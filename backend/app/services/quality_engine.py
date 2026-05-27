@@ -10,6 +10,7 @@ A catalog passes iff ``score >= PASS_SCORE_THRESHOLD`` **and** no
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from dataclasses import dataclass
 from typing import Callable
@@ -58,7 +59,13 @@ RULES: list[Rule] = [
 class QualityEngine:
     def __init__(self, db: AsyncSession):
         self.db = db
-        self._banned = set(all_banned_words())
+        # Compile word-boundary patterns for each banned token so short tokens
+        # like "ck" / "lv" do not match inside ordinary words ("neck", "solve").
+        self._banned_patterns: list[tuple[str, re.Pattern]] = [
+            (w, re.compile(rf"(?<![a-z0-9]){re.escape(w)}(?![a-z0-9])", re.IGNORECASE))
+            for w in all_banned_words()
+            if w
+        ]
 
     async def validate_catalog(self, catalog_id: uuid.UUID) -> QualityReport:
         catalog = (
@@ -185,9 +192,9 @@ class QualityEngine:
     async def _check_banned_words(self, catalog: Catalog, skus: list[SKU]) -> tuple[str, str, str | None]:
         hits: list[str] = []
         for sku in skus:
-            haystack = " ".join(filter(None, [sku.ai_title, sku.ai_description, sku.ai_keywords])).lower()
-            for word in self._banned:
-                if word and word in haystack:
+            haystack = " ".join(filter(None, [sku.ai_title, sku.ai_description, sku.ai_keywords]))
+            for word, pattern in self._banned_patterns:
+                if pattern.search(haystack):
                     hits.append(f"{sku.product_name}: '{word}'")
                     break
         if hits:
