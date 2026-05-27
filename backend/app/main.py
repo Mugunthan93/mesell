@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.config import settings
 from app.routers import auth as auth_router
 from app.routers import catalogs as catalogs_router
+from app.routers import exports as exports_router
 from app.routers import generation as generation_router
 from app.routers import images as images_router
 from app.routers import pricing as pricing_router
@@ -56,6 +57,7 @@ app.include_router(images_router.router)
 app.include_router(generation_router.router)
 app.include_router(quality_router.router)
 app.include_router(pricing_router.router)
+app.include_router(exports_router.router)
 
 
 async def _check_postgres() -> str:
