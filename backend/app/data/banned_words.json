@@ -1,0 +1,49 @@
+{
+  "branded": [
+    "nike", "adidas", "puma", "reebok", "fila", "asics", "new balance",
+    "zara", "h&m", "h and m", "uniqlo", "forever 21", "mango", "gap",
+    "louis vuitton", "lv", "gucci", "prada", "chanel", "hermes", "hermès",
+    "rolex", "omega", "tag heuer", "patek philippe", "cartier",
+    "apple", "iphone", "ipad", "macbook", "airpods", "samsung", "galaxy",
+    "oneplus", "xiaomi", "redmi", "realme", "oppo", "vivo",
+    "rayban", "ray-ban", "oakley", "gucci",
+    "burberry", "armani", "calvin klein", "ck", "tommy hilfiger",
+    "levis", "levi's", "wrangler", "lee",
+    "manyavar", "fabindia", "biba", "westside", "w for woman",
+    "loreal", "l'oreal", "maybelline", "mac", "lakme", "sephora",
+    "nivea", "dove", "lakmé"
+  ],
+  "misleading_health": [
+    "cure", "cures", "miracle", "miraculous", "fda approved", "fda-approved",
+    "weight loss guaranteed", "lose weight fast", "burn fat",
+    "anti-cancer", "cancer cure", "diabetes cure", "blood pressure cure",
+    "anti-aging guaranteed", "permanent fairness", "skin whitening",
+    "100% natural cure", "doctor recommended", "scientifically proven",
+    "clinically tested", "no side effects", "instant relief", "permanent solution",
+    "magic", "magical", "wonder", "wonderful results guaranteed",
+    "best in the world", "world's best", "world no 1", "world #1",
+    "ayurvedic cure", "ancient secret", "ancient cure"
+  ],
+  "prohibited_terms": [
+    "free", "freebie", "bonus", "gift", "cashback offer", "lucky draw",
+    "limited stock", "hurry up", "last chance", "sale ends today",
+    "guaranteed delivery", "100% guarantee", "lifetime warranty",
+    "money back", "refund guaranteed", "no questions asked",
+    "free shipping", "cod available", "cash on delivery",
+    "whatsapp", "call me", "contact me", "phone number", "mobile number",
+    "instagram", "facebook", "telegram", "youtube",
+    "discount code", "promo code", "coupon",
+    "imported", "made in china", "first copy", "1st copy", "7a copy", "7aaa",
+    "replica", "duplicate", "fake", "knockoff", "knock-off", "copy",
+    "stolen", "second hand", "used", "refurbished"
+  ],
+  "vulgar": [
+    "sexy", "hot", "seductive", "naughty", "kinky", "fetish",
+    "intimate exclusive", "x-rated", "xxx", "adult only"
+  ],
+  "religious_political": [
+    "modi", "rahul gandhi", "bjp", "congress", "rss",
+    "hindu only", "muslim only", "christian only", "sikh only",
+    "anti hindu", "anti muslim", "anti national", "tukde tukde"
+  ]
+}

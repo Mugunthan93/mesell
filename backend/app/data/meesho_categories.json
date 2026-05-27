@@ -1,0 +1,149 @@
+{
+  "Women": {
+    "Ethnic Wear": [
+      "Kurtis",
+      "Sarees",
+      "Salwar Suits",
+      "Lehengas",
+      "Dupattas",
+      "Anarkali Suits",
+      "Patiala Suits",
+      "Ethnic Jackets"
+    ],
+    "Western Wear": [
+      "Tops",
+      "T-Shirts",
+      "Dresses",
+      "Jeans",
+      "Skirts",
+      "Trousers",
+      "Jumpsuits",
+      "Shorts"
+    ],
+    "Lingerie & Sleepwear": [
+      "Bras",
+      "Panties",
+      "Nightwear",
+      "Camisoles",
+      "Shapewear"
+    ],
+    "Footwear": [
+      "Heels",
+      "Flats",
+      "Sandals",
+      "Sneakers",
+      "Boots"
+    ],
+    "Jewellery": [
+      "Earrings",
+      "Necklaces",
+      "Bangles",
+      "Rings",
+      "Anklets"
+    ]
+  },
+  "Men": {
+    "Topwear": [
+      "T-Shirts",
+      "Shirts",
+      "Kurta Sets",
+      "Sweaters",
+      "Sweatshirts",
+      "Jackets"
+    ],
+    "Bottomwear": [
+      "Jeans",
+      "Trousers",
+      "Track Pants",
+      "Shorts",
+      "Dhotis"
+    ],
+    "Footwear": [
+      "Casual Shoes",
+      "Sports Shoes",
+      "Formal Shoes",
+      "Sandals"
+    ],
+    "Innerwear": [
+      "Vests",
+      "Briefs",
+      "Trunks",
+      "Thermals"
+    ]
+  },
+  "Kids": {
+    "Boys Clothing": [
+      "T-Shirts",
+      "Shirts",
+      "Jeans",
+      "Shorts",
+      "Kurta Sets"
+    ],
+    "Girls Clothing": [
+      "Frocks",
+      "Tops",
+      "Lehengas",
+      "Skirts",
+      "Leggings"
+    ],
+    "Infant Wear": [
+      "Bodysuits",
+      "Sleepsuits",
+      "Booties"
+    ]
+  },
+  "Home & Kitchen": {
+    "Home Furnishing": [
+      "Bedsheets",
+      "Curtains",
+      "Cushion Covers",
+      "Pillow Covers",
+      "Door Mats"
+    ],
+    "Kitchen": [
+      "Cookware",
+      "Storage Containers",
+      "Utensils",
+      "Lunch Boxes"
+    ],
+    "Home Decor": [
+      "Wall Art",
+      "Showpieces",
+      "Clocks",
+      "Photo Frames"
+    ]
+  },
+  "Beauty & Personal Care": {
+    "Makeup": [
+      "Lipstick",
+      "Eyeliner",
+      "Kajal",
+      "Foundation"
+    ],
+    "Skin Care": [
+      "Face Cream",
+      "Face Wash",
+      "Sunscreen",
+      "Moisturiser"
+    ],
+    "Hair Care": [
+      "Shampoo",
+      "Hair Oil",
+      "Hair Color"
+    ]
+  },
+  "Electronics & Mobile": {
+    "Mobile Accessories": [
+      "Mobile Covers",
+      "Chargers",
+      "Earphones",
+      "Power Banks",
+      "Screen Guards"
+    ],
+    "Audio": [
+      "Headphones",
+      "Bluetooth Speakers",
+      "Earbuds"
+    ]
+  }
+}

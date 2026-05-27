@@ -1,0 +1,82 @@
+{
+  "_default": {
+    "required": ["color", "material"],
+    "optional": ["pattern", "occasion", "wash_care"],
+    "default_return_rate": 0.22
+  },
+  "Kurtis": {
+    "required": ["fabric", "fit", "sleeve_length", "neck_type", "length", "occasion"],
+    "optional": ["pattern", "stitch_type", "wash_care", "ornamentation"],
+    "default_return_rate": 0.25
+  },
+  "Sarees": {
+    "required": ["fabric", "blouse_piece", "saree_length", "border_type", "occasion"],
+    "optional": ["work_type", "pattern", "wash_care", "transparency"],
+    "default_return_rate": 0.20
+  },
+  "Salwar Suits": {
+    "required": ["fabric", "set_type", "kurta_length", "bottom_type", "occasion"],
+    "optional": ["dupatta_fabric", "neck_type", "stitch_type"],
+    "default_return_rate": 0.24
+  },
+  "Lehengas": {
+    "required": ["fabric", "set_type", "work_type", "occasion"],
+    "optional": ["choli_length", "lehenga_length", "wash_care"],
+    "default_return_rate": 0.18
+  },
+  "Tops": {
+    "required": ["fabric", "fit", "sleeve_length", "neck_type", "pattern"],
+    "optional": ["occasion", "wash_care"],
+    "default_return_rate": 0.27
+  },
+  "Dresses": {
+    "required": ["fabric", "fit", "sleeve_length", "neck_type", "length", "pattern"],
+    "optional": ["occasion", "wash_care"],
+    "default_return_rate": 0.26
+  },
+  "T-Shirts": {
+    "required": ["fabric", "fit", "sleeve_length", "neck_type", "pattern"],
+    "optional": ["wash_care", "occasion"],
+    "default_return_rate": 0.20
+  },
+  "Jeans": {
+    "required": ["fabric", "fit", "rise", "stretch", "wash"],
+    "optional": ["distress", "pattern"],
+    "default_return_rate": 0.30
+  },
+  "Shirts": {
+    "required": ["fabric", "fit", "sleeve_length", "collar_type", "pattern"],
+    "optional": ["cuff_type", "placket", "wash_care"],
+    "default_return_rate": 0.22
+  },
+  "Mobile Covers": {
+    "required": ["compatible_model", "material", "type", "pattern"],
+    "optional": ["closure", "back_design"],
+    "default_return_rate": 0.10
+  },
+  "Earphones": {
+    "required": ["connectivity", "type", "color", "mic"],
+    "optional": ["impedance", "frequency_range"],
+    "default_return_rate": 0.12
+  },
+  "Bedsheets": {
+    "required": ["fabric", "size", "thread_count", "pattern", "pieces"],
+    "optional": ["wash_care", "weave_type"],
+    "default_return_rate": 0.15
+  },
+  "Curtains": {
+    "required": ["fabric", "size", "pattern", "pieces", "header_type"],
+    "optional": ["lining", "transparency"],
+    "default_return_rate": 0.18
+  },
+  "Lipstick": {
+    "required": ["finish", "shade", "type"],
+    "optional": ["formulation", "skin_type"],
+    "default_return_rate": 0.08
+  },
+  "Earrings": {
+    "required": ["material", "type", "color"],
+    "optional": ["stone_type", "plating"],
+    "default_return_rate": 0.12
+  }
+}

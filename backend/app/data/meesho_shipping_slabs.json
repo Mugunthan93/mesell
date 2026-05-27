@@ -1,0 +1,15 @@
+{
+  "_note": "Indicative Meesho forward shipping rates (INR) by weight slab and zone. Update when Meesho publishes new rates.",
+  "slabs": [
+    {"max_grams": 500, "local": 40, "regional": 50, "national": 65, "special": 80},
+    {"max_grams": 1000, "local": 55, "regional": 70, "national": 90, "special": 110},
+    {"max_grams": 2000, "local": 75, "regional": 95, "national": 125, "special": 155},
+    {"max_grams": 5000, "local": 120, "regional": 150, "national": 195, "special": 240},
+    {"max_grams": 10000, "local": 200, "regional": 250, "national": 325, "special": 400},
+    {"max_grams": 20000, "local": 320, "regional": 400, "national": 520, "special": 640}
+  ],
+  "additional_500g_rate": {"local": 25, "regional": 32, "national": 42, "special": 50},
+  "default_zone": "national",
+  "gst_on_shipping_percent": 18.0,
+  "payment_processing_percent": 2.0
+}
