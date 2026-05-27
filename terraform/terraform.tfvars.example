@@ -1,0 +1,29 @@
+# Copy to terraform.tfvars (gitignored) and fill in real values.
+
+project_id = "your-gcp-project-id"
+region     = "asia-south1"
+zone       = "asia-south1-a"
+
+# Domain + DNS. Set manage_dns = false if your registrar / DNS provider
+# already manages the zone — then point an A record at the static IP yourself.
+domain     = "meesell.in"
+manage_dns = true
+
+# SSH access (paste the full public key contents).
+ssh_user       = "claude"
+ssh_public_key = "ssh-ed25519 AAAA... your-key"
+
+# Narrow to your office/VPN IP for prod.
+# ssh_source_cidrs = ["203.0.113.5/32"]
+
+# Optional: machine size + disk
+# vm_machine_type = "e2-standard-2"
+# vm_disk_size_gb = 50
+
+# External secrets — fill these so Secret Manager has real values.
+# (JWT_SECRET and POSTGRES_PASSWORD are auto-generated.)
+gemini_api_key      = "AIza..."
+msg91_auth_key      = "..."
+msg91_template_id   = "..."
+razorpay_key_id     = "rzp_live_..."
+razorpay_key_secret = "..."
