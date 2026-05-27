@@ -1,0 +1,37 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: meesell
+spec:
+  # 02:00 IST = 20:30 UTC the previous day.
+  schedule: "30 20 * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: google/cloud-sdk:alpine
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: meesell-secrets
+                      key: POSTGRES_PASSWORD
+                - name: GCS_BUCKET
+                  valueFrom:
+                    secretKeyRef:
+                      name: meesell-secrets
+                      key: GCS_BUCKET
+              command:
+                - "sh"
+                - "-c"
+                - >
+                  apk add --no-cache postgresql-client &&
+                  TS=$(date -u +%Y%m%d_%H%M%S) &&
+                  pg_dump -h postgres -U meesell -d meesell -Fc -f /tmp/meesell_${TS}.dump &&
+                  gsutil cp /tmp/meesell_${TS}.dump gs://${GCS_BUCKET}/backups/meesell_${TS}.dump
