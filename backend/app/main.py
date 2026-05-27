@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config import settings
 from app.routers import auth as auth_router
+from app.routers import images as images_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -44,6 +45,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router.router)
+app.include_router(images_router.router)
 
 
 async def _check_postgres() -> str:
