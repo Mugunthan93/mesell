@@ -12,3 +12,5 @@ k8s/secrets.yaml
 .pytest_cache/
 .coverage
 *.log
+dump.rdb
+appendonlydir/
