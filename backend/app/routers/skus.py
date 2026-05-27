@@ -57,8 +57,7 @@ async def create_sku(
     sku = SKU(catalog_id=catalog_id, **data.model_dump(exclude_unset=True))
     db.add(sku)
     await db.commit()
-    await db.refresh(sku)
-    sku.images = []
+    await db.refresh(sku, attribute_names=["images"])
     return SKUResponse.model_validate(sku)
 
 
