@@ -1,0 +1,38 @@
+services:
+  api:
+    build: ./backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend/app:/app/app
+    ports:
+      - "8000:8000"
+    env_file: ./backend/.env
+    depends_on:
+      - valkey
+      - postgres
+  worker:
+    build: ./backend
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=2
+    volumes:
+      - ./backend/app:/app/app
+    env_file: ./backend/.env
+    depends_on:
+      - valkey
+      - postgres
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: meesell
+      POSTGRES_USER: meesell
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+  valkey:
+    image: valkey/valkey:8-alpine
+    ports:
+      - "6379:6379"
+    command: valkey-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+volumes:
+  postgres_data:
