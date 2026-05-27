@@ -3,8 +3,11 @@
 import logging
 from contextlib import asynccontextmanager
 
+import redis.asyncio as redis
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config import settings
 
@@ -16,7 +19,11 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """Startup and shutdown events."""
     logger.info(f"MeeSell API starting (env={settings.APP_ENV})")
+    app.state.db_engine = create_async_engine(settings.DATABASE_URL, pool_pre_ping=True)
+    app.state.valkey = redis.from_url(settings.VALKEY_URL, decode_responses=True)
     yield
+    await app.state.valkey.aclose()
+    await app.state.db_engine.dispose()
     logger.info("MeeSell API shutting down")
 
 
@@ -36,8 +43,28 @@ app.add_middleware(
 )
 
 
+async def _check_postgres() -> str:
+    try:
+        async with app.state.db_engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        return "ok"
+    except Exception as exc:
+        logger.warning(f"Postgres health check failed: {exc}")
+        return "error"
+
+
+async def _check_valkey() -> str:
+    try:
+        pong = await app.state.valkey.ping()
+        return "ok" if pong else "error"
+    except Exception as exc:
+        logger.warning(f"Valkey health check failed: {exc}")
+        return "error"
+
+
 @app.get("/health")
 async def health():
-    """Health check endpoint."""
-    # TODO: Add PostgreSQL and Valkey connectivity checks (T01)
-    return {"status": "healthy", "env": settings.APP_ENV}
+    """Health check endpoint with PostgreSQL and Valkey connectivity."""
+    checks = {"postgres": await _check_postgres(), "valkey": await _check_valkey()}
+    status = "healthy" if all(v == "ok" for v in checks.values()) else "degraded"
+    return {"status": status, "checks": checks}
