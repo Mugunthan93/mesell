@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.middleware.auth import get_current_user
+from app.middleware.plan_guard import ensure_can_generate
+from app.middleware.rate_limit import enforce as enforce_rate_limit
 from app.models.catalog import Catalog
 from app.models.user import User
 from app.routers.catalogs import _load_owned_catalog
@@ -40,11 +42,8 @@ async def kickoff_generation(
     valkey: Annotated[redis.Redis, Depends(get_valkey)],
 ) -> dict:
     catalog = await _load_owned_catalog(db, catalog_id, user.id)
-    if (user.catalogs_used or 0) >= (user.catalogs_limit or 0):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Catalog generation limit reached for your plan; please upgrade.",
-        )
+    ensure_can_generate(user)
+    await enforce_rate_limit(valkey, user.id, "generate")
 
     from app.workers.generation_tasks import generate_catalog
     async_result = generate_catalog.delay(str(catalog.id))

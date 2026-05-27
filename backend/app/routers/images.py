@@ -4,13 +4,15 @@ import logging
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+import redis.asyncio as redis
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.middleware.auth import get_current_user
+from app.middleware.rate_limit import enforce as enforce_rate_limit
 from app.models.catalog import Catalog
 from app.models.image import Image
 from app.models.sku import SKU
@@ -76,9 +78,11 @@ async def _load_owned_image(db: AsyncSession, image_id: uuid.UUID, user_id: uuid
 async def upload_image(
     sku_id: uuid.UUID,
     file: Annotated[UploadFile, File(...)],
+    request: Request,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ImageResponse:
+    await enforce_rate_limit(request.app.state.valkey, user.id, "images")
     sku = await _load_owned_sku(db, sku_id, user.id)
 
     if file.content_type not in ALLOWED_CONTENT_TYPES:
