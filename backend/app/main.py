@@ -14,6 +14,8 @@ from app.routers import auth as auth_router
 from app.routers import catalogs as catalogs_router
 from app.routers import generation as generation_router
 from app.routers import images as images_router
+from app.routers import pricing as pricing_router
+from app.routers import quality as quality_router
 from app.routers import skus as skus_router
 
 logging.basicConfig(level=logging.INFO)
@@ -52,6 +54,8 @@ app.include_router(catalogs_router.router)
 app.include_router(skus_router.router)
 app.include_router(images_router.router)
 app.include_router(generation_router.router)
+app.include_router(quality_router.router)
+app.include_router(pricing_router.router)
 
 
 async def _check_postgres() -> str:
