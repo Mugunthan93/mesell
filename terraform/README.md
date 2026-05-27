@@ -23,14 +23,53 @@ The split is deliberate: Terraform owns immutable infrastructure; `setup-vm.sh` 
 
 ## One-time setup
 
-1. Authenticate: `gcloud auth application-default login`
-2. Make sure billing is enabled on the project.
-3. `cp terraform.tfvars.example terraform.tfvars` and fill in real values (`project_id`, `domain`, `ssh_public_key`, the `*_api_key` secrets).
+This stack runs under the **`vaishnaviramoorthy@gmail.com`** account (the one
+with the free GCP credit).
+
+1. **Switch gcloud to the Vaishnavi account.** From your laptop:
+   ```bash
+   gcloud auth login vaishnaviramoorthy@gmail.com
+   gcloud auth application-default login            # browser flow; sign in as vaishnavi
+   gcloud config set account vaishnaviramoorthy@gmail.com
+   gcloud projects list                             # pick the project linked
+                                                     # to the free-credit billing account
+   gcloud config set project <PROJECT_ID>
+   gcloud auth application-default set-quota-project <PROJECT_ID>
+   ```
+   Tip: use `gcloud config configurations create meesell-vaishnavi` to keep this
+   profile separate from `mugunthanks93@gmail.com`.
+
+2. **Confirm billing.** Free credit binds to the *billing account*, not the
+   project. Verify with:
+   ```bash
+   gcloud billing projects describe <PROJECT_ID>     # billingEnabled should be true
+   ```
+   If billing is not linked, link a billing account that still has trial credit:
+   ```bash
+   gcloud billing accounts list
+   gcloud billing projects link <PROJECT_ID> --billing-account=<BILLING_ACCOUNT_ID>
+   ```
+
+3. `cp terraform.tfvars.example terraform.tfvars` and fill in real values
+   (`project_id`, `domain`, `ssh_public_key`, the `*_api_key` secrets).
 4. `terraform init`
-5. `terraform plan`
+5. `terraform plan`     ← review carefully; look for `+ create` on the expected resources
 6. `terraform apply`
 
 `terraform output next_steps` prints the full post-apply checklist (NS records, image push, SSH, migration).
+
+### Sanity-check Terraform is using the right identity
+
+Before `terraform apply`, confirm:
+
+```bash
+gcloud auth application-default print-access-token --quiet >/dev/null \
+  && gcloud config list account --format='value(core.account)'
+# Expected output: vaishnaviramoorthy@gmail.com
+```
+
+If the printed account is `mugunthanks93@gmail.com`, re-run step 1 — Terraform
+will otherwise provision resources in the wrong account.
 
 ## Day-2
 

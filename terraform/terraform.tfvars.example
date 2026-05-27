@@ -1,6 +1,19 @@
 # Copy to terraform.tfvars (gitignored) and fill in real values.
+#
+# Authentication: this stack runs against the `vaishnaviramoorthy@gmail.com`
+# account (has the free GCP credit). Before `terraform apply`, on your laptop:
+#
+#   gcloud auth login vaishnaviramoorthy@gmail.com
+#   gcloud auth application-default login    # browser; sign in as vaishnavi
+#   gcloud config set account vaishnaviramoorthy@gmail.com
+#   gcloud projects list                     # pick the project that has the
+#                                            # free-credit billing account linked
+#   gcloud config set project <PROJECT_ID>
+#   gcloud auth application-default set-quota-project <PROJECT_ID>
+#
+# Then put that PROJECT_ID below.
 
-project_id = "your-gcp-project-id"
+project_id = "your-gcp-project-id"   # must be a project under vaishnaviramoorthy@gmail.com
 region     = "asia-south1"
 zone       = "asia-south1-a"
 
