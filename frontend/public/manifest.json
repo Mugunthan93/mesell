@@ -1,0 +1,10 @@
+{
+  "name": "MeeSell",
+  "short_name": "MeeSell",
+  "description": "AI catalogs, QualityGate, and PriceIntel for Meesho sellers",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ed6c1f",
+  "icons": []
+}
