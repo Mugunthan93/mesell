@@ -151,9 +151,10 @@ async def test_full_seller_journey(client, db_engine):
     )
     assert csv_resp.status_code == 200
     csv_url = csv_resp.json()["download_url"]
-    path = urlparse(csv_url).path
-    with open(path, "rb") as f:
-        raw = f.read()
+    # Fetch via test client — /dev-static is served by the in-process app.
+    csv_file = await client.get(urlparse(csv_url).path)
+    assert csv_file.status_code == 200
+    raw = csv_file.content
     assert raw.startswith(b"\xef\xbb\xbf")
     reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")))
     row = next(reader)
@@ -165,7 +166,8 @@ async def test_full_seller_journey(client, db_engine):
     )
     assert zip_resp.status_code == 200
     zip_url = zip_resp.json()["download_url"]
-    zpath = urlparse(zip_url).path
-    with zipfile.ZipFile(zpath) as zf:
+    zip_file = await client.get(urlparse(zip_url).path)
+    assert zip_file.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(zip_file.content)) as zf:
         names = zf.namelist()
     assert names == ["Cotton_Kurti_Red_1.jpg"]

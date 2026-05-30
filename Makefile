@@ -4,7 +4,7 @@ dev:
 dev-down:
 	docker compose -f docker-compose.dev.yml down
 test:
-	cd backend && python -m pytest tests/ -v
+	cd backend && TEST_DATABASE_URL=postgresql+asyncpg://meesell:password@localhost:5433/meesell_test .venv/bin/python -m pytest tests/ -v
 lint:
 	cd backend && python -m ruff check app/
 migrate:

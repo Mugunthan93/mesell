@@ -40,7 +40,7 @@ async def test_upload_accepts_jpeg(client):
     assert r.status_code == 201, r.text
     body = r.json()
     assert body["status"] == "processing"
-    assert body["original_url"].startswith("file://") or body["original_url"].startswith("https://")
+    assert body["original_url"].startswith("http://") or body["original_url"].startswith("https://")
 
 
 @pytest.mark.asyncio

@@ -12,6 +12,23 @@ from app.services.ai_engine import (
     _strip_fences,
 )
 
+# ---------------------------------------------------------------------------
+# Helpers for mocking the Gemini SDK response shape used in regression tests.
+# ---------------------------------------------------------------------------
+
+def _make_candidate(finish_reason: int):
+    """Return a minimal candidate object with the given finish_reason."""
+    return type("Candidate", (), {"finish_reason": finish_reason})()
+
+
+def _make_response(text: str, finish_reason: int = 1):
+    """
+    Build a minimal fake google.generativeai response.
+    finish_reason 1 = STOP (normal), 2 = MAX_TOKENS (truncated).
+    """
+    candidate = _make_candidate(finish_reason)
+    return type("Response", (), {"text": text, "candidates": [candidate]})()
+
 
 def test_strip_fences_removes_json_block():
     raw = "```json\n{\"a\":1}\n```"
@@ -37,6 +54,31 @@ def test_parse_response_extracts_json_from_prose():
 def test_parse_response_raises_on_garbage():
     with pytest.raises(ValueError):
         _parse_response("no json anywhere")
+
+
+def test_parse_response_raises_on_truncated_json_no_closing_brace():
+    """
+    Regression test for the MAX_TOKENS truncation bug.
+
+    When max_output_tokens was 1024, Gemini returned only ~97 chars — a
+    fragment like:
+        {
+          "title": "Warm Woolen Saree for Casual Wear ...",
+          "description
+    — with no closing brace.  Both json.loads and the ``{.*}`` regex failed,
+    producing the misleading "No JSON object found" error.  The regex is
+    correct; the real fix is raising a clear error before JSON parsing when
+    the response is an incomplete fragment, and bumping max_output_tokens.
+    """
+    truncated = (
+        '{\n'
+        '  "title": "Warm Woolen Saree for Casual Wear - Elegant Red Wool '
+        'Saree with Blouse Piece for Women",\n'
+        '  "description'
+        # deliberately ends here — no closing quote, no closing brace
+    )
+    with pytest.raises((ValueError, json.JSONDecodeError)):
+        _parse_response(truncated)
 
 
 def test_build_prompt_substitutes_all_placeholders():
@@ -89,11 +131,9 @@ async def test_generate_listing_normalises_response():
         "attributes": {"fabric": "cotton blend"},
     }
 
-    fake_response = type("R", (), {"text": json.dumps(payload)})
-
     class FakeModel:
         def generate_content(self, prompt, **_):  # noqa: D401
-            return fake_response
+            return _make_response(json.dumps(payload))
 
     engine = GeminiEngine(api_key="dummy")
     with patch.object(engine, "_get_model", return_value=FakeModel()):
@@ -114,13 +154,76 @@ async def test_generate_listing_normalises_response():
 @pytest.mark.asyncio
 async def test_generate_listing_raises_when_keys_missing():
     incomplete = {"title": "T", "description": "D"}
-    fake_response = type("R", (), {"text": json.dumps(incomplete)})
 
     class FakeModel:
         def generate_content(self, *_a, **_k):
-            return fake_response
+            return _make_response(json.dumps(incomplete))
 
     engine = GeminiEngine(api_key="dummy")
     with patch.object(engine, "_get_model", return_value=FakeModel()):
         with pytest.raises(ValueError, match="missing keys"):
             await engine.generate_listing(product_name="X", category="Kurtis")
+
+
+@pytest.mark.asyncio
+async def test_generate_listing_raises_on_max_tokens_truncation():
+    """
+    Regression: finish_reason=2 (MAX_TOKENS) must raise ValueError with a
+    clear 'truncated' message before the JSON parser is even invoked.
+
+    This is the scenario that caused the original 'No JSON object found'
+    error — a 97-char fragment starting with a partial title field, produced
+    by Gemini when max_output_tokens was 1024 and the response needed ~400
+    output tokens.
+    """
+    truncated_text = (
+        '{\n  "title": "Warm Woolen Saree for Casual Wear - Elegant Red Wool '
+        'Saree with Blouse Piece for Women",\n  "description'
+    )
+
+    class FakeModel:
+        def generate_content(self, *_a, **_k):
+            # finish_reason 2 == MAX_TOKENS
+            return _make_response(truncated_text, finish_reason=2)
+
+    engine = GeminiEngine(api_key="dummy")
+    with patch.object(engine, "_get_model", return_value=FakeModel()):
+        with pytest.raises(ValueError, match="truncated"):
+            await engine.generate_listing(
+                product_name="Warm Woolen Saree",
+                category="Sarees",
+                material="Wool",
+                colors="Red",
+                price=799,
+            )
+
+
+@pytest.mark.asyncio
+async def test_generate_listing_uses_2048_max_output_tokens():
+    """
+    Verify the generation config has been bumped to 2048 max_output_tokens.
+    A complete catalog JSON is ~400-600 tokens; 1024 was insufficient.
+    """
+    captured: list[dict] = []
+
+    class FakeModel:
+        def generate_content(self, prompt, generation_config=None, **_):
+            if generation_config:
+                captured.append(generation_config)
+            payload = {
+                "title": "Test Saree",
+                "description": "A test saree.",
+                "keywords": "test, saree",
+                "category": "Sarees",
+                "attributes": {"color": "red"},
+            }
+            return _make_response(json.dumps(payload))
+
+    engine = GeminiEngine(api_key="dummy")
+    with patch.object(engine, "_get_model", return_value=FakeModel()):
+        await engine.generate_listing(product_name="Test Saree", category="Sarees")
+
+    assert captured, "generate_content was never called with generation_config"
+    assert captured[0]["max_output_tokens"] == 2048, (
+        f"Expected max_output_tokens=2048, got {captured[0]['max_output_tokens']}"
+    )

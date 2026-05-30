@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field
 
 ImageStatus = Literal["processing", "completed"]
 
@@ -16,7 +16,6 @@ class ImageResponse(BaseModel):
     sku_id: uuid.UUID
     original_url: str
     processed_url: str | None = None
-    status: ImageStatus = "processing"
     width: int | None = None
     height: int | None = None
     bg_removed: bool = False
@@ -25,6 +24,12 @@ class ImageResponse(BaseModel):
     is_compliant: bool = True
     sort_order: int = 0
     created_at: datetime
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def status(self) -> ImageStatus:
+        """Derived from processed_url — no status column on the Image model."""
+        return "completed" if self.processed_url is not None else "processing"
 
 
 class ImageStatusResponse(BaseModel):

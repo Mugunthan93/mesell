@@ -116,10 +116,31 @@ class GeminiEngine:
                 generation_config={
                     "temperature": 0.7,
                     "top_p": 0.9,
-                    "max_output_tokens": 1024,
+                    # 1024 was too low — a typical catalog JSON is 400-600 tokens.
+                    # With prompt overhead (~430 tokens) the model was hitting
+                    # MAX_TOKENS mid-response, producing truncated JSON with no
+                    # closing brace.  2048 gives comfortable headroom and is still
+                    # well within the model's context window.
+                    "max_output_tokens": 2048,
                     "response_mime_type": "application/json",
                 },
             )
+            # Guard against MAX_TOKENS truncation (finish_reason == 2).
+            # If the model was cut off, response.text will be incomplete JSON;
+            # raise an explicit error rather than letting the JSON parser surface
+            # a confusing "Expecting property name" message.
+            try:
+                candidates = response.candidates
+                if candidates:
+                    finish_reason = candidates[0].finish_reason
+                    # finish_reason 2 == MAX_TOKENS in the google-generativeai SDK
+                    if finish_reason == 2:
+                        raise ValueError(
+                            "Gemini response truncated by MAX_TOKENS limit; "
+                            f"partial text (first 200 chars): {response.text[:200]!r}"
+                        )
+            except (AttributeError, IndexError):
+                pass  # SDK version without candidates — proceed to JSON parse
             return response.text
 
         text = await asyncio.to_thread(_call)

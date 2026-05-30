@@ -1,0 +1,1 @@
+- [GCP account for MeeSell](project_gcp_account.md) — project is under vaishnaviramoorthy@gmail.com; ADC on VM must match; re-copy from legacy_credentials on stale 403

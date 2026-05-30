@@ -95,7 +95,7 @@ async def test_csv_signed_url_has_expiry(db_session):
     cat = await _seed(db_session)
     _, signed = await generate_meesho_csv(db_session, cat.id)
     parsed = urlparse(signed)
-    assert parsed.scheme in {"file", "https"}
+    assert parsed.scheme in {"file", "http", "https"}
     assert "expires=" in parsed.query
 
 

@@ -13,9 +13,10 @@ from app.services.storage import LocalStorage, _guess_content_type
 async def test_upload_returns_file_url_with_readable_contents(tmp_path):
     s = LocalStorage(tmp_path)
     url = await s.upload(b"hello", "originals/u-1/a.jpg")
-    parsed = urlparse(url)
-    assert parsed.scheme == "file"
-    assert Path(parsed.path).read_bytes() == b"hello"
+    # LocalStorage returns an http:// URL served by the /dev-static mount.
+    assert url.startswith("http://localhost:8001/dev-static/")
+    # Verify the bytes were actually written to the storage root.
+    assert (tmp_path / "originals" / "u-1" / "a.jpg").read_bytes() == b"hello"
 
 
 @pytest.mark.asyncio
@@ -38,9 +39,12 @@ async def test_explicit_content_type_overrides_inference(tmp_path):
 async def test_upload_from_file_copies_bytes(tmp_path):
     src = tmp_path / "src.csv"
     src.write_text("a,b\n1,2\n")
-    s = LocalStorage(tmp_path / "store")
+    store_root = tmp_path / "store"
+    s = LocalStorage(store_root)
     url = await s.upload_from_file(str(src), "exports/u-1/cat.csv")
-    assert Path(urlparse(url).path).read_text() == "a,b\n1,2\n"
+    # URL is served via /dev-static; check the actual bytes via the storage root.
+    assert url.startswith("http://localhost:8001/dev-static/")
+    assert (store_root / "exports" / "u-1" / "cat.csv").read_text() == "a,b\n1,2\n"
 
 
 @pytest.mark.asyncio

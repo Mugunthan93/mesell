@@ -32,6 +32,10 @@ class SKUSummary(BaseModel):
     product_name: str
     cost_price: Decimal | None = None
     selling_price: Decimal | None = None
+    ai_title: str | None = None
+    ai_description: str | None = None
+    ai_keywords: str | None = None
+    ai_category: str | None = None
     quality_score: int | None = None
     sort_order: int
     images: list[ImageResponse] = []

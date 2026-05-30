@@ -59,6 +59,14 @@ app.include_router(quality_router.router)
 app.include_router(pricing_router.router)
 app.include_router(exports_router.router)
 
+if settings.is_dev:
+    import os
+
+    from fastapi.staticfiles import StaticFiles
+
+    os.makedirs("/tmp/meesell", exist_ok=True)
+    app.mount("/dev-static", StaticFiles(directory="/tmp/meesell"), name="dev-static")
+
 
 async def _check_postgres() -> str:
     try:

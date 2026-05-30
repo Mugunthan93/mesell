@@ -18,6 +18,9 @@ os.environ["DATABASE_URL"] = os.environ.get(
 )
 os.environ.setdefault("VALKEY_URL", "redis://localhost:6379/15")
 os.environ.setdefault("JWT_SECRET", "test-secret-do-not-use")
+# Redirect Celery tasks to isolated DBs so the GCP worker never picks up test jobs.
+os.environ.setdefault("CELERY_BROKER_URL", "redis://localhost:6381/11")
+os.environ.setdefault("CELERY_RESULT_BACKEND", "redis://localhost:6381/12")
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
 

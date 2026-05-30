@@ -13,7 +13,7 @@ async def _run_generation(catalog_id: uuid.UUID) -> dict:
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
 
-    from app.database import async_session_maker
+    from app.database import make_worker_session
     from app.models.catalog import Catalog
     from app.models.sku import SKU
     from app.services.ai_engine import get_ai_engine
@@ -21,7 +21,7 @@ async def _run_generation(catalog_id: uuid.UUID) -> dict:
     engine = get_ai_engine()
     summary = {"catalog_id": str(catalog_id), "skus_generated": 0, "errors": []}
 
-    async with async_session_maker() as db:
+    async with make_worker_session() as db:
         catalog = (
             await db.execute(
                 select(Catalog)
@@ -74,12 +74,12 @@ def generate_catalog(self, catalog_id: str) -> dict:
 
 
 async def _regenerate_sku(sku_id: uuid.UUID, variation_index: int) -> dict:
-    from app.database import async_session_maker
+    from app.database import make_worker_session
     from app.models.catalog import Catalog
     from app.models.sku import SKU
     from app.services.ai_engine import get_ai_engine
 
-    async with async_session_maker() as db:
+    async with make_worker_session() as db:
         sku = await db.get(SKU, sku_id)
         if sku is None:
             raise ValueError(f"SKU {sku_id} not found")

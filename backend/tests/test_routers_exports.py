@@ -61,9 +61,10 @@ async def test_csv_export_content_round_trip(client):
     cat_id = await _seeded_catalog(client, headers)
     r = await client.post(f"/api/v1/catalogs/{cat_id}/export/meesho-csv", headers=headers)
     download = r.json()["download_url"]
-    path = urlparse(download).path
-    with open(path, "rb") as f:
-        raw = f.read()
+    # Fetch via the test client — /dev-static is served by the in-process app.
+    file_resp = await client.get(urlparse(download).path)
+    assert file_resp.status_code == 200
+    raw = file_resp.content
     assert raw.startswith(b"\xef\xbb\xbf")  # BOM
     text = raw.decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(text))

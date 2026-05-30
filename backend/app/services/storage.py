@@ -118,9 +118,9 @@ class GCSStorage:
 class LocalStorage:
     """Filesystem-backed storage for development.
 
-    Files live under ``root`` (default ``/tmp/meesell``). ``upload`` returns a
-    ``file://`` URL pointing at the on-disk path; ``get_signed_url`` returns
-    that same URL with an ``?expires=<unix_ts>`` query parameter so callers
+    Files live under ``root`` (default ``/tmp/meesell``). ``upload`` returns an
+    HTTP URL served by the ``/dev-static`` mount in ``main.py``; ``get_signed_url``
+    returns that same URL with an ``?expires=<unix_ts>`` query parameter so callers
     can verify expiry behavior end to end.
     """
 
@@ -135,7 +135,7 @@ class LocalStorage:
         return target
 
     def _url(self, path: str) -> str:
-        return f"file://{self._abs(path)}"
+        return f"http://localhost:8001/dev-static/{path}"
 
     async def upload(
         self, file_bytes: bytes, path: str, content_type: str | None = None
@@ -166,7 +166,7 @@ class LocalStorage:
 
     async def get_signed_url(self, path: str, expiry_minutes: int = 60) -> str:
         expires = int(time.time()) + expiry_minutes * 60
-        return f"{self._url(path)}?expires={expires}"
+        return f"http://localhost:8001/dev-static/{path}?expires={expires}"
 
     async def delete(self, path: str) -> None:
         def _do():

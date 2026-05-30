@@ -15,7 +15,7 @@ import uuid
 from PIL import Image as PILImage
 from sqlalchemy import select
 
-from app.database import async_session_maker
+from app.database import make_worker_session
 from app.models.catalog import Catalog
 from app.models.image import Image as ImageModel
 from app.models.sku import SKU
@@ -33,7 +33,22 @@ def remove_background(image_bytes: bytes) -> PILImage.Image:
 
     Rembg is heavy (ONNX model download on first call) — imported lazily so
     importing this module stays cheap during tests.
+
+    Dev bypass: on Apple Silicon (and any machine where APP_ENV=development)
+    onnxruntime fails to compile the CoreML graph, raising an I/O error before
+    any inference can happen. In dev mode we skip rembg entirely and return the
+    original image as RGBA so the rest of the pipeline (white BG, resize,
+    compress) continues unaffected.
     """
+    from app.config import settings
+
+    if settings.is_dev:
+        logger.warning(
+            "remove_background: dev mode — skipping rembg (CoreML not available on ARM). "
+            "Background will NOT be removed in this run."
+        )
+        return PILImage.open(io.BytesIO(image_bytes)).convert("RGBA")
+
     from rembg import remove  # type: ignore
 
     out_bytes = remove(image_bytes)
@@ -115,7 +130,7 @@ async def run_pipeline(image_id: uuid.UUID) -> dict:
     """Full pipeline: download → rembg → composite → resize → compress → upload → DB."""
     storage = get_storage()
 
-    async with async_session_maker() as db:
+    async with make_worker_session() as db:
         image = await db.get(ImageModel, image_id)
         if image is None:
             raise ValueError(f"Image {image_id} not found")
