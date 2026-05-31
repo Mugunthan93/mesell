@@ -12,7 +12,7 @@ from app.middleware.rate_limit import LIMITS, enforce
 
 @pytest_asyncio.fixture
 async def valkey():
-    r = redis.from_url("redis://localhost:6379/13", decode_responses=True)
+    r = redis.from_url("redis://localhost:6381/13", decode_responses=True)
     await r.flushdb()
     yield r
     await r.flushdb()

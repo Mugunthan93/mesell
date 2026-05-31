@@ -18,7 +18,7 @@ from app.services.otp_service import (
 
 @pytest_asyncio.fixture
 async def valkey():
-    r = redis.from_url("redis://localhost:6379/14", decode_responses=True)
+    r = redis.from_url("redis://localhost:6381/14", decode_responses=True)
     await r.flushdb()
     yield r
     await r.flushdb()

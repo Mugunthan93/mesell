@@ -51,7 +51,7 @@ async def test_msg91_dispatched_with_correct_params(monkeypatch):
             resp.raise_for_status = MagicMock()
             return resp
 
-    r = redis.from_url("redis://localhost:6379/12", decode_responses=True)
+    r = redis.from_url("redis://localhost:6381/12", decode_responses=True)
     await r.flushdb()
     try:
         with patch("app.services.otp_service.httpx.AsyncClient", FakeAsyncClient):
@@ -89,7 +89,7 @@ async def test_msg91_network_failure_is_swallowed(monkeypatch):
         async def post(self, *_a, **_kw):
             raise httpx.ConnectError("boom")
 
-    r = redis.from_url("redis://localhost:6379/12", decode_responses=True)
+    r = redis.from_url("redis://localhost:6381/12", decode_responses=True)
     try:
         with patch("app.services.otp_service.httpx.AsyncClient", ExplodingClient):
             svc = OTPService(r)
@@ -119,7 +119,7 @@ async def test_msg91_skipped_when_auth_key_missing(monkeypatch):
             calls.append("posted")
             return MagicMock()
 
-    r = redis.from_url("redis://localhost:6379/12", decode_responses=True)
+    r = redis.from_url("redis://localhost:6381/12", decode_responses=True)
     try:
         with patch("app.services.otp_service.httpx.AsyncClient", FakeAsyncClient):
             svc = OTPService(r)

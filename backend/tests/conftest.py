@@ -16,7 +16,7 @@ os.environ["DATABASE_URL"] = os.environ.get(
     "TEST_DATABASE_URL",
     "postgresql+asyncpg://meesell:password@localhost:5432/meesell",
 )
-os.environ.setdefault("VALKEY_URL", "redis://localhost:6379/15")
+os.environ.setdefault("VALKEY_URL", "redis://localhost:6381/15")
 os.environ.setdefault("JWT_SECRET", "test-secret-do-not-use")
 # Redirect Celery tasks to isolated DBs so the GCP worker never picks up test jobs.
 os.environ.setdefault("CELERY_BROKER_URL", "redis://localhost:6381/11")

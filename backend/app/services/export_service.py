@@ -127,6 +127,13 @@ async def generate_images_zip(db: AsyncSession, catalog_id: uuid.UUID) -> tuple[
     async def _fetch(url: str) -> bytes:
         if url.startswith("file://"):
             return await asyncio.to_thread(_fetch_local, url)
+        # LocalStorage (dev/test) returns http://localhost:8001/dev-static/{path}
+        # No HTTP server is present in tests — read the file directly instead.
+        if "/dev-static/" in url:
+            from pathlib import Path
+            rel = url.split("/dev-static/")[1].split("?")[0]  # strip ?expires= query param
+            file_path = Path("/tmp/meesell") / rel
+            return await asyncio.to_thread(file_path.read_bytes)
         async with httpx.AsyncClient(timeout=30.0) as client:
             r = await client.get(url)
             r.raise_for_status()
