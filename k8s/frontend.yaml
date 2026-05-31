@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: asia-south1-docker.pkg.dev/REPLACE-PROJECT-ID/meesell/frontend:latest
+          image: asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-images/frontend:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 80

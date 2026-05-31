@@ -1,0 +1,240 @@
+# .github/workflows/ci.yml
+#
+# MeeSell — GitHub Actions CI/CD pipeline
+#
+# Stages:
+#   test   → runs on every push and pull_request targeting main
+#   build  → runs on push to main only, after test passes
+#   deploy → runs on push to main only, after build passes
+#
+# Required GitHub repository variables (Settings → Variables → Repository variables):
+#   GCP_WIF_PROVIDER  — full WIF provider resource name (set after `terraform apply`)
+#   GCP_CI_SA_EMAIL   — CI service account email (set after `terraform apply`)
+#
+# No secrets are stored here. All GCP auth uses Workload Identity Federation (WIF).
+
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+
+  # ---------------------------------------------------------------------------
+  # Job 1: test
+  # Runs on every push and pull_request.
+  # Spins up PostgreSQL and Valkey service containers, installs backend
+  # dependencies, and executes the full pytest suite.
+  # ---------------------------------------------------------------------------
+  test:
+    name: Run backend tests
+    runs-on: ubuntu-latest
+
+    services:
+      # PostgreSQL 16 — test database
+      # Container port 5432 is mapped to host port 5433 to match the
+      # TEST_DATABASE_URL injected below and the conftest.py default port.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: meesell
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: meesell_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U meesell -d meesell_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      # Valkey 8 (Redis-compatible) — Celery broker + result backend for tests.
+      # Container port 6379 is mapped to host port 6381 so tests use
+      # redis://localhost:6381/{11,12} (isolated from any production DBs).
+      valkey:
+        image: valkey/valkey:8-alpine
+        ports:
+          - 6381:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Run pytest
+        working-directory: backend
+        env:
+          # Override the database URL so conftest.py connects to the service
+          # container mapped above (port 5433).
+          TEST_DATABASE_URL: postgresql+asyncpg://meesell:password@localhost:5433/meesell_test
+        run: python -m pytest tests/ -v
+
+  # ---------------------------------------------------------------------------
+  # Job 2: build
+  # Runs on push to main only (not PRs). Requires the test job to pass.
+  #
+  # Authenticates to GCP via Workload Identity Federation (no SA key stored),
+  # then submits a Cloud Build job using the existing cloudbuild.yaml.
+  # After Cloud Build completes, the SHA-tagged images are also aliased to
+  # :latest so the cluster can pull them by that tag if needed.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build and push container images
+    runs-on: ubuntu-latest
+    needs: test
+    # Only run on direct pushes to main, not on PRs.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: read
+      # Required for Workload Identity Federation token exchange.
+      id-token: write
+
+    env:
+      PROJECT_ID: project-1f5cbf72-2820-4cdb-949
+      REGION: asia-south1
+      REPO: meesell-images
+      REGISTRY: asia-south1-docker.pkg.dev
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_CI_SA_EMAIL }}
+
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Authenticate Docker to Artifact Registry
+        run: |
+          gcloud auth print-access-token \
+            | docker login -u oauth2accesstoken --password-stdin \
+              ${{ env.REGISTRY }}
+
+      - name: Submit Cloud Build job
+        # Cloud Build clones the repo itself (see cloudbuild.yaml: clone step).
+        # We pass --no-source because the workspace source is not needed locally.
+        run: |
+          gcloud builds submit --no-source \
+            --config=cloudbuild.yaml \
+            --project=${{ env.PROJECT_ID }} \
+            --substitutions=_PROJECT_ID=${{ env.PROJECT_ID }},_REGION=${{ env.REGION }},_REPO=${{ env.REPO }},_TAG=${{ github.sha }} \
+            --timeout=1200s
+
+      - name: Tag images with :latest
+        # Cloud Build already pushes both SHA and :latest tags (see cloudbuild.yaml
+        # build steps). This explicit step ensures the :latest alias is authoritative
+        # even if a previous run left a stale tag on a different digest.
+        run: |
+          gcloud artifacts docker tags add \
+            ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}/api:${{ github.sha }} \
+            ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}/api:latest \
+            --project=${{ env.PROJECT_ID }}
+
+          gcloud artifacts docker tags add \
+            ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}/frontend:${{ github.sha }} \
+            ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}/frontend:latest \
+            --project=${{ env.PROJECT_ID }}
+
+  # ---------------------------------------------------------------------------
+  # Job 3: deploy
+  # Runs on push to main only. Requires the build job to pass.
+  #
+  # Connects to the GCP VM via IAP tunnel (no public SSH port needed) and
+  # issues rolling kubectl image updates for api, worker, and frontend
+  # deployments, then waits for each rollout to complete.
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy to K3s (meesell-vm)
+    runs-on: ubuntu-latest
+    needs: build
+    # Only run on direct pushes to main, not on PRs.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      PROJECT_ID: project-1f5cbf72-2820-4cdb-949
+      REGION: asia-south1
+      REGISTRY: asia-south1-docker.pkg.dev
+      REPO: meesell-images
+      VM_ZONE: asia-south1-a
+      VM_NAME: meesell-vm
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud (WIF)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_CI_SA_EMAIL }}
+
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Install IAP tunnel component
+        run: gcloud components install beta --quiet
+
+      - name: Rolling deploy via IAP SSH
+        # Uses IAP TCP tunneling — no public SSH port required on the VM.
+        # The CI service account must have roles/iap.tunnelResourceAccessor
+        # and roles/compute.instanceAdmin.v1 granted in terraform/ci.tf.
+        run: |
+          gcloud compute ssh ${{ env.VM_NAME }} \
+            --zone=${{ env.VM_ZONE }} \
+            --tunnel-through-iap \
+            --project=${{ env.PROJECT_ID }} \
+            --command="
+              set -e
+              IMAGE_TAG=${{ github.sha }}
+              API_IMAGE=${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}/api:\${IMAGE_TAG}
+              FRONTEND_IMAGE=${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}/frontend:\${IMAGE_TAG}
+
+              # Ensure repo is present and up-to-date for K8s manifests
+              if [ -d ~/mesell/.git ]; then
+                git -C ~/mesell pull --ff-only origin main
+              else
+                git clone --depth=1 https://github.com/Mugunthan93/mesell.git ~/mesell
+              fi
+
+              # Apply manifests (idempotent — creates on first run, no-op if unchanged)
+              kubectl apply -f ~/mesell/k8s/
+
+              # Update images to the exact SHA that was just built
+              kubectl -n meesell set image deployment/api      api=\${API_IMAGE}
+              kubectl -n meesell set image deployment/worker   worker=\${API_IMAGE}
+              kubectl -n meesell set image deployment/frontend frontend=\${FRONTEND_IMAGE}
+
+              # Wait for all rollouts
+              kubectl -n meesell rollout status deployment/api      --timeout=120s
+              kubectl -n meesell rollout status deployment/worker   --timeout=120s
+              kubectl -n meesell rollout status deployment/frontend --timeout=120s
+
+              echo '--- Deploy complete ---'
+            "

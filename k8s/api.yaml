@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: api
-          image: asia-south1-docker.pkg.dev/REPLACE-PROJECT-ID/meesell/api:latest
+          image: asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-images/api:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8000

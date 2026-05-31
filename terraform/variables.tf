@@ -138,3 +138,15 @@ variable "razorpay_key_secret" {
   sensitive   = true
   default     = "replace_me"
 }
+
+variable "github_repository" {
+  description = "Full GitHub repository path (owner/repo). Restricts which GitHub repo may exchange OIDC tokens for the CI SA. Example: Mugunthan93/mesell"
+  type        = string
+  default     = "Mugunthan93/mesell"
+}
+
+variable "github_issuer_uri" {
+  description = "GitHub Actions OIDC issuer. Fixed value for github.com."
+  type        = string
+  default     = "https://token.actions.githubusercontent.com"
+}

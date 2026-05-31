@@ -12,10 +12,11 @@ spec:
     metadata:
       labels:
         app: worker
+      annotations: {} # Note: GCS auth via GCE metadata server ADC — no WI annotation needed on K3s
     spec:
       containers:
         - name: worker
-          image: asia-south1-docker.pkg.dev/REPLACE-PROJECT-ID/meesell/api:latest
+          image: asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-images/api:latest
           imagePullPolicy: Always
           command:
             - "celery"
@@ -31,6 +32,11 @@ spec:
                 name: meesell-config
             - secretRef:
                 name: meesell-secrets
+          # GOOGLE_APPLICATION_CREDENTIALS is intentionally absent here.
+          # Pods reach the GCE metadata server and authenticate as
+          # meesell-workload@... which has roles/storage.objectAdmin on
+          # gs://meesell-dev. If Workload Identity is later configured on K3s,
+          # annotate the K8s ServiceAccount instead and remove the pod annotation above.
           resources:
             requests:
               cpu: "300m"

@@ -45,6 +45,21 @@ output "registry_docker_login_hint" {
   value       = "gcloud auth configure-docker ${var.region}-docker.pkg.dev"
 }
 
+output "ci_workload_identity_provider" {
+  description = "Full WIF provider resource name. Set as GitHub Actions variable GCP_WIF_PROVIDER."
+  value       = google_iam_workload_identity_pool_provider.github.name
+}
+
+output "ci_service_account_email" {
+  description = "Set as GitHub Actions variable GCP_CI_SA_EMAIL."
+  value       = google_service_account.ci.email
+}
+
+output "cloud_build_service_account_email" {
+  description = "Default Cloud Build SA. Audit only — CI does not need this value."
+  value       = "${data.google_project.this.number}-compute@developer.gserviceaccount.com"
+}
+
 output "next_steps" {
   description = "Post-apply checklist."
   value       = <<-EOT

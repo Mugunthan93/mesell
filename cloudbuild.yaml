@@ -1,0 +1,73 @@
+# cloudbuild.yaml — triggered from GitHub Actions via `gcloud builds submit --no-source`
+# Builds and pushes api + frontend images to Artifact Registry.
+# Substitutions injected by the GitHub Actions trigger-build job.
+substitutions:
+  _PROJECT_ID: ""
+  _REGION:     "asia-south1"
+  _REPO:       "meesell-images"
+  _TAG:        "latest"
+
+options:
+  machineType: E2_MEDIUM
+  logging: CLOUD_LOGGING_ONLY
+
+timeout: 1200s
+
+steps:
+  # Clone the repo (public — no auth needed)
+  - id: clone
+    name: "gcr.io/cloud-builders/git"
+    args:
+      - clone
+      - --depth=1
+      - --branch=main
+      - https://github.com/Mugunthan93/mesell.git
+      - src
+
+  # Build API image
+  - id: build-api
+    name: "gcr.io/cloud-builders/docker"
+    dir: src/backend
+    args:
+      - build
+      - -t
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/api:${_TAG}"
+      - -t
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/api:latest"
+      - .
+    waitFor: [clone]
+
+  # Push API image
+  - id: push-api
+    name: "gcr.io/cloud-builders/docker"
+    args:
+      - push
+      - --all-tags
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/api"
+    waitFor: [build-api]
+
+  # Build frontend image
+  - id: build-frontend
+    name: "gcr.io/cloud-builders/docker"
+    dir: src/frontend
+    args:
+      - build
+      - -t
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend:${_TAG}"
+      - -t
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend:latest"
+      - .
+    waitFor: [clone]
+
+  # Push frontend image (can run in parallel with push-api)
+  - id: push-frontend
+    name: "gcr.io/cloud-builders/docker"
+    args:
+      - push
+      - --all-tags
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend"
+    waitFor: [build-frontend]
+
+images:
+  - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/api:${_TAG}"
+  - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend:${_TAG}"
