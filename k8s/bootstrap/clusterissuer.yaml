@@ -1,0 +1,23 @@
+# k8s/bootstrap/clusterissuer.yaml
+# Apply this ONCE after installing cert-manager when the domain is ready.
+# Do NOT include this in the regular `kubectl apply -f k8s/` deployment path.
+#
+# Install cert-manager first:
+#   kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.15.3/cert-manager.yaml
+#
+# Then apply:
+#   kubectl apply -f k8s/bootstrap/clusterissuer.yaml
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: ops@meesell.in
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          ingress:
+            class: traefik

@@ -1,63 +1,31 @@
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: letsencrypt-prod
-spec:
-  acme:
-    server: https://acme-v02.api.letsencrypt.org/directory
-    email: ops@meesell.in
-    privateKeySecretRef:
-      name: letsencrypt-prod-account-key
-    solvers:
-      - http01:
-          ingress:
-            class: traefik
----
+# k8s/ingress.yaml
+# NOTE: TLS and cert-manager (ClusterIssuer) are intentionally disabled.
+# The app currently runs on static IP 34.93.9.139 with no public domain.
+# When a domain is registered, install cert-manager and apply
+# k8s/bootstrap/clusterissuer.yaml, then re-enable TLS here.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: meesell
   namespace: meesell
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-    traefik.ingress.kubernetes.io/router.tls: "true"
-    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.entrypoints: web
 spec:
   ingressClassName: traefik
-  tls:
-    - hosts:
-        - meesell.in
-        - www.meesell.in
-        - api.meesell.in
-      secretName: meesell-tls
   rules:
-    - host: meesell.in
-      http:
+    - http:
         paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: frontend
-                port:
-                  number: 80
-    - host: www.meesell.in
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: frontend
-                port:
-                  number: 80
-    - host: api.meesell.in
-      http:
-        paths:
-          - path: /
+          - path: /api
             pathType: Prefix
             backend:
               service:
                 name: api
+                port:
+                  number: 8000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
                 port:
                   number: 80
