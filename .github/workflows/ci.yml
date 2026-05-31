@@ -93,8 +93,7 @@ jobs:
   #
   # Authenticates to GCP via Workload Identity Federation (no SA key stored),
   # then submits a Cloud Build job using the existing cloudbuild.yaml.
-  # After Cloud Build completes, the SHA-tagged images are also aliased to
-  # :latest so the cluster can pull them by that tag if needed.
+  # Cloud Build pushes both SHA-tagged and :latest images via --all-tags.
   # ---------------------------------------------------------------------------
   build:
     name: Build and push container images
@@ -143,20 +142,6 @@ jobs:
             --substitutions=_PROJECT_ID=${{ env.PROJECT_ID }},_REGION=${{ env.REGION }},_REPO=${{ env.REPO }},_TAG=${{ github.sha }} \
             --timeout=1200s
 
-      - name: Tag images with :latest
-        # Cloud Build already pushes both SHA and :latest tags (see cloudbuild.yaml
-        # build steps). This explicit step ensures the :latest alias is authoritative
-        # even if a previous run left a stale tag on a different digest.
-        run: |
-          gcloud artifacts docker tags add \
-            ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}/api:${{ github.sha }} \
-            ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}/api:latest \
-            --project=${{ env.PROJECT_ID }}
-
-          gcloud artifacts docker tags add \
-            ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}/frontend:${{ github.sha }} \
-            ${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}/frontend:latest \
-            --project=${{ env.PROJECT_ID }}
 
   # ---------------------------------------------------------------------------
   # Job 3: deploy
