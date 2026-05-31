@@ -124,3 +124,12 @@ resource "google_compute_firewall" "allow_ssh_iap" {
   }
   depends_on = [google_project_service.enabled]
 }
+
+# gcloud compute ssh (IAP tunnel) requires the CI SA to be able to act as
+# the VM's attached service account (meesell-workload). Without this,
+# the SSH step fails with PERMISSION_DENIED on iam.serviceAccounts.actAs.
+resource "google_service_account_iam_member" "ci_act_as_workload" {
+  service_account_id = google_service_account.workload.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.ci.email}"
+}
