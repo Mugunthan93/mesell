@@ -84,6 +84,14 @@ resource "google_project_iam_member" "ci_cloudbuild_editor" {
   member  = "serviceAccount:${google_service_account.ci.email}"
 }
 
+# Cloud Build runs jobs under the default Compute SA. The CI SA must be able
+# to "act as" that SA (serviceAccountUser) to submit builds.
+resource "google_service_account_iam_member" "ci_act_as_cloudbuild" {
+  service_account_id = "projects/${var.project_id}/serviceAccounts/${data.google_project.this.number}-compute@developer.gserviceaccount.com"
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.ci.email}"
+}
+
 # IAP TCP tunnel for SSH — CI SSHes to VM without storing a private key
 resource "google_project_iam_member" "ci_iap_tunnel" {
   project = var.project_id
