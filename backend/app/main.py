@@ -17,6 +17,7 @@ from app.routers import generation as generation_router
 from app.routers import images as images_router
 from app.routers import pricing as pricing_router
 from app.routers import quality as quality_router
+from app.routers import research as research_router
 from app.routers import skus as skus_router
 
 logging.basicConfig(level=logging.INFO)
@@ -58,6 +59,7 @@ app.include_router(generation_router.router)
 app.include_router(quality_router.router)
 app.include_router(pricing_router.router)
 app.include_router(exports_router.router)
+app.include_router(research_router.router)
 
 if settings.is_dev:
     import os

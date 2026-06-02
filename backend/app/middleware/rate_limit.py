@@ -30,6 +30,7 @@ LIMITS: dict[str, Limit] = {
     "generate": Limit("generate", per_minute=5, per_day=50),
     "images": Limit("images", per_minute=20, per_day=200),
     "pricing": Limit("pricing", per_minute=30, per_day=500),
+    "scrape": Limit("scrape", per_minute=3, per_day=30),
 }
 
 
