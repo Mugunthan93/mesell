@@ -8,7 +8,11 @@ celery_app = Celery(
     "meesell",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=["app.workers.image_tasks", "app.workers.generation_tasks"],
+    include=[
+        "app.workers.image_tasks",
+        "app.workers.generation_tasks",
+        "app.workers.scrape_tasks",
+    ],
 )
 
 celery_app.conf.update(
@@ -23,5 +27,6 @@ celery_app.conf.update(
     task_routes={
         "app.workers.image_tasks.*": {"queue": "images"},
         "app.workers.generation_tasks.*": {"queue": "generation"},
+        "app.workers.scrape_tasks.*": {"queue": "scraping"},
     },
 )
