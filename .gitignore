@@ -5,6 +5,15 @@ node_modules/
 dist/
 .env
 *.env.local
+.meesho_creds.env
+.meesho_session.json
+/tmp/meesho_templates/
+
+# Meesho batch scraper — ephemeral artifacts
+data/meesho_templates/*.xlsx
+logs/
+.tflogs/
+backend/scripts/.scrape_state.json
 k8s/secrets.yaml
 k8s/meesell-worker-sa-key.json
 *-sa-key.json

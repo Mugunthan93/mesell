@@ -1,0 +1,5 @@
+- [GCP ADC stale credentials](feedback_gcp_adc_refresh.md) — terraform apply needs token refresh or GOOGLE_OAUTH_ACCESS_TOKEN workaround
+- [MeeSell GCP billing is INR](project_mesell_billing_inr.md) — billing account 01620D-6785AB-0E4698 needs currency_code "INR"; $300 free credit ≈ ₹25,000
+- [Namecheap domain lookup script](reference_namecheap_lookup.md) — scripts/namecheap-domain-lookup.mjs uses env-var credentials, supports 2FA, for mesell.xyz lookups
+- [Namecheap rate limit hits at ~5 attempts](feedback_namecheap_rate_limit.md) — device-verification flow locks for 45 min after a few failed codes; persist browser session or use API
+- [cert-manager chart key changed v1.14 → v1.15](feedback_cert_manager_chart_value.md) — installCRDs (v1.14) vs crds.enabled (v1.15+); wrong key silently skips CRD install

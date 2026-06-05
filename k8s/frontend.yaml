@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: frontend
-  namespace: meesell
+  namespace: dev
 spec:
   replicas: 1
   selector:
@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-images/frontend:latest
+          image: asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-prod-images/frontend:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 80
@@ -37,7 +37,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: frontend
-  namespace: meesell
+  namespace: dev
 spec:
   selector:
     app: frontend

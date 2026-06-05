@@ -6,14 +6,19 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config import settings
 from app.database import Base
 from app import models  # noqa: F401 — ensure all models are registered on Base.metadata
 
 config = context.config
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+
+# NOTE: Do NOT call config.set_main_option("sqlalchemy.url", ...) here.
+# The DATABASE_URL may contain percent-encoded characters (e.g. %2F in the
+# password) that trigger configparser interpolation errors.  Instead we pass
+# the URL directly to create_async_engine / context.configure below, bypassing
+# configparser entirely.
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -33,15 +38,26 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        # transaction_per_migration=True: each revision gets its own
+        # BEGIN/COMMIT, which is required for migrations that use
+        # op.get_context().autocommit_block() (e.g. CREATE INDEX CONCURRENTLY).
+        # Without this flag, all revisions share a single outer transaction and
+        # autocommit_block() cannot commit the outer transaction independently.
+        transaction_per_migration=True,
+    )
     with context.begin_transaction():
         context.run_migrations()
 
 
 async def run_async_migrations() -> None:
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
+    # Build the engine directly from settings.DATABASE_URL so that
+    # percent-encoded characters in the password are never fed through
+    # configparser (which would mis-interpret them as interpolation markers).
+    connectable = create_async_engine(
+        settings.DATABASE_URL,
         poolclass=pool.NullPool,
     )
 

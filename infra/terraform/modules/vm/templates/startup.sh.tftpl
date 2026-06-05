@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Purpose: Cloud-init startup script for first-boot K3s installation on meesell-dev.
+# Plan reference: docs/INFRASTRUCTURE_TERRAFORM_PLAN.md §8 (K3s install strategy — cloud-init option A).
+# Note: This script runs ONCE on the first boot of the VM via GCP startup-script metadata.
+#       It does NOT re-run on VM restart (GCP startup-script semantics: runs on every boot,
+#       but the K3s installer is idempotent — a second run upgrades or is a no-op).
+#       The --tls-san command runs ON the VM, so curl ifconfig.me returns the VM's own
+#       external IP — this is the correct and expected behavior (not the founder's laptop IP).
+#
+# Template variables (injected by Terraform templatefile()):
+#   vm_name — the VM name used as the K3s node name (e.g. meesell-dev)
+
+set -euxo pipefail
+
+LOG_FILE="/var/log/meesell-startup.log"
+
+exec > >(tee -a "$LOG_FILE") 2>&1
+
+echo "=== meesell-dev startup script BEGIN: $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
+echo "VM name: ${vm_name}"
+
+# --- Wait for network to be ready ---
+echo "--- Waiting for network..."
+for i in $(seq 1 30); do
+  if curl -sf --max-time 5 https://www.google.com > /dev/null 2>&1; then
+    echo "Network ready after $${i} attempts."
+    break
+  fi
+  echo "Network not ready, attempt $${i}/30, waiting 5 seconds..."
+  sleep 5
+done
+
+# Confirm outbound connectivity — required for K3s installer
+if ! curl -sf --max-time 10 https://get.k3s.io > /dev/null 2>&1; then
+  echo "ERROR: Cannot reach https://get.k3s.io. Check VPC firewall and DNS." >&2
+  exit 1
+fi
+
+# --- Install K3s ---
+# Exact command from INFRASTRUCTURE_PLAYBOOK.md §3.2.
+# --disable=traefik: bundled Traefik disabled — we install our own in Pass 2.
+# --tls-san=$(curl -s ifconfig.me): adds the VM's public IP to the K3s TLS SAN so
+#   that kubectl from the founder's laptop can reach the API server without a TLS error.
+# --write-kubeconfig-mode=644: allows gcloud scp to retrieve kubeconfig without sudo.
+# --node-name: sets a human-readable node name in kubectl get nodes output.
+echo "--- Installing K3s..."
+curl -sfL https://get.k3s.io | sh -s - server \
+  --disable=traefik \
+  --tls-san="$(curl -s ifconfig.me)" \
+  --write-kubeconfig-mode=644 \
+  --node-name="${vm_name}-master"
+
+# --- Validate K3s ---
+echo "--- Validating K3s installation..."
+systemctl is-active k3s || { echo "ERROR: k3s service is not active after install." >&2; exit 1; }
+
+# Give K3s a moment to finish cluster initialization before the node-ready check
+sleep 30
+kubectl get nodes || { echo "WARNING: kubectl get nodes failed immediately after install — this may be transient. Check systemctl status k3s after a few minutes." ; }
+
+echo "=== meesell-dev startup script COMPLETE: $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
+echo "Next step: retrieve kubeconfig per playbook §3.3:"
+echo "  gcloud compute scp meesell-dev:/etc/rancher/k3s/k3s.yaml ~/.kube/meesell-dev.yaml --zone=asia-south1-a"

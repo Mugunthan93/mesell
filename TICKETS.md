@@ -551,6 +551,42 @@
 
 ---
 
+## Sprint 7: Competitive Research (post-MVP)
+
+### T20: Meesho Catalog Scraper (competitive research)
+**Priority:** P2 | **Depends on:** T01, T13 (pricing) | **Estimate:** 1 session
+
+**Goal:** Scrape public Meesho search/category listings to feed pricing &
+quality benchmarking. API-discovery-first, DOM as last resort.
+
+**Tasks:**
+- Create `backend/app/services/meesho_scraper.py` — `MeeshoScraper` with
+  `discover(url)` (Stage A reconnaissance) and `scrape(url)` (Stage B
+  scroll+intercept), India-locale context, heavy-resource blocking,
+  defensive field normalisation, `get_meesho_scraper()` factory.
+- Create `backend/app/workers/scrape_tasks.py` — Celery tasks
+  `meesho.scrape_search` and `meesho.discover` (async helper + sync wrapper,
+  matching `generation_tasks` pattern).
+- Wire `app.workers.scrape_tasks` into `celery_app.include` and route to a
+  new `scraping` queue.
+- Add `playwright` to `requirements.txt`; `playwright install chromium` in the
+  worker image. Add a `scraping` worker to `k8s/worker.yaml` if isolating queues.
+
+**Responsible-use (mandatory):**
+- Honour `robots.txt` and Meesho ToS; never collect PII.
+- Low concurrency, jittered delays; on 403/429/captcha raise
+  `MeeshoBlockedError` and **stop** — do not bypass protection.
+
+**Acceptance Criteria:**
+- [ ] `meesho.discover` returns candidate API URLs for a category page
+- [ ] `meesho.scrape_search` returns normalised product rows (id, name, price,
+      mrp, rating, shop, url) plus `_raw`
+- [ ] Hard block returns `{"blocked": true, ...}` without retry storms
+- [ ] No hardcoded endpoints/selectors — refreshed via `discover()`
+- [ ] Worker picks up the `scraping` queue
+
+---
+
 ## Ticket Tracking
 
 | Ticket | Sprint | Status | Depends On |
@@ -574,3 +610,4 @@
 | T17 | 6 | ⬜ TODO | All backend |
 | T18 | 6 | ⬜ TODO | T14, T15 |
 | T19 | 6 | ⬜ TODO | All |
+| T20 | 7 | 🟦 IN PROGRESS | T01, T13 |

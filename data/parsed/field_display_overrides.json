@@ -1,0 +1,337 @@
+{
+  "_meta": {
+    "version": 1,
+    "tone_locked_at": "2026-06-04 evening",
+    "source": "meesell-data-engineer hand-curation, founder-approved tone. Tier A (universal core) + Tier B (onboarding extensions) per docs/MVP_ARCHITECTURE.md §5.6.6.",
+    "principles": [
+      "5th-grade English reading level",
+      "Indian / Tirupur context examples (kurti, saree, jeera, Tirupur pincodes)",
+      "Action verbs — 'Pick', 'Tell us', 'Add' over 'Select', 'Specify', 'Upload'",
+      "Concrete examples beat abstract definitions",
+      "Short sentences — ≤15 words",
+      "No jargon — never 'SKU', 'schema', 'metadata'",
+      "Local units — rupees, grams, centimeters",
+      "Friendly but direct — like a Tirupur shopkeeper, not a customer-service script",
+      "No emojis, no all-caps",
+      "One concrete example per help text"
+    ],
+    "tiers": {
+      "A": "Universal core — 28 fields appearing in ≥99% of corpus leaves",
+      "B": "Onboarding compliance extensions — ~10 fields, conditional by super-category"
+    }
+  },
+
+  "fields": {
+
+    "_TIER_A_ALWAYS_COMPULSORY_UNIVERSALS": "—— 7 fields ——",
+
+    "product_name": {
+      "tier": "A",
+      "display_label":       {"en": "Product name"},
+      "display_help":        {"en": "What customers see in search. Make it specific — say 'Blue cotton kurti with mirror work' instead of just 'Kurti'."},
+      "display_placeholder": {"en": "Blue cotton kurti with mirror work"},
+      "validation_message":  {"en": "Please give your product a name."}
+    },
+
+    "variation": {
+      "tier": "A",
+      "display_label":       {"en": "Variant"},
+      "display_help":        {"en": "Which version of this product is this? For a kurti, pick the size (S, M, L, XL). For a saree, pick the style. One product row = one variant."},
+      "validation_message":  {"en": "Please pick the variant from the list."}
+    },
+
+    "meesho_price": {
+      "tier": "A",
+      "display_label":       {"en": "Selling price (what customers pay)"},
+      "display_help":        {"en": "Set in rupees. This is the price shown to buyers on Meesho. Example: 499."},
+      "display_placeholder": {"en": "499"},
+      "display_unit_label":  {"en": "₹"},
+      "validation_message":  {"en": "Please enter your selling price in rupees."}
+    },
+
+    "mrp": {
+      "tier": "A",
+      "display_label":       {"en": "MRP (sticker price)"},
+      "display_help":        {"en": "The maximum retail price printed on the tag. Must be higher than your selling price. Example: 999."},
+      "display_placeholder": {"en": "999"},
+      "display_unit_label":  {"en": "₹"},
+      "validation_message":  {"en": "Please enter the MRP in rupees."}
+    },
+
+    "inventory": {
+      "tier": "A",
+      "display_label":       {"en": "How many in stock"},
+      "display_help":        {"en": "How many pieces of this variant do you have ready to ship? Example: 50."},
+      "display_placeholder": {"en": "50"},
+      "validation_message":  {"en": "Please enter your stock count."}
+    },
+
+    "country_of_origin": {
+      "tier": "A",
+      "display_label":       {"en": "Made in"},
+      "display_help":        {"en": "Where the product was made. Usually India for Tirupur sellers."},
+      "display_placeholder": {"en": "India"},
+      "validation_message":  {"en": "Please pick where the product was made."}
+    },
+
+    "image_1_front": {
+      "tier": "A",
+      "display_label":       {"en": "Main photo (front)"},
+      "display_help":        {"en": "The main photo customers see in search. Plain white background. At least 1500×1500 pixels. JPEG format. No watermark or shop logo."},
+      "validation_message":  {"en": "Please add the main product photo."}
+    },
+
+    "_TIER_A_ALWAYS_OPTIONAL_UNIVERSALS": "—— 8 fields ——",
+
+    "image_2": {
+      "tier": "A",
+      "display_label":       {"en": "Photo 2 (optional)"},
+      "display_help":        {"en": "A second angle. Side view or back. Same white background. Same size and format as the main photo."}
+    },
+
+    "image_3": {
+      "tier": "A",
+      "display_label":       {"en": "Photo 3 (optional)"},
+      "display_help":        {"en": "A third angle. Close-up of fabric, embroidery, or detail. Same white background."}
+    },
+
+    "image_4": {
+      "tier": "A",
+      "display_label":       {"en": "Photo 4 (optional)"},
+      "display_help":        {"en": "One more photo if you have it. Lifestyle shot is OK here — model wearing it, flat lay, or full view."}
+    },
+
+    "brand_name": {
+      "tier": "A",
+      "display_label":       {"en": "Your brand name (optional)"},
+      "display_help":        {"en": "If you have your own brand, type it here. Example: 'Tirupur Cotton Co.' Leave blank if you don't have one."},
+      "display_placeholder": {"en": "Tirupur Cotton Co."}
+    },
+
+    "group_id": {
+      "tier": "A",
+      "is_advanced": true,
+      "display_label":       {"en": "Group ID"},
+      "display_help":        {"en": "An internal Meesho code used to group related variants. Most sellers can leave this blank."}
+    },
+
+    "sku_id": {
+      "tier": "A",
+      "display_label":       {"en": "Your SKU code (optional)"},
+      "display_help":        {"en": "Your internal product code, if you use one. Helps you track inventory. Example: KRT-BLU-M."},
+      "display_placeholder": {"en": "KRT-BLU-M"}
+    },
+
+    "product_id_style_id": {
+      "tier": "A",
+      "display_label":       {"en": "Style ID (optional)"},
+      "display_help":        {"en": "Another internal code if you have one. Used when you have many similar styles. Leave blank if you don't."}
+    },
+
+    "product_description": {
+      "tier": "A",
+      "display_label":       {"en": "Description (optional)"},
+      "display_help":        {"en": "Tell customers more about the product. Material, fit, care instructions. Keep it short — 2 to 3 sentences."},
+      "display_placeholder": {"en": "Soft cotton fabric. Regular fit. Machine wash cold. Iron at low heat."}
+    },
+
+    "_TIER_A_NEAR_UNIVERSALS": "—— 13 fields (in ≥99% of leaves) ——",
+
+    "manufacturer_name": {
+      "tier": "A",
+      "display_label":       {"en": "Manufacturer name"},
+      "display_help":        {"en": "Who made the product. If you made it yourself, put your business name. Required by Indian law (Legal Metrology Act)."},
+      "display_placeholder": {"en": "Tirupur Cotton Co."},
+      "validation_message":  {"en": "Please enter the manufacturer name."}
+    },
+
+    "manufacturer_address": {
+      "tier": "A",
+      "display_label":       {"en": "Manufacturer address"},
+      "display_help":        {"en": "Full address where the product is made. Street, area, city, state. Required by Indian law."},
+      "display_placeholder": {"en": "12 Avinashi Road, Tirupur, Tamil Nadu"},
+      "validation_message":  {"en": "Please enter the manufacturer address."}
+    },
+
+    "manufacturer_pincode": {
+      "tier": "A",
+      "display_label":       {"en": "Manufacturer pincode"},
+      "display_help":        {"en": "The 6-digit pincode where the product is made. Example: 641604 (Tirupur)."},
+      "display_placeholder": {"en": "641604"},
+      "validation_message":  {"en": "Please enter a 6-digit pincode."}
+    },
+
+    "packer_name": {
+      "tier": "A",
+      "display_label":       {"en": "Packer name"},
+      "display_help":        {"en": "Who packs the product for shipping. Usually the same as the manufacturer."},
+      "display_placeholder": {"en": "Tirupur Cotton Co."},
+      "validation_message":  {"en": "Please enter the packer name."}
+    },
+
+    "packer_address": {
+      "tier": "A",
+      "display_label":       {"en": "Packer address"},
+      "display_help":        {"en": "Address where the product is packed. Usually the same as the manufacturer address."},
+      "display_placeholder": {"en": "12 Avinashi Road, Tirupur, Tamil Nadu"},
+      "validation_message":  {"en": "Please enter the packer address."}
+    },
+
+    "packer_pincode": {
+      "tier": "A",
+      "display_label":       {"en": "Packer pincode"},
+      "display_help":        {"en": "6-digit pincode where the product is packed."},
+      "display_placeholder": {"en": "641604"},
+      "validation_message":  {"en": "Please enter a 6-digit pincode."}
+    },
+
+    "importer_name": {
+      "tier": "A",
+      "display_label":       {"en": "Importer name"},
+      "display_help":        {"en": "Who imported the product. If the product is made in India, type 'Not Applicable'."},
+      "display_placeholder": {"en": "Not Applicable"},
+      "validation_message":  {"en": "Please enter the importer name."}
+    },
+
+    "importer_address": {
+      "tier": "A",
+      "display_label":       {"en": "Importer address"},
+      "display_help":        {"en": "Importer's full address. If made in India, type 'Not Applicable'."},
+      "display_placeholder": {"en": "Not Applicable"},
+      "validation_message":  {"en": "Please enter the importer address."}
+    },
+
+    "importer_pincode": {
+      "tier": "A",
+      "display_label":       {"en": "Importer pincode"},
+      "display_help":        {"en": "Importer's pincode. If made in India, type '000000'."},
+      "display_placeholder": {"en": "000000"},
+      "validation_message":  {"en": "Please enter a 6-digit pincode (or 000000 if made in India)."}
+    },
+
+    "net_weight_grams": {
+      "tier": "A",
+      "display_label":       {"en": "Weight per piece"},
+      "display_help":        {"en": "How much does ONE piece weigh, in grams? Example: a kurti is about 250g, a saree is about 700g."},
+      "display_placeholder": {"en": "250"},
+      "display_unit_label":  {"en": "grams"},
+      "validation_message":  {"en": "Please enter the weight per piece in grams."}
+    },
+
+    "generic_name": {
+      "tier": "A",
+      "display_label":       {"en": "Category type"},
+      "display_help":        {"en": "Pick the standard product type from the list. Example: Kurti, Saree, Mobile Cover. This helps customers find your product."},
+      "validation_message":  {"en": "Please pick the category type."}
+    },
+
+    "wrong_defective_returns_price": {
+      "tier": "A",
+      "display_label":       {"en": "Refund price for damaged returns (optional)"},
+      "display_help":        {"en": "How much to refund if the customer returns it damaged. Usually the same as your selling price. Leave blank for default."},
+      "display_placeholder": {"en": "499"},
+      "display_unit_label":  {"en": "₹"}
+    },
+
+    "net_quantity_n": {
+      "tier": "A",
+      "display_label":       {"en": "Number of pieces per pack"},
+      "display_help":        {"en": "How many pieces are inside ONE pack? Example: 1 kurti per pack, 6 pairs of socks per pack."},
+      "display_placeholder": {"en": "1"},
+      "validation_message":  {"en": "Please enter how many pieces are in one pack."}
+    },
+
+    "brand": {
+      "tier": "A",
+      "display_label":       {"en": "Brand (optional)"},
+      "display_help":        {"en": "Pick from the list of brands. Start typing the brand name to search. If your brand isn't there, click 'Request to add'."}
+    },
+
+    "_TIER_B_ONBOARDING_EXTENSIONS": "—— 9 fields, asked conditionally based on declared super-categories ——",
+
+    "seller_fssai_license_number": {
+      "tier": "B",
+      "applies_to_super_categories": ["Grocery", "Pet Supplies (food overlap)", "Beauty & Health (food overlap)"],
+      "display_label":       {"en": "FSSAI license number"},
+      "display_help":        {"en": "Your 14-digit FSSAI food license number. Required by law to sell food on Meesho. Don't have one yet? Apply at fssai.gov.in (it takes about 7 days)."},
+      "display_placeholder": {"en": "10012345678901"},
+      "help_url":            "https://fssai.gov.in",
+      "validation_message":  {"en": "Please enter your 14-digit FSSAI license number."}
+    },
+
+    "fssai_expiry": {
+      "tier": "B",
+      "applies_to_super_categories": ["Grocery", "Pet Supplies (food overlap)"],
+      "display_label":       {"en": "FSSAI expiry date"},
+      "display_help":        {"en": "When your FSSAI license expires. We'll remind you a month before."},
+      "display_placeholder": {"en": "31/12/2027"},
+      "validation_message":  {"en": "Please enter your FSSAI expiry date."}
+    },
+
+    "bis_isi_certification_number": {
+      "tier": "B",
+      "applies_to_super_categories": ["Kids & Toys", "Consumer Electronics", "Appliances"],
+      "display_label":       {"en": "BIS/ISI certification number (optional)"},
+      "display_help":        {"en": "If your product has BIS or ISI safety certification, add the number here. It boosts customer trust and search ranking."},
+      "display_placeholder": {"en": "IS-1234-2024"}
+    },
+
+    "r_number": {
+      "tier": "B",
+      "applies_to_super_categories": ["Consumer Electronics"],
+      "display_label":       {"en": "WPC R-Number (optional)"},
+      "display_help":        {"en": "Required for wireless devices like Bluetooth headphones or speakers. The R-number from your WPC certification."},
+      "display_placeholder": {"en": "R-12345"}
+    },
+
+    "is_number": {
+      "tier": "B",
+      "applies_to_super_categories": ["Consumer Electronics", "Home & Kitchen"],
+      "display_label":       {"en": "IS Number (optional)"},
+      "display_help":        {"en": "The Indian Standard number for your product. Example: IS-616 for power tools."},
+      "display_placeholder": {"en": "IS-616"}
+    },
+
+    "cm_l_number": {
+      "tier": "B",
+      "applies_to_super_categories": ["Consumer Electronics"],
+      "display_label":       {"en": "CM/L Number (optional)"},
+      "display_help":        {"en": "If your product is under BIS compulsory marking scheme, add the CM/L number here."},
+      "display_placeholder": {"en": "CM/L-1234"}
+    },
+
+    "license_registration_number": {
+      "tier": "B",
+      "applies_to_super_categories": ["Beauty & Personal Care", "Beauty & Makeup", "Personal Care", "Health & Wellness", "Appliances"],
+      "display_label":       {"en": "License or registration number"},
+      "display_help":        {"en": "For cosmetics, supplements, or licensed products. Your CDSCO, AYUSH, or state-board license number."},
+      "display_placeholder": {"en": "ABC-12345"},
+      "validation_message":  {"en": "Please enter your license number."}
+    },
+
+    "license_registration_type": {
+      "tier": "B",
+      "applies_to_super_categories": ["Beauty & Personal Care", "Health & Wellness"],
+      "display_label":       {"en": "License type"},
+      "display_help":        {"en": "Pick the kind of license you have. Example: AYUSH for ayurvedic products, CDSCO for cosmetics."},
+      "validation_message":  {"en": "Please pick your license type."}
+    },
+
+    "license_expiry_date": {
+      "tier": "B",
+      "applies_to_super_categories": ["Beauty & Personal Care", "Health & Wellness", "Appliances"],
+      "display_label":       {"en": "License expiry date"},
+      "display_help":        {"en": "When your license expires. We'll remind you a month before."},
+      "display_placeholder": {"en": "31/12/2027"},
+      "validation_message":  {"en": "Please enter your license expiry date."}
+    },
+
+    "isbn": {
+      "tier": "B",
+      "applies_to_super_categories": ["Books"],
+      "display_label":       {"en": "ISBN (optional)"},
+      "display_help":        {"en": "The 13-digit ISBN from the back cover of the book. Optional, but helps customers trust your listing."},
+      "display_placeholder": {"en": "9788192123456"}
+    }
+  }
+}

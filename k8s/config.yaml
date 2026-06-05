@@ -2,9 +2,9 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: meesell-config
-  namespace: meesell
+  namespace: dev
 data:
   APP_ENV: "production"
-  CORS_ORIGINS: "https://meesell.in,https://www.meesell.in"
+  CORS_ORIGINS: "https://api.mesell.xyz,https://dev.mesell.xyz,https://testing.mesell.xyz,https://staging.mesell.xyz,https://www.mesell.xyz"
   GEMINI_MODEL: "gemini-2.5-flash"
   JWT_EXPIRY_DAYS: "7"

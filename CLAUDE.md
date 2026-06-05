@@ -1,5 +1,33 @@
 # CLAUDE.md — MeeSell Project Context
 
+## MeeSell Agent Ecosystem Rules (NON-NEGOTIABLE)
+
+MeeSell uses a **dedicated agent fleet** of 18 `meesell-*` agents. These rules govern every Claude session, sub-session, and dispatch in this project:
+
+1. **Only `meesell-*` agents handle MeeSell work.** NEVER dispatch `nexus:level-*`, `general-purpose`, `Explore`, `Plan`, or any other non-MeeSell agent for MeeSell tasks. If a task touches MeeSell, only an agent whose name starts with `meesell-` may execute it.
+2. **Decentralized memory.** Each agent has its own persistent memory at `.claude/agent-memory/meesell-<role>/MEMORY.md`. Every agent reads its own memory at the start of every task and appends learnings at the end.
+3. **Decentralized cross-agent sharing.** Agents share context by **reading each other's memory** (`.claude/agent-memory/meesell-<other-role>/MEMORY.md`), NOT via a centralized truth document. There is no single source of truth — the truth is distributed across agent memories, STATUS files, and the locked docs (`V1_FEATURE_SPEC.md`, `PRICING_LOCKED.md`, `INFRASTRUCTURE_PLAYBOOK.md`, `LEGAL_AND_COMPLIANCE_INFO.md`).
+4. **No agent writes to another agent's memory.** Memory directories are owned. If you need info that's not yet recorded in another agent's memory, escalate via the STATUS file blocker mechanism.
+5. **Coordinator → specialist hierarchy.** The 5 coordinators (`meesell-backend-coordinator`, `meesell-frontend-coordinator`, `meesell-ai-coordinator`, `meesell-legal-writer`, `meesell-data-engineer`) plus `meesell-infra-builder` dispatch the specialists. The master Claude session dispatches the coordinators.
+6. **Out-of-scope work is refused with a redirect.** Every agent has a Scope (IN) and Scope (OUT) section. Out-of-scope asks are refused with a polite "defer to meesell-<other-role>" message.
+
+### The 18-agent roster
+
+| Coordinator / Standalone | Specialists |
+|---|---|
+| `meesell-infra-builder` (opus) | — |
+| `meesell-backend-coordinator` (opus) | `meesell-database-builder` (sonnet), `meesell-api-routes-builder` (sonnet), `meesell-services-builder` (opus), `meesell-auth-builder` (opus) |
+| `meesell-frontend-coordinator` (opus) | `meesell-angular-component-builder` (sonnet), `meesell-angular-service-builder` (sonnet), `meesell-angular-ui-styler` (sonnet) |
+| `meesell-ai-coordinator` (opus) | `meesell-prompt-engineer` (opus), `meesell-category-picker-builder` (opus), `meesell-image-precheck-builder` (opus) |
+| `meesell-legal-writer` (opus, no Bash) | — |
+| `meesell-data-engineer` (opus) | `meesell-xlsx-parser` (sonnet), `meesell-scraper-maintainer` (sonnet) |
+
+**Deferred to V1.5:** `meesell-brand-master-builder` (brand whitelist parsed inline by `meesell-xlsx-parser` for V1). `meesell-test-writer` and `meesell-deployer` are not created at this stage.
+
+See `docs/MEESELL_AGENT_REGISTRY.md` for full agent specs and `.claude/agents/meesell-*.md` for the executable spec files.
+
+---
+
 ## What is MeeSell?
 
 MeeSell is an AI-powered SaaS platform for Meesho marketplace suppliers. It helps sellers create product catalogs, validate listing quality, and optimize pricing — all from one platform at ₹499–1,999/month.
@@ -9,7 +37,7 @@ MeeSell is an AI-powered SaaS platform for Meesho marketplace suppliers. It help
 Single-node K3s cluster on GCP (asia-south1). All services run as Kubernetes pods.
 
 ```
-Client (React PWA) → FastAPI API (2 replicas) → PostgreSQL + Valkey
+Client (Angular 18 PWA) → FastAPI API (2 replicas) → PostgreSQL + Valkey
                                               → Celery Workers (2 replicas)
                                               → GCS (file storage)
                                               → Gemini 2.5 Flash (AI)
@@ -17,16 +45,22 @@ Client (React PWA) → FastAPI API (2 replicas) → PostgreSQL + Valkey
 
 ## Tech Stack
 
-- **Backend:** Python 3.12, FastAPI, SQLAlchemy (async), Celery
-- **Frontend:** React 18, Vite, Tailwind CSS, Zustand
-- **Database:** PostgreSQL 16 (K3s pod)
+- **Backend:** Python 3.12, FastAPI, SQLAlchemy 2.0 (async), Alembic, Pydantic v2, Celery
+- **Frontend:** Angular 18, TypeScript, Tailwind CSS, Angular Material, RxJS
+- **Phase 2 Micro-frontends:** `@angular-architects/module-federation`
+- **Phase 2 Mobile:** Ionic + Capacitor (wraps the Angular app for iOS/Android)
+- **API:** REST (OpenAPI auto-generated from FastAPI)
+- **Database:** PostgreSQL 16 self-hosted on K3s (via trimmed self-hosted Supabase)
 - **Cache/Queue:** Valkey 8 (Redis-compatible, K3s pod)
+- **Background jobs:** Celery + Valkey
 - **AI Text:** Google Gemini 2.5 Flash API
 - **AI Image:** rembg (self-hosted, CPU mode)
-- **Storage:** Google Cloud Storage (GCS)
-- **Auth:** Phone OTP (MSG91) + JWT (PyJWT)
+- **Storage:** Google Cloud Storage (GCS direct, free 5 GB tier)
+- **Auth:** FastAPI + MSG91 OTP + JWT (PyJWT) — NOT GoTrue, NOT Supabase Auth
 - **Payments:** Razorpay Subscriptions
-- **Infra:** K3s on GCP e2-standard-2, Traefik ingress, cert-manager
+- **Infra:** meesell-dev VM + K3s with `dev` / `staging` / `prod` namespaces, Traefik ingress, cert-manager
+- **Region:** asia-south1
+- **CI/CD:** GitLab CI + kubectl
 
 ## Project Structure
 
@@ -100,35 +134,60 @@ meesell/
 │   └── .env.example
 ├── frontend/
 │   ├── src/
-│   │   ├── App.jsx
-│   │   ├── main.jsx
-│   │   ├── api/
-│   │   │   └── client.js        # Axios instance with JWT interceptor
-│   │   ├── stores/
-│   │   │   ├── authStore.js     # Zustand auth state
-│   │   │   └── catalogStore.js  # Zustand catalog state
-│   │   ├── pages/
-│   │   │   ├── Onboarding.jsx
-│   │   │   ├── Dashboard.jsx
-│   │   │   ├── CatalogCreate.jsx
-│   │   │   ├── CatalogPreview.jsx
-│   │   │   ├── QualityCheck.jsx
-│   │   │   ├── PriceCalculator.jsx
-│   │   │   └── ExportPage.jsx
-│   │   ├── components/
-│   │   │   ├── ImageUploader.jsx
-│   │   │   ├── QualityScorecard.jsx
-│   │   │   ├── PnLBreakdown.jsx
-│   │   │   ├── CatalogCard.jsx
-│   │   │   └── Navbar.jsx
-│   │   └── utils/
-│   │       └── formatters.js
+│   │   ├── main.ts
+│   │   ├── index.html
+│   │   ├── styles.css                  # Tailwind directives + Material theming
+│   │   ├── app/
+│   │   │   ├── app.component.ts        # Root standalone component
+│   │   │   ├── app.config.ts           # ApplicationConfig (providers, router)
+│   │   │   ├── app.routes.ts           # Route definitions (lazy-loaded)
+│   │   │   ├── core/
+│   │   │   │   ├── interceptors/
+│   │   │   │   │   └── jwt.interceptor.ts   # HttpClient JWT interceptor
+│   │   │   │   ├── guards/
+│   │   │   │   │   └── auth.guard.ts
+│   │   │   │   └── api/
+│   │   │   │       └── api-client.service.ts # Typed HttpClient wrapper
+│   │   │   ├── services/
+│   │   │   │   ├── auth.service.ts          # Auth state (signals + RxJS)
+│   │   │   │   ├── catalog.service.ts       # Catalog state + API
+│   │   │   │   ├── sku.service.ts
+│   │   │   │   ├── quality.service.ts
+│   │   │   │   └── pricing.service.ts
+│   │   │   ├── pages/
+│   │   │   │   ├── onboarding/
+│   │   │   │   │   └── onboarding.component.ts
+│   │   │   │   ├── dashboard/
+│   │   │   │   │   └── dashboard.component.ts
+│   │   │   │   ├── catalog-create/
+│   │   │   │   │   └── catalog-create.component.ts
+│   │   │   │   ├── catalog-preview/
+│   │   │   │   │   └── catalog-preview.component.ts
+│   │   │   │   ├── quality-check/
+│   │   │   │   │   └── quality-check.component.ts
+│   │   │   │   ├── price-calculator/
+│   │   │   │   │   └── price-calculator.component.ts
+│   │   │   │   └── export-page/
+│   │   │   │       └── export-page.component.ts
+│   │   │   ├── components/
+│   │   │   │   ├── image-uploader/
+│   │   │   │   │   └── image-uploader.component.ts
+│   │   │   │   ├── quality-scorecard/
+│   │   │   │   │   └── quality-scorecard.component.ts
+│   │   │   │   ├── pnl-breakdown/
+│   │   │   │   │   └── pnl-breakdown.component.ts
+│   │   │   │   ├── catalog-card/
+│   │   │   │   │   └── catalog-card.component.ts
+│   │   │   │   └── navbar/
+│   │   │   │       └── navbar.component.ts
+│   │   │   └── utils/
+│   │   │       └── formatters.ts
 │   ├── public/
-│   │   └── manifest.json
-│   ├── index.html
-│   ├── vite.config.js
+│   │   └── manifest.webmanifest
+│   ├── angular.json
 │   ├── tailwind.config.js
 │   ├── postcss.config.js
+│   ├── tsconfig.json
 │   └── package.json
 ├── k8s/
 │   ├── namespace.yaml
@@ -206,47 +265,102 @@ class CatalogService:
         return catalog
 ```
 
-### React (Frontend)
+### Angular (Frontend)
 
-- **React 18** with functional components and hooks only
-- **Tailwind CSS** for all styling, no CSS modules, no styled-components
-- **Zustand** for global state (auth, catalog), React state for local UI state
-- **Axios** for API calls via centralized client with JWT interceptor
-- **Naming**: PascalCase for components, camelCase for functions/variables, UPPER_CASE for constants
-- **File structure**: one component per file, named same as component
-- **No inline styles**: use Tailwind classes exclusively
-- **Error boundaries**: wrap page-level components
-- **Loading states**: show skeleton/spinner for all async operations
+- **Angular 18** with **standalone components** (default — no NgModules)
+- **TypeScript strict mode**, type every input/output and service method
+- **File naming**: kebab-case (e.g., `catalog-card.component.ts`, `auth.service.ts`, `jwt.interceptor.ts`)
+- **Class naming**: PascalCase with suffix (`DashboardComponent`, `AuthService`, `JwtInterceptor`)
+- **State management**: Angular **services + RxJS** (`BehaviorSubject` / `Observable`) for shared state; **signals** for component-local reactive state and computed values
+- **HTTP**: `HttpClient` only, with a global **JWT interceptor** registered via `provideHttpClient(withInterceptors([...]))`
+- **Styling**: **Tailwind CSS** utility classes + **Angular Material** components (no inline styles, no styled-components)
+- **Routing**: `provideRouter` with **lazy-loaded** standalone route components (`loadComponent`)
+- **Forms**: Reactive Forms (`FormBuilder`, `FormGroup`) — avoid template-driven forms
+- **Change detection**: prefer `ChangeDetectionStrategy.OnPush` on all components
+- **Loading states**: show Material spinner or skeleton for all async operations; use `async` pipe to subscribe in templates
+- **Error handling**: `catchError` in services, surface user-facing errors via `MatSnackBar`
+- **Tests**: **Karma + Jasmine** (Angular CLI default) or **Jest** — one `.spec.ts` per component/service
 
-```jsx
-// Example pattern for a page component
-import { useState, useEffect } from "react";
-import { useAuthStore } from "../stores/authStore";
-import { api } from "../api/client";
-import CatalogCard from "../components/CatalogCard";
+```typescript
+// Example pattern for a page component (standalone, OnPush, signals + async pipe)
+import { ChangeDetectionStrategy, Component, OnInit, signal, inject } from "@angular/core";
+import { CommonModule } from "@angular/common";
+import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
+import { AuthService } from "../../services/auth.service";
+import { CatalogService } from "../../services/catalog.service";
+import { CatalogCardComponent } from "../../components/catalog-card/catalog-card.component";
+import { Catalog } from "../../core/models/catalog.model";
 
-export default function Dashboard() {
-  const { user } = useAuthStore();
-  const [catalogs, setCatalogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    api.get("/catalogs").then(res => {
-      setCatalogs(res.data.catalogs);
-      setLoading(false);
-    });
-  }, []);
-
-  if (loading) return <div className="animate-pulse">Loading...</div>;
-
-  return (
-    <div className="max-w-5xl mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">Dashboard</h1>
-      {catalogs.map(c => <CatalogCard key={c.id} catalog={c} />)}
+@Component({
+  selector: "app-dashboard",
+  standalone: true,
+  imports: [CommonModule, MatProgressSpinnerModule, CatalogCardComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <div class="max-w-5xl mx-auto p-4">
+      <h1 class="text-2xl font-bold mb-4">Dashboard</h1>
+      @if (loading()) {
+        <mat-spinner diameter="32"></mat-spinner>
+      } @else {
+        @for (c of catalogs(); track c.id) {
+          <app-catalog-card [catalog]="c"></app-catalog-card>
+        }
+      }
     </div>
-  );
+  `,
+})
+export class DashboardComponent implements OnInit {
+  private readonly auth = inject(AuthService);
+  private readonly catalogApi = inject(CatalogService);
+
+  readonly catalogs = signal<Catalog[]>([]);
+  readonly loading = signal(true);
+
+  ngOnInit(): void {
+    this.catalogApi.list().subscribe({
+      next: (res) => {
+        this.catalogs.set(res.catalogs);
+        this.loading.set(false);
+      },
+      error: () => this.loading.set(false),
+    });
+  }
 }
 ```
+
+```typescript
+// Example pattern for a JWT interceptor
+import { HttpInterceptorFn } from "@angular/common/http";
+import { inject } from "@angular/core";
+import { AuthService } from "../../services/auth.service";
+
+export const jwtInterceptor: HttpInterceptorFn = (req, next) => {
+  const token = inject(AuthService).token();
+  if (!token) return next(req);
+  return next(req.clone({ setHeaders: { Authorization: `Bearer ${token}` } }));
+};
+```
+
+### Phase 2: Module Federation (Micro-frontends)
+
+When the app grows past MVP, the Angular shell will be split into independently deployable
+remotes using **`@angular-architects/module-federation`**.
+
+- **Shell** (host): routing, auth, navbar, shared services
+- **Remotes** (planned): `catalog-mfe`, `quality-mfe`, `pricing-mfe`, `export-mfe`
+- Each remote is a standalone Angular 18 app exposing its root route via Webpack 5 Module Federation
+- Shared singletons: `@angular/core`, `@angular/common`, `@angular/router`, `rxjs`, `AuthService`
+- Bootstrap with `loadRemoteModule(...)` in the shell's lazy routes — no rebuild of the shell needed when a remote ships
+- Do **not** introduce Module Federation until at least 2 teams are touching the frontend or build times exceed 90s
+
+### Phase 2: Ionic + Capacitor (Mobile)
+
+The same Angular codebase is wrapped with **Ionic + Capacitor** for iOS/Android in Phase 2.
+
+- Ionic components (`ion-content`, `ion-list`, `ion-button`) replace Material on mobile routes
+- Capacitor plugins for camera (image upload), file system (CSV export), push notifications
+- Single codebase: web (Angular Material) and mobile (Ionic) share services, models, and interceptors
+- Do **not** add Ionic dependencies before Phase 2 — keep MVP frontend pure web
 
 ### Valkey (Cache/Queue)
 
@@ -290,11 +404,16 @@ export default function Dashboard() {
 3. **Gemini 2.5 Flash, not GPT-4** — 10x cheaper, sufficient quality for catalog text
 4. **rembg on CPU, not GPU** — 3-5s/image is acceptable for MVP, no GPU cost
 5. **Phone OTP login, not email** — Indian sellers prefer phone, no password friction
-6. **K3s, not docker-compose in prod** — consistent with Shotfox infra, easy to scale
+6. **K3s, not docker-compose in prod** — production-grade orchestration, easy to scale horizontally
 7. **Meesho CSV export, not API upload** — Meesho has no open API for small third parties
 8. **FastAPI, not Django** — async-first, better for AI/ML pipeline integration
-9. **Zustand, not Redux** — minimal boilerplate for small frontend
-10. **Tailwind, not MUI** — lighter, more customizable, mobile-first
+9. **Angular 18, not React** — opinionated framework, built-in DI / Router / HttpClient / Forms, TypeScript-first, easier handoff to enterprise / agency engineers; standalone components remove the historical NgModule boilerplate
+10. **Angular Services + RxJS (and signals), not NgRx/Zustand/Redux** — minimal boilerplate for MVP scope; revisit NgRx only if state complexity demands it
+11. **Tailwind + Angular Material, not Material alone** — Material for accessible primitives (forms, dialogs, snackbars), Tailwind for layout and one-off styling
+12. **Module Federation deferred to Phase 2** — single Angular app is faster to ship; split only when team size or build time forces it
+13. **Ionic + Capacitor deferred to Phase 2** — MVP is web-only PWA; mobile wrap happens after product-market fit
+14. **MSG91 OTP + JWT (PyJWT), not GoTrue / Supabase Auth** — full control over OTP flow, no external auth dependency, JWT issued by our own FastAPI
+15. **Trimmed self-hosted Supabase for PostgreSQL only** — use Supabase's hardened Postgres image on K3s; do NOT enable GoTrue, Realtime, or Storage subsystems
 
 ## Environment Variables
 
@@ -316,9 +435,14 @@ make migrate          # Run Alembic migrations
 make test             # Run pytest
 make lint             # Run ruff linter
 
-# Frontend
-cd frontend && npm run dev    # Vite dev server on :5173
-cd frontend && npm run build  # Production build
+# Frontend (Angular CLI)
+cd frontend && npm install           # Install dependencies
+cd frontend && ng serve              # Dev server on :4200 (live reload)
+cd frontend && ng build              # Production build to dist/
+cd frontend && ng test               # Karma + Jasmine unit tests
+cd frontend && ng lint               # Angular ESLint
+cd frontend && ng generate component components/my-thing --standalone
+cd frontend && ng generate service services/my-service
 
 # Production (on GCP VM)
 make deploy           # Build, push, kubectl rolling update

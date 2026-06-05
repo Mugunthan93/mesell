@@ -1,0 +1,257 @@
+{
+  "_meta": {
+    "version": 1,
+    "source": "data-engineer coordinator, hand-curated from 12-batch corpus parse 2026-06-04",
+    "purpose": "Maps Meesho XLSX field-name variants to a canonical internal name. Backend seeds `field_aliases` table from this. Frontend renders canonical names. XLSX exporter reverses canonical → original (per category) for round-trip compatibility.",
+    "review_required": true,
+    "notes": [
+      "Many entries are tentative — consolidate after founder review.",
+      "When the same canonical maps to multiple Meesho variants, the XLSX exporter must know which variant to use for which category. That mapping is in `data/parsed/batch_NN_*.json` (field name per leaf).",
+      "Typos like 'Primiary'/'Seconadry' are preserved verbatim in the variant list because Meesho's XLSX upload validator uses exact-match strings.",
+      "British/American spelling variants both retained."
+    ]
+  },
+  "aliases": {
+    "color": {
+      "canonical": "color",
+      "variants": [
+        "Color",
+        "Colour",
+        "Bottom Color",
+        "Primary Colour",
+        "Secondary Colour"
+      ],
+      "note": "Color/Colour are spelling variants. Bottom Color, Primary/Secondary Colour are positional variants for multi-color products — keep distinct canonical names IF positional semantics matter to frontend (likely yes)."
+    },
+    "battery_presence": {
+      "canonical": "battery_required",
+      "variants": [
+        "Battery",
+        "Battery Required",
+        "Battery Available",
+        "Batteries Required",
+        "Batteries Included",
+        "Battery Operated",
+        "Chargable",
+        "Chargeable"
+      ],
+      "note": "All these convey 'does this product need/include batteries'. 8 variants found in B3+B4+B5+B11+B12."
+    },
+    "battery_type": {
+      "canonical": "battery_type",
+      "variants": [
+        "Battery Type",
+        "Battery Composition"
+      ]
+    },
+    "compatible_devices": {
+      "canonical": "compatible_models",
+      "variants": [
+        "Compatible Model",
+        "Compatible Models",
+        "Compatible Mobiles",
+        "Compatible Devices"
+      ],
+      "note": "4 variants in B4 (Consumer Electronics) for the same concept. Compatible Models is the most common; max enum 4,481 (largest in corpus)."
+    },
+    "brand": {
+      "canonical": "brand",
+      "variants": [
+        "Brand",
+        "brand",
+        "Brands"
+      ],
+      "note": "Lowercase/plural variants found in B5 (Home & Kitchen)."
+    },
+    "no_of_sheets": {
+      "canonical": "no_of_sheets",
+      "variants": [
+        "No. of Sheets",
+        "Number of Sheets",
+        "No. of Usable Sheets"
+      ],
+      "note": "Office Supplies (B8) — 3 variants."
+    },
+    "veg_nonveg": {
+      "canonical": "veg_nonveg",
+      "variants": [
+        "Veg/NonVeg",
+        "Veg/Non Veg"
+      ],
+      "note": "Grocery (B7) — same field, different separator."
+    },
+    "manufacturer_compliance": {
+      "canonical": "manufacturer_block",
+      "variants_3field": ["Manufacturer Name", "Manufacturer Address", "Manufacturer Pincode"],
+      "variants_combined": ["Manufacturer Details"],
+      "note": "3,771/3,772 leaves use the 3-field block. Eye-Serum (leaf 12378) uses the combined single-field 'Manufacturer Details'. Backend stores both representations on seller_profile."
+    },
+    "packer_compliance": {
+      "canonical": "packer_block",
+      "variants_3field": ["Packer Name", "Packer Address", "Packer Pincode"],
+      "variants_combined": ["Packer Details"],
+      "note": "Same pattern as manufacturer."
+    },
+    "importer_compliance": {
+      "canonical": "importer_block",
+      "variants_3field": ["Importer Name", "Importer Address", "Importer Pincode"],
+      "variants_combined": ["Importer Details"],
+      "note": "Same pattern. Often optional in B11 (Books/Auto/Pet/Bags)."
+    },
+    "net_weight": {
+      "canonical": "net_weight_grams",
+      "variants": [
+        "Net Weight (gms)",
+        "Product weight (gms)",
+        "Product Net Weight"
+      ],
+      "note": "Eye-Serum uses 'Product weight (gms)' (lowercase 'w'). Some Home leaves use 'Product Net Weight'."
+    },
+    "primary_camera_count": {
+      "canonical": "no_of_primary_cameras",
+      "variants": [
+        "No. of Primiary Cameras"
+      ],
+      "note": "Meesho typo preserved verbatim — 'Primiary' instead of 'Primary'. XLSX exporter MUST use the typo for round-trip."
+    },
+    "secondary_camera_count": {
+      "canonical": "no_of_secondary_cameras",
+      "variants": [
+        "No. of Seconadry Cameras"
+      ],
+      "note": "Meesho typo preserved — 'Seconadry'."
+    },
+    "assembly_required": {
+      "canonical": "assembly_required",
+      "variants": [
+        "Assembly Required",
+        "Assembling Required"
+      ],
+      "note": "B3 (Kids & Toys) — 2 variants for same concept."
+    },
+    "warranty_family": {
+      "canonical_set": {
+        "warranty_present": ["Warranty"],
+        "warranty_period": ["Warranty Period"],
+        "warranty_type": ["Warranty Type"],
+        "warranty_duration": ["Warranty Duration Months"],
+        "warranty_service_type": ["Warranty Service Type"]
+      },
+      "note": "Warranty is not a single field — it's a family of related fields with different semantics. Don't collapse them; keep each as its own canonical and render them as a coordinated group in the wizard 'Warranty' step (conditional for Electronics/Appliances)."
+    },
+    "license_cosmetic": {
+      "canonical": "license_registration_number",
+      "variants": [
+        "License/Registration Number",
+        "License Number",
+        "License/Registration No."
+      ],
+      "note": "Used in Beauty & Health (B10), some Home & Kitchen appliances (B5). Optional unless seller has licensed product."
+    },
+    "license_expiry": {
+      "canonical": "license_expiry_date",
+      "variants": [
+        "License Expiry Date (DD/MM/YYYY)",
+        "License/Registration Expiry Date"
+      ],
+      "note": "Pairs with license_registration_number."
+    },
+    "license_type": {
+      "canonical": "license_registration_type",
+      "variants": [
+        "License Type",
+        "License/Registration Type"
+      ]
+    },
+    "fssai": {
+      "canonical": "fssai_license_number",
+      "variants": [
+        "Seller FSSAI License Number"
+      ],
+      "note": "COMPULSORY in 321/321 Grocery leaves (B7). Optional in 15-16 Beauty/Pet leaves where there's food overlap. This is the strongest Onboarding extension signal in the corpus."
+    },
+    "bis_isi": {
+      "canonical": "bis_isi_certification_number",
+      "variants": [
+        "BIS/ISI Certification Number",
+        "BIS Certificate Number"
+      ],
+      "note": "Kids & Toys (28 leaves), Consumer Electronics (20), Appliances (5). Always optional. Seller-specific."
+    },
+    "isbn": {
+      "canonical": "isbn",
+      "variants": ["ISBN"],
+      "note": "Books (163 leaves). Optional — Meesho is lenient. Founder question: enforce stricter than Meesho?"
+    },
+    "wireless_certification": {
+      "canonical_set": {
+        "r_number": ["R Number"],
+        "is_number": ["IS Number"],
+        "cm_l_number": ["CM/L Number"]
+      },
+      "note": "Indian wireless/safety certifications. R Number (106 leaves in B4), IS Number (112), CM/L (26). All optional. Onboarding extension for Electronics."
+    },
+    "cable_length": {
+      "canonical": "cable_length",
+      "variants": [
+        "Cable Length",
+        "Cable Length Size"
+      ]
+    }
+  },
+  "onboarding_extension_map": {
+    "26": {
+      "super_name": "Grocery",
+      "extensions": [
+        {"canonical": "fssai_license_number", "required": true},
+        {"canonical": "fssai_expiry", "required": false}
+      ]
+    },
+    "13": {
+      "super_name": "Kids & Toys",
+      "extensions": [
+        {"canonical": "bis_isi_certification_number", "required": false}
+      ]
+    },
+    "16": {
+      "super_name": "Consumer Electronics",
+      "extensions": [
+        {"canonical": "bis_isi_certification_number", "required": false},
+        {"canonical": "r_number", "required": false},
+        {"canonical": "is_number", "required": false},
+        {"canonical": "cm_l_number", "required": false}
+      ]
+    },
+    "19_36_37_14_88_34": {
+      "super_name": "Beauty & Health cluster",
+      "extensions": [
+        {"canonical": "license_registration_number", "required": "conditional"},
+        {"canonical": "license_registration_type", "required": "conditional"},
+        {"canonical": "license_expiry_date", "required": "conditional"}
+      ],
+      "note": "Required if the seller has products that require AYUSH or cosmetic licensing. Optional otherwise."
+    },
+    "80": {
+      "super_name": "Books",
+      "extensions": [
+        {"canonical": "isbn", "required": false}
+      ],
+      "note": "Meesho is surprisingly lenient on Books. Founder question pending."
+    },
+    "17": {
+      "super_name": "Appliances",
+      "extensions": [
+        {"canonical": "bis_isi_certification_number", "required": false},
+        {"canonical": "license_registration_number", "required": false},
+        {"canonical": "license_expiry_date", "required": false}
+      ]
+    },
+    "75": {
+      "super_name": "Pet Supplies (food overlap)",
+      "extensions": [
+        {"canonical": "fssai_license_number", "required": "conditional"}
+      ],
+      "note": "Reuses FSSAI from Grocery for pet food products."
+    }
+  }
+}
