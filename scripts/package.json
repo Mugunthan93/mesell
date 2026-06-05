@@ -1,0 +1,10 @@
+{
+  "name": "mesell-scripts",
+  "version": "1.0.0",
+  "description": "MeeSell operations scripts (Namecheap, etc.) — runtime helpers, not the app.",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "playwright": "^1.55.0"
+  }
+}
