@@ -11,14 +11,6 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config import settings
 from app.routers import auth as auth_router
-from app.routers import catalogs as catalogs_router
-from app.routers import exports as exports_router
-from app.routers import generation as generation_router
-from app.routers import images as images_router
-from app.routers import pricing as pricing_router
-from app.routers import quality as quality_router
-from app.routers import research as research_router
-from app.routers import skus as skus_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -52,14 +44,6 @@ app.add_middleware(
 )
 
 app.include_router(auth_router.router)
-app.include_router(catalogs_router.router)
-app.include_router(skus_router.router)
-app.include_router(images_router.router)
-app.include_router(generation_router.router)
-app.include_router(quality_router.router)
-app.include_router(pricing_router.router)
-app.include_router(exports_router.router)
-app.include_router(research_router.router)
 
 if settings.is_dev:
     import os

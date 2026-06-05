@@ -35,7 +35,7 @@ def get_otp_service(
     return OTPService(valkey)
 
 
-@router.post("/send-otp", response_model=SendOTPResponse)
+@router.post("/otp/send", response_model=SendOTPResponse, summary="Send OTP to phone number")
 async def send_otp(
     data: SendOTPRequest,
     otp_service: Annotated[OTPService, Depends(get_otp_service)],
@@ -44,7 +44,7 @@ async def send_otp(
     return SendOTPResponse(sent=True, dev_otp=code if settings.is_dev else None)
 
 
-@router.post("/verify-otp", response_model=AuthResponse)
+@router.post("/otp/verify", response_model=AuthResponse, summary="Verify OTP and return JWT")
 async def verify_otp(
     data: VerifyOTPRequest,
     otp_service: Annotated[OTPService, Depends(get_otp_service)],
