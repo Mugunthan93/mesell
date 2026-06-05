@@ -1,13 +1,26 @@
 # k8s/ingress.yaml
-# NOTE: TLS and cert-manager (ClusterIssuer) are intentionally disabled.
-# The app currently runs on static IP 34.93.9.139 with no public domain.
-# When a domain is registered, install cert-manager and apply
-# k8s/bootstrap/clusterissuer.yaml, then re-enable TLS here.
+# SUPERSEDED — Terraform now owns all Ingress resources.
+# See: infra/terraform/modules/ingress/main.tf
+# This file is kept for historical reference only. DO NOT apply.
+#
+# Original note: TLS and cert-manager (ClusterIssuer) were intentionally
+# disabled. studio.mesell.xyz is now live with Let's Encrypt TLS via
+# the Terraform ingress module. Additional subdomains (api, dev, testing,
+# staging) are managed via kubernetes_ingress_v1 resources in the same module.
+#
+# Ingress resources (active):
+#   studio.mesell.xyz  → supabase-studio:3000 (dev namespace)
+#   api.mesell.xyz     → api:80 (dev namespace)
+#   dev.mesell.xyz     → frontend:80 (dev namespace)
+#   testing.mesell.xyz → frontend:80 (dev namespace)
+#   staging.mesell.xyz → frontend:80 (staging namespace)
+#
+# Apply order: terraform apply -target=module.ingress
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: meesell
-  namespace: meesell
+  namespace: dev
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: web
 spec:

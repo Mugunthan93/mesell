@@ -1,0 +1,23 @@
+# Purpose: Git ignore rules for the mesell/infra/terraform/ workspace.
+# Plan reference: docs/INFRASTRUCTURE_TERRAFORM_PLAN.md §2 (directory layout), §19 (account lock).
+# Note: .terraform.lock.hcl is intentionally NOT ignored — it is committed for reproducible provider version pinning.
+
+# Terraform working directory (downloaded provider binaries)
+.terraform/
+
+# State files — never commit; local backend only per D2
+terraform.tfstate
+terraform.tfstate.backup
+
+# Saved plan files (may contain sensitive data)
+*.tfplan
+
+# Environment-local var overrides (not the tracked environments/*.tfvars files)
+*.tfvars.local
+secret.auto.tfvars
+
+# Crash log
+crash.log
+
+# Terraform log directory
+.tflogs/
