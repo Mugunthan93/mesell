@@ -31,7 +31,7 @@ import pytest
 def test_make_worker_session_uses_nullpool():
     """make_worker_session source must reference NullPool (structural check)."""
     import inspect
-    import app.database as db_mod
+    import app.shared.database as db_mod
 
     source = inspect.getsource(db_mod.make_worker_session)
     assert "NullPool" in source, (
@@ -54,7 +54,7 @@ def test_make_worker_session_disposes_engine_after_each_call():
     dispose_calls: list[int] = []
 
     async def _single_run(n: int) -> None:
-        from app.database import make_worker_session  # fresh import per call
+        from app.shared.database import make_worker_session  # fresh import per call
 
         mock_session = MagicMock()
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
@@ -128,7 +128,7 @@ def test_generation_tasks_use_make_worker_session():
 def test_get_db_still_uses_pooled_engine():
     """The FastAPI get_db dependency must continue to use the pooled engine."""
     import inspect
-    import app.database as db_mod
+    import app.shared.database as db_mod
 
     source = inspect.getsource(db_mod.get_db)
     assert "async_session_maker" in source, (
@@ -148,7 +148,7 @@ def test_get_db_still_uses_pooled_engine():
 
 def test_two_sequential_asyncio_run_calls_do_not_raise_loop_error():
     """Two back-to-back asyncio.run() calls with mocked DB must not raise loop errors."""
-    import app.database as db_mod
+    import app.shared.database as db_mod
 
     mock_session = MagicMock()
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)

@@ -1,4 +1,23 @@
-"""MeeSell API — FastAPI application entry point."""
+"""MeeSell API — FastAPI application entry point.
+
+Middleware chain (§4.H locked runtime order)::
+
+    CORS → request_id → auth_mw → tenancy_mw → rate_limit_mw → plan_guard_mw → (route) → audit_mw
+
+Starlette applies middleware in REVERSE order of registration — the last
+``add_middleware`` call wraps closest to the outside, the first wraps
+closest to the route.  To achieve the locked runtime order:
+
+* ``AuditMiddleware`` is registered FIRST so it sits deepest, wrapping the
+  route handler and observing the response (it is the only post-handler
+  middleware).
+* Then each pre-route middleware is registered in REVERSE of runtime
+  order: PlanGuard → RateLimit → TenancyContext → AuthContext → RequestId.
+* Finally CORS is registered LAST so it sits outermost — preflight
+  OPTIONS requests must short-circuit before auth-state setup.
+"""
+
+from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
@@ -9,8 +28,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from app.config import settings
-from app.routers import auth as auth_router
+from app.core.cache import prewarm_top_categories
+from app.core.errors import register_error_handlers
+from app.core.middleware.audit_mw import AuditMiddleware
+from app.core.middleware.auth_mw import AuthContextMiddleware
+from app.core.middleware.plan_guard_mw import PlanGuardMiddleware
+from app.core.middleware.rate_limit_mw import RateLimitMiddleware
+from app.core.middleware.request_id import RequestIdMiddleware
+from app.core.middleware.tenancy_mw import TenancyContextMiddleware
+from app.modules.iam import iam_router
+from app.shared.config import settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -18,10 +45,22 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown events."""
+    """Startup and shutdown events.
+
+    The DB engine + Valkey client are kept on ``app.state`` so the legacy
+    ``/health`` checks below can reach them.  ``prewarm_top_categories``
+    runs after the engine is live but BEFORE we ``yield`` — failure here
+    is logged and swallowed so a cold cache does not block boot.
+    """
     logger.info(f"MeeSell API starting (env={settings.APP_ENV})")
     app.state.db_engine = create_async_engine(settings.DATABASE_URL, pool_pre_ping=True)
     app.state.valkey = redis.from_url(settings.VALKEY_URL, decode_responses=True)
+
+    try:
+        await prewarm_top_categories()
+    except Exception as exc:  # noqa: BLE001 — startup hook must not block boot
+        logger.warning("prewarm_top_categories failed at startup: %s", exc)
+
     yield
     await app.state.valkey.aclose()
     await app.state.db_engine.dispose()
@@ -35,15 +74,36 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ── Middleware registration (§4.H canonical order) ─────────────────────────
+# Registered DEEPEST-FIRST.  See module docstring for the runtime-vs-
+# registration-order rationale.
+
+# Innermost — runs AFTER the route handler, observes the response.
+app.add_middleware(AuditMiddleware)
+
+# Pre-route middleware, in REVERSE of runtime order:
+app.add_middleware(PlanGuardMiddleware)        # V1 no-op
+app.add_middleware(RateLimitMiddleware)
+app.add_middleware(TenancyContextMiddleware)
+app.add_middleware(AuthContextMiddleware)
+app.add_middleware(RequestIdMiddleware)
+
+# Outermost — handles CORS preflight before any auth-state setup.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
-    allow_credentials=True,
+    allow_origins=settings.CORS_ALLOWED_ORIGINS,
+    allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.include_router(auth_router.router)
+# ── Error handlers (§4.F) ──────────────────────────────────────────────────
+register_error_handlers(app)
+
+# ── Routers ────────────────────────────────────────────────────────────────
+# §7 iam — owns /api/v1/auth/* (otp/send, otp/verify, refresh, logout, me)
+# + /api/v1/webhooks/razorpay per BACKEND_ARCHITECTURE.md §7.B (LOCKED 2026-06-05).
+app.include_router(iam_router)
 
 if settings.is_dev:
     import os
@@ -54,6 +114,7 @@ if settings.is_dev:
     app.mount("/dev-static", StaticFiles(directory="/tmp/meesell"), name="dev-static")
 
 
+# ── Health check (preserved from baseline) ─────────────────────────────────
 async def _check_postgres() -> str:
     try:
         async with app.state.db_engine.connect() as conn:

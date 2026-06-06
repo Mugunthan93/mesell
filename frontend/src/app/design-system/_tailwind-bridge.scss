@@ -1,0 +1,14 @@
+// design-system/_tailwind-bridge.scss
+// Maps design tokens to CSS custom properties consumed by Tailwind via theme.extend per §5A.H
+// This file ensures Material components and Tailwind classes are visually identical.
+
+@use 'tokens' as tokens;
+
+// Re-publish semantic color tokens for Tailwind consumption
+// These are already published in :root via _tokens.scss — this file is the explicit bridge
+// document that future developers can reference when adding new Tailwind utilities.
+
+// Usage in tailwind.config.js:
+//   theme.extend.colors.primary = 'var(--mee-color-primary)'
+//   theme.extend.colors['on-primary'] = 'var(--mee-color-on-primary)'
+// etc.

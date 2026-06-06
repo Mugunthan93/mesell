@@ -7,7 +7,7 @@ empty until those task modules are authored against the V1 13-table schema.
 
 from celery import Celery
 
-from app.config import settings
+from app.shared.config import settings
 
 celery_app = Celery(
     "meesell",

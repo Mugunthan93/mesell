@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import uuid
 
 import pytest
 import pytest_asyncio
@@ -25,8 +24,8 @@ os.environ.setdefault("CELERY_RESULT_BACKEND", "redis://localhost:6381/12")
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine  # noqa: E402
 from sqlalchemy.pool import NullPool  # noqa: E402
 
-from app.database import Base, get_db  # noqa: E402
-from app import models as _models  # noqa: F401,E402 — registers tables on Base.metadata
+from app.shared.database import Base, get_db  # noqa: E402
+from app.shared import models as _models  # noqa: F401,E402 — registers tables on Base.metadata
 
 # app.main imports legacy routers that reference deleted model files (sku.py,
 # image.py) from the pre-V1 era.  Those routers are out-of-scope for the
@@ -100,14 +99,160 @@ async def client(db_engine):
 
 
 @pytest_asyncio.fixture
-async def auth_client(client):
+async def auth_client(client, use_live_valkey):
+    """Authenticated test client per §7 iam FE-D5 contract.
+
+    Bypasses /otp/send (avoids MSG91 vendor call) by pre-seeding the OTP
+    record into Valkey DB 0 directly, then calls /otp/verify and pins the
+    returned ``access_token`` as Bearer on every subsequent request.
+    """
+    import hashlib
+    import json as _json
+    import time as _time
+
+    from app.shared import valkey as _vk_mod
+
     phone = "+919876543210"
-    await client.post("/api/v1/auth/otp/send", json={"phone": phone})
-    resp = await client.post("/api/v1/auth/otp/verify", json={"phone": phone, "otp": "1234"})
-    token = resp.json()["token"]
-    client.headers["Authorization"] = f"Bearer {token}"
-    client.test_user_id = resp.json()["user"]["id"]
+    otp = "999000"
+    otp_hash = hashlib.sha256(otp.encode("utf-8")).hexdigest()
+    payload = _json.dumps(
+        {"otp_hash": otp_hash, "attempts": 0, "expires_at": int(_time.time()) + 300}
+    )
+    valkey = await _vk_mod.get_valkey_otp()
+    await valkey.set(f"otp:{phone}", payload, ex=300)
+
+    resp = await client.post(
+        "/api/v1/auth/otp/verify", json={"phone": phone, "otp": otp}
+    )
+    body = resp.json()
+    client.headers["Authorization"] = f"Bearer {body['access_token']}"
+    # Resolve user_id via /me so tests can assert ownership without leaking JWT.
+    me_resp = await client.get("/api/v1/auth/me")
+    client.test_user_id = me_resp.json()["user_id"]  # type: ignore[attr-defined]
     return client
+
+
+# ── §4 core/ fixtures ─────────────────────────────────────────────────────────
+# ``use_live_valkey`` replaces the ``shared.valkey`` factory functions with
+# per-test factories that create a FRESH Redis client IN THE CURRENT EVENT
+# LOOP on every call.  The substitution is performed via ``monkeypatch`` —
+# automatically reverted by pytest on teardown.  No module-level singleton
+# survives the test, so a session-loop-bound client from an earlier test
+# (e.g. ``test_database.py`` activating ``dev_engine`` in the session loop)
+# can NEVER leak into a function-scoped test body.
+#
+# Why per-call fresh client (not pivot-the-singleton):
+#   asyncpg / redis-py Protocols attach to whatever loop is running when the
+#   first await on the connection happens.  If a singleton is built in the
+#   session loop, awaiting it later from a function loop raises
+#       RuntimeError: Task ... got Future ... attached to a different loop
+#   By building each client inside the current (function-scoped) loop the
+#   Future <-> loop attachment is always correct.
+#
+# Why monkeypatch the consumer modules too:
+#   Every consumer in ``app/core/`` and the test modules themselves did
+#   ``from app.shared.valkey import get_valkey_otp`` at import time, which
+#   binds a LOCAL name in their own namespace.  Patching only
+#   ``app.shared.valkey.get_valkey_otp`` would miss those captured refs.
+#   We patch the name in every consumer namespace.
+
+@pytest_asyncio.fixture(loop_scope="function")
+async def use_live_valkey(monkeypatch):
+    """Per-test live Redis at CORE_TEST_VALKEY_URL (default redis://localhost:6379).
+
+    Monkeypatches ``get_valkey_otp`` / ``get_valkey_cache`` in ``app.shared.valkey``
+    AND in every consumer module that captured the function by name at import
+    time, to return a Redis client created IN THE CURRENT EVENT LOOP per call.
+    No module singleton mutation survives — the patch is reverted by pytest's
+    monkeypatch on teardown, guaranteeing zero cross-test loop pollution.
+    Clients are ``aclose``d in teardown before the loop dies.
+    """
+    import redis.asyncio as _redis_lib  # local import — keeps top of conftest light
+    import app.shared.valkey as _valkey_mod
+
+    base = os.environ.get("CORE_TEST_VALKEY_URL", "redis://localhost:6379")
+    created: list = []
+
+    async def _otp():
+        c = _redis_lib.from_url(f"{base}/0", decode_responses=True)
+        created.append(c)
+        return c
+
+    async def _cache():
+        c = _redis_lib.from_url(f"{base}/3", decode_responses=True)
+        created.append(c)
+        return c
+
+    # 1. Patch the source module.
+    monkeypatch.setattr(_valkey_mod, "get_valkey_otp", _otp)
+    monkeypatch.setattr(_valkey_mod, "get_valkey_cache", _cache)
+
+    # 2. Patch every consumer module that captured the function by name at
+    #    import time (``from app.shared.valkey import get_valkey_*``).
+    #    We import each consumer lazily so conftest module-load stays cheap
+    #    and so a missing consumer (e.g. test runs without the middleware
+    #    being importable) does not block the fixture.
+    for mod_path, fn_name, factory in (
+        ("app.core.cache", "get_valkey_cache", _cache),
+        ("app.core.plan_guard", "get_valkey_otp", _otp),
+        ("app.core.middleware.rate_limit_mw", "get_valkey_otp", _otp),
+        ("app.core.middleware.audit_mw", "get_valkey_otp", _otp),
+        # §7 iam router — captured ``get_valkey_otp`` at import time.
+        ("app.modules.iam.router", "get_valkey_otp", _otp),
+    ):
+        try:
+            mod = __import__(mod_path, fromlist=[fn_name])
+        except Exception:
+            continue
+        if hasattr(mod, fn_name):
+            monkeypatch.setattr(mod, fn_name, factory)
+
+    # 3. Patch test modules that bound the same names at import time so
+    #    helper calls inside the tests also see the fresh-per-call factory.
+    #    pytest loads test files as TOP-LEVEL modules (bare ``test_core_cache``,
+    #    not ``tests.test_core_cache``) when ``testpaths = tests`` is set
+    #    without ``__init__.py`` packages — so look both up in sys.modules.
+    import sys as _sys
+    for mod_name, fn_name, factory in (
+        ("test_core_cache", "get_valkey_cache", _cache),
+        ("test_core_plan_guard", "get_valkey_otp", _otp),
+    ):
+        # Try both flat and dotted variants.
+        for candidate in (mod_name, f"tests.{mod_name}"):
+            mod = _sys.modules.get(candidate)
+            if mod is not None and hasattr(mod, fn_name):
+                monkeypatch.setattr(mod, fn_name, factory)
+
+    # 4. Defensively NUKE any singleton that a previous test/session-scope
+    #    fixture bound to a (potentially dead) loop.  We do NOT restore them
+    #    — any future code path that bypasses the patched factory will
+    #    re-create lazily, which still happens in a live loop.
+    _valkey_mod._otp_client = None
+    _valkey_mod._cache_client = None
+
+    # 5. Pre-flush scratch DBs so each test sees a clean slate.
+    pre_otp = await _otp()
+    pre_cache = await _cache()
+    try:
+        await pre_otp.flushdb()
+        await pre_cache.flushdb()
+    except Exception:
+        pass
+
+    yield
+
+    # 6. Teardown — flush + aclose every client created during the test.
+    #    Run before the function loop dies; swallow errors to keep teardown
+    #    robust if Valkey vanished mid-test.
+    for c in created:
+        try:
+            await c.flushdb()
+        except Exception:
+            pass
+        try:
+            await c.aclose()
+        except Exception:
+            pass
 
 
 # ── Phase 4 smoke-test fixtures ───────────────────────────────────────────────

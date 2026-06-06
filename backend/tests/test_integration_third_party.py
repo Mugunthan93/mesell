@@ -1,132 +1,23 @@
-"""Integration tests for the third-party seams: MSG91, Gemini, GCS.
+"""Integration tests for the third-party seams: Gemini, GCS.
 
-All three services are mocked. The point is to verify the integration
-*surface* of our code — that we send the right payload to MSG91, decode the
-right shape from Gemini, and call the right GCS methods — without making any
-network calls.
+NOTE: The MSG91 portion of this file was REMOVED during the §7 iam dispatch
+(2026-06-06).  The legacy ``app.services.otp_service.OTPService`` it tested
+was deleted in favour of ``app.modules.iam.service`` +
+``app.adapters.msg91`` (per BACKEND_ARCHITECTURE.md §6.C + §7.B.1).
+The MSG91 adapter is now covered by ``tests/test_msg91_adapter.py``; the
+iam wiring around it is covered by ``tests/modules/iam/*`` +
+``tests/integration/test_iam_*.py``.
+
+Gemini and GCS coverage below remains in scope until §6A.x ai_ops and
+§11 image dispatches re-platform them onto the §6 adapter contracts.
 """
 
 import json
 from unittest.mock import MagicMock, patch
 
-import httpx
 import pytest
-import redis.asyncio as redis
 
 from app.services.ai_engine import GeminiEngine
-from app.services.otp_service import OTPService
-
-
-# ============================================================
-# MSG91 (OTP SMS)
-# ============================================================
-
-@pytest.mark.asyncio
-async def test_msg91_dispatched_with_correct_params(monkeypatch):
-    """We POST to MSG91 with the configured template, mobile sans '+', and auth key.
-
-    We bypass the dev/production gate by calling ``_dispatch_msg91`` directly —
-    that is the unit responsible for the HTTP call, and it works the same way
-    regardless of ``APP_ENV``.
-    """
-
-    monkeypatch.setattr("app.services.otp_service.settings.MSG91_AUTH_KEY", "test-key")
-    monkeypatch.setattr("app.services.otp_service.settings.MSG91_TEMPLATE_ID", "tmpl-1")
-
-    calls = []
-
-    class FakeAsyncClient:
-        def __init__(self, *_a, **_kw):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_a, **_kw):
-            pass
-
-        async def post(self, url, params=None):
-            calls.append((url, params))
-            resp = MagicMock()
-            resp.raise_for_status = MagicMock()
-            return resp
-
-    r = redis.from_url("redis://localhost:6381/12", decode_responses=True)
-    await r.flushdb()
-    try:
-        with patch("app.services.otp_service.httpx.AsyncClient", FakeAsyncClient):
-            svc = OTPService(r)
-            await svc._dispatch_msg91("+919876543210", "5678")
-        assert len(calls) == 1
-        url, params = calls[0]
-        assert url == "https://control.msg91.com/api/v5/otp"
-        assert params["mobile"] == "919876543210"   # no leading +
-        assert params["template_id"] == "tmpl-1"
-        assert params["authkey"] == "test-key"
-        assert params["otp"] == "5678"
-    finally:
-        await r.flushdb()
-        await r.aclose()
-
-
-@pytest.mark.asyncio
-async def test_msg91_network_failure_is_swallowed(monkeypatch):
-    """A 5xx / connection error from MSG91 must not crash the OTP flow."""
-
-    monkeypatch.setattr("app.services.otp_service.settings.MSG91_AUTH_KEY", "test-key")
-    monkeypatch.setattr("app.services.otp_service.settings.MSG91_TEMPLATE_ID", "tmpl-1")
-
-    class ExplodingClient:
-        def __init__(self, *_a, **_kw):
-            pass
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_a, **_kw):
-            pass
-
-        async def post(self, *_a, **_kw):
-            raise httpx.ConnectError("boom")
-
-    r = redis.from_url("redis://localhost:6381/12", decode_responses=True)
-    try:
-        with patch("app.services.otp_service.httpx.AsyncClient", ExplodingClient):
-            svc = OTPService(r)
-            await svc._dispatch_msg91("+919876543210", "1234")  # must not raise
-    finally:
-        await r.aclose()
-
-
-@pytest.mark.asyncio
-async def test_msg91_skipped_when_auth_key_missing(monkeypatch):
-    monkeypatch.setattr("app.services.otp_service.settings.MSG91_AUTH_KEY", "")
-
-    calls = []
-
-    class FakeAsyncClient:
-        def __init__(self, *_a, **_kw):
-            pass
-
-        async def __aenter__(self):
-            calls.append("entered")
-            return self
-
-        async def __aexit__(self, *_a, **_kw):
-            pass
-
-        async def post(self, *_a, **_kw):
-            calls.append("posted")
-            return MagicMock()
-
-    r = redis.from_url("redis://localhost:6381/12", decode_responses=True)
-    try:
-        with patch("app.services.otp_service.httpx.AsyncClient", FakeAsyncClient):
-            svc = OTPService(r)
-            await svc._dispatch_msg91("+919876543210", "1234")
-        assert calls == []
-    finally:
-        await r.aclose()
 
 
 # ============================================================

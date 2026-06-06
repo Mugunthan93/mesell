@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Protocol
 from urllib.parse import quote
 
-from app.config import settings
+from app.shared.config import settings
 
 logger = logging.getLogger(__name__)
 

@@ -1,0 +1,13 @@
+// App root shell — height chain for full-viewport layouts.
+// html/body already have height:100% in styles.scss.
+// AMENDMENT 2026-06-06: Removed `main { flex:1; ... }` rule —
+// layout (flex column, overflow, scroll) is now owned by each layout
+// component (MeeShellComponent, MeeAuthLayoutComponent) rather than
+// by the root shell. The :host rule is kept to ensure the router-outlet
+// fills the full viewport and the height chain remains unbroken.
+
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}

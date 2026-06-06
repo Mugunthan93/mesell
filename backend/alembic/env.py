@@ -8,9 +8,9 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from app.config import settings
-from app.database import Base
-from app import models  # noqa: F401 — ensure all models are registered on Base.metadata
+from app.shared.config import settings
+from app.shared.database import Base
+from app.shared import models  # noqa: F401 — ensure all models are registered on Base.metadata
 
 config = context.config
 

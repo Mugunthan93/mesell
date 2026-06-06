@@ -412,7 +412,7 @@ The same Angular codebase is wrapped with **Ionic + Capacitor** for iOS/Android 
 11. **Tailwind + Angular Material, not Material alone** — Material for accessible primitives (forms, dialogs, snackbars), Tailwind for layout and one-off styling
 12. **Module Federation deferred to Phase 2** — single Angular app is faster to ship; split only when team size or build time forces it
 13. **Ionic + Capacitor deferred to Phase 2** — MVP is web-only PWA; mobile wrap happens after product-market fit
-14. **MSG91 OTP + JWT (PyJWT), not GoTrue / Supabase Auth** — full control over OTP flow, no external auth dependency, JWT issued by our own FastAPI
+14. **MSG91 OTP + JWT (PyJWT), not GoTrue / Supabase Auth** — full control over OTP flow, no external auth dependency, JWT issued by our own FastAPI. **AMENDMENT 2026-06-05 — FE-D5 ratification:** access JWT held in-memory by the frontend; refresh token in HttpOnly+Secure+SameSite=Strict cookie owned by backend with server-side revocation via Valkey allowlist (HMAC-with-pepper keyspace) on logout — no tokens in localStorage. (End amendment.)
 15. **Trimmed self-hosted Supabase for PostgreSQL only** — use Supabase's hardened Postgres image on K3s; do NOT enable GoTrue, Realtime, or Storage subsystems
 
 ## Environment Variables

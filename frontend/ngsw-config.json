@@ -1,0 +1,84 @@
+{
+  "$schema": "./node_modules/@angular/service-worker/config/schema.json",
+  "index": "/index.html",
+  "assetGroups": [
+    {
+      "name": "app-shell-prefetch",
+      "installMode": "prefetch",
+      "updateMode": "prefetch",
+      "resources": {
+        "files": [
+          "/favicon.ico",
+          "/index.html",
+          "/manifest.webmanifest",
+          "/*.css",
+          "/*.js"
+        ]
+      }
+    },
+    {
+      "name": "app-assets-lazy",
+      "installMode": "lazy",
+      "updateMode": "prefetch",
+      "resources": {
+        "files": [
+          "/assets/**",
+          "/*.(eot|svg|cur|jpg|png|webp|gif|otf|ttf|woff|woff2|ani)"
+        ]
+      }
+    }
+  ],
+  "dataGroups": [
+    {
+      "name": "category-schema",
+      "urls": [
+        "https://api.mesell.xyz/api/v1/categories/*/schema",
+        "https://api-dev.mesell.xyz/api/v1/categories/*/schema",
+        "https://api.mesell.xyz/api/v1/categories/browse",
+        "https://api-dev.mesell.xyz/api/v1/categories/browse"
+      ],
+      "cacheConfig": {
+        "strategy": "freshness",
+        "maxSize": 100,
+        "maxAge": "1d",
+        "timeout": "5s"
+      }
+    },
+    {
+      "name": "auth-never-cache",
+      "urls": [
+        "https://api.mesell.xyz/api/v1/auth/*",
+        "https://api-dev.mesell.xyz/api/v1/auth/*"
+      ],
+      "cacheConfig": {
+        "strategy": "freshness",
+        "maxSize": 0,
+        "maxAge": "0s"
+      }
+    },
+    {
+      "name": "products-never-cache",
+      "urls": [
+        "https://api.mesell.xyz/api/v1/products/*",
+        "https://api-dev.mesell.xyz/api/v1/products/*"
+      ],
+      "cacheConfig": {
+        "strategy": "freshness",
+        "maxSize": 0,
+        "maxAge": "0s"
+      }
+    },
+    {
+      "name": "exports-never-cache",
+      "urls": [
+        "https://api.mesell.xyz/api/v1/exports/*",
+        "https://api-dev.mesell.xyz/api/v1/exports/*"
+      ],
+      "cacheConfig": {
+        "strategy": "freshness",
+        "maxSize": 0,
+        "maxAge": "0s"
+      }
+    }
+  ]
+}
