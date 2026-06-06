@@ -3,8 +3,70 @@
 ## Agent Identity
 Gemini prompt template specialist for MeeSell. Owns prompt templates (category_suggest, autofill, watermark_vision), Pydantic parsers, YAML eval fixtures, few-shot banks. Decentralized memory ecosystem.
 
-## Initial State
-No prior memories. First task will populate this file.
+## §6A storage layout & V1 baseline drafts (2026-06-06)
 
-## MEMORY.md
-(Index of memory files — populated as agent works)
+### Where prompts live
+`backend/app/ai_ops/prompts/` — one Python module per `<workload>_v<version>`:
+- `smart_picker_v1.py`
+- `autofill_v1.py`
+- `watermark_v1.py`
+
+Each module exposes 4 module-level constants:
+- `TEMPLATE: str` — body with `{{var}}` placeholders (Python `str.replace`-style; no Jinja2 dep in V1).
+- `VERSION: str` — e.g. `"v1"`.
+- `WORKLOAD: str` — must match one of `smart_picker` / `autofill` / `watermark`.
+- `RENDERED_BY: str` — `"text"` for smart_picker/autofill; `"vision"` for watermark.
+
+Loaded via `app.ai_ops.prompt_registry.resolve(prompt_id, workload)` which dynamic-imports the module by name.
+
+### V1 baseline drafts (authored by services-builder for storage integration)
+Services-builder authored V1 baseline drafts during the §6A construction dispatch to satisfy the package-load smoke test. The CONTENT is considered a starting draft, NOT a tuned prompt. **Prompt-engineer owns iteration going forward.**
+
+- **smart_picker_v1.py** — takes `{{description}}` + `{{compressed_tree}}`; instructs Gemini to emit top-5 ranked suggestions JSON.
+- **autofill_v1.py** — takes `{{product_spec}}` + `{{schema}}`; instructs Gemini to emit `{"fields": {...}}` with allowed-enum compliance.
+- **watermark_v1.py** — vision-rendered; no `{{vars}}` (image bytes passed separately to `call_gemini`); emits `{"has_watermark": bool, "confidence": float}`.
+
+### What prompt-engineer owns going forward
+1. **Refining each TEMPLATE body** during §19 golden-eval tuning:
+   - Smart Picker: 50-description golden set; target top-5 recall ≥ 80% per `MVP_ARCH §8.5`.
+   - Autofill: 30-spec golden set; target 0% invalid enum values per `MVP_ARCH §8.5`.
+   - Watermark: 30-image golden set (50/50); target accuracy ≥ 85% per `MVP_ARCH §8.5`.
+2. **Few-shot example bank** for each workload — append in-line within `TEMPLATE` (no separate fixture file in V1; can be split out in V1.5).
+3. **Adding `_v2`, `_v3` modules** when prompt revisions ship. V1.5 active-version dispatch via Valkey config flag `meesell:ai_ops:active_version:{workload}` is locked but DEFERRED in V1 (hardcoded `v1`).
+
+### What is NOT prompt-engineer's concern
+- **Layer 1 prefix** lives in `ai_ops/guardrail.py` `_LAYER1_PREFIX` (one prefix per workload, bonded to workload not to template). The locked rule per §6A.E: "the prefix is bonded to the workload, not to the prompt template (so it cannot be accidentally removed when prompt-engineer ships a new template version)." This means the JSON-shape constraint signal is in guardrail.py, not in your template. Your template instructs the model on *what* to do given the inputs; guardrail.py enforces the *shape* contract.
+- **Enum allowlist block** is appended to autofill's Layer 1 prefix by `guardrail.apply_prompt_constraint` when `allowed_enums` is supplied. Do NOT duplicate it in the template body — guardrail.py builds the human-readable block from the caller-supplied dict.
+- **Output parsing** is handled by `guardrail.parse_and_validate` Layer 2. Your template must emit JSON conforming to the locked shape per workload (see §6A.E shape per workload), but you do NOT write the parser.
+- **Cost / budget / observability** all live in `ai_ops/` and you do not touch them.
+
+### Cross-agent notes I picked up
+
+From **meesell-services-builder MEMORY (§6A entry)**:
+- `Workload = Literal["smart_picker", "autofill", "watermark"]` — exactly 3, locked. Adding a 4th requires architecture amendment.
+- `client.py` runs 9 steps in order per §6A.C; you can verify by reading the module docstring.
+- Per-workload graceful fallback: smart_picker/autofill set `parsed["fallback_offered"]=True`; watermark sets `parsed["watermark_check"]="skipped_budget"`. AIResponse shape is locked at 5 fields — fallback signal lives INSIDE `parsed`.
+- Cost target per call: ≤ ₹0.05 average per `MVP_ARCH §8.2`. The autofill prompt's enum-allowlist block is the largest single token cost — keep schemas compressed per `MVP_ARCH §8.2`.
+
+### Hand-offs to me from §19
+When the golden-eval-set fixtures land (`tests/eval/smart_picker/fixtures.json` etc.), `ai_ops.eval.run_eval(workload)` runs each fixture end-to-end through `call_gemini`. The per-fixture dispatch logic inside `_run_one_fixture` is a stub in V1 (returns `passed=False`) — §19 wires the actual fixture-shape parser per workload (e.g. smart_picker fixture has `{description, expected_top5}`, autofill has `{spec, expected_fields, allowed_enums}`, watermark has `{image_path, expected_has_watermark}`).
+
+You'll iterate the TEMPLATE body until `run_eval(workload).passed == True` for each of the 3 sets. Treat each tuning pass as a new template version (`_v2`, `_v3`) if the changes are substantive; in-place edits to `_v1` are fine for tuning-pass-1 only.
+
+### Reference paths
+- Templates: `backend/app/ai_ops/prompts/<workload>_v<version>.py`
+- Layer 1 prefixes (read-only for me): `backend/app/ai_ops/guardrail.py` `_LAYER1_PREFIX`
+- Layer 2 parsers (read-only for me): `backend/app/ai_ops/guardrail.py` `parse_and_validate` + shape validators
+- Cost formula (read-only for me): `backend/app/ai_ops/cost_tracker.py` `compute_cost_inr`
+- Eval runner: `backend/app/ai_ops/eval.py` `run_eval`
+- 3 target metrics locked: smart_picker=0.80, autofill=1.00, watermark=0.85 per `MVP_ARCH §8.5`
+
+## Memory index
+| Entry | Type | Summary |
+|---|---|---|
+| §6A storage layout 2026-06-06 | reference | prompt CONTENT lives in `ai_ops/prompts/<workload>_v<version>.py` with 4 required module-level constants (TEMPLATE/VERSION/WORKLOAD/RENDERED_BY); V1 baselines drafted by services-builder, ownership transfers to prompt-engineer for §19 golden-eval tuning |
+| Layer 1 prefix is NOT mine | reference | guardrail.py owns the workload-bonded JSON-shape prefix; prompt-engineer template body excludes the prefix concern |
+| 3 golden targets | reference | smart_picker 80% top-5 recall / autofill 100% conformance (0% invalid enum) / watermark 85% accuracy per MVP_ARCH §8.5 |
+| Output shape locks | reference | smart_picker emits `{"suggestions": [{"category_id", "confidence", "reasons"}]}`; autofill emits `{"fields": {<canonical>: <value>}}`; watermark emits `{"has_watermark": bool, "confidence": float}` |
+| Versioning | reference | V1 ships `_v1` per workload, hardcoded; V1.5 A/B routing via Valkey flag `meesell:ai_ops:active_version:{workload}` is locked but DEFERRED |
+| Per-call cost target | reference | ≤ ₹0.05 average per MVP_ARCH §8.2 — autofill's enum-allowlist block is the largest single token cost |

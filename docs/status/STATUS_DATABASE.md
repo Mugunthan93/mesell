@@ -1,14 +1,14 @@
 # STATUS — DATABASE
 
 **Owner:** DATABASE sub-session (mesell-database-session-1)
-**Last update:** 2026-06-04
+**Last update:** 2026-06-05 (extended — pg_trgm + 3 GIN trgm indexes + idx_product_drafts_saved_at; tests 40 → 42)
 **Coordinator:** master session (direct dispatch — sanctioned exception, no backend-coordinator hop)
 **Primary agent:** `meesell-database-builder` (Sonnet)
 
-**Status:** 🟢 DATABASE TRACK COMPLETE — all 4 phases green. Ready for API track hand-off.
+**Status:** 🟢 DATABASE TRACK COMPLETE — head `f31c75438e61` (baseline `935e55b4852c` → pg_trgm/GIN `a1b2c3d4e5f6` → `idx_product_drafts_saved_at`). 42/42 smoke tests pass. Drift clean. Ready for API track hand-off.
 
 ## Current Phase
-ALL 4 PHASES DONE — track complete 2026-06-05 ~00:40 IST
+ALL 4 PHASES DONE — track complete 2026-06-05 ~00:40 IST; extended same day with §7 Search GIN indexes + §10 autosave index per BACKEND_ARCHITECTURE alignment.
 
 ## Phase Plan (founder pre-authorized full sequential execution — completed overnight)
 - **Phase 0:** ✅ DONE — all 8 context files read, Postgres confirmed live, seed inputs verified.

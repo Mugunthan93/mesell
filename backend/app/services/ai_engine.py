@@ -8,7 +8,7 @@ import logging
 import re
 from pathlib import Path
 
-from app.config import settings
+from app.shared.config import settings
 from app.data import get_category_config
 
 logger = logging.getLogger(__name__)

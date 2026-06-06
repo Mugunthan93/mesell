@@ -114,9 +114,15 @@ def test_health_route_present(meesell_app):
 def test_no_stray_legacy_routes(meesell_app):
     """No route outside the allowed set must be mounted.
 
-    Allowed set:
+    Allowed set (updated for §7 iam construction):
       FastAPI builtins: /openapi.json, /docs, /docs/oauth2-redirect, /redoc
-      Auth routes: /api/v1/auth/otp/send, /api/v1/auth/otp/verify, /api/v1/auth/me
+      §7 iam routes:
+        POST /api/v1/auth/otp/send
+        POST /api/v1/auth/otp/verify
+        POST /api/v1/auth/refresh        (FE-D5 amendment)
+        POST /api/v1/auth/logout         (FE-D5 amendment)
+        GET  /api/v1/auth/me
+        POST /api/v1/webhooks/razorpay
       Health: /health
 
     This test will catch any stray legacy router that was not deleted.
@@ -128,7 +134,10 @@ def test_no_stray_legacy_routes(meesell_app):
         "/redoc",
         "/api/v1/auth/otp/send",
         "/api/v1/auth/otp/verify",
+        "/api/v1/auth/refresh",
+        "/api/v1/auth/logout",
         "/api/v1/auth/me",
+        "/api/v1/webhooks/razorpay",
         "/health",
     }
     route_map = _route_map(meesell_app)
@@ -139,19 +148,21 @@ def test_no_stray_legacy_routes(meesell_app):
 
 
 def test_total_route_count(meesell_app):
-    """Exact route count: 8 routable entries
-    (FastAPI builtins x4 + auth x3 + health x1).
+    """Exact route count: 11 routable entries
+    (FastAPI builtins x4 + §7 iam x6 + health x1).
 
     Breakdown:
       FastAPI builtins: /openapi.json, /docs, /docs/oauth2-redirect, /redoc  (4)
-      Auth:             /api/v1/auth/otp/send, /api/v1/auth/otp/verify, /api/v1/auth/me  (3)
-      Health:           /health  (1)
-    Total = 8
+      §7 iam:           /api/v1/auth/otp/send, /api/v1/auth/otp/verify,
+                        /api/v1/auth/refresh, /api/v1/auth/logout,
+                        /api/v1/auth/me, /api/v1/webhooks/razorpay         (6)
+      Health:           /health                                              (1)
+    Total = 11
 
     If this fails, a route was added or removed unexpectedly.
     """
     route_map = _route_map(meesell_app)
-    expected_count = 8
+    expected_count = 11
     assert len(route_map) == expected_count, (
         f"Expected {expected_count} routes, got {len(route_map)}. "
         f"Paths: {sorted(route_map)}"

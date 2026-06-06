@@ -1,0 +1,18 @@
+// design-system/_motion.scss
+// Duration + easing tokens per §5A.G
+
+// Utility classes for Angular transitions
+.mee-transition-micro {
+  transition-duration: var(--mee-motion-micro);
+  transition-timing-function: var(--mee-motion-easing);
+}
+
+.mee-transition-standard {
+  transition-duration: var(--mee-motion-standard);
+  transition-timing-function: var(--mee-motion-easing);
+}
+
+.mee-transition-large {
+  transition-duration: var(--mee-motion-large);
+  transition-timing-function: var(--mee-motion-easing);
+}

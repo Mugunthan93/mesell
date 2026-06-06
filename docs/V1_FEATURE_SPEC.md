@@ -47,6 +47,8 @@ Reference: `docs/VALIDATED_PAIN_POINTS.md` (themes T1–T6, new pains S3.x)
 3. User enters OTP → server validates → returns JWT (7-day expiry)
 4. Frontend stores JWT in localStorage, attaches as `Authorization: Bearer` on every call
 
+**AMENDMENT 2026-06-05 — FE-D5 ratification:** step 4 is superseded. The frontend holds the access JWT in memory (signal); the refresh token is delivered as an `HttpOnly; Secure; SameSite=Strict` cookie owned by the backend. The frontend attaches `Authorization: Bearer <access>` on every API call. On access-token expiry, the frontend's `RefreshInterceptor` silently calls `POST /api/v1/auth/refresh` (the refresh cookie is auto-sent by the browser); a new access JWT is issued and the refresh cookie is rotated server-side. Server-side revocation on logout is enforced via a Valkey allowlist DEL. No tokens in localStorage. See `docs/BACKEND_ARCHITECTURE.md` §0.C + §4.B + §7 amendments and `.claude/agent-memory/meesell-frontend-coordinator/backend_handoff_jwt_session_pattern.md`. (End amendment.)
+
 **Technical components:**
 - Frontend: `LoginComponent`, `OtpVerifyComponent`, `AuthService`, `AuthInterceptor`
 - Backend: `POST /api/v1/auth/otp/send`, `POST /api/v1/auth/otp/verify`
@@ -69,6 +71,8 @@ Reference: `docs/VALIDATED_PAIN_POINTS.md` (themes T1–T6, new pains S3.x)
 - [ ] OTP expires after 5 min; resend allowed after 30 s
 - [ ] JWT valid for 7 days, refreshed silently on call within 24 h of expiry
 - [ ] Rate limit: 3 OTP requests per phone per hour (Valkey sliding window)
+
+**AMENDMENT 2026-06-05 — FE-D5 ratification:** the JWT-validity criterion is superseded. New acceptance: access JWT valid for 15 min (prod default; env-driven via `ACCESS_TOKEN_TTL_SECONDS`). Refresh token valid for 7 days (env-driven via `REFRESH_TOKEN_TTL_SECONDS`); rotated on every use (Lua-script atomic DEL-old + SET-new on the Valkey allowlist per `BACKEND_ARCHITECTURE.md` §4.B amendment); revoked server-side on logout via Valkey allowlist DEL. The frontend's `RefreshInterceptor` silently refreshes within 30 s of access-token expiry. The `/auth/refresh` endpoint is rate-limited 60/h/user. (End amendment.)
 
 **Edge cases:**
 - Same phone signs up twice → reuse existing user record

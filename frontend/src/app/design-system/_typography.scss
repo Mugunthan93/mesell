@@ -1,0 +1,21 @@
+// design-system/_typography.scss
+// Type scale + font family per §5A.C
+// Font: Plus Jakarta Sans (Spike Angular reference) with Inter fallback
+// Updated 2026-06-06 by meesell-angular-ui-styler
+
+@use 'tokens' as tokens;
+
+// Google Fonts — Plus Jakarta Sans weights 300-800
+// @use must appear before @import url() per SCSS spec
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap");
+
+// Font families (from _tokens.scss SCSS variables)
+// $mee-font-family-base: 'Plus Jakarta Sans', 'Inter', system-ui, ...
+
+html, body {
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: var(--mee-text-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

@@ -2671,6 +2671,8 @@ At 1M rows with the two indexes defined above, both query patterns (§11.8) retu
 - Soft cap: 100 active products per "free" seller in V1
 - **Acceptance**: per-PR isolation regression test asserts User A cannot read User B's products
 
+**AMENDMENT 2026-06-05 — FE-D5 ratification:** JWT claim shape `{sub, exp, plan}` is UNCHANGED. Access-token TTL is now env-driven via `ACCESS_TOKEN_TTL_SECONDS` (prod 900s / staging 60s / dev 30s) — the previous `JWT_EXPIRY_DAYS` field is deprecated. The refresh token is opaque (`secrets.token_urlsafe(48)`, NOT a JWT) and is stored as an HttpOnly+Secure+SameSite=Strict cookie scoped to `Path=/api/v1/auth`. The refresh-token allowlist lives in Valkey DB 0 under the key `cache:refresh:{hmac_sha256(token, REFRESH_TOKEN_PEPPER)}` (HMAC-with-pepper, not plain SHA-256, so a Valkey-only breach cannot validate captured cookies). Rotation on every `/auth/refresh` uses a Lua script via `EVAL` for atomic compare-and-swap (DEL old + SET new in one round-trip). Server-side revocation on logout via Valkey DEL. Cited: FE-D5 + FE-D6 founder rulings 2026-06-05; frontend handoff memo `.claude/agent-memory/meesell-frontend-coordinator/backend_handoff_jwt_session_pattern.md`; backend amendments `docs/BACKEND_ARCHITECTURE.md` §0.C + §4.B + §4.G + §7 + §15 + §17 + §19. (End amendment.)
+
 ### 11.8 BACKEND on Audit Log & Autosave (§10)
 - Create `audit_events` (append-only, BIGSERIAL PK) and `product_drafts` (latest unsaved state per user×product) tables per §10.2
 - Middleware logs events AFTER successful write; failed/rolled-back transactions do NOT log

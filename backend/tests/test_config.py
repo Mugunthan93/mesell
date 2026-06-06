@@ -12,7 +12,7 @@ def _reload_config(env: dict[str, str]):
     try:
         for k, v in env.items():
             os.environ[k] = v
-        import app.config
+        import app.shared.config
         importlib.reload(app.config)
         return app.config.settings
     finally:

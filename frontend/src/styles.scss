@@ -1,0 +1,60 @@
+// styles.scss — Global styles entry point per §5A.H theming flow
+// Order: tokens → tailwind-bridge → Material theme → Tailwind directives
+
+// 1. Design system tokens (CSS custom properties + SCSS variables)
+@use 'app/design-system/tokens' as tokens;
+@use 'app/design-system/theme';
+@use 'app/design-system/component-overrides';
+@use 'app/design-system/tailwind-bridge';
+@use 'app/design-system/typography';
+@use 'app/design-system/elevation';
+@use 'app/design-system/motion';
+
+// 2. Tailwind directives
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+// 3. Global app shell styles
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+// 4. Snackbar panel classes for ErrorService (Material override)
+.mee-snackbar {
+  border-radius: 8px;
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+}
+
+.mee-snackbar--error {
+  background-color: var(--mee-color-error);
+  color: var(--mee-color-on-error);
+}
+
+.mee-snackbar--warning {
+  background-color: var(--mee-color-warning);
+  color: var(--mee-color-on-warning);
+}
+
+.mee-snackbar--info {
+  background-color: var(--mee-color-info);
+  color: var(--mee-color-on-info);
+}
+
+.mee-snackbar--success {
+  background-color: var(--mee-color-success);
+  color: var(--mee-color-on-success);
+}
+
+// 5. Offline banner
+.mee-offline-banner {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  background-color: var(--mee-color-warning);
+  color: var(--mee-color-on-warning);
+  text-align: center;
+  padding: var(--mee-space-2) var(--mee-space-4);
+  font-size: var(--mee-text-sm);
+}
