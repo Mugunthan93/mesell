@@ -68,7 +68,7 @@ tf-plan-pass1: tf-preflight
 	CLOUDSDK_CORE_PROJECT=$(EXPECTED_PROJECT) \
 	  terraform -chdir=$(TF_DIR) plan \
 	    -var-file=environments/dev.tfvars \
-	    -var="founder_ip=$(FOUNDER_IP)" \
+	    \
 	    -target=google_project_service.required \
 	    -target=module.ci_identity \
 	    -target=module.artifact_registry \
@@ -126,7 +126,6 @@ tf-init-pass2: tf-preflight
 #     VALKEY_PASSWORD=$VALKEY_PASSWORD make -f Makefile.tf tf-plan-pass2
 # ---------------------------------------------------------------------------
 tf-plan-pass2: tf-preflight
-	@if [ -z "$(FOUNDER_IP)" ]; then echo "ERROR: set FOUNDER_IP=<ip>" >&2; exit 1; fi
 	@if [ -z "$(POSTGRES_PASSWORD)" ]; then echo "ERROR: set POSTGRES_PASSWORD" >&2; exit 1; fi
 	@if [ -z "$(VALKEY_PASSWORD)" ]; then echo "ERROR: set VALKEY_PASSWORD" >&2; exit 1; fi
 	@mkdir -p $(LOG_DIR_ABS)
@@ -138,7 +137,7 @@ tf-plan-pass2: tf-preflight
 	  CLOUDSDK_CORE_PROJECT=$(EXPECTED_PROJECT) \
 	  terraform plan \
 	    -var-file=environments/dev.tfvars \
-	    -var="founder_ip=$(FOUNDER_IP)" \
+	    \
 	    -var="postgres_password=$(POSTGRES_PASSWORD)" \
 	    -var="valkey_password=$(VALKEY_PASSWORD)" \
 	    -target=module.namespaces \
@@ -176,10 +175,6 @@ tf-apply-pass2: tf-preflight
 # Requires: FOUNDER_IP env var.
 # ---------------------------------------------------------------------------
 tf-destroy-check: tf-preflight
-	@if [ -z "$(FOUNDER_IP)" ]; then \
-	  echo "ERROR: FOUNDER_IP is not set. Run: export FOUNDER_IP=\$$(curl -4 ifconfig.me)" >&2; \
-	  exit 1; \
-	fi
 	@mkdir -p $(LOG_DIR_ABS)
 	@echo "Running destroy dry-run. This does NOT apply any changes."
 	CLOUDSDK_CORE_ACCOUNT=$(EXPECTED_ACCOUNT) \
@@ -187,7 +182,7 @@ tf-destroy-check: tf-preflight
 	  terraform -chdir=$(TF_DIR) plan \
 	    -destroy \
 	    -var-file=environments/dev.tfvars \
-	    -var="founder_ip=$(FOUNDER_IP)" \
+	    \
 	    2>&1 | tee $(LOG_DIR_ABS)/destroy-check.log | grep -E "(prevent_destroy|will be destroyed|google_)" || true
 	@echo ""
 	@echo "Full destroy plan written to $(LOG_DIR_ABS)/destroy-check.log"

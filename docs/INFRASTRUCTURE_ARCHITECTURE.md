@@ -1,7 +1,7 @@
 # MeeSell Infrastructure Architecture — Single Source of Truth
 
 **Owner:** `meesell-infra-builder`
-**Last verified live:** 2026-06-05
+**Last verified live:** 2026-06-07
 **Project state:** Phase A + Phase B complete. All 5 application subdomains live with valid Let's Encrypt TLS. Application images not yet built (Phase D pending).
 
 This is the single source of truth for MeeSell's production infrastructure. If anything in this document conflicts with another doc, this document wins. Update this file whenever live infrastructure changes.
@@ -40,7 +40,7 @@ MeeSell runs on a single-node K3s cluster hosted on one GCP Compute VM (`meesell
 |   | meesell-dev-http   :80 ALL |--------|  e2-standard-2 (2 vCPU / 8 GB) / 50 GB SSD     |               |
 |   | meesell-dev-https  :443 ALL|        |  Debian 12 / K3s v1.35.5+k3s1                  |               |
 |   | meesell-dev-k3s-api:6443/  |        |  Service Account: 888244156264-compute@...     |               |
-|   |   founder_ip /32           |        |                                                  |               |
+|   |   ISP CIDR ranges          |        |                                                  |               |
 |   +----------------------------+        |  +-- namespace: traefik ------------------+     |               |
 |                                          |  |  Helm release: traefik 28.3.0          |     |               |
 |                                          |  |  Service: LoadBalancer (klipper-lb)    |     |               |
@@ -118,7 +118,7 @@ MeeSell runs on a single-node K3s cluster hosted on one GCP Compute VM (`meesell
 | VM Service Account | `888244156264-compute@developer.gserviceaccount.com` | Default Compute Engine SA; granted `artifactregistry.reader` + `storage.objectAdmin` | Active |
 | Firewall: HTTP | `meesell-dev-http` | TCP 80, source `0.0.0.0/0`, target tag `http-server` | Active |
 | Firewall: HTTPS | `meesell-dev-https` | TCP 443, source `0.0.0.0/0`, target tag `https-server` | Active |
-| Firewall: K3s API | `meesell-dev-k3s-api` | TCP 6443, source founder IP `/32` (rotates with ISP), target tag `k3s-server` | Active |
+| Firewall: K3s API | `meesell-dev-k3s-api` | TCP 6443, source ISP CIDR ranges (`122.164.64.0/18` Airtel TN, `152.57.80.0/21` Jio), target tag `k3s-server` | Active |
 | Artifact Registry | `meesell-prod-images` | Docker repo in `asia-south1`; CI SA writer, VM SA reader | Active (empty — Phase D pending) |
 | GCS bucket | `gs://meesell-prod-assets` | `asia-south1`, uniform access, public access prevention, versioning enabled; CI SA + VM SA objectAdmin | Active (empty) |
 | Cloud Billing budget | `meesell-dev-budget` (UUID `95c5e193-c796-44a3-8c2b-8a66e36308d5`) | INR 25,000 with alerts at 50 / 75 / 90 % | Active |
@@ -341,7 +341,7 @@ Managed via `Makefile.tf` at workspace root: `make -f Makefile.tf tf-plan-pass1`
 | Module | Path | Owns |
 |---|---|---|
 | `module.vm` | `infra/terraform/modules/vm/` | GCP Compute Instance `meesell-dev`, boot disk, K3s cloud-init startup script |
-| `module.firewall` | `infra/terraform/modules/firewall/` | 3 firewall rules: HTTP, HTTPS, K3s API (founder IP `/32`) |
+| `module.firewall` | `infra/terraform/modules/firewall/` | 3 firewall rules: HTTP, HTTPS, K3s API (ISP CIDR ranges in `dev.tfvars`) |
 | `module.artifact_registry` | `infra/terraform/modules/artifact_registry/` | AR repo `meesell-prod-images`, cleanup policy, CI SA writer binding |
 | `module.asset_bucket` | `infra/terraform/modules/asset_bucket/` | GCS bucket `meesell-prod-assets`, uniform access, versioning, CI SA + VM SA bindings |
 | `module.ci_identity` | `infra/terraform/modules/ci_identity/` | CI SA, WIF pool, WIF provider, WIF impersonation binding |
@@ -407,14 +407,23 @@ Application image builds and deployments. Nothing here blocks core infra availab
 
 ## 12. Operational Runbooks
 
-### 12.1 Founder IP rotation (firewall — happens on every ISP reconnect)
+### 12.1 Founder IP rotation (firewall — no longer requires terraform apply)
 
-**Symptom:** `kubectl` returns `dial tcp 35.234.223.66:6443: i/o timeout`.
+**Firewall now uses ISP CIDR ranges** (`dev.tfvars: founder_ip_ranges`), not individual `/32` addresses.
+Dynamic IP rotation within the same ISP is automatically covered — no action needed.
 
-**Why:** `meesell-dev-k3s-api` firewall rule only allows the founder's last-recorded `/32`. ISPs rotate the IP.
+| ISP | CIDR | Dynamic pool |
+|-----|------|-------------|
+| Airtel TN broadband | `122.164.64.0/18` | `122.164.64.0`–`122.164.127.255` |
+| Reliance Jio mobile | `152.57.80.0/21` | `152.57.80.0`–`152.57.87.255` |
 
-**Fix (Terraform-managed — do NOT use `gcloud compute firewall-rules update`):**
+**If `kubectl` still times out** (new ISP / travel / VPN):
 ```bash
+# Find your new ISP block
+curl -s https://ipinfo.io/$(curl -4 -s ifconfig.me)/json | jq '{ip,org}'
+whois $(curl -4 -s ifconfig.me) | grep route | head -3
+
+# Add the new CIDR to dev.tfvars founder_ip_ranges, then:
 TOKEN=$(gcloud auth print-access-token --account=vaishnaviramoorthy@gmail.com)
 export GOOGLE_OAUTH_ACCESS_TOKEN=$TOKEN
 terraform -chdir=infra/terraform plan \
@@ -422,16 +431,15 @@ terraform -chdir=infra/terraform plan \
   -var-file=environments/dev.tfvars \
   -var "postgres_password=$(cat ~/.meesell-secrets/dev-postgres-password)" \
   -var "valkey_password=$(cat ~/.meesell-secrets/dev-valkey-password)" \
-  -var "founder_ip=$(curl -4 -s ifconfig.me)" \
-  -out=.tflogs/firewall-ip-rotate.tfplan
-terraform -chdir=infra/terraform apply .tflogs/firewall-ip-rotate.tfplan
+  -out=.tflogs/firewall-isp-ranges.tfplan
+terraform -chdir=infra/terraform apply .tflogs/firewall-isp-ranges.tfplan
 ```
 
-**Rule:** source range MUST stay `/32`. Never `0.0.0.0/0` (Playbook §2.3).
+**Rule:** `founder_ip_ranges` must never contain `0.0.0.0/0`. Use ISP CIDR blocks only (Playbook §2.3).
 
 **Validate:** `kubectl get nodes` returns `meesell-dev-master Ready`.
 
-**Side effect:** MSG91 has its own IP whitelist. If OTP sends fail after a founder-IP rotation, refresh MSG91's whitelist in the dashboard to the current IP.
+**Side effect:** MSG91 has its own IP whitelist — separate from GCP. If OTP sends fail during testing, update MSG91's whitelist in the dashboard to match your current IP.
 
 ### 12.2 ADC token workaround (Terraform auth)
 

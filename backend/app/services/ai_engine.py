@@ -8,7 +8,7 @@ import logging
 import re
 from pathlib import Path
 
-from app.shared.config import settings
+from app.config import settings
 from app.data import get_category_config
 
 logger = logging.getLogger(__name__)
@@ -31,16 +31,52 @@ def _strip_fences(text: str) -> str:
     return text.strip()
 
 
+def _fix_json(text: str) -> str:
+    """Best-effort repair of common LLM JSON quirks.
+
+    1. Trailing commas before } or ] (very common with Gemini).
+    2. Truncated JSON — if there is no closing ``}`` we add enough to make the
+       string parseable so the caller can at least extract partial data.
+    """
+    # Remove trailing commas before closing braces/brackets
+    text = re.sub(r",\s*([}\]])", r"\1", text)
+
+    # If the response was cut off before the final closing brace, close it
+    opens = text.count("{") - text.count("}")
+    if opens > 0:
+        # Strip any dangling incomplete key/value at the very end, then close
+        text = re.sub(r',\s*"[^"]*$', "", text)   # drop partial last key
+        text = re.sub(r',\s*$', "", text)          # drop trailing comma
+        text += "}" * opens
+
+    return text
+
+
 def _parse_response(text: str) -> dict:
     """Robustly pull a JSON object out of an LLM response."""
     cleaned = _strip_fences(text)
+
+    # First attempt — vanilla parse
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", cleaned, re.DOTALL)
-        if not match:
-            raise ValueError("No JSON object found in Gemini response")
-        return json.loads(match.group(0))
+        pass
+
+    # Second attempt — fix trailing commas / truncation then parse
+    try:
+        return json.loads(_fix_json(cleaned))
+    except json.JSONDecodeError:
+        pass
+
+    # Third attempt — extract first {...} block then fix
+    match = re.search(r"\{.*", cleaned, re.DOTALL)
+    if match:
+        try:
+            return json.loads(_fix_json(match.group(0)))
+        except json.JSONDecodeError:
+            pass
+
+    raise ValueError("No JSON object found in Gemini response")
 
 
 class GeminiEngine:
@@ -116,31 +152,9 @@ class GeminiEngine:
                 generation_config={
                     "temperature": 0.7,
                     "top_p": 0.9,
-                    # 1024 was too low — a typical catalog JSON is 400-600 tokens.
-                    # With prompt overhead (~430 tokens) the model was hitting
-                    # MAX_TOKENS mid-response, producing truncated JSON with no
-                    # closing brace.  2048 gives comfortable headroom and is still
-                    # well within the model's context window.
                     "max_output_tokens": 2048,
-                    "response_mime_type": "application/json",
                 },
             )
-            # Guard against MAX_TOKENS truncation (finish_reason == 2).
-            # If the model was cut off, response.text will be incomplete JSON;
-            # raise an explicit error rather than letting the JSON parser surface
-            # a confusing "Expecting property name" message.
-            try:
-                candidates = response.candidates
-                if candidates:
-                    finish_reason = candidates[0].finish_reason
-                    # finish_reason 2 == MAX_TOKENS in the google-generativeai SDK
-                    if finish_reason == 2:
-                        raise ValueError(
-                            "Gemini response truncated by MAX_TOKENS limit; "
-                            f"partial text (first 200 chars): {response.text[:200]!r}"
-                        )
-            except (AttributeError, IndexError):
-                pass  # SDK version without candidates — proceed to JSON parse
             return response.text
 
         text = await asyncio.to_thread(_call)
