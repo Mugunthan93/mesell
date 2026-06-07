@@ -40,17 +40,18 @@ resource "google_compute_firewall" "meesell_dev_k3s_api" {
   name    = "meesell-dev-k3s-api"
   network = "default"
 
-  # DANGER: This rule MUST be scoped to the founder's /32 IP.
-  # Playbook §2.3: "meesell-dev-k3s-api sourceRanges MUST equal ${FOUNDER_IP}/32, never 0.0.0.0/0."
-  # When the founder's IP changes: terraform apply -var="founder_ip=<new_ip>" — Terraform updates
-  # this resource and the validation block ensures the new value is also never 0.0.0.0.
-  description = "Allow K3s API server (tcp:6443) from founder IP only. Scoped to /32 per playbook §2.3 [DANGER]."
+  # DANGER: This rule MUST be scoped to known ISP CIDR ranges — never 0.0.0.0/0.
+  # Playbook §2.3 updated: use ISP-level CIDRs (e.g. Airtel TN /18, Jio /21) instead of
+  # individual /32 IPs. This survives dynamic IP rotation within the same ISP without
+  # requiring a terraform apply on every reconnect.
+  # Set in dev.tfvars as: founder_ip_ranges = ["122.164.64.0/18", "152.57.80.0/21"]
+  description = "Allow K3s API server (tcp:6443) from founder ISP CIDR ranges. Scoped per playbook §2.3 [DANGER] — no 0.0.0.0/0."
 
   allow {
     protocol = "tcp"
     ports    = ["6443"]
   }
 
-  source_ranges = ["${var.founder_ip}/32"]
+  source_ranges = var.founder_ip_ranges
   target_tags   = ["k3s-server"]
 }

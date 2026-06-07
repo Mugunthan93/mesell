@@ -1,13 +1,24 @@
 # Purpose: Variable values for the dev environment (Day 1 provisioning).
 # Plan reference: docs/INFRASTRUCTURE_TERRAFORM_PLAN.md §5 (environment strategy), §11 (bootstrap order).
-# Note: founder_ip is intentionally NOT set here. It must be passed at apply time via the
-#       FOUNDER_IP environment variable and the Makefile wrapper:
-#         make -f Makefile.tf tf-plan-pass1 FOUNDER_IP=$(curl -s ifconfig.me)
-#       This ensures the IP always reflects the founder's current address, never a stale value.
-#       postgres_password and valkey_password are also absent — injected at first Pass 2 apply only.
+# Note: founder_ip_ranges replaces the old per-session founder_ip /32 variable.
+#       ISP CIDR ranges cover all dynamic IPs assigned by the founder's broadband/mobile ISP,
+#       so K3s API access survives IP rotation without any terraform apply.
+#       postgres_password and valkey_password are absent — injected at first Pass 2 apply only.
+#
+# ISP lookup used to derive ranges:
+#   122.164.64.0/18 — Airtel TN DSL (inetnum 122.164.64.0–122.164.127.255, Bharti Airtel Chennai)
+#   152.57.80.0/21  — Reliance Jio mobile hotspot (route 152.57.80.0/21, Jio Infocomm Chennai)
+# If a new ISP appears: curl -s https://ipinfo.io/<ip>/json | jq .org
+#                        whois <ip> | grep route  → add new CIDR to this list.
 
 environment = "dev"
 vm_name     = "meesell-dev"
+
+# K3s API access — ISP CIDR ranges (survives dynamic IP rotation within each ISP)
+founder_ip_ranges = [
+  "122.164.64.0/18", # Airtel TN DSL broadband (Chennai, dynamic pool)
+  "152.57.80.0/21",  # Reliance Jio mobile hotspot (Chennai, dynamic pool)
+]
 
 # VM sizing (matches playbook §2.2 locked constants)
 machine_type    = "e2-standard-2"

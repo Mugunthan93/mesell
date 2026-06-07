@@ -31,13 +31,13 @@ variable "vm_disk_size_gb" {
 
 # --- Networking ---
 
-variable "founder_ip" {
-  type        = string
-  description = "Founder's current public IPv4 address for the K3s API firewall rule (tcp:6443). Must NOT be 0.0.0.0 or empty. Capture with: export FOUNDER_IP=$(curl -s ifconfig.me). Never commit this value."
+variable "founder_ip_ranges" {
+  type        = list(string)
+  description = "ISP CIDR ranges allowed to reach the K3s API (tcp:6443). Use ISP-level blocks (not /32) so dynamic IP rotation within the ISP requires no terraform apply. Must not include 0.0.0.0/0. Set in dev.tfvars — no CLI override needed."
 
   validation {
-    condition     = var.founder_ip != "0.0.0.0" && var.founder_ip != ""
-    error_message = "founder_ip must be a valid non-empty IPv4 address and must not be 0.0.0.0. Opening K3s API (tcp:6443) to the world violates playbook §2.3 [DANGER]. Capture your current IP with: export FOUNDER_IP=$(curl -s ifconfig.me)."
+    condition     = length(var.founder_ip_ranges) > 0 && !contains(var.founder_ip_ranges, "0.0.0.0/0")
+    error_message = "founder_ip_ranges must be a non-empty list and must not contain 0.0.0.0/0. Playbook §2.3 [DANGER] prohibits opening tcp:6443 to the world."
   }
 }
 

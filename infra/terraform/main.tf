@@ -121,7 +121,7 @@ module "vm" {
 module "firewall" {
   source = "./modules/firewall"
 
-  founder_ip = var.founder_ip
+  founder_ip_ranges = var.founder_ip_ranges
 
   depends_on = [
     null_resource.account_lock_guard,
