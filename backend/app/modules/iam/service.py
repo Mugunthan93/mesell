@@ -25,7 +25,6 @@ import json
 import logging
 import secrets
 import time
-from datetime import timezone
 from uuid import UUID
 
 from redis.asyncio import Redis
@@ -154,34 +153,70 @@ async def _write_audit_direct(
     user_id: UUID | None,
     event_type: str,
     *,
+    db: AsyncSession | None = None,
     entity_type: str | None = None,
     entity_id: UUID | None = None,
     metadata: dict | None = None,
     diff: dict | None = None,
 ) -> int | None:
-    """Write an ``audit_events`` row in its OWN AsyncSessionLocal session.
+    """Write an ``audit_events`` row per §7.I documented exception.
 
-    Drop-on-failure per §1.E + §6A.D pattern: any DB error is logged and
-    swallowed so the business path returns its response unchanged.  Mirrors
-    ``app/core/middleware/audit_mw.py:_maybe_write`` semantics — the only
-    difference is the caller, not the failure posture.
+    Two dispatch paths:
 
-    Returns the row ID on success, ``None`` on failure or when ``user_id``
-    is None (the ``audit_events`` table requires NOT NULL ``user_id`` per
-    its DDL; we elide the write rather than violate the constraint).
+    * **In-request path** (``db`` provided) — the audit row is inserted
+      inside a SAVEPOINT on the caller's session.  This is REQUIRED for
+      events whose ``user_id`` references a row that the caller has
+      ``flush``ed but not yet committed (e.g. ``auth.login.success``
+      on the verify path — the user upsert is in-flight within the
+      route's ``get_db`` transaction; a separate session would see the
+      pre-commit snapshot and FK-fail).  The SAVEPOINT preserves the
+      drop-on-failure invariant: an audit error rolls back only the
+      nested transaction, never the outer business write.
+
+    * **Out-of-request path** (``db`` is None) — opens its own
+      :data:`AsyncSessionLocal` session.  Used for events that fire
+      from a context with no active request session (none currently in
+      iam; reserved for future Celery callbacks).
+
+    Returns the row ID on success, ``None`` on any failure or when
+    ``user_id`` is None (the ``audit_events`` table requires NOT NULL
+    ``user_id`` per §11.2 DDL; we elide the write rather than violate it).
     """
     if user_id is None:
         return None
+
+    def _build_row() -> AuditEvent:
+        return AuditEvent(
+            user_id=user_id,
+            event_type=event_type[:40],  # column is String(40)
+            entity_type=entity_type,
+            entity_id=entity_id,
+            diff_jsonb=diff,
+            metadata_jsonb=metadata,
+        )
+
+    if db is not None:
+        # In-request: SAVEPOINT so audit failure does not poison the txn.
+        try:
+            async with db.begin_nested():
+                row = _build_row()
+                db.add(row)
+                await db.flush()
+            return int(row.id) if row.id is not None else None
+        except Exception as exc:  # noqa: BLE001 — drop-on-failure
+            logger.warning(
+                "audit_events direct-write failed inside savepoint "
+                "(event=%s, user=%s): %s",
+                event_type,
+                user_id,
+                exc,
+            )
+            return None
+
+    # Out-of-request: independent session.
     try:
         async with AsyncSessionLocal() as session:
-            row = AuditEvent(
-                user_id=user_id,
-                event_type=event_type[:40],  # column is String(40)
-                entity_type=entity_type,
-                entity_id=entity_id,
-                diff_jsonb=diff,
-                metadata_jsonb=metadata,
-            )
+            row = _build_row()
             session.add(row)
             await session.commit()
             return int(row.id) if row.id is not None else None
@@ -324,10 +359,13 @@ async def verify_otp_and_issue_tokens(
     # Single-use OTP — DEL after successful verify per §7.B.2 step 2.
     await valkey.delete(key)
 
-    # Audit row — direct write per §7.I exception.  Now we have user_id.
+    # Audit row — direct write per §7.I exception, in-request via SAVEPOINT
+    # so the user_id FK resolves against the user we just upserted in the
+    # same transaction.
     await _write_audit_direct(
         user_id=user.id,
         event_type="auth.login.success",
+        db=db,
         metadata={
             "ip": client_ip,
             "hashed_phone": _hash_phone_for_audit(phone),
@@ -358,9 +396,12 @@ async def rotate_refresh_token(
     :class:`RefreshInvalidError`; the audit row distinguishes ``reason``.
     """
     if not old_refresh_token:
+        # No user_id known on this failure path — _write_audit_direct
+        # short-circuits when user_id is None (see DDL NOT NULL constraint).
         await _write_audit_direct(
-            user_id=None,  # no user yet — drop_on_failure path; we still try
+            user_id=None,
             event_type="auth.token.refresh_failed",
+            db=db,
             metadata={"reason": "missing", "ip": client_ip},
         )
         raise RefreshInvalidError()
@@ -384,6 +425,7 @@ async def rotate_refresh_token(
         await _write_audit_direct(
             user_id=None,
             event_type="auth.token.refresh_failed",
+            db=db,
             metadata={"reason": "expired", "ip": client_ip},
         )
         raise RefreshInvalidError()
@@ -408,6 +450,7 @@ async def rotate_refresh_token(
         await _write_audit_direct(
             user_id=existing_entry.user_id,
             event_type="auth.token.refresh_failed",
+            db=db,
             metadata={"reason": "race_lost", "ip": client_ip},
         )
         raise RefreshInvalidError()
@@ -424,6 +467,7 @@ async def rotate_refresh_token(
         await _write_audit_direct(
             user_id=None,
             event_type="auth.token.refresh_failed",
+            db=db,
             metadata={"reason": "user_deleted", "ip": client_ip},
         )
         raise RefreshInvalidError()
@@ -432,6 +476,7 @@ async def rotate_refresh_token(
     await _write_audit_direct(
         user_id=user.id,
         event_type="auth.token.refreshed",
+        db=db,
         metadata={"ip": client_ip},
     )
 
@@ -444,7 +489,9 @@ async def rotate_refresh_token(
 
 
 async def revoke_refresh_token(
-    refresh_token: str | None, valkey: Redis
+    refresh_token: str | None,
+    valkey: Redis,
+    db: AsyncSession | None = None,
 ) -> RevokeResult:
     """``POST /api/v1/auth/logout`` business path per §7.B.4.
 
@@ -452,6 +499,11 @@ async def revoke_refresh_token(
     The router uses ``cookie_was_present`` to decide whether to emit the
     ``auth.logout`` audit row; this service writes the row directly so the
     ``user_id`` resolution happens BEFORE the Valkey DEL.
+
+    The optional ``db`` parameter routes the audit write through the
+    caller's session via SAVEPOINT.  When ``None`` (e.g. unit-test paths
+    that don't need an audit row), the audit falls back to its own
+    :data:`AsyncSessionLocal` — drop-on-failure still applies.
     """
     if not refresh_token:
         return RevokeResult(cookie_was_present=False, user_id=None)
@@ -466,6 +518,7 @@ async def revoke_refresh_token(
         await _write_audit_direct(
             user_id=entry.user_id,
             event_type="auth.logout",
+            db=db,
             metadata={"ip": entry.ip},
         )
 

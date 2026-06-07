@@ -198,6 +198,7 @@ async def auth_refresh(
 )
 async def auth_logout(
     response: Response,
+    db: Annotated[AsyncSession, Depends(get_db)],
     valkey: Annotated[Redis, Depends(get_valkey_otp)],
     refresh_token: Annotated[Optional[str], Cookie()] = None,
 ) -> Response:
@@ -207,7 +208,7 @@ async def auth_logout(
     present.  The audit row is emitted by the service ONLY when a cookie
     was actually present (so calling logout twice does not double-log).
     """
-    await iam_service.revoke_refresh_token(refresh_token, valkey)
+    await iam_service.revoke_refresh_token(refresh_token, valkey, db=db)
     _clear_refresh_cookie(response)
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
@@ -259,7 +260,11 @@ async def razorpay_webhook(request: Request) -> WebhookCaptureResponse:
     signature = request.headers.get("X-Razorpay-Signature") or request.headers.get(
         "x-razorpay-signature", ""
     )
-    result = await iam_service.capture_razorpay_webhook(raw_body, signature)
+    # Service call drives signature verify + audit capture; the response is
+    # always 200 ``captured=True`` on success.  Any failure raises a typed
+    # ``MeesellError`` subclass which the §4.F handler translates into the
+    # 401 / 400 envelope.
+    await iam_service.capture_razorpay_webhook(raw_body, signature)
     return WebhookCaptureResponse(captured=True)
 
 

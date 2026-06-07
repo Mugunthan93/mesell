@@ -2,6 +2,7 @@
 // Routes: /signup, /login, /onboarding, /profile per §23 + §2.C.2
 
 import { Routes } from '@angular/router';
+import { ProfileApiService } from './profile/profile-api.service';
 
 export const ACCOUNT_ROUTES: Routes = [
   {
@@ -19,6 +20,7 @@ export const ACCOUNT_ROUTES: Routes = [
   {
     path: 'profile',
     loadComponent: () => import('./profile/profile.component').then(m => m.ProfileEditComponent),
+    providers: [ProfileApiService],
   },
   {
     path: '',

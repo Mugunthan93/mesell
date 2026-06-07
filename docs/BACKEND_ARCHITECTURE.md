@@ -470,7 +470,7 @@ The Module Catalog is the **ownership map** for specialists. When the founder di
 
 **Cross-module dependencies (service calls only, per §16):**
 - Calls `catalog.service.list_products(user_id, pagination)` for the primary listing.
-- Calls `customer.service.get_profile_completeness(user_id)` for onboarding-progress badges.
+- Calls `customer.service.get_onboarding_completeness(user_id)` for onboarding-progress badges.
 - (Optionally) calls `image.service.summary(product_ids)`, `pricing.service.summary(product_ids)`, `export.service.summary(product_ids)` for status-column hydration in the listing.
 
 **Adapters used:** none.
@@ -2775,7 +2775,7 @@ The 5 endpoint contracts below are normative. Request/response shapes reference 
 
 - **Request:** no body. Authorization: `Bearer <access_token>` per §4.B.
 - **Response 200:** `SellerProfileResponse` (full profile shape per §8.E).
-- **Response 404:** profile does not exist yet (first-time seller, expected state — frontend redirects to the onboarding wizard). Envelope `validation_message_id="customer.profile_not_found"`.
+- **Response 404:** profile does not exist yet (first-time seller, expected state — frontend redirects to the onboarding wizard). Envelope `validation_message_id="customer.profile.not_found"`.
 - **Rate limit:** per-IP fallback only (no per-user — frontend polls on every page load per §4.G).
 - **Status codes:** 200, 401, 404.
 - **Audit:** NONE (read-only — same posture as §7.B.5 `/me` for the same flood-prevention reason).
@@ -2792,12 +2792,12 @@ Covers the 9 Legal Metrology fields + `country_of_origin`.
 - **Status codes:** 200, 400 (`validation.{field}.invalid_format`), 401, 422 (Pydantic aggregate).
 - **Audit:** middleware emits `customer.profile.updated` carrying the **changed field NAMES only** (NOT values — values may include PII per `MVP_ARCH §11.9`; field names are safe).
 - **JWT required:** yes.
-- **Flow:** `customer.service.upsert_profile(user_id, patch)` → repository upserts the row → recomputes `profile_complete` flag → returns full profile.
+- **Flow:** `customer.service.upsert_profile(user_id, patch)` → repository upserts the row → recomputes `onboarding_complete` flag → returns full profile.
 
 #### 8.B.3 `PATCH /api/v1/seller-profile/active-categories` — declare/update active super-categories
 
 - **Request body (Pydantic):** `PatchActiveCategoriesRequest({active_super_categories: list[str]})`. **Replaces the array entirely** (NOT additive — declares the seller's current sell-in scope).
-- **Response 200:** `SellerProfileResponse` (updated profile with new `active_super_categories` + recomputed `profile_complete`).
+- **Response 200:** `SellerProfileResponse` (updated profile with new `active_super_categories` + recomputed `onboarding_complete`).
 - **Rate limit:** `@rate_limit(scope="active_categories", limit="60/h", key="user_id")`.
 - **Status codes:** 200, 401, 422 (`validation.super_category.unknown` — when any `super_id` in the array does not exist in the `categories.super_id` distinct set).
 - **Audit:** middleware emits `customer.active_categories.updated` with the new array (no PII concern — `super_id`s are reference data per `MVP_ARCH §11.9`).
@@ -2805,7 +2805,7 @@ Covers the 9 Legal Metrology fields + `country_of_origin`.
 - **Flow:** `customer.service.set_active_categories(user_id, super_ids)`:
   1. Validate each `super_id` exists in the `categories.super_id` distinct set (cached read via `core/cache.py` — global data per §4.D).
   2. Repository updates `active_super_categories TEXT[]`.
-  3. Recompute `profile_complete` (false if any newly declared `super_id` requires compliance extension keys that are not yet present in `compliance_extensions`).
+  3. Recompute `onboarding_complete` (false if any newly declared `super_id` requires compliance extension keys that are not yet present in `compliance_extensions`).
   4. Return updated profile.
 
 #### 8.B.4 `PATCH /api/v1/seller-profile/compliance/{super_id}` — set compliance extension for one declared super-category
@@ -2813,15 +2813,15 @@ Covers the 9 Legal Metrology fields + `country_of_origin`.
 - **Request body (Pydantic):** `PatchComplianceExtensionRequest` — `dict[str, Any]` shape; the super_id-specific required keys are validated by the service against `COMPLIANCE_EXTENSION_MAP` (§8.F). Example for `super_id=26` (Grocery): `{"fssai_license_number": "10012345678901", "fssai_expiry": "2027-12-31"}`.
 - **Response 200:** `SellerProfileResponse`.
 - **Rate limit:** `@rate_limit(scope="compliance_update", limit="60/h", key="user_id")`.
-- **Status codes:** 200, 401, 404 (`customer.super_category_not_declared` — `super_id` not in `active_super_categories`), 422 (`customer.compliance_missing_fields` — required keys absent; envelope payload lists which keys are missing).
+- **Status codes:** 200, 401, 404 (`customer.super_category.not_declared` — `super_id` not in `active_super_categories`), 422 (`customer.compliance.missing_fields` — required keys absent; envelope payload lists which keys are missing).
 - **Audit:** middleware emits `customer.compliance.updated` with `{super_id, updated_keys}` (NO values — license numbers are PII per `MVP_ARCH §11.9`).
 - **JWT required:** yes.
 - **Flow:** `customer.service.set_compliance_extension(user_id, super_id, payload)`:
   1. Read current profile.
-  2. Verify `super_id IN active_super_categories`. If not → 404 `customer.super_category_not_declared`.
+  2. Verify `super_id IN active_super_categories`. If not → 404 `customer.super_category.not_declared`.
   3. Validate `payload` against `COMPLIANCE_EXTENSION_MAP[super_id]` (required keys per `MVP_ARCH §2.2`).
   4. Repository updates `compliance_extensions` JSONB at the `{super_id}` key (JSONB merge — does NOT affect other super_ids' entries).
-  5. Recompute `profile_complete`.
+  5. Recompute `onboarding_complete`.
   6. Return updated profile.
 
 #### 8.B.5 `GET /api/v1/seller-profile/required-fields` — drives the frontend onboarding wizard
@@ -2851,13 +2851,13 @@ async def get_profile(user_id: UUID) -> SellerProfile:
     """Raises ProfileNotFoundError if no row exists. Consumed by catalog/export/dashboard cross-module."""
 
 async def upsert_profile(user_id: UUID, patch: PatchProfileRequest) -> SellerProfile:
-    """First PATCH creates row; subsequent PATCH updates. Recomputes profile_complete on every call."""
+    """First PATCH creates row; subsequent PATCH updates. Recomputes onboarding_complete on every call."""
 
 async def set_active_categories(user_id: UUID, super_ids: list[str]) -> SellerProfile:
-    """Replaces active_super_categories entirely; validates each super_id; recomputes profile_complete."""
+    """Replaces active_super_categories entirely; validates each super_id; recomputes onboarding_complete."""
 
 async def set_compliance_extension(user_id: UUID, super_id: str, payload: dict) -> SellerProfile:
-    """JSONB-merge update at the {super_id} key in compliance_extensions; recomputes profile_complete."""
+    """JSONB-merge update at the {super_id} key in compliance_extensions; recomputes onboarding_complete."""
 
 async def get_required_fields(user_id: UUID) -> RequiredFieldsResponse:
     """Drives onboarding wizard. Cached 60s per §4.D; invalidated on PATCH."""
@@ -2865,7 +2865,7 @@ async def get_required_fields(user_id: UUID) -> RequiredFieldsResponse:
 async def get_compliance_block(user_id: UUID) -> ComplianceBlock:
     """Cross-module call from export.service. Returns the 9 standard fields + country_of_origin."""
 
-async def get_profile_completeness(user_id: UUID) -> ProfileCompleteness:
+async def get_onboarding_completeness(user_id: UUID) -> ProfileCompleteness:
     """Cross-module call from dashboard.service. Returns counts + completeness flag."""
 
 async def assert_eligible_for_super_id(user_id: UUID, super_id: str) -> None:
@@ -2909,7 +2909,7 @@ class SellerProfileResponse(BaseModel):
     # Conditional compliance, JSONB shape per MVP_ARCH §2.2
     compliance_extensions: dict[str, dict]  # {super_id: {key: value, ...}}
     # Bookkeeping
-    profile_complete: bool
+    onboarding_complete: bool
     created_at: datetime
     updated_at: datetime
 
@@ -2931,7 +2931,7 @@ class PatchActiveCategoriesRequest(BaseModel):
 
 class PatchComplianceExtensionRequest(BaseModel):
     # super_id-specific; service-layer validation against COMPLIANCE_EXTENSION_MAP.
-    # Pydantic schema accepts any dict; service rejects malformed payloads with 422 customer.compliance_missing_fields.
+    # Pydantic schema accepts any dict; service rejects malformed payloads with 422 customer.compliance.missing_fields.
     model_config = ConfigDict(extra="allow")
 
 class RequiredFieldsResponse(BaseModel):
@@ -2975,7 +2975,7 @@ class SellerProfile:
     country_of_origin: str
     active_super_categories: list[str]
     compliance_extensions: dict[str, dict]
-    profile_complete: bool
+    onboarding_complete: bool
     created_at: datetime
     updated_at: datetime
 
@@ -3000,7 +3000,7 @@ class ProfileCompleteness:
     base_total_count: int          # always 10 (9 LM fields + country_of_origin)
     extension_complete_count: int
     extension_total_count: int     # depends on active_super_categories
-    profile_complete: bool         # mirrors the seller_profile.profile_complete flag
+    onboarding_complete: bool         # mirrors the seller_profile.onboarding_complete flag
 
 @dataclass(frozen=True)
 class ComplianceExtensionSpec:
@@ -3013,7 +3013,7 @@ class ComplianceExtensionSpec:
                       # others are conditional per MVP_ARCH §0 premise #7
 ```
 
-The `COMPLIANCE_EXTENSION_MAP: dict[str, ComplianceExtensionSpec]` constant is locked to the **6 entries** per `MVP_ARCH §2.2`:
+The `COMPLIANCE_EXTENSION_MAP: dict[str, ComplianceExtensionSpec]` constant is locked to **6 source rules covering 11 super_id keys** per `MVP_ARCH §2.2` (Beauty's 6 super_ids each map to the same shared `ComplianceExtensionSpec` instance for O(1) lookup by `super_id`; the 5 single-super rules map 1:1):
 
 - `"26"` Grocery — required `[fssai_license_number]` + optional `[fssai_expiry]`, **compulsory=True**.
 - `"13"` Kids — optional `[bis_isi_certification_number]`, compulsory=False.
@@ -3032,7 +3032,7 @@ class CustomerError(MeesellError):
 
 class ProfileNotFoundError(CustomerError):
     status_code = 404
-    validation_message_id = "customer.profile_not_found"
+    validation_message_id = "customer.profile.not_found"
 
 class InvalidPincodeError(CustomerError):
     status_code = 422
@@ -3044,15 +3044,15 @@ class InvalidSuperCategoryError(CustomerError):
 
 class SuperCategoryNotDeclaredError(CustomerError):
     status_code = 404
-    validation_message_id = "customer.super_category_not_declared"
+    validation_message_id = "customer.super_category.not_declared"
 
 class ComplianceExtensionMissingFieldsError(CustomerError):
     status_code = 422
-    validation_message_id = "customer.compliance_missing_fields"
+    validation_message_id = "customer.compliance.missing_fields"
 
 class ProfileIncompleteForCategoryError(CustomerError):
     status_code = 422
-    validation_message_id = "customer.profile_incomplete_for_category"
+    validation_message_id = "customer.profile.incomplete_for_category"
     # Raised by customer.service.assert_eligible_for_super_id when catalog tries to
     # create a product in a category whose super_id requires a compliance extension
     # the seller has not yet provided.
@@ -3069,7 +3069,7 @@ class ProfileIncompleteForCategoryError(CustomerError):
 - **Plan guard (§4.E):** **NOT participating** in V1 — `customer` endpoints are profile-management, not feature-budget-consuming. The §4.E 4-resource `Literal` (`product_count`, `ai_autofill`, `smart_picker`, `create_product`) does not include profile updates.
 - **Tenancy (§4.C):** YES — `seller_profile.user_id` is the PK; every repository query passes through `scope_to_user(user_id)` per the §4.C locked rule for owned tables.
 - **Cache helper (§4.D):** the `/required-fields` response is cache-eligible per §8.B.5 — key `seller_profile_required_fields:{user_id}:v{cache_version}` TTL 60s, invalidated on any profile PATCH. The `categories.super_id` distinct set lookup (used by `set_active_categories` validation) is also cache-eligible per §4.D (global reference data).
-- **i18n (§5A.I):** the 6 customer-specific `validation_message_id`s (`customer.profile_not_found`, `validation.pincode.invalid_format`, `validation.super_category.unknown`, `customer.super_category_not_declared`, `customer.compliance_missing_fields`, `customer.profile_incomplete_for_category`) land in `i18n/messages_en.py` during the services-builder construction dispatch.
+- **i18n (§5A.I):** the 6 customer-specific `validation_message_id`s (`customer.profile.not_found`, `validation.pincode.invalid_format`, `validation.super_category.unknown`, `customer.super_category.not_declared`, `customer.compliance.missing_fields`, `customer.profile.incomplete_for_category`) land in `i18n/messages_en.py` during the services-builder construction dispatch.
 
 ### 8.J Test plan
 
@@ -3078,13 +3078,13 @@ Locked test classes for §19 consolidation. Pytest fixtures use a real Postgres 
 **Unit tests (`backend/tests/modules/customer/`):**
 1. **Profile upsert idempotency** — first PATCH creates the row, subsequent PATCH updates the same row, returns the same `user_id`.
 2. **Pincode regex enforcement** — invalid pincodes (5 digits, 7 digits, alphanumeric) → 422 with `validation_message_id="validation.pincode.invalid_format"`.
-3. **Compliance extension validation per super_id** — Grocery (`super_id=26`) requires `fssai_license_number`; missing → 422 `customer.compliance_missing_fields` with envelope payload listing the missing keys.
-4. **`profile_complete` flag recomputation** — true iff all 10 base fields are present AND all `active_super_categories`' compulsory extension keys are present; recomputed on every PATCH (B.2 / B.3 / B.4).
+3. **Compliance extension validation per super_id** — Grocery (`super_id=26`) requires `fssai_license_number`; missing → 422 `customer.compliance.missing_fields` with envelope payload listing the missing keys.
+4. **`onboarding_complete` flag recomputation** — true iff all 10 base fields are present AND all `active_super_categories`' compulsory extension keys are present; recomputed on every PATCH (B.2 / B.3 / B.4).
 5. **Eye-Serum case** — `customer` stores ONLY the 9 standard fields regardless of the seller's active categories (the `compliance_shape="collapsed"` lookup is `export`'s concern per §5A.F + `§12.6`).
 
 **Integration tests (`backend/tests/integration/test_customer_*.py`):**
-1. **Full onboarding flow** — sign up via §7 OTP-verify → first PATCH base profile → first PATCH active-categories `["26"]` (Grocery) → first PATCH compliance/26 → `/required-fields` shows `profile_complete=true`.
-2. **Cross-module call** — `catalog.service.create_product` calls `customer.service.assert_eligible_for_super_id(user_id, super_id)`; on a profile lacking the required extension → 422 `customer.profile_incomplete_for_category` (the §10 `PROFILE_INCOMPLETE_FOR_CATEGORY` gate per `MVP_ARCH §3.3`).
+1. **Full onboarding flow** — sign up via §7 OTP-verify → first PATCH base profile → first PATCH active-categories `["26"]` (Grocery) → first PATCH compliance/26 → `/required-fields` shows `onboarding_complete=true`.
+2. **Cross-module call** — `catalog.service.create_product` calls `customer.service.assert_eligible_for_super_id(user_id, super_id)`; on a profile lacking the required extension → 422 `customer.profile.incomplete_for_category` (the §10 `PROFILE_INCOMPLETE_FOR_CATEGORY` gate per `MVP_ARCH §3.3`).
 
 ### 8.K Extraction notes (V1.5+)
 
@@ -3512,13 +3512,13 @@ The 6 endpoint contracts below are normative. Request/response shapes reference 
 - **Response 201** (Pydantic, §10.E): `ProductResponse` — full product shape including the new `product_id`, the resolved `catalog_id`, `category_id`, an empty `fields_jsonb={}`, an empty `ai_suggestions_jsonb={}`, `status="draft"`, and timestamps.
 - **Rate limit:** `@rate_limit(scope="create_product", limit="20/h", key="user_id")` per §4.E (`create_product_hourly`). Per-IP fallback per §4.G.
 - **Plan guard:** `core.plan_guard.enforce_plan_limit(user_id, plan, resource="product_count", delta=1)` per §4.E — V1 hard cap **100 active products per user** (active = `deleted_at IS NULL`); raises `plan.limit_exceeded` mapped to 402. Note: the rate-limit decorator (`create_product_hourly=20/h`) and the plan-guard check (`product_count=100`) are **orthogonal** — RL caps creation velocity, plan guard caps cumulative inventory. Both must pass.
-- **Status codes:** 201, 400 (`validation.*` for malformed UUIDs / over-long name), 401 (`auth.token_*`), 402 (`plan.limit_exceeded` from plan_guard or `rate_limit.exceeded` from rate_limit_mw), 404 (`catalog.catalog_not_found` when `catalog_id` non-null and not owned, OR `category.not_found` from the cross-module assert), 422 (`customer.profile_incomplete_for_category` — see flow step 3 below).
+- **Status codes:** 201, 400 (`validation.*` for malformed UUIDs / over-long name), 401 (`auth.token_*`), 402 (`plan.limit_exceeded` from plan_guard or `rate_limit.exceeded` from rate_limit_mw), 404 (`catalog.catalog_not_found` when `catalog_id` non-null and not owned, OR `category.not_found` from the cross-module assert), 422 (`customer.profile.incomplete_for_category` — see flow step 3 below).
 - **Audit posture:** `audit_mw` emits `catalog.product.created` event on 2xx per §4.G + `MVP_ARCH §11.3`. `actor_user_id` from `request.state.user`, `payload_jsonb = {product_id, catalog_id, category_id}` — no name, no field content (PII per `MVP_ARCH §11.9`).
 - **JWT required:** yes (`Depends(get_current_user)` per §4.B).
 - **Flow** (service-layer, locked sequence):
   1. `core.plan_guard.enforce_plan_limit(user_id, plan, "product_count", delta=1)` — fails fast with 402 BEFORE any DB write; uses `repository.count_active_products(user_id)` per §10.D.
   2. `category.service.assert_category_exists(category_id)` per §9.C cross-module surface — raises `category.not_found` mapped to 404 if not in the global category tree.
-  3. Get `super_id` from the category row; call `customer.service.assert_eligible_for_super_id(user_id, super_id)` per §8.C — raises `customer.profile_incomplete_for_category` mapped to 422 if the seller has not completed the compliance extension for that super_id (e.g., trying to create a Beauty product without the license trio).
+  3. Get `super_id` from the category row; call `customer.service.assert_eligible_for_super_id(user_id, super_id)` per §8.C — raises `customer.profile.incomplete_for_category` mapped to 422 if the seller has not completed the compliance extension for that super_id (e.g., trying to create a Beauty product without the license trio).
   4. If `catalog_id` is `None`: `repository.create_catalog(user_id, name=default_name)` returns a new `Catalog` row; otherwise `repository.find_catalog_by_id(user_id, catalog_id)` — 404 if not owned.
   5. `repository.insert_product(user_id, catalog_id, category_id, name)` — inserts a row with `status="draft"`, `fields_jsonb={}`, `ai_suggestions_jsonb={}`, `deleted_at=NULL`.
   6. `await db.commit()` per the §4.G commit-then-audit invariant (M8); audit_mw emits the `catalog.product.created` event post-2xx.
@@ -4816,7 +4816,7 @@ STATUS: LOCKED (2026-06-05)
 
 §13 specifies the `dashboard` module — the seller's tracking view for Feature 8 (Tracking Dashboard) per `docs/V1_FEATURE_SPEC.md` Feature 8. **Owner specialists:** `meesell-api-routes-builder` (route handler + Pydantic schemas) + `meesell-services-builder` (read-aggregation composition logic) per §2.7. **NO AI track collaboration** — pure read aggregation with no Gemini call, no `ai_ops` invocation, no prompt-engineer participation. **Leaf module on the cross-module call graph** per §2.D: dashboard → customer ✓, dashboard → catalog ✓; every other cell is `✗` per the founder ruling that kept the matrix at exactly 8 ✓ (no elevation in V1 to image / pricing / export `summary()` opt-ins).
 
-`dashboard` is **the purest demonstration of the modular monolith discipline** described in §2.7's preamble. It owns ZERO tables (the only domain module besides `core/` — and `core/` is not a domain module — with no DDL footprint at all per `MVP_ARCH §2`). It has NO `repository.py` file in its subtree (a structural deviation from the §3.C canonical per-module 7-file layout, locked here explicitly so the absence reads as intentional design — not omission). It reads NOTHING directly — every data access flows through `catalog.service.list_products(...)` and `customer.service.get_profile_completeness(...)` per §10.C + §8.C, which themselves own the `scope_to_user(user_id)` enforcement at their respective repository layers per §4.C. Dashboard's role is purely **composing** pre-scoped, pre-validated, pre-shaped results from the two consumed services into a single wire-shaped `DashboardResponse`.
+`dashboard` is **the purest demonstration of the modular monolith discipline** described in §2.7's preamble. It owns ZERO tables (the only domain module besides `core/` — and `core/` is not a domain module — with no DDL footprint at all per `MVP_ARCH §2`). It has NO `repository.py` file in its subtree (a structural deviation from the §3.C canonical per-module 7-file layout, locked here explicitly so the absence reads as intentional design — not omission). It reads NOTHING directly — every data access flows through `catalog.service.list_products(...)` and `customer.service.get_onboarding_completeness(...)` per §10.C + §8.C, which themselves own the `scope_to_user(user_id)` enforcement at their respective repository layers per §4.C. Dashboard's role is purely **composing** pre-scoped, pre-validated, pre-shaped results from the two consumed services into a single wire-shaped `DashboardResponse`.
 
 When V1.5 extraction lands per §21, dashboard becomes its own **BFF (backend-for-frontend) pod** with **zero data-layer migration** — every cross-module Python call simply swaps in-process invocation for HTTP. There are no Alembic migrations to detach, no foreign-key cascade to redirect, no row-level locks to coordinate. The extraction reduces to: change `from app.modules.catalog.service import list_products` to `httpx.AsyncClient().get(CATALOG_SVC_URL + "/products?...")`, plus a service-discovery config change. This is why dashboard (alongside `export` per §2.8) is one of the **easiest V1.5 extractions** in the codebase, in contrast to `catalog` which is the hardest per §10.K.
 
@@ -4855,12 +4855,12 @@ The module surfaces **1 endpoint** in the locked §0.C 27-endpoint contract.
     "total": 42,
     "page": 1,
     "limit": 20,
-    "profile_completeness": {
+    "onboarding_completeness": {
         "base_complete_count": 8,
         "base_total_count": 10,
         "extension_complete_count": 2,
         "extension_total_count": 3,
-        "profile_complete": false
+        "onboarding_complete": false
     }
 }
 ```
@@ -4885,7 +4885,7 @@ The module surfaces **1 endpoint** in the locked §0.C 27-endpoint contract.
 
 1. **Pydantic validation** — query parameters are validated against `DashboardQuery`. Out-of-bound values raise `InvalidPaginationError` per §13.G → 400 with `validation.dashboard.invalid_pagination`.
 2. **Service call to catalog** — `await catalog.service.list_products(user_id, Pagination(page, limit, status_filter, search))` per §10.C. Returns a `PaginatedProducts({products: list[Product], total: int, page: int, limit: int})` domain object where each `Product` carries `{product_id, name, category_id, status, created_at, updated_at}` per the catalog domain shape locked in §10.F. **`scope_to_user(user_id)` is enforced at catalog's repository layer per §10.D** — dashboard never sees a raw SQL query; the tenancy contract is upstream.
-3. **Service call to customer** — `await customer.service.get_profile_completeness(user_id)` per §8.C. Returns a `ProfileCompleteness({base_complete_count, base_total_count, extension_complete_count, extension_total_count, profile_complete})` domain object per the customer domain shape locked in §8.F. **`scope_to_user(user_id)` is enforced at customer's repository layer per §8.D** — same posture as the catalog call.
+3. **Service call to customer** — `await customer.service.get_onboarding_completeness(user_id)` per §8.C. Returns a `ProfileCompleteness({base_complete_count, base_total_count, extension_complete_count, extension_total_count, onboarding_complete})` domain object per the customer domain shape locked in §8.F. **`scope_to_user(user_id)` is enforced at customer's repository layer per §8.D** — same posture as the catalog call.
 4. **Compose response** — `_compose_response(paginated, completeness)` (pure function per §13.C) builds the `DashboardResponse` Pydantic model. V1 does NOT call `image.service.summary(...)` per §11.C OPTIONAL surface, does NOT call `pricing.service.summary(...)` per §12.C OPTIONAL surface, does NOT call `export.service.summary(...)` per §14 forthcoming OPTIONAL surface. Per-product status badges in V1 are inferred from `product.status` field only (one of `draft` / `ready` / `exported`); richer derived badges (e.g., "watermark detected" / "low margin") wait for V1.5 matrix elevation.
 5. **Return 200** with the composed `DashboardResponse`.
 
@@ -4900,7 +4900,7 @@ async def list_products_for_dashboard(
 ) -> DashboardResponse:
     """
     Compose the dashboard view by aggregating catalog.list_products
-    and customer.get_profile_completeness for the requesting seller.
+    and customer.get_onboarding_completeness for the requesting seller.
     Owns no data access; pure delegation + composition.
     """
 ```
@@ -4979,7 +4979,7 @@ class ProfileCompletenessSummary(BaseModel):
     base_total_count: int  # always 10 per §8.F ProfileCompleteness
     extension_complete_count: int
     extension_total_count: int
-    profile_complete: bool
+    onboarding_complete: bool
 
 
 class DashboardResponse(BaseModel):
@@ -4988,7 +4988,7 @@ class DashboardResponse(BaseModel):
     total: int
     page: int
     limit: int
-    profile_completeness: ProfileCompletenessSummary
+    onboarding_completeness: ProfileCompletenessSummary
 ```
 
 `base_total_count` is documented as always `10` (the 10 base seller-profile fields per §8.F + `MVP_ARCH §3.2`); the field is sent over the wire anyway so the frontend can render `8 of 10` without re-hardcoding the denominator. `extension_total_count` varies by the seller's `active_super_categories` per §8.B `COMPLIANCE_EXTENSION_MAP`.
@@ -5042,7 +5042,7 @@ Just one concrete exception class. Most failures the dashboard endpoint can surf
 
 - **401 Unauthorized** — raised by `auth_mw` per §4.B before the handler runs; never reaches dashboard code.
 - **404 Not Found (product-level)** — not applicable; dashboard returns a list, and an empty list is a valid 200 (NOT 404 — empty seller inventory is a real state).
-- **500 Internal Server Error** — raised generically by the §4.F handler if `catalog.service.list_products` or `customer.service.get_profile_completeness` throws an unexpected exception; the underlying module's error code surfaces in the response body.
+- **500 Internal Server Error** — raised generically by the §4.F handler if `catalog.service.list_products` or `customer.service.get_onboarding_completeness` throws an unexpected exception; the underlying module's error code surfaces in the response body.
 
 The Pydantic `DashboardQuery` validator catches `page < 1` / `limit > 100` / invalid `status_filter` Literal / `search` length BEFORE handler execution, and the §4.F handler chain renders the resulting `ValidationError` as 400 with `validation.dashboard.invalid_pagination` per §5A.D convention.
 
@@ -5057,7 +5057,7 @@ Dashboard does not import from `app.adapters.*`. Per the §1.E egress map, the d
 - **Rate-limit decorators (§4.E):** per-IP fallback only via `@rate_limit(scope="dashboard_list", limit=..., key="ip")`. No per-user limit configured — dashboard is polled on every page load and refresh button, and a per-user limit would create UX friction for legitimate sellers.
 - **Plan guard (§4.E):** NOT participating in V1. Dashboard is one of the 3 modules excluded from plan_guard alongside `customer` (§8) and `pricing` (§12). There is no plan-gated resource consumed by listing products.
 - **Audit middleware (§4.G + §11.9):** NONE. Read-only endpoint posture per the §9 category-endpoints model. The `audit_mw` skips writes on `GET` requests by default; dashboard inherits that default without override.
-- **Tenancy (§4.C):** NOT participating at the repository level (no repository exists). The consumed service methods `catalog.service.list_products` and `customer.service.get_profile_completeness` each enforce `scope_to_user(user_id)` at their own repository layer per §10.D + §8.D. Dashboard's role is composing pre-scoped results; it never sees a raw query and never asserts tenancy itself.
+- **Tenancy (§4.C):** NOT participating at the repository level (no repository exists). The consumed service methods `catalog.service.list_products` and `customer.service.get_onboarding_completeness` each enforce `scope_to_user(user_id)` at their own repository layer per §10.D + §8.D. Dashboard's role is composing pre-scoped results; it never sees a raw query and never asserts tenancy itself.
 - **Cache helper (§4.D):** NOT participating. Per-user data with high write churn (every PATCH on products invalidates the listing); the hit rate would be too low to justify the cache-key plumbing. V1.5 may revisit if seller dashboards hit a poll-rate that the per-IP rate limit doesn't absorb.
 - **AI Ops (§6A):** NONE.
 - **i18n (§5A.D):** 1 dashboard-specific `validation_message_id` lands in `backend/app/i18n/messages_en.py` during the `services-builder` dispatch — `validation.dashboard.invalid_pagination`. The English string content is owned by the specialist; coordinator owns only the ID.
@@ -5078,13 +5078,13 @@ Per §19, the dashboard module's test surface is the lightest in the codebase: 3
 
 2. **`test_response_composition`** — verifies `_compose_response` is correct in isolation:
    - Mocked `catalog.list_products` returns 3 products + `total=42` (3 of 42 page).
-   - Mocked `customer.get_profile_completeness` returns specific counts.
-   - Verify `DashboardResponse.products` has 3 items, `total=42`, `page` and `limit` echo the request, and `profile_completeness` mirrors the mocked completeness shape.
+   - Mocked `customer.get_onboarding_completeness` returns specific counts.
+   - Verify `DashboardResponse.products` has 3 items, `total=42`, `page` and `limit` echo the request, and `onboarding_completeness` mirrors the mocked completeness shape.
 
 3. **`test_empty_state_response`** — boundary case for first-time sellers:
    - Mocked `catalog.list_products` returns empty list + `total=0`.
    - Dashboard returns 200 with `products=[]` and `total=0` (NOT 404 — empty inventory is a valid state).
-   - `profile_completeness` still surfaces (the seller still has a profile even with zero products).
+   - `onboarding_completeness` still surfaces (the seller still has a profile even with zero products).
 
 **Integration tests** (`backend/tests/integration/test_dashboard_*.py`):
 
@@ -5092,7 +5092,7 @@ Per §19, the dashboard module's test surface is the lightest in the codebase: 3
    - Seller signs up via §7 (`POST /otp/send` + `POST /otp/verify`) → JWT.
    - Seller creates 5 products via §10 (`POST /products` × 5).
    - Seller calls `GET /api/v1/products?page=1&limit=20` with JWT.
-   - Response: 200, `products` length 5, `total=5`, `profile_completeness` reflecting the seller's onboarding state.
+   - Response: 200, `products` length 5, `total=5`, `onboarding_completeness` reflecting the seller's onboarding state.
 
 2. **`test_dashboard_cross_tenant_isolation`** — the tenancy contract verified end-to-end through dashboard:
    - User A has 3 products, User B has 2 products (both created via §10 paths).
@@ -6003,7 +6003,7 @@ Per-module participation cross-references the cross-cutting bullets locked in ea
 | dashboard (§13) | none (no repository file per §13.D) | N/A — consumed services enforce per §13.I | N/A | — |
 | export (§14) | `exports` | yes via `scope_to_user` per §14.D | consumes catalog's gate via `get_product_for_export` per §14.C | yes GCS path `meesell-exports/{user_id}/{export_id}.zip` per §6.D + §14.E |
 
-**V1.5 RLS migration (deferred per `MVP_ARCH §9` + §14).** PostgreSQL Row-Level Security predicates will replace app-level `scope_to_user`; the cross-module service surfaces (`assert_product_ownership`, `get_compliance_block`, `get_profile_completeness`, `list_products`) become extracted-pod HTTP boundaries per §21 extraction path. The 3-layer defense survives extraction unchanged — Layer 1 moves into Postgres (RLS predicate), Layer 2 moves into per-pod HTTP gate, Layer 3 stays as GCS path convention.
+**V1.5 RLS migration (deferred per `MVP_ARCH §9` + §14).** PostgreSQL Row-Level Security predicates will replace app-level `scope_to_user`; the cross-module service surfaces (`assert_product_ownership`, `get_compliance_block`, `get_onboarding_completeness`, `list_products`) become extracted-pod HTTP boundaries per §21 extraction path. The 3-layer defense survives extraction unchanged — Layer 1 moves into Postgres (RLS predicate), Layer 2 moves into per-pod HTTP gate, Layer 3 stays as GCS path convention.
 
 ---
 
@@ -6337,7 +6337,7 @@ The §2.D matrix locks **exactly 8 ✓ cells** of cross-module dependency. Each 
 | 4 | `pricing` | `catalog` | `catalog.service.assert_product_ownership(product_id, user_id)` | Tenancy gate before price-calc-row write (same 3-layer defense) | §10.C + §12.B.1 |
 | 5 | `pricing` | `category` | `category.service.get_commission(category_id)` | Commission % lookup for the P&L formula (§12.E `compute_pnl_breakdown`) | §9.C + §12.B.1 |
 | 6 | `dashboard` | `catalog` | `catalog.service.list_products(user_id, pagination)` | Paginated product listing for Feature 8 (`GET /api/v1/products`) | §10.C + §13.B.1 |
-| 7 | `dashboard` | `customer` | `customer.service.get_profile_completeness(user_id)` | Onboarding-progress badge on the dashboard response envelope | §8.C + §13.B.1 |
+| 7 | `dashboard` | `customer` | `customer.service.get_onboarding_completeness(user_id)` | Onboarding-progress badge on the dashboard response envelope | §8.C + §13.B.1 |
 | 8 | `export` | (4 callees — see §16.B.1 below) | — | Heaviest cross-module consumer; counted as 4 distinct ✓ cells in the §2.D matrix | §14.C |
 
 **§16.B.1 Export's 4 calls (the 8th matrix row, expanded).** Export consumes 4 distinct service surfaces — counted as 4 ✓ cells in the §2.D matrix but listed as a single matrix row for readability:
@@ -6607,7 +6607,7 @@ The §3.C 7-file canonical subtree and the §15.B "every owned-table query has u
 **Exception 1: `dashboard` has NO `repository.py`** (locked at §13.D).
 - The §3.C 7-file canonical subtree is INTENTIONALLY violated by `dashboard`.
 - `modules/dashboard/` has 5 files: `router.py`, `service.py`, `schemas.py`, `domain.py`, `exceptions.py`. NO `repository.py`, NO `tasks.py`.
-- All data flows through `catalog.list_products(user_id, pagination)` + `customer.get_profile_completeness(user_id)` per §15.B 3-layer defense — `dashboard` is a pure composition layer.
+- All data flows through `catalog.list_products(user_id, pagination)` + `customer.get_onboarding_completeness(user_id)` per §15.B 3-layer defense — `dashboard` is a pure composition layer.
 - §13.D documents this as "the purest demonstration of modular monolith discipline" — `dashboard` owns ZERO tables.
 - **CI linter impact:** §19 must allowlist `dashboard` as "no repository expected" — the `repository.py is PRIVATE` rule (§16.E contract 1) does not list `app.modules.dashboard.repository` because the file does not exist.
 - **V1.5/V2 extension:** If dashboard ever needs its own table (e.g. a precomputed materialized view), §13 amendment must introduce the repository — which would simultaneously retire the "purest modular monolith demo" claim.
@@ -7775,7 +7775,7 @@ A reviewer evaluating §22 asks: "does every V1_FEATURE_SPEC feature have a back
 
 **Feature 8 — Dashboard (§13).**
 - ✓ `GET /api/v1/products` paginated listing per §13.B.1.
-- ✓ `profile_completeness` badge composed from `customer.service.get_profile_completeness(user_id)` per §16.B.
+- ✓ `onboarding_completeness` badge composed from `customer.service.get_onboarding_completeness(user_id)` per §16.B.
 - ✓ NO repository file in `modules/dashboard/` per §13.D (the §16.F structural exception preserved).
 - ✓ P95 ≤ 200 ms per §19.E.
 

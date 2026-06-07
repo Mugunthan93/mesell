@@ -1459,22 +1459,45 @@ If unsure: start in the feature folder. Promote to `shared/enums/` or `core/mode
 
 ## Section 5A — `design-system/` — Tokens, Theming, Typography, Spacing
 
-STATUS: PARTIAL LOCK — FRAMEWORK LOCKED, VALUES PENDING (2026-06-05, founder ruling FE-D9)
+STATUS: FULL LOCK (2026-06-06 — integration AMENDMENT 2026-06-06B per design system sub-session deliverables per FE-D10 + FE-D11)
 
-**FRAMEWORK LOCKED:** the token taxonomy (semantic color naming `--mee-color-primary` / `--mee-color-secondary` / etc., type scale rung positions, spacing grid arithmetic, 4-level elevation, 3-tier motion system, mobile-first 360px baseline, M3 → Tailwind theming flow, dark mode media-query structure, WCAG 2.2 AA contrast contract).
+**AMENDMENT 2026-06-06B — Design system values integrated 2026-06-06:**
+Values landed in `frontend/src/app/design-system/` per `DESIGN_SYSTEM_ARCHITECTURE.md §2.A`. `ng build --configuration=production` succeeds with zero errors using the new tokens. Bundle stays within §19 budget. §5A framework remains LOCKED unchanged (no token taxonomy / scale rung / breakpoint shifts). The values portion of §5A is now AUTHORITATIVE per the design system sub-session output.
 
-**VALUES PENDING external visual designer (FE-D9, 2026-06-05):** all hex codes, font family choices, exact px values per rung, and component visual language (card corners, button states, form treatment, iconography style, empty-state illustration, microcopy tone) are coordinator-authored PLACEHOLDERS, NOT founder-ratified visual decisions. The founder will engage an external visual/brand designer (e.g., via 99designs / Behance / Dribbble) to produce:
-  - Primary + secondary + semantic color palette with rationale
-  - Typography choice (typeface + weights + sizes per rung)
-  - 1-2 reference hi-fi mockups (landing + dashboard, at minimum) demonstrating the visual language
-  - Iconography set selection (Material Symbols variant: outlined / filled / rounded / sharp)
-  - Loading state treatment (skeleton vs spinner)
-  - Empty state illustration approach
-  - Tone of voice for microcopy
+**Locked value highlights (consumed via CSS custom properties):**
+- **Primary brand**: `#F26B23` saffron-leaning warm orange (preserved from placeholder)
+- **Secondary**: `#1E40AF` deep blue (preserved from placeholder)
+- **Background**: `#f0f5f9` soft cool-gray (changed from `#FFFFFF` placeholder — softer canvas per Spike Angular alignment)
+- **Surface**: `#ffffff`; on-surface `#2a3547`
+- **Typography**: **Plus Jakarta Sans** (Google Fonts; weights 300-800) — deviation from Inter placeholder; better x-height for 360px mobile; Indic-script fallbacks (Noto Sans Tamil + Noto Sans Devanagari) preserved for V1.5
+- **Border radius**: 7/16/18/full (added beyond original §5A scope — soft rounded feel)
+- **Reduced-motion**: respected via `prefers-reduced-motion` media query (durations zeroed)
+- **Iconography (interim ratification)**: Material Symbols **Outlined** variant as V1 default until `docs/design-system/ICONOGRAPHY.md` authors final ratification
 
-Once the designer's output exists, the values portion of §5A is updated from those artefacts on a dedicated founder-review turn. Until then, the placeholders below are NON-AUTHORITATIVE — `meesell-angular-ui-styler` dispatch is BLOCKED on designer ratification.
+**Spike Angular alignment (NEW visual reference):**
+The design system sub-session adopted Spike Angular's light-theme as the reference template. Substantial component-level visual language pre-baked via `_component-overrides.scss` (20 KB) covering 15 Material components: badge / button / card / chip / dialog / expansion / icon-button / menu / option / select / snackbar / stepper / tab / textfield / toolbar. Component-builder dispatches across feature sub-sessions inherit this language — they do NOT reinvent component visuals.
 
-The placeholders are kept inline (rather than blanked) so the framework remains illustrative and so specialists scaffolding stubs have something to reference. Future readers should treat the hex values and font family below as "coordinator best-guess" not "founder-locked".
+**Deferred deliverables (4 of 13 from DESIGN_SYSTEM_ARCH §2.A — non-blocking for module-wise UI work):**
+
+| Deliverable | Why deferred | Workaround until landed | Owner |
+|---|---|---|---|
+| `_tokens.spec.ts` (WCAG contrast verification) | CI gate gap; not blocking dev | Manual verification per dispatch | design system sub-session |
+| `docs/design-system/RATIONALE.md` | Documentation gap | Spike alignment + Plus Jakarta Sans rationale captured in this amendment | design system sub-session |
+| `docs/design-system/MICROCOPY_TONE.md` | Tone-consistency gap | Each feature sub-session uses Tirupur-seller voice (5th-grade English, action verbs, no jargon) until landed | design system sub-session |
+| `docs/design-system/ICONOGRAPHY.md` | Variant decision gap | Material Symbols Outlined as interim default per this amendment | design system sub-session |
+
+**Implications for consumer sessions (feature sub-sessions):**
+1. **CSS custom properties are LIVE** — components use `var(--mee-color-primary)`, `var(--mee-text-base)`, etc. Direct hex values forbidden.
+2. **Tailwind utility classes work** — `bg-primary`, `text-on-surface`, `p-4`, `text-lg` consume the tokens correctly.
+3. **Material directives work** — `color="primary"` resolves to `#F26B23`; M3 theme is wired.
+4. **Component overrides apply automatically** — feature components rendering Material primitives inherit Spike Angular visual language with zero feature-side config.
+5. **No re-styling pass needed** — components built against the locked tokens land in their final visual form (subject to per-feature mockup review).
+
+---
+
+**Historical context (pre-2026-06-06B amendment) — preserved for chain-of-custody:**
+
+Per founder ruling FE-D9 (2026-06-05), values were PLACEHOLDER pending external designer engagement. Per founder ruling FE-D10 (2026-06-05), FE-D9 was superseded by AI-assisted production via `meesell-angular-ui-styler` (Opus tier). Per founder ruling FE-D11 (2026-06-05), design system work moved to a dedicated sub-session. Per 2026-06-06A grouping ratification, design system sub-session bootstrapped + Phase 1 Round 1 curation completed + multi-turn iteration ratified per `DESIGN_SYSTEM_ARCHITECTURE.md §5`. This AMENDMENT 2026-06-06B records the integration outcome.
 
 ### A. What §5A establishes
 

@@ -152,15 +152,104 @@ def etag_for(payload: bytes) -> str:
 async def prewarm_top_categories(n: int = 100) -> None:
     """Pre-warm the hot category cache on FastAPI startup.
 
-    V1 STUB — actual warming logic lives in §9's ``category`` module,
-    which owns the seed-list of top categories + the schema fetch fn.
-    Today this just logs intent so boot-time confirmation is greppable.
+    Per ``MVP_ARCH §6.7`` hot-tier strategy:
+
+    1. Warm the full ``category_tree`` GLOBAL key (TTL 1 h).
+    2. Warm ``schema:{category_id}`` for the top ``n`` categories.
+
+    The §9 ``category.service`` module is the truth source for both
+    payload shapes; this function lazy-imports it to avoid a top-level
+    circular import (``core/`` is below ``modules/`` in the §3 layering).
+
+    Ranking strategy (V1):
+        We have no traffic stats yet, so "top" is taken as the first
+        ``n`` categories sorted by (super_id, leaf_name) — the same
+        canonical ordering the repository's ``fetch_category_tree``
+        returns.  Replaced with a traffic-driven ranking in V1.5 once
+        the dashboard analytics surface lands per ``MVP_ARCH §13``.
+
+    Failure mode:
+        Each warm step is wrapped in try/except so a missing DB
+        connection / Valkey blip at startup does NOT block boot.  The
+        caller in :func:`app.main.lifespan` also wraps this whole call
+        in try/except for defense-in-depth.
 
     Args:
-        n: Number of categories to warm (default 100 per MVP_ARCH §6.7
-            hot-tier strategy).  Forwarded to §9 once it lands.
+        n: Number of categories whose schemas to warm.  Default 100 per
+            ``MVP_ARCH §6.7``.
     """
-    logger.info("prewarm_top_categories(n=%d) — V1 no-op stub (§9 not yet built)", n)
+    logger.info("prewarm_top_categories(n=%d) starting", n)
+
+    # Lazy import — keeps core/ free of top-level ``app.modules`` imports
+    # (the §3 layering rule).  Local import resolves at first call,
+    # caches in sys.modules thereafter.
+    try:
+        from app.modules.category import service as category_service
+        from app.shared.database import make_worker_session
+    except Exception as exc:  # noqa: BLE001 — startup hook must not block boot
+        logger.warning("prewarm_top_categories: import failed: %s", exc)
+        return
+
+    # Use a peer worker session — get_db is request-scoped and
+    # unavailable from the lifespan context.
+    try:
+        async with make_worker_session() as db:
+            # Step 1 — warm the full tree.  This populates the
+            # category_tree key; the same JSON blob is reused by
+            # suggest_categories() compression source path.
+            try:
+                await category_service.get_category_tree(db)
+                logger.info("prewarm_top_categories: category_tree warmed")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "prewarm_top_categories: tree warm failed: %s", exc
+                )
+                # Don't return — schema warm below uses a fresh tree fetch.
+
+            # Step 2 — warm schema:{category_id} for the top n categories.
+            # Fetch the (already cached) tree dict to derive the id list.
+            try:
+                from uuid import UUID as _UUID
+
+                tree_payload = await category_service.get_category_tree(db)
+                count = 0
+                for super_node in tree_payload.get("super_categories", []):
+                    for leaf in super_node.get("leaves", []):
+                        if count >= n:
+                            break
+                        leaf_id_raw = leaf.get("category_id")
+                        if leaf_id_raw is None:
+                            continue
+                        try:
+                            cid = (
+                                leaf_id_raw
+                                if isinstance(leaf_id_raw, _UUID)
+                                else _UUID(str(leaf_id_raw))
+                            )
+                        except (ValueError, TypeError):
+                            continue
+                        try:
+                            await category_service.fetch_schema(cid, db)
+                            count += 1
+                        except Exception as exc:  # noqa: BLE001
+                            logger.warning(
+                                "prewarm_top_categories: schema warm failed "
+                                "for %s: %s",
+                                cid,
+                                exc,
+                            )
+                    if count >= n:
+                        break
+                logger.info(
+                    "prewarm_top_categories: %d schema entries warmed", count
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "prewarm_top_categories: schema warm batch failed: %s",
+                    exc,
+                )
+    except Exception as exc:  # noqa: BLE001 — startup hook must not block boot
+        logger.warning("prewarm_top_categories: session failed: %s", exc)
 
 
 __all__ = [

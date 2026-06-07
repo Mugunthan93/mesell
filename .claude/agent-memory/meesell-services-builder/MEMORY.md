@@ -943,3 +943,280 @@ direct-paths) but client.py converts to AIResponse with parsed-dict
 | 3 golden targets | reference | smart_picker 80% / autofill 100% conformance (0% invalid) / watermark 85% — locked per MVP_ARCH §8.5 |
 | ai_ops/prompts/ storage layout | reference | one module per `<workload>_v<version>.py` with TEMPLATE/VERSION/WORKLOAD/RENDERED_BY constants; resolve() dynamic-imports |
 | Asia/Kolkata day boundary | reference | _today_kolkata_str() uses zoneinfo("Asia/Kolkata"); 25h TTL on daily keys survives midnight reset |
+
+
+---
+
+## §8 customer service layer CONSTRUCTED (2026-06-07)
+
+### Scope
+Solo sub-session `meesell-backend-construction-8-customer-1` — step 1 of 2 (router lands in api-routes-builder step 2). Built the seller-profile service layer + 5 unit tests + 2 integration tests per §8 (LOCKED 2026-06-05) + master rulings (2026-06-07).
+
+### Files created (8)
+
+Source (6):
+- `backend/app/modules/customer/__init__.py` — package shell; router NOT mounted in step 1.
+- `backend/app/modules/customer/domain.py` — 4 frozen dataclasses (`SellerProfile`, `ComplianceBlock`, `ProfileCompleteness`, `ComplianceExtensionSpec`) + `COMPLIANCE_EXTENSION_MAP` (11 keys, MappingProxyType wrapped, Beauty's 6 super_ids share ONE Spec instance). Also `BASE_FIELD_NAMES` (10) + `BASE_REQUIRED_FIELDS` (7 blocking).
+- `backend/app/modules/customer/exceptions.py` — 6 CustomerError subclasses: `ProfileNotFoundError` (404), `InvalidPincodeError` (422), `InvalidSuperCategoryError` (422), `SuperCategoryNotDeclaredError` (404), `ComplianceExtensionMissingFieldsError` (422), `ProfileIncompleteForCategoryError` (422). 3-segment validation_message_ids per §5A.H.
+- `backend/app/modules/customer/schemas.py` — SCAFFOLD: 6 Pydantic v2 models (`SellerProfileResponse`, `PatchProfileRequest`, `PatchActiveCategoriesRequest`, `PatchComplianceExtensionRequest`, `RequiredFieldsResponse`, `ComplianceBlockResponse`). `Field(pattern=r"^\d{6}$")` on all 3 pincode fields.
+- `backend/app/modules/customer/repository.py` — 4 module-private async methods (`find_by_user_id`, `upsert`, `update_active_categories`, `update_compliance_extension`). Every method body has a direct `scope_to_user(` call (inlined in `upsert` to be a §19 grep anchor).
+- `backend/app/modules/customer/service.py` — 9 PUBLIC async methods per §8.C: `get_profile_or_none`, `get_profile`, `upsert_profile`, `set_active_categories`, `set_compliance_extension`, `get_required_fields`, `get_compliance_block`, `get_onboarding_completeness`, `assert_eligible_for_super_id`.
+
+Tests (2 files in modules/customer + 2 files in integration + 1 conftest):
+- `backend/tests/modules/customer/conftest.py` — `db` fixture aliases `db_session` (ephemeral 5432 DB) so unit tests don't need the 5433 tunnel.
+- 5 unit tests (29 sub-tests pass).
+- 2 integration tests (6 sub-tests pass, both use per-test NullPool engine to dodge cross-loop Future issues).
+
+### Tests added
+| File | Sub-tests | Notes |
+|---|---|---|
+| test_profile_upsert_idempotency.py | 2 | First-PATCH-creates-row + user_id stable across upserts. |
+| test_pincode_regex_enforcement.py | 13 | Parametrised over 8 invalid + 3 fields + valid + None. |
+| test_compliance_extension_validation_per_super_id.py | 8 | 4 sync MAP shape (11 keys, Beauty shared identity, Grocery/Beauty compulsory, optional supers) + 4 async DB. |
+| test_onboarding_complete_flag_recomputation.py | 3 | 6-transition lifecycle + missing-base-field + all-optional-supers. |
+| test_eye_serum_case.py | 3 | ComplianceBlock has only 9 LM fields; Beauty seller still stores 9 base; Beauty Spec has no compliance_shape attr. |
+| test_customer_full_onboarding_flow.py | 1 | Sign up via OTP → PATCH base → PATCH active['26'] → PATCH compliance/26 → required-fields shows completed=True. |
+| test_customer_cross_module_eligibility.py | 5 | assert_eligible_for_super_id under all 5 gate combinations. |
+
+Total: **35 customer tests PASS / 35**.
+Regression sweep (227 baseline core+iam+i18n+shared): 227/227 PASS, no regressions.
+
+### Decisions FLAGGED
+
+D1 — **`schemas.RequiredFieldsResponse` uses `list[dict[str, Any]]` not `list[FieldSpec]`.** Pydantic v2 on Python 3.11 rejects `typing.TypedDict` (which `app/i18n/schema_contract.FieldSpec` uses); requires `typing_extensions.TypedDict`. Service-layer `_build_field_spec` constructs each dict with the §5A.C 9-key shape; `tests/test_per_field_shape_keys.py` is the schema-conformance gate. Forward-compat: when Python 3.12 is runtime OR i18n switches to `typing_extensions.TypedDict`, the type can be tightened.
+
+D2 — **`db` fixture in tests/modules/customer/conftest.py aliases `db_session` (5432 ephemeral) NOT the iam-style `db` (5433 tunnel).** Customer unit tests don't need seeded categories (repository helpers bypass the categories.super_id validation). Dev tunnel at 5433 is operator-dependent (SSH session required). iam unit tests keep the 5433 dependency because they exercise tunnel-only paths.
+
+D3 — **Unit + integration tests CANNOT run in the same pytest invocation** against the local 5432 DB because `db_engine` teardown calls `Base.metadata.drop_all`, wiping `audit_events` before integration's `iam_client` teardown tries to DELETE. Run them in separate pytest invocations (the standard CI pattern). Both pass on their own.
+
+D4 — **`repository.upsert` inlines its SELECT** (instead of delegating to `find_by_user_id`) so the §19 grep anchor `scope_to_user(` appears at the call site of every repository mutator method body. Same query plan; explicit grep visibility.
+
+D5 — **6 customer-specific validation_message_ids were ALREADY in messages_en.py** from the §5A construction dispatch. The brief said to "append 6 entries" assuming they weren't there; they were. Verified all 6 keys present, conform to §5A.H regex, and have natural English text.
+
+### Key implementation patterns locked
+
+#### COMPLIANCE_EXTENSION_MAP structure
+- `dict[str, ComplianceExtensionSpec]` wrapped in `MappingProxyType` (defensive immutability).
+- 11 keys: `26` (Grocery, compulsory=True), `13` (Kids, optional), `16` (Electronics, optional), `19/36/37/14/88/34` (Beauty, compulsory=True, **shared instance** for O(1) lookup), `80` (Books, optional), `30` (Home & Kitchen, optional).
+- Beauty `super_id` `"19"` is the canonical anchor; 6 keys all map to the SAME Spec instance (`is` identity verified in tests).
+- `required_keys` + `optional_keys` are `tuple[str, ...]` (immutable). `compulsory: bool` drives the gate.
+
+#### `onboarding_complete` recompute algorithm
+```python
+all(_is_field_present(base_state[name]) for name in BLOCKING_BASE_FIELDS)
+AND
+for super_id in active_super_categories:
+    spec = COMPLIANCE_EXTENSION_MAP.get(super_id)
+    if spec and spec.compulsory:
+        all(_is_field_present(ext.get(super_id, {}).get(k)) for k in spec.required_keys)
+```
+- `BLOCKING_BASE_FIELDS` = 6 mandatory LM fields + `country_of_origin` (importer trio is OPTIONAL — does not block).
+- Recomputed on every PATCH path (B.2 / B.3 / B.4); written into `seller_profile.onboarding_complete`.
+- `ProfileCompleteness.base_total_count` is always 10 (`len(BASE_FIELD_NAMES)`) for UI badge math; blocking gate uses 7.
+
+#### Cache pattern (§8.B.5 /required-fields)
+- Logical key: `customer.required_fields.{user_id}`; full key: `meesell:v{cv}:customer.required_fields.{user_id}`.
+- TTL: 60s (`_REQUIRED_FIELDS_TTL_SECONDS`).
+- Invalidated by `_invalidate_required_fields_cache(user_id)` after every PATCH (B.2/B.3/B.4).
+- Drop-on-failure: cache delete failures logged at WARNING, never raise.
+
+#### Cache pattern (categories.super_id distinct set)
+- Logical key: `customer.super_category_set` (global; not per-user).
+- TTL: 3600s, `single_flight=True` to prevent cold-cache stampede.
+- Service-side cache via `core.cache.get_or_set` — `_load_super_id_set` is `SELECT DISTINCT super_id FROM categories ORDER BY super_id`.
+
+#### Cross-loop Future avoidance (integration tests)
+- DO NOT use `app.shared.database.AsyncSessionLocal` directly in integration tests that span multiple iam_client requests — the module-level engine's pool attaches to whatever loop first awaits it.
+- DO use a per-test NullPool engine: `create_async_engine(DATABASE_URL, poolclass=NullPool)` inside the test body, dispose in `finally`.
+
+#### Test ordering (local dev with 5432 only)
+- Unit tests use `db_session` (drops + creates tables fresh).
+- Integration tests use `iam_client` against `settings.DATABASE_URL` (5432); assume schema already present.
+- Run them in SEPARATE pytest invocations to avoid `db_engine` teardown wiping the integration schema.
+- For the integration suite, before the first run: `Base.metadata.create_all` + seed a `Grocery` (super_id='26') Category row.
+
+### Hand-offs queued
+
+- **meesell-api-routes-builder (step 2 of 2)** — `backend/app/modules/customer/router.py` with 5 endpoint handlers per §8.B; main.py `include_router(customer_router)`; update `test_app_boot_integration.py` allowed paths + route count from 11 → 16; refine schemas examples/descriptions for OpenAPI. Service signatures use 3rd-positional `db: AsyncSession`; router handlers should `Depends(get_db)` and forward.
+- **§9 category** — replaces my `_get_super_id_set` cached read with a richer category-set service if needed; existing key `customer.super_category_set` is the canonical name.
+- **§10 catalog** — `catalog.service.create_product` calls `customer.service.assert_eligible_for_super_id(user_id, super_id, db)` BEFORE creating any row. Raises `ProfileIncompleteForCategoryError` (422 `customer.profile.incomplete_for_category`).
+- **§13 dashboard** — `dashboard.service` consumes `customer.service.get_onboarding_completeness(user_id, db)` for the completeness badge.
+- **§14 export** — `export.service` consumes `customer.service.get_compliance_block(user_id, db)`; the Eye-Serum collapsed-3-column transformation happens at XLSX-write time only (NOT in customer).
+- **§19 import-linter** — register the customer module's repository surface as a §16 boundary: `from app.modules.customer.repository import` MUST NOT appear under any other `app/modules/<other>/`.
+
+### Memory index additions
+| Entry | Type | Summary |
+|---|---|---|
+| §8 customer landed | project | 6 source + 5 unit + 2 integration tests; 35 customer tests + 227 regression PASS |
+| COMPLIANCE_EXTENSION_MAP 11 keys | reference | Beauty's 6 super_ids share ONE Spec instance (`is` identity); 6 source rules; MappingProxyType wrapped |
+| Beauty Spec compulsory=True | reference | Master ruling 4 — license_registration_number/type/expiry_date block onboarding |
+| onboarding_complete recompute | reference | 6+1 base fields blocking AND every compulsory super's required_keys present |
+| customer cache keys | reference | `customer.required_fields.{user_id}` TTL 60s; `customer.super_category_set` TTL 3600s single_flight |
+| repository scope_to_user invariant | reference | every method body has a direct `scope_to_user(` call (upsert inlines its SELECT) |
+| customer test split rule | reference | unit + integration cannot share pytest invocation against 5432 (db_engine drops tables); run separately |
+| per-test NullPool engine for integration | reference | DO NOT reuse `app.shared.database.AsyncSessionLocal` across `iam_client` requests — cross-loop Future error |
+| customer has no adapter egress | reference | Pure CRUD-against-Postgres + cache reads; no Gemini, MSG91, GCS, Razorpay, LangFuse per §8.H |
+| FieldSpec TypedDict workaround | reference | Pydantic v2 + py3.11 rejects typing.TypedDict; use list[dict[str, Any]] until py3.12 or typing_extensions migration |
+
+
+---
+
+## §9 category services slice CONSTRUCTED (2026-06-07)
+
+### Scope
+Sub-session `meesell-backend-construction-9-category-1` — services-builder
+slice (api-routes-builder runs in parallel for router.py + schemas.py +
+main.py mount).  Built repository + service + exceptions + domain for §9
+per BACKEND_ARCHITECTURE.md §9 (LOCKED 2026-06-05).
+
+### Files created (4)
+- `backend/app/modules/category/exceptions.py` — `CategoryError` base + 4
+  subclasses per §9.G (CategoryNotFoundError 404, FieldEnumNotFoundError 404,
+  SuggestQueryInvalidError 400, BrowseQueryInvalidError 400).
+- `backend/app/modules/category/domain.py` — 2 frozen dataclasses per §9.F
+  (CategoryRow, SuperCategoryInfo).
+- `backend/app/modules/category/repository.py` — 7 module-private async
+  methods per §9.D.  **No `scope_to_user`** (categories/templates/
+  field_enum_values are §4.C global data — §19 linter exempts).
+- `backend/app/modules/category/service.py` — 8 PUBLIC async methods per
+  §9.C.  Returns plain `dict` payloads (NOT Pydantic shapes — schemas.py
+  is owned by api-routes-builder dispatched in parallel).
+
+### Files modified (1)
+- `backend/app/core/cache.py` — `prewarm_top_categories` rewritten from V1
+  stub to real implementation.  Lazy-imports `app.modules.category.service`
+  inside the function to avoid the circular core/→modules/ import.  Uses
+  `make_worker_session()` (lifespan ctx has no get_db).  Warms
+  category_tree GLOBAL key + schema:{id} for top n categories (taken as
+  the first n in canonical (super_id, leaf_name) order for V1; replaced
+  with traffic-driven ranking in V1.5).  Failure-mode = try/except per
+  step, never blocks boot.
+
+### Tests added (5 unit modules + 3 integration modules)
+
+Unit (`tests/modules/category/`):
+- `test_trigram_search_uses_gin_index.py` (2 tests) — EXPLAIN ANALYZE
+  asserts Bitmap Index Scan on one of the 3 GIN trgm indexes
+  (idx_categories_path_trgm / _leaf_name_trgm / _super_name_trgm shipped
+  in migration a1b2c3d4e5f6).  P95 over 100 iterations < 200 ms target.
+- `test_schema_fetch_envelope_conformance.py` (4 tests) — 5 random
+  category_ids each; 7-key envelope, compliance_shape ∈ {standard,
+  collapsed}, total = compulsory + optional, fields[] carry the
+  5 §5A.C-derived keys (canonical_name, data_type, primitive, marker,
+  is_advanced).
+- `test_field_enum_returns_labelled_payload.py` (2 tests) — entries
+  carry {canonical, meesho, labels.en}; single-flight dedupe verified
+  via monkeypatched call-counter.
+- `test_suggest_graceful_fallback_on_budget.py` (2 tests) — covers BOTH
+  paths: (a) `BudgetExceededError` raised through `call_gemini` →
+  200 + empty + fallback_offered=True, (b) `AIResponse.parsed.
+  fallback_offered=True` returned → same.
+- `test_suggest_layer2_invalid_id_retry.py` (1 test) — AI returns an
+  invalid UUID; service's final-pass guardrail rejects + emits empty
+  fallback envelope.
+
+Integration (`tests/integration/`):
+- `test_category_smart_picker_to_schema_flow.py` — HTTP /suggest (mocked
+  call_gemini) → /{id}/schema (200 + 7-key envelope).
+- `test_category_browse_to_schema_flow.py` — HTTP /browse → /{id}/schema.
+- `test_category_etag_roundtrip.py` — GET /categories ETag → 304 via
+  If-None-Match.
+
+All 3 integration tests pytest.skip on 404 from the category router so
+they don't fail when api-routes-builder hasn't shipped router.py yet.
+They ERROR on the pre-existing test-infra blocker (audit_events relation
+missing on ephemeral test DB) — SAME issue as §8 customer integration
+tests (memory D3); separate test-infra dispatch.
+
+### Test counts
+- Category unit: **15/15 PASS** (4 pre-existing picker_helpers + 11 new) in 28.4 s.
+- Core/cache regression: **5/5 PASS** (`test_prewarm_top_categories_stub_no_raise`
+  still passes because the rewritten prewarm catches all exceptions and
+  returns).
+- Boot regression: **7/7 PASS**.
+- Combined: **27/27 PASS**.
+
+### Decisions FLAGGED (NEW)
+
+D1 — **Service returns `dict` payloads (NOT Pydantic models).**  `schemas.py`
+is owned by api-routes-builder dispatched IN PARALLEL with this slice.
+Returning dicts decouples the service tests from the schema author cycle;
+the router does `XxxResponse.model_validate(dict)` at the boundary.  No
+double-validation cost — the cache layer JSON-roundtrips already.  When
+schemas.py lands the service signatures can be widened to return Pydantic
+models without breaking callers (the dict shape == the Pydantic model
+shape by construction).
+
+D2 — **`repository.fetch_schema_uncached` merges `templates.compliance_shape`
+into the §5A.B envelope at read time.**  The seeded `templates.schema_jsonb`
+JSONB carries 6 top-level keys (`fields`, `compulsory_count`,
+`optional_count`, `total_count`, `wizard_step_count`, `main_sheet_label`);
+the 7th key (`compliance_shape`) lives on the dedicated `templates.
+compliance_shape` column for indexability.  The repository SELECTs both
+in one JOIN and assembles the 7-key envelope per §5A.B spec.
+
+D3 — **The 4 §9.G validation_message_ids in the dispatch prompt are
+2-segment shorthand.**  §5A.H regex locks 3-segment.  Used the canonical
+3-segment IDs already shipped by §5A construction
+(`category.lookup.not_found`, `category.field_enum.not_found`,
+`validation.suggest_q.too_short_or_long`,
+`validation.browse.invalid_pagination`).  Same precedent as §7 iam
+(memory D2) and §8 customer (memory D5).  ESCALATION QUEUED if master
+prefers updating §5A.H to permit 2-segment.
+
+D4 — **Integration tests `pytest.skip` on router 404** so they survive
+the parallel api-routes-builder dispatch.  Once the router lands, the
+skips fall away and the assertions exercise the HTTP surface end-to-end.
+
+D5 — **`get_commission` returns `Decimal('0.00')` when `commission_pct`
+IS NULL** (rather than raising).  The 404 path (no row) still raises
+`CategoryNotFoundError`; the NULL-commission row is treated as "no
+commission rule seeded yet — pricing service may apply a default at the
+call site".  Documented in service docstring; pricing-builder will refine
+on §12 dispatch.
+
+### Hand-offs queued
+
+- **meesell-api-routes-builder (parallel)** — service surface returns
+  dicts.  Router wraps each in `SuggestResponse.model_validate(payload)`
+  (etc.).  For GET /categories: compute `etag_for(json.dumps(payload).
+  encode())`; set ETag header; on If-None-Match match return 304.  For
+  GET /categories/{id}/schema: same ETag pattern.
+
+- **§10 catalog** — `catalog.service.create_product` calls
+  `category.service.assert_category_exists(category_id, db)` BEFORE the
+  insert.  `catalog.service.validate_product` calls
+  `category.service.fetch_schema(category_id, db)` to retrieve the
+  §5A.B envelope.  Both raise `CategoryNotFoundError` (404).
+
+- **§12 pricing** — `pricing.service.calculate_price` calls
+  `category.service.get_commission(category_id, db)`.  Returns
+  `Decimal` (never None; falls back to `Decimal('0.00')` when
+  `commission_pct` is NULL).
+
+- **§8 customer (back-edge)** — `customer.service.set_active_categories`
+  already uses a customer-private `_get_super_id_set` distinct read.
+  When the api-routes dispatch lands, customer can switch to
+  `category.service.list_super_categories(db)` for the canonical
+  `SuperCategoryInfo` cross-module type.  The legacy cache key
+  `customer.super_category_set` and the new `super_category_list` are
+  separate by design (cache keyspace already includes the caller name).
+
+- **§19 import-linter** — register the category module's repository
+  surface as a §16 boundary: `from app.modules.category.repository
+  import` MUST NOT appear under any other `app/modules/<other>/`.
+  `from app.adapters.gemini import` MUST NOT appear under
+  `app/modules/category/` (already clean — grep verified).
+
+### Memory index additions
+| Entry | Type | Summary |
+|---|---|---|
+| §9 category services slice 2026-06-07 | project | 4 source + 1 cache.py rewrite + 5 unit (15 tests) + 3 integration; 27 regression PASS |
+| category global-data carve-out | reference | repository carries NO `scope_to_user` — §4.C exception listed in `core/tenancy._GLOBAL_TABLES` |
+| category cache key inventory | reference | smart_picker (900s) / browse (300s) / category_tree (3600s + ETag) / schema:{id} (3600s + ETag) / field_enum:{id}:{name} (3600s, single_flight=True) / super_category_list (3600s) |
+| service returns dict not Pydantic (D1) | reference | service surface dict-typed; router wraps in `.model_validate(payload)` — schemas.py owned by api-routes-builder |
+| fetch_schema 7-key envelope merge (D2) | reference | repository SELECTs schema_jsonb + compliance_shape column together; merges into §5A.B 7-key envelope |
+| ID normalisation D3 (3-segment) | reference | category IDs use `category.lookup.not_found`/`category.field_enum.not_found` registered in i18n; matches §5A.H regex |
+| prewarm_top_categories real impl | reference | lazy-imports category.service from inside the fn (avoids circular); uses `make_worker_session()`; warms tree + top n schemas; try/except per step |
+| integration test skip-on-404 (D4) | reference | category integration tests skip when router 404s — survives parallel api-routes-builder dispatch |
+| get_commission None→Decimal('0.00') (D5) | reference | no-row → CategoryNotFoundError; row + null commission → 0.00 (pricing applies default at call site) |

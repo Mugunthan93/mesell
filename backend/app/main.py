@@ -36,6 +36,8 @@ from app.core.middleware.plan_guard_mw import PlanGuardMiddleware
 from app.core.middleware.rate_limit_mw import RateLimitMiddleware
 from app.core.middleware.request_id import RequestIdMiddleware
 from app.core.middleware.tenancy_mw import TenancyContextMiddleware
+from app.modules.category import category_router
+from app.modules.customer import customer_router
 from app.modules.iam import iam_router
 from app.shared.config import settings
 
@@ -104,6 +106,12 @@ register_error_handlers(app)
 # §7 iam — owns /api/v1/auth/* (otp/send, otp/verify, refresh, logout, me)
 # + /api/v1/webhooks/razorpay per BACKEND_ARCHITECTURE.md §7.B (LOCKED 2026-06-05).
 app.include_router(iam_router)
+
+# §8 customer — owns /api/v1/seller-profile/* (5 endpoints per §8.B LOCKED 2026-06-05).
+app.include_router(customer_router)
+
+# §9 category — owns /api/v1/categories/* (5 endpoints per §9.B LOCKED 2026-06-05).
+app.include_router(category_router)
 
 if settings.is_dev:
     import os

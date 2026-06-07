@@ -5,22 +5,24 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
 type StatColor = 'orange' | 'blue' | 'green' | 'purple';
 type TrendDir = 'up' | 'down' | 'neutral';
 
-interface ColorTokens {
-  circleBg: string;
-  iconColor: string;
-}
-
-const COLOR_MAP: Record<StatColor, ColorTokens> = {
-  orange: { circleBg: '#FFF3E8', iconColor: '#F26B23' },
-  blue:   { circleBg: '#EFF6FF', iconColor: '#1E40AF' },
-  green:  { circleBg: '#F0FDF4', iconColor: '#16A34A' },
-  purple: { circleBg: '#F3E8FF', iconColor: '#7C3AED' },
+const CIRCLE_CLASSES: Record<StatColor, string> = {
+  orange: 'bg-orange-50',
+  blue:   'bg-blue-50',
+  green:  'bg-green-50',
+  purple: 'bg-violet-50',
 };
 
-const TREND_COLOR: Record<TrendDir, string> = {
-  up: '#16A34A',
-  down: '#DC2626',
-  neutral: '#9CA3AF',
+const ICON_CLASSES: Record<StatColor, string> = {
+  orange: 'text-primary',    // var(--mee-color-primary) = #F26B23
+  blue:   'text-secondary',  // var(--mee-color-secondary) = #1E40AF
+  green:  'text-success',    // var(--mee-color-success) = #16A34A
+  purple: 'text-violet-700', // Tailwind palette — no design token for purple
+};
+
+const TREND_CLASSES: Record<TrendDir, string> = {
+  up:      'text-success',   // var(--mee-color-success)
+  down:    'text-error',     // var(--mee-color-error)
+  neutral: 'text-gray-400',
 };
 
 @Component({
@@ -31,28 +33,30 @@ const TREND_COLOR: Record<TrendDir, string> = {
     :host { display: block; }
   `],
   template: `
-    <div style="background:#FFFFFF; border-radius:16px; padding:20px 24px; box-shadow:0 1px 3px rgba(0,0,0,0.08); display:flex; flex-direction:column;">
+    <div class="bg-bg-elevated rounded-mee-md py-5 px-6 shadow-mee-1 flex flex-col">
       <!-- Top row: icon circle -->
-      <div style="display:flex; align-items:center; justify-content:flex-start;">
-        <div [style]="iconCircleStyle()">
+      <div class="flex items-center">
+        <div class="inline-flex items-center justify-center w-9 h-9 rounded-full" [class]="circleClass()">
           <!-- Material icon via CSS mask — use a simple unicode fallback rendered as text -->
-          <span [style]="iconTextStyle()" aria-hidden="true">{{ icon() }}</span>
+          <span style="font-family:'Material Icons','Material Symbols Outlined',sans-serif; font-size:20px; user-select:none;"
+                [class]="iconClass()"
+                aria-hidden="true">{{ icon() }}</span>
         </div>
       </div>
 
       <!-- Value -->
-      <div style="margin-top:12px; font-size:28px; font-weight:700; color:#1F2937; line-height:1;">
+      <div class="mt-3 text-[28px] font-bold text-on-surface leading-none">
         {{ value() }}
       </div>
 
       <!-- Label -->
-      <div style="margin-top:4px; font-size:13px; color:#6B7280;">
+      <div class="mt-1 text-[13px] text-on-surface-variant">
         {{ label() }}
       </div>
 
       <!-- Trend row -->
       @if (trendLabel()) {
-        <div [style]="trendRowStyle()" style="margin-top:8px; font-size:12px;">
+        <div class="mt-2 text-xs" [class]="trendClass()">
           {{ trendLabel() }}
         </div>
       }
@@ -67,18 +71,9 @@ export class StatCardComponent {
   readonly trendLabel = input<string | undefined>(undefined);
   readonly color = input<StatColor>('orange');
 
-  readonly iconCircleStyle = computed(() => {
-    const tokens = COLOR_MAP[this.color()];
-    return `display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; border-radius:50%; background:${tokens.circleBg};`;
-  });
+  readonly circleClass = computed(() => CIRCLE_CLASSES[this.color()]);
 
-  readonly iconTextStyle = computed(() => {
-    const tokens = COLOR_MAP[this.color()];
-    // Render as Material icon font character using font-family; falls back to text
-    return `font-family:'Material Icons','Material Symbols Outlined',sans-serif; font-size:20px; color:${tokens.iconColor}; user-select:none;`;
-  });
+  readonly iconClass = computed(() => ICON_CLASSES[this.color()]);
 
-  readonly trendRowStyle = computed(() => {
-    return `color:${TREND_COLOR[this.trend()]};`;
-  });
+  readonly trendClass = computed(() => TREND_CLASSES[this.trend()]);
 }

@@ -1,16 +1,20 @@
 // features/preview/preview-api.service.ts
 // Feature-scoped service: GET /products/:id/preview per §13.C
+// NOT providedIn: 'root' — scoped to PREVIEW_ROUTES providers[]
 
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { ApiClient } from '@core/api/api-client.service';
 
+/** Wire-format response from GET /api/v1/products/:id/preview */
 export interface PreviewData {
   readonly title: string;
-  readonly price: number | null;
-  readonly imageUrls: readonly string[];
-  readonly firstVariant: Record<string, unknown> | null;
-  readonly fullDescription: string | null;
+  readonly price: number;
+  readonly image_urls: string[];
+  readonly first_variant: string | null;
+  readonly full_description: string | null;
+  readonly quality_score: number | null;
+  readonly category_path: string;
 }
 
 @Injectable()

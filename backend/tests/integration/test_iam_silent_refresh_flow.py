@@ -26,6 +26,8 @@ import pytest
 from app.adapters.msg91 import Msg91Response
 from app.shared.config import settings
 
+from tests.integration._cookie_helpers import extract_refresh_cookie
+
 
 pytestmark = pytest.mark.asyncio
 
@@ -40,10 +42,10 @@ async def _seed_otp_in_valkey(phone: str, otp: str) -> None:
     await valkey.set(f"otp:{phone}", payload, ex=300)
 
 
-async def test_full_silent_refresh_flow(client, use_live_valkey, monkeypatch):
+async def test_full_silent_refresh_flow(iam_client, use_live_valkey, monkeypatch):
     """End-to-end: verify → refresh → old access still decodes."""
     # ── Arrange ────────────────────────────────────────────────────────────
-    phone = "+919876500001"
+    phone = "+915550000101"
     otp = "424242"
     await _seed_otp_in_valkey(phone, otp)
 
@@ -55,7 +57,7 @@ async def test_full_silent_refresh_flow(client, use_live_valkey, monkeypatch):
     monkeypatch.setattr("app.adapters.msg91.send_otp", _fake_send_otp)
 
     # ── Step 1: verify (issues access JWT + refresh cookie) ────────────────
-    r1 = await client.post(
+    r1 = await iam_client.post(
         "/api/v1/auth/otp/verify",
         json={"phone": phone, "otp": otp},
     )
@@ -63,7 +65,8 @@ async def test_full_silent_refresh_flow(client, use_live_valkey, monkeypatch):
     body1 = r1.json()
     old_access = body1["access_token"]
     assert body1["token_type"] == "bearer"
-    assert "refresh_token" in r1.cookies
+    refresh_v1 = extract_refresh_cookie(r1)
+    assert refresh_v1, "verify must emit a refresh_token Set-Cookie"
 
     # ── Step 2: small in-loop wait, well under any TTL ─────────────────────
     # No real sleep needed — the access token's `exp` is `now + TTL`, so we
@@ -77,11 +80,23 @@ async def test_full_silent_refresh_flow(client, use_live_valkey, monkeypatch):
     assert decoded_old["plan"] == "free"
 
     # ── Step 3: refresh (cookie carries the credential) ────────────────────
-    r2 = await client.post("/api/v1/auth/refresh")
+    # httpx's cookie jar drops the `.mesell.xyz`-domain cookie on a
+    # `testserver` request — see ``_cookie_helpers``.  Forward the value
+    # explicitly via the Cookie header.
+    r2 = await iam_client.post(
+        "/api/v1/auth/refresh",
+        headers={"Cookie": f"refresh_token={refresh_v1}"},
+    )
     assert r2.status_code == 200, r2.text
     body2 = r2.json()
     new_access = body2["access_token"]
-    assert new_access != old_access  # new exp, new signature
+    # NOTE: we do NOT assert ``new_access != old_access`` — when verify +
+    # refresh land in the same wall-clock second the JWT payload is
+    # bit-identical because §4.B does not include an ``iat`` claim
+    # (CurrentUser shape is ``{sub, exp, plan}``).  What matters for the
+    # silent-refresh contract is (a) the new token decodes, (b) the
+    # claims still resolve to the same principal, (c) the new refresh
+    # cookie is fresh (already exercised by the rotation Lua replay test).
 
     # ── Step 4: old access is still valid until its own exp ────────────────
     # The access token has NO allowlist — only refresh does.  Decoding it
@@ -101,3 +116,6 @@ async def test_full_silent_refresh_flow(client, use_live_valkey, monkeypatch):
     )
     assert decoded_new["sub"] == decoded_old["sub"]
     assert decoded_new["exp"] >= decoded_old["exp"]
+    # New refresh cookie MUST be present and fresh (locked at §7.B.3).
+    refresh_v2 = extract_refresh_cookie(r2)
+    assert refresh_v2 and refresh_v2 != refresh_v1

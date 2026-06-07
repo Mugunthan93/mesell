@@ -1,199 +1,430 @@
 // features/catalog-form/catalog-form/catalog-form.component.ts
-// Route: /catalogs/:id/edit — visual shell (hardcoded stub data; no service injection)
+// Route: /catalogs/:id/edit
+// Orchestrator: coordinates CatalogFormApiService, CatalogFormStateService,
+// DraftRecoveryService, CategorySchemaService, WizardRendererComponent, StepComposerService.
+// Does NOT render form fields directly — delegates to mee-wizard (WizardRendererComponent).
 
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
+  computed,
+  inject,
+  OnInit,
   signal,
 } from '@angular/core';
-import { MatIconModule } from '@angular/material/icon';
+import { ActivatedRoute, Router } from '@angular/router';
+import { MatButtonModule } from '@angular/material/button';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatSnackBar } from '@angular/material/snack-bar';
+import { debounceTime, Subject } from 'rxjs';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+
+import { CatalogFormApiService } from '../catalog-form-api.service';
+import { CatalogFormStateService } from '../catalog-form-state.service';
+import { DraftRecoveryService } from '../draft-recovery.service';
+import { CategorySchemaService } from '../category-schema.service';
+import { StepComposerService } from '../wizard-renderer/step-composer.service';
+import { WizardRendererComponent } from '../wizard-renderer/wizard-renderer.component';
+import { LoadingSpinnerComponent } from '@shared/components/loading-spinner/loading-spinner.component';
+import { StatusBadgeComponent } from '@shared/components/status-badge/status-badge.component';
+import { ErrorService } from '@core/services/error.service';
+import { ApiError } from '@core/api/api-error';
+import { ValueChange } from '../primitives/primitive.contract';
+
+// AutosaveStatus type mirrors what we drive locally
+type AutosaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 @Component({
   selector: 'mee-catalog-form',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatIconModule],
-  template: `
-    <!-- Page header -->
-    <div style="display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:24px;">
-      <div>
-        <div style="font-size:22px; font-weight:700; color:#1F2937; line-height:1.2;">Edit Product</div>
-        <div style="font-size:13px; color:#6B7280; margin-top:4px;">Cotton Kurti – Blue Floral Print</div>
-      </div>
-      <div style="display:flex; gap:8px; align-items:center;">
-        <button type="button"
-          style="border:1px solid #D1D5DB; background:#ffffff; color:#374151; padding:9px 16px; border-radius:8px; font-size:13px; cursor:pointer; line-height:1;">
-          Save Draft
-        </button>
-        <button type="button"
-          style="background:#F26B23; color:#ffffff; border:none; padding:9px 18px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; line-height:1;">
-          Continue &rarr;
-        </button>
-      </div>
-    </div>
-
-    <!-- Step progress bar -->
-    <div style="margin-bottom:24px;">
-      <div style="display:flex; align-items:center;">
-        @for (step of steps; track step.index; let i = $index) {
-          <!-- Step circle + label -->
-          <div style="display:flex; flex-direction:column; align-items:center; min-width:72px;">
-            <div style="
-              width:24px; height:24px; border-radius:50%; display:flex; align-items:center;
-              justify-content:center; font-size:11px; font-weight:700;
-              background:{{ step.index <= activeStep() ? '#F26B23' : '#E5E7EB' }};
-              color:{{ step.index <= activeStep() ? '#ffffff' : '#9CA3AF' }};">
-              {{ step.index }}
-            </div>
-            <div style="
-              font-size:13px; margin-top:4px; white-space:nowrap;
-              color:{{ step.index === activeStep() ? '#F26B23' : step.index < activeStep() ? '#6B7280' : '#9CA3AF' }};">
-              {{ step.label }}
-            </div>
-          </div>
-          <!-- Connector line (not after last step) -->
-          @if (i < steps.length - 1) {
-            <div style="
-              flex:1; height:2px; margin-bottom:18px;
-              background:{{ (i + 1) < activeStep() ? '#F26B23' : '#E5E7EB' }};">
-            </div>
-          }
-        }
-      </div>
-    </div>
-
-    <!-- Main two-column grid -->
-    <div style="display:grid; grid-template-columns:1fr 320px; gap:24px;" class="catalog-form-grid">
-
-      <!-- Left column — Form card -->
-      <div style="background:#ffffff; border-radius:12px; padding:24px; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
-
-        <!-- Section: Basic Information -->
-        <div style="font-size:15px; font-weight:700; color:#374151; border-bottom:1px solid #F3F4F6; padding-bottom:10px; margin-bottom:20px;">
-          Basic Information
-        </div>
-
-        <!-- Field: Product Title -->
-        <div style="margin-bottom:16px;">
-          <label style="display:block; font-size:13px; font-weight:500; color:#374151; margin-bottom:6px;">
-            Product Title <span style="color:#DC2626;">*</span>
-          </label>
-          <input type="text" value="Cotton Kurti - Blue Floral Print - M"
-            style="width:100%; height:44px; border:1px solid #D1D5DB; border-radius:8px; padding:0 14px; font-size:14px; box-sizing:border-box; background:#F9FAFB;" />
-          <p style="font-size:11px; color:#9CA3AF; margin:4px 0 0;">Max 100 characters. Be specific: fabric, color, size.</p>
-        </div>
-
-        <!-- Field: Description -->
-        <div style="margin-bottom:16px;">
-          <label style="display:block; font-size:13px; font-weight:500; color:#374151; margin-bottom:6px;">
-            Description <span style="color:#DC2626;">*</span>
-          </label>
-          <textarea rows="4"
-            style="width:100%; border:1px solid #D1D5DB; border-radius:8px; padding:10px 14px; font-size:14px; box-sizing:border-box; background:#F9FAFB; resize:vertical; font-family:inherit;">Lightweight cotton kurti with floral print. Available in sizes S, M, L, XL. Machine washable.</textarea>
-          <p style="font-size:11px; color:#9CA3AF; margin:4px 0 0;">Describe material, fit, and care instructions.</p>
-        </div>
-
-        <!-- Field: MRP -->
-        <div style="margin-bottom:16px;">
-          <label style="display:block; font-size:13px; font-weight:500; color:#374151; margin-bottom:6px;">
-            MRP (&#8377;) <span style="color:#DC2626;">*</span>
-          </label>
-          <input type="number" value="599"
-            style="width:100%; height:44px; border:1px solid #D1D5DB; border-radius:8px; padding:0 14px; font-size:14px; box-sizing:border-box; background:#F9FAFB;" />
-          <p style="font-size:11px; color:#9CA3AF; margin:4px 0 0;">Meesho minimum &#8377;99</p>
-        </div>
-
-        <!-- Field: Size Type -->
-        <div style="margin-bottom:16px;">
-          <label style="display:block; font-size:13px; font-weight:500; color:#374151; margin-bottom:6px;">
-            Size Type
-          </label>
-          <select
-            style="width:100%; height:44px; border:1px solid #D1D5DB; border-radius:8px; padding:0 14px; font-size:14px; box-sizing:border-box; background:#F9FAFB; appearance:auto;">
-            <option value="Medium" selected>Medium</option>
-            <option value="Small">Small</option>
-            <option value="Large">Large</option>
-            <option value="XL">XL</option>
-            <option value="XXL">XXL</option>
-          </select>
-        </div>
-
-        <!-- Section: Category -->
-        <div style="font-size:15px; font-weight:700; color:#374151; border-bottom:1px solid #F3F4F6; padding-bottom:10px; margin-top:24px; margin-bottom:16px;">
-          Category
-        </div>
-
-        <!-- Category read-only row -->
-        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-          <span style="
-            background:#FFF3E8; color:#F26B23; border:1px solid #FDDCB5;
-            border-radius:6px; padding:4px 10px; font-size:12px; font-weight:600;">
-            Women / Kurtis / Cotton Kurtis
-          </span>
-          <span style="color:#6B7280; font-size:12px; cursor:pointer; text-decoration:underline;">Change</span>
-        </div>
-
-      </div><!-- /Left column -->
-
-      <!-- Right column — Tips card -->
-      <div style="background:#ffffff; border-radius:12px; padding:20px; box-shadow:0 1px 3px rgba(0,0,0,0.08);">
-
-        <div style="font-size:14px; font-weight:700; color:#374151; margin-bottom:14px;">
-          &#128161; Listing Tips
-        </div>
-
-        @for (tip of tips; track tip.text) {
-          <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:12px;">
-            <mat-icon style="font-size:16px; width:16px; height:16px; color:#16A34A; flex-shrink:0; margin-top:1px;">check_circle</mat-icon>
-            <span style="font-size:13px; color:#374151; line-height:1.4;">{{ tip.text }}</span>
-          </div>
-        }
-
-        <!-- Autofill banner -->
-        <div style="
-          margin-top:16px; background:#EFF6FF; border-radius:8px;
-          padding:12px; border:1px solid #BFDBFE;">
-          <div style="font-size:13px; font-weight:600; color:#1D4ED8; margin-bottom:4px;">
-            &#9889; AI Autofill available
-          </div>
-          <div style="font-size:12px; color:#3B82F6;">
-            Paste your product description and let AI fill the form.
-          </div>
-          <button type="button"
-            style="
-              background:#1D4ED8; color:#ffffff; border:none; border-radius:6px;
-              padding:6px 14px; font-size:12px; cursor:pointer; margin-top:8px; line-height:1.4;">
-            Try Autofill &rarr;
-          </button>
-        </div>
-
-      </div><!-- /Right column -->
-
-    </div><!-- /grid -->
-  `,
+  providers: [StepComposerService],
+  imports: [
+    MatButtonModule,
+    MatProgressSpinnerModule,
+    WizardRendererComponent,
+    LoadingSpinnerComponent,
+    StatusBadgeComponent,
+  ],
   styles: [`
-    :host { display: block; }
-    @media (max-width: 899px) {
-      .catalog-form-grid {
-        grid-template-columns: 1fr !important;
-      }
+    :host {
+      display: block;
+      background: var(--mee-color-bg);
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .catalog-form-page {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .page-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 24px;
+    }
+    .page-header h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--mee-color-on-surface);
+      margin: 0;
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .error-banner {
+      background: #FEF2F2;
+      border: 1px solid #FECACA;
+      border-radius: var(--mee-radius-md);
+      padding: 12px 16px;
+      color: #991B1B;
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+    .save-status {
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      font-size: 12px;
+      padding: 6px 12px;
+      border-radius: var(--mee-radius-md);
+      background: var(--mee-color-surface);
+      border: 1px solid #E5E7EB;
+      color: var(--mee-color-on-surface);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .save-status[data-status='saving'],
+    .save-status[data-status='saved'],
+    .save-status[data-status='error'] {
+      opacity: 1;
+    }
+    .save-status[data-status='error'] {
+      border-color: #FECACA;
+      color: #991B1B;
+      background: #FEF2F2;
+    }
+    .save-status[data-status='saved'] {
+      border-color: #BBF7D0;
+      color: #166534;
+      background: #F0FDF4;
+    }
+    .ai-fill-btn {
+      min-height: 44px;
+      min-width: 44px;
     }
   `],
+  template: `
+    <div class="catalog-form-page">
+
+      <!-- Page header: product name + status badge + AI Fill button -->
+      <div class="page-header">
+        <h1>{{ productTitle() }}</h1>
+
+        @if (state.product()) {
+          <mee-status-badge [status]="state.product()!.status" />
+        }
+
+        <button
+          mat-raised-button
+          color="accent"
+          class="ai-fill-btn"
+          type="button"
+          [disabled]="state.autofillLoading() || state.loading()"
+          (click)="onRequestAutofill()"
+          aria-label="Fill form fields using AI"
+        >
+          @if (state.autofillLoading()) {
+            <mat-spinner diameter="16" />
+          }
+          AI Fill
+        </button>
+      </div>
+
+      <!-- Loading state -->
+      @if (state.loading()) {
+        <mee-loading-spinner caption="Loading product..." />
+      }
+
+      <!-- Error state -->
+      @if (state.error()) {
+        <div class="error-banner" role="alert">{{ state.error() }}</div>
+      }
+
+      <!-- Wizard — only when schema + product are loaded -->
+      @if (!state.loading() && state.schema() && state.product()) {
+        <mee-wizard
+          [steps]="wizardSteps()"
+          [model]="state.fields()"
+          [aiSuggestions]="state.aiSuggestions()"
+          (valueChange)="onFieldChange($event)"
+          (submit)="onSubmit()"
+        />
+      }
+
+      <!-- Autosave status indicator -->
+      <div class="save-status" [attr.data-status]="saveStatus()">
+        @switch (saveStatus()) {
+          @case ('saving') { <span>Saving...</span> }
+          @case ('saved')  { <span>Saved</span> }
+          @case ('error')  { <span>Save failed</span> }
+        }
+      </div>
+
+    </div>
+  `,
 })
-export class CatalogFormComponent {
-  readonly activeStep = signal<number>(2);
+export class CatalogFormComponent implements OnInit {
 
-  readonly steps: Array<{ index: number; label: string }> = [
-    { index: 1, label: 'Category' },
-    { index: 2, label: 'Product Info' },
-    { index: 3, label: 'Images' },
-    { index: 4, label: 'Pricing' },
-  ];
+  // ── DI ─────────────────────────────────────────────────────────────────────
 
-  readonly tips: Array<{ text: string }> = [
-    { text: 'Use specific fabric names (cotton, poly-silk)' },
-    { text: 'Include size in the title' },
-    { text: 'White background images get 2x views' },
-    { text: 'Set competitive MRP — check similar listings' },
-  ];
+  protected readonly state = inject(CatalogFormStateService);
+  private readonly catalogFormApi = inject(CatalogFormApiService);
+  private readonly draftRecovery = inject(DraftRecoveryService);
+  private readonly categorySchema = inject(CategorySchemaService);
+  private readonly stepComposer = inject(StepComposerService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly errorService = inject(ErrorService);
+  private readonly snackBar = inject(MatSnackBar);
+  private readonly destroyRef = inject(DestroyRef);
+
+  // ── Local state ─────────────────────────────────────────────────────────────
+
+  /** Autosave status driven by the Subject+debounce autosave pipeline */
+  readonly saveStatus = signal<AutosaveStatus>('idle');
+
+  /**
+   * Autosave pipeline: Subject+debounce(10s) + takeUntilDestroyed.
+   * This is functionally equivalent to the meeAutosave directive.
+   * The directive requires a FormGroup via meeAutosaveControl; since this
+   * component uses signals (no FormGroup), we implement autosave directly.
+   * Pattern: emit on each onFieldChange call → debounce 10s → call autosaveProduct.
+   */
+  private readonly autosaveTrigger$ = new Subject<void>();
+
+  /** The product UUID from the route param :id */
+  private productId = '';
+
+  // ── Computed ────────────────────────────────────────────────────────────────
+
+  /** Wizard steps computed from schema via StepComposerService */
+  readonly wizardSteps = computed(() =>
+    this.stepComposer.compose(this.state.schema() ?? []),
+  );
+
+  /** Product title derived from fields for the page header */
+  readonly productTitle = computed<string>(() => {
+    const fields = this.state.fields();
+    return (fields['title'] as string) || (fields['name'] as string) || 'Untitled product';
+  });
+
+  // ── Lifecycle ────────────────────────────────────────────────────────────────
+
+  ngOnInit(): void {
+    // Wire up the autosave Subject pipeline (constructor-equivalent injection context)
+    this.autosaveTrigger$.pipe(
+      debounceTime(10_000),
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe(() => {
+      const pid = this.productId;
+      if (!pid) return;
+      this.saveStatus.set('saving');
+      this.catalogFormApi.autosaveProduct(pid, this.state.fields()).subscribe({
+        next: () => {
+          this.saveStatus.set('saved');
+          // Auto-reset to idle after 3s
+          setTimeout(() => {
+            if (this.saveStatus() === 'saved') this.saveStatus.set('idle');
+          }, 3000);
+        },
+        error: () => {
+          this.saveStatus.set('error');
+        },
+      });
+    });
+
+    // 1. Read route param :id
+    const id = this.route.snapshot.paramMap.get('id');
+    if (!id) {
+      // No product ID — navigate to dashboard
+      void this.router.navigate(['/dashboard']);
+      return;
+    }
+    this.productId = id;
+    this.state.loading.set(true);
+    this.state.error.set(null);
+
+    // 2a. Fetch product first — schema requires leafCategoryId from product response
+    this.catalogFormApi.getProduct(id).subscribe({
+      next: (product) => {
+        this.state.setProduct(product);
+        this.state.productId.set(id);
+
+        // 2b. Fetch schema (requires leafCategoryId) + draft recovery in parallel
+        let schemaResolved = false;
+        let draftResolved = false;
+
+        const tryFinish = () => {
+          if (schemaResolved && draftResolved) {
+            this.state.loading.set(false);
+          }
+        };
+
+        // Fetch category schema
+        this.categorySchema.getSchema(product.leafCategoryId).subscribe({
+          next: (schema) => {
+            this.state.setSchema(schema.fields);
+            schemaResolved = true;
+            tryFinish();
+          },
+          error: (err: unknown) => {
+            this.state.error.set('Failed to load category fields. Please refresh.');
+            this.errorService.showError(err instanceof Error ? err : new Error('Schema load failed'));
+            schemaResolved = true;
+            this.state.loading.set(false);
+          },
+        });
+
+        // Fetch draft (in parallel with schema)
+        this.draftRecovery.getDraft(id).subscribe({
+          next: (draft) => {
+            // null = no draft (204), non-null = draft exists
+            this.state.setDraft(draft ? draft.fields : null);
+            draftResolved = true;
+            tryFinish();
+          },
+          error: () => {
+            // Draft fetch failure is non-fatal — log and continue
+            draftResolved = true;
+            tryFinish();
+          },
+        });
+      },
+      error: (err: unknown) => {
+        this.state.loading.set(false);
+        if (err instanceof ApiError && err.status === 404) {
+          // catalog.product_not_found → navigate to /dashboard
+          void this.router.navigate(['/dashboard']);
+          return;
+        }
+        if (err instanceof ApiError && err.status === 429) {
+          // Rate limit exceeded — use Retry-After header if available
+          const retryAfter = err.raw?.headers?.get('Retry-After');
+          const message = retryAfter
+            ? `Pausing a moment, please try again in ${retryAfter} seconds`
+            : 'Too many requests. Please wait before trying again.';
+          this.snackBar.open(message, 'Dismiss', { duration: 6000 });
+          return;
+        }
+        this.state.error.set('Failed to load product. Please try again.');
+        this.errorService.showError(err instanceof ApiError ? err : new Error('Load failed'));
+      },
+    });
+  }
+
+  // ── Event handlers ──────────────────────────────────────────────────────────
+
+  /**
+   * Called on each field change from WizardRendererComponent.
+   * Applies the change to state and triggers debounced autosave.
+   */
+  onFieldChange(change: ValueChange): void {
+    this.state.applyFieldChange(change);
+    // Trigger the 10s-debounced autosave pipeline
+    this.autosaveTrigger$.next();
+  }
+
+  /**
+   * Triggered by the AI Fill button.
+   * Calls requestAutofill and applies suggestions to state.
+   * Handles fallback_offered + 429 rate limit per §11.A.1.
+   */
+  onRequestAutofill(): void {
+    const pid = this.productId;
+    if (!pid) return;
+
+    this.state.autofillLoading.set(true);
+    this.catalogFormApi.requestAutofill(pid).subscribe({
+      next: (response) => {
+        this.state.applyAutofillSuggestions(response.suggestions);
+        if (response.fallbackOffered) {
+          this.snackBar.open('AI suggestions may not be complete', 'Dismiss', { duration: 4000 });
+        }
+        this.state.autofillLoading.set(false);
+      },
+      error: (err: unknown) => {
+        this.state.autofillLoading.set(false);
+        if (err instanceof ApiError && err.status === 429) {
+          this.snackBar.open('Daily AI fill limit reached. Try again tomorrow.', 'Dismiss', { duration: 6000 });
+          return;
+        }
+        this.errorService.showError(err instanceof ApiError ? err : new Error('Autofill failed'));
+      },
+    });
+  }
+
+  /**
+   * Called when the seller accepts an AI suggestion for a field.
+   * Accepts the suggestion in state and persists it via saveProduct.
+   */
+  onAutofillAccepted(event: { canonicalName: string; value: unknown }): void {
+    this.state.acceptAiSuggestion(event.canonicalName);
+    const pid = this.productId;
+    if (!pid) return;
+    // Persist the accepted field value immediately (no debounce)
+    this.catalogFormApi.saveProduct(pid, this.state.fields()).subscribe({
+      error: (err: unknown) => {
+        this.errorService.showError(err instanceof ApiError ? err : new Error('Save failed'));
+      },
+    });
+  }
+
+  /**
+   * Called when the seller rejects an AI suggestion for a field.
+   * Removes the suggestion from state and persists rejection metadata.
+   */
+  onAutofillRejected(event: { canonicalName: string; rejectedReason: string }): void {
+    this.state.rejectAiSuggestion(event.canonicalName);
+    const pid = this.productId;
+    if (!pid) return;
+    // Persist rejection note — backend merges ai_suggestions_jsonb on receipt
+    const rejectionPayload = {
+      ...this.state.fields(),
+      ai_suggestions: {
+        [event.canonicalName]: { rejected_reason: 'user_rejected' },
+      },
+    };
+    this.catalogFormApi.saveProduct(pid, rejectionPayload).subscribe({
+      error: (err: unknown) => {
+        this.errorService.showError(err instanceof ApiError ? err : new Error('Save failed'));
+      },
+    });
+  }
+
+  /**
+   * Manual save triggered by wizard submit button.
+   * On success: navigate to /catalogs/:id/images.
+   */
+  onSubmit(): void {
+    const pid = this.productId;
+    if (!pid) return;
+
+    this.state.saving.set(true);
+    this.catalogFormApi.saveProduct(pid, this.state.fields()).subscribe({
+      next: () => {
+        this.state.saving.set(false);
+        void this.router.navigate(['/catalogs', pid, 'images']);
+      },
+      error: (err: unknown) => {
+        this.state.saving.set(false);
+        this.errorService.showError(err instanceof ApiError ? err : new Error('Save failed'));
+      },
+    });
+  }
 }

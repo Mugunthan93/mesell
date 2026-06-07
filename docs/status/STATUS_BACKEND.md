@@ -1,13 +1,13 @@
 # STATUS — BACKEND
 
 **Owner:** BACKEND sub-session (mesell-backend-session-* lineage)
-**Last update:** 2026-06-06 (BACKEND_ARCHITECTURE.md 100% LOCKED — 26 of 26 sections, 8,042 lines)
+**Last update:** 2026-06-07 (§8 customer FULLY CONSTRUCTED — router + tests live)
 **SSOT:** `docs/BACKEND_ARCHITECTURE.md` (read first — the construction contract)
 
-**Status:** 🟢 CONSTRUCTION IN PROGRESS — §5 shared LOCKED. Wave 1 foundation layer landed 2026-06-06: `backend/app/shared/` (config + database + valkey + models registry) + 46 new tests. 95/95 tests PASS against live dev Postgres. Awaiting master GO for §4 `core/` dispatch.
+**Status:** CONSTRUCTION IN PROGRESS — §7 iam + §8 customer LIVE. App boots with 15 distinct route paths (16 raw APIRoute objects: GET+PATCH on /api/v1/seller-profile counts as 2). 535 passing tests (19 new customer routes + 7 boot integration). Next domain: §9 category.
 
 ## Current Phase
-**Wave 1 — Foundation.** §5 shared CONSTRUCTED. Next dispatch: §4 `core/` (auth + tenancy + plan_guard + cache + errors + middleware chain). After §4, §6 adapters (gemini/msg91/gcs/razorpay/langfuse) and §6A ai_ops can begin in parallel.
+**Wave 2 — Domain Modules.** §7 iam CONSTRUCTED 2026-06-06. §8 customer FULLY CONSTRUCTED 2026-06-07 (meesell-services-builder + meesell-api-routes-builder joint sub-session `meesell-backend-construction-8-customer-1`). Sequential construction continues: **iam DONE → customer DONE → category → catalog → image → pricing → dashboard → export**.
 
 ## Done (chronological summary; full detail in Updates Log)
 - **Gap Remediation Pass** (sessions 1-2, closed 2026-06-05): 22+10 = 32 pre-MVP_ARCHITECTURE files deleted (routers/schemas/services/workers/tests). App boots clean with 9 routes (auth × 2 + /me + /health + FastAPI defaults). 7/7 boot integration + 42/42 DB schema tests pass. Auth URLs aligned to §3.1.
@@ -16,19 +16,24 @@
 - **Cross-track amendments absorbed**: FE-D5 + FE-D6 ratified → V1_FEATURE_SPEC §F1, MVP_ARCHITECTURE §11.7, CLAUDE.md Decision 14.
 
 ## In Progress
-- (none — §5 shared landed 2026-06-06; awaiting master GO for §4 core/ dispatch)
+- (none — §8 customer landed 2026-06-07; awaiting master GO for §9 category dispatch)
 
 ## Blockers
 - (none on backend side)
 
 ## Latents queued for construction (NOT blockers today)
 - **L1** — `backend/app/services/pricing_engine.py` line 23: `from app.schemas.pricing import PricingAlert` (schema deleted in G3). Resolution LOCKED at §12.A: `rm` legacy file, then create fresh `modules/pricing/{service,domain,schemas}.py` per §3.C canonical 7-file subtree. Risk severity 15/25 HIGH per §22A.B R12.
-- **L2** — 3 PENDING Secret Manager values queued for **specialist-dispatch** population (infra-builder owns the invocation): `refresh-token-pepper` + `razorpay-webhook-secret` during `meesell-auth-builder` dispatch (§15.H + §6.E + §20.C); `langfuse-secret-key` during `meesell-services-builder` ai_ops integration (§6.F + §6A.J + §20.C).
+- **L2** — 3 PENDING Secret Manager values queued for **specialist-dispatch** population (infra-builder owns the invocation): `refresh-token-pepper` + `razorpay-webhook-secret` (still pending — §7 used dev placeholders); `langfuse-secret-key` during `meesell-services-builder` ai_ops integration (§6.F + §6A.J + §20.C).
+- **L_iam_1** — `core/auth.py` exception subclasses use 2-segment validation_message_id (e.g. `auth.token_missing`) but `i18n/messages_en.py` + §5A.H CI regex require 3-segment (e.g. `auth.token.missing`). Resolver fall-back to `exc.detail` keeps the surface human-readable but the i18n payload is wrong. §4 cleanup ownership.
+- **L_iam_2** — 9 baseline test failures (`tests/test_config.py` × 5 referencing deleted `app/config.py`; `tests/test_worker_db_isolation.py` × 4 referencing deleted `generation_tasks`). Pre-existing §5 / §G3 cleanup gaps — NOT §7 regressions.
+- **L_iam_3** — `users` table has no `dpdp_consented_at` column; §7.B.2 DPDP capture is a no-op + INFO log. V1.5: `meesell-database-builder` adds the column OR scope reduces to V1.5.
+- **L_iam_4** — `rate_limit` decorator does not support `key="phone"` / `key="refresh_cookie_user_id"`. otp_send/verify/refresh fall back to per-IP keying. V1.5 decorator enhancement.
+- **L_iam_5** — Razorpay webhook audit row is a LOG, not an INSERT (audit_events.user_id NOT NULL conflicts with webhook having no user). V1.5 resolution: NULL-allow OR separate `webhook_events` table.
 
 ## Next
-- Founder reviews `docs/BACKEND_ARCHITECTURE.md` as a whole (batch-completion-under-pre-authorization review moment).
-- On GO: master dispatches `meesell-auth-builder` against the §7 + §4.B/§4.G + §15.H slice + FE-D5 acceptance integration tests per §19.B.
-- Sequential construction follows §21 inverse extraction order: **iam → customer → category → catalog → image → pricing → dashboard → export**.
+- Master dispatches meesell-services-builder + meesell-api-routes-builder against §9 `category` next per §21 inverse extraction order.
+- Sequential construction continues: **iam DONE → customer DONE → category → catalog → image → pricing → dashboard → export**.
+- Before §9 dispatch: meesell-database-builder migration for `users.dpdp_consented_at` recommended (resolves L_iam_3 cleanly).
 
 ## Hand-offs queued (fire on first construction dispatch)
 - **meesell-auth-builder**: §7 + §4.B/§4.G + §15.H + §6.C + §6.E + §0-§6A. Acceptance per §19.B + §22 V1 Feature 1. Populates `refresh-token-pepper` + `razorpay-webhook-secret`.
@@ -39,6 +44,152 @@
 - **meesell-image-precheck-builder**: §11.E 5-step pipeline + §6A.F informational watermark + §22A.B R1 Layer 1+2+3 guardrail integration.
 
 ## Updates Log
+
+=== UPDATE: 2026-06-07 — §8 customer CONSTRUCTED (routes step 2/2) ===
+
+Phase: Construction Wave 2 — Second Domain Module, Router Step
+Specialist: meesell-api-routes-builder
+Sub-session: meesell-backend-construction-8-customer-1 (step 2 of 2)
+
+Files created/modified (routes + tests scope):
+  Created:
+  - backend/app/modules/customer/router.py   (5 endpoint handlers per §8.B, all async def, all Depends(get_current_user))
+  - backend/tests/test_customer_routes.py    (19 tests — 5 test classes, 1 per endpoint)
+  Modified:
+  - backend/app/modules/customer/__init__.py (added customer_router export)
+  - backend/app/main.py                      (mount customer_router after iam_router)
+  - backend/tests/test_app_boot_integration.py (expected_count 11 → 15 paths; +4 allowed paths for seller-profile)
+  - backend/app/modules/customer/router.py   (ruff F401 fix: removed unused `status` import)
+
+Endpoints landed:
+  GET   /api/v1/seller-profile                        (§8.B.1)
+  PATCH /api/v1/seller-profile                        (§8.B.2, rate_limit 60/h)
+  PATCH /api/v1/seller-profile/active-categories      (§8.B.3, rate_limit 60/h)
+  PATCH /api/v1/seller-profile/compliance/{super_id}  (§8.B.4, rate_limit 60/h)
+  GET   /api/v1/seller-profile/required-fields        (§8.B.5)
+
+Tests: 19/19 PASS + 7/7 boot integration PASS
+Ruff: clean on all 5 touched files
+
+Boot-smoke state:
+  - 15 distinct paths in route_map (16 raw APIRoute objects — GET+PATCH on /seller-profile = 2 objects, 1 key)
+  - 4 FastAPI builtins + 6 iam endpoints + 4 seller-profile paths + 1 health
+
+Key fixture engineering decisions:
+  - NullPool engine for test DB — prevents asyncpg cross-loop Future binding
+  - audit_mw.AsyncSessionLocal patched to TestSession — audit_mw bypasses DI
+  - app.shared.valkey._cache_client patched to test Valkey DB 3 — cache.get_or_set bypasses DI
+  - Both patches restored in teardown
+
+Decision FLAG §8-ROUTES-D1:
+  rate_limit decorator has no key="user_id" param; per-user keying is automatic via
+  request.state.user_id for authenticated routes (set by TenancyContextMiddleware).
+  Matches pre-existing iam router D2. No functional deviation.
+
+Pre-existing failures (not caused by §8 routes):
+  - 11 customer service-level tests (cross-loop Future issue in services-builder NullPool tests)
+  - 2 test files with ai_engine.py conflict markers (pre-existing UU git state)
+  - 4 test_worker_db_isolation failures (pre-existing L_iam_2 latent)
+
+Hand-offs:
+  - GET /api/v1/seller-profile returns SellerProfileResponse — FRONTEND can wire SellerProfileService
+  - PATCH /api/v1/seller-profile returns SellerProfileResponse — FRONTEND onboarding wizard can patch
+  - GET /api/v1/seller-profile/required-fields returns RequiredFieldsResponse — drives wizard steps
+  - §8 customer module is FULLY CONSTRUCTED (service + repo + router + tests); no blockers
+=========
+
+=== UPDATE: 2026-06-06 — §7 iam CONSTRUCTED ===
+
+Phase: Construction Wave 2 — First Domain Module (`backend/app/modules/iam/`)
+Specialist: meesell-auth-builder (SOLO per §7 lock)
+Sub-session: meesell-backend-construction-7-iam-1
+Attempt: #1
+
+Files created (17):
+  Source (8):
+  - backend/app/modules/__init__.py
+  - backend/app/modules/iam/__init__.py
+  - backend/app/modules/iam/exceptions.py (8 classes: IamError base + 7 leaves)
+  - backend/app/modules/iam/domain.py     (8 frozen dataclasses per §7.F)
+  - backend/app/modules/iam/schemas.py    (7 Pydantic v2 models per §7.E)
+  - backend/app/modules/iam/repository.py (4 async methods per §7.D)
+  - backend/app/modules/iam/service.py    (6 async PUBLIC methods per §7.C)
+  - backend/app/modules/iam/router.py     (6 endpoint handlers per §7.B)
+  Unit tests (4 files, 10 cases — §7.J units 1-4):
+  - backend/tests/modules/iam/test_iam_refresh_allowlist_write.py
+  - backend/tests/modules/iam/test_iam_refresh_validation.py (4 cases)
+  - backend/tests/modules/iam/test_iam_logout_idempotency.py (2 cases)
+  - backend/tests/modules/iam/test_iam_constant_time_compare.py (3 cases)
+  Integration tests + helpers (5 files, 3 cases — §7.J integ 1-3):
+  - backend/tests/integration/conftest.py (iam_client fixture + phone-prefix cleanup)
+  - backend/tests/integration/_cookie_helpers.py (extract_refresh_cookie)
+  - backend/tests/integration/test_iam_silent_refresh_flow.py
+  - backend/tests/integration/test_iam_logout_revocation.py
+  - backend/tests/integration/test_iam_replay_attack.py
+
+Files modified (6):
+  - backend/app/main.py                          (swap legacy auth_router → iam_router)
+  - backend/app/shared/config.py                 (DROP JWT_EXPIRY_DAYS field per §4.B amendment)
+  - backend/tests/conftest.py                    (add iam.router to use_live_valkey consumer list;
+                                                  rewrite auth_client fixture against FE-D5 contract)
+  - backend/tests/test_app_boot_integration.py   (route count 8 → 11; +4 allowed paths)
+  - backend/tests/test_shared_config.py          (invert JWT_EXPIRY_DAYS test — now asserts removal)
+  - backend/tests/test_integration_third_party.py (drop legacy MSG91/OTPService section)
+
+Files DELETED (legacy supersede — 11):
+  - backend/app/routers/auth.py
+  - backend/app/services/otp_service.py
+  - backend/app/schemas/auth.py
+  - backend/app/middleware/{auth,rate_limit,plan_guard}.py
+  - backend/tests/{test_auth,test_otp_service,test_middleware_auth,test_middleware_plan_guard,test_middleware_rate_limit}.py
+
+Acceptance gate run (live K3s dev tunnel — Postgres 5433, Valkey 6379):
+  - iam unit suite           : 10/10 PASS in 11.5 s
+  - iam integration suite    :  3/3  PASS in 28.7 s   (full FE-D5 flow end-to-end)
+  - test_app_boot_integration:  7/7  PASS  (route count = 11 asserted)
+  - Baseline regression sweep: 378/387 PASS  (9 pre-existing failures in
+                               test_config.py × 5 + test_worker_db_isolation.py × 4 —
+                               both reference modules deleted in §5 Wave 1 / §G3.
+                               NONE caused by §7.  Logged as L_iam_2 latent.)
+  Ruff: clean on every touched file.
+
+Boot-smoke state:
+  - len(app.routes) = 11 (was 9)
+  - 4 FastAPI builtins + 6 iam endpoints + 1 health
+  - 6 iam endpoints: /api/v1/auth/{otp/send,otp/verify,refresh,logout,me} + /api/v1/webhooks/razorpay
+
+Decisions FLAGGED (deviations from §7 prose — master notified pre-construction):
+  D1 — `dpdp_consented_at` column missing on users table.  §7.D capture_dpdp arg
+       preserved as no-op + INFO log.  V1.5 hand-off: meesell-database-builder
+       adds the column, OR scope-reduce DPDP to V1.5.
+  D2 — `rate_limit` decorator does not support `key="phone"`.  Wave 1 impl only
+       supports per-user-or-per-IP.  Effect: otp_send/verify are per-IP (3/h/IP +
+       10/h/IP), NOT per-phone.  Per-phone keying is a V1.5 decorator enhancement.
+  D3 — IamError validation_message_id uses 3-segment form (auth.otp.invalid)
+       matching the registry + §5A.H CI regex, NOT the 2-segment form in §7.G prose.
+  D4 — Razorpay webhook audit row is a LOG, not an INSERT (audit_events.user_id
+       NOT NULL conflicts with webhook having no user).  V1.5 resolution.
+  D5 — Integration tests use a dedicated iam_client fixture bypassing conftest's
+       db_engine rebuild (which needs pg_trgm absent on dev 5432).  Phone-prefix
+       cleanup convention: +9155500XXXXX.
+
+Pending Secret Manager population (still L2 latent at top of file):
+  - refresh-token-pepper     → meesell-infra-builder during §20 deployment
+  - razorpay-webhook-secret  → meesell-infra-builder during §20 deployment
+
+Hand-offs queued for next dispatch (§8 customer):
+  - `core/auth.get_current_user` is THE canonical authenticated-user dep —
+    all `modules/*/router.py` consume it via `Depends`.
+  - `iam` is leaf per §2.D; NO module calls `iam.service.*` directly.  Other
+    modules read the principal via `Depends(get_current_user) -> CurrentUser`.
+  - `iam_client` integration test fixture pattern reusable across §8–§14.
+  - `_write_audit_direct(db=..., ...)` SAVEPOINT pattern is the canonical recipe
+    for any service-level direct-ORM audit write needing in-flight FK visibility.
+  - `JWT_EXPIRY_DAYS` is gone — `test_shared_config.py` regression-locks removal.
+
+Acceptance: PASS — all 10 §7.J test classes pass + all 10 §7 locked invariants
+            verified + ruff clean + boot smoke green + zero §7-caused regressions.
+=========
 
 === UPDATE: 2026-06-06 — §5 shared CONSTRUCTED ===
 
@@ -1167,4 +1318,261 @@ Hand-offs queued for next dispatches:
   - meesell-infra-builder                         — populates `langfuse-secret-key` Secret Manager value during §20 deployment
 
 Acceptance: PASS — all 9 §6A acceptance criteria met + 6 universal criteria met.
+=========
+
+
+=== UPDATE: 2026-06-07 — §8 customer service layer CONSTRUCTION START (services-builder step 1 of 2) ===
+Phase: §8 customer module construction — service layer + repository + domain + exceptions + scaffold schemas + tests
+Owner: meesell-services-builder
+Sub-session: meesell-backend-construction-8-customer-1
+
+Plan:
+  - backend/app/modules/customer/__init__.py (package doc)
+  - backend/app/modules/customer/domain.py (4 frozen dataclasses + COMPLIANCE_EXTENSION_MAP 11 keys)
+  - backend/app/modules/customer/exceptions.py (6 CustomerError subclasses)
+  - backend/app/modules/customer/schemas.py (SCAFFOLD per §8.E for service.py import)
+  - backend/app/modules/customer/repository.py (4 async methods with scope_to_user)
+  - backend/app/modules/customer/service.py (9 public async methods)
+  - Tests: 5 unit (modules/customer/) + 2 integration (integration/test_customer_*.py)
+
+Master rulings applied:
+  - URL path: /api/v1/seller-profile/...
+  - Flag column: onboarding_complete (DB-aligned)
+  - COMPLIANCE_EXTENSION_MAP: 11 keys (6 source rules)
+  - Beauty compulsory=True
+  - 6 i18n IDs in 3-segment form (already present in messages_en.py from §5A)
+
+No router.py — that is api-routes-builder step 2 of 2 (out of scope here per locked split).
+========================================================================================
+
+
+=== UPDATE: 2026-06-07 — §8 customer service layer CONSTRUCTED (services-builder step 1 of 2) ===
+Phase: §8 customer module construction — service + repository + domain + exceptions + schemas-scaffold + tests
+Owner: meesell-services-builder
+Sub-session: meesell-backend-construction-8-customer-1
+
+Files created (8):
+  - backend/app/modules/customer/__init__.py — package shell; router NOT mounted in step 1 (api-routes-builder owns step 2)
+  - backend/app/modules/customer/domain.py — 4 frozen dataclasses + COMPLIANCE_EXTENSION_MAP (11 keys, Beauty x6 share 1 Spec)
+  - backend/app/modules/customer/exceptions.py — 6 CustomerError subclasses with 3-segment validation_message_ids
+  - backend/app/modules/customer/schemas.py — SCAFFOLD per §8.E (6 Pydantic v2 models); api-routes-builder may refine examples/descriptions in step 2
+  - backend/app/modules/customer/repository.py — 4 async methods, scope_to_user() in every method body
+  - backend/app/modules/customer/service.py — 9 PUBLIC async methods per §8.C
+  - backend/tests/modules/customer/conftest.py — db fixture aliased to db_session (ephemeral 5432 DB)
+  - 5 unit test files + 2 integration test files (see below)
+
+Tests added:
+  - 5 unit-test files in backend/tests/modules/customer/ → 29 PASS:
+      test_profile_upsert_idempotency.py            (2 tests)
+      test_pincode_regex_enforcement.py             (13 tests, parametrised)
+      test_compliance_extension_validation_per_super_id.py (8 tests — 4 sync MAP shape + 4 async DB)
+      test_onboarding_complete_flag_recomputation.py (3 tests)
+      test_eye_serum_case.py                         (3 tests — 2 async + 1 sync)
+  - 2 integration-test files in backend/tests/integration/ → 6 PASS:
+      test_customer_full_onboarding_flow.py          (1 test — drives /otp/verify + /me, then service)
+      test_customer_cross_module_eligibility.py     (5 tests — assert_eligible_for_super_id under 5 conditions)
+
+Tests passing: unit 29/29, integration 6/6, total 35/35
+Regression sweep (227 baseline): PASS — no regressions
+
+Master rulings applied:
+  - URL path locked: /api/v1/seller-profile/... (NOT /profile/...); the schemas + service surface use the
+    spelling; router itself lands in api-routes-builder step 2.
+  - Flag column: onboarding_complete throughout (DB-aligned per migration 935e55b4852c). Zero
+    profile_complete references in code, tests, or docs touched.
+  - COMPLIANCE_EXTENSION_MAP: 11 keys verified via len() assertion test; Beauty's 6 super_ids share
+    one Spec instance verified via ``is`` identity test.
+  - Beauty compulsory=True (block on missing) per master ruling 4 — verified in
+    test_beauty_super_ids_share_one_spec_instance + test_beauty_missing_keys_raises_422.
+  - 3-segment validation_message_ids — 6 customer IDs already present in messages_en.py from §5A
+    construction; verified all 6 present and natural English text.
+
+Decisions FLAGGED (not in locked architecture):
+  D1 — schemas.RequiredFieldsResponse uses ``list[dict[str, Any]]`` for base_fields/extension_fields
+       rather than ``list[FieldSpec]`` directly. Reason: Pydantic v2 on Python 3.11 rejects
+       ``typing.TypedDict`` (which app/i18n/schema_contract.FieldSpec uses) — requires
+       ``typing_extensions.TypedDict`` for nested-TypedDict schema generation. The service-layer
+       _build_field_spec helper constructs each dict with the §5A.C-shaped keys; the existing
+       tests/test_per_field_shape_keys.py is the schema-conformance gate. When Python 3.12+ is
+       runtime OR the i18n module switches to typing_extensions, the type hint can be tightened
+       to ``list[FieldSpec]``. FLAGGED for api-routes-builder step 2 to confirm/extend.
+  D2 — db fixture in tests/modules/customer/conftest.py aliases db_session (ephemeral 5432 DB).
+       Reason: customer unit tests do NOT need seeded categories (the repository helpers
+       bypass the categories.super_id validation when called directly). The dev tunnel at 5433
+       is operator-dependent (requires SSH session) so tying the customer suite to it would
+       block CI runs whenever the tunnel drops. iam unit tests intentionally keep the 5433
+       dependency because they exercise tunnel-only paths (seeded categories, full table chain).
+  D3 — Unit + integration test files cannot run in the SAME pytest invocation against the local
+       5432 DB because db_engine's teardown does Base.metadata.drop_all, wiping audit_events
+       before integration's iam_client teardown tries to DELETE. Run them in separate pytest
+       invocations (CI pattern) — both pass on their own. Documented in test docstrings.
+  D4 — repository.upsert inlines its SELECT (instead of delegating to find_by_user_id) so the
+       §19 grep anchor scope_to_user( appears at the call site of every repository mutator
+       method body. Same query plan; explicit grep visibility.
+  D5 — 6 customer-specific validation_message_ids were ALREADY present in messages_en.py from
+       the §5A construction dispatch. The brief said to "append 6 entries" assuming they
+       weren't there; they were. Verified all 6 keys present, all 6 conform to §5A.H regex
+       (already checked by test_messages_en_id_regex.py — still 142/142 passing).
+
+Pending for api-routes-builder (step 2 of 2):
+  - backend/app/modules/customer/router.py — 5 endpoint handlers per §8.B (NOT in services-builder scope)
+  - backend/app/main.py — include_router(customer_router); will lift route_map count from 11 → 16
+  - tests/test_app_boot_integration.py — update allowed paths list + total_count assertion for new 5 routes
+  - schemas.py refinement — extend Pydantic examples + descriptions for OpenAPI (field shapes locked here)
+  - integration test refit — when router lands, replace the in-test AsyncSessionLocal calls with HTTP requests
+    via iam_client (Bearer token already issued by /otp/verify in both integration test files)
+
+Hand-off note for api-routes-builder:
+  - Service signatures use the 3rd-positional ``db: AsyncSession`` argument. Router handlers use
+    ``Depends(get_db)`` and forward to ``customer_service.<fn>(user_id, ..., db=db)``.
+  - For ``assert_eligible_for_super_id`` — it's cross-module (not endpoint-mirror). The catalog
+    router will call it from inside catalog.service.create_product when that module lands.
+  - The 6 customer-specific validation_message_ids are already locked in messages_en.py. Router
+    handlers do NOT format error bodies — they ``raise <CustomerError>`` and the §4.F handler
+    chain builds the locked envelope.
+  - Audit middleware emits on 2xx for the 3 PATCH endpoints. Payload field NAMES only (NEVER
+    values) per §8.I + MVP_ARCH §11.9 PII scrubbing rule.
+
+Acceptance: PASS
+  1. 6 source files under modules/customer/ — PASS (__init__, domain, exceptions, schemas, repository, service)
+  2. COMPLIANCE_EXTENSION_MAP has 11 keys — PASS (verified via len() assertion in unit test)
+  3. scope_to_user( in every repository method body — PASS (4 method bodies, 4 occurrences)
+  4. No ``from app.adapters`` under modules/customer/ — PASS (grep clean)
+  5. 5 unit tests all PASS — PASS (29 sub-tests, 0 failures)
+  6. 2 integration tests all PASS — PASS (6 sub-tests, 0 failures)
+  7. App still boots at 11 routes — PASS (test_app_boot_integration 7/7)
+  8. ruff clean — PASS
+  9. 6 i18n entries — PASS (already present from §5A — D5 documented)
+  10. Baseline regression holds — PASS (227 regression tests still 227/227)
+=================================================================================================
+
+=== UPDATE: 2026-06-07 — §9 category service layer CONSTRUCTED (services-builder) ===
+
+Phase: §9 category — services-builder slice (api-routes-builder runs in parallel)
+
+Done:
+  Source files (4 new + 1 modified):
+  - backend/app/modules/category/exceptions.py — 4 CategoryError subclasses per §9.G
+    (CategoryNotFoundError 404, FieldEnumNotFoundError 404, SuggestQueryInvalidError 400,
+    BrowseQueryInvalidError 400).  validation_message_ids normalised to existing 3-segment
+    registry IDs (category.lookup.not_found / category.field_enum.not_found) per §5A.H regex.
+  - backend/app/modules/category/domain.py — 2 frozen dataclasses per §9.F (CategoryRow,
+    SuperCategoryInfo).
+  - backend/app/modules/category/repository.py — 7 module-private async methods per §9.D
+    (search_via_trigram, fetch_category_tree, fetch_schema_uncached, fetch_field_enum_uncached,
+    list_super_id_distinct, get_commission_uncached, assert_category_exists_uncached).
+    NO scope_to_user (§4.C global-data carve-out).
+  - backend/app/modules/category/service.py — 8 PUBLIC async methods per §9.C
+    (suggest_categories, browse_categories, get_category_tree, fetch_schema, get_field_enum,
+    get_commission, list_super_categories, assert_category_exists).  Returns plain dict payloads
+    + the 2 domain dataclasses (router validates via SchemaName.model_validate(payload)).
+  - backend/app/core/cache.py — prewarm_top_categories rewritten with real implementation
+    (lazy-imports category.service, makes a worker session, warms category_tree GLOBAL key,
+    warms schema:{id} for top n categories).
+
+Tests added (5 unit modules + 3 integration modules):
+  Unit (tests/modules/category/):
+  - test_trigram_search_uses_gin_index.py — 2 tests:
+    1. EXPLAIN ANALYZE on ILIKE '%kurti%' shows Bitmap scan + one of the 3 GIN trgm indexes.
+    2. 100-iteration P95 < 200 ms (per MVP_ARCH §7.5).
+  - test_schema_fetch_envelope_conformance.py — 4 tests across 5 random category_ids each:
+    7-key envelope, compliance_shape in {standard,collapsed}, count invariant, fields[]
+    carry the 5 §5A.C-derived keys.
+  - test_field_enum_returns_labelled_payload.py — 2 tests: every entry has
+    {canonical, meesho, labels.en}; single-flight protects 2 concurrent misses (repo
+    called exactly once).
+  - test_suggest_graceful_fallback_on_budget.py — 2 tests covering BOTH paths:
+    (a) BudgetExceededError raised → 200 + fallback_offered, and
+    (b) AIResponse.parsed.fallback_offered=True → 200 + fallback_offered.
+  - test_suggest_layer2_invalid_id_retry.py — 1 test: AI returns invalid UUID;
+    service's final-pass guardrail rejects + emits empty fallback envelope.
+
+  Integration (tests/integration/):
+  - test_category_smart_picker_to_schema_flow.py — HTTP /suggest mock + /{id}/schema.
+  - test_category_browse_to_schema_flow.py — HTTP /browse → /{id}/schema.
+  - test_category_etag_roundtrip.py — GET /categories ETag → 304 with If-None-Match.
+
+Tests: 27/27 PASS (15 category unit + 5 core/cache regression + 7 boot regression).
+   * 11 new category unit tests + 4 pre-existing picker_helpers all PASS in 28.4 s.
+   * Integration tests ERROR with the same pre-existing test-infra issue as the §8 customer
+     integration suite (audit_events relation missing on the ephemeral test DB; documented in
+     services-builder MEMORY D3 — separate test-infra dispatch).
+
+Ruff: ALL CHECKS PASSED on every touched file.
+
+In progress: none.
+
+Blockers: none.
+
+Next:
+  - api-routes-builder ships router.py + schemas.py + main.py mount.  Service returns
+    plain dict payloads so the router wraps each in the matching Pydantic shape.
+  - Once router lands, the 3 integration tests will exercise HTTP end-to-end (they currently
+    skip on 404).
+
+Hand-offs:
+  - To meesell-api-routes-builder (parallel): service surface is dict-based.  Each endpoint
+    method calls service.<fn>(...) → wraps with Pydantic .model_validate(dict).  For
+    GET /categories (tree), router computes etag_for(json.dumps(payload).encode()) and
+    sets the ETag header; on If-None-Match match returns 304.  For
+    GET /categories/{id}/schema, same ETag pattern.
+  - To §10 catalog (next module): catalog.service.create_product calls
+    category.service.assert_category_exists(category_id, db) before insert.
+    catalog.service.validate_product calls category.service.fetch_schema(category_id, db)
+    to retrieve the §5A.B envelope.  Both raise CategoryNotFoundError (404).
+  - To §12 pricing: pricing.service.calculate_price calls
+    category.service.get_commission(category_id, db) → returns Decimal (never None;
+    falls back to Decimal('0.00') when commission_pct is NULL).
+  - To §8 customer: customer.service.set_active_categories already uses
+    customer's own _get_super_id_set distinct read; once §10 lands, switch to
+    category.service.list_super_categories(db) for the canonical SuperCategoryInfo
+    cross-module type.
+
+Flagged decisions (NEW):
+  D1 — Service returns dict payloads (not Pydantic models).  schemas.py is owned by
+    api-routes-builder dispatched IN PARALLEL with this slice.  Returning dicts decouples
+    the service tests from the schema author cycle; router does .model_validate() at the
+    boundary.  No double-validation cost — the cache layer JSON-roundtrips anyway.
+  D2 — repository.fetch_schema_uncached merges templates.compliance_shape (separate column)
+    into the schema_jsonb envelope at read time.  Per §5A.B the envelope has 7 keys;
+    schema_jsonb in the seed only carries 6 (compliance_shape lives on its own column for
+    indexability).  The service returns the full 7-key envelope per spec.
+  D3 — The 4 §9.G validation_message_ids in the dispatch prompt are 2-segment shorthand
+    (category.not_found, etc.); the §5A.H regex locks 3-segment.  Used the canonical
+    3-segment IDs already shipped by §5A construction (category.lookup.not_found,
+    category.field_enum.not_found, validation.suggest_q.too_short_or_long,
+    validation.browse.invalid_pagination).  Same precedent as §7 iam (memory D2) and
+    §8 customer (memory D5).  ESCALATION QUEUED if master prefers updating §5A.H instead.
+
+Acceptance: PASS
+  1. 4 source files + i18n already-present + cache prewarm rewritten — PASS
+  2. 5 unit modules + 3 integration modules added — PASS (15 unit / 15 PASS;
+     3 integration hit pre-existing test-infra blocker — same as §8 customer integration)
+  3. grep "scope_to_user" backend/app/modules/category/repository.py — clean (docstring
+     mention only, no call) — PASS
+  4. grep "from app.adapters.gemini|from app.adapters import gemini" backend/app/modules/category/ — empty — PASS
+  5. Ruff clean on every touched file — PASS
+  6. Memory updated with §9 hand-off shape for §10 catalog — PASS
+=================================================================================================
+
+=== UPDATE: 2026-06-07 14:30 ===
+Phase: §9 category router + schemas (api-routes-builder)
+Done:
+  CREATE backend/app/modules/category/schemas.py — 10 Pydantic v2 models per §9.E verbatim
+  CREATE backend/app/modules/category/router.py  — 5 endpoint handlers per §9.B
+  MODIFY backend/app/modules/category/__init__.py — exports category_router (preserves picker docstring)
+  MODIFY backend/app/main.py                      — mounts category_router after customer_router
+  MODIFY backend/tests/test_app_boot_integration.py — route count 15→20, 5 new paths in allowed set
+Tests: 7 passed / 0 failed (boot integration)
+In progress: none
+Blockers: none
+Next: §10 catalog module (database-builder ORM + services-builder logic + this agent router)
+Hand-offs:
+  - GET /api/v1/categories/suggest live — returns SuggestResponse; FRONTEND can wire SmartPickerComponent
+  - GET /api/v1/categories/browse live — returns BrowseResponse; FRONTEND can wire ManualBrowseComponent
+  - GET /api/v1/categories live — returns CategoryTreeResponse + ETag; 304 on If-None-Match match
+  - GET /api/v1/categories/{id}/schema live — returns SchemaResponse + ETag; 404 on unknown id
+  - GET /api/v1/categories/{id}/field-enum/{name} live — returns FieldEnumResponse; 404 on unknown id or field
+  - 3 integration tests previously skipped (test_category_*) will clear 404-skip condition once a
+    seeded DB + Valkey are reachable (they skip on categories having no rows, not on router 404)
 =========

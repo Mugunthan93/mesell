@@ -14,6 +14,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 
+import { MatDialog } from '@angular/material/dialog';
 import { MatTableModule } from '@angular/material/table';
 import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { MatChipsModule } from '@angular/material/chips';
@@ -26,6 +27,9 @@ import { TranslocoModule, TranslocoService } from '@jsverse/transloco';
 
 import { debounceTime, distinctUntilChanged, catchError } from 'rxjs/operators';
 import { EMPTY } from 'rxjs';
+
+import { ConfirmDialogComponent } from '@shared/components/confirm-dialog/confirm-dialog.component';
+import { ProductRowComponent } from '../components/product-row/product-row.component';
 
 import { ErrorService } from '@core/services/error.service';
 import { StatusBadgeComponent } from '@shared/components/status-badge/status-badge.component';
@@ -44,6 +48,7 @@ type StatusFilter = 'draft' | 'ready' | 'exported';
   selector: 'mee-dashboard',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styleUrl: './dashboard.component.scss',
   imports: [
     // Angular
     ReactiveFormsModule,
@@ -63,6 +68,8 @@ type StatusFilter = 'draft' | 'ready' | 'exported';
     EmptyStateComponent,
     RelativeTimePipe,
     StatCardComponent,
+    // Feature-private
+    ProductRowComponent,
   ],
   template: `
     <div class="mee-dashboard-page">
@@ -212,6 +219,20 @@ type StatusFilter = 'draft' | 'ready' | 'exported';
               </td>
             </ng-container>
 
+            <!-- Actions column -->
+            <ng-container matColumnDef="actions">
+              <th mat-header-cell *matHeaderCellDef class="mee-cell--actions">
+                <span class="sr-only">{{ 'dashboard.table.actions' | transloco }}</span>
+              </th>
+              <td mat-cell *matCellDef="let row" class="mee-cell--actions">
+                <mee-product-row
+                  [row]="row"
+                  (editRequest)="navigateToEdit($event)"
+                  (deleteRequest)="onDeleteRequest($event)"
+                ></mee-product-row>
+              </td>
+            </ng-container>
+
             <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
             <tr
               mat-row
@@ -263,6 +284,7 @@ export class DashboardComponent implements OnInit {
   private readonly errorService = inject(ErrorService);
   private readonly router = inject(Router);
   private readonly transloco = inject(TranslocoService);
+  private readonly dialog = inject(MatDialog);
 
   // ── Local signals ──
   readonly products = signal<ProductListItem[]>([]);
@@ -289,7 +311,7 @@ export class DashboardComponent implements OnInit {
   readonly searchCtrl = new FormControl<string>('', { nonNullable: true });
 
   // ── Table config ──
-  readonly displayedColumns: string[] = ['name', 'status', 'updatedAt'];
+  readonly displayedColumns: string[] = ['name', 'status', 'updatedAt', 'actions'];
 
   constructor() {
     // Wire search control with debounce — takeUntilDestroyed auto-unsubscribes
@@ -336,6 +358,44 @@ export class DashboardComponent implements OnInit {
 
   navigateToCreate(): void {
     this.router.navigate(['/catalogs/new']);
+  }
+
+  /**
+   * Opens the ConfirmDialog for deleting a product.
+   * ConfirmDialogComponent uses Angular input() signals (not MAT_DIALOG_DATA).
+   * Inputs are set via ComponentRef.setInput() — the supported Angular 18 API
+   * for setting input() signals on dynamically-opened Material dialog components.
+   */
+  onDeleteRequest(row: ProductListItem): void {
+    const dialogRef = this.dialog.open(ConfirmDialogComponent, { width: '360px' });
+
+    // ComponentRef.setInput() is the Angular 18 API for setting input() signals
+    // on dynamically-created components. componentRef is always non-null when
+    // opening a Component (not a TemplateRef) via MatDialog.open().
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    const cmpRef = dialogRef.componentRef!;
+    cmpRef.setInput('title', this.transloco.translate('dashboard.delete.confirm.title'));
+    cmpRef.setInput('message', this.transloco.translate('dashboard.delete.confirm.message'));
+    cmpRef.setInput('confirmLabel', this.transloco.translate('dashboard.delete.confirm.confirm'));
+    cmpRef.setInput('cancelLabel', this.transloco.translate('dashboard.delete.confirm.cancel'));
+    cmpRef.setInput('destructive', true);
+
+    dialogRef.afterClosed().subscribe((confirmed: boolean) => {
+      if (!confirmed) return;
+      this.dashboardApi
+        .deleteProduct(row.product_id)
+        .pipe(
+          catchError((err) => {
+            this.errorService.showError(
+              err?.displayMessage ?? 'Failed to delete product',
+            );
+            return EMPTY;
+          }),
+        )
+        .subscribe(() => {
+          this.loadProducts();
+        });
+    });
   }
 
   // ── Data loading ──

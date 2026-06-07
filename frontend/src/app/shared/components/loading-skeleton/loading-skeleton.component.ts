@@ -14,7 +14,7 @@ type SkeletonVariant = 'card' | 'table-row' | 'text' | 'stat-card';
       to   { background-position:  200% 0; }
     }
     .shimmer-box {
-      background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+      background: linear-gradient(90deg, var(--mee-color-surface-variant) 25%, var(--mee-color-outline) 50%, var(--mee-color-surface-variant) 75%);
       background-size: 200% 100%;
       animation: shimmer 1.5s infinite linear;
     }

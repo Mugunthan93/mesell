@@ -9,11 +9,11 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
   imports: [MatProgressSpinnerModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px;">
-      <div class="mee-loading-spinner">
+    <div class="flex flex-col items-center justify-center gap-2">
+      <div class="flex flex-col items-center gap-1">
         <mat-spinner [diameter]="diameter()" />
         @if (caption()) {
-          <p class="mee-loading-spinner__caption">{{ caption() }}</p>
+          <p class="text-xs text-on-surface-variant text-center mt-1">{{ caption() }}</p>
         }
       </div>
     </div>

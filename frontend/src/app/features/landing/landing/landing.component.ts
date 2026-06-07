@@ -1,180 +1,120 @@
 // features/landing/landing/landing.component.ts
-// Route: / — Landing page visual shell (no service injection; hardcoded stub content)
-// Rendered inside MeeAuthLayoutComponent's centered white card (max-width 440px)
+// Route: / — public home page (no auth required, no API calls)
+// per FRONTEND_ARCHITECTURE.md §2.C.1
+// Dispatch: auth sub-session dispatch 1 of N (2026-06-06)
 
 import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { MatButtonModule } from '@angular/material/button';
+import { TranslocoModule } from '@jsverse/transloco';
 
 @Component({
   selector: 'mee-landing',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [RouterLink],
+  host: { class: 'mee-landing' },
+  imports: [
+    RouterLink,
+    MatButtonModule,
+    TranslocoModule,
+  ],
   template: `
-    <div style="padding: 32px 32px 28px;">
+    <!-- Section 1: Top navbar strip -->
+    <header class="sticky top-0 z-50 bg-bg-elevated shadow-mee-1 px-4 py-3">
+      <nav
+        class="max-w-5xl mx-auto flex items-center justify-between"
+        aria-label="MeeSell main navigation"
+      >
+        <span class="font-bold text-mee-xl text-on-surface">MeeSell</span>
 
-      <!-- Section 1: Hero -->
-      <div>
-        <span style="
-          display: inline-block;
-          background: #FFF3E8;
-          color: #F26B23;
-          border: 1px solid #FDDCB5;
-          font-size: 11px;
-          font-weight: 600;
-          padding: 4px 10px;
-          border-radius: 999px;
-          margin-bottom: 16px;
-          line-height: 1.4;
-        ">&#128640; AI-powered catalog builder</span>
+        <div class="flex items-center gap-4">
+          <a
+            routerLink="/login"
+            class="text-mee-sm text-on-surface-variant hover:text-primary transition duration-standard no-underline min-h-[44px] inline-flex items-center"
+          >{{ 'nav.login' | transloco }}</a>
 
-        <h1 style="
-          font-size: 26px;
-          font-weight: 800;
-          color: #1F2937;
-          line-height: 1.2;
-          margin: 0 0 8px 0;
-        ">Sell Smarter on Meesho</h1>
+          <a
+            routerLink="/signup"
+            mat-flat-button
+            color="primary"
+            class="min-h-[44px] min-w-[44px]"
+            aria-label="Sign up for MeeSell"
+          >{{ 'nav.signup' | transloco }}</a>
+        </div>
+      </nav>
+    </header>
 
-        <p style="
-          font-size: 14px;
-          color: #6B7280;
-          line-height: 1.6;
-          margin: 0;
-        ">Create professional catalogs in minutes with AI. Quality-check images, auto-fill attributes, and export directly to Meesho.</p>
-      </div>
+    <!-- Section 2: Hero -->
+    <section class="bg-bg py-12 md:py-20" aria-labelledby="hero-headline">
+      <div class="max-w-2xl mx-auto px-4 text-center">
+        <h1
+          id="hero-headline"
+          class="text-mee-3xl md:text-mee-4xl font-bold text-on-surface leading-tight"
+        >{{ 'landing.hero.headline' | transloco }}</h1>
 
-      <!-- Section 2: CTAs -->
-      <div style="margin-top: 24px;">
-        <button
-          [routerLink]="['/signup']"
-          style="
-            display: block;
-            width: 100%;
-            height: 46px;
-            background: #F26B23;
-            color: #ffffff;
-            border: none;
-            border-radius: 10px;
-            font-size: 15px;
-            font-weight: 700;
-            cursor: pointer;
-            text-align: center;
-            line-height: 46px;
-            box-sizing: border-box;
-          "
-        >Get Started Free &rarr;</button>
+        <p class="text-mee-lg text-on-surface-variant mt-3">
+          {{ 'landing.hero.subheadline' | transloco }}
+        </p>
 
-        <button
-          [routerLink]="['/login']"
-          style="
-            display: block;
-            width: 100%;
-            height: 46px;
-            background: transparent;
-            color: #374151;
-            border: 1.5px solid #D1D5DB;
-            border-radius: 10px;
-            font-size: 14px;
-            font-weight: 400;
-            cursor: pointer;
-            text-align: center;
-            margin-top: 10px;
-            box-sizing: border-box;
-          "
-        >Already have an account? Login</button>
-      </div>
-
-      <!-- Section 3: Feature Highlights -->
-      <div style="margin-top: 24px;">
-
-        <!-- Row 1: AI Category Picker -->
-        <div style="
-          display: flex;
-          align-items: flex-start;
-          gap: 12px;
-          padding: 10px 0;
-          border-bottom: 1px solid #F3F4F6;
-        ">
-          <div style="
-            width: 32px;
-            height: 32px;
-            min-width: 32px;
-            background: #FFF3E8;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 16px;
-            line-height: 1;
-          ">&#9889;</div>
-          <div>
-            <div style="font-size: 13px; font-weight: 600; color: #1F2937; margin-bottom: 2px;">AI Category Picker</div>
-            <div style="font-size: 12px; color: #6B7280;">Describe your product; AI picks the right Meesho category.</div>
-          </div>
+        <div class="mt-8">
+          <a
+            routerLink="/signup"
+            mat-flat-button
+            color="primary"
+            class="rounded-mee-full px-8 py-3 text-mee-base font-semibold min-h-[44px]"
+            aria-label="Get started free"
+          >{{ 'landing.cta.signup' | transloco }}</a>
         </div>
 
-        <!-- Row 2: Quality Pre-Check -->
-        <div style="
-          display: flex;
-          align-items: flex-start;
-          gap: 12px;
-          padding: 10px 0;
-          border-bottom: 1px solid #F3F4F6;
-        ">
-          <div style="
-            width: 32px;
-            height: 32px;
-            min-width: 32px;
-            background: #F0FDF4;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 16px;
-            font-weight: 700;
-            color: #16A34A;
-            line-height: 1;
-          ">&#10003;</div>
-          <div>
-            <div style="font-size: 13px; font-weight: 600; color: #1F2937; margin-bottom: 2px;">Quality Pre-Check</div>
-            <div style="font-size: 12px; color: #6B7280;">Image validation: size, white background, watermark detection.</div>
-          </div>
-        </div>
-
-        <!-- Row 3: P&L Calculator (no border-bottom on last row) -->
-        <div style="
-          display: flex;
-          align-items: flex-start;
-          gap: 12px;
-          padding: 10px 0;
-        ">
-          <div style="
-            width: 32px;
-            height: 32px;
-            min-width: 32px;
-            background: #EFF6FF;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 16px;
-            line-height: 1;
-          ">&#128202;</div>
-          <div>
-            <div style="font-size: 13px; font-weight: 600; color: #1F2937; margin-bottom: 2px;">P&amp;L Calculator</div>
-            <div style="font-size: 12px; color: #6B7280;">See exact profit per SKU before you list.</div>
-          </div>
-        </div>
-
+        <p class="mt-3">
+          <a
+            routerLink="/login"
+            class="text-mee-sm text-on-surface-variant hover:text-primary transition duration-standard no-underline min-h-[44px] inline-flex items-center"
+          >{{ 'landing.cta.login' | transloco }}</a>
+        </p>
       </div>
+    </section>
 
-      <!-- Section 4: Social Proof -->
-      <div style="margin-top: 20px; text-align: center;">
-        <span style="font-size: 12px; color: #9CA3AF;">&#11088;&#11088;&#11088;&#11088;&#11088; Trusted by 200+ Tirupur sellers</span>
-      </div>
+    <!-- Section 3: Value props (3 cards) -->
+    <section
+      class="max-w-5xl mx-auto px-4 py-12 grid grid-cols-1 md:grid-cols-3 gap-6"
+      aria-label="Why MeeSell"
+    >
+      <article class="bg-surface rounded-mee-md shadow-mee-1 p-6 flex flex-col gap-3">
+        <span class="material-symbols-outlined text-primary text-[2rem]" aria-hidden="true">inventory_2</span>
+        <h2 class="text-mee-lg font-semibold text-on-surface">
+          {{ 'landing.value.catalog.title' | transloco }}
+        </h2>
+        <p class="text-mee-sm text-on-surface-variant leading-relaxed">
+          {{ 'landing.value.catalog.body' | transloco }}
+        </p>
+      </article>
 
-    </div>
+      <article class="bg-surface rounded-mee-md shadow-mee-1 p-6 flex flex-col gap-3">
+        <span class="material-symbols-outlined text-primary text-[2rem]" aria-hidden="true">task_alt</span>
+        <h2 class="text-mee-lg font-semibold text-on-surface">
+          {{ 'landing.value.quality.title' | transloco }}
+        </h2>
+        <p class="text-mee-sm text-on-surface-variant leading-relaxed">
+          {{ 'landing.value.quality.body' | transloco }}
+        </p>
+      </article>
+
+      <article class="bg-surface rounded-mee-md shadow-mee-1 p-6 flex flex-col gap-3">
+        <span class="material-symbols-outlined text-primary text-[2rem]" aria-hidden="true">trending_up</span>
+        <h2 class="text-mee-lg font-semibold text-on-surface">
+          {{ 'landing.value.pricing.title' | transloco }}
+        </h2>
+        <p class="text-mee-sm text-on-surface-variant leading-relaxed">
+          {{ 'landing.value.pricing.body' | transloco }}
+        </p>
+      </article>
+    </section>
+
+    <!-- Section 4: Footer strip -->
+    <footer class="bg-surface-variant py-6 px-4 text-center text-mee-xs text-on-surface-variant">
+      &copy; 2026 MeeSell. Built for Indian Meesho sellers.
+    </footer>
   `,
 })
 export class LandingComponent {}

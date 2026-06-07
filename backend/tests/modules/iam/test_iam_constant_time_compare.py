@@ -81,7 +81,7 @@ def test_no_eq_on_sensitive_token_operands(path: Path) -> None:
         if isinstance(node, ast.Compare) and _eq_on_sensitive_operand(node):
             offending.append(f"{path.name}:{node.lineno}")
     assert not offending, (
-        f"Sensitive ``==`` comparison detected — use secrets.compare_digest:\n  "
+        "Sensitive ``==`` comparison detected — use secrets.compare_digest:\n  "
         + "\n  ".join(offending)
     )
 

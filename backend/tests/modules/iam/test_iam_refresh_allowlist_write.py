@@ -37,16 +37,20 @@ pytestmark = pytest.mark.asyncio
 
 
 async def test_verify_writes_allowlist_entry_with_correct_payload_and_ttl(
-    db_engine, use_live_valkey
+    db, use_live_valkey
 ):
-    """Happy path — verify writes the allowlist entry per §7.J unit 1."""
-    from sqlalchemy.ext.asyncio import async_sessionmaker
+    """Happy path — verify writes the allowlist entry per §7.J unit 1.
 
+    Uses conftest's ``db`` fixture (NullPool, rollback on teardown) so the
+    upsert lands in a transaction that disappears at the test boundary —
+    no dev DB pollution per the §conftest fixture docstring.
+    """
     from app.shared import valkey as _vk_mod
 
-    Session = async_sessionmaker(db_engine, expire_on_commit=False)
-
-    phone = "+919876543210"
+    # Phone uses a 5XX prefix not in the registered E.164 range that any
+    # real Indian SIM would carry — keeps the test data trivially
+    # identifiable in dev DB audit dumps even though the txn rolls back.
+    phone = "+915550000001"
     otp = "654321"
     otp_hash = hashlib.sha256(otp.encode("utf-8")).hexdigest()
 
@@ -56,10 +60,9 @@ async def test_verify_writes_allowlist_entry_with_correct_payload_and_ttl(
     await valkey.set(f"otp:{phone}", payload, ex=300)
 
     # 2. Drive the verify path through the service.
-    async with Session() as db:
-        result = await iam_service.verify_otp_and_issue_tokens(
-            phone=phone, otp=otp, client_ip="203.0.113.7", db=db, valkey=valkey
-        )
+    result = await iam_service.verify_otp_and_issue_tokens(
+        phone=phone, otp=otp, client_ip="203.0.113.7", db=db, valkey=valkey
+    )
 
     # 3. Allowlist key MUST exist with the locked payload shape.
     allowlist_key = refresh_allowlist_key(result.refresh_token)

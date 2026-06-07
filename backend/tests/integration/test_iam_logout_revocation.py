@@ -16,16 +16,18 @@ import pytest
 
 from app.adapters.msg91 import Msg91Response
 
+from tests.integration._cookie_helpers import extract_refresh_cookie
+
 
 pytestmark = pytest.mark.asyncio
 
 
 async def test_logout_revokes_then_refresh_returns_401(
-    client, use_live_valkey, monkeypatch
+    iam_client, use_live_valkey, monkeypatch
 ):
     """End-to-end: verify → logout → refresh must 401."""
     # ── Arrange ────────────────────────────────────────────────────────────
-    phone = "+919876500002"
+    phone = "+915550000102"
     otp = "525252"
 
     from app.shared import valkey as _vk_mod
@@ -40,21 +42,25 @@ async def test_logout_revokes_then_refresh_returns_401(
     monkeypatch.setattr("app.adapters.msg91.send_otp", _fake_send_otp)
 
     # ── Step 1: verify ─────────────────────────────────────────────────────
-    r1 = await client.post(
+    r1 = await iam_client.post(
         "/api/v1/auth/otp/verify", json={"phone": phone, "otp": otp}
     )
     assert r1.status_code == 200, r1.text
-    assert "refresh_token" in r1.cookies
+    saved_refresh = extract_refresh_cookie(r1)
+    assert saved_refresh, "verify must emit a refresh_token Set-Cookie"
 
-    # ── Step 2: logout — must return 204 ───────────────────────────────────
-    r2 = await client.post("/api/v1/auth/logout")
+    # ── Step 2: logout — must return 204 (forward the cookie explicitly) ──
+    r2 = await iam_client.post(
+        "/api/v1/auth/logout",
+        headers={"Cookie": f"refresh_token={saved_refresh}"},
+    )
     assert r2.status_code == 204, r2.text
 
     # ── Step 3: refresh on the now-revoked cookie must 401 ────────────────
-    # The client's cookie jar still carries the (now-stale) refresh_token
-    # cookie because httpx does not auto-clear on the server's Max-Age=0
-    # in this test path; we re-send it explicitly via the cookie jar.
-    r3 = await client.post("/api/v1/auth/refresh")
+    r3 = await iam_client.post(
+        "/api/v1/auth/refresh",
+        headers={"Cookie": f"refresh_token={saved_refresh}"},
+    )
     assert r3.status_code == 401, r3.text
     envelope = r3.json()
     assert envelope.get("validation_message_id") == "auth.refresh.invalid"
