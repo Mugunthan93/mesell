@@ -1116,6 +1116,44 @@ Hand-off: §22 acceptance next. Founder must populate razorpay-webhook-secret (b
 
 ---
 
+=== UPDATE: 2026-06-09 — Phase D DEPLOYED ===
+Agent: meesell-infra-builder
+
+**What was deployed:** V1 backend to `dev` namespace on K3s (meesell-dev, asia-south1).
+
+**Images built (Cloud Build):**
+| Image | Tag | Build ID |
+|---|---|---|
+| `api` | `v1.0.0` + `latest` | `23b3fbad-9ce9-46e8-9177-6fdfe44873c7` (final, with alembic) |
+| `worker` | `v1.0.0` + `latest` | `3f06450a-0b4a-4e3b-af22-18a78b2880bf` |
+| Registry | `asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-prod-images/` | — |
+
+**K8s objects created/applied:**
+- `ConfigMap/meesell-config` (dev) — LANGFUSE_PUBLIC_KEY set to `pk-lf-disabled-v1`
+- `Secret/backend-secrets` (dev) — 20 keys populated from GCP Secret Manager + in-cluster PG/Valkey credentials
+- `Deployment/api` (dev) — 2/2 Running; image `api:latest`; CPU req 200m
+- `Service/api` (dev) — ClusterIP port 80→8000
+- `Deployment/worker` (dev) — 2/2 Running; image `api:latest`; CPU req 250m
+
+**Migration head confirmed:** `f31c75438e61` (`add_idx_product_drafts_saved_at`) — `alembic current` verified in pod.
+
+**Smoke test result:**
+- `curl https://api.mesell.xyz/health` → HTTP 200 `{"status":"healthy","checks":{"postgres":"ok","valkey":"ok"}}` ✅
+- `curl https://api.mesell.xyz/api/v1/categories` → HTTP 401 (expected — auth required, auth middleware working correctly)
+
+**D-flags (Phase D specific):**
+- D-API-1: Worker image uses the `api:latest` image tag (same Dockerfile as API + celery CMD override). This is correct — V1 Celery tasks live in `app/workers/` which is in the api image.
+- D-API-2: `seed_field_aliases.py` does not exist yet in `backend/scripts/` — not a Phase D blocker, seeding deferred to backend team (no seed scripts were written during V1 construction).
+- D-API-3: CPU requests intentionally reduced for dev single-node VM (api: 200m vs spec 500m; worker: 250m vs spec 1000m). Limits unchanged (api: 1000m; worker: 1000m). Revisit when migrating to staging/prod on larger VM.
+- D-API-4: `playwright==1.59.0` remains in `requirements.txt` (V0 leftover) — no browser binaries installed, tasks don't call Playwright in V1. Clean up in V1.5.
+- D-API-5: Cloud Build uses `888244156264-compute@developer.gserviceaccount.com` (Compute Engine default SA) rather than `888244156264@cloudbuild.gserviceaccount.com`. Granted both `roles/storage.admin` on `_cloudbuild` bucket and `roles/artifactregistry.writer` on `meesell-prod-images`. Unusual SA selection — investigate before CI/CD pipeline setup.
+- D-API-6: K3s AR auth via `registries.yaml` with metadata-server token (refreshed every 45 min by cron). This is sufficient for dev. For production, configure `kubelet-credential-providers` with `gcp-cloud-credential-provider` binary.
+
+**Commits on `claude/meesell-project-setup-Tl7DS`:**
+- `814d4c7` fix(worker): remove V0 playwright/chromium, fix celery -A path and add V1 CMD args
+- `880cc3d` fix(deploy): add alembic+scripts to Dockerfile, tune dev CPU requests, fix LANGFUSE key
+=========
+
 ## 2026-06-08 23:46 — SCOPE DEFLECTION: Wave 2B Step 1 (frontend scaffold) declined
 
 - **Task received:** "Wave 2B Step 1 — Scaffold new frontend" (clone Sakai-ng, `ng new frontend` Angular 21, install PrimeNG + Tailwind v4, wire + build).
