@@ -1,3 +1,6 @@
+# k8s/worker.yaml
+# Celery worker Deployment per BACKEND_ARCHITECTURE.md §20.G (resources),
+# §20.F.1 (rolling update), §20.B.3 (celery args), §20.H (topology sketch).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -5,6 +8,11 @@ metadata:
   namespace: dev
 spec:
   replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: worker
@@ -12,35 +20,34 @@ spec:
     metadata:
       labels:
         app: worker
-      annotations: {} # Note: GCS auth via GCE metadata server ADC — no WI annotation needed on K3s
     spec:
       containers:
         - name: worker
           image: asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-prod-images/api:latest
           imagePullPolicy: Always
-          command:
-            - "celery"
+          command: ["celery"]
+          args:
             - "-A"
             - "app.workers.celery_app"
             - "worker"
             - "--loglevel=info"
-            - "--concurrency=2"
-            - "-Q"
-            - "images,generation"
+            - "--concurrency=4"
+            - "--max-tasks-per-child=100"
           envFrom:
             - configMapRef:
                 name: meesell-config
             - secretRef:
-                name: meesell-secrets
-          # GOOGLE_APPLICATION_CREDENTIALS is intentionally absent here.
-          # Pods reach the GCE metadata server and authenticate as
-          # meesell-workload@... which has roles/storage.objectAdmin on
-          # gs://meesell-dev. If Workload Identity is later configured on K3s,
-          # annotate the K8s ServiceAccount instead and remove the pod annotation above.
+                name: backend-secrets
+          # NOTE: No -Q queue override — celery_app.py INCLUDE list locked to
+          # [image.tasks, export.tasks] per §18.B. Workers process both queues.
+          # NOTE: GOOGLE_APPLICATION_CREDENTIALS absent — ADC via GCE metadata server
+          # (VM SA 888244156264-compute@... has storage.objectAdmin on
+          # gs://meesell-prod-assets per Phase A A2). If Workload Identity is later
+          # configured on K3s, annotate the K8s ServiceAccount instead.
           resources:
             requests:
-              cpu: "300m"
-              memory: "768Mi"
+              cpu: "250m"    # Reduced from 1000m — dev single-node VM (2 vCPU total, shared with infra)
+              memory: "512Mi"  # Reduced from 1Gi — dev environment
             limits:
-              cpu: "1500m"
-              memory: "1.5Gi"
+              cpu: "1000m"
+              memory: "1Gi"

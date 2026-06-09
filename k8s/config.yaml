@@ -1,10 +1,50 @@
+# k8s/config.yaml
+# Non-secret application configuration per BACKEND_ARCHITECTURE.md §5.D.
+# Secrets (passwords, API keys, tokens) live in the `backend-secrets` k8s Secret
+# (see secrets.yaml.example), sourced from GCP Secret Manager. NEVER put a secret
+# value in this ConfigMap.
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: meesell-config
   namespace: dev
 data:
+  # App
   APP_ENV: "production"
-  CORS_ORIGINS: "https://api.mesell.xyz,https://dev.mesell.xyz,https://testing.mesell.xyz,https://staging.mesell.xyz,https://www.mesell.xyz"
+
+  # Database pool (non-secret tuning)
+  DB_POOL_SIZE: "10"
+  DB_MAX_OVERFLOW: "5"
+  DB_POOL_RECYCLE: "1800"
+  DB_ECHO: "false"
+
+  # JWT / Auth (non-secret tuning)
+  JWT_ALGORITHM: "HS256"
+  ACCESS_TOKEN_TTL_SECONDS: "900"
+  REFRESH_TOKEN_TTL_SECONDS: "604800"
+
+  # CORS (per §4.G — NEVER use "*")
+  CORS_ALLOWED_ORIGINS: "https://api.mesell.xyz,https://dev.mesell.xyz,https://testing.mesell.xyz,https://staging.mesell.xyz,https://www.mesell.xyz"
+  CORS_ALLOW_CREDENTIALS: "true"
+
+  # Gemini
   GEMINI_MODEL: "gemini-2.5-flash"
-  JWT_EXPIRY_DAYS: "7"
+
+  # GCS (non-secret: bucket name + project). Single-bucket model per Phase A SSOT.
+  GCS_BUCKET: "meesell-prod-assets"
+  GCS_PROJECT_ID: "project-1f5cbf72-2820-4cdb-949"
+  GCS_SIGNED_URL_TTL_SECONDS: "3600"
+
+  # LangFuse (public key is non-secret per §5.D; secret key is in backend-secrets)
+  LANGFUSE_PUBLIC_KEY: "pk-lf-disabled-v1"
+  LANGFUSE_HOST: "https://cloud.langfuse.com"
+
+  # AI Ops budget
+  AI_DAILY_BUDGET_INR: "500"
+  AI_BUDGET_ALARM_THRESHOLD: "0.80"
+
+  # Cache version (bumped on quarterly Meesho refresh)
+  CACHE_VERSION: "v1"
+
+  # Rate limits
+  RL_PER_IP_PER_MINUTE: "120"
