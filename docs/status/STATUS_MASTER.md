@@ -2168,3 +2168,135 @@ New latent registered: `L_cache_valkey_unavail_1`
 **F1/F3/F6-F9 accepted — no rework needed on these features.**
 **Estimated time to V1 GO: 1-2 days assuming parallel execution.**
 =========
+
+---
+
+## SESSION SUMMARY — 2026-06-09 (Wave 9/10 + V1 GO)
+
+**Session type:** Verification + remediation + doc-amendment ratification
+**Branch:** `claude/meesell-project-setup-Tl7DS`
+**Outcome:** ✅ **V1 BACKEND SIGNED OFF** — §22 V1 GO (9/9 PASS, Attempt #3)
+
+### Commits landed this session (in order)
+
+| Hash | What |
+|------|------|
+| `43abd23` | feat: V1 backend construction complete — 8 domain modules, Wave 1-7 (274 files, +35429/-4275; V0 artifacts deleted; 815 tests collected 0 errors) |
+| `c9a2312` | feat: AI eval golden sets — F2 smart_picker / F4 autofill / F5 watermark (all 3 pass §22.C thresholds: 100% / 100% / 100%) |
+| `17da09b` | chore: §22 V1 GO — backend acceptance signed off (9/9 PASS) — audit reports + STATUS_BACKEND update |
+| `50b99b3` | docs(arch): wave 1-7 construction amendments to BACKEND_ARCHITECTURE.md (§13.A.1, §17 corrections, §18.A.1) |
+| `0e7e9e3` | docs(arch): doc-amendment batch A-E — ratified 2026-06-09 (§7.K, §10.K, §11.L, §16.B.1 8d, §15.C, §15.E, §11.E, §14.E) |
+
+### V1 GO evidence (§22 Attempt #3 — 9/9 PASS)
+
+| Check | Result |
+|-------|--------|
+| 28 routes across 8 modules | ✅ iam=6 / customer=5 / category=5 / catalog=6 / image=2 / pricing=1 / dashboard=1 / export=2 |
+| Auth posture 23 JWT / 2 cookie / 2 public / 1 HMAC | ✅ |
+| 15 golden round-trip fixtures | ✅ fixture_01_sarees … fixture_15_special_chars |
+| 10 locked CI linter contracts in .gitlab-ci.yml | ✅ Contracts 1-7 + 3 AST scanners |
+| Prometheus /metrics + 7 metric singletons | ✅ core/metrics.py + main.py mount |
+| Export worker terminal audit rows | ✅ export.completed + export.failed in tasks.py |
+| @audit_event on 4 write endpoints | ✅ customer (3) + export (1) |
+| audit_mw Gate 2.5 (write-method only) | ✅ lines 235-237 auth_mw.py |
+| All 3 GCP secrets ENABLED | ✅ refresh-token-pepper v1 / razorpay-webhook-secret v1 / langfuse-secret-key v1 |
+
+### GCP Secret Manager state (project-1f5cbf72-2820-4cdb-949)
+
+| Secret | Status | Notes |
+|--------|--------|-------|
+| `refresh-token-pepper` | v1 ENABLED | Set in prior session |
+| `razorpay-key-id` | v2 ENABLED | `rzp_test_SzNwynjr6l05dy` (test key) |
+| `razorpay-key-secret` | v2 ENABLED | Set this session |
+| `razorpay-webhook-secret` | v1 ENABLED | Generated `c889d2519ca8a6f98089a4f46fd0bd838a8a07b92d2e5ba807b499db275c9831`; founder has configured in Razorpay Dashboard → Settings → Webhooks |
+| `langfuse-secret-key` | v1 ENABLED | Placeholder `langfuse-disabled-v1` (Langfuse disabled V1 per LEGAL_ARCHITECTURE.md decision #10) |
+| `langfuse-public-key` | NOT in GCP | In k8s/config.yaml as `REPLACE-ME-WITH-LANGFUSE-PUBLIC-KEY` — needs update before prod deploy |
+
+### Remediation items completed (from §22 Attempt #1 NO-GO)
+
+| Item | Resolution |
+|------|-----------|
+| F-15-1: export worker audit rows | ✅ `_emit_export_terminal_audit()` in export/tasks.py |
+| F-15-2: Prometheus 7 metrics | ✅ core/metrics.py + /metrics mount + budget/refresh/i18n/cost instrumentation |
+| F6: @audit_event decorators | ✅ customer router (3) + export router (1) |
+| F7: audit_mw read-flood Gate 2.5 | ✅ auth_mw.py lines 235-237 |
+| CRITICAL-1: AI eval sets | ✅ 50 smart_picker + 30 autofill + 30 watermark fixtures, all PASS |
+| CRITICAL-2: GCP secrets | ✅ All 3 §22.C secrets now ENABLED |
+
+### Doc amendments ratified this session
+
+| Amendment | Sections | Change |
+|-----------|----------|--------|
+| A | §7.K + §10.K | Extraction order corrected to §21.B: export(1)→dashboard(2)→image(3)→pricing(4)→customer(5)→category(6)→iam(7)→catalog(8) |
+| B | §11.L | V1.5 forward-note: get_image_bytes returns bytes, not JSON-transportable |
+| C | §16.B.1 8d | Method corrected: get_image_bytes → list_images |
+| D | §15.C | Customer cache direct-invalidation carve-out documented |
+| E | §15.E + §11.E + §14.E | V1 canonical per-site AuditEvent() pattern declared; core/audit_helpers does NOT exist |
+
+### Outstanding latents (non-blocking, carry forward)
+
+| ID | Description | Priority |
+|----|-------------|----------|
+| L_cache_invalidate_1 | §15.C carve-out documented; verify customer/service.py calls core/cache.invalidate not bare Valkey | V1.5 |
+| L_audit_helpers_1 | core/audit_helpers confirmed non-existent; per-site pattern is canonical | Closed |
+| L_extract_order_1 | §7.K + §10.K corrected to §21.B | Closed |
+| L_extract_bytes_1 | §11.L forward-note added; V1.5 must add get_image_signed_url | V1.5 |
+| L_extract_serial_1 | §21 F-21-2 serializer gaps — no V1 blocker | V1.5 |
+| L_cache_valkey_unavail_1 | §22A A-1: core/cache.py no try/except on Valkey connection failure | V1.5 |
+
+---
+
+## PHASE D HANDOFF — For meesell-infra-builder
+
+**Trigger:** §22 V1 GO achieved. Backend is cleared for deployment.
+
+### What Phase D does
+
+Phase D deploys the V1 backend to the `dev` namespace on the K3s cluster on GCP VM (asia-south1). Reference: `docs/INFRASTRUCTURE_PLAYBOOK.md` §20 + STATUS_INFRA.md.
+
+### Pre-flight checklist for infra session
+
+- [x] All GCP secrets populated (5 secrets ENABLED — see table above)
+- [x] Docker images: Dockerfile + Dockerfile.worker present in backend/
+- [x] K8s manifests: k8s/*.yaml present (namespace, postgres, valkey, api, worker, frontend, ingress, backup-cronjob)
+- [x] k8s/secrets.yaml.example documents all GCP → K8s secret mappings
+- [x] k8s/config.yaml has LANGFUSE_PUBLIC_KEY as "REPLACE-ME-WITH-LANGFUSE-PUBLIC-KEY" — set to placeholder `pk-lf-disabled-v1` for V1 (Langfuse disabled)
+- [ ] GCP VM SSH reachable: `meesell-dev` VM in asia-south1
+- [ ] K3s cluster healthy: `kubectl get nodes` from VM
+- [ ] `backend-secrets` K8s Secret does NOT yet exist (needs creation from GCP secrets)
+
+### Infra session action plan
+
+1. **SSH to GCP VM** + verify K3s cluster health
+2. **Build + push Docker image** (`backend/Dockerfile` → GCR or Artifact Registry)
+3. **Build + push worker image** (`backend/Dockerfile.worker`)
+4. **Create `backend-secrets` K8s Secret** in `dev` namespace from GCP Secret Manager values:
+   - `DATABASE_URL` (from existing infra)
+   - `VALKEY_URL` (from existing infra)
+   - `JWT_SECRET` (from existing infra or generate)
+   - `REFRESH_TOKEN_PEPPER` ← GCP `refresh-token-pepper`
+   - `MSG91_AUTH_KEY` (from existing infra)
+   - `MSG91_TEMPLATE_ID` (from existing infra)
+   - `RAZORPAY_KEY_ID` ← GCP `razorpay-key-id`
+   - `RAZORPAY_KEY_SECRET` ← GCP `razorpay-key-secret`
+   - `RAZORPAY_WEBHOOK_SECRET` ← GCP `razorpay-webhook-secret`
+   - `GEMINI_API_KEY` (from existing infra)
+   - `GCS_BUCKET` + `GCS_PROJECT_ID` (from existing infra)
+   - `LANGFUSE_PUBLIC_KEY` ← placeholder `pk-lf-disabled-v1`
+   - `LANGFUSE_SECRET_KEY` ← GCP `langfuse-secret-key`
+   - `LANGFUSE_HOST` ← `https://cloud.langfuse.com` (disabled; value irrelevant but required for boot validator)
+   - `AUDIT_PII_SALT` (from existing infra or generate)
+   - `CORS_ALLOWED_ORIGINS` ← `https://studio.mesell.xyz`
+   - `APP_ENV` ← `dev`
+5. **Apply K8s manifests**: namespace → postgres (if not up) → valkey (if not up) → api → worker
+6. **Run Alembic migrations**: `kubectl exec` into api pod → `alembic upgrade head`
+7. **Smoke test**: `curl https://studio.mesell.xyz/health` → 200
+8. **Run seed scripts** if needed: `scripts/seed_field_aliases.py` + category seed
+
+### Key files for infra session to read
+
+- `docs/INFRASTRUCTURE_PLAYBOOK.md` — full deployment protocol
+- `docs/status/STATUS_INFRA.md` — current infra state
+- `k8s/secrets.yaml.example` — GCP → K8s mapping with exact gcloud commands
+- `k8s/config.yaml` — non-secret env vars (update LANGFUSE_PUBLIC_KEY before apply)
+- `backend/alembic/versions/` — latest migration head
