@@ -1136,7 +1136,7 @@ Each middleware is documented below: purpose (1 line), position in the chain, `r
 - Position: 7th — **runs AFTER the route handler**.
 - Reads `request.state.{user_id, request_id}`, route path, response status. Reads response body for diff capture (autosave PATCH events only — see coalescing below).
 - Failure mode: drop-on-failure with logged warning — observability MUST NOT block business path per §1.E LangFuse rule.
-- **Coalescing.** Coalesces same-key `(user_id, product_id)` PATCH events within a 5-minute window per `MVP_ARCH §11.4` — 30× volume reduction for autosave. Non-autosave events (`product.export`, `seller_profile.update`, `auth.login`) are NEVER coalesced — each occurrence is a distinct audit fact per §11.4.
+- **Coalescing.** Coalesces same-key `(user_id, product_id)` PATCH events within a 5-minute window per `MVP_ARCH §11.4` — 30× volume reduction for autosave. Non-autosave events (`export.initiated`, `customer.profile_updated`, `auth.login.success`) are NEVER coalesced — each occurrence is a distinct audit fact per §11.4.
 - **PII scrubbing.** Before any row is written, `phone` is replaced with `SHA-256(phone + PII_SALT)`, `FSSAI_no` / `GST_no` are stripped, per MVP_ARCH §11.9. PII_SALT lives in `shared/config.AUDIT_PII_SALT`.
 - **Write posture.** V1 = **synchronous inline append** per MVP_ARCH §11.3 (current traffic floor justifies it). V1.5 moves to a Celery sink per MVP_ARCH §14 — `core/middleware/audit_mw.py` becomes `enqueue(audit_event_task)` without changing the call site.
 - Owner: `meesell-services-builder`.
@@ -4810,7 +4810,7 @@ Network of records on extraction: copy `pricing_calcs` rows by `user_id` in batc
 
 ## Section 13 — Module: `dashboard`
 
-STATUS: LOCKED (2026-06-05)
+STATUS: LOCKED (2026-06-05) — AMENDED 2026-06-07 (see §13.A.1 — filter/search deferred to V1.5)
 
 ### 13.A Preamble
 
@@ -4821,6 +4821,30 @@ STATUS: LOCKED (2026-06-05)
 When V1.5 extraction lands per §21, dashboard becomes its own **BFF (backend-for-frontend) pod** with **zero data-layer migration** — every cross-module Python call simply swaps in-process invocation for HTTP. There are no Alembic migrations to detach, no foreign-key cascade to redirect, no row-level locks to coordinate. The extraction reduces to: change `from app.modules.catalog.service import list_products` to `httpx.AsyncClient().get(CATALOG_SVC_URL + "/products?...")`, plus a service-discovery config change. This is why dashboard (alongside `export` per §2.8) is one of the **easiest V1.5 extractions** in the codebase, in contrast to `catalog` which is the hardest per §10.K.
 
 Surfaces **1 endpoint** in V1, which is the **only listing GET in the §0.C 27-endpoint contract** (note: `GET /api/v1/products` belongs to dashboard, not catalog — per §2.7 ownership lock; `catalog` owns CREATE/PATCH/AUTOFILL/PREVIEW/DELETE/DRAFT-RECOVER but not the LIST). §13 does NOT specify any table DDL (dashboard owns NONE — see §13.L scope-out), does NOT specify any repository methods (NO repository file exists for dashboard — see §13.D), does NOT specify the §14 `export.service.summary()` opt-in for richer status badges (forward-referenced to V1.5 amendment if/when founder elevates the §2.D matrix beyond 8 ✓).
+
+### 13.A.1 AMENDMENT 2026-06-07 — filter/search deferred to V1.5
+
+**Founder ruling 2026-06-07 (founder Mugunthan, post-construction ratification on `meesell-backend-construction-13-dashboard-1` D3 escalation; see STATUS_MASTER Master Decisions Log entry 2026-06-07 for process posture):** the `status_filter` and `search` query parameters specified in §13.B and the `status_filter` / `search` fields on `DashboardQuery` + `Pagination` specified in §13.E + §13.F are **DEFERRED to V1.5**. The `status` Literal on `ProductListItem` in §13.E is **narrowed from `Literal["draft", "ready", "exported"]` to `Literal["draft", "ready"]` for V1**.
+
+**Why:** the §10 catalog module (LOCKED + CONSTRUCTED 2026-06-07) ships a `Pagination(page, limit)` shape and `list_paginated` SQL that supports neither status filtering nor name search. Extending catalog's V1 contract to add those two predicates would (a) breach the §10 LOCKED contract without a §10 amendment, (b) require an `exports` JOIN or denormalisation to support the `"exported"` literal (which lives on the `exports` table per §14, not on `products.status`), and (c) cost ~4–6 hours of catalog-side change for a UX feature that V1 sellers (0–5 products at launch in Tirupur) do not need. V1 dashboard ships with `page` + `limit` only.
+
+**Operative override for V1 construction:**
+
+| §13 sub-section | Original (LOCKED 2026-06-05) | V1 (AMENDED 2026-06-07) |
+|---|---|---|
+| §13.B query params | `page`, `limit`, `status_filter`, `search` | `page`, `limit` (only) |
+| §13.B response `status` field | `Literal["draft" \| "ready" \| "exported"]` | `Literal["draft" \| "ready"]` |
+| §13.B status code 400 trigger list | includes `status_filter` invalid, `search > 100 chars` | drops those triggers; 400 reduces to `page < 1` OR `limit < 1` OR `limit > 100` |
+| §13.E `DashboardQuery` | 4 fields | 2 fields (`page`, `limit`) |
+| §13.E `ProductListItem.status` | 3-value Literal | 2-value Literal |
+| §13.F `Pagination` dataclass | 4 fields | 2 fields (`page`, `limit`) — and now equals `catalog.domain.Pagination`; dashboard imports it directly from catalog instead of redefining |
+| §13.J unit test #1 | 5 rejection cases (page, limit×2, status_filter, search) | 3 rejection cases (page, limit×2); drops `status_filter` and `search` cases |
+
+**Method-name correction:** §13.B.4 prose refers to `customer.service.get_onboarding_completeness(user_id)` per §8.C — this is the operative method name (the §8 surface ships as `get_onboarding_completeness`, not `get_profile_completeness`). No amendment needed; the §13 prose is already correct.
+
+**§13.L V1.5 deferral entry:** the V1.5 `dashboard` filter/search restoration is bound to a §10 catalog amendment that extends `Pagination` + `list_products` + `list_paginated` with `status_filter` + `search` predicates (and, if `"exported"` status filtering returns, an `EXISTS (SELECT 1 FROM exports WHERE product_id = …)` predicate or a denormalised `is_exported` column). The V1.5 amendment lifts §13.A.1, restores the 4-field `DashboardQuery`, restores the 3-value `ProductListItem.status`, and re-elevates §13.J test #1 to the 5-case form.
+
+**Nothing else in §13 is amended.** The §13.D no-repository structural exception, the §13.G single exception class (`InvalidPaginationError`), the §13.H zero-adapter constraint, the §13.I cross-cutting posture (rate-limit per-IP only, NO plan_guard, NO audit, NO cache, NO AI), and the §13.K extraction notes all stand verbatim.
 
 ### 13.B Endpoint surfaces
 
@@ -5115,6 +5139,7 @@ Per §19, the dashboard module's test surface is the lightest in the codebase: 3
 - **The frontend dashboard component rendering** — owned by `meesell-frontend-coordinator` + `meesell-angular-component-builder` in `FRONTEND_ARCHITECTURE.md`. §13 specifies the wire shape only.
 - **Aggregation-heavy reports or analytics dashboards** (e.g., monthly revenue rollups, per-category conversion funnels) — V1.5+ feature; not in the §0.C 27-endpoint contract; not §13's scope.
 - **The seller's first-time empty-state UX copy and CTAs** — frontend concern. §13 only guarantees the empty list is a valid 200 (not a 404 redirect).
+- **Filter (`status_filter`) and search (`search`) query parameters on `GET /api/v1/products`** — deferred to V1.5 per §13.A.1. V1 dashboard ships with `page` + `limit` only. The V1.5 restoration is bound to a §10 catalog amendment that extends `Pagination` + `list_products` + `list_paginated` with the two predicates and (if `"exported"` returns to the status Literal) an `EXISTS (SELECT 1 FROM exports WHERE product_id = …)` predicate or a denormalised `is_exported` column on `products`.
 
 ---
 
@@ -6386,7 +6411,7 @@ The **rule of thumb**: a `domain.py` dataclass is public iff at least one `servi
 
 **Rule 6 (corollary): `router.py` is NEVER cross-module imported.** No module imports another module's `router.py` — that file binds HTTP paths only. Even self-imports of `router.py` happen only at `app/main.py` registration time.
 
-**Rule 7 (corollary): `tasks.py` is NEVER cross-module imported.** Celery task references are by **task name string** (`"image.precheck"`, `"export.generate"` per §3.I), not by Python import. Cross-module task enqueue uses `celery_app.send_task("image.precheck", ...)` not `from app.modules.image.tasks import precheck`. This preserves the V1.5 extraction story for Celery tasks (the worker pod may live in a separate process; the task name is the stable handle).
+**Rule 7 (corollary): `tasks.py` is NEVER cross-module imported.** Celery task references are by **task name string** (`"image.precheck"`, `"export.xlsx"` per §3.I), not by Python import. Cross-module task enqueue uses `celery_app.send_task("image.precheck", ...)` not `from app.modules.image.tasks import precheck`. This preserves the V1.5 extraction story for Celery tasks (the worker pod may live in a separate process; the task name is the stable handle).
 
 ---
 
@@ -6739,7 +6764,7 @@ A reviewer evaluating §16 asks: "are the 8 allowed calls correctly mapped to th
 
 ## Section 17 — Endpoint Inventory
 
-STATUS: LOCKED (2026-06-06)
+STATUS: LOCKED (2026-06-06) — AMENDED 2026-06-09
 
 ### 17.A Preamble
 
@@ -6759,31 +6784,31 @@ The table columns are: **#** (row number), **Method** (HTTP verb), **Path** (URL
 
 | # | Method | Path | Owning Module | Auth | Rate Limit | Plan Guard | Audit Event | Locking section |
 |---|--------|------|---------------|------|-----------|-----------|-------------|-----------------|
-| 1 | POST | `/api/v1/auth/otp/send` | `iam` | none | 3/h/phone | — | `otp.send.requested` | §7.B.1 |
-| 2 | POST | `/api/v1/auth/otp/verify` | `iam` | none | 10/h/phone | — | `auth.login` | §7.B.2 |
-| 3 | POST | `/api/v1/auth/refresh` | `iam` | cookie-only | 60/h/user | — | `auth.refresh` | §7.B.3 |
-| 4 | POST | `/api/v1/auth/logout` | `iam` | cookie-only | 60/h/user | — | `auth.logout` | §7.B.4 |
+| 1 | POST | `/api/v1/auth/otp/send` | `iam` | none | 3/h/phone | — | — | §7.B.1 |
+| 2 | POST | `/api/v1/auth/otp/verify` | `iam` | none | 10/h/phone | — | `auth.login.success` / `auth.login.failed` | §7.B.2 |
+| 3 | POST | `/api/v1/auth/refresh` | `iam` | cookie-only | 60/h/user | — | `auth.token.refreshed` / `auth.token.refresh_failed` | §7.B.3 |
+| 4 | POST | `/api/v1/auth/logout` | `iam` | cookie-only | none | — | `auth.logout` | §7.B.4 |
 | 5 | GET | `/api/v1/seller-profile` | `customer` | JWT | per-IP only | — | — | §8.B.1 |
-| 6 | PATCH | `/api/v1/seller-profile` | `customer` | JWT | 20/h/user | — | `seller_profile.update` | §8.B.2 |
-| 7 | PATCH | `/api/v1/seller-profile/active-categories` | `customer` | JWT | 20/h/user | — | `seller_profile.active_categories_update` | §8.B.3 |
-| 8 | PATCH | `/api/v1/seller-profile/compliance/{super_id}` | `customer` | JWT | 20/h/user | — | `seller_profile.compliance_update` | §8.B.4 |
+| 6 | PATCH | `/api/v1/seller-profile` | `customer` | JWT | 60/h/user | — | `customer.profile_updated` | §8.B.2 |
+| 7 | PATCH | `/api/v1/seller-profile/active-categories` | `customer` | JWT | 60/h/user | — | `customer.active_categories.updated` | §8.B.3 |
+| 8 | PATCH | `/api/v1/seller-profile/compliance/{super_id}` | `customer` | JWT | 60/h/user | — | `customer.compliance_updated` | §8.B.4 |
 | 9 | GET | `/api/v1/seller-profile/required-fields` | `customer` | JWT | per-IP only | — | — | §8.B.5 |
 | 10 | GET | `/api/v1/categories/suggest?q=...` | `category` | JWT | 100/h/user | `smart_picker_hourly` | — | §9.B.1 |
 | 11 | GET | `/api/v1/categories/browse?q=&super_id=&limit=&offset=` | `category` | JWT | per-IP only | — | — | §9.B.2 |
 | 12 | GET | `/api/v1/categories` | `category` | JWT | per-IP only | — | — | §9.B.3 |
 | 13 | GET | `/api/v1/categories/{id}/schema` | `category` | JWT | per-IP only | — | — | §9.B.4 |
 | 14 | GET | `/api/v1/categories/{id}/field-enum/{name}` | `category` | JWT | per-IP only | — | — | §9.B.5 |
-| 15 | POST | `/api/v1/products` | `catalog` | JWT | 20/h/user | `create_product_hourly` + `product_count` | `product.create` | §10.B.1 |
-| 16 | PATCH | `/api/v1/products/{id}` | `catalog` | JWT | per-IP only | — | `product.patch` (coalesced 5-min per §15.E) | §10.B.2 |
-| 17 | POST | `/api/v1/products/{id}/autofill` | `catalog` | JWT | 50/h/user | `ai_autofill_hourly` | `product.autofill` | §10.B.3 |
+| 15 | POST | `/api/v1/products` | `catalog` | JWT | 20/h/user | `create_product_hourly` + `product_count` | `catalog.product.created` | §10.B.1 |
+| 16 | PATCH | `/api/v1/products/{id}` | `catalog` | JWT | per-IP only | — | `catalog.product.updated` (coalesced 5-min per §15.E) | §10.B.2 |
+| 17 | POST | `/api/v1/products/{id}/autofill` | `catalog` | JWT | 50/h/user | `ai_autofill_hourly` | `catalog.autofill.invoked` | §10.B.3 |
 | 18 | GET | `/api/v1/products/{id}/preview` | `catalog` | JWT | per-IP only | — | — | §10.B.4 |
-| 19 | DELETE | `/api/v1/products/{id}` | `catalog` | JWT | 10/h/user | — | `product.delete` | §10.B.5 |
+| 19 | DELETE | `/api/v1/products/{id}` | `catalog` | JWT | 60/h/user | — | `catalog.product.deleted` | §10.B.5 |
 | 20 | GET | `/api/v1/products/{id}/draft` | `catalog` | JWT | per-IP only | — | — | §10.B.6 |
 | 21 | POST | `/api/v1/products/{id}/images` | `image` | JWT | 10/min/user | — | `image.upload.received` | §11.B.1 |
 | 22 | GET | `/api/v1/products/{id}/images` | `image` | JWT | per-IP only | — | — | §11.B.2 |
-| 23 | POST | `/api/v1/products/{id}/price-calc` | `pricing` | JWT | 30/h/user | — | `pricing.calc.created` | §12.B.1 |
+| 23 | POST | `/api/v1/products/{id}/price-calc` | `pricing` | JWT | per-IP only | — | `pricing.calculated` | §12.B.1 |
 | 24 | GET | `/api/v1/products` | `dashboard` | JWT | per-IP only | — | — | §13.B.1 |
-| 25 | POST | `/api/v1/exports` | `export` | JWT | 5/h/user | — | `product.export.initiated` | §14.B.1 |
+| 25 | POST | `/api/v1/products/{id}/export-xlsx` | `export` | JWT | 5/h/user | — | `export.initiated` | §14.B.1 |
 | 26 | GET | `/api/v1/exports/{id}` | `export` | JWT | per-IP only | — | — | §14.B.2 |
 | 27 | (reserved — counter alignment, see note below) | — | — | — | — | — | — | — |
 
@@ -6796,11 +6821,11 @@ This counter-alignment note is preserved verbatim so future amendments do NOT re
 | # | Method | Path | Owning Module | Auth | Rate Limit | Plan Guard | Audit Event | Locking section |
 |---|--------|------|---------------|------|-----------|-----------|-------------|-----------------|
 | I1 | GET | `/api/v1/auth/me` | `iam` | JWT | per-IP only | — | — | §7.B.5 |
-| I2 | POST | `/api/v1/webhooks/razorpay` | `iam` | signature (HMAC body) | per-IP only | — | `razorpay.webhook.received` | §7.B.6 |
+| I2 | POST | `/api/v1/webhooks/razorpay` | `iam` | signature (HMAC body) | per-IP only | — | `razorpay.webhook.captured` | §7.B.6 |
 
-These 2 infrastructure surfaces bring the total HTTP routes mounted on `app/main.py` to **29** (the 27 contract endpoints + 2 infrastructure). The 29-count is the operational deployment-side reality; the 27-count is the contract narrative. Both counts are correct in their respective contexts.
+These 2 infrastructure surfaces bring the total HTTP routes mounted on `app/main.py` to **28** (the 26 distinct contract routes + 2 infrastructure). The 28-count is the operational deployment-side reality; the 27-count is the contract narrative (row 27 in §17.B is a counter-alignment placeholder per §17.B.1 reconciliation arithmetic). Both counts are correct in their respective contexts.
 
-**§17.B.3 Plus `/health` and FastAPI defaults.** The `/health` liveness endpoint (mounted at root, NOT under `/api/v1/`) plus the 5 FastAPI default routes (`/docs`, `/redoc`, `/openapi.json`, `/`, `/favicon.ico`) bring the total app surface to **35** routes. These 6 framework / health surfaces are NOT in any contract count — they are FastAPI / K8s deployment plumbing.
+**§17.B.3 Plus `/health` and FastAPI defaults.** The `/health` liveness endpoint (mounted at root, NOT under `/api/v1/`) plus 5 FastAPI framework routes (`/docs`, `/docs/oauth2-redirect`, `/redoc`, `/openapi.json`, `/favicon.ico`) bring the total app surface to **34** routes. These 6 framework / health surfaces are NOT in any contract count — they are FastAPI / K8s deployment plumbing.
 
 ---
 
@@ -6808,21 +6833,21 @@ These 2 infrastructure surfaces bring the total HTTP routes mounted on `app/main
 
 Of the 27 contract endpoints + 2 infrastructure surfaces:
 
-- **JWT-protected (Bearer access token):** 22 endpoints — every authenticated user-facing endpoint (rows 5-26 in §17.B plus I1).
+- **JWT-protected (Bearer access token):** 23 endpoints — every authenticated user-facing endpoint (rows 5-26 in §17.B plus I1).
 - **Cookie-only (refresh token):** 2 endpoints — rows 3-4 (`/auth/refresh` + `/auth/logout`). These DO NOT carry an `Authorization: Bearer` header; the HttpOnly refresh cookie IS the credential per §4.B FE-D5 amendment.
 - **No auth (public):** 2 endpoints — rows 1-2 (`/auth/otp/send` + `/auth/otp/verify`). These are pre-login surfaces.
 - **HMAC signature auth:** 1 endpoint — I2 (`/webhooks/razorpay`). Razorpay signs the request body; backend verifies via `adapters.razorpay.verify_webhook_signature` per §6.E + §7.B.6.
 
-The 22 JWT-protected routes use the same `get_current_user` FastAPI dependency per §4.B — the dep returns 401 with `validation_message_id="auth.unauthorized"` on any of: missing header, malformed token, expired token, signature failure.
+The 23 JWT-protected routes use the same `get_current_user` FastAPI dependency per §4.B — the dep returns 401 with `validation_message_id="auth.unauthorized"` on any of: missing header, malformed token, expired token, signature failure.
 
 ---
 
 ### 17.D Rate limit distribution
 
-Per the §4.G `rate_limit_mw.py` decorator pattern (per-route via `@rate_limit(...)`) the 29 surfaces split as follows:
+Per the §4.G `rate_limit_mw.py` decorator pattern (per-route via `@rate_limit(...)`) the 28 surfaces split as follows:
 
-- **Per-user sliding-hour limits:** 13 routes (rows 6, 7, 8, 10, 15, 17, 19, 23, 25 + the 2 OTP/phone routes 1-2 + the 2 refresh/user routes 3-4).
-- **Per-IP only (DDoS gate):** 14 routes (every read-only GET + the autosave PATCH row 16 + introspection I1 + webhook I2). Per-IP only means no per-user accounting — the global Valkey key `meesell:rl:ip:{ip}:1m` enforces a 100/min/IP ceiling per §4.H.
+- **Per-user sliding-hour limits:** 9 routes (rows 3, 6, 7, 8, 10, 15, 17, 19, 25). Row 3 (`/auth/refresh`) is cookie-authenticated but has a per-user limit (60/h). Rows 6–8 (customer PATCH) and rows 10, 15, 17, 19, 25 are the primary write/AI surfaces.
+- **Per-IP only (DDoS gate):** 16 routes (every read-only GET + the autosave PATCH row 16 + price-calc row 23 + logout row 4 + introspection I1 + webhook I2). Row 4 (logout) carries no per-user decorator — idempotent; global per-IP ceiling applies. Row 23 (price-calc) is per-IP only per §12.B.1. Per-IP means no per-user accounting — the global Valkey key `meesell:rl:ip:{ip}:1m` enforces a 100/min/IP ceiling per §4.H.
 - **Per-minute burst limit:** 1 route (row 21 `POST /products/{id}/images`, 10/min/user per §11.B.1 — minute-window enforcement protects against image-upload storms).
 - **Per-phone limit (NOT per-user):** 2 routes (rows 1-2 `/auth/otp/*` — the phone IS the identifier pre-login; 3/h/phone send + 10/h/phone verify per §7.B.1-2).
 
@@ -6853,25 +6878,24 @@ Per §15.E + the per-module audit subsections, the audit_events table receives w
 
 | Audit event name | Triggering endpoint | Coalescing | Locking |
 |------------------|---------------------|-----------|---------|
-| `otp.send.requested` | row 1 | no | §7.I |
-| `auth.login` | row 2 (on 200) | no | §7.I |
-| `auth.refresh` | row 3 (on 200) | no | §7.I + §15.H |
+| `auth.login.success` / `auth.login.failed` | row 2 (on 200 / on 4xx) | no | §7.I |
+| `auth.token.refreshed` / `auth.token.refresh_failed` | row 3 (on 200 / on 4xx) | no | §7.I + §15.H |
 | `auth.logout` | row 4 (always on 204) | no | §7.I + §15.H |
-| `seller_profile.update` | row 6 (on 200) | no | §8.I |
-| `seller_profile.active_categories_update` | row 7 (on 200) | no | §8.I |
-| `seller_profile.compliance_update` | row 8 (on 200) | no | §8.I |
-| `product.create` | row 15 (on 201) | no | §10.I |
-| `product.patch` | row 16 (on 200) | **YES, 5-min window per `(user_id, product_id)` per §15.E** | §10.I + §15.E |
-| `product.autofill` | row 17 (on 200) | no | §10.I |
-| `product.delete` | row 19 (on 204) | no | §10.I |
+| `customer.profile_updated` | row 6 (on 200) | no | §8.I |
+| `customer.active_categories.updated` | row 7 (on 200) | no | §8.I |
+| `customer.compliance_updated` | row 8 (on 200) | no | §8.I |
+| `catalog.product.created` | row 15 (on 201) | no | §10.I |
+| `catalog.product.updated` | row 16 (on 200) | **YES, 5-min window per `(user_id, product_id)` per §15.E** | §10.I + §15.E |
+| `catalog.autofill.invoked` | row 17 (on 200) | no | §10.I |
+| `catalog.product.deleted` | row 19 (on 204) | no | §10.I |
 | `image.upload.received` | row 21 (on 202) | no | §11.J |
 | `image.precheck.completed` | (worker context — NOT route-triggered) | no | §11.J (documented exception: written directly from Celery task per §11.E + §6A.D pattern) |
-| `pricing.calc.created` | row 23 (on 201) | no | §12.I |
-| `product.export.initiated` | row 25 (on 202) | no | §14.J |
+| `pricing.calculated` | row 23 (on 201) | no | §12.I |
+| `export.initiated` | row 25 (on 202) | no | §14.J |
 | `product.export.completed` | (worker context — NOT route-triggered) | no | §14.J (documented exception per §14.E worker context + §6A.D pattern) |
-| `razorpay.webhook.received` | I2 (on 200, only after HMAC verify passes) | no | §7.I |
+| `razorpay.webhook.captured` | I2 (on 200, only after HMAC verify passes) | no | §7.I |
 
-**14 distinct audit event names** are emitted across V1 — 11 from HTTP routes + 3 from Celery worker context (`image.precheck.completed`, `product.export.completed`, plus the `ai_ops.call.completed` audit event from §6A.D AI-cost-recording exception which is emitted from `ai_ops/client.py` not a domain module).
+**19 distinct audit event names** are emitted across V1 — 16 from HTTP route processing (including conditional `.success`/`.failed` and `.refreshed`/`.refresh_failed` variants at rows 2 and 3) + 3 from Celery worker context (`image.precheck.completed`, `product.export.completed`, and `ai_ops.call.completed` per §6A.D AI-cost-recording exception from `ai_ops/client.py`). Row 1 (`/auth/otp/send`) emits NO audit event — the send endpoint is a pre-login surface with no resolvable `user_id` and no audit value per §7.I.
 
 PII redaction (per §15.E + `MVP_ARCH §11.9` — `phone` → SHA-256 hash with `AUDIT_PII_SALT`) applies uniformly; the audit_mw middleware (§4.G) handles redaction inline for HTTP-triggered events; the worker-context events redact at write time inside `core/audit_helpers.py` (the §15.E shared helper).
 
@@ -6879,15 +6903,15 @@ PII redaction (per §15.E + `MVP_ARCH §11.9` — `phone` → SHA-256 hash with 
 
 ### 17.G Cross-cutting summary
 
-**29 routes mounted on `app/main.py` after construction.** This is the assertion the §19 boot integration tests verify (`tests/test_app_boot_integration.py` currently passes at 7/7 with 9 routes; post-construction the assertion increments to 35 routes when accounting for `/health` + FastAPI defaults per §17.B.3).
+**28 routes mounted on `app/main.py` after construction.** This is the assertion the §19 boot integration tests verify (`tests/test_app_boot_integration.py` currently passes at 7/7 with 9 routes; post-construction the assertion increments to 34 routes when accounting for `/health` + FastAPI defaults per §17.B.3).
 
-**2 Celery task names registered on `celery_app`:** `image.precheck` (§11.E) and `export.generate` (§14.E). These are the ONLY domain-module-owning Celery tasks in V1; no other module has a `tasks.py` per §3.C canonical 7-file subtree (the 2 modules with `tasks.py` are explicitly `image` and `export`). §18 expands the Celery task contract.
+**2 Celery task names registered on `celery_app`:** `image.precheck` (§11.E) and `export.xlsx` (§14.E). These are the ONLY domain-module-owning Celery tasks in V1; no other module has a `tasks.py` per §3.C canonical 7-file subtree (the 2 modules with `tasks.py` are explicitly `image` and `export`). §18 expands the Celery task contract.
 
 **Rate-limit decorator scopes consolidated:**
 - `phone` scope: 2 routes (rows 1-2).
 - `user` scope (sliding-hour): 13 routes.
 - `user` scope (sliding-minute): 1 route (row 21).
-- `IP` scope (DDoS gate, always on): all 29 routes.
+- `IP` scope (DDoS gate, always on): all 28 routes.
 
 The per-IP DDoS limit at the middleware level is GLOBAL — every route passes through `rate_limit_mw`. The decorator-tagged limits are ADDITIONAL per-route enforcement on top of the global DDoS ceiling.
 
@@ -6900,9 +6924,9 @@ The per-IP DDoS limit at the middleware level is GLOBAL — every route passes t
 - **Request and response wire shapes** (Pydantic schemas) — per-module §X.E subsections (`§7.E`, `§8.E`, `§9.E`, `§10.E`, `§11.F`, `§12.E`, `§13.E`, `§14.G`). §17 only records that a wire shape exists for each endpoint; the contents are owned by the per-module locks.
 - **Service-layer signatures** (the methods called by route handlers) — per-module §X.C subsections.
 - **Cross-module call signatures** — §16.B (the 8-call matrix consolidated from §2.D).
-- **Celery task contracts** (`image.precheck`, `export.generate`) — §18.
+- **Celery task contracts** (`image.precheck`, `export.xlsx`) — §18.
 - **Test coverage per endpoint** — §19 (every contract endpoint has at least 1 happy-path integration test).
-- **K3s manifest mapping** (which routes serve from which pod) — §20 (V1 = all 29 routes from a single FastAPI pod; V1.5 per-module extraction redistributes routes per §21).
+- **K3s manifest mapping** (which routes serve from which pod) — §20 (V1 = all 28 routes from a single FastAPI pod; V1.5 per-module extraction redistributes routes per §21).
 - **V1.5 extraction shim wiring** — §16.G + §21.
 
 A reviewer evaluating §17 asks: "are the 27 rows correctly mapped to module owners, do auth / rate-limit / plan-guard / audit columns match per-module specs, does the I1/I2 + counter-alignment note resolve the §0.C 27-count?" — NOT "what does the response body of `GET /products` look like?" (that's §13.E) or "how does the catalog spine extract in V1.5?" (that's §16.H + §21).
@@ -6911,11 +6935,23 @@ A reviewer evaluating §17 asks: "are the 27 rows correctly mapped to module own
 
 ## Section 18 — Background Jobs (Celery)
 
-STATUS: LOCKED (2026-06-06)
+STATUS: LOCKED (2026-06-06) — AMENDED 2026-06-08 (see §18.A.1 — Celery task name harmonization with §14.E owning section; §18.F.1 — Worker JWT re-validation implementation moved from inline tasks.py to centralized task_prerun signal handler in celery_app.py) — AMENDED 2026-06-09 (§18.B + §18.D path correction: `POST /api/v1/exports` → `POST /api/v1/products/{id}/export-xlsx` per owning §14.B.1 + Wave 8 §17 audit ruling)
 
 ### 18.A Preamble
 
 §18 enumerates the **Celery job catalog** for V1: which modules emit jobs, which workers consume them, queue layout in Valkey DB 1 (broker) + DB 2 (results), retry policy, idempotency posture, and worker concurrency budget. Per §3.I + §3.C canonical 7-file subtree, only **2 modules have a `tasks.py`** in V1 — `image` and `export`. All other modules (`iam`, `customer`, `category`, `catalog`, `pricing`, `dashboard`) are synchronous request/response; they do not emit Celery tasks.
+
+### 18.A.1 AMENDMENT 2026-06-08 — Celery task name harmonization with §14.E owning section
+
+**Founder ruling 2026-06-08 (founder Mugunthan, post-construction ratification on `meesell-backend-construction-14-export-1` D8 escalation; see STATUS_MASTER Master Decisions Log entry 2026-06-08):** the V1 export Celery task name is canonicalized to **`"export.xlsx"`** (matching §14.E line 5427 which has always read `@celery_app.task(name="export.xlsx", ...)`).
+
+**Why:** Prior to 2026-06-08, §14.E read `"export.xlsx"` while §16.E rule 7 corollary, §17 (×2), §18.B inventory table, §18.D task contract section (heading + body + code sketch), §18.H cross-cutting, and §18.I failure-mode section all read `"export.generate"`. This was an internal LOCK inconsistency baked in on 2026-06-05 — NOT a sub-session error. The §14 sub-session (`meesell-backend-construction-14-export-1`) correctly followed §14.E (the owning section) when constructing `app/modules/export/tasks.py`, producing `@shared_task(name="export.xlsx", ...)`. Master surfaced the cross-section discrepancy; founder ruled `"export.xlsx"` wins.
+
+**Rationale for `"export.xlsx"` over `"export.generate"`:** (a) §14.E is the owning section per §3.I — task name should propagate FROM the owner; (b) format-explicit naming preserves V1.5 room (`export.csv`, `export.pdf`); (c) zero code changes — `app/modules/export/tasks.py` was already shipped + tested with `"export.xlsx"` (64/64 tests PASS); (d) the alternative would require touching the LOCKED CONSTRUCTED §14 code, which would breach §5.0 NON-NEGOTIABLE.
+
+**Operative override (replacing all `"export.generate"` references throughout the LOCKED doc with `"export.xlsx"`):** §16.E rule 7 corollary, §17 line 6909 + line 6928, §18.B inventory table row, §18.D heading + task name + code sketch, §18.H AI calls cross-reference, §18.I failure-mode bullet — all renamed in this amendment. The §14.E owning section is unchanged (was always `"export.xlsx"`).
+
+**Nothing else in §14 / §16 / §17 / §18 is amended.** The `max_retries=1` setting, `retry_backoff=True`, idempotency posture (status='failed' + new UUID on retry), 9-step pipeline, F3 Layer 3 guardrail, GCS subdir layout, round-trip validator, V2 marketplace adapter seam, and §18 worker JWT re-validation rule (§18.F) all stand verbatim.
 
 §18 does NOT re-specify task internals — the 5-step image precheck pipeline algorithm is owned by `meesell-image-precheck-builder` per §11.E; the 9-step export pipeline is owned by `meesell-services-builder` per §14.E. What §18 DOES specify is the queue contract, retry + DLQ policy, worker startup posture, idempotency rules, and how Valkey wiring works in the worker process — the operational glue that lets the per-module tasks run reliably.
 
@@ -6928,11 +6964,11 @@ A reviewer evaluating §18 asks: "are the 2 queue contracts correct, is retry po
 | Task name | Owner module | Owner specialist | Locking section | Max retries | Retry backoff | Idempotency |
 |-----------|--------------|------------------|-----------------|------------|---------------|-------------|
 | `image.precheck` | `image` | `meesell-services-builder` + `meesell-image-precheck-builder` (algorithm) | §11.E | 2 | `True` (Celery exponential backoff) | Yes — re-running on the same `image_id` produces the same `precheck_jsonb` result (idempotent at the row level — `UPDATE product_images SET precheck_jsonb=...`) |
-| `export.generate` | `export` | `meesell-services-builder` | §14.E | 1 | `True` | Yes — exports row carries `status="failed"` on terminal failure; re-trigger from `POST /api/v1/exports` creates a NEW row with a NEW UUID, never reuses |
+| `export.xlsx` | `export` | `meesell-services-builder` | §14.E | 1 | `True` | Yes — exports row carries `status="failed"` on terminal failure; re-trigger from `POST /api/v1/products/{id}/export-xlsx` creates a NEW row with a NEW UUID, never reuses |
 
 **§18.B.1 The 2-task floor is the V1 ceiling.** No other module emits Celery tasks in V1. The `ai_ops` layer's Gemini calls are synchronous (await within the request handler) — they do NOT enqueue. The audit_events writes are synchronous inline per §4.G `audit_mw` (V1.5 may move to a Celery sink per `MVP_ARCH §14` — that adds a 3rd task at V1.5 dispatch time, NOT V1).
 
-Cross-reference: the `MVP_ARCH §5.5.10` performance budget (≤ 30 s end-to-end export pipeline) is consumed by `export.generate`; the `MVP_ARCH §11.5` budget (≤ 5 s image precheck) is consumed by `image.precheck`.
+Cross-reference: the `MVP_ARCH §5.5.10` performance budget (≤ 30 s end-to-end export pipeline) is consumed by `export.xlsx`; the `MVP_ARCH §11.5` budget (≤ 5 s image precheck) is consumed by `image.precheck`.
 
 ---
 
@@ -6970,15 +7006,15 @@ def image_precheck(self, image_id: str, user_id: str) -> None:
 
 ---
 
-### 18.D `export.generate` — task contract
+### 18.D `export.xlsx` — task contract
 
-**Task name (Celery registration):** `export.generate`
+**Task name (Celery registration):** `export.xlsx`
 
 **Owner file:** `app/modules/export/tasks.py` (per §3.C + §14.E).
 
 **Signature (locked at §14.E):**
 ```python
-@shared_task(name="export.generate", bind=True, max_retries=1, retry_backoff=True)
+@shared_task(name="export.xlsx", bind=True, max_retries=1, retry_backoff=True)
 def export_generate(self, export_id: str, user_id: str) -> None:
     """Run 9-step export pipeline for a user's catalog/category/products subset.
 
@@ -6997,9 +7033,9 @@ def export_generate(self, export_id: str, user_id: str) -> None:
 
 **Idempotency:** `UPDATE exports SET status="completed", xlsx_url=..., zip_url=... WHERE id=export_id` — re-running the task on the same `export_id` regenerates the same artifacts (the input rows are immutable-while-processing per §14.E). If the worker dies mid-pipeline, the Celery `task_reject_on_worker_lost=True` setting (locked session 2 G3 cleanup) requeues the task — the partial GCS objects are overwritten on retry.
 
-**Retry posture:** On exception, Celery retries 1 time with exponential backoff (1s, 2s). After 1 failed retry, the worker writes `exports.status="failed"` with the `error_code` field populated per the §14.H error taxonomy — NO DLQ in V1, the failed exports row IS the dead-letter record. The seller polls (row 26) and sees the failure; UI offers a "retry" button that creates a NEW `POST /api/v1/exports` (new UUID, new row).
+**Retry posture:** On exception, Celery retries 1 time with exponential backoff (1s, 2s). After 1 failed retry, the worker writes `exports.status="failed"` with the `error_code` field populated per the §14.H error taxonomy — NO DLQ in V1, the failed exports row IS the dead-letter record. The seller polls (row 26) and sees the failure; UI offers a "retry" button that creates a NEW `POST /api/v1/products/{id}/export-xlsx` (new UUID, new row).
 
-**Audit event:** `product.export.completed` — written DIRECTLY from the worker via `core/audit_helpers.audit_event_write(...)` per §15.E (same documented exception pattern as §6A.D + §7.I + §11.E). The HTTP-triggered companion event `product.export.initiated` is written by the audit_mw at route response time per §17.F.
+**Audit event:** `product.export.completed` — written DIRECTLY from the worker via `core/audit_helpers.audit_event_write(...)` per §15.E (same documented exception pattern as §6A.D + §7.I + §11.E). The HTTP-triggered companion event `export.initiated` is written by the audit_mw at route response time per §17.F.
 
 ---
 
@@ -7021,7 +7057,57 @@ Per §5.C + `CLAUDE.md` Valkey DB mapping:
 
 **Locked rule (§1.G):** workers re-validate `user_id` against the `users` table before executing business logic. Rationale: the JWT token was already consumed at the HTTP route; the worker receives only the `user_id` claim from the task payload. If the user has been deleted (V1.5 admin action) between task enqueue and worker pickup, the worker MUST refuse to execute.
 
-**Implementation pattern (locked):**
+#### 18.F.1 AMENDMENT 2026-06-08 — Implementation via Celery task_prerun signal handler (V1 canonical)
+
+**Founder ruling 2026-06-08 (founder Mugunthan, post-construction ratification on `meesell-backend-construction-18-celery-1` D2 escalation; see STATUS_MASTER Master Decisions Log entry 2026-06-08):** the V1 canonical implementation pattern for §18.F worker JWT re-validation is a **Celery `task_prerun` signal handler in `app/workers/celery_app.py`** scoped to a hardcoded whitelist of V1 task names — NOT an inline `_validate_user_or_abort` helper inside each `tasks.py`. The original implementation pattern shown below (lines 7079–7090 in pre-amendment numbering) is preserved as documentation of the *observable invariant* but is NOT the operative V1 implementation.
+
+**Why (engineering rationale):**
+
+1. **Centralization** — one signal handler in `celery_app.py` enforces re-validation across all V1 tasks, vs per-task implementations that risk drift between image's check and export's check.
+2. **Explicit opt-in via whitelist** — `_TASKS_REQUIRING_USER_REVALIDATION = frozenset({"image.precheck", "export.xlsx"})` makes the scope auditable in one place; future tasks must explicitly join the whitelist.
+3. **Preserves §11.E + §14.E LOCKED CONSTRUCTED `tasks.py` code untouched** — the §18 sub-session avoided modifying other sub-sessions' owned code, which would have introduced regression risk into the LOCKED §11/§14 test suites without a corresponding re-dispatch coordination protocol.
+4. **Same observable security guarantee** — the signal handler runs BEFORE the task body executes; raising `celery.exceptions.Reject(requeue=False)` on missing user terminates the task without retry, identical to the original `UserNotFoundError` semantics. 9 sub-tests cover filter, kwarg extraction, kwarg+positional, missing/existing/malformed user_id, DB-error fail-open, no-op, whitelist cardinality.
+5. **V1.5 forward-compat** — when the User model gains `disabled` / `deleted_at` columns, the signal handler's existence-check extends to `WHERE id=$1 AND disabled=False AND deleted_at IS NULL` in ONE place, vs editing each `tasks.py` separately.
+
+**V1 operative implementation (locked):**
+
+```python
+# app/workers/celery_app.py — V1 canonical §18.F enforcement
+from celery.exceptions import Reject
+from celery.signals import task_prerun
+
+_TASKS_REQUIRING_USER_REVALIDATION = frozenset({
+    "image.precheck",
+    "export.xlsx",
+})
+
+@task_prerun.connect
+def _revalidate_user_pre_task(sender=None, task_id=None, task=None,
+                              args=None, kwargs=None, **_extra) -> None:
+    """§18.F worker JWT re-validation. Whitelisted to V1 tasks only.
+    Raises Reject(requeue=False) if user_id not in users table."""
+    task_name = getattr(task, "name", None) or getattr(sender, "name", None)
+    if task_name not in _TASKS_REQUIRING_USER_REVALIDATION:
+        return
+    user_id_str = _extract_user_id_from_args(tuple(args or ()), dict(kwargs or {}))
+    if user_id_str is None:
+        return  # task body raises on missing positional arg
+    if not _user_exists_sync(user_id_str):
+        raise Reject(reason=f"user {user_id_str} not found", requeue=False)
+```
+
+**DB error posture (locked):** `_user_exists_sync` fails OPEN on transient DB errors (returns `True`), allowing the task body's repository layer to surface the DB error normally rather than hard-rejecting at the signal handler with no audit trail of WHY. This is the V1 posture — V1.5 may revisit for hardened multi-tenant deployments.
+
+**Signal contract assumption (locked):** both V1 tasks accept `(entity_id, user_id)` positionally; `_extract_user_id_from_args` reads `kwargs["user_id"]` first, then falls back to `args[1]`. Future V1.5 tasks joining the whitelist MUST honor this positional convention OR `_extract_user_id_from_args` must be extended.
+
+**What §18.F.1 does NOT change:** §1.G locked rule (workers re-validate user_id against users table before executing business logic) and the observable security guarantee (task terminated without retry on missing user — user-deletion is a permanent condition) both stand verbatim. Only the *implementation location* moved from per-task `tasks.py` files to the centralized `celery_app.py` signal handler.
+
+---
+
+#### 18.F.0 Original implementation pattern (pre-amendment 2026-06-08, preserved for documentation)
+
+The following pattern was the originally-locked implementation prior to the §18.F.1 amendment. Preserved here for historical reference; **NOT the operative V1 implementation** — see §18.F.1 above:
+
 ```python
 # app/modules/image/tasks.py + app/modules/export/tasks.py — common pattern
 async def _validate_user_or_abort(user_id: UUID, session: AsyncSession) -> None:
@@ -7031,7 +7117,7 @@ async def _validate_user_or_abort(user_id: UUID, session: AsyncSession) -> None:
         raise UserNotFoundError(user_id=user_id)
 ```
 
-Called as the FIRST line of every Celery task body after `_setup_db_session()`. The exception terminates the task (no retry — user-deletion is a permanent condition).
+In the pre-amendment pattern, this helper was to be called as the FIRST line of every Celery task body after `_setup_db_session()`. The exception terminated the task (no retry — user-deletion is a permanent condition). The V1.5 amendment may restore this pattern IF per-task validation logic diverges enough to warrant per-task implementations.
 
 ---
 
@@ -7045,7 +7131,7 @@ The setting is locked here at §18.G to preserve discoverability for future cons
 
 ### 18.H Cross-cutting integration
 
-**§6A AI calls fire from tasks.** The `image.precheck` task invokes `ai_ops.client.call_gemini(workload="watermark", ...)` at step 5 per §11.E. This is the ONLY V1 cross-cutting integration between Celery and `ai_ops/`. The `export.generate` task does NOT invoke AI — export is deterministic per §14.A.
+**§6A AI calls fire from tasks.** The `image.precheck` task invokes `ai_ops.client.call_gemini(workload="watermark", ...)` at step 5 per §11.E. This is the ONLY V1 cross-cutting integration between Celery and `ai_ops/`. The `export.xlsx` task does NOT invoke AI — export is deterministic per §14.A.
 
 **Cost tracking writes audit_events directly per §6A.D.** When `image.precheck` calls Gemini at step 5, `ai_ops/cost_tracker.py` writes the `ai_ops.call.completed` audit event INLINE inside `ai_ops/client.py` per §6A.D — this is the 3rd documented exception to the "audit_mw writes audit_events" rule. The worker context does NOT have an audit_mw available, so the inline write is necessary.
 
@@ -7059,7 +7145,7 @@ The setting is locked here at §18.G to preserve discoverability for future cons
 
 **V1 has NO Dead Letter Queue (DLQ).** Failed tasks after `max_retries` exhausted are recorded in the owning table:
 - `image.precheck` failure → `product_images.status = "failed_precheck"` with `precheck_jsonb.error = <error_code>`.
-- `export.generate` failure → `exports.status = "failed"` with `exports.error_code = <code>` per the §14.H error taxonomy.
+- `export.xlsx` failure → `exports.status = "failed"` with `exports.error_code = <code>` per the §14.H error taxonomy.
 
 These status values ARE the dead-letter records. The seller-facing UI surfaces the failure and offers a manual retry (which creates a NEW row, NEW UUID, NEW task). The operator dashboard (V1.5 — not in scope here) will query these tables for failure rates.
 
@@ -7224,7 +7310,7 @@ Performance tests are pytest-marked `perf` and `slow` — gated by `PYTEST_RUN_S
 **Backend coverage targets for V1:**
 
 - **80% module-level line coverage** for `app/modules/*/service.py` and `app/modules/*/repository.py` (the two layers that hold business logic). `pytest-cov` measures via `pytest --cov=app.modules --cov-fail-under=80`.
-- **100% endpoint coverage** — every contract endpoint (27 per §17.B + 2 infrastructure = 29 total) has at least 1 happy-path integration test. Asserted by a custom test (`tests/lint/check_endpoint_coverage.py`) that introspects FastAPI's `app.routes` and cross-references with the integration test inventory.
+- **100% endpoint coverage** — every contract endpoint (26 distinct per §17.B + 2 infrastructure = 28 total) has at least 1 happy-path integration test. Asserted by a custom test (`tests/lint/check_endpoint_coverage.py`) that introspects FastAPI's `app.routes` and cross-references with the integration test inventory.
 - **Schemas.py + router.py + domain.py + exceptions.py NOT in coverage scope** — these are declarative layers (Pydantic models, FastAPI route bindings, frozen dataclasses, exception classes). Their correctness is asserted by the integration tests, not by coverage of their own lines.
 
 Coverage reports surface in CI as a comment on the PR; coverage drop > 5% triggers a review block.
@@ -7714,7 +7800,7 @@ A reviewer evaluating §21 asks: "is the order traceable to §16.H, do per-modul
 
 ## Section 22 — Acceptance & Sign-Off
 
-STATUS: LOCKED (2026-06-06)
+STATUS: LOCKED (2026-06-06) — AMENDED 2026-06-09 (§22.B Feature 9 + §22.C: export path + route count corrections per Wave 8 §17 audit Option A ruling)
 
 ### 22.A Preamble
 
@@ -7747,7 +7833,7 @@ A reviewer evaluating §22 asks: "does every V1_FEATURE_SPEC feature have a back
 **Feature 3 — Catalog Wizard (§10).**
 - ✓ 6 catalog endpoints live per §10.B (rows 15-20 in §17.B).
 - ✓ Schema validation against `templates.schema_jsonb` envelope per §5A.B (top-level 6 keys + per-field 9 keys + 11-primitive mapping).
-- ✓ Autosave coalescing per `MVP_ARCH §11.4` — `product.patch` events coalesced 5-min/`(user_id, product_id)` per §15.E.
+- ✓ Autosave coalescing per `MVP_ARCH §11.4` — `catalog.product.updated` events coalesced 5-min/`(user_id, product_id)` per §15.E.
 - ✓ Draft recovery via `GET /api/v1/products/{id}/draft` per §10.B.6.
 
 **Feature 4 — AI Auto-fill (§10.B.3).**
@@ -7780,7 +7866,7 @@ A reviewer evaluating §22 asks: "does every V1_FEATURE_SPEC feature have a back
 - ✓ P95 ≤ 200 ms per §19.E.
 
 **Feature 9 — XLSX Export (§14).**
-- ✓ 2 export endpoints live: `POST /api/v1/exports` (202) + `GET /api/v1/exports/{id}` per §14.B.
+- ✓ 2 export endpoints live: `POST /api/v1/products/{id}/export-xlsx` (202) + `GET /api/v1/exports/{id}` per §14.B.
 - ✓ 9-step Celery pipeline operational per §14.E.
 - ✓ 2 ComplianceStrategy concretes (`StandardComplianceStrategy` + `CollapsedComplianceStrategy`) per §14.F + §0.G §12.6.
 - ✓ 15 golden round-trip XLSX fixtures pass per §14.K (one per super-category + Eye-Serum collapsed variant).
@@ -7794,7 +7880,7 @@ A reviewer evaluating §22 asks: "does every V1_FEATURE_SPEC feature have a back
 **Surface count.**
 - ✓ 27 contract endpoints live per §17.B.
 - ✓ 2 infrastructure surfaces live per §17.B (I1 `/me` + I2 `/webhooks/razorpay`).
-- ✓ Total 29 routes mounted on `app/main.py` — asserted by boot smoke test per §19.B Layer 5 (target line: 35 routes including `/health` + FastAPI defaults).
+- ✓ Total 28 routes mounted on `app/main.py` — asserted by boot smoke test per §19.B Layer 5 (target line: 34 routes including `/health` + FastAPI defaults per §17.B.3).
 
 **i18n.**
 - ✓ All ~50 i18n message IDs populated in `app/i18n/messages_en.py` per §15.K consolidation.
