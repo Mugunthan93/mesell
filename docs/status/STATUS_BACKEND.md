@@ -3522,3 +3522,122 @@ In progress: executing delete + excise + verify-collection + commit
 Blockers: none
 Next: surgical edit, deletes, pytest --collect-only verify, stage, commit
 =========
+
+=== UPDATE: 2026-06-09 (V0 cleanup + commit COMPLETE) ===
+Phase: V0 artifact delete + V0-rot test cleanup + git commit
+Agent: meesell-services-builder
+Done:
+  - Surgical excise in tests/test_worker_db_isolation.py: (a) repointed two
+    patch() targets from deleted `app.database` → `app.shared.database`
+    (preserving the valid V1 make_worker_session dispose test); (b) removed
+    the entire test_run_pipeline_uses_make_worker_session test (imported
+    deleted app.services.image_processor), replaced with a RETIRED comment
+    block. File no longer imports or patch-targets app.services/app.database;
+    4 V1 isolation tests preserved + collect cleanly.
+  - Deleted 3 pure-V0 test files: test_storage.py, test_ai_engine.py,
+    test_integration_third_party.py (all imported app.services.*).
+  - Deleted 5 V0 source artifacts: app/middleware/, app/routers/, app/schemas/,
+    app/services/, app/database.py. app/data/ PRESERVED (separate decision).
+  - pytest --collect-only -q from backend/: exit 0, 815 tests collected,
+    0 collection errors / 0 ImportError / 0 ModuleNotFoundError.
+  - Staged backend/app + requirements.txt + pytest.ini + Dockerfile(.worker)
+    + alembic/ + tests/ + scripts/ + .gitlab-ci.yml + docs/. UNSTAGED
+    docs/BACKEND_ARCHITECTURE.md (had a pre-existing 208-line working-tree mod
+    swept in by `git add docs/`) per §5.0 NON-NEGOTIABLE — left untouched in
+    working tree, NOT committed.
+  - Secrets scan: 0 .env* files, 0 secret-pattern filenames, 0 live-secret
+    signatures (AKIA/PRIVATE KEY/AIza/sk_live/rzp_live) in staged diff.
+  - Committed: 43abd23 ("feat: V1 backend construction complete — 8 domain
+    modules, Wave 1-7"), 274 files, +35429/-4275. V0 deletes recorded as
+    delete-mode entries.
+Tests: collection clean (815/0); no test execution requested this task.
+In progress: none
+Blockers: none
+Next: (master) push branch when ready; AI track to handle the untracked
+      backend/tests/eval/smart_picker/eval_results.json artifact (likely
+      gitignore candidate) + the unstaged fixtures.json mod — both outside
+      services-builder scope.
+Hand-offs:
+  - L_iam_2 V0-rot cleanup item from §19 memory is now CLOSED: the 3 V0-rot
+    test files + the test_worker_db_isolation V0 import are remediated.
+  - BACKEND_ARCHITECTURE.md remains with an UNCOMMITTED 208-line working-tree
+    modification (not authored by this session); whoever owns that change must
+    decide its disposition — it was deliberately NOT committed here.
+=========
+
+### §22 V1 Acceptance Audit — Attempt #2 — 2026-06-09
+- **Verdict:** V1 NO-GO
+- **Checks:** 8/9 PASS (1 FAIL)
+- **FAIL:** Check 9 — GCP Secret Manager. `razorpay-webhook-secret` and
+  `langfuse-secret-key` both have ZERO versions (containers exist, never
+  populated; `versions describe latest` → NOT_FOUND). Only
+  `refresh-token-pepper` (v1 ENABLED) is populated. CRITICAL-2 NOT resolved
+  against live GCP state (founder "now populated" claim contradicted).
+- **PASS (8):** Check 1 route count = 28; Check 2 auth posture 23/2/2/1 exact;
+  Check 3 = 15 golden fixtures; Check 4 = 10 §16.E CI contracts wired (see
+  checklist-text reconciliation note F-CHECK4); Check 5 Prometheus /metrics +
+  7 §15.J singletons; Check 6 export.completed/export.failed audit rows;
+  Check 7 four @audit_event decorators; Check 8 audit_mw Gate 2.5 positioned
+  correctly (L235-237).
+- **Single blocker to V1 GO:** populate the two missing Secret Manager
+  versions (founder/INFRA action; no code change). Re-run Check 9 only.
+- **Non-blocking:** §22.C Check 4 checklist lists
+  ruff/mypy/bandit/safety/pytest-markers/alembic-heads, which are NOT the
+  locked §16.E/§19.G "10 CI contracts." The real 10 (import-linter 1-7 +
+  scope_to_user + no-meesho-symbols + message-id-regex) are wired and green.
+- **Report:** `docs/audits/§22_acceptance_audit_2026-06-09_attempt2.md`
+- **Hand-offs:** INFRA (`meesell-infra-builder`) + founder for the secret
+  versions; §22.C checklist-text reconciliation recommended.
+=========
+
+=== UPDATE: 2026-06-09 — §22 V1 ACCEPTANCE AUDIT ATTEMPT #3 — V1 GO ===
+Phase: §22.C V1 acceptance gate
+Session: meesell-backend-verification-22-acceptance-3
+Branch: claude/meesell-project-setup-Tl7DS
+
+### §22 V1 Acceptance Audit — Attempt #3 — 2026-06-09
+- **Verdict:** **V1 GO — 9/9 PASS** (Backend signed off for V1)
+- **Checks:**
+  - Check 1 (28 routes): PASS — iam=6, customer=5, category=5, catalog=6,
+    image=2, pricing=1, dashboard=1, export=2 → 28 total.
+  - Check 2 (auth 23/2/2/1): PASS — full route-by-route table in report
+    confirms 23 JWT, 2 cookie (refresh+logout), 2 public (otp/send +
+    otp/verify), 1 HMAC (razorpay webhook).
+  - Check 3 (15 golden fixtures): PASS — fixture_01..fixture_15.
+  - Check 4 (10 §16.E/§19.G linter contracts): PASS — Contracts 1-7 via
+    `lint-imports --config tests/lint/import_rules.toml` (27 contract blocks
+    spread across 7 numbered groups) + Contract 8 `check_scope_to_user.py` +
+    Contract 9 `check_no_meesho_symbols_outside_export.py` + Contract 10
+    `check_message_id_regex.py`. All 4 commands wired in `.gitlab-ci.yml`
+    `lint` stage (lines 130/132/134/136).
+  - Check 5 (/metrics + 7 §15.J singletons): PASS — `main.py` L158 mounts
+    `make_asgi_app()` at `/metrics`; `core/metrics.py` defines the 7 LOCKED
+    singletons (AI_OPS_BUDGET_ALARM, I18N_MISSING_KEY, HTTP_REQUEST_DURATION,
+    HTTP_REQUESTS_TOTAL, CELERY_QUEUE_DEPTH, AI_OPS_COST_INR,
+    AUTH_TOKEN_REFRESH_FAILED).
+  - Check 6 (export terminal audits): PASS — `export/tasks.py` emits
+    `event_type="export.completed"` on terminal SUCCESS (L113) and
+    `event_type="export.failed"` on retries-exhausted FAILURE (L102) via
+    `_emit_export_terminal_audit`.
+  - Check 7 (@audit_event on 4 writes): PASS — customer/router.py L107
+    (`customer.profile_updated`), L135 (`customer.active_categories.updated`),
+    L164 (`customer.compliance_updated`); export/router.py L103
+    (`export.initiated`).
+  - Check 8 (audit_mw Gate 2.5): PASS — `audit_mw.py` L235-237 wires
+    `if request.method not in {"POST","PATCH","PUT","DELETE"}: return`
+    between Gate 2 (auth check L231-233) and Gate 3 (autosave coalesce
+    L243-246).
+  - Check 9 (3 GCP secrets ENABLED): PASS — `refresh-token-pepper`,
+    `razorpay-webhook-secret`, `langfuse-secret-key` each return at least
+    one ENABLED version against project `project-1f5cbf72-2820-4cdb-949`.
+- **All remediations from Attempts #1 and #2 confirmed landed:**
+  - CRITICAL-1 (AI eval sets): commits c9a2312 + 43abd23.
+  - CRITICAL-2 (GCP secrets): resolved at infra layer — all 3 now ENABLED.
+  - F6 (@audit_event decorators) + F7 (Gate 2.5): commit 43abd23.
+- **Report:** `docs/audits/§22_acceptance_audit_2026-06-09_attempt3.md`
+- **Blockers:** none.
+- **Hand-offs:**
+  - Master: V1 backend acceptance gate is closed. Backend may proceed to
+    deployment dispatch.
+  - FRONTEND / AI / INFRA: no new asks generated by this audit.
+=========

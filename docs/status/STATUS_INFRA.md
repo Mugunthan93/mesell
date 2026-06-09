@@ -18,6 +18,9 @@ Phase B closed (5 multi-SAN-equivalent ingresses live: `studio`, `api`, `dev`, `
 - **Tooling** — `Makefile.tf` Pass 1 + Pass 2 + Pass 2b targets, `scripts/tf-preflight.sh` (Layer E gate), `scripts/namecheap-*.mjs` (Playwright DNS helpers), `~/.meesell-secrets/` (chmod 700, files chmod 600).
 - **Docs** — SSOT at `docs/INFRASTRUCTURE_ARCHITECTURE.md`. Operational runbooks (IP rotation, ADC token workaround, TF state debug, secret verification, cert-manager chart version) captured in that doc.
 
+## Recent Ops
+- **2026-06-09 — Razorpay TEST credential rotation (Secret Manager).** Added version 2 to `razorpay-key-id` (TEST key, `rzp_test_*`) and `razorpay-key-secret`. Both containers pre-existed (from Phase A v1). Used `printf '%s' | gcloud secrets versions add --data-file=-` (no trailing newline; hexdump-verified no `0a` byte). Both secrets now show versions 1+2 ENABLED; apps reading `latest` pick up v2. Maps to `RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET` (`backend/app/shared/config.py:62-63`). Account `vaishnaviramoorthy@gmail.com`, project `project-1f5cbf72-2820-4cdb-949`.
+
 ## In Progress
 - (none)
 
