@@ -2742,7 +2742,7 @@ Locked test classes per the §19 SKELETON amendment that absorbed FE-D5 per coor
 
 ### 7.K Extraction notes (V1.5+)
 
-Per §21 extraction order, `iam` is the **2nd-easiest** module to extract after `export`. Data surface: 1 table (`users`). Public contract is already an interface — `core/auth.get_current_user` becomes a remote JWT-validation HTTP call in V1.5 (the iam-pod exposes `POST /internal/auth/validate` returning `CurrentUser`). At extraction time:
+Per §21.B extraction order, `iam` is the **7th module to extract** (second-to-last, before `catalog`). The reason: every authenticated route in the monolith consumes `core/auth_mw.get_current_user` — all 6 earlier modules must already have their `get_current_user` shim wired to the extracted `iam-svc` before `iam` itself can safely split off. Data surface: 1 table (`users`). Public contract is already an interface — `core/auth.get_current_user` becomes a remote JWT-validation HTTP call in V1.5 (the iam-pod exposes `POST /internal/auth/validate` returning `CurrentUser`). At extraction time:
 1. Lift `modules/iam/` to its own pod (FastAPI + iam-only).
 2. Repoint `core/auth.py`'s `get_current_user` to call the extracted iam-pod via HTTP instead of decoding JWT in-process (or keep in-process decoding + remote `users` lookup — TBD per §21).
 3. Move the Valkey DB 0 allowlist keys to the extracted iam-pod's Valkey, or share the existing Valkey via cluster.
@@ -3933,7 +3933,7 @@ Test fixtures: a `conftest.py` per `backend/tests/modules/catalog/` provides (a)
 2. **Schema fetch is hot-path.** Every PATCH (the highest-QPS endpoint) calls `category.service.fetch_schema` per §10.B.2 step 2 + the in-process cache hit on §6.7. Extraction moves this from a Valkey hit (~1ms) to a network call (~10ms) **per PATCH**. V1.5 must either keep `category` and `catalog` co-located, OR push the schema into a CDN-friendly read-replica.
 3. **The compliance gate spans modules.** `create_product` step 3 (per §10.B.1) chains `category → customer → catalog` in a single request. Extraction means this chain becomes 3 RPCs instead of 3 function calls; the failure modes multiply (any one can timeout).
 
-Per §21, the recommended V1.5 extraction order is `iam → customer → category → image → pricing → dashboard → export → catalog (last)`. Catalog is the spine; extracting it first risks the kind of cascading-failure outage that the modular-monolith decision was meant to defer.
+Per §21.B, the recommended V1.5 extraction order is `export → dashboard → image → pricing → customer → category → iam → catalog (last)`. Catalog is the spine; extracting it first risks the kind of cascading-failure outage that the modular-monolith decision was meant to defer.
 
 The two facets that DO transfer cleanly to extraction: (a) the §10.E Pydantic schemas are already the wire-format (no internal-vs-external shape divergence); (b) the §10.C cross-module service surface (`assert_product_ownership`, `get_product_for_export`, `list_products`, `get_validation_summary`) is the natural V1.5 gRPC service definition — the four method signatures become the four RPCs.
 
@@ -4221,6 +4221,11 @@ def image_precheck_task(self, image_id: UUID, user_id: UUID) -> None:
                   prompt_vars={},
                   image_bytes=bytes,
               ) — Layer 2 guardrail validates {has_watermark: bool, confidence: float}
+
+    **Audit write (V1 canonical per-site pattern per §15.E):** on task completion,
+    `image.precheck.completed` is written via a direct `AuditEvent(...)` ORM insert
+    inside `async with AsyncSessionLocal() as session:`. No shared helper exists —
+    see §15.E V1 direct-write canonical pattern.
               shape per §6A.E. On BudgetExceededError → precheck_jsonb.watermark_check
               = "skipped_budget" per §6A.F graceful fallback (informational,
               non-blocking — status still resolves to "ready" if steps 1-4 pass).
@@ -4437,7 +4442,7 @@ The construction dispatch produces 5 unit + 3 integration test classes covering 
 - The 2 API endpoints (`POST` + `GET`) extract to their own FastAPI pod with GCS adapter access + Postgres FK to `products`.
 - The Celery worker for `image.precheck` becomes a dedicated worker pod scaled independently from the catalog/dashboard workers.
 - The `catalog.service.assert_product_ownership` cross-module call becomes an HTTP call (likely `GET /api/v1/internal/catalog/products/{id}/ownership?user_id=...` against the still-monolith catalog service). The service signature is already designed for this transition: `async`, raises typed `CatalogNotFoundError` exception, no implicit DB-session sharing.
-- The `image.service.get_image_urls` / `get_image_bytes` cross-module reads from `catalog` / `export` similarly become HTTP calls — the contracts are already locked at this section.
+- The `image.service.get_image_urls` / `get_image_bytes` cross-module reads from `catalog` / `export` similarly become HTTP calls — the contracts are already locked at this section. **V1.5 note:** `get_image_bytes` returns raw `bytes`, which is not JSON-transportable across a service boundary. The V1.5 extraction plan must replace any `get_image_bytes` call site with a signed-URL method returning a `str` URL (e.g. `get_image_signed_url(image_id, user_id) -> str`), allowing the export pipeline to download directly from GCS rather than proxying bytes through the image-svc pod.
 - Signed-URL generation, GCS path convention, and 4-slot rule travel with the extracted service unchanged.
 
 API surface stays small (2 endpoints), which is the structural reason `image` extracts cleanly while `catalog` does not (catalog is the call hub with 6 endpoints + 4 cross-module consumers — the V1.5 hardest target per §21).
@@ -5497,6 +5502,13 @@ def export_xlsx_task(self, export_id: UUID, user_id: UUID) -> None:
     access JWT that initiated the export may have expired during the
     task's pending window; the user-existence check is the sufficient
     surrogate at task time).
+
+    Audit writes (V1 canonical per-site pattern per §15.E):
+    - `export.completed` is written on terminal SUCCESS via a direct
+      AuditEvent(...) ORM insert inside async with AsyncSessionLocal().
+    - `export.failed` is written on terminal FAILURE (retries >= max_retries)
+      via the same pattern.
+    No shared audit_helpers module — per-site write is V1 standard.
     """
     import asyncio
     asyncio.run(_run_export_pipeline_with_error_handling(export_id, user_id))
@@ -6067,6 +6079,8 @@ Per-module participation cross-references the cross-cutting bullets locked in ea
 
 **What is NOT cached (locked at §4.D).** Per-user write-heavy data — `products` (PATCH burst from autosave), `pricing_calcs` (re-computed on every input change), `exports` (single-use ZIPs) — because the invalidation rate exceeds the read rate, so caching adds cost without benefit.
 
+**Customer direct-invalidation carve-out (§8.I).** `customer.service` is the one module that actively invalidates its own cache keys on write. On `PATCH /seller-profile`, `PATCH /seller-profile/active-categories`, and `PATCH /seller-profile/compliance/{super_id}`, the service layer calls `core/cache.invalidate(key)` for `seller_profile_required_fields:{user_id}` and the super_id distinct set immediately after the DB commit — ensuring the next read gets a fresh value rather than a stale 60s/1h cached result. This goes through `core/cache` (the sole Valkey helper), not directly to Valkey, so it does NOT violate the "domain modules NEVER call `valkey.get`/`valkey.set` directly" rule above.
+
 ---
 
 ### 15.D Search & indexing
@@ -6116,6 +6130,8 @@ LIMIT :limit OFFSET :offset
 | `image.precheck.completed` | Celery worker context (no request close) | §11.E |
 | `export.completed` / `export.failed` | Celery worker context (no request close) | §14.E |
 | `razorpay.webhook.captured` | Captured before user context resolved | §7.B.6 |
+
+**V1 direct-write canonical pattern.** All documented exception events above use a per-site direct `AuditEvent(event_type=..., user_id=..., ...)` ORM write inside an `async with AsyncSessionLocal() as session:` block (`session.add(row); await session.commit()`). `core/audit_helpers` does NOT exist in V1 — the per-site write is intentional: it avoids coupling Celery worker context (which has no FastAPI request) to a middleware abstraction. V1.5 may unify all writes (middleware path + exception path) into a shared `audit.write` Celery task sink; until then, per-site is the V1 standard. Builders MUST follow this pattern for any new direct-write event — do NOT create a helper module.
 
 **5-minute coalescing.** Per `MVP_ARCH §11.4`, `audit_mw` coalesces consecutive `(user_id, product_id, event_type="catalog.product.updated")` PATCH events within a 5-minute window into a single audit row — yields ~30× volume reduction during the autosave typing burst (a seller editing 10 fields generates one row, not 10). The coalescing applies ONLY to `catalog.product.updated` per §10.I; other event types never coalesce.
 
@@ -6372,7 +6388,7 @@ The §2.D matrix locks **exactly 8 ✓ cells** of cross-module dependency. Each 
 | 8a | `catalog` | `catalog.service.get_product_for_export(product_id, user_id)` | Fetch product + AI attributes for XLSX row composition | §10.C + §14.B.1 |
 | 8b | `customer` | `customer.service.get_compliance_block(user_id)` | Inject FSSAI / BIS / license values into compliance columns | §8.C + §14.B.1 |
 | 8c | `category` | `category.service.fetch_schema(category_id)` + `category.service.get_field_enum(category_id, name)` | Resolve canonical → Meesho-raw enum codes per F2.4 `for_xlsx_export` | §9.C + §14.B.1 |
-| 8d | `image` | `image.service.get_image_bytes(image_id, user_id)` | Read watermarked image bytes for ZIP bundling | §11.C + §14.B.1 |
+| 8d | `image` | `image.service.list_images(product_id, user_id)` | Retrieve image URL list for ZIP download + bundling in export pipeline | §11.C + §14.B.1 |
 
 **§16.B.2 The 8-count is the matrix count, not the service-method count.** The 4 callee modules (`customer`, `category`, `catalog`, `image`) expose **6 distinct service methods** across all 8 ✓ cells — some methods are shared by multiple callers:
 - `catalog.service.assert_product_ownership` is consumed by image (call #3), pricing (call #4) → counted twice in the matrix, exists once on the catalog service surface.
