@@ -1,0 +1,37 @@
+{
+  "name": "Mobiles (Electronics, super_id=16)",
+  "coverage": "Standard + typo restore for `no_of_primary_cameras` per §0.G §12.2.",
+  "input_snapshot": {
+    "product": {
+      "fields_jsonb": {
+        "name": "Phone X",
+        "no_of_primary_cameras": 4,
+        "no_of_secondary_cameras": 2
+      },
+      "ai_suggestions": {}
+    },
+    "compliance_block": null,
+    "format": "xlsx_with_images"
+  },
+  "schema": {
+    "fields": [
+      {"canonical_name": "name", "meesho_column_header": "Product Name", "data_type": "text", "primitive": "text_short", "marker": "compulsory", "enum_resolver": null, "is_advanced": false, "help_text": "h", "validation_message_ids": []},
+      {"canonical_name": "no_of_primary_cameras", "meesho_column_header": "No. of Primiary Cameras", "data_type": "number", "primitive": "integer", "marker": "optional", "enum_resolver": null, "is_advanced": false, "help_text": "h", "validation_message_ids": []},
+      {"canonical_name": "no_of_secondary_cameras", "meesho_column_header": "No. of Seconadry Cameras", "data_type": "number", "primitive": "integer", "marker": "optional", "enum_resolver": null, "is_advanced": false, "help_text": "h", "validation_message_ids": []}
+    ],
+    "compulsory_count": 1,
+    "optional_count": 2,
+    "total_count": 3,
+    "wizard_step_count": 1,
+    "main_sheet_label": "Mobiles Sheet",
+    "compliance_shape": "standard"
+  },
+  "expected_xlsx_canonical": {
+    "main_sheet_label": "Mobiles Sheet",
+    "columns": [
+      {"canonical_name": "name", "value": "Phone X"},
+      {"canonical_name": "no_of_primary_cameras", "value": 4, "meesho_header_expected": "No. of Primiary Cameras"},
+      {"canonical_name": "no_of_secondary_cameras", "value": 2, "meesho_header_expected": "No. of Seconadry Cameras"}
+    ]
+  }
+}

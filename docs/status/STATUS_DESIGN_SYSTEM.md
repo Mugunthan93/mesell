@@ -1,3 +1,62 @@
+═══════════════════════════════════════════════════════
+UPDATE 2026-06-09 — TAILWIND SAFELIST DEBT ELIMINATED
+═══════════════════════════════════════════════════════
+Strategy: PREFERRED FIX (bare import + postcss.config.json). Safelist block DELETED.
+Root cause discovered: @angular/build:application does NOT load postcss.config.mjs.
+  It only reads postcss.config.json or .postcssrc.json (verified by reading Angular source).
+  When no JSON PostCSS config exists, Angular tries its own Tailwind integration path:
+  require('tailwindcss').default({ config }) — but Tailwind v4 has no .default export,
+  so it silently fails. Result: zero utility classes generated; only static preflight CSS
+  from esbuild resolving @import "tailwindcss" → tailwindcss/index.css.
+Fix: created frontend/postcss.config.json with { "@tailwindcss/postcss": { "base": "/Users/mugunthansrinivasan/Project/mesell/frontend/" } }
+  Angular detects postcss.config.json → sets postcssConfiguration → skips broken tailwind path
+  → calls @tailwindcss/postcss({ base }) → full source scanning enabled on all .ts/.html files.
+Layer order fix retained: styles.css @layer theme, base, primeng, components, utilities (declared before @import).
+app.config.ts cssLayer.order updated to 'theme, base, primeng, components, utilities' (matches Tailwind v4 native layers).
+Manual safelist block (@layer tailwind-utilities { .w-full {} .flex {} ... }) DELETED.
+Auto-detection proof: mt-10 test class on h1 → h1_marginTop computed as 40px (PASS, on-demand generation confirmed).
+Test class removed after proof. Final styles.css has no safelist and no @source directive.
+Build: ZERO errors, 1.649 seconds.
+Tests: 17/17 PASS, 0 regressions.
+Screenshots: 3 pages (login/signup/otp-verify) at 1280x800 — all styled correctly.
+Files modified: frontend/src/styles.css, frontend/src/app/app.config.ts, frontend/postcss.config.json (CREATED), frontend/postcss.config.mjs (comment-only update).
+═══════════════════════════════════════
+UPDATE 2026-06-09 — WAVE 2C HOTFIX: Tailwind v4 + PrimeNG layer wiring
+═══════════════════════════════════════
+Bug: auth controls unstyled (bare-text buttons, no-border inputs, left-bunched) — Preflight outranked PrimeNG because styles.css used bare @import "tailwindcss" while app.config.ts cssLayer.order referenced tailwind-base/tailwind-utilities (v3 names → empty phantom layers).
+Fix: styles.css split-import into tailwind-base/primeng/tailwind-utilities layers matching the PrimeNG config; added w-full fluid classes to inputs + p-button hosts + centered OTP.
+Tailwind @source note: @source glob scanning does NOT work with @angular/build:application esbuild pipeline (scanner gets no files because the builder virtualizes file paths). Workaround: explicit @layer tailwind-utilities { .w-full { ... } .flex { ... } ... } block added directly in styles.css to ensure critical utility classes are in the correct named layer.
+Verified: computed-style probe — button bg rgb(242,107,35) (orange PASS), padding 10px 14px (non-zero PASS), borderRadius 999px (pill PASS), width 376px (full card PASS); input width 376px (full PASS), border 1px solid (non-zero PASS).
+Screenshots: 6 captured at /tmp/mesell-shots-fixed/ (login/signup/otp-verify at 1280x800 + 390x844) — all pages render correctly.
+Tests: 17/17 passing, 0 regressions.
+Build: ZERO errors, 2.0s.
+═══════════════════════════════════════
+UPDATE 2026-06-09 — WAVE 2C AUTH PAGES
+═══════════════════════════════════════
+Components built: LoginComponent / SignupComponent / OtpVerifyComponent
+Route added: /otp-verify
+Tests added: 9 | Tests passing: 17/17 (all spec files)
+Gate 1 BUILD:       ✅ ZERO errors, 2.497s
+Gate 2 ROUTES:      ✅ /login, /signup, /otp-verify all registered as top-level routes in app.routes.ts
+Gate 3 FORM VALID:  ✅ form.invalid prevents submit — confirmed via reactive form logic (required + pattern validators)
+Gate 4 FUNCTIONAL:  ✅ 17/17 vitest tests pass
+Gate 5 VISUAL:      pending founder
+Open questions: none
+
+═════════════════════════════════════════════════
+UPDATE 2026-06-08 — WAVE 2A FRAMEWORK RESEARCH
+═════════════════════════════════════════════════
+Trigger: Full frontend reset — archive + rebuild
+Old frontend: archive/frontend_angular_material/ (archived)
+Old themes: archive/themes/ (archived)
+Task: Research Angular UI library candidates
+Candidates evaluated: 8 (3 shortlisted, 5 rejected)
+Shortlist: PrimeNG+Sakai-ng, NG-ZORRO+ng-alain, Taiga UI (conditional)
+Recommendation: PrimeNG + Sakai-ng Free (MIT, standalone, Tailwind, 8 pre-built page types)
+Gate A: ✅ Complete
+Awaiting: founder pick for Wave 2B (scaffold)
+═════════════════════════════════════════════════
+
 # STATUS — DESIGN SYSTEM
 
 **Owner:** Design System Coordinator sub-session (session-as-role; no separate `.claude/agents/` spec)

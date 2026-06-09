@@ -398,6 +398,7 @@ Step generator algorithm (frontend-friendly):
 ```
 POST   /api/v1/products                              → create draft
 PATCH  /api/v1/products/{id}                         → autosave
+GET    /api/v1/products/{id}/draft                   → draft recovery (§11.6 crash recovery; added per D3 ruling — §0.F)
 POST   /api/v1/products/{id}/autofill                → Gemini suggestions
                                                        (enum-constrained per decision #4)
 POST   /api/v1/products/{id}/images                  → upload + queue pre-check

@@ -1,0 +1,34 @@
+{
+  "name": "FSSAI Grocery (super_id=26)",
+  "coverage": "Compliance extension required (fssai_license_number) per §12.1; tests the customer.get_compliance_block super_id branch.",
+  "input_snapshot": {
+    "product": {
+      "fields_jsonb": {
+        "name": "Premium Basmati Rice 1kg",
+        "fssai_license_number": "12345678901234"
+      },
+      "ai_suggestions": {}
+    },
+    "compliance_block": null,
+    "format": "xlsx_with_images"
+  },
+  "schema": {
+    "fields": [
+      {"canonical_name": "name", "meesho_column_header": "Product Name", "data_type": "text", "primitive": "text_short", "marker": "compulsory", "enum_resolver": null, "is_advanced": false, "help_text": "h", "validation_message_ids": []},
+      {"canonical_name": "fssai_license_number", "meesho_column_header": "FSSAI License Number", "data_type": "text", "primitive": "text_short", "marker": "compulsory", "enum_resolver": null, "is_advanced": false, "help_text": "h", "validation_message_ids": []}
+    ],
+    "compulsory_count": 2,
+    "optional_count": 0,
+    "total_count": 2,
+    "wizard_step_count": 1,
+    "main_sheet_label": "Grocery Sheet",
+    "compliance_shape": "standard"
+  },
+  "expected_xlsx_canonical": {
+    "main_sheet_label": "Grocery Sheet",
+    "columns": [
+      {"canonical_name": "name", "value": "Premium Basmati Rice 1kg"},
+      {"canonical_name": "fssai_license_number", "value": "12345678901234"}
+    ]
+  }
+}

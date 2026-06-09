@@ -1,0 +1,44 @@
+{
+  "name": "Brand-pattern field — `brand` across 2 categories",
+  "coverage": "Same canonical name, different enum sources per category; tests the per-category enum-resolution branch in step 5. Fixture exercises ONE category — the cross-category check is implicit in the per-call resolver.",
+  "input_snapshot": {
+    "product": {
+      "fields_jsonb": {
+        "name": "Generic Phone",
+        "brand": "samsung"
+      },
+      "ai_suggestions": {}
+    },
+    "compliance_block": null,
+    "format": "xlsx_only"
+  },
+  "schema": {
+    "fields": [
+      {"canonical_name": "name", "meesho_column_header": "Product Name", "data_type": "text", "primitive": "text_short", "marker": "compulsory", "enum_resolver": null, "is_advanced": false, "help_text": "h", "validation_message_ids": []},
+      {"canonical_name": "brand", "meesho_column_header": "Brand", "data_type": "enum", "primitive": "dropdown_static", "marker": "compulsory", "enum_resolver": "category_resolved", "is_advanced": false, "help_text": "h", "validation_message_ids": []}
+    ],
+    "compulsory_count": 2,
+    "optional_count": 0,
+    "total_count": 2,
+    "wizard_step_count": 1,
+    "main_sheet_label": "Brand Sheet",
+    "compliance_shape": "standard"
+  },
+  "expected_xlsx_canonical": {
+    "main_sheet_label": "Brand Sheet",
+    "columns": [
+      {"canonical_name": "name", "value": "Generic Phone"},
+      {"canonical_name": "brand", "value": "Samsung"}
+    ]
+  },
+  "enum_payloads": {
+    "brand": {
+      "enum_entries": [
+        {"canonical": "samsung", "meesho": "Samsung", "labels": {"en": "Samsung"}},
+        {"canonical": "apple", "meesho": "Apple", "labels": {"en": "Apple"}}
+      ],
+      "total": 2,
+      "truncated": false
+    }
+  }
+}

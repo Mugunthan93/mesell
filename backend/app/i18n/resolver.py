@@ -30,6 +30,7 @@ from __future__ import annotations
 import logging
 from typing import Final
 
+from app.core.metrics import I18N_MISSING_KEY
 from app.i18n.messages_en import VALIDATION_MESSAGES as _MESSAGES_EN
 
 logger = logging.getLogger(__name__)
@@ -91,7 +92,9 @@ def resolve(message_id: str, locale: str = "en") -> str:
     if en_hit is not None:
         return en_hit
 
-    # Step 3 — verbatim ID. Log at WARNING so observability picks it up.
+    # Step 3 — verbatim ID. Log at WARNING + bump the §15.J Prometheus counter
+    # so observability picks up the seed/registry gap.
+    I18N_MISSING_KEY.labels(message_id=message_id).inc()
     logger.warning(
         "%s: message_id=%s locale=%s",
         _VERBATIM_SENTINEL_LOG,

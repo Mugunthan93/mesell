@@ -1088,3 +1088,35 @@ Out-of-scope guarantee: meesell-vm (34.93.9.139), shotfox-platform, shotfox-mvp1
 Status: PHASE A COMPLETE.
 Next handoff: TF state now reflects valkey maxmemory; dev.tfvars carries new secret IDs but module.app_secrets not yet applied (Phase B candidate).
 =========
+
+=== SESSION: 2026-06-08 — §20 Deployment Topology V1 CONSTRUCTED ===
+Agent: meesell-infra-builder
+Pre-flight: gcloud account=vaishnaviramoorthy@gmail.com (active), project=project-1f5cbf72-2820-4cdb-949, kubectl meesell-dev-master Ready v1.35.5+k3s1. gcloud at /opt/homebrew/bin, kubectl at /usr/local/bin (not on default PATH — must export). Founder IP now 122.164.87.94 (rotated again — firewall not touched this session).
+
+TASK 0 (tunnel): RESTORED. No gcp-mesell SSH alias (~/.ssh/config has only gcp-nexus -> 35.244.22.79, NOT the mesell VM 35.234.223.66). Used `kubectl port-forward svc/postgres 5433:5432 -n dev` (background, log /tmp/meesell-pf-postgres.log). nc 127.0.0.1 5433 succeeds. psql NOT installed locally — used `kubectl exec postgres-0` for DB queries instead.
+
+TASK 1 (secrets): refresh-token-pepper VERSION 1 LIVE (openssl rand -hex 32, 64 bytes). razorpay-webhook-secret + langfuse-secret-key SM containers created, ZERO versions (founder escalations). Pre-snapshot: /tmp/meesell-pre-secrets-state.txt.
+
+TASK 2 (manifests): 9 files updated (frontend.yaml already correct). Live datastore reconciliation: postgres + valkey are TF-managed StatefulSets (module.postgres_dev / module.valkey_dev) reading dedicated postgres-credentials / valkey-credentials secrets via valueFrom — NOT backend-secrets, NOT envFrom. So postgres.yaml + valkey.yaml + ingress.yaml written as DOCUMENTATION-ONLY (DO NOT APPLY headers) matching LIVE state. api/worker/backup-cronjob use backend-secrets + dev namespace. Live verified: postgres:16 200m/500Mi→1/1Gi; valkey/valkey:8 100m/200Mi→500m/512Mi maxmemory 128mb allkeys-lru.
+
+TASK 3 (dry-run): PASS. Full k8s/ client dry-run 0 errors. namespace.yaml would create prod (NOT applied — Week 2 gate).
+
+TASK 4 (V0-rot): tests/test_config.py 5 FAILED — stale: imports app.shared.config but references app.config (module moved to app/shared/config.py; app/config.py gone). Carry-forward for backend specialist. tests/test_celery_*.py 12 PASSED.
+
+TASK 5 (pool budget): postgres 16.14, max_connections=100, current 6 conns. 2 API×15 + 2 worker×15 = 60 < 100. OK.
+
+Security: .gitignore covers k8s/secrets.yaml + *-sa-key.json + .env*. No real secret material in any committed k8s file (only REPLACE-ME + placeholder 'sk-lf-...' in comments).
+
+Hand-off: §22 acceptance next. Founder must populate razorpay-webhook-secret (before §7 iam) and langfuse-secret-key (before §6A ai_ops). See k8s/secrets.yaml.example for exact gcloud commands.
+=========
+
+
+---
+
+## 2026-06-08 23:46 — SCOPE DEFLECTION: Wave 2B Step 1 (frontend scaffold) declined
+
+- **Task received:** "Wave 2B Step 1 — Scaffold new frontend" (clone Sakai-ng, `ng new frontend` Angular 21, install PrimeNG + Tailwind v4, wire + build).
+- **Decision:** DECLINED — out of infra scope. Zero changes made (no clone, no scaffold, no package installs, no file edits).
+- **Why:** (1) No `INFRASTRUCTURE_PLAYBOOK.md` section covers Angular scaffolding/PrimeNG/Tailwind — playbook treats Angular only as a deployed nginx artifact. (2) Dedicated owner exists: `meesell-frontend-coordinator` (+ angular-component/service/ui-styler builders). (3) `docs/FRONTEND_ARCHITECTURE.md` labels this "Wave 2B scaffold," a frontend-owned wave, founder-APPROVED 2026-06-08.
+- **Correct route:** dispatch `meesell-frontend-coordinator` for Wave 2B Step 1.
+- **Pre-state captured (zero mutations):** `themes/` and `frontend/` do NOT exist at repo root. Old frontend archived at `archive/frontend_angular_material/` (Angular 20 + @angular/material + Tailwind v3 — the rejected stack). Old themes at `archive/themes/{signal-admin,spike-angular}`. `.gitignore` ignores `frontend/.angular/` only.

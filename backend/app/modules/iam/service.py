@@ -38,6 +38,7 @@ from app.core.auth import (
     refresh_allowlist_key,
     rotate_refresh_token as rotate_refresh_token_in_valkey,
 )
+from app.core.metrics import AUTH_TOKEN_REFRESH_FAILED
 from app.modules.iam import repository as iam_repo
 from app.modules.iam.domain import (
     OtpRecord,
@@ -398,6 +399,7 @@ async def rotate_refresh_token(
     if not old_refresh_token:
         # No user_id known on this failure path — _write_audit_direct
         # short-circuits when user_id is None (see DDL NOT NULL constraint).
+        AUTH_TOKEN_REFRESH_FAILED.labels(reason="cookie_missing").inc()
         await _write_audit_direct(
             user_id=None,
             event_type="auth.token.refresh_failed",
@@ -422,6 +424,7 @@ async def rotate_refresh_token(
         # Either expired, never existed, or malformed JSON.  The Lua call
         # below would also return 0; we short-circuit so the audit row has
         # the right reason without needing to ask the script.
+        AUTH_TOKEN_REFRESH_FAILED.labels(reason="expired").inc()
         await _write_audit_direct(
             user_id=None,
             event_type="auth.token.refresh_failed",
@@ -447,6 +450,7 @@ async def rotate_refresh_token(
     )
     if not rotated:
         # Race lost — another concurrent /refresh already rotated.
+        AUTH_TOKEN_REFRESH_FAILED.labels(reason="replay").inc()
         await _write_audit_direct(
             user_id=existing_entry.user_id,
             event_type="auth.token.refresh_failed",
@@ -464,6 +468,7 @@ async def rotate_refresh_token(
         # has TTL — it will expire naturally.  We could DEL it, but the user
         # being gone means no attacker can use it without the cookie value
         # (which we are NOT returning).
+        AUTH_TOKEN_REFRESH_FAILED.labels(reason="allowlist_miss").inc()
         await _write_audit_direct(
             user_id=None,
             event_type="auth.token.refresh_failed",

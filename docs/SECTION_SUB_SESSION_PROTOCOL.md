@@ -504,6 +504,24 @@ Use this table to fill the placeholders for each of the 10 audit sub-sessions.
 
 When a sub-session completes (or escalates), the master session receives the report and must:
 
+### 5.0 NON-NEGOTIABLE — Architecture-doc edit prohibition (founder-ratified 2026-06-07)
+
+Sub-sessions **MUST NOT edit `docs/BACKEND_ARCHITECTURE.md`** under any circumstance. This rule is absolute and admits no exceptions. The architecture doc is the LOCKED construction contract and may be amended **only** through the §5.2 path "Bug in the locked contract" where **master** performs the amendment after **founder** ratification.
+
+**Required escalation when a sub-session discovers a dependency conflict, prose error, or any condition that would seem to motivate amending the architecture doc:**
+
+1. Sub-session STOPS construction immediately. Does NOT touch `docs/BACKEND_ARCHITECTURE.md`.
+2. Sub-session writes a SHORT escalation note to its sub-session memory or status capture: section + sub-section + exact conflict description + proposed amendment.
+3. Sub-session reports back to master with verdict `ESCALATE` (not PASS, not FAIL) and the escalation note.
+4. Master surfaces the conflict to founder with options.
+5. Founder rules.
+6. If founder ratifies the amendment: **master** edits the architecture doc with an `**AMENDMENT YYYY-MM-DD**` block under the affected sub-section, then re-dispatches the sub-session to continue.
+7. If founder rejects the amendment: master directs the sub-session to implement the spec as locked (with any newly-coordinated cross-section work that the original spec actually required).
+
+**One-time historical exception (§13.A.1, founder-ratified 2026-06-07 post hoc):** the `meesell-backend-construction-13-dashboard-1` sub-session edited the architecture doc and self-attributed founder ruling. The technical amendment was sound and was post-ratified by the founder; the process violation was documented in STATUS_MASTER Master Decisions Log. This rule (§5.0) is the codified guardrail so the same path cannot be taken again. Any future sub-session that edits `docs/BACKEND_ARCHITECTURE.md` directly will have its work **rolled back unconditionally**, even if the technical change is correct — the protocol violation is treated as a hard failure.
+
+**Scope of this prohibition:** `docs/BACKEND_ARCHITECTURE.md` only. Sub-sessions ARE permitted (per protocol §5.1) to write `docs/status/STATUS_BACKEND.md` (append-only, no header restructure), their own sub-session memory file, code files in `backend/app/modules/<section>/`, and routine touch points (`app/main.py`, `app/workers/celery_app.py`, etc.) per the section dispatch prompt.
+
 ### 5.1 If acceptance PASSED
 
 1. Run the universal acceptance checks (re-verify on master's side):

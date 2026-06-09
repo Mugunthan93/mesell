@@ -706,3 +706,90 @@ Blockers updated:
   - REFRESH_TOKEN_PEPPER: still infra-builder pre-deploy gate (unchanged)
   - ComplianceStepComponent: still pending onboarding bootstrap
 =========
+
+  ═══════════════════════════════════════════
+  UPDATE 2026-06-08 — WAVE 1A AREA 1 LAYOUTS
+  ═══════════════════════════════════════════
+  Wave source: master session (frontend-coordinator)
+  Verdicts source: founder via master 2026-06-08 walk-through
+  Spike refs consulted:
+    themes/spike-angular/package/src/app/layouts/full/full.component.html
+    themes/spike-angular/package/src/app/layouts/full/header/header.component.html
+    themes/spike-angular/package/src/app/layouts/full/sidebar/sidebar.component.html
+    themes/spike-angular/package/src/app/layouts/blank/blank.component.html
+  Agent dispatched: meesell-angular-component-builder (sonnet)
+
+  Files modified:
+    layouts/shell/shell.component.ts     (+60 / -45 lines)
+    layouts/shell/shell.component.spec.ts (+65 lines, 5 new tests)
+    layouts/auth/auth-layout.component.ts (+12 / -3 lines)
+
+  Files added: none
+
+  Changes applied (10 verdicts):
+    ✅ ADOPT 1: Header — notification bell REMOVED; avatar div → mat-mini-fab
+       [matMenuTriggerFor]="profileMenu" aria-label="Open profile menu";
+       profile dropdown (mat-menu) with "My Profile" + "Log out" ONLY.
+       MatMenuModule added to imports. logout() now navigates to /login
+       after auth.logout() completes (FE-D5 compliant).
+    ✅ ADOPT 2: Blank layout structure kept (MeeAuthLayoutComponent is
+       structural-only; no sidebar). Hex tokenised where tokens exist.
+    ✅ ADOPT 3: Sidebar pattern kept (brand + nav sections + footer logout).
+       Dark navy #111c2d grandfathered (no dark sidebar token exists).
+    ✅ ADOPT 4: Dropdown = "My Profile" (→ /profile) + "Log out" (→ /login).
+       No "My Account", no "My Task".
+    ✅ SKIP 5-10: topstrip / PRO card / footer / Tabler icons / bell / Check Pro —
+       none present; bell explicitly removed.
+
+  Token replacements (shell.component.ts):
+    #F26B23 → var(--mee-color-primary)       [brand-icon, nav-active, avatar-fab]
+    #f0f5f9 → var(--mee-color-bg)            [sidenav-container bg, page-content bg]
+    rgba(242,107,35,*) → color-mix(in srgb, var(--mee-color-primary) 12/20%, transparent)
+    #ffffff (header bg) → var(--mee-color-bg-elevated) [token = #ffffff, exact]
+    #e8ecf0 (header border) → var(--mee-color-outline) [token = #e5eaef, ~match]
+  Token replacements (auth-layout.component.ts):
+    #F26B23 → var(--mee-color-primary)       [auth-brand-logo bg]
+    #111827 → var(--mee-color-on-surface)    [auth-brand-name color]
+    16px radius → var(--mee-radius-md)       [auth-card, exact match]
+    12px radius on logo kept — no token match (--mee-radius-md = 16px, mismatch)
+  Grandfathered (no token equivalent):
+    #111c2d (dark nav sidebar bg), rgba(255,255,255,*) (sidebar text/icons),
+    #374151 / #f3f4f6 (header toggle hover), #fff on avatar-fab (white on primary)
+
+  Tests added: 5 new tests in shell.component.spec.ts
+    1. Avatar button has aria-label="Open profile menu"
+    2. Notification bell is absent (aria-label="Notifications" selector returns null)
+    3. "My Profile" menu item click → router.navigate(['/profile'])
+    4. "Log out" menu item click → auth.logout() called + router.navigate(['/login'])
+    5. Direct logout() call → auth.logout() called + router.navigate(['/login'])
+
+  Tests passing: 11/11 shell tests | 272/279 total
+    (7 pre-existing failures in export.component.spec.ts — NG0300 Multiple
+     components match; pre-existing since Wave 2b, unrelated to this dispatch)
+
+  Gate 1 BUILD:      ✅ ng build --configuration=production — zero errors, zero
+                        new warnings, all bundles within budget (7.5s)
+  Gate 2 TOKEN:      ✅ #F26B23 and #f0f5f9 no longer appear in layouts/.
+                        No new hex introduced. Grandfathered hex documented inline.
+  Gate 3 VISUAL:     🚫 CANCELLED — Spike Angular local copy is free-tier only;
+                        pro layout pages are locked/unavailable. Spike visual
+                        comparison methodology ABANDONED per founder decision
+                        2026-06-08. Code changes stand (verdicts were already
+                        encoded before dispatch; no Spike comparison needed to
+                        validate them). Founder will review MeeSell shell
+                        directly when needed.
+  Gate 4 FUNCTIONAL: ✅ 11/11 shell tests pass (6 existing + 5 new)
+
+  Minor note: auth property on MeeShellComponent changed from `private readonly`
+    to `readonly` (agent rationale: test accessibility). Tests use mock injection
+    — `private` would have sufficed. Harmless but flagged for awareness.
+
+  Open questions for founder/master:
+    1. Sidebar footer still has a "Logout" text button (pre-existing). Both
+       sidebar logout + header dropdown "Log out" now route to /login.
+       If founder wants sidebar footer logout REMOVED (cleaner header-only
+       pattern like Spike), flag for Wave 1B or a separate micro-dispatch.
+    2. Dark sidebar token: #111c2d is hardcoded throughout. If design system
+       should formally register a --mee-color-surface-dark token, that's a
+       design-system-session task (separate from layouts).
+=========

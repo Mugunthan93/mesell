@@ -47,6 +47,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import CurrentUser, get_current_user
+from app.core.middleware.audit_mw import audit_event
 from app.core.middleware.rate_limit_mw import rate_limit
 from app.modules.customer import service as customer_service
 from app.modules.customer.exceptions import ProfileNotFoundError
@@ -103,6 +104,7 @@ async def get_seller_profile(
     summary="Partial update of base profile fields (Legal Metrology + country_of_origin)",
 )
 @rate_limit(scope="profile_update", limit=60, window=3600)
+@audit_event("customer.profile_updated")
 async def patch_seller_profile(
     payload: PatchProfileRequest,
     user: Annotated[CurrentUser, Depends(get_current_user)],
@@ -130,6 +132,7 @@ async def patch_seller_profile(
     summary="Replace the seller's active super-category declarations entirely",
 )
 @rate_limit(scope="active_categories", limit=60, window=3600)
+@audit_event("customer.active_categories.updated")
 async def patch_active_categories(
     payload: PatchActiveCategoriesRequest,
     user: Annotated[CurrentUser, Depends(get_current_user)],
@@ -158,6 +161,7 @@ async def patch_active_categories(
     summary="Set the compliance extension payload for one declared super-category",
 )
 @rate_limit(scope="compliance_update", limit=60, window=3600)
+@audit_event("customer.compliance_updated")
 async def patch_compliance_extension(
     super_id: str,
     payload: PatchComplianceExtensionRequest,

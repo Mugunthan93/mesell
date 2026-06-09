@@ -21,8 +21,6 @@ import asyncio
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 
 # ---------------------------------------------------------------------------
 # 1. make_worker_session source-level verification: NullPool is referenced
@@ -66,8 +64,8 @@ def test_make_worker_session_disposes_engine_after_each_call():
         mock_engine.dispose = AsyncMock(side_effect=lambda: dispose_calls.append(n))
 
         with (
-            patch("app.database.create_async_engine", return_value=mock_engine),
-            patch("app.database.async_sessionmaker", return_value=mock_session_maker),
+            patch("app.shared.database.create_async_engine", return_value=mock_engine),
+            patch("app.shared.database.async_sessionmaker", return_value=mock_session_maker),
         ):
             async with make_worker_session():
                 pass  # session body
@@ -83,42 +81,24 @@ def test_make_worker_session_disposes_engine_after_each_call():
 
 
 # ---------------------------------------------------------------------------
-# 3. image_processor.run_pipeline uses make_worker_session, not the module-
-#    level async_session_maker.
+# 3. (RETIRED 2026-06-09 — V0-rot cleanup)
+#    The original test #3 asserted that ``app.services.image_processor``'s
+#    ``run_pipeline`` used ``make_worker_session``.  Both the V0 ``app.services``
+#    package and its ``image_processor`` module were deleted in the pre-§22 §3
+#    audit (V0-rot purge).  The V1 image pipeline lives at
+#    ``app/modules/image/tasks.py`` and its worker-session posture is covered by
+#    the §11 image module test suite.  This structural assertion no longer
+#    applies and was removed to keep collection clean.
+#
+# 4. (RETIRED 2026-06-08 by §18 sub-session)
+#    app/workers/generation_tasks.py was a V0 leftover deleted in session 2
+#    final purge, accidentally restored, and re-deleted by §18 construction
+#    when populating ``workers/celery_app.py``.  The §3.I canonical workers/
+#    subtree contains exactly 2 files (``__init__.py`` + ``celery_app.py``);
+#    no ``generation_tasks.py`` exists in V1.  The original test that
+#    verified ``generation_tasks._run_generation`` / ``_regenerate_sku``
+#    used ``make_worker_session`` is no longer applicable.
 # ---------------------------------------------------------------------------
-
-def test_run_pipeline_uses_make_worker_session_not_global_session_maker():
-    """run_pipeline must reference make_worker_session, not async_session_maker."""
-    import inspect
-    import app.services.image_processor as ip_mod
-
-    source = inspect.getsource(ip_mod.run_pipeline)
-    assert "make_worker_session" in source, (
-        "run_pipeline must use make_worker_session() for Celery-safe DB access"
-    )
-    assert "async_session_maker" not in source, (
-        "run_pipeline must NOT use the module-level async_session_maker "
-        "(that pool is unsafe across asyncio.run() calls)"
-    )
-
-
-# ---------------------------------------------------------------------------
-# 4. generation_tasks helpers use make_worker_session
-# ---------------------------------------------------------------------------
-
-def test_generation_tasks_use_make_worker_session():
-    """Both _run_generation and _regenerate_sku must import make_worker_session."""
-    import inspect
-    import app.workers.generation_tasks as gt_mod
-
-    for fn_name in ("_run_generation", "_regenerate_sku"):
-        source = inspect.getsource(getattr(gt_mod, fn_name))
-        assert "make_worker_session" in source, (
-            f"{fn_name} must use make_worker_session() for Celery-safe DB access"
-        )
-        assert "async_session_maker" not in source, (
-            f"{fn_name} must NOT use the module-level async_session_maker"
-        )
 
 
 # ---------------------------------------------------------------------------

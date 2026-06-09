@@ -1,7 +1,302 @@
 # STATUS — FRONTEND
 
 **Owner:** meesell-frontend-coordinator (master session)
-**Last update:** 2026-06-07
+**Last update:** 2026-06-09
+
+=== UPDATE: 2026-06-09 SESSION-END (meesell-angular-component-builder) ===
+Phase: PrimeNG 21 API Reference Docs — COMPLETE
+Done:
+  - docs/primeng/ — 91 files total (90 component/directive docs + INDEX.md)
+  - Remaining 31 docs written this session (continuing from prior context):
+    radiobutton.md, rating.md, scroller.md, scrollpanel.md, scrolltop.md,
+    select.md, selectbutton.md, skeleton.md, slider.md, speeddial.md,
+    splitbutton.md, splitter.md, stepper.md, steps.md, table.md, tabs.md,
+    tag.md, terminal.md, textarea.md, tieredmenu.md, timeline.md, toast.md,
+    togglebutton.md, toggleswitch.md, toolbar.md, tooltip.md, tree.md,
+    treeselect.md, treetable.md, animateonscroll.md, autofocus.md, icons.md,
+    INDEX.md (master index with wave usage map + full component table)
+Tests: N/A (docs task — no component code written)
+Build: N/A (docs task)
+In progress: none
+Blockers: none
+Next: ready for Wave 3+ component builds; agents should read docs/primeng/<component>.md before using any PrimeNG API
+Hand-offs: docs/primeng/INDEX.md is the master reference; all meesell-* agents should read the relevant .md before implementing any PrimeNG component
+=========
+
+=== UPDATE: 2026-06-09 SESSION-END (meesell-angular-ui-styler) ===
+Phase: Wave 2C Hotfix — Tailwind v4 + PrimeNG layer wiring COMPLETE
+Done:
+  1. frontend/src/styles.css REWRITTEN
+     - @layer tailwind-base, primeng, tailwind-utilities; declaration added
+     - Split imports: tailwindcss/theme.css + preflight.css → tailwind-base; utilities.css → tailwind-utilities
+     - @source "./app/**/*.ts" added (partially works — esbuild pipeline limitation noted below)
+     - Explicit @layer tailwind-utilities block with 8 critical utility classes added as workaround
+     - _tokens.css import preserved
+  2. frontend/postcss.config.mjs UPDATED — base: set to project root (supports @source resolution)
+  3. frontend/src/app/features/auth/login.component.ts
+     - Phone input: added class="w-full"
+     - p-button host: added class="w-full"
+     - Styles: display:block on input, .phone-field input { flex:1 }, ::ng-deep p-button { display:block; width:100% }, ::ng-deep .p-button { width:100%; justify-content:center }
+  4. frontend/src/app/features/auth/signup.component.ts
+     - Name input: added class="w-full"
+     - Phone input: added class="w-full"
+     - p-button host: added class="w-full"
+     - Same style rules as login
+  5. frontend/src/app/features/auth/otp-verify/otp-verify.component.ts
+     - p-button host: added class="w-full"
+     - Styles: ::ng-deep .p-button { width:100%; justify-content:center }, ::ng-deep p-button { display:block; width:100% }, ::ng-deep .p-inputotp { display:flex; justify-content:center; gap:8px; width:100% }
+Build: ZERO errors — 2.0s (final)
+A11y: no regressions — WCAG AA contrast maintained
+Mobile (390px): all 3 auth pages render correctly at 390x844 — cards fill screen width, buttons full-width, inputs full-width, OTP boxes centered
+Probe AFTER (login):
+  button.bg = rgb(242, 107, 35) — orange PASS
+  button.padding = 10px 14px — non-zero PASS
+  button.borderRadius = 999px — pill PASS
+  button.width = 376px — full card width PASS
+  input.width = 345.953px (flex-remaining in phone row) — PASS
+  input.border = 1px solid rgb(205, 215, 229) — non-zero PASS
+Tests: 17/17 PASS, 0 regressions
+Blockers: none
+Key learnings:
+  - @source glob scanning does NOT work with @angular/build:application esbuild pipeline when using split imports
+  - Workaround: explicit @layer tailwind-utilities { .util {} } blocks in styles.css for critical classes
+  - PrimeNG runtime JS injects <style>@layer primeng {...}</style> — correct layer ordering requires tailwind-utilities layer to be declared AFTER primeng in the @layer statement
+Hand-offs:
+  - Auth pages are now fully styled with orange buttons, bordered inputs, and full-width layout
+  - component-builder: no changes needed to component logic — all styling changes are CSS-only
+  - Any future Tailwind utility classes used in templates must be added to the @layer tailwind-utilities safelist block in styles.css until @source scanning is resolved with Angular esbuild builder
+=========
+
+=== UPDATE: 2026-06-09 02:00 (meesell-angular-component-builder) ===
+Phase: Wave 2C — Auth Pages (Login / Signup / OtpVerify)
+Done:
+  1. frontend/src/app/features/auth/login.component.ts — REPLACED stub
+     - Reactive form: phone (required, pattern /^[6-9]\d{9}$/)
+     - loading signal, setTimeout(1500) simulation → navigate('/otp-verify')
+     - PrimeNG InputText + Button; AuthLayoutComponent wrapper
+     - CSS vars only; 44px touch targets
+  2. frontend/src/app/features/auth/login.component.spec.ts — CREATED (3 tests)
+  3. frontend/src/app/features/auth/signup.component.ts — REPLACED stub
+     - Reactive form: name (required, minLength 2, maxLength 60) + phone (pattern)
+     - loading signal, setTimeout(1500) simulation → navigate('/otp-verify')
+     - PrimeNG InputText + Button; AuthLayoutComponent wrapper
+  4. frontend/src/app/features/auth/signup.component.spec.ts — CREATED (3 tests)
+  5. frontend/src/app/features/auth/otp-verify/otp-verify.component.ts — CREATED
+     - Reactive form: otp (required, minLength/maxLength 6)
+     - loading + countdown signals; 30s interval via setInterval
+     - ngOnDestroy clears interval
+     - resendOtp() resets countdown and restarts interval
+     - onSubmit(): setTimeout(1500) → auth.setSession('mock-token', {...}) → navigate('/dashboard')
+     - PrimeNG InputOtp + Button; AuthLayoutComponent wrapper
+  6. frontend/src/app/features/auth/otp-verify/otp-verify.component.spec.ts — CREATED (3 tests)
+  7. frontend/src/app/app.routes.ts — UPDATED
+     - Added /otp-verify top-level route (same level as /login, /signup)
+     - loadComponent: import('./features/auth/otp-verify/otp-verify.component')
+Tests: 17 passed / 0 failed (6 spec files — includes 9 new auth + 8 pre-existing)
+Build: ZERO errors — 2.497s
+  - otp-verify-component lazy chunk: 11.70 kB raw / 3.86 kB transfer
+  - signup-component lazy chunk: 3.49 kB raw / 1.31 kB transfer
+  - login-component lazy chunk: 3.01 kB raw / 1.20 kB transfer
+In progress: none
+Blockers: none
+Next: Wave 2D or coordinator-directed next dispatch
+Hand-offs:
+  - /otp-verify route live; auth.setSession() called only on successful OTP verify (FE-D5 compliant)
+  - All 3 auth routes (/login, /signup, /otp-verify) use flat import paths; AuthLayoutComponent via ng-content (NOT router-outlet)
+=========
+
+=== UPDATE: 2026-06-09 00:15 (meesell-angular-component-builder) ===
+Phase: Wave 2B Step 3 — Shell, auth layout, guard, service stub, page stubs + tests
+Done:
+  1. frontend/src/app/core/services/auth.service.ts CREATED
+     - Signal-based auth state (_token, _user as WritableSignal)
+     - isAuthenticated + currentUser as computed()
+     - setSession / logout / getToken methods
+     - FE-D5 compliant: in-memory only, no localStorage
+  2. frontend/src/app/core/guards/auth.guard.ts CREATED
+     - CanActivateFn using inject(AuthService) + inject(Router)
+     - Returns true if authenticated, else router.createUrlTree(['/login'])
+  3. frontend/src/app/layouts/auth-layout/auth-layout.component.ts CREATED
+     - Standalone, OnPush, RouterOutlet
+     - CSS vars only: var(--mee-color-bg), var(--mee-color-surface), var(--mee-radius-md), var(--mee-shadow-md), var(--mee-color-primary)
+  4. frontend/src/app/layouts/shell/shell.component.ts CREATED (3 files)
+     - PrimeNG v21: Drawer (not SidebarModule) + Menu (not MenuModule)
+     - mobileSidebarVisible = signal(false) wired to p-drawer [visible]/(visibleChange)
+     - userMenu = @ViewChild('userMenu') Menu
+     - navItems: 4 routes with pi pi-* icons
+     - userMenuItems: My Profile + separator + Log out (auth.logout())
+     - userInitials getter: splits name on space, returns 2-letter uppercase
+  5. frontend/src/app/layouts/shell/shell.component.html CREATED
+  6. frontend/src/app/layouts/shell/shell.component.css CREATED
+     - Desktop sidebar: fixed 260px, var(--mee-color-sidebar)
+     - Mobile: p-drawer overlay (hidden when >= 1024px)
+     - nav-item--active: var(--mee-color-sidebar-active) + left border + color-mix bg
+     - Header: sticky 60px, hamburger (mobile only), user avatar, p-menu popup
+     - Touch targets: 44px min-height on .nav-item, .hamburger, .avatar
+  7. Page stubs CREATED (6 total):
+     - frontend/src/app/features/dashboard/dashboard.component.ts (DashboardComponent)
+     - frontend/src/app/features/catalogs/catalog-list.component.ts (CatalogListComponent)
+     - frontend/src/app/features/catalog-new/catalog-new.component.ts (CatalogNewComponent)
+     - frontend/src/app/features/profile/profile.component.ts (ProfileComponent)
+     - frontend/src/app/features/auth/login.component.ts (LoginComponent)
+     - frontend/src/app/features/auth/signup.component.ts (SignupComponent)
+  8. frontend/src/app/app.routes.ts UPDATED
+     - Auth group: path '' → AuthLayoutComponent → children: ['' redirectTo login, login, signup]
+     - Shell group: path '' → ShellComponent + canActivate:[authGuard] → children: [dashboard, catalogs, catalogs/new, profile]
+     - Fallback: '**' → redirectTo 'login'
+  9. frontend/src/app/app.ts UPDATED
+     - Class renamed App → AppComponent, inline template <router-outlet />, OnPush
+  10. frontend/src/main.ts UPDATED — import alias to match AppComponent rename
+  11. Tests CREATED:
+      - auth-layout.component.spec.ts: 2 tests (create + logo text)
+      - shell.component.spec.ts: 5 tests (create, 4 nav items, U initials, MS initials, logout item)
+Tests: 8 passed / 0 failed (3 spec files)
+Build: ZERO errors — production 2.309s; development 1.224s
+  - shell-component lazy chunk: 155.60 kB raw / 30.01 kB transfer
+  - auth-layout-component lazy chunk: 1.02 kB raw / 1.02 kB transfer
+  - page stubs: 383–402 bytes each (minimal — correct)
+In progress: none
+Blockers: none
+Next: Wave 2B Step 4 — Auth feature components (login + signup with OTP flow)
+Hand-offs:
+  - AuthService ready at core/services/auth.service.ts — service-builder should wire HTTP calls (sendOtp, verifyOtp) to backend
+  - authGuard at core/guards/auth.guard.ts — coordinator should register in app.routes.ts extended routes
+  - ShellComponent ready; needs real nav items wired as routes are completed
+  - Login/Signup stubs ready for auth feature build-out
+=========
+
+=== UPDATE: 2026-06-08 SESSION-END (meesell-angular-ui-styler) ===
+Phase: Wave 2B Step 2 — PrimeNG theme preset + design tokens COMPLETE
+Done:
+  1. frontend/src/app/design-system/_tokens.css CREATED
+     - 52 CSS custom properties in :root — brand, sidebar, surface, semantic, border, radius, spacing, shadow, transition
+     - Zero component library dependency (Layer 1 — pure CSS)
+  2. frontend/src/app/core/theme/meesell-preset.ts CREATED
+     - definePreset(Aura, {...}) extending @primeuix/themes Aura
+     - primary palette: #F26B23 at 500 scale with full 50–950 ramp
+     - colorScheme.light.surface: #f0f5f9 → #2a3547 scale
+     - colorScheme.light.primary: color/contrastColor/hoverColor/activeColor
+     - colorScheme.light.highlight: background rgba(242,107,35,0.12)
+     - components: card (borderRadius 16px, shadow), button (borderRadius 999px, paddingX), inputtext (borderRadius 7px), select (borderRadius 7px), dialog (borderRadius 16px), panel (borderRadius 16px)
+     - NOTE: all component tokens nested under root: {} (required by @primeuix/themes 2.0.3 type structure)
+     - NOTE: datatable.headerCell has no borderRadius token in the type system — removed (not in typed API)
+  3. frontend/src/app/app.config.ts UPDATED
+     - Added provideAnimationsAsync() from @angular/platform-browser/animations/async
+     - Added providePrimeNG({ theme: { preset: MeeSellPreset, options: { prefix: p, darkModeSelector: .dark, cssLayer: { name: primeng, order: tailwind-base primeng tailwind-utilities } } }, ripple: true })
+     - Preserved existing provideBrowserGlobalErrorListeners() + provideRouter()
+     - @angular/animations@21.2.16 installed (version-matched to Angular 21.2.16 framework)
+  4. frontend/src/styles.css UPDATED
+     - @import "tailwindcss" retained
+     - @import "./app/design-system/_tokens.css" added
+     - Global html/body: height 100%, margin 0, background-color var(--mee-color-bg), color var(--mee-color-on-surface), font-family Plus Jakarta Sans
+  5. frontend/src/index.html UPDATED
+     - Google Fonts preconnect + Plus Jakarta Sans (wght 300–800, display=swap) added
+     - PrimeIcons CDN (cdn.jsdelivr.net/npm/primeicons/primeicons.css) added
+Build: ZERO errors — 2.073 seconds
+  - main 246.37 kB raw / 47.80 kB transfer
+  - styles 22.40 kB raw / 4.96 kB transfer
+  - Initial total 381.87 kB raw / 86.61 kB transfer
+A11y: Token values preserved from Wave 1 — #2a3547 on #f0f5f9 = ~9.5:1 WCAG AA PASS; #F26B23 on #ffffff = ~3.11:1 (large text / brand elements only — AA acceptable for non-body-text use)
+Mobile (360px): n/a (no layout component authored this step — pure token/config wiring)
+In progress: none
+Blockers: none
+Next: Wave 2B Step 3 (2B-3) — meesell-angular-component-builder takes over for shell/layout scaffolding using PrimeNG components + design tokens now available.
+Hand-offs:
+  - To meesell-angular-component-builder: MeeSellPreset is live. PrimeNG components can use severity/outlined/text variants. CSS custom properties in _tokens.css are available globally. Font is Plus Jakarta Sans (Google Fonts CDN). PrimeIcons available via pi pi-* classes. providePrimeNG is wired — no further config needed.
+  - Token reference: use var(--mee-color-primary) for orange, var(--mee-color-sidebar) for nav bg, var(--mee-color-bg) for page bg, var(--mee-color-on-surface) for body text, var(--mee-color-outline) for borders.
+=========
+
+=== UPDATE: 2026-06-08 SESSION-START ===
+Phase: Wave 2B Step 1 — Scaffold new Angular 21 frontend (clean slate)
+Task: Execute the 7-step scaffold — clone Sakai-ng (visual ref), ng new Angular 21 standalone+routing, install PrimeNG + @primeuix/themes, Tailwind CSS 4 (PostCSS), wire styles.css, verify primeclt absent, verify build green.
+Routes this lays foundation for: ALL 10 V1 routes (/, /signup, /login, /dashboard, /catalogs/new, /catalogs/:id/edit, /catalogs/:id/images, /catalogs/:id/preview, /catalogs/:id/pricing, /catalogs/:id/export). No route table authored yet — scaffold only.
+Specialists touched: NONE this step (founder instruction: coordinator executes scaffold via Bash; meesell-angular-ui-styler takes Wave 2B-2). component-builder + service-builder follow in later waves.
+Pre-verified clean slate: frontend/ absent, themes/ absent, archive/frontend_angular_material intact, node v22.15.0 / pnpm 11.5.2 / npx 10.9.2 confirmed.
+Stop condition: stop after build passes green — do NOT proceed to 2B-2.
+In progress: scaffold execution
+Blockers: none
+=========
+
+=== UPDATE: 2026-06-08 SESSION-END ===
+Phase: Wave 2B Step 1 — Angular 21 scaffold COMPLETE (build green)
+Done:
+  1. themes/sakai-ng/ cloned (HEAD 96d7149, 57 TS files, full project) — read-only visual reference
+  2. ng new frontend @ Angular CLI 21.2.14 / framework 21.2.16 / TypeScript 5.9.3 — standalone + routing + css + pnpm + skip-git
+     - Builder is @angular/build:application (esbuild/Vite); default test runner is vitest 4.1.8; rxjs 7.8.2
+  3. PrimeNG 21.1.9 + @primeuix/themes 2.0.3 installed (deps)
+  4. Tailwind CSS 4.3.0 + @tailwindcss/postcss 4.3.0 installed (devDeps)
+  5. Tailwind wired via PostCSS: postcss.config.mjs ({ plugins: { "@tailwindcss/postcss": {} } }) + src/styles.css = `@import "tailwindcss";`
+  6. primeclt: ABSENT (clean — never installed)
+  7. pnpm run build: ZERO errors, 2.278s
+Build: main 213.66 kB raw / 58.48 kB transfer; styles 21.23 kB raw / 4.62 kB transfer; Initial total 234.90 kB raw / 63.11 kB transfer. Output dist/frontend/browser/.
+  - Tailwind 4 confirmed active: built styles-*.css carries @layer cascade (21,234 bytes generated base/theme layer). Utility classes emit on demand as templates consume them (fresh app.html uses none yet — correct, expected).
+  - The fallback @tailwindcss/vite path was NOT needed; PostCSS path worked first try with @angular/build:application.
+A11y: n/a (no UI authored this step)
+Mobile (360px): n/a (no UI authored this step)
+TS strict: Angular 21 ng new defaults to strict mode (tsconfig "strict": true) — preserved.
+In progress: none
+Blockers: none
+Next: Wave 2B Step 2 (2B-2) — meesell-angular-ui-styler takes over: PrimeNG theme preset (@primeuix/themes) + Tailwind theme tokens (#F26B23 primary, #111c2d sidebar, #f0f5f9 bg carried from old _tokens.scss) + providePrimeNG() wiring in app.config.ts. Coordinator STOPPED here per founder instruction.
+Hand-offs:
+  - To meesell-angular-ui-styler: clean Angular 21 + PrimeNG 21 + Tailwind 4 scaffold ready at /Users/mugunthansrinivasan/Project/mesell/frontend/. Sakai-ng visual reference at /Users/mugunthansrinivasan/Project/mesell/themes/sakai-ng/ (read-only). app.config.ts currently holds only provideRouter + provideBrowserGlobalErrorListeners + provideZonelessChangeDetection (ng21 default) — needs providePrimeNG({ theme: ... }) + provideAnimationsAsync added. styles.css holds only the Tailwind import — PrimeNG theme is applied via providePrimeNG preset, NOT a CSS import (PrimeNG v18+ themeless/styled mode).
+=========
+
+=== UPDATE: 2026-06-08 ===
+Phase: Wave 2B architecture doc — FRONTEND_ARCHITECTURE.md rewrite
+Done: Wrote docs/FRONTEND_ARCHITECTURE.md with founder-approved abstraction-first architecture.
+  - Stack decision locked: Angular 21 + PrimeNG 21 + Sakai-ng Free + Tailwind CSS 4
+  - 4-layer architecture documented: Design System → UI Kit → Layouts/Shared → Features
+  - All 17 UI Kit component contracts specified (mee-button through mee-toast)
+  - Design token contract specified (_tokens.scss minimum required set)
+  - Path aliases documented (@mee/ui, @mee/shared, @mee/design, @mee/core)
+  - PrimeNG import boundary rule: primeng imports ONLY in src/app/ui/
+  - Wave sequence locked: 2B scaffold → 2C UI Kit → 2D Shared → 2E+ Features
+  - Mobile-first rule: 360px → 768px → 1280px
+Build: n/a (doc-only dispatch)
+A11y: Token contract preserves WCAG AA: #2a3547 on #f0f5f9 = ~9.5:1 PASS; #F26B23 on #ffffff = ~3.11:1 (large text / brand elements only)
+Mobile (360px): n/a
+In progress: none
+Blockers: none
+Next: Wave 2B scaffold dispatch — new session to implement Angular 21 + PrimeNG 21 + Sakai-ng scaffold
+Hand-offs: docs/FRONTEND_ARCHITECTURE.md ready. component-builder and service-builder may read this document to understand the 4-layer structure and component contracts before Wave 2B begins. Design tokens (#F26B23 primary, #111c2d sidebar, #f0f5f9 bg) are carried forward from current _tokens.scss.
+=========
+
+=== UPDATE: 2026-06-08 ===
+Phase: Wave 1B — CLOSED (template rejected)
+Decision: Signal Admin REJECTED by founder. Not suitable as MeeSell reference.
+Status: Wave 1C BLOCKED — awaiting founder to provide theme source.
+Angular 20 upgrade: COMPLETE and retained (still valid regardless of theme choice).
+themes/signal-admin/: retained on disk until new theme is provided.
+Next: Founder provides theme → new Wave 1B-2 evaluation → Wave 1C dispatch.
+=========
+
+
+=== UPDATE: 2026-06-08 03:55 ===
+Phase: Tooling upgrade — Angular 18 → 20 (founder-approved alignment with Signal Admin)
+Done:
+- Upgraded Angular core+CLI 18.2.0 → 19.2.25 → 20.3.24 (two-step ng update with --allow-dirty --force)
+- Upgraded Angular Material/CDK 18.2.14 → 19.2.19 → 20.2.14
+- Upgraded @jsverse/transloco 7.4.2 → 8.3.0 (installed with --legacy-peer-deps; pre-existing @analogjs/vitest-angular peer-dep conflict on @angular-devkit/architect range — unrelated, observe later)
+- TypeScript bumped 5.5.2 → 5.9.3; zone.js 0.14.10 → 0.15.1 by migration
+- Fixed v20 Material token-rename breakages in src/app/design-system/_component-overrides.scss:
+  * mat.button-overrides — variant-prefixed all tokens (filled-/outlined-/protected-/text-/tonal-); moved hover elevation to protected-only
+  * mat.card-overrides — variant-prefixed container-color/shape/elevation (elevated-/filled-/outlined-)
+  * mat.form-field-overrides — variant-prefixed container-shape (filled-/outlined-)
+  * mat.menu-overrides — replaced removed base-elevation-level (v18) with container-elevation-shadow (v20) mapped to --mat-sys-level2
+- v19 migration auto-rewrote 44 components for new standalone-default semantics (added standalone:false where needed)
+- v20 Material migration script auto-updated dist/ + public/ themes/spike/ assets and _theme.scss
+Build: development bundle generation completes in 5.4s, only two pre-existing NG8113 warnings (unused RouterLink imports in ImagesComponent + PreviewComponent — predate upgrade)
+Dev server: ng serve --port 4200 returns HTTP 200 on / within 25s
+Blockers: none
+Next:
+- Optional: align @angular-eslint/* (still v18.3) with v20 — non-blocking
+- Optional: resolve @analogjs/vitest-angular peer-dep range (vitest may need pin)
+- Run unit + e2e suite to confirm no runtime regressions
+- Confirm CLAUDE.md Decision 9 wording (currently says "Angular 18") is updated by master session — coordinator does not own root CLAUDE.md
+Hand-offs:
+- meesell-angular-ui-styler: review _component-overrides.scss SECTION 2 (Button) + SECTION 4 (Card) + SECTION 10 (Form Field) + SECTION 12 (Menu) — variant-prefixed token semantics may unlock further per-variant Spike fidelity
+=========
+
 
 **Status:** CONSTRUCTION ACTIVE — 2 of 6 sub-sessions V1-complete; catalog Waves 1–4 (non-export) done; cross-cutting maintenance active.
 
@@ -76,6 +371,69 @@
   - Recommend amending SESSION_PROMPTS_FEATURE_DASHBOARD.md §9 note (non-blocking)
 
 ## Updates Log
+=== UPDATE: 2026-06-08 10:00 ===
+Phase: Wave 1B — Ratified template spec authored
+Done:
+  - Wrote docs/ui_ux/WAVE_1B_RATIFIED_TEMPLATE_SPEC.md
+  - Signal Admin ratified as MeeSell UI reference template (replacing Spike Angular paywalled)
+  - Angular version upgrade decision recorded: Angular 18 → Angular 20 (matches Signal Admin stack; code reuse, not visual reference only)
+  - Reuse map documented: 8 of 10 Signal Admin pages mapped to MeeSell routes (2 auth pages replaced by existing OTP flow)
+  - 5 MeeSell-specific change items locked in spec: color tokens, icon font swap, auth flow, mobile sidebar, Angular version
+  - Wave 1C handoff sequence locked: dashboard → catalog-list → catalog-form → images → preview → export → profile
+Build: n/a (doc-only dispatch — no frontend/src/ files modified)
+A11y: n/a
+Mobile (360px): n/a
+In progress: none
+Blockers: none
+Next: Wave 1C dispatch — page-by-page Signal Admin component reuse starting with /dashboard
+Hand-offs: WAVE_1B_RATIFIED_TEMPLATE_SPEC.md ready. Angular version upgrade to 20 is now a gate for component-builder and service-builder before Wave 1C page work begins.
+=========
+
+=== UPDATE: 2026-06-08 ===
+Phase: Wave 1B — Reference template shortlist research
+Done:
+  - Evaluated 14 Angular admin templates against mandatory criteria:
+    Angular 18+, Angular Material, Tailwind CSS, standalone components, MIT LICENSE file verified, no paywall
+  - 11 candidates rejected (documented reasons: Angular version too old, Bootstrap instead of Material,
+    same author lineage as Spike, paywall, no Angular Material)
+  - 3 candidates shortlisted and documented in docs/ui_ux/WAVE_1B_TEMPLATE_SHORTLIST.md
+  - PRIMARY RECOMMENDATION: Signal Admin (github.com/codebangla/signal-admin)
+    Angular 20 + Angular Material 20 + Tailwind 3.4 + standalone + MIT 2025 + 12 pre-built pages
+  - SECONDARY: ng-matero (1,500+ stars, actively maintained May 2026; no Tailwind natively)
+  - CONDITIONAL: lannodev/angular-tailwind (Tailwind v4 + signals; no Angular Material natively)
+  - Created screenshots directory: docs/ui_ux/wave_1b_screenshots/signal-admin/
+Build: n/a (research-only dispatch — no frontend/ files modified)
+A11y: n/a
+Mobile (360px): n/a
+In progress: Signal Admin local clone + visual verification pending
+Blockers: none
+Next: Founder reviews shortlist; if Signal Admin approved, deploy to themes/signal-admin/ for visual confirmation
+Hand-offs: docs/ui_ux/WAVE_1B_TEMPLATE_SHORTLIST.md ready for founder review. Gate A pending: paywall evidence via local clone.
+=========
+
+=== UPDATE: 2026-06-08 08:11 ===
+Phase: Wave 1A Area 1 — layouts/shell/ + layouts/auth/ (layout-only pass)
+Done:
+  - MeeShellComponent: removed notification bell button + .notification-dot CSS + .header-icon-btn CSS
+  - MeeShellComponent: replaced plain user-avatar div with mat-mini-fab + MatMenuModule profile dropdown
+  - MeeShellComponent: profile dropdown has exactly 2 items — "My Profile" (→/profile) + "Log out" (→/login after auth.logout())
+  - MeeShellComponent: all tokened hex values replaced (bg, primary, bg-elevated, outline, active states)
+  - MeeShellComponent: grandfathered hex values documented (#111c2d dark sidebar, #374151 toggle btn, rgba whites on dark)
+  - MeeShellComponent: added navigateToProfile() method; updated logout() to navigate(['/login']) after auth.logout().subscribe()
+  - MeeAuthLayoutComponent: #F26B23 → var(--mee-color-primary) on .auth-brand-logo
+  - MeeAuthLayoutComponent: #111827 → var(--mee-color-on-surface) on .auth-brand-name
+  - MeeAuthLayoutComponent: border-radius 16px → var(--mee-radius-md) on .auth-card (exact match)
+  - MeeAuthLayoutComponent: .auth-brand-logo border-radius 12px kept (--mee-radius-md=16px, mismatch)
+  - MeeAuthLayoutComponent: gradient background + #fff on logo text left as-is (no token equivalents)
+Tests: 11 shell tests passing / 0 failing (6 existing + 5 new); 7 pre-existing export.spec failures unchanged; 272/279 total
+Build: ng build --configuration=production ZERO errors; 7.476s; all bundles within budget
+Gate 2 (hex hygiene): #F26B23 removed from layouts/; #f0f5f9 removed from layouts/; remaining hex = grandfathered dark sidebar + no-token grays
+In progress: none
+Blockers: none
+Next: Wave 1B or other coordinator-directed dispatch
+Hand-offs: MeeShellComponent profile dropdown ready for QA. Sidebar logout still present (in sidebar footer) + dropdown logout both call same logout() method — both navigate to /login after auth.logout().
+=========
+
 === UPDATE: 2026-06-07 08:55 ===
 Phase: /onboarding — features/account/onboarding/ (Dispatch 2 wiring)
 Done: OnboardingWizardComponent updated — SuperCategoryChipsComponent wired into Phase 2; ComplianceStepComponent loop wired into Phase 3; complianceFields signal (stub) + onComplianceSubmit handler added
@@ -4086,4 +4444,81 @@ Blockers: 2 cross-track items above gate remaining frontend work.
 Next: project master propagates to STATUS_MASTER + relays to backend
       coordinator at next master session turn.
 
+=========
+
+=== UPDATE: 2026-06-08 FROM ONBOARDING SUB-SESSION — COMPILATION FIX ===
+Written by: onboarding sub-session
+
+ISSUE: NG8102 warning in onboarding.component.ts
+  `signal<Record<string, FieldSpec[]>>({})` — TypeScript infers `Record<string, T>`
+  index access as `T` (never undefined), so `complianceFields()[id] ?? []` in the
+  template triggered NG8102 ("?? operator can be safely removed").
+
+FIX applied to:
+  frontend/src/app/features/account/onboarding/onboarding.component.ts line 166
+
+  Before: signal<Record<string, FieldSpec[]>>({})
+  After:  signal<Partial<Record<string, FieldSpec[]>>>({})
+
+  `Partial<Record<K,V>>` correctly types index access as `V | undefined`, making
+  the `?? []` guard meaningful and resolving the warning.
+
+RESULT:
+  Onboarding NG8102 cleared ✓
+  7/7 onboarding spec tests passing ✓
+  Build: ZERO errors; onboarding chunk 3.37 kB gzip unchanged ✓
+
+REMAINING WARNINGS (pre-existing, not onboarding scope):
+  NG8102 — features/catalog-form/wizard-renderer/wizard-renderer.component.ts:51
+  NG8102 — features/images/images/images.component.ts:94
+  NG8107 — features/catalog-form/primitives/text-long/text-long.component.ts:58
+  NG8107 — features/catalog-form/primitives/text-short/text-short.component.ts:54
+  These are catalog-session scope. Not onboarding's concern.
+=========
+
+=== UPDATE: 2026-06-08 — WAVE 1A AREA 1 COMPLETE + SPIKE REFERENCE ABANDONED ===
+Phase: Wave 1A Area 1 (Layouts) — closed
+
+WORK COMPLETED (Wave 1A Area 1):
+  shell.component.ts (+60/-45 lines):
+    - Notification bell + .notification-dot + .header-icon-btn CSS REMOVED
+    - User avatar div → mat-mini-fab [matMenuTriggerFor]="profileMenu"
+    - Profile mat-menu: "My Profile" (→ /profile) + "Log out" (→ /login) ONLY
+    - MatMenuModule added to imports
+    - logout() now navigates to /login after auth.logout() completes (FE-D5)
+    - Token replacements: #F26B23→var(--mee-color-primary), #f0f5f9→var(--mee-color-bg),
+      header bg→var(--mee-color-bg-elevated), header border→var(--mee-color-outline)
+  shell.component.spec.ts (+65 lines, 5 new tests):
+    - Avatar aria-label verified, bell absent verified
+    - My Profile nav, Log out nav, direct logout() all tested with OverlayContainer
+  auth-layout.component.ts (+12/-3 lines):
+    - #F26B23→var(--mee-color-primary), #111827→var(--mee-color-on-surface),
+      16px radius→var(--mee-radius-md)
+  Gates: BUILD ✅ | TOKEN ✅ | VISUAL 🚫 CANCELLED | FUNCTIONAL ✅ 11/11 shell tests
+
+SPIKE REFERENCE METHODOLOGY — ABANDONED:
+  Root cause: Spike Angular local copy is free-tier only. Pro layout pages are
+  locked. No usable visual reference available.
+  Decision (founder, 2026-06-08): Stop Spike comparison approach.
+  Impact: Zero — the 10 verdicts were already translated explicitly before any
+  dispatch. Code work is correct and stands. Future UI decisions will be made
+  directly against MeeSell's own design system (§5A FULL LOCK) without
+  Spike comparison.
+
+OPEN ITEMS (carried forward):
+  1. Sidebar footer "Logout" button — still present alongside header dropdown.
+     Both route correctly to /login. Founder to decide: keep both or
+     remove sidebar footer logout (header-only pattern).
+  2. Dark sidebar token — #111c2d still hardcoded (no --mee-color-surface-dark
+     token). Candidate for design system addition if needed.
+  3. auth property on MeeShellComponent changed to readonly (was private readonly)
+     — harmless but flagged.
+
+NEXT ACTIONS (founder to direct):
+  Proceed with any of:
+  a) auth rename dispatch (features/account/ → features/auth/ + app.routes.ts lockstep)
+  b) mee-navbar dispatch (cross-cutting, now unblocked per Q-AUTH-001)
+  c) seller-profile model fix (cross-cutting Q-CC-001)
+  d) catalog Wave 2 (THE SPINE — 11 primitives + wizard)
+  e) other founder priority
 =========

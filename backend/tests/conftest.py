@@ -17,9 +17,19 @@ os.environ["DATABASE_URL"] = os.environ.get(
 )
 os.environ.setdefault("VALKEY_URL", "redis://localhost:6381/15")
 os.environ.setdefault("JWT_SECRET", "test-secret-do-not-use")
-# Redirect Celery tasks to isolated DBs so the GCP worker never picks up test jobs.
-os.environ.setdefault("CELERY_BROKER_URL", "redis://localhost:6381/11")
-os.environ.setdefault("CELERY_RESULT_BACKEND", "redis://localhost:6381/12")
+# NOTE (§18 sub-session 2026-06-08): the previous ``CELERY_BROKER_URL``
+# + ``CELERY_RESULT_BACKEND`` env-var defaults were removed.  Per §18.E
+# the worker derives both URLs from ``settings.VALKEY_URL`` via the
+# local ``_build_url_for_db`` helper (DB 1 broker, DB 2 result
+# backend).  Setting the env vars at conftest level hijacked Celery's
+# resolution order (env wins over ``Celery(broker=...)`` constructor
+# arg) and silently broke the §18.E lock.  Tests do NOT enqueue real
+# Celery work, so the previous redirect-to-/11+/12 guard is
+# unnecessary.
+# Defensive removal in case a prior process leaked these into the
+# inherited environment (pytest re-uses parent shell env).
+os.environ.pop("CELERY_BROKER_URL", None)
+os.environ.pop("CELERY_RESULT_BACKEND", None)
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine  # noqa: E402
 from sqlalchemy.pool import NullPool  # noqa: E402
@@ -330,3 +340,282 @@ async def db() -> AsyncSession:
                 await conn.rollback()
     finally:
         await eng.dispose()
+
+
+# ── §19.D — pytest fixture posture (LOCKED 2026-06-06) ──────────────────────
+#
+# Per ``BACKEND_ARCHITECTURE.md`` §19.D the 6 fixtures consumed by per-module
+# unit + integration tests are:
+#
+#   * ``db``                   — real Postgres via dev tunnel, per-test
+#                                 ROLLBACK at teardown (DEFINED ABOVE).
+#   * ``valkey``               — real Valkey via dev tunnel, per-test FLUSHDB
+#                                 on DB 0 / 1 / 2 / 3 at teardown.
+#   * ``mock_ai_ops_client``   — :class:`unittest.mock.AsyncMock` substituting
+#                                 :func:`app.ai_ops.client.call_gemini` for
+#                                 unit + integration tests. Real Gemini calls
+#                                 are reserved for the ``ai_eval`` marker.
+#   * ``mock_msg91_adapter``   — substitutes :func:`app.adapters.msg91.send_otp`
+#                                 for OTP-related tests (no quota burn).
+#   * ``mock_gcs_adapter``     — substitutes the 4 ``app.adapters.gcs.*`` async
+#                                 surfaces with an in-memory bytes dict.
+#   * ``mock_razorpay_adapter``— substitutes :func:`app.adapters.razorpay
+#                                 .verify_webhook_signature` for webhook tests.
+#
+# Real-vs-mock policy (locked at §19.D): ``db`` + ``valkey`` are ALWAYS real
+# in V1 (no SQLite, no fakeredis) — schema-fidelity bugs SQLite masks are too
+# expensive to find at runtime. Adapter layer is ALWAYS mocked per-test
+# except in the dedicated golden-fixture + AI-eval suites.
+
+
+@pytest_asyncio.fixture(loop_scope="function")
+async def valkey(use_live_valkey):
+    """§19.D — real Valkey via dev tunnel, per-test FLUSHDB across all 4 DBs.
+
+    Builds on :func:`use_live_valkey` (which already monkeypatches the
+    ``app.shared.valkey`` factories to per-call clients in the function loop)
+    and adds a teardown that flushes DB 0 + DB 1 + DB 2 + DB 3 to guarantee
+    no test data leaks across tests.
+
+    Yields a dict of pinned async clients (one per logical Valkey DB) so a
+    test can inspect or seed any DB by name without re-deriving the URL::
+
+        async def test_thing(valkey, db):
+            await valkey["cache"].set("foo", "bar")
+            await valkey["otp"].set(f"otp:+91XYZ", "...")
+
+    Per-DB key (matches §1.B + §5.C + §15.C convention):
+        * ``valkey["otp"]``     — DB 0 (OTP / rate-limit / session / refresh)
+        * ``valkey["broker"]``  — DB 1 (Celery broker)
+        * ``valkey["results"]`` — DB 2 (Celery result backend)
+        * ``valkey["cache"]``   — DB 3 (app cache)
+
+    Teardown order: FLUSHDB on each client → aclose each client. Errors are
+    swallowed so the fixture survives Valkey-vanish-mid-test scenarios.
+    """
+    import redis.asyncio as _redis_lib
+
+    base = os.environ.get("CORE_TEST_VALKEY_URL", "redis://localhost:6379")
+    clients: dict[str, "_redis_lib.Redis"] = {}
+    for name, db_index in (("otp", 0), ("broker", 1), ("results", 2), ("cache", 3)):
+        clients[name] = _redis_lib.from_url(
+            f"{base}/{db_index}", decode_responses=True
+        )
+
+    try:
+        # Pre-flush so the test sees a clean slate. Defensive — earlier tests
+        # may have left keys behind despite their own teardown.
+        for client in clients.values():
+            try:
+                await client.flushdb()
+            except Exception:
+                pass
+        yield clients
+    finally:
+        for client in clients.values():
+            try:
+                await client.flushdb()
+            except Exception:
+                pass
+            try:
+                await client.aclose()
+            except Exception:
+                pass
+
+
+@pytest_asyncio.fixture
+async def mock_ai_ops_client(monkeypatch):
+    """§19.D — AsyncMock substituting :func:`app.ai_ops.client.call_gemini`.
+
+    Returns the :class:`unittest.mock.AsyncMock` so tests can assert on
+    call shapes::
+
+        async def test_autofill(mock_ai_ops_client):
+            mock_ai_ops_client.return_value = {"name": "Red Kurti", ...}
+            ...
+            mock_ai_ops_client.assert_awaited_once()
+
+    Default return value is an empty dict — tests override per scenario.
+
+    The mock is installed BOTH on the source module (``app.ai_ops.client``)
+    AND on every consumer module that imported ``call_gemini`` by name at
+    module-load time (the §6A.A 3 AI-workload modules — category, catalog,
+    image). Without the per-consumer patch the consumer's local binding
+    would still call the real adapter.
+    """
+    from unittest.mock import AsyncMock
+
+    mock = AsyncMock(return_value={})
+
+    # Patch the source module first.
+    import app.ai_ops.client as _client_mod
+    monkeypatch.setattr(_client_mod, "call_gemini", mock)
+
+    # Patch every known consumer per §6A.A. Imports that didn't capture the
+    # symbol locally are silently skipped (lazy / module-not-built cases).
+    for mod_path in (
+        "app.modules.category.service",
+        "app.modules.catalog.service",
+        "app.modules.image.service",
+        "app.modules.image.tasks",
+    ):
+        try:
+            mod = __import__(mod_path, fromlist=["call_gemini"])
+        except Exception:
+            continue
+        if hasattr(mod, "call_gemini"):
+            monkeypatch.setattr(mod, "call_gemini", mock)
+
+    return mock
+
+
+@pytest_asyncio.fixture
+async def mock_msg91_adapter(monkeypatch):
+    """§19.D — substitute :func:`app.adapters.msg91.send_otp` with AsyncMock.
+
+    Returns the mock so tests can assert call arguments. Default return value
+    is a minimal :class:`app.adapters.msg91.Msg91Response`-compatible mapping
+    so the OTP send path completes its happy path.
+
+    Patches both ``app.adapters.msg91.send_otp`` AND every known consumer
+    that bound the symbol at import time (per the §15.H + §7.B flow,
+    primarily ``app.modules.iam.service`` + ``app.modules.iam.router``).
+    """
+    from unittest.mock import AsyncMock
+
+    mock = AsyncMock(return_value={"type": "success", "message": "sent"})
+
+    import app.adapters.msg91 as _msg91_mod
+    monkeypatch.setattr(_msg91_mod, "send_otp", mock)
+
+    for mod_path in (
+        "app.modules.iam.service",
+        "app.modules.iam.router",
+    ):
+        try:
+            mod = __import__(mod_path, fromlist=["send_otp"])
+        except Exception:
+            continue
+        if hasattr(mod, "send_otp"):
+            monkeypatch.setattr(mod, "send_otp", mock)
+
+    return mock
+
+
+@pytest_asyncio.fixture
+async def mock_gcs_adapter(monkeypatch):
+    """§19.D — substitute the 4 ``app.adapters.gcs.*`` async surfaces.
+
+    Backed by an in-memory ``dict[str, bytes]`` keyed by GCS path so write
+    + read round-trip behaviour is preserved per test::
+
+        async def test_export_pipeline(mock_gcs_adapter):
+            # Write happens transparently — the stored bytes are inspectable:
+            assert "meesell-exports/user-1/abc.xlsx" in mock_gcs_adapter.storage
+
+    Returns the fixture object itself with attributes:
+
+      * ``.storage``  — ``dict[str, bytes]`` of uploaded objects
+      * ``.upload_bytes`` / ``.download_bytes`` / ``.generate_signed_url``
+        / ``.delete`` — the AsyncMocks patched onto :mod:`app.adapters.gcs`
+
+    The signed-URL mock returns a deterministic placeholder so tests can
+    assert URL shape without depending on real GCS signing.
+    """
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    storage: dict[str, bytes] = {}
+
+    async def _upload_bytes(path, data, content_type, *, bucket=None):
+        storage[path] = bytes(data)
+        return None
+
+    async def _download_bytes(path, *, bucket=None):
+        try:
+            return storage[path]
+        except KeyError as exc:
+            raise FileNotFoundError(f"gcs mock: {path}") from exc
+
+    async def _generate_signed_url(
+        path, *, bucket=None, ttl_seconds=None, method="GET"
+    ):
+        return f"https://storage.googleapis.test/{bucket or 'mock'}/{path}?token=mock"
+
+    async def _delete(path, *, bucket=None):
+        storage.pop(path, None)
+
+    import app.adapters.gcs as _gcs_mod
+
+    upload_mock = AsyncMock(side_effect=_upload_bytes)
+    download_mock = AsyncMock(side_effect=_download_bytes)
+    sign_mock = AsyncMock(side_effect=_generate_signed_url)
+    delete_mock = AsyncMock(side_effect=_delete)
+
+    monkeypatch.setattr(_gcs_mod, "upload_bytes", upload_mock)
+    monkeypatch.setattr(_gcs_mod, "download_bytes", download_mock)
+    monkeypatch.setattr(_gcs_mod, "generate_signed_url", sign_mock)
+    monkeypatch.setattr(_gcs_mod, "delete", delete_mock)
+
+    # Patch consumers that captured the names at import time (image upload,
+    # export pipeline, storage service).
+    for mod_path, names in (
+        ("app.modules.image.service",
+         ("upload_bytes", "download_bytes", "generate_signed_url", "delete")),
+        ("app.modules.image.tasks",
+         ("upload_bytes", "download_bytes", "generate_signed_url", "delete")),
+        ("app.modules.export.tasks",
+         ("upload_bytes", "download_bytes", "generate_signed_url", "delete")),
+        ("app.modules.export.service",
+         ("upload_bytes", "download_bytes", "generate_signed_url", "delete")),
+    ):
+        try:
+            mod = __import__(mod_path, fromlist=list(names))
+        except Exception:
+            continue
+        for name in names:
+            if hasattr(mod, name):
+                target = {
+                    "upload_bytes": upload_mock,
+                    "download_bytes": download_mock,
+                    "generate_signed_url": sign_mock,
+                    "delete": delete_mock,
+                }[name]
+                monkeypatch.setattr(mod, name, target)
+
+    return SimpleNamespace(
+        storage=storage,
+        upload_bytes=upload_mock,
+        download_bytes=download_mock,
+        generate_signed_url=sign_mock,
+        delete=delete_mock,
+    )
+
+
+@pytest_asyncio.fixture
+async def mock_razorpay_adapter(monkeypatch):
+    """§19.D — substitute :func:`app.adapters.razorpay.verify_webhook_signature`.
+
+    Returns a :class:`unittest.mock.MagicMock` so tests can pre-set the
+    boolean return value per scenario (signature pass / signature fail).
+    Default return is ``True`` — the happy path.
+    """
+    from unittest.mock import MagicMock
+
+    mock = MagicMock(return_value=True)
+
+    import app.adapters.razorpay as _rzp_mod
+    monkeypatch.setattr(_rzp_mod, "verify_webhook_signature", mock)
+
+    for mod_path in (
+        "app.modules.iam.service",
+        "app.modules.iam.router",
+    ):
+        try:
+            mod = __import__(mod_path, fromlist=["verify_webhook_signature"])
+        except Exception:
+            continue
+        if hasattr(mod, "verify_webhook_signature"):
+            monkeypatch.setattr(mod, "verify_webhook_signature", mock)
+
+    return mock

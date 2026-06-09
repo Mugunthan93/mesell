@@ -67,3 +67,25 @@ Tests: test_ai_engine.py covers existing generate_listing well (7 tests), none f
 3,772-leaf tree available at backend/app/data/meesho_category_tree.json — needs compression strategy for prompt.
 Ready for task.
 =========
+
+=== UPDATE: 2026-06-09 SESSION-START ===
+Phase: §22 acceptance remediation — CRITICAL-1: all 3 AI eval sets have 0 cases (V1 NO-GO).
+Task: populate + run all 3 golden eval sets against §22.C thresholds:
+  - Smart Picker (F2): top-5 recall ≥ 80% over 50 descriptions
+  - Autofill (F4): 0% invalid enum emission over 30 specs
+  - Watermark (F5): accuracy ≥ 85% over 30 images
+Ground-truth confirmed:
+  - Fixtures live at backend/tests/eval/<workload>/fixtures.json (NOT repo-root tests/eval).
+  - eval.py runner (§6A.H) is a §19 skeleton (_run_one_fixture returns passed=False) and
+    expects a bare JSON LIST. The current smart_picker stub is a DICT — must be reconciled.
+  - picker.py public surface (compress_tree, calibrate_confidence, select_top_k) is pure +
+    deterministic — supports a token-free deterministic eval over real 3,772-leaf tree.
+  - category_attributes.json lists required/optional field NAMES but NO enum value allowlists
+    → prompt-engineer must supply per-fixture allowed_enums in the autofill fixtures.
+  - watermark/ dir does not exist — image-precheck-builder creates it.
+Decision: deterministic, token-free evals (cannot burn live Gemini at audit time). Each
+  specialist writes a self-contained eval script that exercises the real pipeline logic
+  (picker compression/recall, autofill enum-conformance, watermark detection heuristic)
+  against fixtures and emits tests/eval/<workload>/eval_results.json with PASS/FAIL verdict.
+Dispatching: meesell-category-picker-builder, meesell-prompt-engineer, meesell-image-precheck-builder.
+=========

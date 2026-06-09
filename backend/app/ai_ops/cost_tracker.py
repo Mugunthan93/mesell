@@ -49,12 +49,24 @@ from uuid import UUID
 
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.metrics import AI_OPS_COST_INR
 from app.shared.config import settings
 from app.shared.database import AsyncSessionLocal
 from app.shared.models.audit_event import AuditEvent
 from app.shared.valkey import get_valkey_otp
 
 logger = logging.getLogger(__name__)
+
+# ── §15.J per-workload daily cost accumulator (process-local) ───────────────
+# The Valkey ``ai:cost:daily:{date}`` counter is GLOBAL (not split by
+# workload), so it cannot back the per-``workload`` ``ai_ops_cost_inr`` gauge
+# directly.  We keep a small in-process running total keyed on
+# ``(workload, kolkata_date)`` and SET the gauge from it on every ``record``.
+# Process-local is correct for a Prometheus gauge: each pod reports its own
+# contribution and the scrape aggregates across pods.  Stale prior-day keys
+# self-heal because the gauge is re-SET to the new day's accumulator (which
+# starts at 0) on the first call after the Kolkata midnight rollover.
+_WORKLOAD_DAILY_INR: dict[tuple[str, str], float] = {}
 
 # ── Workload literal type re-export ────────────────────────────────────────
 # The 3 AI workloads §6A recognises.  Type-identical across cost_tracker,
@@ -181,6 +193,21 @@ async def record(
         logger.warning(
             "cost_tracker user-hourly bump failed (user=%s workload=%s): %r",
             user_id,
+            workload,
+            exc,
+        )
+
+    # 4. §15.J ``ai_ops_cost_inr{workload,period="daily"}`` gauge — SET (not
+    #    inc) to the current running daily total for this workload.  Best-
+    #    effort: a metrics failure MUST NOT regress the AI-call success path.
+    try:
+        acc_key = (workload, _today_kolkata_str())
+        running_total = _WORKLOAD_DAILY_INR.get(acc_key, 0.0) + cost_inr
+        _WORKLOAD_DAILY_INR[acc_key] = running_total
+        AI_OPS_COST_INR.labels(workload=workload, period="daily").set(running_total)
+    except Exception as exc:  # noqa: BLE001 — gauge update is best-effort
+        logger.warning(
+            "cost_tracker ai_ops_cost_inr gauge set failed (workload=%s): %r",
             workload,
             exc,
         )

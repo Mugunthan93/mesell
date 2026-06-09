@@ -1,0 +1,31 @@
+{
+  "name": "Special characters — name: Kurti & Top — 5\"",
+  "coverage": "Ampersand, em-dash, and escaped double-quote preserved through XLSX encoding + round-trip re-parse.",
+  "input_snapshot": {
+    "product": {
+      "fields_jsonb": {
+        "name": "Kurti & Top — 5\""
+      },
+      "ai_suggestions": {}
+    },
+    "compliance_block": null,
+    "format": "xlsx_only"
+  },
+  "schema": {
+    "fields": [
+      {"canonical_name": "name", "meesho_column_header": "Product Name", "data_type": "text", "primitive": "text_short", "marker": "compulsory", "enum_resolver": null, "is_advanced": false, "help_text": "h", "validation_message_ids": []}
+    ],
+    "compulsory_count": 1,
+    "optional_count": 0,
+    "total_count": 1,
+    "wizard_step_count": 1,
+    "main_sheet_label": "Special Chars Sheet",
+    "compliance_shape": "standard"
+  },
+  "expected_xlsx_canonical": {
+    "main_sheet_label": "Special Chars Sheet",
+    "columns": [
+      {"canonical_name": "name", "value": "Kurti & Top — 5\""}
+    ]
+  }
+}
