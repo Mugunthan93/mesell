@@ -2,8 +2,8 @@ feature: "image-precheck"
 session: "mesell-image-precheck-amendment-session-1"
 worktree: "/tmp/mesell-wt/image-precheck"
 branch: "feature/image-precheck/planning"
-status: "PLAN_READY"
-last_updated: "2026-06-10T12:00:00Z"
+status: "IN_REVIEW"
+last_updated: "2026-06-10T12:52:02Z"
 feature_plan_path: "docs/plans/features/image-precheck/FEATURE_PLAN.md"
 feature_plan_line_count: 1606
 pr_number: 14
@@ -20,3 +20,5 @@ notes: |
 
   PR #14 open against develop, awaiting founder review.
   Branch: feature/image-precheck/planning
+
+  2026-06-10: Amendment session was interrupted before the final status flip; this commit completes it (PLAN_READY -> IN_REVIEW).
