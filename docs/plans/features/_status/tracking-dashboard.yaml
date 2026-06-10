@@ -2,11 +2,11 @@ feature: "tracking-dashboard"
 session: "mesell-tracking-dashboard-amendment-session-1"
 worktree: "/tmp/mesell-wt/tracking-dashboard"
 branch: "feature/tracking-dashboard/planning"
-status: "PLAN_READY"
+status: "IN_REVIEW"
 last_updated: "2026-06-10T12:00:00Z"
 feature_plan_path: "docs/plans/features/tracking-dashboard/FEATURE_PLAN.md"
 feature_plan_line_count: 1442
-pr_number: null
-pr_url: null
+pr_number: 19
+pr_url: "https://github.com/Mugunthan93/mesell/pull/19"
 outstanding_founder_decisions: []
-notes: "Amendment session complete — 11 canonical h2 headings verified in locked order. Branch setup + Memory protocol confirmed present. Common Dispatch Template Preamble confirmed as h3 inside Dispatch templates. v2 revision history entry confirmed present."
+notes: "Amendment session complete — 11 canonical h2 headings verified in locked order. Branch setup + Memory protocol confirmed present. Common Dispatch Template Preamble confirmed as h3 inside Dispatch templates. v2 revision history entry confirmed present. PR #19 open for founder review."
