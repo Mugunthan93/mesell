@@ -105,6 +105,68 @@ PHASE E (after component-builder complete):
 
 ---
 
+## Branch setup
+
+> **When to create:** After PR #3 (`feature/auth-otp/planning`) merges to `develop` and this feature is `LOCKED` in the tracker. Do NOT open coding branches while this plan is still `IN REVIEW`. Per D3: no coding branch opens until auth-otp is LOCKED.
+
+### Branches to create (all cut from `develop`)
+
+| Branch | Cut from | Purpose | Who commits here |
+|--------|----------|---------|-----------------|
+| `feature/auth-otp` | `develop` | Integration branch — sub-branches merge into here; final PR to `develop` | Only merge commits from sub-branches |
+| `feature/auth-otp/backend` | `feature/auth-otp` | All backend specialist work | `meesell-database-builder`, `meesell-services-builder`, `meesell-auth-builder`, `meesell-api-routes-builder` |
+| `feature/auth-otp/frontend` | `feature/auth-otp` | All frontend specialist work | `meesell-angular-service-builder`, `meesell-angular-component-builder`, `meesell-angular-ui-styler` |
+| `feature/auth-otp/infra` | `feature/auth-otp` | All infra work | `meesell-infra-builder` |
+
+### Creation commands (run by founder after PR #3 merges)
+
+```bash
+# Ensure develop is current
+git checkout develop && git pull origin develop
+
+# Create integration branch
+git checkout -b feature/auth-otp
+git push -u origin feature/auth-otp
+
+# Create 3 group branches from the integration branch
+git checkout -b feature/auth-otp/backend feature/auth-otp
+git push -u origin feature/auth-otp/backend
+
+git checkout -b feature/auth-otp/frontend feature/auth-otp
+git push -u origin feature/auth-otp/frontend
+
+git checkout -b feature/auth-otp/infra feature/auth-otp
+git push -u origin feature/auth-otp/infra
+
+# Return to integration branch
+git checkout feature/auth-otp
+```
+
+### PR flow (coding stage)
+
+```
+feature/auth-otp/backend  ──┐
+feature/auth-otp/frontend ──┤──► feature/auth-otp ──► develop
+feature/auth-otp/infra    ──┘
+```
+
+- Each group branch opens a PR to `feature/auth-otp` (NOT directly to `develop`)
+- `feature/auth-otp/backend` PR reviewed and approved by `meesell-backend-coordinator`
+- `feature/auth-otp/frontend` PR reviewed and approved by `meesell-frontend-coordinator`
+- `feature/auth-otp/infra` PR self-reviewed by `meesell-infra-builder`, then founder gate
+- Integration PR (`feature/auth-otp` → `develop`) opened only after all 3 group PRs are merged; founder does final review
+
+### PR templates
+
+| PR | Template file |
+|----|--------------|
+| `feature/auth-otp/backend` → `feature/auth-otp` | `.github/PULL_REQUEST_TEMPLATE/backend.md` |
+| `feature/auth-otp/frontend` → `feature/auth-otp` | `.github/PULL_REQUEST_TEMPLATE/frontend.md` |
+| `feature/auth-otp/infra` → `feature/auth-otp` | `.github/PULL_REQUEST_TEMPLATE/infra.md` |
+| `feature/auth-otp` → `develop` | `.github/PULL_REQUEST_TEMPLATE/feature.md` |
+
+---
+
 ## Code surfaces
 
 ### Backend
