@@ -11,6 +11,7 @@
 
 | Feature | Group branch | Status | Current session | Last touched | Blocking | Notes |
 |---|---|---|---|---|---|---|
+| housekeeping-v1 | feature/housekeeping-v1-backend | IN REVIEW | — | 2026-06-10 21:31 IST | none | dead-file cleanup PR open |
 
 ## Recently merged (last 14 days)
 
