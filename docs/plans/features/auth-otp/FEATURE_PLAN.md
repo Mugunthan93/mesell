@@ -167,6 +167,163 @@ feature/auth-otp/infra    ──┘
 
 ---
 
+## Sprint plan
+
+> **Purpose:** Execution roadmap for coding-stage dispatch. Read this before dispatching any agent.
+> **Based on:** Actual codebase audit (2026-06-10) — backend is ~95% complete; frontend is ~30% complete (UI scaffolded, zero HTTP wiring).
+> **Gate to start:** PR #3 merged to `develop` → tracker = `LOCKED` → 4 coding branches created.
+
+### Current state audit
+
+| Track | Component | Status | What exists | What's missing |
+|-------|-----------|--------|-------------|----------------|
+| Backend | `modules/iam/service.py` | ✅ COMPLETE | All 6 methods implemented with FE-D5 contracts | — |
+| Backend | `modules/iam/domain.py` | ✅ COMPLETE | 8 frozen dataclasses | — |
+| Backend | `modules/iam/exceptions.py` | ✅ COMPLETE | 8 exception subclasses | — |
+| Backend | `modules/iam/router.py` | ✅ COMPLETE | 6 endpoints, cookie constants, rate limiting | — |
+| Backend | `core/auth.py` | ✅ COMPLETE | JWT issuing, HMAC pepper, Lua `REFRESH_ROTATE_LUA`, EVALSHA/EVAL fallback | — |
+| Backend | `shared/models/user.py` | ✅ COMPLETE | `User` ORM model | Alembic migration needs verification |
+| Backend | `adapters/msg91.py` | ✅ COMPLETE | MSG91 adapter | IP whitelist needs verification |
+| Backend | `modules/iam/schemas.py` | ⚠️ VERIFY | May exist (router imports it) | Needs pytest suite |
+| Frontend | `core/services/auth.service.ts` | ⚠️ STUB | Signal state, `setSession`, `logout`, `getToken` | `sendOtp()`, `verifyOtp()`, `logout()`, `getProfile()` HTTP calls missing |
+| Frontend | `core/interceptors/auth.interceptor.ts` | ❌ MISSING | Directory does not exist | Full interceptor file needed |
+| Frontend | `core/interceptors/refresh.interceptor.ts` | ❌ MISSING | Directory does not exist | Full interceptor file needed |
+| Frontend | `core/guards/auth.guard.ts` | ⚠️ STUB | Reads `isAuthenticated()` computed | Must read `token()` signal directly |
+| Frontend | `features/auth/login/login.component.ts` | ⚠️ STUB | Full UI + reactive form | `onSubmit()` uses `setTimeout` mock — no HTTP call |
+| Frontend | `features/auth/signup/signup.component.ts` | ⚠️ STUB | Full UI + reactive form | `onSubmit()` uses `setTimeout` mock — no HTTP call |
+| Frontend | `features/auth/otp-verify/otp-verify.component.ts` | ⚠️ STUB | UI, countdown timer, OTP input | Phone not read from query params; `'mock-token'` hardcoded |
+| Frontend | SCSS files (3) | ❌ MISSING | Not created | `login.component.scss`, `signup.component.scss`, `otp-verify.component.scss` |
+| Infra | K8s env vars + secrets | ✅ COMPLETE | All 4 secrets LIVE in Secret Manager | K8s manifest env-var additions needed |
+| Infra | `auth-secret-rotation.md` runbook | ❌ MISSING | Not created | New file needed |
+
+### Sprint 0 — Unlock (½ day)
+
+**Gate:** PR #3 reviewed and merged to `develop`. Precedes all coding dispatch.
+
+| # | Task | Owner | Exit criterion |
+|---|------|-------|---------------|
+| S0.1 | Founder reviews and approves PR #3 (`feature/auth-otp/planning` → `develop`) | Founder | PR merged to `develop` |
+| S0.2 | Update `feature_planning_master.md` row: `auth-otp` → `LOCKED` | Founder / Director | Tracker updated |
+| S0.3 | Create 4 coding branches per Branch setup commands | Founder | `feature/auth-otp`, `/backend`, `/frontend`, `/infra` all pushed to origin |
+| S0.4 | Update `docs/status/feature_board_backend.md` and `feature_board_frontend.md` — auth-otp row = `IN PROGRESS` | Backend coord + Frontend coord | Status boards updated on respective branches |
+
+### Sprint 1 — Backend verification + infra (Days 1–3)
+
+**Dispatch:** Phase A (parallel): `meesell-database-builder` + `meesell-services-builder` + `meesell-infra-builder`
+**Followed by:** Phase B: `meesell-auth-builder` → Phase C: `meesell-api-routes-builder`
+
+| # | Task | Agent | Phase | What gets done |
+|---|------|-------|-------|---------------|
+| S1.1 | Verify Alembic migration exists and runs clean; confirm `User` model columns match `service.py` assumptions | `meesell-database-builder` | A | Migration `iam_users` verified; `alembic upgrade head` passes |
+| S1.2 | Add env vars to K8s manifests (dev + staging namespaces); verify all 4 secrets wired; write `auth-secret-rotation.md` runbook | `meesell-infra-builder` | A | 3 infra surfaces done; secret check complete |
+| S1.3 | Verify `modules/iam/schemas.py` exists; all Pydantic v2 request/response shapes match `domain.py` dataclasses; add any missing schemas | `meesell-api-routes-builder` | C | `schemas.py` complete; `router.py` imports clean |
+| S1.4 | Write pytest suite: `tests/unit/iam/test_service.py` + `test_router.py` + `tests/integration/test_auth_otp_integration.py` | `meesell-auth-builder` (unit) + `meesell-api-routes-builder` (integration) | B + C | ≥ 80% iam path coverage; all 6 service methods tested |
+| S1.5 | Verify MSG91 IP whitelist allows dev VM IP (`122.164.85.51`); real OTP send in dev namespace | `meesell-infra-builder` | A | Smoke: `POST /auth/otp/send` with real phone returns `200 OK` in dev |
+
+**Sprint 1 exit gate:**
+- [ ] `alembic upgrade head` runs clean from empty DB
+- [ ] `pytest tests/unit/iam/` — all green
+- [ ] `pytest tests/integration/test_auth_otp_integration.py` — all green (requires dev K8s running)
+- [ ] `POST /auth/otp/send` smoke → real OTP received on phone
+- [ ] `feature/auth-otp/backend` PR and `feature/auth-otp/infra` PR open and ready for review
+
+### Sprint 2 — Frontend HTTP wiring (Days 4–9)
+
+**Dispatch:** Phase D then Phase E — service-builder first, component-builder after, ui-styler last.
+
+#### S2.A — Service layer (`meesell-angular-service-builder`, Days 4–6)
+
+| # | Task | What gets built |
+|---|------|----------------|
+| S2.1 | `auth.service.ts` HTTP methods | `sendOtp(phone)`, `verifyOtp(phone, otp)`, `logout()`, `getProfile()` — all returning `Observable<...>` |
+| S2.2 | Create `core/interceptors/` directory + `auth.interceptor.ts` | JWT Bearer interceptor; `withCredentials: true` ONLY on URLs containing `/api/v1/auth/` |
+| S2.3 | `refresh.interceptor.ts` | Silent 401 handler; `BehaviorSubject` refresh deduplication (one in-flight refresh, all other 401 callers queue); retry original request on success; redirect to `/login` on failure |
+| S2.4 | `auth.guard.ts` | Read `AuthService.token()` signal directly (not `isAuthenticated()` computed) |
+| S2.5 | `app.routes.ts` | Add `/login`, `/signup`, `/otp-verify` as public routes with `auth-layout`; route comment block per Documentation deliverable #6 |
+| S2.6 | `app.config.ts` | Register both interceptors: `provideHttpClient(withInterceptors([authInterceptor, refreshInterceptor]))` — auth first, refresh second |
+
+#### S2.B — Component wiring (`meesell-angular-component-builder`, Days 7–8)
+
+| # | Task | What gets built |
+|---|------|----------------|
+| S2.7 | `login.component.ts` | Replace `setTimeout` mock with `AuthService.sendOtp()` call; on success navigate to `/otp-verify?phone=<encoded>` |
+| S2.8 | `otp-verify.component.ts` | Read `phone` from `ActivatedRoute.queryParams`; replace `setTimeout` mock with `AuthService.verifyOtp()` call; `AuthService.setSession()` on success; navigate to `/dashboard` |
+| S2.9 | `signup.component.ts` | Replace `setTimeout` mock with `AuthService.sendOtp()` call; navigate to `/otp-verify?phone=<encoded>&mode=signup` |
+| S2.10 | Error states | All 3 components surface inline errors from `IamService` exception types: `phone_invalid`, `otp_expired`, `otp_invalid`, `rate_limited` |
+
+#### S2.C — Styling pass (`meesell-angular-ui-styler`, Day 9)
+
+| # | Task | What gets built |
+|---|------|----------------|
+| S2.11 | 3 SCSS files | `login.component.scss`, `signup.component.scss`, `otp-verify.component.scss` — Tailwind mobile-first layout, responsive breakpoints, WCAG AA contrast, Tirupur seller mobile target |
+
+**Sprint 2 exit gate:**
+- [ ] `ng build` — zero errors, zero `@ts-ignore`
+- [ ] `auth.interceptor.ts` and `refresh.interceptor.ts` exist in `core/interceptors/`
+- [ ] `auth.guard.ts` reads `token()` signal (not `isAuthenticated()`)
+- [ ] Full OTP flow works end-to-end in `ng serve` against dev API — no `setTimeout` mocks remain
+- [ ] `phone` read from query params in `otp-verify.component.ts`
+- [ ] `feature/auth-otp/frontend` PR open and ready for review
+
+### Sprint 3 — Integration + acceptance gate (Days 10–12)
+
+| # | Task | Owner | Exit criterion |
+|---|------|-------|---------------|
+| S3.1 | Real end-to-end OTP flow in dev: send OTP → receive SMS → enter OTP → receive JWT → access protected route | Founder + backend lead | Full flow works with real MSG91 SMS |
+| S3.2 | Verify refresh token rotation: login → wait for access TTL (30s in dev) → make authenticated request → confirm silent refresh fires once | Founder | No visible session interruption; `POST /auth/refresh` called exactly once |
+| S3.3 | Verify logout: `POST /auth/logout` → refresh cookie deleted → subsequent `POST /auth/refresh` returns 401 | Founder | Session fully terminated |
+| S3.4 | CI gate 1: `ng build` clean | CI | ✅ green |
+| S3.5 | CI gate 2: `pytest` full suite ≥ 80% coverage on `modules/iam/` | CI | ✅ green |
+| S3.6 | CI gate 3: `ruff check backend/` clean | CI | ✅ green |
+| S3.7 | CI gate 4: `ng lint` clean | CI | ✅ green |
+| S3.8 | `feature/auth-otp/backend` PR approved by `meesell-backend-coordinator` | Backend coord | PR ✅ approved |
+| S3.9 | `feature/auth-otp/frontend` PR approved by `meesell-frontend-coordinator` | Frontend coord | PR ✅ approved |
+| S3.10 | `feature/auth-otp/infra` PR approved by founder | Founder | PR ✅ approved |
+| S3.11 | All 3 group PRs merged to `feature/auth-otp` integration branch | Founder | Integration branch holds all work |
+| S3.12 | Integration PR (`feature/auth-otp` → `develop`) opened; founder final review | Founder | Review done |
+| S3.13 | Integration PR merged; `develop` carries working auth | Founder | `feature/auth-otp` → `develop` ✅ |
+
+**Post-merge stamps (after S3.13):**
+- `meesell-backend-coordinator` stamps `V1_FEATURE_SPEC.md §F1` — "implemented YYYY-MM-DD PR#N"
+- `meesell-backend-coordinator` adds `BACKEND_ARCHITECTURE.md §7` sentinel comment
+
+### Sprint timeline
+
+```
+Day 0:    PR #3 merged → LOCKED → 4 coding branches created
+          │
+Days 1–3: [BACKEND Phase A — parallel]
+            meesell-database-builder  → users model + migration verification
+            meesell-services-builder  → msg91 adapter (verify / complete gaps)
+            meesell-infra-builder     → K8s env vars + secrets + runbook
+          [BACKEND Phase B] meesell-auth-builder      → pytest unit suite
+          [BACKEND Phase C] meesell-api-routes-builder → schemas + integration tests
+          │
+Days 4–6: [FRONTEND Phase D-1] meesell-angular-service-builder
+            → auth.service.ts HTTP methods
+            → auth.interceptor.ts + refresh.interceptor.ts (NEW)
+            → auth.guard.ts fix + app.routes.ts + app.config.ts
+          │
+Days 7–8: [FRONTEND Phase D-2] meesell-angular-component-builder
+            → wire login/signup/otp-verify to real HTTP (remove setTimeout mocks)
+          │
+Day 9:    [FRONTEND Phase E] meesell-angular-ui-styler
+            → 3 SCSS files (mobile-first, WCAG AA)
+          │
+Days 10–12: Integration test + acceptance gate + group PRs → feature/auth-otp → develop
+```
+
+### Risk-adjusted schedule notes
+
+| Risk | Buffer | Contingency |
+|------|--------|-------------|
+| MSG91 IP whitelist blocked in dev | +0.5 day | Use MSG91 test-sender credentials (no IP restriction) for dev namespace while founder updates whitelist |
+| `refresh.interceptor.ts` BehaviorSubject dedup complexity | +1 day | Service-builder reads `BACKEND_ARCHITECTURE.md §4.B` BehaviorSubject pattern before starting; dedup is the hardest piece of this sprint |
+| `ng build` breaks after interceptor registration order change | +0.5 day | Interceptor order in `app.config.ts` must be `[authInterceptor, refreshInterceptor]` — auth first, refresh second |
+| `dpdp_consented_at` NOT NULL constraint gap (webhook capture) | Deferred | Webhook capture is log-only in V1; `user_id` NOT NULL gap acknowledged; no sprint scope impact |
+
+---
+
 ## Code surfaces
 
 ### Backend
@@ -1401,3 +1558,4 @@ feature/auth-otp/{backend|frontend|infra} PR #<N> — <status: open|merged|block
 | 0.2 | 2026-06-10 | mesell-auth-otp-planning-session-1 | D4 recorded (agent lineup confirmed by founder). meesell-angular-ui-styler added — Phase E, 3 SCSS surfaces, Template H, 4 frontend review checks. |
 | 0.3 | 2026-06-10 | mesell-auth-otp-planning-session-1 | Branch setup section added — 4 coding branches documented, creation commands, PR flow, PR templates. |
 | 0.4 | 2026-06-10 | mesell-auth-otp-planning-session-1 | Memory management section added — protocol, per-agent spec table, memory file template. Memory update line added to all 8 dispatch template report formats. Lead agent memories pre-seeded (backend-coordinator, frontend-coordinator, infra-builder). |
+| 0.5 | 2026-06-10 | mesell-auth-otp-planning-session-1 | Sprint plan added — 3-sprint execution roadmap (Sprint 0 unlock + Sprint 1 backend/infra + Sprint 2 frontend HTTP wiring + Sprint 3 integration). Current state audit table included (backend ~95%, frontend ~30%). |
