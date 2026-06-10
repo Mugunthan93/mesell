@@ -1,21 +1,48 @@
 # k8s/ingress.yaml
-# SUPERSEDED — Terraform now owns all Ingress resources.
-# See: infra/terraform/modules/ingress/main.tf
-# This file is kept for historical reference only. DO NOT apply.
-#
-# Original note: TLS and cert-manager (ClusterIssuer) were intentionally
-# disabled. studio.mesell.xyz is now live with Let's Encrypt TLS via
-# the Terraform ingress module. Additional subdomains (api, dev, testing,
-# staging) are managed via kubernetes_ingress_v1 resources in the same module.
-#
-# Ingress resources (active):
-#   studio.mesell.xyz  → supabase-studio:3000 (dev namespace)
-#   api.mesell.xyz     → api:80 (dev namespace)
-#   dev.mesell.xyz     → frontend:80 (dev namespace)
-#   testing.mesell.xyz → frontend:80 (dev namespace)
-#   staging.mesell.xyz → frontend:80 (staging namespace)
-#
+# ============================================================================
+# SUPERSEDED — DOCUMENTATION ONLY. DO NOT `kubectl apply` THIS FILE.
+# ============================================================================
+# Terraform owns ALL Ingress resources. The live Ingress objects are managed by
+# infra/terraform/modules/ingress/main.tf (kubernetes_ingress_v1 resources).
 # Apply order: terraform apply -target=module.ingress
+#
+# LIVE INGRESS HOSTS (verified Phase B, 2026-06-05 — all 5 with LE TLS Ready):
+#   studio.mesell.xyz   -> supabase-studio:3000  (dev namespace)
+#   api.mesell.xyz      -> api:80                 (dev namespace)
+#   dev.mesell.xyz      -> frontend:80            (dev namespace)
+#   testing.mesell.xyz  -> frontend:80            (dev namespace)
+#   staging.mesell.xyz  -> frontend:80            (staging namespace)
+#
+# TLS: cert-manager ClusterIssuer `letsencrypt-prod` issues certs for all 5
+# hosts (HTTP-01 solver via Traefik). All 5 certificates were Ready=True as of
+# Phase B. Renewal is automatic.
+#
+# Ingress controller: self-managed Traefik in the `traefik` namespace (the K3s
+# bundled Traefik is disabled, playbook §3.2 / §8.1). ingressClassName: traefik.
+#
+# ----------------------------------------------------------------------------
+# CORS (per BACKEND_ARCHITECTURE.md §4.G) — INFRA MUST NOT INTERFERE:
+#   - CORS is handled by the FastAPI application (CORSMiddleware), NOT by
+#     Traefik. The allowed origins are in k8s/config.yaml CORS_ALLOWED_ORIGINS
+#     and CORS_ALLOW_CREDENTIALS=true.
+#   - Traefik / any ingress middleware MUST NOT strip, rewrite, or override the
+#     following response headers emitted by the app:
+#       Access-Control-Allow-Origin
+#       Access-Control-Allow-Credentials
+#       Access-Control-Allow-Methods
+#       Access-Control-Allow-Headers
+#       Vary: Origin
+#   - NEVER configure a wildcard (`*`) CORS origin at the ingress layer. Origins
+#     are an explicit allowlist (the 5 mesell.xyz subdomains above).
+#   - Preflight OPTIONS requests must pass through to the app unmodified.
+#   - The refresh-token cookie is HttpOnly+Secure+SameSite=Strict (CLAUDE.md
+#     decision #14 amendment); ingress must preserve Set-Cookie unchanged and
+#     terminate TLS so Secure cookies are honoured.
+# ----------------------------------------------------------------------------
+#
+# The manifest below is the ORIGINAL pre-Terraform Ingress, retained as a
+# historical reference of the path-based routing intent. DO NOT APPLY — it
+# conflicts with the Terraform-managed host-based Ingress resources above.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -34,7 +61,7 @@ spec:
               service:
                 name: api
                 port:
-                  number: 8000
+                  number: 80
           - path: /
             pathType: Prefix
             backend:

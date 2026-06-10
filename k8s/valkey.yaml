@@ -1,23 +1,46 @@
+# k8s/valkey.yaml
+# ============================================================================
+# DOCUMENTATION ONLY — DO NOT `kubectl apply` THIS FILE.
+# ============================================================================
+# Valkey is a Terraform-managed StatefulSet. Terraform owns the live resource
+# (module.valkey_dev, see infra/terraform/modules/valkey/main.tf). This file
+# mirrors the LIVE cluster state for human reference. Applying it would conflict
+# with Terraform's StatefulSet and is forbidden by playbook §0.
+#
+# LIVE STATE (verified 2026-06-08):
+#   kind:        StatefulSet (NOT Deployment)  — pod `valkey-0`, namespace `dev`
+#   image:       valkey/valkey:8
+#   service:     `valkey` (headless, clusterIP: None) on 6379
+#   auth:        --requirepass $(VALKEY_PASSWORD) from `valkey-credentials` Secret
+#   maxmemory:   128mb  (allkeys-lru) — matches Phase A A3 live verification
+#                (valkey-cli config get maxmemory -> 134217728). The previous
+#                value of 512mb in this file was stale and has been corrected.
+#   resources:   requests cpu=100m mem=200Mi ; limits cpu=500m mem=512Mi
+#                (left at live values; §20.G CPU target 200m/500m is documented
+#                 below but live TF state is the SSOT — recorded D-flag D3)
+#   storage:     ~2-5Gi PVC (volumeClaimTemplate `data`)
+# ----------------------------------------------------------------------------
 apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: valkey-data
-  namespace: meesell
-spec:
-  accessModes: ["ReadWriteOnce"]
-  resources:
-    requests:
-      storage: 2Gi
----
-apiVersion: apps/v1
-kind: Deployment
+kind: Service
 metadata:
   name: valkey
-  namespace: meesell
+  namespace: dev
 spec:
+  clusterIP: None
+  selector:
+    app: valkey
+  ports:
+    - port: 6379
+      name: valkey
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: valkey
+  namespace: dev
+spec:
+  serviceName: valkey
   replicas: 1
-  strategy:
-    type: Recreate
   selector:
     matchLabels:
       app: valkey
@@ -28,45 +51,44 @@ spec:
     spec:
       containers:
         - name: valkey
-          image: valkey/valkey:8-alpine
+          image: valkey/valkey:8
           args:
-            - "valkey-server"
+            - "--requirepass"
+            - "$(VALKEY_PASSWORD)"
             - "--appendonly"
             - "yes"
             - "--maxmemory"
-            - "512mb"
+            - "128mb"
             - "--maxmemory-policy"
             - "allkeys-lru"
+          env:
+            - name: VALKEY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: valkey-credentials
+                  key: password
           ports:
             - containerPort: 6379
           resources:
             requests:
               cpu: "100m"
-              memory: "256Mi"
+              memory: "200Mi"
             limits:
               cpu: "500m"
-              memory: "768Mi"
+              memory: "512Mi"
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", 'valkey-cli -a "$VALKEY_PASSWORD" ping | grep PONG']
+            initialDelaySeconds: 5
+            periodSeconds: 5
           volumeMounts:
             - name: data
               mountPath: /data
-          readinessProbe:
-            tcpSocket:
-              port: 6379
-            initialDelaySeconds: 3
-            periodSeconds: 5
-      volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: valkey-data
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: valkey
-  namespace: meesell
-spec:
-  selector:
-    app: valkey
-  ports:
-    - port: 6379
-      targetPort: 6379
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi

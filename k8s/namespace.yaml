@@ -1,4 +1,31 @@
+# k8s/namespace.yaml
+# MeeSell namespaces per INFRASTRUCTURE_PLAYBOOK.md §4 and BACKEND_ARCHITECTURE.md §20.
+#   dev     — created Day 1, active engineering namespace (all workloads live here).
+#   staging — created Day 1, populated Day 7 (mirror of dev via overlays).
+#   prod    — declared here for completeness; NOT created until Week 2 after
+#             staging passes a full week of acceptance. Do NOT `kubectl apply`
+#             the prod block before that gate (playbook §0, §15).
+#
+# Live state (2026-06-08): dev + staging Active; prod NOT yet created.
+# Legacy `meesell` namespace from pre-§20 manifests may still exist — leave it,
+# do not delete (playbook §0: no deletes without founder approval).
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: meesell
+  name: dev
+  labels:
+    env: dev
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: staging
+  labels:
+    env: staging
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: prod
+  labels:
+    env: prod
