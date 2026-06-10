@@ -196,9 +196,11 @@ Inside each `### {specialist}` block, the prompt content (`## Your mission`, `##
 
 **For audits:** A reviewer scanning a FEATURE_PLAN.md for canonical-pattern conformance runs:
 
-```
-grep -nE "^## " docs/plans/features/{slug}/FEATURE_PLAN.md
-```
+````
+awk '/^(```|~~~)/{f=!f; next} !f && /^## /' docs/plans/features/{slug}/FEATURE_PLAN.md
+````
+
+This is fence-aware: it toggles a flag on every code-fence line and only matches `## ` headings outside fenced blocks. A naive `grep -nE "^## "` produces false positives because it counts h2-looking lines inside fenced dispatch-prompt code blocks — content the pattern itself says does not participate in the section hierarchy.
 
 The expected output is exactly 11 lines, in the exact order:
 
@@ -225,3 +227,4 @@ Anything else (count != 11, wrong heading text, wrong order) flags as non-confor
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 2.0 | 2026-06-10 | master Director session + meesell-backend-coordinator | Initial LOCKED version. 11 sections (v1's 5 explicit + 4 universal gaps + 2 promoted ad-hoc). Replaces the implicit v1 pattern in PLANNING_DISPATCH.md Step 7. |
+| 2.1 | 2026-06-10 | master Director session + meesell-backend-coordinator | Audit command made fence-aware; founder-approved |
