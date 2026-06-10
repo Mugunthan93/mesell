@@ -1,17 +1,28 @@
 # .github/workflows/ci.yml
 #
 # MeeSell — GitHub Actions CI/CD pipeline
+# Spec: docs/DEVOPS_ARCHITECTURE.md §5 (CI), §6 (build), §7 (deploy)
 #
-# Stages:
-#   test   → runs on every push and pull_request targeting main
-#   build  → runs on push to main only, after test passes
-#   deploy → runs on push to main only, after build passes
+# Triggers:
+#   push to main           → 5 CI gates → build → deploy to dev
+#   pull_request to main   → 5 CI gates only (no build, no deploy)
+#   schedule (nightly)     → slow/perf + ai_eval (no CI gates, no build, no deploy)
 #
-# Required GitHub repository variables (Settings → Variables → Repository variables):
-#   GCP_WIF_PROVIDER  — full WIF provider resource name (set after `terraform apply`)
-#   GCP_CI_SA_EMAIL   — CI service account email (set after `terraform apply`)
+# CI gates (sequential — each needs: its predecessor; fast-fail at gate 1 cancels the rest):
+#   1. unit              pytest -m "unit"            no services    < 30s
+#   2. smoke             pytest -m "smoke"           no services    < 10s
+#   3. lint              import-linter + 3 AST       no services    < 60s   (BACKEND_ARCHITECTURE.md §16.E)
+#   4. integration       pytest -m "integration"     postgres+valkey ~3 min
+#   5. golden_roundtrip  pytest -m "golden_roundtrip" postgres+valkey ~1 min
 #
-# No secrets are stored here. All GCP auth uses Workload Identity Federation (WIF).
+# Required GitHub repository variables (Settings → Secrets and variables → Actions → Variables):
+#   GCP_WIF_PROVIDER  — terraform output github_wif_provider_name (after `terraform apply`)
+#   GCP_CI_SA_EMAIL   — terraform output github_ci_sa_email       (after `terraform apply`)
+#
+# Required GitHub repository secrets (Settings → Secrets and variables → Actions → Secrets):
+#   GEMINI_API_KEY_CI — low-quota Gemini key for nightly ai_eval (NOT the production key)
+#
+# No service account JSON keys stored anywhere. All GCP auth uses Workload Identity Federation.
 
 name: CI
 
@@ -22,23 +33,165 @@ on:
   pull_request:
     branches:
       - main
+  schedule:
+    # 01:00 UTC = 06:30 IST. Runs the nightly suite once per day.
+    - cron: '0 1 * * *'
+
+# Shared env across every CI gate. Dummy / test-safe values only — production secrets
+# are NEVER injected into GitHub Actions (see DEVOPS_ARCHITECTURE.md §8.2).
+env:
+  PYTHONUNBUFFERED: "1"
+  # Account-locked targets (DEVOPS_ARCHITECTURE.md §1.2).
+  PROJECT_ID: project-1f5cbf72-2820-4cdb-949
+  REGION: asia-south1
+  REPO: meesell-prod-images
+  REGISTRY: asia-south1-docker.pkg.dev
+  VM_ZONE: asia-south1-a
+  VM_NAME: meesell-dev
+  NAMESPACE: dev
 
 jobs:
 
-  # ---------------------------------------------------------------------------
-  # Job 1: test
-  # Runs on every push and pull_request.
-  # Spins up PostgreSQL and Valkey service containers, installs backend
-  # dependencies, and executes the full pytest suite.
-  # ---------------------------------------------------------------------------
-  test:
-    name: Run backend tests
+  # =============================================================================
+  # GATE 1 — unit
+  # Pure-function tests, no I/O. Fast (< 30s). Failure here cancels every downstream job.
+  # =============================================================================
+  unit:
+    name: "CI Gate 1: unit"
     runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    timeout-minutes: 5
+    env:
+      SECRET_KEY: ci-dummy-secret-key
+      JWT_SECRET: ci-dummy-jwt-secret
+      MSG91_AUTH_KEY: ci-dummy-msg91-auth-key
+      MSG91_TEMPLATE_ID: ci-dummy-template-id
+      RAZORPAY_KEY_ID: ci-dummy-razorpay-key-id
+      RAZORPAY_KEY_SECRET: ci-dummy-razorpay-key-secret
+      RAZORPAY_WEBHOOK_SECRET: ci-dummy-razorpay-webhook
+      REFRESH_TOKEN_PEPPER: ci-dummy-refresh-pepper
+      AUDIT_PII_SALT: ci-dummy-audit-pii-salt
+      GEMINI_API_KEY: ci-dummy-gemini-key
+      APP_ENV: development
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: pytest -m "unit"
+        working-directory: backend
+        run: pytest -m "unit" -v
+
+  # =============================================================================
+  # GATE 2 — smoke
+  # FastAPI boot + DB-schema-shape assertions. No services needed (uses dummy env).
+  # =============================================================================
+  smoke:
+    name: "CI Gate 2: smoke"
+    runs-on: ubuntu-latest
+    needs: unit
+    if: github.event_name != 'schedule'
+    timeout-minutes: 5
+    env:
+      SECRET_KEY: ci-dummy-secret-key
+      JWT_SECRET: ci-dummy-jwt-secret
+      MSG91_AUTH_KEY: ci-dummy-msg91-auth-key
+      MSG91_TEMPLATE_ID: ci-dummy-template-id
+      RAZORPAY_KEY_ID: ci-dummy-razorpay-key-id
+      RAZORPAY_KEY_SECRET: ci-dummy-razorpay-key-secret
+      RAZORPAY_WEBHOOK_SECRET: ci-dummy-razorpay-webhook
+      REFRESH_TOKEN_PEPPER: ci-dummy-refresh-pepper
+      AUDIT_PII_SALT: ci-dummy-audit-pii-salt
+      GEMINI_API_KEY: ci-dummy-gemini-key
+      APP_ENV: development
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: pytest -m "smoke"
+        working-directory: backend
+        run: pytest -m "smoke" -v
+
+  # =============================================================================
+  # GATE 3 — lint
+  # 10 CI linter contracts (BACKEND_ARCHITECTURE.md §16.E hard rule).
+  # Contracts 1-7 via import-linter; Contracts 8-10 via AST scanners.
+  # =============================================================================
+  lint:
+    name: "CI Gate 3: lint (10 contracts)"
+    runs-on: ubuntu-latest
+    needs: smoke
+    if: github.event_name != 'schedule'
+    timeout-minutes: 5
+    env:
+      SECRET_KEY: ci-dummy-secret-key
+      APP_ENV: development
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: "Contracts 1-7: import-linter"
+        working-directory: backend
+        run: lint-imports --config tests/lint/import_rules.toml
+
+      - name: "Contract 8: repository methods scoped to user_id"
+        working-directory: backend
+        run: python tests/lint/check_scope_to_user.py
+
+      - name: "Contract 9: no Meesho symbols outside export module"
+        working-directory: backend
+        run: python tests/lint/check_no_meesho_symbols_outside_export.py
+
+      - name: "Contract 10: i18n message-id regex"
+        working-directory: backend
+        run: python tests/lint/check_message_id_regex.py
+
+  # =============================================================================
+  # GATE 4 — integration
+  # pytest -m "integration" against real Postgres 16 + Valkey 8 in service containers.
+  # =============================================================================
+  integration:
+    name: "CI Gate 4: integration"
+    runs-on: ubuntu-latest
+    needs: lint
+    if: github.event_name != 'schedule'
+    timeout-minutes: 15
 
     services:
-      # PostgreSQL 16 — test database
-      # Container port 5432 is mapped to host port 5433 to match the
-      # TEST_DATABASE_URL injected below and the conftest.py default port.
       postgres:
         image: postgres:16-alpine
         env:
@@ -53,9 +206,6 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
-      # Valkey 8 (Redis-compatible) — Celery broker + result backend for tests.
-      # Container port 6379 is mapped to host port 6381 so tests use
-      # redis://localhost:6381/{11,12} (isolated from any production DBs).
       valkey:
         image: valkey/valkey:8-alpine
         ports:
@@ -66,52 +216,130 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://meesell:password@localhost:5433/meesell_test
+      TEST_VALKEY_URL: redis://localhost:6381/0
+      DATABASE_URL: postgresql+asyncpg://meesell:password@localhost:5433/meesell_test
+      VALKEY_URL: redis://localhost:6381/0
+      SECRET_KEY: ci-dummy-secret-key
+      JWT_SECRET: ci-dummy-jwt-secret
+      MSG91_AUTH_KEY: ci-dummy-msg91-auth-key
+      MSG91_TEMPLATE_ID: ci-dummy-template-id
+      RAZORPAY_KEY_ID: ci-dummy-razorpay-key-id
+      RAZORPAY_KEY_SECRET: ci-dummy-razorpay-key-secret
+      RAZORPAY_WEBHOOK_SECRET: ci-dummy-razorpay-webhook
+      REFRESH_TOKEN_PEPPER: ci-dummy-refresh-pepper
+      AUDIT_PII_SALT: ci-dummy-audit-pii-salt
+      GEMINI_API_KEY: ci-dummy-gemini-key
+      APP_ENV: development
+
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
 
       - name: Install backend dependencies
         working-directory: backend
         run: pip install -r requirements.txt
 
-      - name: Run pytest
+      - name: pytest -m "integration"
         working-directory: backend
-        env:
-          # Override the database URL so conftest.py connects to the service
-          # container mapped above (port 5433).
-          TEST_DATABASE_URL: postgresql+asyncpg://meesell:password@localhost:5433/meesell_test
-        run: python -m pytest tests/ -v
+        run: pytest -m "integration" -v
 
-  # ---------------------------------------------------------------------------
-  # Job 2: build
-  # Runs on push to main only (not PRs). Requires the test job to pass.
-  #
-  # Authenticates to GCP via Workload Identity Federation (no SA key stored),
-  # then submits a Cloud Build job using the existing cloudbuild.yaml.
-  # Cloud Build pushes both SHA-tagged and :latest images via --all-tags.
-  # ---------------------------------------------------------------------------
-  build:
-    name: Build and push container images
+  # =============================================================================
+  # GATE 5 — golden_roundtrip
+  # 15 XLSX round-trip fixtures (BACKEND_ARCHITECTURE.md §14.K). Final CI gate.
+  # =============================================================================
+  golden_roundtrip:
+    name: "CI Gate 5: golden_roundtrip"
     runs-on: ubuntu-latest
-    needs: test
-    # Only run on direct pushes to main, not on PRs.
+    needs: integration
+    if: github.event_name != 'schedule'
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: meesell
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: meesell_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U meesell -d meesell_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      valkey:
+        image: valkey/valkey:8-alpine
+        ports:
+          - 6381:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://meesell:password@localhost:5433/meesell_test
+      TEST_VALKEY_URL: redis://localhost:6381/0
+      DATABASE_URL: postgresql+asyncpg://meesell:password@localhost:5433/meesell_test
+      VALKEY_URL: redis://localhost:6381/0
+      SECRET_KEY: ci-dummy-secret-key
+      JWT_SECRET: ci-dummy-jwt-secret
+      MSG91_AUTH_KEY: ci-dummy-msg91-auth-key
+      MSG91_TEMPLATE_ID: ci-dummy-template-id
+      RAZORPAY_KEY_ID: ci-dummy-razorpay-key-id
+      RAZORPAY_KEY_SECRET: ci-dummy-razorpay-key-secret
+      RAZORPAY_WEBHOOK_SECRET: ci-dummy-razorpay-webhook
+      REFRESH_TOKEN_PEPPER: ci-dummy-refresh-pepper
+      AUDIT_PII_SALT: ci-dummy-audit-pii-salt
+      GEMINI_API_KEY: ci-dummy-gemini-key
+      APP_ENV: development
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: pytest -m "golden_roundtrip"
+        working-directory: backend
+        run: pytest -m "golden_roundtrip" -v
+
+  # =============================================================================
+  # BUILD — Docker images via Cloud Build
+  # Runs ONLY on push to main, after all 5 CI gates pass.
+  # See cloudbuild.yaml + DEVOPS_ARCHITECTURE.md §6.
+  # =============================================================================
+  build:
+    name: "Build container images"
+    runs-on: ubuntu-latest
+    needs: [unit, smoke, lint, integration, golden_roundtrip]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 30
 
     permissions:
       contents: read
-      # Required for Workload Identity Federation token exchange.
+      # Required for OIDC token exchange with GCP Workload Identity Federation.
       id-token: write
-
-    env:
-      PROJECT_ID: project-1f5cbf72-2820-4cdb-949
-      REGION: asia-south1
-      REPO: meesell-images
-      REGISTRY: asia-south1-docker.pkg.dev
 
     steps:
       - name: Checkout source
@@ -126,49 +354,31 @@ jobs:
       - name: Set up gcloud CLI
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Authenticate Docker to Artifact Registry
-        run: |
-          gcloud auth print-access-token \
-            | docker login -u oauth2accesstoken --password-stdin \
-              ${{ env.REGISTRY }}
-
       - name: Submit Cloud Build job
-        # Cloud Build clones the repo itself (see cloudbuild.yaml: clone step).
-        # We pass --no-source because the workspace source is not needed locally.
+        # `--no-source` tells Cloud Build NOT to upload the runner workspace; cloudbuild.yaml
+        # has its own `git clone` step that pulls the repo on the Cloud Build worker.
         run: |
           gcloud builds submit --no-source \
             --config=cloudbuild.yaml \
             --project=${{ env.PROJECT_ID }} \
             --substitutions=_PROJECT_ID=${{ env.PROJECT_ID }},_REGION=${{ env.REGION }},_REPO=${{ env.REPO }},_TAG=${{ github.sha }} \
-            --timeout=1200s
+            --timeout=1800s
 
-
-  # ---------------------------------------------------------------------------
-  # Job 3: deploy
-  # Runs on push to main only. Requires the build job to pass.
-  #
-  # Connects to the GCP VM via IAP tunnel (no public SSH port needed) and
-  # issues rolling kubectl image updates for api, worker, and frontend
-  # deployments, then waits for each rollout to complete.
-  # ---------------------------------------------------------------------------
+  # =============================================================================
+  # DEPLOY — Rolling deploy to dev namespace via IAP TCP tunnel
+  # Runs ONLY on push to main, after build succeeds.
+  # See DEVOPS_ARCHITECTURE.md §7.
+  # =============================================================================
   deploy:
-    name: Deploy to K3s (meesell-vm)
+    name: "Deploy to K3s (dev namespace)"
     runs-on: ubuntu-latest
     needs: build
-    # Only run on direct pushes to main, not on PRs.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 20
 
     permissions:
       contents: read
       id-token: write
-
-    env:
-      PROJECT_ID: project-1f5cbf72-2820-4cdb-949
-      REGION: asia-south1
-      REGISTRY: asia-south1-docker.pkg.dev
-      REPO: meesell-images
-      VM_ZONE: asia-south1-a
-      VM_NAME: meesell-vm
 
     steps:
       - name: Checkout source
@@ -183,43 +393,145 @@ jobs:
       - name: Set up gcloud CLI
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Install IAP tunnel component
+      - name: Install IAP tunnel + beta components
         run: gcloud components install beta --quiet
 
       - name: Rolling deploy via IAP SSH
-        # Uses IAP TCP tunneling — no public SSH port required on the VM.
-        # The CI service account must have roles/iap.tunnelResourceAccessor
-        # and roles/compute.instanceAdmin.v1 granted in terraform/ci.tf.
+        # IAP-tunneled SSH — no public port 6443, OIDC WIF for the SA, scoped IAM
+        # (roles/iap.tunnelResourceAccessor + roles/compute.instanceAdmin.v1 on the VM).
         run: |
           gcloud compute ssh ${{ env.VM_NAME }} \
             --zone=${{ env.VM_ZONE }} \
             --tunnel-through-iap \
             --project=${{ env.PROJECT_ID }} \
             --command="
-              set -e
+              set -euxo pipefail
               IMAGE_TAG=${{ github.sha }}
               API_IMAGE=${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}/api:\${IMAGE_TAG}
               FRONTEND_IMAGE=${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}/frontend:\${IMAGE_TAG}
 
-              # Ensure repo is present and up-to-date for K8s manifests
+              # 1. Refresh the manifest checkout on the VM so any k8s/*.yaml change ships.
               if [ -d ~/mesell/.git ]; then
-                git -C ~/mesell pull --ff-only origin main
+                git -C ~/mesell fetch origin main
+                git -C ~/mesell reset --hard origin/main
               else
                 git clone --depth=1 https://github.com/Mugunthan93/mesell.git ~/mesell
               fi
 
-              # Apply manifests (idempotent — creates on first run, no-op if unchanged)
-              kubectl apply -f ~/mesell/k8s/
+              # 2. Apply ConfigMap + Deployment shapes (idempotent).
+              kubectl apply -f ~/mesell/k8s/config.yaml
+              kubectl apply -f ~/mesell/k8s/api.yaml
+              kubectl apply -f ~/mesell/k8s/worker.yaml
+              # Frontend Deployment is applied only when frontend/Dockerfile + image exist.
+              if [ -f ~/mesell/frontend/Dockerfile ]; then
+                kubectl apply -f ~/mesell/k8s/frontend.yaml
+              fi
 
-              # Update images to the exact SHA that was just built
-              kubectl -n meesell set image deployment/api      api=\${API_IMAGE}
-              kubectl -n meesell set image deployment/worker   worker=\${API_IMAGE}
-              kubectl -n meesell set image deployment/frontend frontend=\${FRONTEND_IMAGE}
+              # 3. Migrate the schema on the CURRENT api pod BEFORE rolling the new image.
+              kubectl exec -n ${{ env.NAMESPACE }} deploy/api -- alembic upgrade head
 
-              # Wait for all rollouts
-              kubectl -n meesell rollout status deployment/api      --timeout=120s
-              kubectl -n meesell rollout status deployment/worker   --timeout=120s
-              kubectl -n meesell rollout status deployment/frontend --timeout=120s
+              # 4. Roll the new images.
+              kubectl -n ${{ env.NAMESPACE }} set image deployment/api    api=\${API_IMAGE}
+              kubectl -n ${{ env.NAMESPACE }} set image deployment/worker worker=\${API_IMAGE}
+              if [ -f ~/mesell/frontend/Dockerfile ]; then
+                kubectl -n ${{ env.NAMESPACE }} set image deployment/frontend frontend=\${FRONTEND_IMAGE}
+              fi
 
-              echo '--- Deploy complete ---'
+              # 5. Wait for rollouts.
+              kubectl -n ${{ env.NAMESPACE }} rollout status deployment/api    --timeout=180s
+              kubectl -n ${{ env.NAMESPACE }} rollout status deployment/worker --timeout=180s
+              if [ -f ~/mesell/frontend/Dockerfile ]; then
+                kubectl -n ${{ env.NAMESPACE }} rollout status deployment/frontend --timeout=180s
+              fi
+
+              # 6. Smoke check — fail and auto-rollback on non-200.
+              sleep 5
+              HTTP_CODE=\$(curl -s -o /dev/null -w '%{http_code}' https://api.mesell.xyz/health)
+              if [ \"\${HTTP_CODE}\" != \"200\" ]; then
+                echo \"Health check failed: HTTP \${HTTP_CODE}. Rolling back.\"
+                kubectl -n ${{ env.NAMESPACE }} rollout undo deployment/api
+                kubectl -n ${{ env.NAMESPACE }} rollout undo deployment/worker
+                exit 1
+              fi
+              echo \"Deploy complete: \${IMAGE_TAG}\"
             "
+
+  # =============================================================================
+  # NIGHTLY — slow/perf + ai_eval, schedule-only
+  # Fires only on the cron trigger. No build / no deploy.
+  # See DEVOPS_ARCHITECTURE.md §5.5.
+  # =============================================================================
+  nightly:
+    name: "Nightly: slow + perf + ai_eval"
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    timeout-minutes: 60
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: meesell
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: meesell_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U meesell -d meesell_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      valkey:
+        image: valkey/valkey:8-alpine
+        ports:
+          - 6381:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://meesell:password@localhost:5433/meesell_test
+      TEST_VALKEY_URL: redis://localhost:6381/0
+      DATABASE_URL: postgresql+asyncpg://meesell:password@localhost:5433/meesell_test
+      VALKEY_URL: redis://localhost:6381/0
+      SECRET_KEY: ci-dummy-secret-key
+      JWT_SECRET: ci-dummy-jwt-secret
+      MSG91_AUTH_KEY: ci-dummy-msg91-auth-key
+      MSG91_TEMPLATE_ID: ci-dummy-template-id
+      RAZORPAY_KEY_ID: ci-dummy-razorpay-key-id
+      RAZORPAY_KEY_SECRET: ci-dummy-razorpay-key-secret
+      RAZORPAY_WEBHOOK_SECRET: ci-dummy-razorpay-webhook
+      REFRESH_TOKEN_PEPPER: ci-dummy-refresh-pepper
+      AUDIT_PII_SALT: ci-dummy-audit-pii-salt
+      APP_ENV: development
+      # Real low-quota Gemini key for the ai_eval suite ONLY. CI-only — distinct
+      # from the production key in GCP Secret Manager (see DEVOPS §8.1).
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_CI }}
+      PYTEST_RUN_SLOW: "1"
+      RUN_AI_EVAL: "1"
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: pytest -m "slow or perf"
+        working-directory: backend
+        run: pytest -m "slow or perf" -v
+
+      - name: pytest -m "ai_eval"
+        working-directory: backend
+        run: pytest -m "ai_eval" -v

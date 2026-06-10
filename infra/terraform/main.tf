@@ -60,13 +60,23 @@ resource "null_resource" "account_lock_guard" {
 module "ci_identity" {
   source = "./modules/ci_identity"
 
+  # GitLab CI identity (Phase A — unchanged in Phase E).
   service_account_id     = var.ci_service_account_id
   gitlab_repository_path = var.gitlab_repository_path
   asset_bucket_name      = var.gcs_asset_bucket_name
 
+  # GitHub Actions CI identity (Phase E — 2026-06-10).
+  # D6 RESOLVED: a separate SA from meesell-prod-ci for blast-radius isolation.
+  github_repository            = var.github_repository
+  github_ci_service_account_id = var.github_ci_service_account_id
+  vm_name_for_iap              = var.vm_name
+
   depends_on = [
     null_resource.account_lock_guard,
     google_project_service.required,
+    # The github_ci_vm_instance_admin binding references the VM resource by name,
+    # so the VM must be created before this module's resources are applied.
+    module.vm,
   ]
 }
 
@@ -138,6 +148,22 @@ module "billing_budget" {
   depends_on = [
     null_resource.account_lock_guard,
     google_project_service.required,
+  ]
+}
+
+# Phase D codification (2026-06-10):
+# Cloud Build runs as the Compute Engine default SA in this project (not the
+# conventional Cloud Build SA). The IAM bindings that let it download source
+# from the `_cloudbuild` bucket and push to Artifact Registry are codified here
+# so they survive re-provision and don't drift silently. See module README for
+# the full quirk explanation.
+module "cloudbuild_permissions" {
+  source = "./modules/cloudbuild_permissions"
+
+  depends_on = [
+    null_resource.account_lock_guard,
+    google_project_service.required,
+    module.artifact_registry,
   ]
 }
 

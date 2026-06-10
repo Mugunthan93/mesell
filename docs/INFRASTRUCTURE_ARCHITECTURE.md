@@ -1,16 +1,20 @@
 # MeeSell Infrastructure Architecture — Single Source of Truth
 
 **Owner:** `meesell-infra-builder`
-**Last verified live:** 2026-06-07
-**Project state:** Phase A + Phase B complete. All 5 application subdomains live with valid Let's Encrypt TLS. Application images not yet built (Phase D pending).
+**Last verified live:** 2026-06-10
+**Project state:** Phase A + Phase B + Phase D complete. V1 backend live in the `dev` namespace. Terraform state migrated to GCS. All 5 application subdomains serving end-to-end traffic.
 
 This is the single source of truth for MeeSell's production infrastructure. If anything in this document conflicts with another doc, this document wins. Update this file whenever live infrastructure changes.
+
+> **Infrastructure discipline (post Phase D, ratified 2026-06-10):**
+> Every GCP-layer infrastructure change MUST go through Terraform. Direct `gcloud iam`, `gcloud compute`, or any state-changing `gcloud` command on a tracked resource is forbidden once the resource is codified — drift will be detected by `terraform plan` and rejected.
+> K8s application workloads (Deployments, Services, ConfigMaps, Secrets that are not bootstrap datastores) remain managed by `k8s/*.yaml` manifests and the CI/CD pipeline. Datastore StatefulSets (`postgres`, `valkey`) and Ingress objects are Terraform-owned and bypass `kubectl apply`.
 
 ---
 
 ## 1. Overview
 
-MeeSell runs on a single-node K3s cluster hosted on one GCP Compute VM (`meesell-dev`) in `asia-south1-a`. PostgreSQL 16 and Valkey 8 run as StatefulSets in the `dev` namespace; Supabase Studio runs as a Deployment for DB administration. Traefik (Helm) is the ingress controller; cert-manager + Let's Encrypt issues TLS certs over HTTP-01 challenges. Off-cluster GCP services include Artifact Registry (`meesell-prod-images`) for container images, GCS (`gs://meesell-prod-assets`) for product images / exports / audit logs, and Secret Manager (7 secrets) for application credentials. CI/CD runs from GitLab (`techades/mesell`) using Workload Identity Federation — no service account keys leave Google. All infrastructure is managed by Terraform (`infra/terraform/`, 14 modules, local state); domain `mesell.xyz` is registered at Namecheap with five A records pointing to the VM's static external IP `35.234.223.66`.
+MeeSell runs on a single-node K3s cluster hosted on one GCP Compute VM (`meesell-dev`) in `asia-south1-a`. PostgreSQL 16 and Valkey 8 run as StatefulSets in the `dev` namespace; Supabase Studio runs as a Deployment for DB administration. The V1 backend (`api` + `worker` Deployments, 2/2 each) is live in the same namespace. Traefik (Helm) is the ingress controller; cert-manager + Let's Encrypt issues TLS certs over HTTP-01 challenges. Off-cluster GCP services include Artifact Registry (`meesell-prod-images`, holding `api:v1.0.0` and `worker:v1.0.0`) for container images, GCS (`gs://meesell-prod-assets`) for product images / exports / audit logs, and Secret Manager (10 secrets, all populated) for application credentials. CI/CD runs from GitLab (`techades/mesell`) using Workload Identity Federation — no service account keys leave Google. All infrastructure is managed by Terraform (`infra/terraform/`, 15 modules, **GCS-backed state** in `gs://meesell-tfstate/terraform/state/`); domain `mesell.xyz` is registered at Namecheap with five A records pointing to the VM's static external IP `35.234.223.66`.
 
 ---
 
@@ -79,8 +83,9 @@ MeeSell runs on a single-node K3s cluster hosted on one GCP Compute VM (`meesell
 |                                            v                v                    v                          |
 |   +----------------------+   +---------------------+   +-------------------+   +------------------------+   |
 |   | Artifact Registry    |   | GCS bucket          |   | Secret Manager    |   | Cloud Billing          |   |
-|   | meesell-prod-images  |   | meesell-prod-assets |   | 7 secrets         |   | Budget: INR 25,000     |   |
-|   | asia-south1 / Docker |   | asia-south1         |   | (see Section 4)   |   | 50 / 75 / 90 % alerts  |   |
+|   | meesell-prod-images  |   | meesell-prod-assets |   | 10 secrets        |   | Budget: INR 25,000     |   |
+|   | api:v1.0.0 LIVE      |   | asia-south1         |   | all populated     |   | 50 / 75 / 90 % alerts  |   |
+|   | worker:v1.0.0 LIVE   |   | (see Section 4)     |   | (see Section 4)   |   |                        |   |
 |   +----------------------+   +---------------------+   +-------------------+   +------------------------+   |
 |             ^                                                                                              |
 |             | docker push (CI)                                                                             |
@@ -115,20 +120,22 @@ MeeSell runs on a single-node K3s cluster hosted on one GCP Compute VM (`meesell
 | Resource | Name / ID | Spec | Status |
 |---|---|---|---|
 | Compute VM | `meesell-dev` | e2-standard-2, 50 GB SSD, Debian 12, external IP `35.234.223.66` (static) | RUNNING |
-| VM Service Account | `888244156264-compute@developer.gserviceaccount.com` | Default Compute Engine SA; granted `artifactregistry.reader` + `storage.objectAdmin` | Active |
+| VM Service Account | `888244156264-compute@developer.gserviceaccount.com` | Default Compute Engine SA. Roles: `artifactregistry.reader` + `artifactregistry.writer` (both on `meesell-prod-images`), `storage.objectAdmin` (on `meesell-prod-assets`), `storage.admin` (on `_cloudbuild` source bucket). The `writer` and `_cloudbuild admin` bindings exist because Cloud Build runs as this SA in this project — see §10.2. | Active |
 | Firewall: HTTP | `meesell-dev-http` | TCP 80, source `0.0.0.0/0`, target tag `http-server` | Active |
 | Firewall: HTTPS | `meesell-dev-https` | TCP 443, source `0.0.0.0/0`, target tag `https-server` | Active |
 | Firewall: K3s API | `meesell-dev-k3s-api` | TCP 6443, source ISP CIDR ranges (`122.164.64.0/18` Airtel TN, `152.57.80.0/21` Jio), target tag `k3s-server` | Active |
-| Artifact Registry | `meesell-prod-images` | Docker repo in `asia-south1`; CI SA writer, VM SA reader | Active (empty — Phase D pending) |
-| GCS bucket | `gs://meesell-prod-assets` | `asia-south1`, uniform access, public access prevention, versioning enabled; CI SA + VM SA objectAdmin | Active (empty) |
+| Artifact Registry | `meesell-prod-images` | Docker repo in `asia-south1`; CI SA writer, VM SA reader+writer, Cloud Build SA writer | Active: `api:v1.0.0`+`api:latest`, `worker:v1.0.0`+`worker:latest` (built 2026-06-09 via Cloud Build) |
+| GCS bucket: assets | `gs://meesell-prod-assets` | `asia-south1`, uniform access, public access prevention, versioning enabled; CI SA + VM SA objectAdmin | Active (Phase D consumers reading + writing) |
+| GCS bucket: TF state | `gs://meesell-tfstate` | `asia-south1`, uniform access, versioning enabled. State at `terraform/state/default.tfstate`. | Active (migrated 2026-06-10) |
+| GCS bucket: Cloud Build source | `gs://project-1f5cbf72-2820-4cdb-949_cloudbuild` | Auto-created by Cloud Build first run; holds source tarballs. VM SA + Cloud Build SA both have `roles/storage.admin` (the VM SA binding is codified in `module.cloudbuild_permissions`). | Active |
 | Cloud Billing budget | `meesell-dev-budget` (UUID `95c5e193-c796-44a3-8c2b-8a66e36308d5`) | INR 25,000 with alerts at 50 / 75 / 90 % | Active |
-| CI Service Account | `meesell-prod-ci@project-1f5cbf72-2820-4cdb-949.iam.gserviceaccount.com` | Roles: `artifactregistry.writer` (project), `storage.objectAdmin` (bucket) | Active |
+| CI Service Account | `meesell-prod-ci@project-1f5cbf72-2820-4cdb-949.iam.gserviceaccount.com` | Roles: `artifactregistry.writer` (project), `storage.objectAdmin` (bucket) | Active (CI/CD pipeline not yet wired) |
 | Workload Identity Pool | `gitlab-prod-pool` | Global | Active |
 | Workload Identity Provider | `gitlab-prod-provider` | OIDC issuer `gitlab.com`, attribute mapping on `repository` | Active |
 | WIF binding | `principalSet://iam.googleapis.com/projects/888244156264/locations/global/workloadIdentityPools/gitlab-prod-pool/attribute.repository/techades/mesell` | Impersonates CI SA | Active |
 | Account lock (Terraform) | `null_resource.account_lock_guard` | Preconditions: project ID + billing account both match expected values | Enforced |
 
-Enabled GCP APIs (9): `serviceusage`, `compute`, `iam`, `iamcredentials`, `cloudresourcemanager`, `secretmanager`, `artifactregistry`, `storage`, `sts`, plus `cloudbilling` and `billingbudgets` (10 + 1 enabled by `module.app_secrets` cascade).
+Enabled GCP APIs (12): `serviceusage`, `compute`, `iam`, `iamcredentials`, `cloudresourcemanager`, `secretmanager`, `artifactregistry`, `storage`, `sts`, `cloudbilling`, `billingbudgets`, plus `cloudbuild` (enabled out-of-band during Phase D for image builds; not yet referenced in `google_project_service.required`).
 
 ### 3.3 R&D / out-of-scope resources (DO NOT TOUCH)
 
@@ -142,7 +149,7 @@ Enabled GCP APIs (9): `serviceusage`, `compute`, `iam`, `iamcredentials`, `cloud
 
 ## 4. Secret Manager
 
-All 7 production secrets are populated with version 1. Local backups live at `~/.meesell-secrets/` (dir `chmod 700`, files `chmod 600`). Workloads read these via the VM SA at runtime — no keys are ever written to ConfigMaps or images.
+All 10 production secrets are populated with at least one enabled version. Local backups live at `~/.meesell-secrets/` (dir `chmod 700`, files `chmod 600`). Workloads read these via the VM SA at runtime — no keys are ever written to ConfigMaps or images.
 
 | Secret ID | Purpose | Status | Notes |
 |---|---|---|---|
@@ -150,16 +157,21 @@ All 7 production secrets are populated with version 1. Local backups live at `~/
 | `msg91-template-id` | MSG91 OTP template ID | LIVE (v1) | Sourced from R&D `meesell-msg91-template-id` (11 chars). |
 | `gemini-api-key` | Google Gemini 2.5 Flash API key | LIVE (v1) | Used by `services/ai_engine.py`. |
 | `jwt-secret` | JWT signing secret | LIVE (v1) | `openssl rand -hex 64` (128-char hex). |
-| `razorpay-key-id` | Razorpay TEST key ID | LIVE (v1) | Replace with LIVE key during prod cut-over. |
-| `razorpay-key-secret` | Razorpay TEST key secret | LIVE (v1) | Replace with LIVE secret during prod cut-over. |
+| `razorpay-key-id` | Razorpay TEST key ID | LIVE (v1+v2 both enabled) | Rotated 2026-06-09. `latest` → v2. Replace with LIVE key during prod cut-over. |
+| `razorpay-key-secret` | Razorpay TEST key secret | LIVE (v1+v2 both enabled) | Rotated 2026-06-09. `latest` → v2. Replace with LIVE secret during prod cut-over. |
+| `razorpay-webhook-secret` | Razorpay webhook signing secret | LIVE (v1) | Populated 2026-06-09 from Razorpay dashboard → Webhooks. Required by `auth.razorpay_webhook` route signature check. |
 | `audit-pii-salt` | 32-byte salt for audit-log PII hashing (`MVP_ARCHITECTURE.md §11.9`) | LIVE (v1) | `openssl rand -hex 32` (64-char hex). |
+| `refresh-token-pepper` | HMAC pepper for refresh-token storage allowlist (Decision #14 amendment) | LIVE (v1) | `openssl rand -hex 32` (64-char hex). |
+| `langfuse-secret-key` | LangFuse Cloud secret key for AI tracing | LIVE (v1) | Populated 2026-06-09. **In V1 the app uses the stub key `pk-lf-disabled-v1`** for `LANGFUSE_PUBLIC_KEY` and reads this secret but does not yet emit traces — LangFuse integration is a V1.5 deliverable. |
 
 Read pattern (from a workload pod, via VM SA metadata server):
 ```bash
 gcloud secrets versions access latest --secret=<secret-id> --project=project-1f5cbf72-2820-4cdb-949
 ```
 
-The Terraform module (`module.app_secrets`) manages only the secret containers, not their values — `lifecycle.ignore_changes` discipline keeps `terraform plan` clean across founder-side `gcloud secrets versions add` operations.
+The Terraform module (`module.app_secrets`) manages only the secret containers, not their values — `lifecycle.ignore_changes` discipline keeps `terraform plan` clean across founder-side `gcloud secrets versions add` operations. The `app_secret_ids` list in `environments/dev.tfvars` carries all 10 IDs.
+
+**Rotation gotcha (logged 2026-06-09):** adding a new version does NOT disable prior versions; `latest` simply moves to the newest. When verifying a no-trailing-newline secret, use `... | tail -c N | xxd` to confirm the last byte is not `0x0a` — do not trust hand-counted character lengths.
 
 ---
 
@@ -204,12 +216,16 @@ The Terraform module (`module.app_secrets`) manages only the secret containers, 
 
 | Workload | Kind | Replicas | Image | Resources (req / limit) | Storage | Status |
 |---|---|---|---|---|---|---|
-| `postgres` | StatefulSet | 1 | `postgres:16` | 200m / 1000m CPU, 500Mi / 1Gi mem | 20Gi PVC (`local-path`, `prevent_destroy`) | Running, accepting connections |
+| `postgres` | StatefulSet | 1 | `postgres:16` | 200m / 1000m CPU, 500Mi / 1Gi mem | 20Gi PVC (`local-path`, `prevent_destroy`) | Running, accepting connections. Alembic head `f31c75438e61`. |
 | `valkey` | StatefulSet | 1 | `valkey/valkey:8` | 100m / 500m CPU, 200Mi / 512Mi mem | 5Gi PVC (`local-path`, `prevent_destroy`) | Running, `maxmemory 128mb allkeys-lru` |
 | `supabase-studio` | Deployment | 1 | `supabase/studio:latest` | 100m / 500m CPU, 256Mi / 512Mi mem | (stateless) | Running |
-| `api` | Deployment | 2 | `asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-prod-images/api:latest` | TBD | (stateless) | **NOT DEPLOYED** (Phase D — image not built) |
-| `worker` | Deployment | 2 | `asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-prod-images/api:latest` | TBD | (stateless) | **NOT DEPLOYED** (Phase D — image not built) |
-| `frontend` | Deployment | 1 | `asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-prod-images/frontend:latest` | TBD | (stateless) | **NOT DEPLOYED** (Phase D — image not built) |
+| `api` | Deployment | 2 | `meesell-prod-images/api:latest` (resolves to `api:v1.0.0`) | **200m** / 1000m CPU, 512Mi / 1Gi mem | (stateless) | **Running 2/2** (deployed 2026-06-09, Phase D). Reads ConfigMap `meesell-config` + Secret `backend-secrets`. Probes `/health` (readiness 15s/10s, liveness 30s/30s). |
+| `worker` | Deployment | 2 | same as `api` (`meesell-prod-images/api:latest`) | **250m** / 1000m CPU, 512Mi / 1Gi mem | (stateless) | **Running 2/2** (deployed 2026-06-09, Phase D). CMD: `celery -A app.workers.celery_app worker --concurrency=4 --max-tasks-per-child=100`. |
+| `frontend` | Deployment | 2 | `meesell-prod-images/frontend:latest` | 100m / 500m CPU, 128Mi / 256Mi mem | (stateless) | **NOT DEPLOYED** (image not yet built — frontend Wave 2B in progress) |
+
+> **CPU sizing note (D-API-3):** the api/worker requests were tuned from the spec defaults (500m / 1000m) down to 200m / 250m for this single-node 2 vCPU VM, where the infra footprint (postgres + valkey + studio + traefik + cert-manager) consumed almost the entire CPU budget. Revisit when migrating to staging / prod on a larger machine type.
+
+> **Config + secret injection:** both Deployments use `envFrom` against the ConfigMap (`meesell-config`) first, then the Secret (`backend-secrets`) — the Secret overrides any duplicates. The 20-key `backend-secrets` carries DB / cache URLs (URL-encoded passwords), JWT secret, MSG91 / Razorpay / Gemini API keys, GCS bucket name, LangFuse stub key (`pk-lf-disabled-v1`), and `APP_ENV=development`. **The Pydantic settings model requires `APP_ENV ∈ {development, staging, production}` — `dev` is rejected.**
 
 ### Namespace `staging`
 
@@ -325,7 +341,7 @@ Credentials are sourced from K8s Secrets (`dev/postgres-credentials`, `dev/valke
 
 ## 9. Terraform Module Map
 
-All Terraform code lives at `infra/terraform/`. State is **local** (`infra/terraform/terraform.tfstate`); GCS backend migration is tracked as a deferred follow-up.
+All Terraform code lives at `infra/terraform/`. State is **GCS-backed** as of 2026-06-10 — `gs://meesell-tfstate/terraform/state/default.tfstate` (versioning enabled). The historical local `terraform.tfstate` file is retained as a one-time backup but is no longer authoritative. Auth uses the documented `GOOGLE_OAUTH_ACCESS_TOKEN` workaround — see Runbook 12.2.
 
 ### Apply order
 
@@ -345,8 +361,9 @@ Managed via `Makefile.tf` at workspace root: `make -f Makefile.tf tf-plan-pass1`
 | `module.artifact_registry` | `infra/terraform/modules/artifact_registry/` | AR repo `meesell-prod-images`, cleanup policy, CI SA writer binding |
 | `module.asset_bucket` | `infra/terraform/modules/asset_bucket/` | GCS bucket `meesell-prod-assets`, uniform access, versioning, CI SA + VM SA bindings |
 | `module.ci_identity` | `infra/terraform/modules/ci_identity/` | CI SA, WIF pool, WIF provider, WIF impersonation binding |
-| `module.app_secrets` | `infra/terraform/modules/app_secrets/` | 7 Secret Manager secret containers (values managed out-of-band) |
+| `module.app_secrets` | `infra/terraform/modules/app_secrets/` | 10 Secret Manager secret containers (values managed out-of-band — see §4) |
 | `module.billing_budget` | `infra/terraform/modules/billing_budget/` | Cloud Billing budget INR 25,000 + 3 alert thresholds |
+| `module.cloudbuild_permissions` | `infra/terraform/modules/cloudbuild_permissions/` | Codifies the Phase D Cloud Build SA IAM bindings: VM SA `storage.admin` on `_cloudbuild` bucket + `artifactregistry.writer` on `meesell-prod-images` (because Cloud Build runs as the Compute Engine default SA in this project — see §10.2) |
 | `module.namespaces` | `infra/terraform/modules/namespaces/` | K8s namespaces `dev`, `staging` (+ `env` label) |
 | `module.postgres_dev` | `infra/terraform/modules/postgres/` | Postgres StatefulSet, headless Service, K8s Secret (`postgres-credentials`), 20Gi PVC |
 | `module.valkey_dev` | `infra/terraform/modules/valkey/` | Valkey StatefulSet, headless Service, K8s Secret (`valkey-credentials`), 5Gi PVC, maxmemory args |
@@ -363,45 +380,75 @@ Some modules carry an environment suffix in the root `main.tf` even though the m
 
 ## 10. CI/CD
 
-### Current state
+### 10.1 Current state
 
 - **Workload Identity Federation:** wired and verified. GitLab pipeline jobs running on `techades/mesell` can impersonate `meesell-prod-ci@<project>` without a service account key.
 - **GitLab CI variable to set:** `GCP_WORKLOAD_IDENTITY_PROVIDER` = `projects/888244156264/locations/global/workloadIdentityPools/gitlab-prod-pool/providers/gitlab-prod-provider`
 - **GitLab CI service account variable:** `GCP_SERVICE_ACCOUNT` = `meesell-prod-ci@project-1f5cbf72-2820-4cdb-949.iam.gserviceaccount.com`
-- **Pipeline file (`.gitlab-ci.yml`):** **NOT YET WRITTEN**.
+- **Pipeline file (`.gitlab-ci.yml`):** **NOT YET WRITTEN.** First image build (Phase D, 2026-06-09) ran as an out-of-band `gcloud builds submit` from the laptop while the CI/CD session is still pending.
 
-### What's needed
+### 10.2 Cloud Build SA quirk (D-API-5 — codified 2026-06-10)
+
+Cloud Build in `project-1f5cbf72-2820-4cdb-949` runs builds as the **Compute Engine default SA** (`888244156264-compute@developer.gserviceaccount.com`), NOT the conventional Cloud Build SA (`888244156264@cloudbuild.gserviceaccount.com`).
+
+This means the standard "give the Cloud Build SA permissions" recipe is wrong here. During Phase D's first `gcloud builds submit`, the build failed with `403: ... 888244156264-compute@... does not have storage.objects.get access` on the `_cloudbuild` source bucket. We granted:
+
+| Resource | Role | Member | Owner |
+|---|---|---|---|
+| `gs://project-1f5cbf72-2820-4cdb-949_cloudbuild` | `roles/storage.admin` | `888244156264-compute@developer.gserviceaccount.com` | `module.cloudbuild_permissions` |
+| `meesell-prod-images` AR repo | `roles/artifactregistry.writer` | `888244156264-compute@developer.gserviceaccount.com` | `module.cloudbuild_permissions` |
+| `gs://project-1f5cbf72-2820-4cdb-949_cloudbuild` | `roles/storage.admin` | `888244156264@cloudbuild.gserviceaccount.com` | (live, unused — see note) |
+| `meesell-prod-images` AR repo | `roles/artifactregistry.writer` | `888244156264@cloudbuild.gserviceaccount.com` | (live, unused — see note) |
+
+The Cloud Build SA bindings (rows 3 + 4) were granted during Phase D debugging but Cloud Build never used them in this project. They are intentionally NOT codified in Terraform so they can be cleaned up via a single `gcloud iam ...` command later without touching `module.cloudbuild_permissions`.
+
+When the CI/CD pipeline migrates from out-of-band Cloud Build to GitLab CI + WIF, this section will be updated and `module.cloudbuild_permissions` may be removed (or repurposed to grant the GitLab CI SA the same roles).
+
+### 10.3 What's needed (CI/CD session — out of scope for this doc)
 
 1. `.gitlab-ci.yml` at repo root with stages: `lint` -> `test` -> `build` -> `push` -> `deploy`
 2. Image build step: `docker build -t asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-prod-images/api:$CI_COMMIT_SHA backend/`
-3. Image push step: auth via WIF (`google-github-actions/auth` equivalent for GitLab) then `gcloud auth configure-docker asia-south1-docker.pkg.dev` then `docker push`
-4. Deploy step: SSH to VM (or use kubeconfig from a CI runner with K3s API access from the runner's IP) and `kubectl set image deployment/api api=... -n dev`
+3. Image push step: auth via WIF then `gcloud auth configure-docker asia-south1-docker.pkg.dev` then `docker push`
+4. Deploy step: kubeconfig from a CI runner with K3s API access from the runner's IP and `kubectl set image deployment/api api=... -n dev`
 5. Manual gate for `staging` -> `prod` promotion
 
-### Container image targets
+### 10.4 Container image targets
 
-| Component | Image | Build context |
-|---|---|---|
-| API + Worker | `asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-prod-images/api:<tag>` | `backend/` (FastAPI + Celery, same image, different entrypoint) |
-| Frontend | `asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-prod-images/frontend:<tag>` | `frontend/` (Angular build + nginx) |
+| Component | Image | Build context | Live |
+|---|---|---|---|
+| API + Worker | `asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-prod-images/api:<tag>` | `backend/` (FastAPI + Celery, same image, different entrypoint) | `v1.0.0`, `latest` |
+| Frontend | `asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-prod-images/frontend:<tag>` | `frontend/` (Angular build + nginx) | not yet built |
 
-Pull authentication on the VM: VM SA `888244156264-compute@...` has `roles/artifactregistry.reader` on `meesell-prod-images`. K3s uses the GCE metadata server for keyless pulls — no `imagePullSecrets` needed.
+Pull authentication on the VM: VM SA `888244156264-compute@...` has `roles/artifactregistry.reader` on `meesell-prod-images`. K3s `containerd` is configured via `/etc/rancher/k3s/registries.yaml` to use the GCE metadata server token — no `imagePullSecrets` needed on Deployments. See Runbook 12.8 for the registries.yaml + cron refresh setup.
 
 ---
 
-## 11. Pending (Phase D)
+## 11. Pending Work
 
-Application image builds and deployments. Nothing here blocks core infra availability — only application traffic.
+### 11.1 Phase D (mostly complete — 2026-06-09 / 2026-06-10)
 
-- [ ] Write `backend/Dockerfile` and `frontend/Dockerfile` (multi-stage builds, distroless or slim base)
-- [ ] First image build + push to Artifact Registry (`api:latest`, `frontend:latest`)
-- [ ] Write `.gitlab-ci.yml` covering lint / test / build / push / deploy
-- [ ] Fix `k8s/api.yaml`, `k8s/worker.yaml`, `k8s/frontend.yaml` — change `namespace: meesell` -> `namespace: dev`
-- [ ] Fix `k8s/secrets.yaml.example` — service hosts to `*.dev.svc.cluster.local`, bucket to `meesell-prod-assets`
-- [ ] Fix `k8s/config.yaml` — `CORS_ORIGINS` to include `dev.mesell.xyz`, `testing.mesell.xyz`, `staging.mesell.xyz`, `www.mesell.xyz`
-- [ ] Create `k8s/secrets.yaml` from `.example` with real values (NEVER commit)
-- [ ] Apply `k8s/api.yaml`, `k8s/worker.yaml`, `k8s/frontend.yaml` once images are present
-- [ ] Optional Pass 3 Terraform: `modules/api/`, `modules/worker/`, `modules/frontend/` so application Deployments are in Terraform state
+- [x] Write `backend/Dockerfile` and `backend/Dockerfile.worker`
+- [x] First image build + push to Artifact Registry (`api:v1.0.0` + `latest`, `worker:v1.0.0` + `latest`)
+- [x] Fix `k8s/{api,worker,frontend,ingress,secrets.yaml.example}.yaml` — `namespace: meesell` → `namespace: dev`
+- [x] Fix `k8s/secrets.yaml.example` — service hosts, bucket, `AUDIT_PII_SALT` row
+- [x] Fix `k8s/config.yaml` — `CORS_ORIGINS` covers all subdomains; `LANGFUSE_PUBLIC_KEY=pk-lf-disabled-v1`
+- [x] Create `backend-secrets` in `dev` namespace (20 keys, sourced from GCP SM + in-cluster postgres / valkey credentials; URL-encoded passwords)
+- [x] Apply `k8s/api.yaml`, `k8s/worker.yaml` (2/2 each Running)
+- [x] Run Alembic `upgrade head` → `f31c75438e61`
+- [x] Smoke test `https://api.mesell.xyz/health` → 200 healthy
+- [x] Codify Phase D Cloud Build SA IAM bindings into `module.cloudbuild_permissions`
+- [x] Migrate Terraform state to `gs://meesell-tfstate`
+- [x] Codify K3s AR auth (registries.yaml + cron) into `startup.sh.tftpl` for re-provision reproducibility
+- [ ] **Build + push frontend image** (`meesell-prod-images/frontend:v1.0.0`) and apply `k8s/frontend.yaml` — depends on Wave 2B frontend completion
+- [ ] Write `.gitlab-ci.yml` covering lint / test / build / push / deploy (separate CI/CD session)
+- [ ] Clean up unused Cloud Build SA IAM bindings on `888244156264@cloudbuild.gserviceaccount.com` — see §10.2
+
+### 11.2 Phase E (post Phase D — Terraform discipline rollout)
+
+- [ ] Codify the Phase A VM SA IAM bindings (`artifactregistry.reader` on `meesell-prod-images`, `storage.objectAdmin` on `gs://meesell-prod-assets`) into a new `module.vm_sa_permissions` so they're captured by `terraform plan`. They're currently live but were granted via manual `gcloud iam` in Phase A.
+- [ ] Add `cloudbuild.googleapis.com` to `google_project_service.required` so the API is also TF-managed.
+- [ ] Pass 3 Terraform modules (`modules/api/`, `modules/worker/`, `modules/frontend/`) so application Deployments are in Terraform state — currently they're applied directly from `k8s/*.yaml`. Defer until CI/CD is wired so the Deployment lives in only one place at a time.
+- [ ] Production-grade AR node auth: replace the `registries.yaml` + cron approach with `kubelet-credential-providers` + the `cloud-provider-gcp` `auth-provider-gcp` binary, eliminating the time-bounded token.
 
 ---
 
@@ -507,6 +554,72 @@ See Playbook §12.1 for the full runbook.
 
 See 12.1 (firewall IP rotation) — that's the cause 95% of the time. If the rule is correct, see Playbook §12.3.
 
+### 12.8 K3s Artifact Registry node auth (registries.yaml + cron)
+
+**Why this exists:** K3s does not bundle a credential helper for GCP Artifact Registry. The VM SA (`888244156264-compute@...`) has `roles/artifactregistry.reader` on `meesell-prod-images` and can pull images using its GCE metadata server token — but K3s' containerd doesn't fetch that token automatically.
+
+**Live setup (running VM, established 2026-06-09):**
+
+- `/etc/rancher/k3s/registries.yaml` carries an `oauth2accesstoken` username + the metadata server token as password, scoped to `asia-south1-docker.pkg.dev`.
+- `/usr/local/bin/refresh-ar-token.sh` fetches a fresh metadata token and rewrites the file on every invocation.
+- `cron`: `*/45 * * * * /usr/local/bin/refresh-ar-token.sh >> /var/log/ar-token-refresh.log 2>&1` (45 min refresh; metadata tokens are valid for 60 min).
+- Token rotation does NOT require K3s restart — `containerd` rereads `registries.yaml` on each pull. K3s only had to be restarted ONCE to load the file initially.
+
+**Reproducibility on re-provision:** the same setup steps now live in `infra/terraform/modules/vm/templates/startup.sh.tftpl` (the cloud-init startup script). A re-provisioned VM will run them automatically on first boot. The VM has `lifecycle.ignore_changes = [metadata]`, so updating the template does not trigger a Terraform plan diff on the existing VM — the new setup applies only on the NEXT provision.
+
+**Manual re-install procedure (if the script needs to run on the existing VM):**
+```bash
+gcloud compute ssh meesell-dev --zone=asia-south1-a -- '
+  sudo tee /usr/local/bin/refresh-ar-token.sh > /dev/null <<SCRIPT
+#!/bin/bash
+set -e
+TOKEN=\$(curl -sf -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)[\"access_token\"])")
+cat > /etc/rancher/k3s/registries.yaml <<YAML
+configs:
+  "asia-south1-docker.pkg.dev":
+    auth:
+      username: oauth2accesstoken
+      password: "\${TOKEN}"
+YAML
+SCRIPT
+  sudo chmod +x /usr/local/bin/refresh-ar-token.sh
+  sudo /usr/local/bin/refresh-ar-token.sh
+  (sudo crontab -l 2>/dev/null | grep -v refresh-ar-token; \
+    echo "*/45 * * * * /usr/local/bin/refresh-ar-token.sh >> /var/log/ar-token-refresh.log 2>&1") \
+    | sudo crontab -
+  sudo systemctl restart k3s
+'
+```
+
+**Production upgrade path:** replace this with the `kubelet-credential-providers` API + the `gcp-cloud-credential-provider` binary from `cloud-provider-gcp`. That removes the time-bounded token entirely. Tracked in §11.2.
+
+### 12.9 Terraform state backend (GCS)
+
+**Current backend:** `backend "gcs" { bucket = "meesell-tfstate"; prefix = "terraform/state" }`. Object versioning is enabled on the bucket — every `terraform apply` writes a new generation; previous generations are retained indefinitely (review every few months and prune via `gcloud storage objects delete --version=<gen>`).
+
+**Read locking:** GCS object generation numbers handle atomic compare-and-swap for state writes. No separate lock table needed. If a `terraform apply` is interrupted, the lock may persist for a few minutes — `terraform force-unlock <lock-id>` clears it (lock ID is printed in the error).
+
+**Restore from a corrupted state:**
+```bash
+# List object generations
+gcloud storage objects list gs://meesell-tfstate/terraform/state/default.tfstate \
+  --all-versions
+
+# Restore a specific generation
+gcloud storage cp \
+  gs://meesell-tfstate/terraform/state/default.tfstate#<GEN_NUMBER> \
+  gs://meesell-tfstate/terraform/state/default.tfstate
+
+# Re-init terraform to pick up the restored object
+cd infra/terraform && terraform init -reconfigure
+```
+
+**Local backup:** the pre-migration local state still exists at `infra/terraform/terraform.tfstate` as a one-time disaster-recovery copy. Do not edit it — it's frozen at the 2026-06-10 migration point. Future state lives only in GCS.
+
+**Auth:** terraform reads/writes the state bucket via ADC. The vaishnaviramoorthy@gmail.com account has implicit `roles/storage.admin` on the bucket through project ownership — no explicit IAM binding required. When ADC is bound to `mugunthanks93@gmail.com`, use the `GOOGLE_OAUTH_ACCESS_TOKEN` workaround in 12.2.
+
 ---
 
 ## 13. Deferred Work
@@ -515,8 +628,7 @@ See 12.1 (firewall IP rotation) — that's the cause 95% of the time. If the rul
 |---|---|---|
 | `www.mesell.xyz` DNS + Ingress + prod namespace | Production cut-over gated on 1 week of clean staging (Playbook §15c) | Week 2 |
 | `prod` namespace creation | Same as above | Week 2 |
-| Terraform state migration: local -> GCS | Local laptop disk failure currently = state loss. Migration via `terraform init -migrate-state` is straightforward but no-one has scheduled the downtime. | Before any second engineer joins |
-| LangFuse for AI tracing | `MVP_ARCHITECTURE.md §9.6` requirement; deferred per gap analysis D2 | V1.5 |
+| LangFuse for AI tracing (active integration) | Secret container + value live; the app reads `LANGFUSE_SECRET_KEY` but emits no traces yet. Wiring `langfuse` SDK into `services/ai_engine.py` is V1.5. | V1.5 |
 | Wildcard cert `*.mesell.xyz` | Requires DNS-01 challenge + Namecheap cert-manager plugin; HTTP-01 multi-SAN works for V1 | V1.5 |
 | Off-VM backup storage | Postgres and Valkey backups currently land on the founder's laptop. Need to push to `gs://meesell-prod-assets/backups/` on a CronJob. | Pre-launch |
 | Observability stack (Prometheus / Grafana / Loki) | Not yet required; Cloud Logging captures VM-level logs | Week 2 |

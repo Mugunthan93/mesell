@@ -1,22 +1,30 @@
 # cloudbuild.yaml — triggered from GitHub Actions via `gcloud builds submit --no-source`
-# Builds and pushes api + frontend images to Artifact Registry.
-# Substitutions injected by the GitHub Actions trigger-build job.
+# Spec: docs/DEVOPS_ARCHITECTURE.md §6.
+# Builds and pushes api + worker + frontend images to Artifact Registry.
+# `--no-source` is used in the GitHub Actions trigger so this file's first step
+# does a fresh `git clone` on the Cloud Build worker (keeps runner uploads small).
+# Substitutions injected by the GitHub Actions build job; defaults are safe fallbacks.
+
 substitutions:
   _PROJECT_ID: ""
-  _REGION:     "asia-south1"
-  _REPO:       "meesell-images"
-  _TAG:        "latest"
+  _REGION: "asia-south1"
+  _REPO: "meesell-prod-images"
+  _TAG: "latest"
 
 options:
   machineType: E2_MEDIUM
   logging: CLOUD_LOGGING_ONLY
 
-timeout: 1200s
+timeout: 1800s
 
 steps:
-  # Clone the repo (public — no auth needed)
+  # ---------------------------------------------------------------------------
+  # Step 0 — clone repo at HEAD of main
+  # `--no-source` means the runner did NOT upload the workspace, so the entire
+  # build context comes from this clone. Pinned to main; release tags are a TODO.
+  # ---------------------------------------------------------------------------
   - id: clone
-    name: "gcr.io/cloud-builders/git"
+    name: gcr.io/cloud-builders/git
     args:
       - clone
       - --depth=1
@@ -24,50 +32,136 @@ steps:
       - https://github.com/Mugunthan93/mesell.git
       - src
 
-  # Build API image
+  # ---------------------------------------------------------------------------
+  # Step 1 — precheck: does the frontend Dockerfile exist?
+  # Wave 2B may not yet have produced frontend/Dockerfile. If absent, frontend
+  # build + push are silently skipped — pipeline does NOT fail.
+  # Marker file `.frontend-buildable` is consumed by the conditional build step.
+  # ---------------------------------------------------------------------------
+  - id: precheck-frontend
+    name: bash
+    args:
+      - -c
+      - |
+        if [ -f /workspace/src/frontend/Dockerfile ]; then
+          touch /workspace/.frontend-buildable
+          echo "Frontend Dockerfile present — frontend build will run"
+        else
+          echo "Frontend Dockerfile missing — frontend build will be SKIPPED"
+        fi
+    waitFor:
+      - clone
+
+  # ---------------------------------------------------------------------------
+  # Step 2 — build API image (backend/Dockerfile)
+  # ---------------------------------------------------------------------------
   - id: build-api
-    name: "gcr.io/cloud-builders/docker"
+    name: gcr.io/cloud-builders/docker
     dir: src/backend
     args:
       - build
+      - -f
+      - Dockerfile
       - -t
       - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/api:${_TAG}"
       - -t
       - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/api:latest"
       - .
-    waitFor: [clone]
+    waitFor:
+      - clone
 
-  # Push API image
+  # ---------------------------------------------------------------------------
+  # Step 3 — push API image (both SHA + latest tags)
+  # ---------------------------------------------------------------------------
   - id: push-api
-    name: "gcr.io/cloud-builders/docker"
+    name: gcr.io/cloud-builders/docker
     args:
       - push
       - --all-tags
       - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/api"
-    waitFor: [build-api]
+    waitFor:
+      - build-api
 
-  # Build frontend image
-  - id: build-frontend
-    name: "gcr.io/cloud-builders/docker"
-    dir: src/frontend
+  # ---------------------------------------------------------------------------
+  # Step 4 — build Worker image (backend/Dockerfile.worker)
+  # Same build context as API (backend/), different Dockerfile.
+  # Runs in parallel with build-api.
+  # ---------------------------------------------------------------------------
+  - id: build-worker
+    name: gcr.io/cloud-builders/docker
+    dir: src/backend
     args:
       - build
+      - -f
+      - Dockerfile.worker
       - -t
-      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend:${_TAG}"
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/worker:${_TAG}"
       - -t
-      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend:latest"
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/worker:latest"
       - .
-    waitFor: [clone]
+    waitFor:
+      - clone
 
-  # Push frontend image (can run in parallel with push-api)
-  - id: push-frontend
-    name: "gcr.io/cloud-builders/docker"
+  # ---------------------------------------------------------------------------
+  # Step 5 — push Worker image (parallel with push-api)
+  # ---------------------------------------------------------------------------
+  - id: push-worker
+    name: gcr.io/cloud-builders/docker
     args:
       - push
       - --all-tags
-      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend"
-    waitFor: [build-frontend]
+      - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/worker"
+    waitFor:
+      - build-worker
 
+  # ---------------------------------------------------------------------------
+  # Step 6 — build Frontend image (CONDITIONAL — skips if Dockerfile absent)
+  # See precheck-frontend step. When the marker file is absent, this step
+  # exits 0 without doing anything (`bash -c` is forgiving — no failure).
+  # ---------------------------------------------------------------------------
+  - id: build-frontend
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        if [ ! -f /workspace/.frontend-buildable ]; then
+          echo "Skipping frontend build (no Dockerfile)."
+          exit 0
+        fi
+        cd src/frontend
+        docker build \
+          -t "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend:${_TAG}" \
+          -t "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend:latest" \
+          .
+    waitFor:
+      - precheck-frontend
+
+  # ---------------------------------------------------------------------------
+  # Step 7 — push Frontend image (CONDITIONAL)
+  # `docker push --all-tags` on a non-existent local image is a no-op error,
+  # so we wrap in bash and skip if the marker file is missing.
+  # ---------------------------------------------------------------------------
+  - id: push-frontend
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        if [ ! -f /workspace/.frontend-buildable ]; then
+          echo "Skipping frontend push (no Dockerfile)."
+          exit 0
+        fi
+        docker push --all-tags \
+          "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend"
+    waitFor:
+      - build-frontend
+
+# Cloud Build verifies + records metadata for each image in this list. Every entry
+# here MUST exist in the registry when the build finishes, or the build fails.
+# Frontend is intentionally OMITTED — its push step is conditional on the Dockerfile
+# being present (Wave 2B). When the Dockerfile lands, add `frontend:${_TAG}` here
+# (and remove the conditional skip from `build-frontend` / `push-frontend`).
 images:
   - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/api:${_TAG}"
-  - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend:${_TAG}"
+  - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/worker:${_TAG}"
