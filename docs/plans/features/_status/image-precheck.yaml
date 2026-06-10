@@ -3,33 +3,20 @@ session: "mesell-image-precheck-amendment-session-1"
 worktree: "/tmp/mesell-wt/image-precheck"
 branch: "feature/image-precheck/planning"
 status: "PLAN_READY"
-last_updated: "2026-06-10T17:45:00Z"
+last_updated: "2026-06-10T12:00:00Z"
 feature_plan_path: "docs/plans/features/image-precheck/FEATURE_PLAN.md"
 feature_plan_line_count: 1606
-pr_number: 8
-pr_url: "https://github.com/Mugunthan93/mesell/pull/8"
+pr_number: 14
+pr_url: "https://github.com/Mugunthan93/mesell/pull/14"
 outstanding_founder_decisions: []
 notes: |
-  Amended to canonical pattern v2 — 11 real h2 sections in locked order, verified
-  via Python script that excludes fenced-code-block ## lines (the dispatch template
-  prompts contain embedded `## Your mission` etc. that don't count per canonical §7).
+  Amendment session confirmed FEATURE_PLAN.md is fully conformant with canonical pattern v2.
+  All 11 canonical h2 headings present in locked order. No structural amendments required.
 
-  Changes applied:
-  - Reordered Code surfaces + Documentation deliverables BEFORE Branch setup + Memory
-    protocol (4-section reorder; canonical 3/4/5/6 was at 5/6/3/4)
-  - Renamed `## Memory namespace convention` → `## Memory protocol`
-  - Demoted ad-hoc `## Features in flight` h2 to `### Features in flight` h3 inside
-    Memory protocol
-  - Added new canonical subsections in Memory protocol: `### Memories the coding-session
-    leads MUST read at session start` (per canonical §6 spec) + `### Cross-feature memos`
-    (names the catalog→image dependency)
-  - Renamed Risk register column `Severity` → `Impact` and reordered to canonical
-    `Likelihood | Impact` order with row values swapped accordingly
-  - Updated Acceptance gate cross-reference `§Memory namespace convention` → `§Memory protocol`
-  - Added v2 row to Revision history documenting this amendment session
+  Audit findings:
+  - ## Iteration {2 or 3} at line 1532 is INSIDE a code fence (re-dispatch template prompt body) — not a structural h2, no fix needed
+  - All 8 specialist dispatch templates are at h3 level (### Template X) — already correct
+  - Revision history v2 row present from prior amendment commit 0b2d22d
 
-  File grew 1584 → 1606 lines (+22) — net of additions from canonical §6 subsections.
-
-  Branch feature/image-precheck/planning already has PR #8 open against develop from
-  the original planning session. The amendment commit will be added to that PR
-  (gh pr create would refuse a duplicate PR).
+  PR #14 open against develop, awaiting founder review.
+  Branch: feature/image-precheck/planning
