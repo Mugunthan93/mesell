@@ -2,10 +2,9 @@
 
 **Owner:** Master Director session
 **Purpose:** Single source of truth for the state of all 9 V1 feature planning sessions
-**Last updated:** 2026-06-10 (Step 13 — post-merge reconciliation)
+**Last updated:** 2026-06-10 (planning lockdown — canonical v2 amendments merged)
 **This file is updated by sub-sessions only. The master Director session reads it.**
-**Reconciliation pass 2026-06-10:** all 9 features now have planning PRs open against `develop`; status set to `IN REVIEW` across the board; live-preview (#10) and tracking-dashboard (#11) shipped via the worktree pattern (`scripts/launch-planning-session.sh`) after the parallel run hit branch-checkout collisions; the 4 rows previously showing `NOT STARTED` (ai-autofill / image-precheck / price-calculator / xlsx-export) reflected stale state and have been corrected against `gh pr list`.
-**Post-merge pass 2026-06-10 (Step 13):** all 9 planning PRs merged to `develop`; status flipped from `IN REVIEW` → `MERGED` for every feature; planning phase is complete and downstream coding-stage dispatches are now unblocked.
+**Lockdown pass 2026-06-10:** all 9 FEATURE_PLAN.md files were amended to canonical pattern v2 (11 h2 sections in locked order) and merged to `develop` via amendment PRs #14–#22. All 9 `_status/{slug}.yaml` files and every row below are now `LOCKED`. The planning stage is complete; the coding stage is unblocked. The canonical pattern itself is at v2.1 (fence-aware audit command, PR #12).
 
 ---
 
@@ -13,15 +12,15 @@
 
 | # | Feature              | Session                                          | Status       | FEATURE_PLAN.md path                                | Last updated | Notes |
 |---|----------------------|--------------------------------------------------|--------------|-----------------------------------------------------|--------------|-------|
-| 1 | auth-otp             | mesell-auth-otp-planning-session-1               | MERGED       | docs/plans/features/auth-otp/FEATURE_PLAN.md        | 2026-06-10   | merged to develop via PR #3 |
-| 2 | smart-picker         | mesell-smart-picker-planning-session-1           | MERGED       | docs/plans/features/smart-picker/FEATURE_PLAN.md    | 2026-06-10   | merged to develop via PR #6 |
-| 3 | catalog-form         | mesell-catalog-form-planning-session-1           | MERGED       | docs/plans/features/catalog-form/FEATURE_PLAN.md    | 2026-06-10   | merged to develop via PR #7 |
-| 4 | ai-autofill          | mesell-ai-autofill-planning-session-1            | MERGED       | docs/plans/features/ai-autofill/FEATURE_PLAN.md     | 2026-06-10   | merged to develop via PR #4 |
-| 5 | image-precheck       | mesell-image-precheck-planning-session-1         | MERGED       | docs/plans/features/image-precheck/FEATURE_PLAN.md  | 2026-06-10   | merged to develop via PR #8 |
-| 6 | live-preview         | mesell-live-preview-planning-session-1           | MERGED       | docs/plans/features/live-preview/FEATURE_PLAN.md    | 2026-06-10   | merged to develop via PR #10 |
-| 7 | price-calculator     | mesell-price-calculator-planning-session-1       | MERGED       | docs/plans/features/price-calculator/FEATURE_PLAN.md | 2026-06-10  | merged to develop via PR #5 |
-| 8 | tracking-dashboard   | mesell-tracking-dashboard-planning-session-1     | MERGED       | docs/plans/features/tracking-dashboard/FEATURE_PLAN.md | 2026-06-10 | merged to develop via PR #11 |
-| 9 | xlsx-export          | mesell-xlsx-export-planning-session-1            | MERGED       | docs/plans/features/xlsx-export/FEATURE_PLAN.md     | 2026-06-10   | merged to develop via PR #9 |
+| 1 | auth-otp             | mesell-auth-otp-amendment-session-1              | LOCKED       | docs/plans/features/auth-otp/FEATURE_PLAN.md        | 2026-06-10   | canonical v2 amendment merged via PR #21 (base plan PR #3) |
+| 2 | smart-picker         | mesell-smart-picker-amendment-session-1          | LOCKED       | docs/plans/features/smart-picker/FEATURE_PLAN.md    | 2026-06-10   | canonical v2 amendment merged via PR #17 (base plan PR #6) |
+| 3 | catalog-form         | mesell-catalog-form-amendment-session-1          | LOCKED       | docs/plans/features/catalog-form/FEATURE_PLAN.md    | 2026-06-10   | canonical v2 amendment merged via PR #15 (base plan PR #7) |
+| 4 | ai-autofill          | mesell-ai-autofill-amendment-session-1           | LOCKED       | docs/plans/features/ai-autofill/FEATURE_PLAN.md     | 2026-06-10   | canonical v2 amendment merged via PR #18 (base plan PR #4) |
+| 5 | image-precheck       | mesell-image-precheck-amendment-session-1        | LOCKED       | docs/plans/features/image-precheck/FEATURE_PLAN.md  | 2026-06-10   | canonical v2 amendment merged via PR #14 (base plan PR #8) |
+| 6 | live-preview         | mesell-live-preview-amendment-session-1          | LOCKED       | docs/plans/features/live-preview/FEATURE_PLAN.md    | 2026-06-10   | canonical v2 amendment merged via PR #16 (base plan PR #10) |
+| 7 | price-calculator     | mesell-price-calculator-amendment-session-1      | LOCKED       | docs/plans/features/price-calculator/FEATURE_PLAN.md | 2026-06-10  | canonical v2 amendment merged via PR #20 (base plan PR #5) |
+| 8 | tracking-dashboard   | mesell-tracking-dashboard-amendment-session-1    | LOCKED       | docs/plans/features/tracking-dashboard/FEATURE_PLAN.md | 2026-06-10 | canonical v2 amendment merged via PR #19 (base plan PR #11) |
+| 9 | xlsx-export          | mesell-xlsx-export-amendment-session-1           | LOCKED       | docs/plans/features/xlsx-export/FEATURE_PLAN.md     | 2026-06-10   | canonical v2 amendment merged via PR #22 (base plan PR #9) |
 
 ## Status vocabulary (canonical — 5 values)
 
@@ -59,6 +58,9 @@ A sub-session for feature `{feature-slug}` MUST:
 
 | Date | Feature | Event | Reference |
 |------|---------|-------|-----------|
+| 2026-06-10 | (governance) | Planning stage LOCKED — all 9 _status yamls + tracker rows flipped to LOCKED | mesell-repo-management-session-2 (planning-lockdown PR) |
+| 2026-06-10 | (governance) | Canonical v2 amendment PRs #14–#22 merged to develop (one per feature) | mesell-repo-management-session-2 |
+| 2026-06-10 | (governance) | Canonical pattern v2.1 — fence-aware audit command merged via PR #12 | mesell-repo-management-session-2 |
 | 2026-06-10 | (governance) | All 9 feature blueprints MERGED to develop; planning phase complete | mesell-repo-management-session-1 |
 | 2026-06-10 | (governance) | All 9 features moved to IN REVIEW; live-preview + tracking-dashboard shipped via worktree pattern | mesell-repo-management-session-1 |
 | 2026-06-10 | tracking-dashboard | IN REVIEW — PR #11 open: https://github.com/Mugunthan93/mesell/pull/11 | mesell-repo-management-session-1 (Step 10 reconciliation, via worktree) |

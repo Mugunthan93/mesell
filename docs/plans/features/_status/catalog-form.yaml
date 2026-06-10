@@ -2,8 +2,8 @@ feature: "catalog-form"
 session: "mesell-catalog-form-amendment-session-1"
 worktree: "/tmp/mesell-wt/catalog-form"
 branch: "feature/catalog-form/planning"
-status: "IN_REVIEW"
-last_updated: "2026-06-10T12:00:00Z"
+status: "LOCKED"
+last_updated: "2026-06-10T12:55:02Z"
 feature_plan_path: "docs/plans/features/catalog-form/FEATURE_PLAN.md"
 feature_plan_line_count: 1065
 pr_number: 15
@@ -15,3 +15,5 @@ notes: |
   markdown code fence (```markdown block), not a real h2. All specialist headings in Dispatch
   templates already at h3 level. Revision history v3 entry added to record audit completion.
   PR #15 already open from prior amendment session — updated with conformance audit commit.
+
+  Founder merged amendment PR #15 to develop 2026-06-10 — plan LOCKED.
