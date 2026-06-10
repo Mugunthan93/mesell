@@ -1,0 +1,44 @@
+feature: "live-preview"
+session: "mesell-live-preview-amendment-session-1"
+worktree: "/tmp/mesell-wt/live-preview"
+branch: "feature/live-preview/planning"
+status: "PLAN_READY"
+last_updated: "2026-06-10T12:04:32Z"
+feature_plan_path: "docs/plans/features/live-preview/FEATURE_PLAN.md"
+feature_plan_line_count: 1338
+pr_number: 10
+pr_url: "https://github.com/Mugunthan93/mesell/pull/10"
+outstanding_founder_decisions:
+  - "D1 — locked (scope confirmed against V1_FEATURE_SPEC §F6)"
+  - "D2 — locked (backend pre-shapes structured PreviewResponse with server-side truncation)"
+  - "D3 — locked (FEATURE_LIVE_PREVIEW_ENABLED gated rollout)"
+  - "D4 — locked (ships after catalog-form + image-precheck, parallel with price-calculator)"
+  - "D5 — locked (3 leads + 6 specialists, infra in scope)"
+  - "D6 — locked (3 default iteration cap; 4 for ui-styler visual-diff)"
+notes: |
+  Amended to canonical pattern v2 — 11 sections in locked order.
+
+  Section reordering applied (6 moves):
+  - Code surfaces: pos 4 → pos 3
+  - Documentation deliverables: pos 5 → pos 4
+  - Branch setup: pos 3 → pos 5
+  - Memory protocol: pos 8 → pos 6 (also renamed from "Memory management")
+  - Dispatch templates: pos 6 → pos 7
+  - Review + iteration protocol: pos 7 → pos 8
+
+  Risk register expanded from 11 lines (single compact table) to 72 lines (per-risk
+  subsections + monitoring + ownership + audit cadence). All original content preserved
+  verbatim; new structure adds depth, not new claims.
+
+  Revision history: v0.2 row appended.
+
+  FEATURE_PLAN.md: 1278 → 1338 lines (+60 from risk register expansion + v0.2 row).
+
+  NOTE: mandatory read _CANONICAL_PATTERN.md does NOT exist on this worktree. Founder
+  approved best-effort conformance using the amendment dispatch text (Step 5 enumeration
+  + Step 4 templates) as the source-of-truth. Section ordering and the 4 universal-gap
+  thresholds derived from the dispatch itself.
+
+  Ready for amendment PR. Since PR #10 is already merged or open (master tracker line 20
+  says "IN REVIEW — PR #10"), this amendment may either extend PR #10 with a follow-up
+  commit OR a new amendment PR will be opened against develop.
