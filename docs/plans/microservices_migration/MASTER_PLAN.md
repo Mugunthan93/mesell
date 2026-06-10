@@ -1,6 +1,6 @@
 # MeeSell Microservices Migration — MASTER PLAN
 
-STATUS: DRAFT — produced by meesell-backend-coordinator 2026-06-10
+STATUS: LOCKED 2026-06-10 — ratified by founder as post-V1 roadmap (per its own Lock target convention)
 
 > Scope: planning-only. Zero code changes. This document is the master roadmap for converting the MeeSell modular monolith into a set of independent FastAPI microservices, one per domain module. It does NOT itself migrate anything; it specifies HOW the migration will be carried out, in what ORDER, with which AGENTS, and against which RISKS.
 
@@ -440,7 +440,7 @@ Today `products.user_id REFERENCES users(id)` enforces that every product has a 
 | Field | Value |
 |-------|-------|
 | Document type | Master migration plan |
-| Status | DRAFT |
+| Status | LOCKED 2026-06-10 |
 | Produced by | meesell-backend-coordinator |
 | Produced on | 2026-06-10 |
 | Lock target | Founder review → STATUS: LOCKED |
@@ -449,4 +449,12 @@ Today `products.user_id REFERENCES users(id)` enforces that every product has a 
 
 ---
 
-**END OF MASTER PLAN — DRAFT**
+## Revision History
+
+| Version | Date | Author | Change |
+|---------|------|--------|--------|
+| 1.0 | 2026-06-10 | founder + master Director session | Ratified DRAFT → LOCKED as V1.5/V2 roadmap. Execution begins post-V1-launch. A–H order locked per §16.H. ai_ops + middleware decisions stay deferred to Sub-Plan A. Noted: full extraction forces VM upgrade e2-standard-2 → ≥e2-standard-4 (~₹2.5–6k/mo) at execution time. |
+
+---
+
+**END OF MASTER PLAN — LOCKED 2026-06-10**

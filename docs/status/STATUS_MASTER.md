@@ -2306,3 +2306,19 @@ Phase D deploys the V1 backend to the `dev` namespace on the K3s cluster on GCP 
 ## SSOT VERIFICATION — 2026-06-10
 
 `docs/MVP_ARCHITECTURE.md` cross-verified against all individual architecture docs and LOCKED 2026-06-10. 15 divergences resolved (3 CRITICAL, 7 IMPORTANT, 5 MINOR). See `docs/doc_verification/SSOT_DIVERGENCE_REPORT.md` for full details.
+
+---
+
+=== UPDATE: 2026-06-10 — REPO MANAGEMENT PLAN ACTIVE ===
+Repo-management MASTER_PLAN §10 acceptance gate is now fully satisfied:
+(1) plan APPROVED v1.0; (2) prerequisite architecture plans ratified —
+module_federation APPROVED 2026-06-10 (founder ruling: federation BEFORE
+Wave 6), microservices_migration LOCKED 2026-06-10 (post-V1 roadmap);
+(3) develop + staging exist; develop branch protection applied 2026-06-10
+(PR-only, 1 review, strict checks placeholder pending CI activation).
+The Model C convention is ACTIVE. Leads operate under it for all feature work.
+All 9 V1 feature plans LOCKED on develop (PRs #14–#23). Planning program
+next: S3 (module federation) + S5 (infra-MF) as the active pair per the
+federation-first ruling; S2/S4 queued. Sub-plan 0 gates: TestBed-38 triage
++ infra Gate-4 confirmation.
+=========
