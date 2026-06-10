@@ -1,32 +1,18 @@
 import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
-import { providePrimeNG } from 'primeng/config';
-import { MessageService, ConfirmationService } from 'primeng/api';
 
 import { routes } from './app.routes';
-import { MeeSellPreset } from './core/theme/meesell-preset';
+// Deep import (not the barrel) so the root bundle pulls only the PrimeNG
+// providers + theme, never the full set of mee-* wrappers.
+import { provideMeeUi } from './ui/providers';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideRouter(routes),
     provideAnimationsAsync(),
-    MessageService,
-    ConfirmationService,
-    providePrimeNG({
-      theme: {
-        preset: MeeSellPreset,
-        options: {
-          prefix: 'p',
-          darkModeSelector: '.dark',
-          cssLayer: {
-            name: 'primeng',
-            order: 'theme, base, primeng, components, utilities',
-          },
-        },
-      },
-      ripple: true,
-    }),
+    // PrimeNG theme + toast/confirm services, sealed behind the @mee/ui boundary.
+    ...provideMeeUi(),
   ],
 };
