@@ -12,8 +12,6 @@
 
 ---
 
-## ⚠️ Mandatory read declaration
-
 > **Any lead or specialist working on the `smart-picker` feature MUST read this document at session start, in addition to the lead-spec / specialist-spec Mandatory First Action checklist.** This rule is per Governance Decision G4 (locked 2026-06-10). The FEATURE_PLAN supersedes any conflicting interpretation of the dispatch prompt; if the FEATURE_PLAN and a lead spec disagree, the FEATURE_PLAN wins for THIS feature only — escalate the conflict to the founder for permanent reconciliation.
 
 ---
@@ -226,6 +224,87 @@ Per Decision G4, this list is the documentation acceptance gate for the feature.
 ### Cross-cutting
 - [ ] `docs/V1_FEATURE_SPEC.md §F2` stamped "implemented YYYY-MM-DD" with PR link (post-ship, on a follow-up doc PR).
 - [ ] `.github/workflows/ci.yml` carries the `ai_eval` job referencing `backend/tests/eval/smart_picker/` — gate green within 24h of the AI PR's merge.
+
+---
+
+## Branch setup
+
+| Branch | Cut from | Purpose | Who commits |
+|---|---|---|---|
+| `feature/smart-picker` | `develop` | Integration branch | Lead coordinators (merge approval only) |
+| `feature/smart-picker/backend` | `feature/smart-picker` | Backend specialist work | meesell-backend-coordinator specialists |
+| `feature/smart-picker/ai` | `feature/smart-picker` | AI/ML specialist work | meesell-ai-coordinator specialists |
+| `feature/smart-picker/frontend` | `feature/smart-picker` | Frontend specialist work | meesell-frontend-coordinator specialists |
+
+### Creation commands
+```
+git checkout develop && git pull
+git checkout -b feature/smart-picker feature/smart-picker
+git push -u origin feature/smart-picker
+git checkout -b feature/smart-picker/backend feature/smart-picker
+git push -u origin feature/smart-picker/backend
+git checkout -b feature/smart-picker/ai feature/smart-picker
+git push -u origin feature/smart-picker/ai
+git checkout -b feature/smart-picker/frontend feature/smart-picker
+git push -u origin feature/smart-picker/frontend
+```
+
+### PR flow (coding stage)
+```
+feature/smart-picker/backend → feature/smart-picker   (reviewer: meesell-backend-coordinator)
+feature/smart-picker/ai → feature/smart-picker         (reviewer: meesell-ai-coordinator)
+feature/smart-picker/frontend → feature/smart-picker   (reviewer: meesell-frontend-coordinator)
+feature/smart-picker → develop                         (reviewer: founder)
+```
+
+### Rebase strategy
+If a sibling group PR lands first, rebase the next group PR onto the updated feature/smart-picker tip before requesting review.
+
+---
+
+## Memory protocol
+
+Memories leads MUST read at coding-session start:
+- `.claude/agent-memory/meesell-ai-coordinator/MEMORY.md`
+- `.claude/agent-memory/meesell-backend-coordinator/MEMORY.md`
+- `.claude/agent-memory/meesell-frontend-coordinator/MEMORY.md`
+
+Cross-feature memos: smart-picker depends on catalog-form's category_id contract; read `meesell-backend-coordinator/catalog_form_feature.md` if catalog-form is already delivered.
+
+Naming convention for new memos: `smart_picker_feature.md` (specifically: `feature_smart_picker_<slice>.md` inside the contributing agent's memory directory per Decision G3).
+
+### Memory discipline
+
+```
+## MEMORY DISCIPLINE (per Governance Decision G3 + G4)
+
+At session start, in this order, READ:
+1. Your own memory: .claude/agent-memory/meesell-<your-role>/MEMORY.md (the index)
+2. Under the index's "## Per-feature memory > smart-picker" subsection, read EVERY listed feature_smart_picker_*.md file in your own directory.
+3. docs/plans/features/smart-picker/FEATURE_PLAN.md (this entire document — mandatory per G4)
+4. Cross-agent: read the latest feature_smart_picker_*.md files (if any) in:
+   - .claude/agent-memory/meesell-backend-coordinator/
+   - .claude/agent-memory/meesell-frontend-coordinator/
+   - .claude/agent-memory/meesell-ai-coordinator/
+   - .claude/agent-memory/meesell-data-engineer/
+   (Read only — never write to another agent's memory directory.)
+
+At session close, WRITE/APPEND to:
+- .claude/agent-memory/meesell-<your-role>/feature_smart_picker_<your-slice>.md
+  Where <your-slice> is a kebab-case tag describing your contribution
+  (e.g., "prompt-v1-iteration", "service-suggest-wiring", "component-three-cards").
+  Sections to include:
+    ## Session header — session name + date
+    ## Files touched — bullet list of paths with NEW/MODIFY/RENAME/VERIFY status
+    ## What was done — bullet list of contributions
+    ## Eval / test / metric results (mandatory for AI specialists; optional for others)
+    ## Open items — what remains for the next session (if any)
+    ## Cross-feature gotchas — observations that affect ai-autofill, image-precheck, or other features
+    ## Next-session brief — one paragraph for future-self
+- .claude/agent-memory/meesell-<your-role>/MEMORY.md
+  Add a one-line entry under "## Per-feature memory > smart-picker":
+  - [feature_smart_picker_<your-slice>.md](feature_smart_picker_<your-slice>.md) — one-line description
+```
 
 ---
 
@@ -956,4 +1035,5 @@ Top 5 feature-specific risks. Each carries an owner + mitigation + escalation tr
 
 | Version | Date | Author | Change |
 |---|---|---|---|
-| 0.1 | 2026-06-10 | Master session (Director) — initiated by founder dispatch `mesell-smart-picker-planning-session-1` | Initial DRAFT authored. Founder governance decisions G1–G4 locked (full lineup, planning-branch-now + group-branches-lazy, 4-part memory convention, FEATURE_PLAN.md mandatory read for active features). Founder scope decisions D1–D4 locked (arch-aligned scope with backend top-5 / frontend top-3 / graceful fallback to /browse, standard flag posture, Smart Picker ships first among AI features, frontend folder renames catalog-new → smart-picker). Agent lineup (7 mandatory + 1 conditional specialists across 4 leads), code surfaces (backend / frontend / AI / data / docs / CI), documentation deliverables, 8 specialist dispatch templates, review + iteration protocol (cross-group merge order, smart-picker-specific lead checks, 8 re-dispatch failure modes, 3-iteration cap), acceptance gate, and 5-item risk register all drafted. Awaiting founder review on PR `feature/smart-picker/planning` → `develop`. |
+| v1 | 2026-06-10 | mesell-smart-picker-planning-session-1 | Initial FEATURE_PLAN.md authored. Founder governance decisions G1–G4 locked (full lineup, planning-branch-now + group-branches-lazy, 4-part memory convention, FEATURE_PLAN.md mandatory read for active features). Founder scope decisions D1–D4 locked (arch-aligned scope with backend top-5 / frontend top-3 / graceful fallback to /browse, standard flag posture, Smart Picker ships first among AI features, frontend folder renames catalog-new → smart-picker). Agent lineup (7 mandatory + 1 conditional specialists across 4 leads), code surfaces (backend / frontend / AI / data / docs / CI), documentation deliverables, 8 specialist dispatch templates, review + iteration protocol (cross-group merge order, smart-picker-specific lead checks, 8 re-dispatch failure modes, 3-iteration cap), acceptance gate, and 5-item risk register all drafted. |
+| v2 | 2026-06-10 | mesell-smart-picker-amendment-session-1 | Pattern conformance — Branch setup and Memory protocol added, ad-hoc sections relocated. Added ## Branch setup section (was missing): branch table, creation commands, PR flow, rebase strategy. Added ## Memory protocol section (absorbed MEMORY DISCIPLINE content): mandatory read list, cross-feature memo notes, naming convention, memory discipline subsection. Relocated ad-hoc ## ⚠️ Mandatory read declaration to preamble prose (before ## Decisions). Verified 11 canonical h2 headings in locked order. |
