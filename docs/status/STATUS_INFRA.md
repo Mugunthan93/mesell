@@ -1394,3 +1394,14 @@ Ratification deferred to founder S5 window (NOT this session).
 Mutations: ZERO cluster / ZERO terraform / ZERO manifest edits. Only new file GATE4_CONFIRMATION.md + board/STATUS updates.
 Board sweep (session-end): gate4-confirmation moved IN PROGRESS -> Recently merged (#33). Active features empty. No rows untouched 7+ days. No inter-lead requests open.
 =========
+
+=== UPDATE: 2026-06-11 AUTH-OTP INFRA SESSION-END ===
+Session: mesell-auth-otp-infra-session-1
+Infra group PR #45 (feature/auth-otp/infra -> feature/auth-otp/integration) SQUASH-MERGED — merge SHA d2b734e. Self-review: all 6 FEATURE_PLAN infra checks pass (check 1 dry-run-server deferred to deploy time per F3, cluster unreachable; offline kustomize+yaml validation clean).
+Files merged: k8s/config.yaml (dev TTL/CORS corrected), k8s/overlays/staging/{kustomization,config}.yaml (NEW staging surface), docs/runbooks/auth-secret-rotation.md (NEW).
+Then OPENED (NOT merged) integration->develop PR — founder gate. See PR # in this entry's tail.
+Founder-flags carried into both PR bodies: F1 APP_ENV=production on dev ConfigMap (pre-existing; backend cookie semantics — founder decision); F2 backend refresh key single-pepper/unversioned, R5 dual-pepper grace path is a backend follow-up before V1.5 prod; F3 server-side dry-run must be re-run at deploy time.
+Board: auth-otp moved IN REVIEW -> MERGED (Recently merged, #45). Active features now empty again.
+Board sweep (session-end): no rows untouched 7+ days. No inter-lead requests open. No blockers.
+Cost impact: ₹0/month.
+=========
