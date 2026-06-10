@@ -1,0 +1,34 @@
+feature: "tracking-dashboard"
+session: "mesell-tracking-dashboard-amendment-session-1"
+worktree: "/tmp/mesell-wt/tracking-dashboard"
+branch: "feature/tracking-dashboard/planning"
+status: "IN_REVIEW"
+last_updated: "2026-06-10T18:00:00Z"
+feature_plan_path: "docs/plans/features/tracking-dashboard/FEATURE_PLAN.md"
+feature_plan_line_count: 1450
+pr_number: 19
+pr_url: "https://github.com/Mugunthan93/mesell/pull/19"
+outstanding_founder_decisions:
+  - "D-A — locked"
+  - "D-B — locked"
+  - "D-C — locked"
+  - "D-D — locked"
+  - "D1 — locked"
+  - "D2 — locked"
+  - "D3 — locked"
+  - "D4 — locked"
+notes: |
+  Amendment session complete. 11 canonical h2 headings verified in locked order:
+  Decisions, Agent lineup, Code surfaces, Documentation deliverables, Branch setup,
+  Memory protocol, Dispatch templates, Review + iteration protocol, Acceptance gate,
+  Risk register, Revision history. Branch setup (90 lines) + Memory protocol
+  (68 lines) promoted to top-level (extracted from Decisions D-B and D-C stubs).
+  Common Dispatch Preamble demoted to h3 inside Dispatch templates. Dispatch template
+  internals demoted to fenced code blocks with leading-space prefix so they no longer
+  match ^## grep. All section headings normalized (no numeric prefix, no emoji,
+  exact capitalization). Table of Contents + Status Preamble relocated as preamble
+  prose. Risk register augmented with detection mechanisms, escalation paths, and
+  per-risk monitoring across the dispatch lifecycle. Revision history v2 row added.
+  Version bumped to 2.0 in the file header. Architectural distinctive preserved
+  verbatim: §13.D no-`repository.py` structural exception unchanged everywhere it
+  appears in the plan. PR #19 open for founder review.
