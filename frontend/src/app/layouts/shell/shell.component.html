@@ -16,8 +16,8 @@
     </ul>
   </nav>
 
-  <!-- Mobile sidebar overlay (PrimeNG v21 Drawer) -->
-  <p-drawer
+  <!-- Mobile sidebar overlay -->
+  <mee-drawer
     [visible]="mobileSidebarVisible()"
     (visibleChange)="mobileSidebarVisible.set($event)"
     styleClass="mee-mobile-sidebar"
@@ -36,7 +36,7 @@
         </li>
       }
     </ul>
-  </p-drawer>
+  </mee-drawer>
 
   <!-- Main content area -->
   <div class="shell-main">
@@ -56,12 +56,12 @@
              tabindex="0"
              aria-haspopup="true"
              aria-label="User menu"
-             (click)="userMenu.toggle($event)"
-             (keydown.enter)="userMenu.toggle($event)"
-             (keydown.space)="userMenu.toggle($event)">
+             (click)="toggleUserMenu($event)"
+             (keydown.enter)="toggleUserMenu($event)"
+             (keydown.space)="toggleUserMenu($event)">
           {{ userInitials }}
         </div>
-        <p-menu #userMenu [model]="userMenuItems" [popup]="true" />
+        <mee-menu #userMenu [items]="userMenuItems" />
       </div>
     </header>
 

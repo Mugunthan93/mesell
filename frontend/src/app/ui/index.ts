@@ -18,8 +18,15 @@ export { MeeConfirmDialogComponent }   from './confirm-dialog/confirm-dialog.com
 export { MeeConfirmService }           from './confirm-dialog/confirm-dialog.component';
 export { MeePasswordInputComponent }   from './password-input/password-input.component';
 export { MeeTextareaComponent }        from './textarea/textarea.component';
+export { MeeDrawerComponent }          from './drawer/drawer.component';
+export { MeeMenuComponent }            from './menu/menu.component';
+
+// Root bootstrap (PrimeNG providers + theme — sealed behind @mee/ui)
+export { provideMeeUi }                from './providers';
+export { MeeSellPreset }               from './theme';
 
 // Types
+export type { MeeMenuItem }                                              from './menu/menu.types';
 export type { MeeButtonVariant, MeeButtonSize }                         from './button/button.types';
 export type { MeeSelectOption }                                          from './select/select.types';
 export type { MeeColumn, MeeTablePageEvent, MeeTableSortEvent }         from './table/table.types';
