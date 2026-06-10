@@ -2,8 +2,10 @@
 
 **Owner:** Master Director session
 **Purpose:** Single source of truth for the state of all 9 V1 feature planning sessions
-**Last updated:** 2026-06-10
+**Last updated:** 2026-06-10 (Step 13 — post-merge reconciliation)
 **This file is updated by sub-sessions only. The master Director session reads it.**
+**Reconciliation pass 2026-06-10:** all 9 features now have planning PRs open against `develop`; status set to `IN REVIEW` across the board; live-preview (#10) and tracking-dashboard (#11) shipped via the worktree pattern (`scripts/launch-planning-session.sh`) after the parallel run hit branch-checkout collisions; the 4 rows previously showing `NOT STARTED` (ai-autofill / image-precheck / price-calculator / xlsx-export) reflected stale state and have been corrected against `gh pr list`.
+**Post-merge pass 2026-06-10 (Step 13):** all 9 planning PRs merged to `develop`; status flipped from `IN REVIEW` → `MERGED` for every feature; planning phase is complete and downstream coding-stage dispatches are now unblocked.
 
 ---
 
@@ -11,15 +13,15 @@
 
 | # | Feature              | Session                                          | Status       | FEATURE_PLAN.md path                                | Last updated | Notes |
 |---|----------------------|--------------------------------------------------|--------------|-----------------------------------------------------|--------------|-------|
-| 1 | auth-otp             | mesell-auth-otp-planning-session-1               | IN REVIEW    | docs/plans/features/auth-otp/FEATURE_PLAN.md        | 2026-06-10   | PR #3 open; D1/D2/D3 locked; all secrets LIVE |
-| 2 | smart-picker         | mesell-smart-picker-planning-session-1           | NOT STARTED  | docs/plans/features/smart-picker/FEATURE_PLAN.md    | -            | -     |
-| 3 | catalog-form         | mesell-catalog-form-planning-session-1           | NOT STARTED  | docs/plans/features/catalog-form/FEATURE_PLAN.md    | -            | -     |
-| 4 | ai-autofill          | mesell-ai-autofill-planning-session-1            | NOT STARTED  | docs/plans/features/ai-autofill/FEATURE_PLAN.md     | -            | -     |
-| 5 | image-precheck       | mesell-image-precheck-planning-session-1         | NOT STARTED  | docs/plans/features/image-precheck/FEATURE_PLAN.md  | -            | -     |
-| 6 | live-preview         | mesell-live-preview-planning-session-1           | NOT STARTED  | docs/plans/features/live-preview/FEATURE_PLAN.md    | -            | -     |
-| 7 | price-calculator     | mesell-price-calculator-planning-session-1       | NOT STARTED  | docs/plans/features/price-calculator/FEATURE_PLAN.md | -           | -     |
-| 8 | tracking-dashboard   | mesell-tracking-dashboard-planning-session-1     | NOT STARTED  | docs/plans/features/tracking-dashboard/FEATURE_PLAN.md | -          | -     |
-| 9 | xlsx-export          | mesell-xlsx-export-planning-session-1            | NOT STARTED  | docs/plans/features/xlsx-export/FEATURE_PLAN.md     | -            | -     |
+| 1 | auth-otp             | mesell-auth-otp-planning-session-1               | MERGED       | docs/plans/features/auth-otp/FEATURE_PLAN.md        | 2026-06-10   | merged to develop via PR #3 |
+| 2 | smart-picker         | mesell-smart-picker-planning-session-1           | MERGED       | docs/plans/features/smart-picker/FEATURE_PLAN.md    | 2026-06-10   | merged to develop via PR #6 |
+| 3 | catalog-form         | mesell-catalog-form-planning-session-1           | MERGED       | docs/plans/features/catalog-form/FEATURE_PLAN.md    | 2026-06-10   | merged to develop via PR #7 |
+| 4 | ai-autofill          | mesell-ai-autofill-planning-session-1            | MERGED       | docs/plans/features/ai-autofill/FEATURE_PLAN.md     | 2026-06-10   | merged to develop via PR #4 |
+| 5 | image-precheck       | mesell-image-precheck-planning-session-1         | MERGED       | docs/plans/features/image-precheck/FEATURE_PLAN.md  | 2026-06-10   | merged to develop via PR #8 |
+| 6 | live-preview         | mesell-live-preview-planning-session-1           | MERGED       | docs/plans/features/live-preview/FEATURE_PLAN.md    | 2026-06-10   | merged to develop via PR #10 |
+| 7 | price-calculator     | mesell-price-calculator-planning-session-1       | MERGED       | docs/plans/features/price-calculator/FEATURE_PLAN.md | 2026-06-10  | merged to develop via PR #5 |
+| 8 | tracking-dashboard   | mesell-tracking-dashboard-planning-session-1     | MERGED       | docs/plans/features/tracking-dashboard/FEATURE_PLAN.md | 2026-06-10 | merged to develop via PR #11 |
+| 9 | xlsx-export          | mesell-xlsx-export-planning-session-1            | MERGED       | docs/plans/features/xlsx-export/FEATURE_PLAN.md     | 2026-06-10   | merged to develop via PR #9 |
 
 ## Status vocabulary (canonical — 5 values)
 
@@ -57,6 +59,15 @@ A sub-session for feature `{feature-slug}` MUST:
 
 | Date | Feature | Event | Reference |
 |------|---------|-------|-----------|
+| 2026-06-10 | (governance) | All 9 feature blueprints MERGED to develop; planning phase complete | mesell-repo-management-session-1 |
+| 2026-06-10 | (governance) | All 9 features moved to IN REVIEW; live-preview + tracking-dashboard shipped via worktree pattern | mesell-repo-management-session-1 |
+| 2026-06-10 | tracking-dashboard | IN REVIEW — PR #11 open: https://github.com/Mugunthan93/mesell/pull/11 | mesell-repo-management-session-1 (Step 10 reconciliation, via worktree) |
+| 2026-06-10 | live-preview | IN REVIEW — PR #10 open: https://github.com/Mugunthan93/mesell/pull/10 | mesell-repo-management-session-1 (Step 10 reconciliation, via worktree) |
+| 2026-06-10 | live-preview | FEATURE_PLAN.md complete — awaiting master consolidation | (no PR yet) |
+| 2026-06-10 | tracking-dashboard | FEATURE_PLAN.md complete — awaiting master consolidation | (no PR yet) |
+| 2026-06-10 | auth-otp | FEATURE_PLAN.md complete — awaiting master consolidation | (no PR yet) |
+| 2026-06-10 | catalog-form | FEATURE_PLAN.md complete — awaiting master consolidation | (no PR yet) |
+| 2026-06-10 | smart-picker | FEATURE_PLAN.md complete — awaiting master consolidation | (no PR yet) |
 | 2026-06-10 | auth-otp | IN REVIEW — PR #3 open: https://github.com/Mugunthan93/mesell/pull/3 | mesell-auth-otp-planning-session-1 |
 | 2026-06-10 | auth-otp | PLAN READY — FEATURE_PLAN.md authored; PR opening on feature/auth-otp/planning | mesell-auth-otp-planning-session-1 |
 | 2026-06-10 | auth-otp | IN PROGRESS — session opened, mandatory reads complete, D1/D2/D3 locked | mesell-auth-otp-planning-session-1 |
