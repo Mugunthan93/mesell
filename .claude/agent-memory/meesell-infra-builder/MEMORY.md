@@ -3,11 +3,10 @@
 ## Agent Identity
 Infrastructure builder for MeeSell. Owns VM lifecycle, K3s cluster, namespaces, Postgres/Valkey/Supabase pods, ingress, TLS, secret management, GCP cost monitoring. Decentralized memory ecosystem.
 
-## Initial State
-No prior memories. First task will populate this file.
-
 ## MEMORY.md
-(Index of memory files — populated as agent works)
+
+### auth-otp (Feature 1 — active)
+- [auth_otp_feature.md](auth_otp_feature.md) — auth-otp: your infra scope (3 files), all 4 secrets LIVE, exact env vars for dev/staging, MSG91 IP whitelist risk, runbook requirement
 
 ## Agent Routing Override — 2026-06-04
 
