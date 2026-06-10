@@ -11,7 +11,12 @@
    the entire frontend/src tree for class candidates and generates utilities
    on demand. No manual safelist or @source directive needed. */
 @import "tailwindcss";
-@import "./app/design-system/_tokens.css";
+@import "../libs/design-tokens/_tokens.css";
+
+/* R4 (Sub-Plan 0 / MASTER_PLAN §6.3): the mee-* primitives + composites now live
+   under frontend/libs/. Tailwind v4's default scan covers the project; the explicit
+   @source below guarantees libs/ class candidates survive purge after relocation. */
+@source "../libs";
 
 /* Global body */
 html, body {

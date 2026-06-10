@@ -19,8 +19,8 @@ import {
   MeeButtonComponent,
   MeeInputComponent,
   MeeStepsComponent,
-} from '../../../ui';
-import type { MeeStep } from '../../../ui';
+} from '@mesell/ui-kit';
+import type { MeeStep } from '@mesell/ui-kit';
 
 /** GST pattern: 15-char GSTIN format */
 const GST_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;

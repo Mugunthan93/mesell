@@ -12,14 +12,14 @@ import { ReactiveFormsModule, FormControl } from '@angular/forms';
 import { Router } from '@angular/router';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 
-import { MeeConfirmService } from '../../ui';
+import { MeeConfirmService } from '@mesell/ui-kit';
 import {
   StatCardComponent,
   StatusBadgeComponent,
   PageHeaderComponent,
   EmptyStateComponent,
   LoadingSkeletonComponent,
-} from '../../shared';
+} from '@mesell/composites';
 
 import {
   DashboardApiService,
