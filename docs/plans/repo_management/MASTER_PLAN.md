@@ -77,10 +77,16 @@ Where:
 
 | Branch | Created when | Created by | Merges into | Deleted when |
 |---|---|---|---|---|
-| `feature/{name}` | First group is about to start the feature. | Founder (or the lead whose group starts first). | `develop` (via PR — see §2) | After PR to `develop` merges. |
-| `feature/{name}/{group}` | Group's lead dispatches a specialist on this feature. | Lead agent for that group. | `feature/{name}` (via PR — see §2) | After PR to `feature/{name}` merges. |
+| `feature/{name}/integration` | First group is about to start the feature. | Founder (or the lead whose group starts first). | `develop` (via PR — see §2) | After PR to `develop` merges. |
+| `feature/{name}/{group}` | Group's lead dispatches a specialist on this feature. | Lead agent for that group. | `feature/{name}/integration` (via PR — see §2) | After PR to `feature/{name}/integration` merges. |
 
-`feature/{name}` is the **integration branch** for that feature across all groups. It is branched **from `develop`** when the feature starts and is the parent of every `feature/{name}/{group}` branch.
+`feature/{name}/integration` is the **integration branch** for that feature across all groups. It is branched **from `develop`** when the feature starts and is the parent of every `feature/{name}/{group}` branch.
+
+> **Git-ref conflict — 2026-06-10 amendment (F1).** As originally written, the integration branch was `feature/{name}` and group branches were `feature/{name}/{group}`. These two forms **cannot coexist as git refs**: git stores refs as filesystem paths under `.git/refs/heads/`, so a ref cannot be both a *file* (`feature/auth-otp`) and a *directory* (`feature/auth-otp/backend/`) at the same path. Creating `feature/auth-otp/backend` after `feature/auth-otp` exists fails with `cannot lock ref ... 'feature/auth-otp' exists; cannot create 'feature/auth-otp/backend'`. **Ruling:** the integration branch is renamed `feature/{name}/integration`. Group branches keep the canonical `feature/{name}/{group}` form exactly as written in all 9 LOCKED FEATURE_PLANs — only the integration branch moved.
+>
+> **FEATURE_PLAN interpretation note (F1).** The 9 LOCKED FEATURE_PLANs are **NOT individually amended**. Wherever any FEATURE_PLAN's "Branch setup" says create `feature/{slug}`, read it as `feature/{slug}/integration`. This single interpretation note governs all 9 plans.
+>
+> The Model C pilot (housekeeping-v1, PRs #27–#29) used a dashed adaptation — `feature/housekeeping-v1` as the integration branch and `feature/housekeeping-v1-infra` / `feature/housekeeping-v1-backend` as group branches — to sidestep the conflict before this ruling existed. That dashed-name form was a **sanctioned one-off, not the standard**. The standard is `feature/{name}/integration` + `feature/{name}/{group}`.
 
 `feature/{name}/{group}` branches are short-lived (target: hours to days, not weeks). If a group's work on a feature exceeds 5 calendar days without a merge, the lead must escalate to the founder.
 
@@ -180,22 +186,22 @@ A group only gets a branch **if and when** that group has work to do for that fe
                    └─────────────────────────────────────────────────┘
 ```
 
-### 2.1 STEP 1 — `feature/{name}/{group}` → `feature/{name}`
+### 2.1 STEP 1 — `feature/{name}/{group}` → `feature/{name}/integration`
 
 | Field | Value |
 |---|---|
-| Preconditions | (a) Specialist's slice is complete per the dispatched acceptance criteria. (b) Group's PR template (§5) filled out. (c) `feature_board.md` for that group's lead updated to `IN REVIEW`. (d) Branch rebased on current `feature/{name}` tip — no merge commits. |
+| Preconditions | (a) Specialist's slice is complete per the dispatched acceptance criteria. (b) Group's PR template (§5) filled out. (c) `feature_board.md` for that group's lead updated to `IN REVIEW`. (d) Branch rebased on current `feature/{name}/integration` tip — no merge commits. |
 | Who opens the PR | The specialist who did the work. |
 | Who merges | **Lead agent for that group.** (Backend lead reviews backend group's PR, etc.) |
 | Merge type | PR with squash-merge. One commit per group's contribution to a feature. |
 | CI gate requirement | Gates 1+2+3 (unit, smoke, lint) MUST pass. Gates 4+5 (integration, golden_roundtrip) are advisory at this step — they SHOULD pass but a lead may merge with a documented blocker if the blocker is owned by another group (e.g., backend cannot run integration without infra's DB migration landing first). |
-| Rollback | If the merge breaks `feature/{name}` for sibling groups, the lead reverts via `git revert -m 1 <merge-sha>` on `feature/{name}`. The specialist re-opens a new PR with the fix; the reverted PR is closed not reopened. |
+| Rollback | If the merge breaks `feature/{name}/integration` for sibling groups, the lead reverts via `git revert -m 1 <merge-sha>` on `feature/{name}/integration`. The specialist re-opens a new PR with the fix; the reverted PR is closed not reopened. |
 
-### 2.2 STEP 2 — `feature/{name}` → `develop`
+### 2.2 STEP 2 — `feature/{name}/integration` → `develop`
 
 | Field | Value |
 |---|---|
-| Preconditions | (a) ALL groups participating in the feature have merged their `feature/{name}/{group}` PRs. (b) Integration tests authored by the backend coordinator (`backend/tests/test_*_integration.py`) and the frontend coordinator (Playwright/Cypress E2E if applicable) pass on `feature/{name}`. (c) All 5 CI gates green. (d) Every participating lead has marked the feature `IN REVIEW` on their `feature_board.md`. (e) Acceptance criteria from `V1_FEATURE_SPEC.md` confirmed met. |
+| Preconditions | (a) ALL groups participating in the feature have merged their `feature/{name}/{group}` PRs. (b) Integration tests authored by the backend coordinator (`backend/tests/test_*_integration.py`) and the frontend coordinator (Playwright/Cypress E2E if applicable) pass on `feature/{name}/integration`. (c) All 5 CI gates green. (d) Every participating lead has marked the feature `IN REVIEW` on their `feature_board.md`. (e) Acceptance criteria from `V1_FEATURE_SPEC.md` confirmed met. |
 | Who opens the PR | The lead whose group has the largest contribution (typically `backend` for backend-heavy features, `frontend` for UI-heavy ones). |
 | Who merges | **Founder.** (V1 rule — V1.5 may delegate to a designated lead for low-risk features.) |
 | Merge type | PR with merge-commit (NOT squash) — preserves the per-group commit history for archaeology. |
@@ -682,6 +688,8 @@ If the blocker text would exceed one line, put a summary on the row and link to 
 
 The lead **must** sweep the board at session start and end. Stale entries (older than 7 days untouched) generate a flag in `STATUS_MASTER.md`.
 
+> **MERGED-transition mechanism on a protected integration branch — 2026-06-10 amendment (F2).** The `MERGED` flip (row moved from Active features to Recently merged) is a board edit that must land on the integration branch where the group PR merged. Because that branch is PR-protected (§9.5), the pilot surfaced friction: the two leads diverged — the infra lead made a direct status-only commit, the backend lead took the conservative path of recording MERGED only in STATUS + memory and left the board row IN REVIEW (the "known carried imperfection" in PR #29). **Ruling:** the lead performs the MERGED flip as a **DIRECT status-only commit** to the integration branch, **restricted to `docs/status/feature_board_*.md` paths**, with commit message `chore(board): {slug} {group} MERGED transition`. This is permitted because F3 (§9.5) sets `required_approving_review_count = 0` on integration branches — a direct authenticated push for a status-only doc edit is allowed (no force-push, no protection bypass). **Fallback:** if a future integration branch has review-count > 0 OR push restrictions, this path closes — fall back to a tiny board-only PR. **Always re-probe protection before assuming** (`gh api repos/.../branches/<b>/protection`, per the infra lead's documented method) — do not assume count is still 0.
+
 ### 6.6 Query protocol (founder/director)
 
 The founder/director queries a lead's status by:
@@ -882,6 +890,8 @@ Each sub-plan is authored AFTER this MASTER_PLAN is ratified by the founder. Eac
 | Acceptance | Founder confirms the three rules apply and that "Include administrators" is checked where appropriate. |
 | Sequence | Must land BEFORE the first PR is merged into `develop`. |
 
+> **Integration-branch protection standard — 2026-06-10 amendment (F3).** The pilot established a distinct protection profile for short-lived feature **integration** branches (`feature/{name}/integration`), separate from the long-lived branches above. **Standard for `feature/{name}/integration`:** PR-only (no direct push for group PRs); `required_approving_review_count = **0**` (the group PR is gated by the lead's review action, not by GitHub's count); strict status checks with `contexts = []` until CI is wired active; `allow_force_pushes = false`; `allow_deletions = false`; `enforce_admins = false`. Applied at **integration-branch creation** as part of each feature kickoff. The review-count-0 setting is what permits the §6.5 direct board-flip commit. **Long-lived branches (`develop` / `staging` / `main`) keep `required_approving_review_count = 1`** per §1.1 — this F3 standard does NOT relax them.
+
 ### 9.6 Sub-plan sequence (recommended order)
 
 ```
@@ -916,3 +926,4 @@ If any of the three preconditions slips (e.g., microservices plan rejected and r
 |---|---|---|---|
 | 0.1 | 2026-06-10 | meesell-backend-coordinator | Initial DRAFT authored. Awaiting founder review. |
 | 1.0 | 2026-06-10 | founder + meesell-backend-coordinator | Ratified DRAFT → APPROVED. Decisions D1/D2/D3 locked. Status: executable. |
+| 1.1 | 2026-06-10 | founder + master Director session | Pilot (housekeeping-v1, PRs #27–#29) findings F1–F3 ruled: integration branch renamed feature/{slug}/integration (git ref conflict), §6.5 direct board-flip mechanism, §9.5 integration-branch protection standard (review-count 0). |
