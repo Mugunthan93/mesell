@@ -1,0 +1,12 @@
+feature: "auth-otp"
+session: "mesell-auth-otp-amendment-session-1"
+worktree: "/tmp/mesell-wt/auth-otp"
+branch: "feature/auth-otp/planning"
+status: "PLAN_READY"
+last_updated: "2026-06-10T12:00:00Z"
+feature_plan_path: "docs/plans/features/auth-otp/FEATURE_PLAN.md"
+feature_plan_line_count: 1577
+pr_number: null
+pr_url: null
+outstanding_founder_decisions: []
+notes: "Amended to canonical pattern v2. Section reordering (Branch setup moved to canonical position 5), Memory protocol added, Sprint plan relocated to subsection of Agent lineup."

@@ -103,77 +103,13 @@ PHASE E (after component-builder complete):
                                        (components must exist before ui-styler can reference selectors + HTML structure)
 ```
 
----
-
-## Branch setup
-
-> **When to create:** After PR #3 (`feature/auth-otp/planning`) merges to `develop` and this feature is `LOCKED` in the tracker. Do NOT open coding branches while this plan is still `IN REVIEW`. Per D3: no coding branch opens until auth-otp is LOCKED.
-
-### Branches to create (all cut from `develop`)
-
-| Branch | Cut from | Purpose | Who commits here |
-|--------|----------|---------|-----------------|
-| `feature/auth-otp` | `develop` | Integration branch — sub-branches merge into here; final PR to `develop` | Only merge commits from sub-branches |
-| `feature/auth-otp/backend` | `feature/auth-otp` | All backend specialist work | `meesell-database-builder`, `meesell-services-builder`, `meesell-auth-builder`, `meesell-api-routes-builder` |
-| `feature/auth-otp/frontend` | `feature/auth-otp` | All frontend specialist work | `meesell-angular-service-builder`, `meesell-angular-component-builder`, `meesell-angular-ui-styler` |
-| `feature/auth-otp/infra` | `feature/auth-otp` | All infra work | `meesell-infra-builder` |
-
-### Creation commands (run by founder after PR #3 merges)
-
-```bash
-# Ensure develop is current
-git checkout develop && git pull origin develop
-
-# Create integration branch
-git checkout -b feature/auth-otp
-git push -u origin feature/auth-otp
-
-# Create 3 group branches from the integration branch
-git checkout -b feature/auth-otp/backend feature/auth-otp
-git push -u origin feature/auth-otp/backend
-
-git checkout -b feature/auth-otp/frontend feature/auth-otp
-git push -u origin feature/auth-otp/frontend
-
-git checkout -b feature/auth-otp/infra feature/auth-otp
-git push -u origin feature/auth-otp/infra
-
-# Return to integration branch
-git checkout feature/auth-otp
-```
-
-### PR flow (coding stage)
-
-```
-feature/auth-otp/backend  ──┐
-feature/auth-otp/frontend ──┤──► feature/auth-otp ──► develop
-feature/auth-otp/infra    ──┘
-```
-
-- Each group branch opens a PR to `feature/auth-otp` (NOT directly to `develop`)
-- `feature/auth-otp/backend` PR reviewed and approved by `meesell-backend-coordinator`
-- `feature/auth-otp/frontend` PR reviewed and approved by `meesell-frontend-coordinator`
-- `feature/auth-otp/infra` PR self-reviewed by `meesell-infra-builder`, then founder gate
-- Integration PR (`feature/auth-otp` → `develop`) opened only after all 3 group PRs are merged; founder does final review
-
-### PR templates
-
-| PR | Template file |
-|----|--------------|
-| `feature/auth-otp/backend` → `feature/auth-otp` | `.github/PULL_REQUEST_TEMPLATE/backend.md` |
-| `feature/auth-otp/frontend` → `feature/auth-otp` | `.github/PULL_REQUEST_TEMPLATE/frontend.md` |
-| `feature/auth-otp/infra` → `feature/auth-otp` | `.github/PULL_REQUEST_TEMPLATE/infra.md` |
-| `feature/auth-otp` → `develop` | `.github/PULL_REQUEST_TEMPLATE/feature.md` |
-
----
-
-## Sprint plan
+### Sprint plan
 
 > **Purpose:** Execution roadmap for coding-stage dispatch. Read this before dispatching any agent.
 > **Based on:** Actual codebase audit (2026-06-10) — backend is ~95% complete; frontend is ~30% complete (UI scaffolded, zero HTTP wiring).
 > **Gate to start:** PR #3 merged to `develop` → tracker = `LOCKED` → 4 coding branches created.
 
-### Current state audit
+#### Current state audit
 
 | Track | Component | Status | What exists | What's missing |
 |-------|-----------|--------|-------------|----------------|
@@ -196,7 +132,7 @@ feature/auth-otp/infra    ──┘
 | Infra | K8s env vars + secrets | ✅ COMPLETE | All 4 secrets LIVE in Secret Manager | K8s manifest env-var additions needed |
 | Infra | `auth-secret-rotation.md` runbook | ❌ MISSING | Not created | New file needed |
 
-### Sprint 0 — Unlock (½ day)
+#### Sprint 0 — Unlock (½ day)
 
 **Gate:** PR #3 reviewed and merged to `develop`. Precedes all coding dispatch.
 
@@ -207,7 +143,7 @@ feature/auth-otp/infra    ──┘
 | S0.3 | Create 4 coding branches per Branch setup commands | Founder | `feature/auth-otp`, `/backend`, `/frontend`, `/infra` all pushed to origin |
 | S0.4 | Update `docs/status/feature_board_backend.md` and `feature_board_frontend.md` — auth-otp row = `IN PROGRESS` | Backend coord + Frontend coord | Status boards updated on respective branches |
 
-### Sprint 1 — Backend verification + infra (Days 1–3)
+#### Sprint 1 — Backend verification + infra (Days 1–3)
 
 **Dispatch:** Phase A (parallel): `meesell-database-builder` + `meesell-services-builder` + `meesell-infra-builder`
 **Followed by:** Phase B: `meesell-auth-builder` → Phase C: `meesell-api-routes-builder`
@@ -227,11 +163,11 @@ feature/auth-otp/infra    ──┘
 - [ ] `POST /auth/otp/send` smoke → real OTP received on phone
 - [ ] `feature/auth-otp/backend` PR and `feature/auth-otp/infra` PR open and ready for review
 
-### Sprint 2 — Frontend HTTP wiring (Days 4–9)
+#### Sprint 2 — Frontend HTTP wiring (Days 4–9)
 
 **Dispatch:** Phase D then Phase E — service-builder first, component-builder after, ui-styler last.
 
-#### S2.A — Service layer (`meesell-angular-service-builder`, Days 4–6)
+##### S2.A — Service layer (`meesell-angular-service-builder`, Days 4–6)
 
 | # | Task | What gets built |
 |---|------|----------------|
@@ -242,7 +178,7 @@ feature/auth-otp/infra    ──┘
 | S2.5 | `app.routes.ts` | Add `/login`, `/signup`, `/otp-verify` as public routes with `auth-layout`; route comment block per Documentation deliverable #6 |
 | S2.6 | `app.config.ts` | Register both interceptors: `provideHttpClient(withInterceptors([authInterceptor, refreshInterceptor]))` — auth first, refresh second |
 
-#### S2.B — Component wiring (`meesell-angular-component-builder`, Days 7–8)
+##### S2.B — Component wiring (`meesell-angular-component-builder`, Days 7–8)
 
 | # | Task | What gets built |
 |---|------|----------------|
@@ -251,7 +187,7 @@ feature/auth-otp/infra    ──┘
 | S2.9 | `signup.component.ts` | Replace `setTimeout` mock with `AuthService.sendOtp()` call; navigate to `/otp-verify?phone=<encoded>&mode=signup` |
 | S2.10 | Error states | All 3 components surface inline errors from `IamService` exception types: `phone_invalid`, `otp_expired`, `otp_invalid`, `rate_limited` |
 
-#### S2.C — Styling pass (`meesell-angular-ui-styler`, Day 9)
+##### S2.C — Styling pass (`meesell-angular-ui-styler`, Day 9)
 
 | # | Task | What gets built |
 |---|------|----------------|
@@ -265,7 +201,7 @@ feature/auth-otp/infra    ──┘
 - [ ] `phone` read from query params in `otp-verify.component.ts`
 - [ ] `feature/auth-otp/frontend` PR open and ready for review
 
-### Sprint 3 — Integration + acceptance gate (Days 10–12)
+#### Sprint 3 — Integration + acceptance gate (Days 10–12)
 
 | # | Task | Owner | Exit criterion |
 |---|------|-------|---------------|
@@ -287,7 +223,7 @@ feature/auth-otp/infra    ──┘
 - `meesell-backend-coordinator` stamps `V1_FEATURE_SPEC.md §F1` — "implemented YYYY-MM-DD PR#N"
 - `meesell-backend-coordinator` adds `BACKEND_ARCHITECTURE.md §7` sentinel comment
 
-### Sprint timeline
+#### Sprint timeline
 
 ```
 Day 0:    PR #3 merged → LOCKED → 4 coding branches created
@@ -313,7 +249,7 @@ Day 9:    [FRONTEND Phase E] meesell-angular-ui-styler
 Days 10–12: Integration test + acceptance gate + group PRs → feature/auth-otp → develop
 ```
 
-### Risk-adjusted schedule notes
+#### Risk-adjusted schedule notes
 
 | Risk | Buffer | Contingency |
 |------|--------|-------------|
@@ -441,6 +377,159 @@ These must exist alongside the merged code. Each is an acceptance gate item.
 | 4 | **`V1_FEATURE_SPEC.md §F1` implementation stamp** — "implemented YYYY-MM-DD PR#N" appended to the FE-D5 acceptance criteria block | `meesell-backend-coordinator` | After `feature/auth-otp` → `develop` merges |
 | 5 | **`BACKEND_ARCHITECTURE.md §7` sentinel** — one-line commit reference proving §7 code is on-disk | `meesell-backend-coordinator` | After `feature/auth-otp` → `develop` merges |
 | 6 | **`app.routes.ts` comment block** — one-line comment per route documenting `public` vs `guarded` status and which layout is used | `meesell-angular-service-builder` | In PR `feature/auth-otp/frontend` |
+
+---
+
+## Branch setup
+
+> **When to create:** After PR #3 (`feature/auth-otp/planning`) merges to `develop` and this feature is `LOCKED` in the tracker. Do NOT open coding branches while this plan is still `IN REVIEW`. Per D3: no coding branch opens until auth-otp is LOCKED.
+
+### Branches to create (all cut from `develop`)
+
+| Branch | Cut from | Purpose | Who commits here |
+|--------|----------|---------|-----------------|
+| `feature/auth-otp` | `develop` | Integration branch — sub-branches merge into here; final PR to `develop` | Only merge commits from sub-branches |
+| `feature/auth-otp/backend` | `feature/auth-otp` | All backend specialist work | `meesell-database-builder`, `meesell-services-builder`, `meesell-auth-builder`, `meesell-api-routes-builder` |
+| `feature/auth-otp/frontend` | `feature/auth-otp` | All frontend specialist work | `meesell-angular-service-builder`, `meesell-angular-component-builder`, `meesell-angular-ui-styler` |
+| `feature/auth-otp/infra` | `feature/auth-otp` | All infra work | `meesell-infra-builder` |
+
+### Creation commands (run by founder after PR #3 merges)
+
+```bash
+# Ensure develop is current
+git checkout develop && git pull origin develop
+
+# Create integration branch
+git checkout -b feature/auth-otp
+git push -u origin feature/auth-otp
+
+# Create 3 group branches from the integration branch
+git checkout -b feature/auth-otp/backend feature/auth-otp
+git push -u origin feature/auth-otp/backend
+
+git checkout -b feature/auth-otp/frontend feature/auth-otp
+git push -u origin feature/auth-otp/frontend
+
+git checkout -b feature/auth-otp/infra feature/auth-otp
+git push -u origin feature/auth-otp/infra
+
+# Return to integration branch
+git checkout feature/auth-otp
+```
+
+### PR flow (coding stage)
+
+```
+feature/auth-otp/backend  ──┐
+feature/auth-otp/frontend ──┤──► feature/auth-otp ──► develop
+feature/auth-otp/infra    ──┘
+```
+
+- Each group branch opens a PR to `feature/auth-otp` (NOT directly to `develop`)
+- `feature/auth-otp/backend` PR reviewed and approved by `meesell-backend-coordinator`
+- `feature/auth-otp/frontend` PR reviewed and approved by `meesell-frontend-coordinator`
+- `feature/auth-otp/infra` PR self-reviewed by `meesell-infra-builder`, then founder gate
+- Integration PR (`feature/auth-otp` → `develop`) opened only after all 3 group PRs are merged; founder does final review
+
+### PR templates
+
+| PR | Template file |
+|----|--------------|
+| `feature/auth-otp/backend` → `feature/auth-otp` | `.github/PULL_REQUEST_TEMPLATE/backend.md` |
+| `feature/auth-otp/frontend` → `feature/auth-otp` | `.github/PULL_REQUEST_TEMPLATE/frontend.md` |
+| `feature/auth-otp/infra` → `feature/auth-otp` | `.github/PULL_REQUEST_TEMPLATE/infra.md` |
+| `feature/auth-otp` → `develop` | `.github/PULL_REQUEST_TEMPLATE/feature.md` |
+
+### Rebase strategy
+
+When a sibling group PR lands first and the next group PR needs to rebase:
+
+1. The integration branch (`feature/auth-otp`) has moved forward with the merged sibling
+2. The pending group branch runs: `git rebase feature/auth-otp` to incorporate the new merge commit
+3. Force-push the rebased group branch: `git push --force-with-lease origin feature/auth-otp/<group>`
+4. The lead re-reviews only the delta since the last approval
+5. No new PR is opened — the existing PR is updated in place
+
+---
+
+## Memory protocol
+
+- **Memories leads MUST read at coding-session start:**
+  - `.claude/agent-memory/meesell-backend-coordinator/MEMORY.md`
+  - `.claude/agent-memory/meesell-backend-coordinator/auth_otp_feature.md`
+  - `.claude/agent-memory/meesell-frontend-coordinator/MEMORY.md`
+  - `.claude/agent-memory/meesell-frontend-coordinator/auth_otp_feature.md`
+  - `.claude/agent-memory/meesell-infra-builder/MEMORY.md`
+  - `.claude/agent-memory/meesell-infra-builder/auth_otp_feature.md`
+
+- **Cross-feature memos:** auth-otp is the prerequisite feature; downstream features (catalog-form, image-precheck, etc.) will read auth contracts from `meesell-backend-coordinator/auth_otp_feature.md`. The memo captures `IamService` public API, JWT claim shape, cookie attribute values, and Pydantic schema names — everything a downstream feature's backend specialist needs to write a `Depends(get_current_user)` dependency or a `/auth/refresh` integration.
+
+- **Naming convention for new memos:** `auth_otp_feature.md` (snake_case, feature-prefixed). This is the convention used for all specialist memos in this feature — do NOT use `feature_auth_otp.md` or any other variant.
+
+- **Session-close memory entries:** each lead appends to their own `MEMORY.md` at coding-session close:
+  - Session header (session name, date, branch)
+  - Decisions ratified during session (D-number + outcome)
+  - Files touched (count + list of key files)
+  - Blockers carried forward (none / description + escalation owner)
+  - Next-step recommendation (what the next session should dispatch first)
+
+### Pre-dispatch memory seeding
+
+The 3 **lead agents** are seeded with auth-otp awareness before the first dispatch (done by this planning session — see files created below). Specialist agents write their own memory when they complete their session; they do not need pre-seeding because they receive a full dispatch template with all context.
+
+**Lead memory files created by this planning session:**
+- `.claude/agent-memory/meesell-backend-coordinator/auth_otp_feature.md` ✅
+- `.claude/agent-memory/meesell-frontend-coordinator/auth_otp_feature.md` ✅
+- `.claude/agent-memory/meesell-infra-builder/auth_otp_feature.md` ✅
+
+### Per-agent memory spec
+
+What each agent MUST record in `auth_otp_feature.md` when they complete their session:
+
+| Agent | What to record |
+|-------|----------------|
+| `meesell-backend-coordinator` | Which specialists were dispatched, which phase, PR# of feature/auth-otp/backend, blockers if any, feature_board_backend.md status |
+| `meesell-frontend-coordinator` | Which specialists were dispatched, which phase, PR# of feature/auth-otp/frontend, blockers if any, feature_board_frontend.md status |
+| `meesell-infra-builder` | Files written (exact paths), dry-run result, PR# of feature/auth-otp/infra, MSG91 IP whitelist confirmed/blocked |
+| `meesell-database-builder` | `User` model column names + types, Alembic revision ID, current head after `alembic upgrade head`, `shared/models/__init__.py` export confirmed |
+| `meesell-services-builder` | `Msg91Adapter` public method signatures (`send_otp`, `verify_otp` or equivalent), env var name used (`MSG91_AUTH_KEY`), async HTTP client used (httpx/aiohttp) |
+| `meesell-auth-builder` | `IamService` public method signatures (6 methods), Lua SHA1 digest stored on instance (so the next session knows the `SCRIPT LOAD` pattern is in place), HMAC key format confirmed, cookie `Path` and `Domain` values used |
+| `meesell-api-routes-builder` | 6 endpoint paths + HTTP verbs, Pydantic schema class names, how `iam_router` is mounted in `main.py` (prefix, tags), integration test file path |
+| `meesell-angular-service-builder` | `AuthService` public API (signal name, method signatures), interceptor registration order in `app.config.ts`, route paths added to `app.routes.ts` |
+| `meesell-angular-component-builder` | Component selectors, reactive form control names for each component, navigation targets, `mee-*` primitives used |
+| `meesell-angular-ui-styler` | Tailwind design tokens used, any custom SCSS decisions, WCAG AA contrast confirmed, responsive breakpoints tested |
+
+### Memory file template (use this structure for `auth_otp_feature.md`)
+
+```markdown
+---
+name: auth-otp-feature
+description: auth-otp Feature 1 — what this agent built, files it owns, contracts it implemented
+metadata:
+  type: project
+---
+
+Feature: auth-otp (Feature 1 of 9)
+Branch: feature/auth-otp/{backend|frontend|infra}
+Session: mesell-auth-otp-{group}-session-{N}
+Date: YYYY-MM-DD
+Status: COMPLETE | PARTIAL | BLOCKED
+
+## What I built
+<list of files created/modified with one-line description of what each does>
+
+## Key contracts I implemented
+<critical decisions, method signatures, config values — anything the next specialist needs to know>
+
+## What the next agent in the chain needs from my output
+<specific outputs: model shape, interface signatures, mounted paths, etc.>
+
+## PR
+feature/auth-otp/{backend|frontend|infra} PR #<N> — <status: open|merged|blocked>
+
+## Blockers
+<none | specific blocker with context>
+```
 
 ---
 
@@ -1463,81 +1552,6 @@ This feature is "done" (ready for `feature/auth-otp` → `develop` PR) when ALL 
 
 ---
 
-## Memory management
-
-Agents are stateless across sessions — the only continuity they have is their `MEMORY.md`. Without explicit memory updates after each specialist session, re-dispatches (retries, review-requested revisions, future cross-feature references) are blind to what was already built.
-
-### Protocol — mandatory for every dispatch in this feature
-
-Every dispatch template in this plan ends with a **Memory update** block. The agent MUST:
-
-1. Create (or update) `.claude/agent-memory/{agent-name}/auth_otp_feature.md` — the feature memory file for this agent
-2. Add a one-line pointer to it in their `MEMORY.md` index under `## auth-otp`
-3. Commit both the code AND the memory file on the same branch (memory and code stay in sync)
-4. Include `Memory update: DONE | SKIPPED (reason)` in the final report sent back to the lead
-
-If the agent cannot write to memory (e.g., a blocker prevented code completion), they still write a memory entry recording the blocker and their partial state.
-
-### Pre-dispatch memory seeding
-
-The 3 **lead agents** are seeded with auth-otp awareness before the first dispatch (done by this planning session — see files created below). Specialist agents write their own memory when they complete their session; they do not need pre-seeding because they receive a full dispatch template with all context.
-
-**Lead memory files created by this planning session:**
-- `.claude/agent-memory/meesell-backend-coordinator/auth_otp_feature.md` ✅
-- `.claude/agent-memory/meesell-frontend-coordinator/auth_otp_feature.md` ✅
-- `.claude/agent-memory/meesell-infra-builder/auth_otp_feature.md` ✅
-
-### Per-agent memory spec
-
-What each agent MUST record in `auth_otp_feature.md` when they complete their session:
-
-| Agent | What to record |
-|-------|----------------|
-| `meesell-backend-coordinator` | Which specialists were dispatched, which phase, PR# of feature/auth-otp/backend, blockers if any, feature_board_backend.md status |
-| `meesell-frontend-coordinator` | Which specialists were dispatched, which phase, PR# of feature/auth-otp/frontend, blockers if any, feature_board_frontend.md status |
-| `meesell-infra-builder` | Files written (exact paths), dry-run result, PR# of feature/auth-otp/infra, MSG91 IP whitelist confirmed/blocked |
-| `meesell-database-builder` | `User` model column names + types, Alembic revision ID, current head after `alembic upgrade head`, `shared/models/__init__.py` export confirmed |
-| `meesell-services-builder` | `Msg91Adapter` public method signatures (`send_otp`, `verify_otp` or equivalent), env var name used (`MSG91_AUTH_KEY`), async HTTP client used (httpx/aiohttp) |
-| `meesell-auth-builder` | `IamService` public method signatures (6 methods), Lua SHA1 digest stored on instance (so the next session knows the `SCRIPT LOAD` pattern is in place), HMAC key format confirmed, cookie `Path` and `Domain` values used |
-| `meesell-api-routes-builder` | 6 endpoint paths + HTTP verbs, Pydantic schema class names, how `iam_router` is mounted in `main.py` (prefix, tags), integration test file path |
-| `meesell-angular-service-builder` | `AuthService` public API (signal name, method signatures), interceptor registration order in `app.config.ts`, route paths added to `app.routes.ts` |
-| `meesell-angular-component-builder` | Component selectors, reactive form control names for each component, navigation targets, `mee-*` primitives used |
-| `meesell-angular-ui-styler` | Tailwind design tokens used, any custom SCSS decisions, WCAG AA contrast confirmed, responsive breakpoints tested |
-
-### Memory file template (use this structure for `auth_otp_feature.md`)
-
-```markdown
----
-name: auth-otp-feature
-description: auth-otp Feature 1 — what this agent built, files it owns, contracts it implemented
-metadata:
-  type: project
----
-
-Feature: auth-otp (Feature 1 of 9)
-Branch: feature/auth-otp/{backend|frontend|infra}
-Session: mesell-auth-otp-{group}-session-{N}
-Date: YYYY-MM-DD
-Status: COMPLETE | PARTIAL | BLOCKED
-
-## What I built
-<list of files created/modified with one-line description of what each does>
-
-## Key contracts I implemented
-<critical decisions, method signatures, config values — anything the next specialist needs to know>
-
-## What the next agent in the chain needs from my output
-<specific outputs: model shape, interface signatures, mounted paths, etc.>
-
-## PR
-feature/auth-otp/{backend|frontend|infra} PR #<N> — <status: open|merged|blocked>
-
-## Blockers
-<none | specific blocker with context>
-```
-
----
-
 ## Risk register
 
 | # | Risk | Likelihood | Impact | Mitigation |
@@ -1554,8 +1568,10 @@ feature/auth-otp/{backend|frontend|infra} PR #<N> — <status: open|merged|block
 
 | Version | Date | Author | Change |
 |---|---|---|---|
-| 0.1 | 2026-06-10 | mesell-auth-otp-planning-session-1 | Initial FEATURE_PLAN.md authored. Decisions D1/D2/D3 recorded. All 7 specialist dispatch templates drafted. |
-| 0.2 | 2026-06-10 | mesell-auth-otp-planning-session-1 | D4 recorded (agent lineup confirmed by founder). meesell-angular-ui-styler added — Phase E, 3 SCSS surfaces, Template H, 4 frontend review checks. |
-| 0.3 | 2026-06-10 | mesell-auth-otp-planning-session-1 | Branch setup section added — 4 coding branches documented, creation commands, PR flow, PR templates. |
-| 0.4 | 2026-06-10 | mesell-auth-otp-planning-session-1 | Memory management section added — protocol, per-agent spec table, memory file template. Memory update line added to all 8 dispatch template report formats. Lead agent memories pre-seeded (backend-coordinator, frontend-coordinator, infra-builder). |
-| 0.5 | 2026-06-10 | mesell-auth-otp-planning-session-1 | Sprint plan added — 3-sprint execution roadmap (Sprint 0 unlock + Sprint 1 backend/infra + Sprint 2 frontend HTTP wiring + Sprint 3 integration). Current state audit table included (backend ~95%, frontend ~30%). |
+| v0.1 | 2026-06-10 | mesell-auth-otp-planning-session-1 | Initial FEATURE_PLAN.md authored. Decisions D1/D2/D3 recorded. All 7 specialist dispatch templates drafted. |
+| v0.2 | 2026-06-10 | mesell-auth-otp-planning-session-1 | D4 recorded (agent lineup confirmed by founder). meesell-angular-ui-styler added — Phase E, 3 SCSS surfaces, Template H, 4 frontend review checks. |
+| v0.3 | 2026-06-10 | mesell-auth-otp-planning-session-1 | Branch setup section added — 4 coding branches documented, creation commands, PR flow, PR templates. |
+| v0.4 | 2026-06-10 | mesell-auth-otp-planning-session-1 | Memory management section added — protocol, per-agent spec table, memory file template. Memory update line added to all 8 dispatch template report formats. Lead agent memories pre-seeded (backend-coordinator, frontend-coordinator, infra-builder). |
+| v0.5 | 2026-06-10 | mesell-auth-otp-planning-session-1 | Sprint plan added — 3-sprint execution roadmap (Sprint 0 unlock + Sprint 1 backend/infra + Sprint 2 frontend HTTP wiring + Sprint 3 integration). Current state audit table included (backend ~95%, frontend ~30%). |
+| v1.0 | 2026-06-10 | mesell-auth-otp-planning-session-1 | Initial FEATURE_PLAN.md authored (consolidated v0.1–v0.5). |
+| v2.0 | 2026-06-10 | mesell-auth-otp-amendment-session-1 | Pattern conformance — section reordering (Branch setup moved to canonical position 5, Code surfaces/Documentation deliverables moved to positions 3/4), Memory protocol section added (position 6, replacing ad-hoc Memory management), Sprint plan relocated to ### Sprint plan subsection inside ## Agent lineup. All 11 canonical h2 headings present in locked order. |
