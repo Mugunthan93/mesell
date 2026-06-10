@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-backend-coordinator`
 **Domain:** backend
-**Last updated:** 2026-06-10 (initial creation)
+**Last updated:** 2026-06-10 (session-end sweep, mesell-microservices-backend-session-1)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -11,12 +11,13 @@
 
 | Feature | Group branch | Status | Current session | Last touched | Blocking | Notes |
 |---|---|---|---|---|---|---|
-| housekeeping-v1 | feature/housekeeping-v1-backend | IN REVIEW | — | 2026-06-10 21:31 IST | none | dead-file cleanup PR open |
+| microservices-export | feature/microservices-export/backend | IN PROGRESS | mesell-microservices-backend-session-1 | 2026-06-10 22:55 IST | none | Sub-Plan A (SUB_PLAN_01) authored DRAFT; awaiting founder ratification of A1 (ai_ops) + A2 (middleware). Step 4 extraction execution is POST-V1. |
 
 ## Recently merged (last 14 days)
 
 | Feature | Merged to | Date | PR | Notes |
 |---|---|---|---|---|
+| housekeeping-v1 | feature/housekeeping-v1 (integration) | 2026-06-10 | #28 | Sweep correction: PILOT_REPORT shows backend group PR squash-merged `6da5b80`; board row was stale at IN REVIEW (F2 conservative path). Moved to MERGED. |
 
 ## Inter-lead requests open
 

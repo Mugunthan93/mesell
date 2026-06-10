@@ -1,7 +1,7 @@
 # Session Dispatch: Microservices Migration
 **Session name:** `mesell-microservices-backend-session-1`
 **Project:** `/Users/mugunthansrinivasan/Project/mesell`
-**Status:** READY — S1 complete, Model C ACTIVE (2026-06-10), pilot-hardened (PILOT_REPORT.md)
+**Status:** IN PROGRESS — awaiting founder decisions. Plan LOCKED (Step 1 done). Sub-Plan A (`SUB_PLAN_01_export_extraction.md`) authored as DRAFT 2026-06-10 (Step 3 done). `feature/microservices-export/backend` created (Step 2). Step 4 (extraction execution) deferred — POST-V1 per MASTER_PLAN framing. Two Sub-Plan-A decisions (A1 ai_ops placement, A2 middleware placement) returned to founder as analysis+recommendation, NOT self-ratified.
 
 ---
 
