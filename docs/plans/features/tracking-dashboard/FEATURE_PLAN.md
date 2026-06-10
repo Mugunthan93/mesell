@@ -8,47 +8,9 @@
 
 ---
 
-## Table of Contents
+This plan conforms to canonical pattern v2 — the 11 sections below appear in locked order: Decisions, Agent lineup, Code surfaces, Documentation deliverables, Branch setup, Memory protocol, Dispatch templates, Review + iteration protocol, Acceptance gate, Risk register, Revision history. Navigation is by section name; no numeric prefix is used.
 
-1. [Status Preamble](#1-status-preamble)
-   - 1.1 Pre-flight Reality Check
-2. [Decisions (locked 2026-06-10)](#2-decisions-locked-2026-06-10)
-   - 2.1 Operational Decisions
-   - 2.2 Scope Decisions
-3. [Code Surfaces](#3-code-surfaces)
-   - 3.1 Backend
-   - 3.2 Frontend
-   - 3.3 AI (NONE)
-   - 3.4 Data (NONE)
-   - 3.5 Infra (NONE)
-   - 3.6 Cross-cutting Docs
-4. [Agent Lineup](#4-agent-lineup)
-5. [Documentation Deliverables](#5-documentation-deliverables)
-   - 5.1 Backend Documentation
-   - 5.2 Frontend Documentation
-   - 5.3 Cross-cutting Documentation
-6. [Common Dispatch Template Preamble](#6-common-dispatch-template-preamble)
-7. [Dispatch Templates](#7-dispatch-templates)
-   - 7.1 `meesell-services-builder`
-   - 7.2 `meesell-api-routes-builder`
-   - 7.3 `meesell-angular-component-builder`
-   - 7.4 `meesell-angular-service-builder`
-8. [Review and Iteration Protocol](#8-review-and-iteration-protocol)
-   - 8.1 Backend Review
-   - 8.2 Frontend Review
-   - 8.3 Re-dispatch Triggers
-   - 8.4 Iteration Limit
-9. [Acceptance Gate](#9-acceptance-gate)
-10. [Risk Register](#10-risk-register)
-11. [Revision History](#11-revision-history)
-
----
-
-## 1. Status Preamble
-
-### 1.1 Pre-flight Reality Check
-
-Five reconciliations between `PLANNING_DISPATCH.md` and the operative `BACKEND_ARCHITECTURE.md §13.A.1` amendment (dated 2026-06-07). Decision D-D below is the authority resolution.
+**Pre-flight reality check (operative spec reconciliation).** Five reconciliations between `PLANNING_DISPATCH.md` and the operative `BACKEND_ARCHITECTURE.md §13.A.1` amendment (dated 2026-06-07). Decision D-D in the Decisions section below is the authority resolution.
 
 | # | PLANNING_DISPATCH.md stated | §13.A.1 operative (supersedes) |
 |---|---|---|
@@ -58,15 +20,15 @@ Five reconciliations between `PLANNING_DISPATCH.md` and the operative `BACKEND_A
 | 4 | `Pagination` dataclass defined inside `dashboard/domain.py` | For V1, dashboard imports `Pagination` directly from `catalog.domain` (the §13.A.1 amendment collapses it to `page` + `limit`, which equals the catalog shape). Dashboard does NOT redefine it. |
 | 5 | §13.J unit test #1 covers 5 rejection cases | Narrowed to 3 cases: `page < 1`, `limit < 1`, `limit > 100`. Cases for `status_filter` invalid Literal and `search > 100 chars` drop alongside those deferred params. |
 
-These reconciliations are consequential. Leads dispatching against this plan use only the §13.A.1 operative scope. Any specialist output that reintroduces the deferred params is a re-dispatch trigger per §8.3.
+These reconciliations are consequential. Leads dispatching against this plan use only the §13.A.1 operative scope. Any specialist output that reintroduces the deferred params is a re-dispatch trigger per the Review + iteration protocol section.
 
 ---
 
-## 2. Decisions (locked 2026-06-10 — founder approval in `mesell-tracking-dashboard-planning-session-1`)
+## Decisions
 
-### 2.1 Operational Decisions
+Operational decisions (D-A through D-D) define how the work runs; scope decisions (D1 through D4) define what ships. Decisions are append-only and verbatim — no renumbering, no in-place rewrites; corrections land via the Revision history section with a new entry.
 
-#### D-A — Agent Lineup
+### D-A — Agent Lineup
 
 2 leads x 2 specialists each.
 
@@ -80,55 +42,15 @@ AI / data / infra leads are EXPLICITLY OMITTED. Rationale:
 
 The roster is founder-locked. Leads CANNOT add specialists later without a FEATURE_PLAN.md amendment and a new revision history entry.
 
-#### D-B — Branch Lifecycle
+### D-B — Branch Lifecycle
 
-```
-feature/tracking-dashboard/planning
-  └── Created by Director THIS SESSION off develop at SHA 9a2b25c.
-      FEATURE_PLAN.md commits here. PR opens to develop using backend PR template.
+Branches are created when the first group is about to start work, not speculatively, per `docs/plans/repo_management/MASTER_PLAN.md §1.2`. The full branch ladder, creation commands, PR flow diagram, PR-template mapping, and rebase strategy are documented in the dedicated **Branch setup** section below (canonical pattern v2 promoted this content out of Decisions into its own top-level section).
 
-feature/tracking-dashboard  (parent)
-  └── Created by the FIRST lead to dispatch (backend lead per priority D4)
-      off the develop tip AT DISPATCH TIME.
-      Commit message: chore(feature): create parent branch for tracking-dashboard
+### D-C — Memory and Awareness Protocol
 
-feature/tracking-dashboard/backend
-  └── Created by meesell-backend-coordinator at first specialist dispatch
-      off feature/tracking-dashboard.
-      Rebase cadence: daily against the parent.
+Four-stage memory cadence (pre-seed → dispatch → session close → merge) prevents multi-feature memory blur across sessions. Every memory line is tagged `feature=tracking-dashboard session=N` enabling grep-based context recovery when a single agent works multiple features concurrently. The full protocol — including mandatory leads' reads at session start, cross-feature memo dependencies, memo naming convention, and per-stage memory-entry templates — is documented in the dedicated **Memory protocol** section below (canonical pattern v2 promoted this content out of Decisions into its own top-level section).
 
-feature/tracking-dashboard/frontend
-  └── Created by meesell-frontend-coordinator at first specialist dispatch
-      off feature/tracking-dashboard.
-      Rebase cadence: daily against the parent.
-```
-
-This matches `docs/plans/repo_management/MASTER_PLAN.md §1.2` (branches created when first group is about to start work, not speculatively).
-
-#### D-C — Memory and Awareness Protocol
-
-Four-stage cadence to prevent multi-feature memory blur across sessions:
-
-**Stage 1 — Pre-seed at FEATURE_PLAN.md merge:**
-- Both leads add `tracking-dashboard PENDING + FEATURE_PLAN.md commit hash` entry to their own MEMORY.md.
-- PENDING row added to `docs/status/feature_board_{backend|frontend}.md`.
-
-**Stage 2 — At dispatch:**
-- Lead's prompt cites FEATURE_PLAN.md commit hash + specialist's prior memory state.
-- Specialist opens `feature=tracking-dashboard session=N OPEN` entry in their own MEMORY.md.
-
-**Stage 3 — At session close:**
-- Specialist appends `feature=tracking-dashboard session=N CLOSED` tagged entry.
-- Lead reviews and appends matching entry.
-- Board row flips to IN REVIEW.
-
-**Stage 4 — At merge:**
-- Lead appends MERGED entry.
-- FEATURE_PLAN.md revision history (§11) appends if any contract changed.
-
-Every memory line is tagged with `feature=tracking-dashboard session=N` enabling grep-based context recovery when a single agent works multiple features concurrently.
-
-#### D-D — Operative Spec (§13.A.1 Amendment — 2026-06-07)
+### D-D — Operative Spec (§13.A.1 Amendment — 2026-06-07)
 
 **The `BACKEND_ARCHITECTURE.md §13.A.1` amendment dated 2026-06-07 IS THE OPERATIVE V1 SCOPE AUTHORITY.** `PLANNING_DISPATCH.md` text is SUPERSEDED where it conflicts.
 
@@ -147,15 +69,13 @@ Nothing else in §13 is amended. The no-repository structural exception (§13.D)
 
 V1.5 restoration path: the §13.A.1 amendment is lifted when a §10 catalog amendment extends `Pagination` + `list_products` + `list_paginated` with `status_filter` + `search` predicates.
 
-### 2.2 Scope Decisions
-
-#### D1 — Onboarding-Completeness Banner
+### D1 — Onboarding-Completeness Banner
 
 YES — render at top of `/dashboard` when the API returns `onboarding_complete: false` on the `onboarding_completeness` object. Banner shows base and extension counter progress (for example "8 of 10 base docs complete · 2 of 3 extensions complete"). CTA routes to `/profile`. Dismissible with "remind me tomorrow" via `localStorage` timestamp (24-hour snooze). Key: `dashboard.banner.snoozed_until` (Unix timestamp in ms).
 
 Frontend consumes the `onboarding_completeness` key already returned by the §13.B endpoint response — no backend change needed for the banner. Trigger is the boolean `onboarding_complete: false`, not a percentage threshold.
 
-#### D2 — Status Badge Colors
+### D2 — Status Badge Colors
 
 Two-value V1 contract:
 
@@ -164,7 +84,7 @@ Two-value V1 contract:
 
 Reserves green slot for V1.5 "exported" status. `StatusBadgeComponent` MUST NOT include "exported" or "live" code paths in V1. The two-value contract is directly enforced by the §13.A.1 amendment narrowing `ProductListItem.status` to `Literal["draft", "ready"]`.
 
-#### D3 — Feature Flag Posture
+### D3 — Feature Flag Posture
 
 - Flag name: `FEATURE_TRACKING_DASHBOARD_ENABLED`
 - Dev default: `true`
@@ -174,7 +94,7 @@ Reserves green slot for V1.5 "exported" status. `StatusBadgeComponent` MUST NOT 
 
 When OFF: `GET /api/v1/products` returns 404 and the `/dashboard` route shows "Dashboard temporarily disabled" placeholder. Flag readable at the backend route guard and at the frontend route guard.
 
-#### D4 — Priority Ordering
+### D4 — Priority Ordering
 
 Ships AFTER `catalog-form` because it consumes `catalog.service.list_products` — depends on catalog's `list_products` / `list_paginated` signatures being stable and the catalog module construction PR having landed on `feature/catalog-form` (or merged to develop). Backend lead MUST NOT open `feature/tracking-dashboard` until catalog-form's backend PR has landed.
 
@@ -184,9 +104,39 @@ Early ship is actively encouraged: dashboard provides login-to-end-to-end smoke 
 
 ---
 
-## 3. Code Surfaces
+## Agent lineup
 
-### 3.1 Backend (group: `backend`, lead: `meesell-backend-coordinator`)
+| Lead | Specialists dispatched | What each specialist builds |
+|---|---|---|
+| `meesell-backend-coordinator` | `meesell-services-builder` | `dashboard/service.py` (public `list_products_for_dashboard` + private `_compose_response`), `dashboard/domain.py`, `dashboard/exceptions.py`, `dashboard/__init__.py`, `i18n/messages_en.py` entry, 3 unit tests (§13.J #1/2/3). |
+| `meesell-backend-coordinator` | `meesell-api-routes-builder` | `dashboard/router.py`, `dashboard/schemas.py`, 2 integration tests (§13.J int #1/2). |
+| `meesell-frontend-coordinator` | `meesell-angular-component-builder` | `DashboardComponent`, `ProductRowComponent`, `StatusBadgeComponent`, `ProfileCompletenessBanner`, `DashboardComponent` spec, `app.routes.ts` modification. |
+| `meesell-frontend-coordinator` | `meesell-angular-service-builder` | `DashboardService`, `DashboardService` spec, `dashboard.model.ts` interfaces. |
+
+Leads with no work on this feature (OMITTED — rationale per Decision D-A above):
+
+- `meesell-ai-coordinator` — Non-AI feature per §13. No Gemini call, no prompt-engineer, no `ai_ops` usage.
+- `meesell-data-engineer` — No schema changes; dashboard owns zero tables per §13.D.
+- `meesell-infra-builder` — No manifest, secret, bucket, or env-var changes.
+
+### Dispatch order (critical path)
+
+1. **Wait for `catalog-form` to land first.** Per Decision D4, tracking-dashboard consumes `catalog.service.list_products` (signature locked at §10.C). Backend lead MUST NOT open `feature/tracking-dashboard` until the catalog-form backend PR has merged.
+2. **Backend lead opens parent + group branches** off the develop tip at dispatch time (see Branch setup below).
+3. **Backend services-builder dispatched first** — composes `list_products_for_dashboard` against the catalog + customer service surfaces. No HTTP wiring yet.
+4. **Backend api-routes-builder dispatched next** — wires `GET /api/v1/products` on top of the service surface. Depends on `list_products_for_dashboard` signature being stable.
+5. **Frontend lead dispatches in parallel with backend api-routes-builder** once `dashboard/schemas.py` is committed (the wire shape is the contract surface). Specifically:
+   - `meesell-angular-service-builder` first — produces the TypeScript interfaces + `DashboardService.list()`.
+   - `meesell-angular-component-builder` next — depends on `DashboardService` being injectable and the `DashboardResponse` model being importable.
+6. **Integration occurs at `feature/tracking-dashboard`** when both group PRs land. Backend lead merges backend PR first (sentinel flip on §13). Frontend lead rebases their group branch onto the updated integration tip, then merges. Founder merges the final integration PR to develop.
+
+Critical-path observation: smart-picker and live-preview can ship in parallel with tracking-dashboard (no shared file contention — they all consume catalog/customer surfaces without modifying them).
+
+---
+
+## Code surfaces
+
+### Backend (group: `backend`, lead: `meesell-backend-coordinator`)
 
 Owner specialists as noted. All paths are relative to `backend/app/`.
 
@@ -206,11 +156,11 @@ Owner specialists as noted. All paths are relative to `backend/app/`.
 | `backend/tests/integration/test_dashboard_list_full_flow.py` | NEW | `meesell-api-routes-builder` | End-to-end: sign up → create 5 products → `GET /api/v1/products` per §13.J integration #1. |
 | `backend/tests/integration/test_dashboard_cross_tenant_isolation.py` | NEW | `meesell-api-routes-builder` | Two-user cross-tenant boundary test per §13.J integration #2. |
 
-**Schema note (§13.A.1 amendment):** `ProductListItem.status` is `Literal["draft", "ready"]` — a 2-value enum, NOT 3. This is referenced here, in §7.1 (services-builder dispatch), in §7.3 (component-builder dispatch), and in §8.3 (re-dispatch triggers for 3-value enum landing).
+**Schema note (§13.A.1 amendment):** `ProductListItem.status` is `Literal["draft", "ready"]` — a 2-value enum, NOT 3. This is referenced here, in the Dispatch templates section (services-builder + component-builder), and in the Review + iteration protocol section (re-dispatch trigger for 3-value enum landing).
 
-**Import-linter note:** `backend/tests/lint/import_rules.toml` Contract 1.dashboard (line 329 in the file as of 2026-06-10) is ALREADY PRESENT and verified. It forbids `app.modules.dashboard` from importing any other module's `repository.py`. This contract structurally enforces the §13.D no-repository rule at CI level. See §5.3 cross-cutting docs.
+**Import-linter note:** `backend/tests/lint/import_rules.toml` Contract 1.dashboard (line 329 in the file as of 2026-06-10) is ALREADY PRESENT and verified. It forbids `app.modules.dashboard` from importing any other module's `repository.py`. This contract structurally enforces the §13.D no-repository rule at CI level. See Cross-cutting docs sub-section below.
 
-### 3.2 Frontend (group: `frontend`, lead: `meesell-frontend-coordinator`)
+### Frontend (group: `frontend`, lead: `meesell-frontend-coordinator`)
 
 All paths are relative to `frontend/src/app/`.
 
@@ -226,19 +176,19 @@ All paths are relative to `frontend/src/app/`.
 | `features/dashboard/models/dashboard.model.ts` | NEW | `meesell-angular-service-builder` | TypeScript interfaces mirroring `DashboardResponse`, `ProductListItem`, `ProfileCompletenessSummary`. Status typed as `'draft' | 'ready'` (2-value, per §13.A.1 amendment). |
 | `app.routes.ts` | MODIFY | `meesell-angular-component-builder` | Register `/dashboard` route with `AuthGuard`, lazy-loading `DashboardComponent`. Route comment documents the feature. |
 
-### 3.3 AI (NONE)
+### AI (NONE)
 
 Dashboard is a non-AI feature per `BACKEND_ARCHITECTURE.md §13`, `§13.H`, and `§13.I`. No Gemini call, no `ai_ops` invocation, no prompt-engineer participation. `meesell-ai-coordinator` and all AI specialists are OMITTED from this feature.
 
-### 3.4 Data (NONE)
+### Data (NONE)
 
 No schema changes. Dashboard owns ZERO tables per `§13.D`. The 13-table schema at Alembic head `f31c75438e61` is unchanged. `meesell-database-builder` and `meesell-data-engineer` are OMITTED from this feature.
 
-### 3.5 Infra (NONE)
+### Infra (NONE)
 
 No new Kubernetes manifests, no new secrets, no new GCS buckets, no new environment variables. `meesell-infra-builder` is OMITTED from this feature. The feature flag `FEATURE_TRACKING_DASHBOARD_ENABLED` is a runtime config value read from the existing `shared/config.py` `Settings` object — it is NOT a new secret or a new infra primitive.
 
-### 3.6 Cross-cutting Docs
+### Cross-cutting docs
 
 The following documentation changes accompany the merged feature PR — they are acceptance gate items, not optional:
 
@@ -246,28 +196,14 @@ The following documentation changes accompany the merged feature PR — they are
 |---|---|---|
 | `docs/V1_FEATURE_SPEC.md §F8` | Add "implemented YYYY-MM-DD via PR #N" stamp at the top of the Feature 8 block. | Merge of `feature/tracking-dashboard` to develop. |
 | `docs/BACKEND_ARCHITECTURE.md §13` sentinel | Flip status line from `LOCKED-on-paper` to `LOCKED-on-disk via PR #N` (recording the PR URL). This is the §13 sentinel flip. | Merge of `feature/tracking-dashboard/backend` to `feature/tracking-dashboard`. |
-| `backend/tests/lint/import_rules.toml` Contract 1.dashboard | VERIFY present and passing (it is — see §3.1 note). Document verified-present status in the backend lead's PR description. | PR open for `feature/tracking-dashboard/backend`. |
+| `backend/tests/lint/import_rules.toml` Contract 1.dashboard | VERIFY present and passing (it is — see Backend sub-section note above). Document verified-present status in the backend lead's PR description. | PR open for `feature/tracking-dashboard/backend`. |
 | `docs/MEESELL_AGENT_REGISTRY.md` | Verify `dashboard` service surface entry matches the locked §13 public method `list_products_for_dashboard`. No new entry required if already present; add if missing. | Pre-merge review by backend lead. |
 
 ---
 
-## 4. Agent Lineup
+## Documentation deliverables
 
-| Lead | Specialists dispatched | What each specialist owns |
-|---|---|---|
-| `meesell-backend-coordinator` | `meesell-services-builder` | `dashboard/service.py` (public `list_products_for_dashboard` + private `_compose_response`), `dashboard/domain.py`, `dashboard/exceptions.py`, `dashboard/__init__.py`, `i18n/messages_en.py` entry, 3 unit tests (§13.J #1/2/3). |
-| `meesell-backend-coordinator` | `meesell-api-routes-builder` | `dashboard/router.py`, `dashboard/schemas.py`, 2 integration tests (§13.J int #1/2). |
-| `meesell-frontend-coordinator` | `meesell-angular-component-builder` | `DashboardComponent`, `ProductRowComponent`, `StatusBadgeComponent`, `ProfileCompletenessBanner`, `DashboardComponent` spec, `app.routes.ts` modification. |
-| `meesell-frontend-coordinator` | `meesell-angular-service-builder` | `DashboardService`, `DashboardService` spec, `dashboard.model.ts` interfaces. |
-| `meesell-ai-coordinator` | OMITTED | Non-AI feature per §13. No Gemini call, no prompt-engineer, no `ai_ops` usage. |
-| `meesell-data-engineer` | OMITTED | No schema changes; dashboard owns zero tables per §13.D. |
-| `meesell-infra-builder` | OMITTED | No manifest / secret / bucket changes. |
-
----
-
-## 5. Documentation Deliverables
-
-### 5.1 Backend Documentation
+### Backend documentation
 
 The following documentation MUST exist in merged code alongside implementations. Backend lead verifies each at PR review.
 
@@ -285,7 +221,7 @@ The following documentation MUST exist in merged code alongside implementations.
 **Inline comment on `dashboard/__init__.py`:**
 - Explains the intentional absence of `repository.py` for future auditors: "dashboard is the modular monolith's purest BFF module — it owns no tables and performs no direct data access. The absence of repository.py is structural per §13.D, not an omission."
 
-### 5.2 Frontend Documentation
+### Frontend documentation
 
 **Route comment in `app.routes.ts`:**
 - Documents the `/dashboard` route as Feature 8 (Tracking Dashboard), auth-guarded, lazy-loaded from `features/dashboard`.
@@ -303,7 +239,7 @@ The following documentation MUST exist in merged code alongside implementations.
 - Documents the dismiss-and-remind-tomorrow UX: triggered on `onboarding_complete: false`. Dismiss writes Unix timestamp `Date.now() + 86400000` to `localStorage` key `dashboard.banner.snoozed_until`. On mount, checks if current time exceeds stored value before rendering.
 - Documents that snooze is bounded (max 24h) — there is no "remind never" option by founder decision D1.
 
-### 5.3 Cross-cutting Documentation
+### Cross-cutting documentation
 
 **`docs/V1_FEATURE_SPEC.md §F8` implemented stamp:**
 - Format: `> Implemented: YYYY-MM-DD via PR #N (feature/tracking-dashboard → develop)`
@@ -318,9 +254,171 @@ The following documentation MUST exist in merged code alongside implementations.
 
 ---
 
-## 6. Common Dispatch Template Preamble
+## Branch setup
 
-All four dispatch templates in §7.1–7.4 open with the following boilerplate verbatim. The `{group}` and `{N}` placeholders are filled by the dispatching lead at dispatch time.
+Branches are created when the first group is about to start work, not speculatively, per `docs/plans/repo_management/MASTER_PLAN.md §1.2`. Three layers: the planning branch (this branch, used for this FEATURE_PLAN.md), the integration parent, and per-group branches.
+
+| Branch | Created by | Created from | Purpose | Reviewer |
+|---|---|---|---|---|
+| `feature/tracking-dashboard/planning` | Director (this session — `mesell-tracking-dashboard-planning-session-1`) | `develop` at SHA `9a2b25c` | This FEATURE_PLAN.md and amendments | Founder reviews PR to `develop` |
+| `feature/tracking-dashboard` (parent / integration) | Backend lead (first to dispatch, per D4) | `develop` tip at dispatch time | Stitches `backend` + `frontend` group merges | Founder reviews PR to `develop` |
+| `feature/tracking-dashboard/backend` | `meesell-backend-coordinator` at first specialist dispatch | `feature/tracking-dashboard` | Backend group work (services + routes + tests) | `meesell-backend-coordinator` reviews PR to `feature/tracking-dashboard` |
+| `feature/tracking-dashboard/frontend` | `meesell-frontend-coordinator` at first specialist dispatch | `feature/tracking-dashboard` | Frontend group work (components + service + models) | `meesell-frontend-coordinator` reviews PR to `feature/tracking-dashboard` |
+
+### Creation commands
+
+Planning branch already exists; recorded here for reference and amendment sessions:
+
+```bash
+# Planning branch (already done — this session works inside the worktree)
+git checkout develop
+git pull
+git checkout -b feature/tracking-dashboard/planning
+git push -u origin feature/tracking-dashboard/planning
+```
+
+Parent / integration branch (backend lead executes when ready to dispatch):
+
+```bash
+git checkout develop
+git pull
+git checkout -b feature/tracking-dashboard
+git commit --allow-empty -m "chore(feature): create parent branch for tracking-dashboard"
+git push -u origin feature/tracking-dashboard
+```
+
+Group branches (each lead executes at first specialist dispatch):
+
+```bash
+# Backend lead
+git checkout feature/tracking-dashboard
+git pull
+git checkout -b feature/tracking-dashboard/backend
+git push -u origin feature/tracking-dashboard/backend
+
+# Frontend lead (analogous)
+git checkout feature/tracking-dashboard
+git pull
+git checkout -b feature/tracking-dashboard/frontend
+git push -u origin feature/tracking-dashboard/frontend
+```
+
+### PR flow (coding stage)
+
+```
+feature/tracking-dashboard/backend  ─┐
+                                      ├─PR──>  feature/tracking-dashboard  ──PR──>  develop
+feature/tracking-dashboard/frontend ─┘                  (integration)        (founder reviews)
+       (lead reviews)                                  (lead reviews)
+```
+
+Reviewer rule (locked 2026-06-10, per `docs/plans/repo_management/MASTER_PLAN.md §6`):
+
+- For `feature/{name}/{group}` → `feature/{name}`: the lead agent for the group is the reviewer. Backend lead reviews the `backend` group PR; frontend lead reviews the `frontend` group PR.
+- For `feature/{name}` → `develop`: the founder is the reviewer.
+
+### PR templates
+
+| Source branch | Target branch | Template path | Filled by |
+|---|---|---|---|
+| `feature/tracking-dashboard/planning` | `develop` | `.github/PULL_REQUEST_TEMPLATE/backend.md` | Director (this session and amendment sessions) |
+| `feature/tracking-dashboard/backend` | `feature/tracking-dashboard` | `.github/PULL_REQUEST_TEMPLATE/backend.md` | `meesell-backend-coordinator` |
+| `feature/tracking-dashboard/frontend` | `feature/tracking-dashboard` | `.github/PULL_REQUEST_TEMPLATE/frontend.md` | `meesell-frontend-coordinator` |
+| `feature/tracking-dashboard` | `develop` | `.github/PULL_REQUEST_TEMPLATE/backend.md` (most-involved group is backend; sentinel flip + import-linter contract live in backend) | `meesell-backend-coordinator` proposes; founder reviews and merges |
+
+### Rebase strategy
+
+Backend PR lands first (it owns the §13 sentinel flip and the contract surface in `dashboard/schemas.py` that the frontend consumes). When the backend group PR merges into `feature/tracking-dashboard`, the frontend group branch rebases onto the updated integration tip:
+
+```bash
+# Frontend lead, after backend group PR merges
+git checkout feature/tracking-dashboard/frontend
+git fetch origin
+git rebase origin/feature/tracking-dashboard
+# Resolve any conflicts in dashboard.model.ts vs the committed dashboard/schemas.py (rare —
+# the contract is locked by §13.E + §13.A.1; conflicts indicate a contract drift that should
+# trigger the re-dispatch trigger "Filter or search param landed in DashboardQuery").
+git push --force-with-lease origin feature/tracking-dashboard/frontend
+```
+
+Daily rebase cadence between dispatch and PR open: both group branches rebase against the integration parent daily to catch upstream drift early. If a feature ships in less than one calendar day per group, the cadence is N/A.
+
+---
+
+## Memory protocol
+
+The four-stage memory cadence (per Decision D-C) prevents multi-feature memory blur. Every memory entry on this feature is tagged `feature=tracking-dashboard session=N` enabling grep-based context recovery when a single agent works on multiple features concurrently. This section documents the protocol in operational detail.
+
+### Mandatory reads at coding-session start
+
+Coding-session leads (backend and frontend) MUST read these memories at the start of every coding session on `tracking-dashboard`:
+
+- Lead's own memory: `.claude/agent-memory/meesell-backend-coordinator/MEMORY.md` or `.claude/agent-memory/meesell-frontend-coordinator/MEMORY.md`
+- The other lead's memory (for cross-group contract awareness): the opposite path above
+- Each specialist's memory before dispatching them:
+  - Backend lead reads `.claude/agent-memory/meesell-services-builder/MEMORY.md` and `.claude/agent-memory/meesell-api-routes-builder/MEMORY.md`
+  - Frontend lead reads `.claude/agent-memory/meesell-angular-component-builder/MEMORY.md` and `.claude/agent-memory/meesell-angular-service-builder/MEMORY.md`
+- This FEATURE_PLAN.md plus the operative `BACKEND_ARCHITECTURE.md §13` (and amendment §13.A.1)
+- The relevant cross-feature memo (see "Cross-feature memos" below) — required because tracking-dashboard consumes the catalog-form `list_products` signature.
+
+Specialists likewise MUST read their own MEMORY.md as the first action of every session, per the boilerplate in the Common dispatch preamble (see Dispatch templates section).
+
+### Cross-feature memos
+
+The catalog-form feature owns the `list_products` / `list_paginated` signature consumed by tracking-dashboard's services-builder. The catalog-form memo is the source of truth for that contract during dispatch.
+
+- File path (catalog-form side, owned by catalog-form planning session): `.claude/agent-memory/meesell-backend-coordinator/feature_catalog-form.md`
+- Tracking-dashboard side (this feature): `.claude/agent-memory/meesell-backend-coordinator/feature_tracking-dashboard.md`
+
+Tracking-dashboard backend lead reads the catalog-form memo before dispatching services-builder to confirm the `list_products(user_id, pagination) -> PaginatedProducts` signature is unchanged. If the signature drifted while tracking-dashboard was queued, the dispatch is blocked and the founder is consulted via STATUS log.
+
+### Naming convention for new memos
+
+One file per feature per agent, with stable prefix `feature_`:
+
+- Correct: `.claude/agent-memory/meesell-services-builder/feature_tracking-dashboard.md`
+- Correct: `.claude/agent-memory/meesell-backend-coordinator/feature_tracking-dashboard.md`
+- Forbidden (do NOT use both): `tracking-dashboard_feature.md` and `feature_tracking-dashboard.md` mixed across agents. Pick `feature_{slug}.md` everywhere.
+
+Inside the memo, entries are append-only with this format (one line per state transition):
+
+```
+2026-MM-DD HH:MM | feature=tracking-dashboard session=N | <STATE> | <one-line note>
+```
+
+where `<STATE>` is one of `PENDING`, `OPEN`, `CLOSED`, `MERGED`, `BLOCKED`.
+
+### Stage-by-stage memory cadence
+
+**Stage 1 — Pre-seed at FEATURE_PLAN.md merge.** Both leads append `PENDING` entries to their `feature_tracking-dashboard.md` memo citing the FEATURE_PLAN.md commit hash. A `PENDING` row is added to `docs/status/feature_board_backend.md` and `docs/status/feature_board_frontend.md`.
+
+**Stage 2 — At dispatch.** The dispatching lead's prompt cites the FEATURE_PLAN.md commit hash and the specialist's prior memory state. The specialist opens an `OPEN` entry tagged `feature=tracking-dashboard session=N` in their own MEMORY.md as the first action (per Common dispatch preamble).
+
+**Stage 3 — At session close.** Specialist appends a `CLOSED` entry tagged with the same `session=N`. The lead reviews the close report, appends a matching `CLOSED` entry to their own memo, and flips the board row to `IN REVIEW`. If a re-dispatch is required (per Review + iteration protocol section), the lead increments N and a new `OPEN` entry opens at the next dispatch.
+
+**Stage 4 — At merge.** Lead appends a `MERGED` entry to their memo. If any wire contract changed during the feature, the Revision history section gets a new row.
+
+### Session-close memory entry templates
+
+Lead entry on merge:
+
+```
+2026-MM-DD HH:MM | feature=tracking-dashboard session=N | MERGED | Backend group PR #<n> merged into feature/tracking-dashboard; §13 sentinel flipped to LOCKED-on-disk; import-linter Contract 1.dashboard CI-green; P95 measured at <m>ms on 100-row seed.
+```
+
+Specialist entry on session close (paste-able):
+
+```
+2026-MM-DD HH:MM | feature=tracking-dashboard session=N | CLOSED | <files created>; <tests PASS count>; <deviations from plan or NONE>.
+```
+
+---
+
+## Dispatch templates
+
+### Common dispatch preamble
+
+All four dispatch templates below open with the following boilerplate verbatim. The `{group}` and `{N}` placeholders are filled by the dispatching lead at dispatch time. The internal `## ...` lines inside the fenced block are PROMPT TEXT consumed by the specialist; they do not participate in this document's markdown heading hierarchy (the leading space prefix preserves paste-ability while keeping the prompt readable).
 
 ```
 PROJECT BOUNDARY: You are working on project "mesell" at /Users/mugunthansrinivasan/Project/mesell.
@@ -329,13 +427,13 @@ If you need cross-project information, stop and ask the Director.
 
 SESSION: mesell-tracking-dashboard-{group}-session-{N}
 
-## Feature context
+  ## Feature context
 Feature: Tracking Dashboard (Feature 8 per docs/V1_FEATURE_SPEC.md)
 Operative spec: docs/BACKEND_ARCHITECTURE.md §13, as amended by §13.A.1 (2026-06-07)
 Feature plan: docs/plans/features/tracking-dashboard/FEATURE_PLAN.md (commit hash: {FEATURE_PLAN_COMMIT_HASH})
 Your session ordinal: {N} (increment each re-dispatch; start at 1)
 
-## First action
+  ## First action
 Before writing a single line of production code:
 1. Read your own MEMORY.md at .claude/agent-memory/meesell-{specialist-role}/MEMORY.md.
 2. Open a memory entry: "feature=tracking-dashboard session={N} OPEN — {today's date}".
@@ -343,7 +441,7 @@ Before writing a single line of production code:
    status enum is ["draft", "ready"] only, Pagination is imported from catalog.domain.
 4. Confirm the method name is get_onboarding_completeness (NOT get_profile_completeness).
 
-## Session naming
+ ## Session naming
 This session's name follows docs/plans/repo_management/MASTER_PLAN.md §4 convention:
   mesell-tracking-dashboard-{group}-session-{N}
 where {group} is "backend" or "frontend" and {N} is the dispatch ordinal starting at 1.
@@ -351,9 +449,9 @@ where {group} is "backend" or "frontend" and {N} is the dispatch ordinal startin
 
 ---
 
-## 7. Dispatch Templates
+### meesell-services-builder
 
-### 7.1 `meesell-services-builder` (dispatched by `meesell-backend-coordinator`)
+Dispatched by `meesell-backend-coordinator`. The prompt below is paste-able verbatim; the `{N}` placeholder is filled with the session ordinal at dispatch time. Prompt-internal headings inside the fence are prefixed with a leading space so they remain readable to the specialist but do not participate in this document's heading hierarchy.
 
 ```
 PROJECT BOUNDARY: You are working on project "mesell" at /Users/mugunthansrinivasan/Project/mesell.
@@ -362,13 +460,13 @@ If you need cross-project information, stop and ask the Director.
 
 SESSION: mesell-tracking-dashboard-backend-session-{N}
 
-## Feature context
+ ## Feature context
 Feature: Tracking Dashboard (Feature 8 per docs/V1_FEATURE_SPEC.md)
 Operative spec: docs/BACKEND_ARCHITECTURE.md §13, as amended by §13.A.1 (2026-06-07)
 Feature plan: docs/plans/features/tracking-dashboard/FEATURE_PLAN.md (commit hash: {FEATURE_PLAN_COMMIT_HASH})
 Your session ordinal: {N} (increment each re-dispatch; start at 1)
 
-## First action
+ ## First action
 Before writing a single line of production code:
 1. Read your own MEMORY.md at .claude/agent-memory/meesell-services-builder/MEMORY.md.
 2. Open a memory entry: "feature=tracking-dashboard session={N} OPEN — {today's date}".
@@ -376,7 +474,7 @@ Before writing a single line of production code:
    status enum is ["draft", "ready"] only, Pagination is imported from catalog.domain.
 4. Confirm the method name is get_onboarding_completeness (NOT get_profile_completeness).
 
-## Mandatory reads (in this order)
+ ## Mandatory reads (in this order)
 1. docs/BACKEND_ARCHITECTURE.md §13 — full module spec for dashboard (STATUS: LOCKED, AMENDED 2026-06-07)
    - §13.A.1 — the operative amendment (filter/search deferred; status 2-value; Pagination from catalog)
    - §13.C — service layer: list_products_for_dashboard signature + _compose_response pure function
@@ -398,7 +496,7 @@ Before writing a single line of production code:
 5. backend/tests/lint/import_rules.toml — read Contract 1.dashboard (line ~329) to understand
    the CI rule that will fail if your code imports any other module's repository
 
-## Mission
+ ## Mission
 Implement the business logic layer for the dashboard module.
 
 ### Files to create
@@ -486,7 +584,7 @@ Implement the business logic layer for the dashboard module.
   - Dashboard returns 200 with products=[] and total=0 (NOT 404 — empty inventory is valid).
   - onboarding_completeness still surfaces (the seller still has a profile).
 
-## Acceptance criteria
+ ## Acceptance criteria
 - P95 latency <= 200ms measured against a 100-row product seed per §13.H zero-egress budget.
   Verify by running the integration test with timing assertions or by inspecting test logs.
 - _compose_response is a pure function: no I/O, no side effects, no global state mutations.
@@ -497,7 +595,7 @@ Implement the business logic layer for the dashboard module.
 - import-linter Contract 1.dashboard passes: run lint-imports from backend/ directory.
 - i18n entry validation.dashboard.invalid_pagination present in messages_en.py.
 
-## Hard constraints (NON-NEGOTIABLE)
+ ## Hard constraints (NON-NEGOTIABLE)
 - DO NOT create backend/app/modules/dashboard/repository.py. This file MUST NOT EXIST.
   §13.D documents the absence as intentional structural design. Creating it violates the
   modular monolith discipline and will trigger an immediate re-dispatch.
@@ -518,7 +616,7 @@ Implement the business logic layer for the dashboard module.
 - Method name is get_onboarding_completeness — NOT get_profile_completeness.
 - Pagination is imported from catalog.domain — NOT redefined in dashboard.
 
-## Files you MAY touch
+ ## Files you MAY touch
 - backend/app/modules/dashboard/__init__.py (NEW)
 - backend/app/modules/dashboard/service.py (NEW)
 - backend/app/modules/dashboard/domain.py (NEW)
@@ -528,7 +626,7 @@ Implement the business logic layer for the dashboard module.
 - backend/tests/modules/dashboard/test_response_composition.py (NEW)
 - backend/tests/modules/dashboard/test_empty_state_response.py (NEW)
 
-## Files you MUST NOT touch
+ ## Files you MUST NOT touch
 - backend/app/modules/dashboard/router.py (owned by meesell-api-routes-builder)
 - backend/app/modules/dashboard/schemas.py (owned by meesell-api-routes-builder)
 - backend/app/modules/dashboard/repository.py — THIS FILE MUST NOT BE CREATED
@@ -539,7 +637,7 @@ Implement the business logic layer for the dashboard module.
 - Any file under frontend/ (backend specialist only)
 - docs/ (do not modify documentation — that is the lead's job at merge time)
 
-## Final report format
+ ## Final report format
 After completing all tasks, produce a report with exactly these sections:
 
 ### Session close report — mesell-tracking-dashboard-backend-session-{N}
@@ -556,7 +654,9 @@ After completing all tasks, produce a report with exactly these sections:
 
 ---
 
-### 7.2 `meesell-api-routes-builder` (dispatched by `meesell-backend-coordinator`)
+### meesell-api-routes-builder
+
+Dispatched by `meesell-backend-coordinator`. The prompt below is paste-able verbatim; the `{N}` placeholder is filled with the session ordinal at dispatch time. Prompt-internal headings inside the fence are prefixed with a leading space so they remain readable to the specialist but do not participate in this document's heading hierarchy.
 
 ```
 PROJECT BOUNDARY: You are working on project "mesell" at /Users/mugunthansrinivasan/Project/mesell.
@@ -565,20 +665,20 @@ If you need cross-project information, stop and ask the Director.
 
 SESSION: mesell-tracking-dashboard-backend-session-{N}
 
-## Feature context
+ ## Feature context
 Feature: Tracking Dashboard (Feature 8 per docs/V1_FEATURE_SPEC.md)
 Operative spec: docs/BACKEND_ARCHITECTURE.md §13, as amended by §13.A.1 (2026-06-07)
 Feature plan: docs/plans/features/tracking-dashboard/FEATURE_PLAN.md (commit hash: {FEATURE_PLAN_COMMIT_HASH})
 Your session ordinal: {N} (increment each re-dispatch; start at 1)
 
-## First action
+ ## First action
 Before writing a single line of production code:
 1. Read your own MEMORY.md at .claude/agent-memory/meesell-api-routes-builder/MEMORY.md.
 2. Open a memory entry: "feature=tracking-dashboard session={N} OPEN — {today's date}".
 3. Confirm the operative spec is §13.A.1 (2026-06-07): status_filter and search DEFERRED,
    status enum is ["draft", "ready"] only, DashboardQuery has exactly 2 fields.
 
-## Mandatory reads (in this order)
+ ## Mandatory reads (in this order)
 1. docs/BACKEND_ARCHITECTURE.md §13.B — endpoint surface for GET /api/v1/products
    - §13.B.1 — query parameters (V1: page, limit ONLY — no status_filter, no search)
    - §13.B.1 — response 200 shape (DashboardResponse per §13.E)
@@ -597,7 +697,7 @@ Before writing a single line of production code:
 4. docs/BACKEND_ARCHITECTURE.md §4.B — get_current_user dependency contract
 5. docs/BACKEND_ARCHITECTURE.md §15 — rate_limit decorator usage pattern
 
-## Mission
+ ## Mission
 Implement the HTTP boundary layer for the dashboard module.
 
 ### Files to create
@@ -669,7 +769,7 @@ Implement the HTTP boundary layer for the dashboard module.
   - User B GET /products returns only B's 2 + total=2.
   - Verifies scope_to_user is enforced end-to-end through dashboard.
 
-## Acceptance criteria
+ ## Acceptance criteria
 - GET /api/v1/products?page=1&limit=20 returns 200 with valid DashboardResponse shape.
 - GET /api/v1/products?page=0 returns 400 with validation.dashboard.invalid_pagination.
 - GET /api/v1/products?limit=0 returns 400 with validation.dashboard.invalid_pagination.
@@ -679,7 +779,7 @@ Implement the HTTP boundary layer for the dashboard module.
 - ProductListItem.status is Literal["draft", "ready"] — 2 values, not 3.
 - Both integration tests pass against a seeded DB.
 
-## Hard constraints (NON-NEGOTIABLE)
+ ## Hard constraints (NON-NEGOTIABLE)
 - DO NOT add status_filter query param to DashboardQuery or the route. Deferred to V1.5.
 - DO NOT add search query param to DashboardQuery or the route. Deferred to V1.5.
 - DO NOT add plan_guard decorator to the route. Dashboard is plan_guard-excluded per §13.I.
@@ -689,13 +789,13 @@ Implement the HTTP boundary layer for the dashboard module.
 - DO NOT create backend/app/modules/dashboard/repository.py. That file must not exist.
 - DO NOT modify catalog or customer modules. Dashboard only consumes their service surfaces.
 
-## Files you MAY touch
+ ## Files you MAY touch
 - backend/app/modules/dashboard/schemas.py (NEW)
 - backend/app/modules/dashboard/router.py (NEW)
 - backend/tests/integration/test_dashboard_list_full_flow.py (NEW)
 - backend/tests/integration/test_dashboard_cross_tenant_isolation.py (NEW)
 
-## Files you MUST NOT touch
+ ## Files you MUST NOT touch
 - backend/app/modules/dashboard/service.py (owned by meesell-services-builder)
 - backend/app/modules/dashboard/domain.py (owned by meesell-services-builder)
 - backend/app/modules/dashboard/exceptions.py (owned by meesell-services-builder)
@@ -706,7 +806,7 @@ Implement the HTTP boundary layer for the dashboard module.
 - Any file under frontend/
 - docs/ (documentation is the lead's job at merge time)
 
-## Final report format
+ ## Final report format
 After completing all tasks, produce a report with exactly these sections:
 
 ### Session close report — mesell-tracking-dashboard-backend-session-{N}
@@ -724,7 +824,9 @@ After completing all tasks, produce a report with exactly these sections:
 
 ---
 
-### 7.3 `meesell-angular-component-builder` (dispatched by `meesell-frontend-coordinator`)
+### meesell-angular-component-builder
+
+Dispatched by `meesell-frontend-coordinator`. The prompt below is paste-able verbatim; the `{N}` placeholder is filled with the session ordinal at dispatch time. Prompt-internal headings inside the fence are prefixed with a leading space so they remain readable to the specialist but do not participate in this document's heading hierarchy.
 
 ```
 PROJECT BOUNDARY: You are working on project "mesell" at /Users/mugunthansrinivasan/Project/mesell.
@@ -733,13 +835,13 @@ If you need cross-project information, stop and ask the Director.
 
 SESSION: mesell-tracking-dashboard-frontend-session-{N}
 
-## Feature context
+ ## Feature context
 Feature: Tracking Dashboard (Feature 8 per docs/V1_FEATURE_SPEC.md)
 Operative spec: docs/BACKEND_ARCHITECTURE.md §13, as amended by §13.A.1 (2026-06-07)
 Feature plan: docs/plans/features/tracking-dashboard/FEATURE_PLAN.md (commit hash: {FEATURE_PLAN_COMMIT_HASH})
 Your session ordinal: {N} (increment each re-dispatch; start at 1)
 
-## First action
+ ## First action
 Before writing a single line of production code:
 1. Read your own MEMORY.md at .claude/agent-memory/meesell-angular-component-builder/MEMORY.md.
 2. Open a memory entry: "feature=tracking-dashboard session={N} OPEN — {today's date}".
@@ -748,7 +850,7 @@ Before writing a single line of production code:
 4. Confirm: ProfileCompletenessBanner trigger is onboarding_complete: false (boolean), NOT
    a percentage threshold.
 
-## Mandatory reads (in this order)
+ ## Mandatory reads (in this order)
 1. docs/FRONTEND_ARCHITECTURE.md — full architecture including 4-layer pattern:
    - Layer 2: src/app/ui/ — mee-table, mee-badge, mee-dialog, mee-button, mee-skeleton
    - Layer 3: src/app/shared/ — mee-status-badge (verify if exists; if not, StatusBadgeComponent
@@ -763,7 +865,7 @@ Before writing a single line of production code:
      extension_complete_count, extension_total_count, onboarding_complete: bool}
 4. docs/plans/features/tracking-dashboard/FEATURE_PLAN.md §2.2 D1 (banner) + D2 (badge colors) + D4 (priority)
 
-## Mission
+ ## Mission
 Implement the Angular component layer for the dashboard feature.
 
 ### Files to create
@@ -834,7 +936,7 @@ frontend/src/app/features/dashboard/profile-completeness-banner.component.ts
         import('./features/dashboard/dashboard.component').then(m => m.DashboardComponent),
     }
 
-## Acceptance criteria
+ ## Acceptance criteria
 - Angular build completes without errors: ng build.
 - All component specs pass: ng test.
 - OnPush detected on every new component: verify in spec.
@@ -847,7 +949,7 @@ frontend/src/app/features/dashboard/profile-completeness-banner.component.ts
 - Screenshots attached at 360px and 1280px viewport widths.
 - No direct PrimeNG imports in any feature file (import from @mee/ui only).
 
-## Hard constraints (NON-NEGOTIABLE)
+ ## Hard constraints (NON-NEGOTIABLE)
 - DO NOT add a filter dropdown. Filter is deferred to V1.5 per §13.A.1.
 - DO NOT add a search input. Search is deferred to V1.5 per §13.A.1.
 - DO NOT add "exported" or "live" status branches in StatusBadgeComponent. 2-value only.
@@ -859,7 +961,7 @@ frontend/src/app/features/dashboard/profile-completeness-banner.component.ts
 - DO NOT add BehaviorSubject for component state. Use signal() per architecture rule.
 - All components MUST have changeDetection: ChangeDetectionStrategy.OnPush.
 
-## Files you MAY touch
+ ## Files you MAY touch
 - frontend/src/app/features/dashboard/dashboard.component.ts (NEW)
 - frontend/src/app/features/dashboard/dashboard.component.spec.ts (NEW)
 - frontend/src/app/features/dashboard/product-row.component.ts (NEW)
@@ -867,7 +969,7 @@ frontend/src/app/features/dashboard/profile-completeness-banner.component.ts
 - frontend/src/app/features/dashboard/profile-completeness-banner.component.ts (NEW)
 - frontend/src/app/app.routes.ts (MODIFY — add /dashboard route)
 
-## Files you MUST NOT touch
+ ## Files you MUST NOT touch
 - frontend/src/app/features/dashboard/services/ (owned by meesell-angular-service-builder)
 - frontend/src/app/features/dashboard/models/ (owned by meesell-angular-service-builder)
 - frontend/src/app/ui/ (UI kit — do not modify primitives)
@@ -876,7 +978,7 @@ frontend/src/app/features/dashboard/profile-completeness-banner.component.ts
 - Any file under backend/
 - docs/
 
-## Final report format
+ ## Final report format
 After completing all tasks, produce a report with exactly these sections:
 
 ### Session close report — mesell-tracking-dashboard-frontend-session-{N}
@@ -895,7 +997,9 @@ After completing all tasks, produce a report with exactly these sections:
 
 ---
 
-### 7.4 `meesell-angular-service-builder` (dispatched by `meesell-frontend-coordinator`)
+### meesell-angular-service-builder
+
+Dispatched by `meesell-frontend-coordinator`. The prompt below is paste-able verbatim; the `{N}` placeholder is filled with the session ordinal at dispatch time. Prompt-internal headings inside the fence are prefixed with a leading space so they remain readable to the specialist but do not participate in this document's heading hierarchy.
 
 ```
 PROJECT BOUNDARY: You are working on project "mesell" at /Users/mugunthansrinivasan/Project/mesell.
@@ -904,20 +1008,20 @@ If you need cross-project information, stop and ask the Director.
 
 SESSION: mesell-tracking-dashboard-frontend-session-{N}
 
-## Feature context
+ ## Feature context
 Feature: Tracking Dashboard (Feature 8 per docs/V1_FEATURE_SPEC.md)
 Operative spec: docs/BACKEND_ARCHITECTURE.md §13, as amended by §13.A.1 (2026-06-07)
 Feature plan: docs/plans/features/tracking-dashboard/FEATURE_PLAN.md (commit hash: {FEATURE_PLAN_COMMIT_HASH})
 Your session ordinal: {N} (increment each re-dispatch; start at 1)
 
-## First action
+ ## First action
 Before writing a single line of production code:
 1. Read your own MEMORY.md at .claude/agent-memory/meesell-angular-service-builder/MEMORY.md.
 2. Open a memory entry: "feature=tracking-dashboard session={N} OPEN — {today's date}".
 3. Confirm: DashboardService.list() takes only {page, limit} — no search, no filter params.
 4. Confirm: DashboardResponse.products[].status is 'draft' | 'ready' only (2-value).
 
-## Mandatory reads (in this order)
+ ## Mandatory reads (in this order)
 1. docs/BACKEND_ARCHITECTURE.md §13.B.1 — GET /api/v1/products contract:
    - Query: page (int, default 1), limit (int, default 20, max 100)
    - Response 200: DashboardResponse shape (products, total, page, limit, onboarding_completeness)
@@ -928,7 +1032,7 @@ Before writing a single line of production code:
    - State: signals for component state, RxJS for HTTP calls
 3. CLAUDE.md — Angular 21 patterns: HttpClient, interceptors, strict TypeScript
 
-## Mission
+ ## Mission
 Implement the HTTP service layer and TypeScript models for the dashboard feature.
 
 ### Files to create
@@ -1004,7 +1108,7 @@ frontend/src/app/features/dashboard/services/dashboard.service.spec.ts
   - Test: 401 response surfaces via catchError (if error handling is added)
   All tests use HttpClientTestingModule + HttpTestingController.
 
-## Acceptance criteria
+ ## Acceptance criteria
 - DashboardService.list() sends GET to /api/v1/products with page and limit query params.
 - JWT Bearer token attached via auth.interceptor.ts (verify in spec).
 - HttpTestingController tests pass.
@@ -1013,7 +1117,7 @@ frontend/src/app/features/dashboard/services/dashboard.service.spec.ts
 - Service has no write methods.
 - Angular build passes.
 
-## Hard constraints (NON-NEGOTIABLE)
+ ## Hard constraints (NON-NEGOTIABLE)
 - DO NOT add search or debounce logic. Search is deferred to V1.5 per §13.A.1.
 - DO NOT add filter param. Filter is deferred to V1.5 per §13.A.1.
 - DO NOT add POST, PUT, PATCH, or DELETE methods. Dashboard is strictly read-only.
@@ -1022,12 +1126,12 @@ frontend/src/app/features/dashboard/services/dashboard.service.spec.ts
 - DO NOT use BehaviorSubject or store state in the service. DashboardService is stateless.
   State management belongs in the component (DashboardComponent) via signals.
 
-## Files you MAY touch
+ ## Files you MAY touch
 - frontend/src/app/features/dashboard/services/dashboard.service.ts (NEW)
 - frontend/src/app/features/dashboard/services/dashboard.service.spec.ts (NEW)
 - frontend/src/app/features/dashboard/models/dashboard.model.ts (NEW)
 
-## Files you MUST NOT touch
+ ## Files you MUST NOT touch
 - frontend/src/app/features/dashboard/dashboard.component.ts (owned by component-builder)
 - frontend/src/app/features/dashboard/product-row.component.ts (owned by component-builder)
 - frontend/src/app/features/dashboard/status-badge.component.ts (owned by component-builder)
@@ -1037,7 +1141,7 @@ frontend/src/app/features/dashboard/services/dashboard.service.spec.ts
 - Any file under backend/
 - docs/
 
-## Final report format
+ ## Final report format
 After completing all tasks, produce a report with exactly these sections:
 
 ### Session close report — mesell-tracking-dashboard-frontend-session-{N}
@@ -1054,13 +1158,18 @@ After completing all tasks, produce a report with exactly these sections:
 
 ---
 
-## 8. Review and Iteration Protocol
+## Review + iteration protocol
 
-### 8.1 Backend Review (services-builder + api-routes-builder)
+### Backend review (services-builder + api-routes-builder)
 
-The backend lead (`meesell-backend-coordinator`) runs this checklist before approving any specialist PR onto `feature/tracking-dashboard/backend`:
+The backend lead (`meesell-backend-coordinator`) runs the checklist below before approving any specialist PR onto `feature/tracking-dashboard/backend`. The PR template gate is `.github/PULL_REQUEST_TEMPLATE/backend.md` — every section MUST be filled (no `<>` placeholders). The lead is the reviewer; the lead does NOT review the integration-to-develop PR (founder reviewer rule, locked 2026-06-10).
 
-**Structural integrity checks:**
+Specialist coverage of the checks below:
+
+- **`meesell-services-builder` is responsible for:** Structural integrity (no `repository.py`, only `catalog`+`customer` imports, `__init__.py` comment), Contract correctness items naming `service.py` / `domain.py` / `exceptions.py`, Performance verification, Test coverage for the 3 unit tests, i18n entry.
+- **`meesell-api-routes-builder` is responsible for:** Contract correctness items naming `schemas.py` / `router.py`, Test coverage for the 2 integration tests, OpenAPI generation, Import-linter contract verification at PR open (the contract enforces the no-repository rule at CI level — both specialists must pass it but the routes specialist is the one whose PR triggers the CI run that confirms green).
+
+**Structural integrity checks (services-builder primary):**
 - [ ] `backend/app/modules/dashboard/repository.py` does NOT exist. Run `ls backend/app/modules/dashboard/` and confirm absence. Presence = instant rejection.
 - [ ] Only `catalog.service` and `customer.service` are imported in `dashboard/service.py`. Run: `grep "from app.modules" backend/app/modules/dashboard/service.py`. Any other module import = instant rejection.
 - [ ] `dashboard/__init__.py` contains the inline comment documenting the intentional absence of `repository.py` per §13.D.
@@ -1089,11 +1198,16 @@ The backend lead (`meesell-backend-coordinator`) runs this checklist before appr
 **i18n:**
 - [ ] `validation.dashboard.invalid_pagination` key present in `backend/app/i18n/messages_en.py`.
 
-### 8.2 Frontend Review (component-builder + service-builder)
+### Frontend review (component-builder + service-builder)
 
-The frontend lead (`meesell-frontend-coordinator`) runs this checklist before approving any specialist PR onto `feature/tracking-dashboard/frontend`:
+The frontend lead (`meesell-frontend-coordinator`) runs the checklist below before approving any specialist PR onto `feature/tracking-dashboard/frontend`. The PR template gate is `.github/PULL_REQUEST_TEMPLATE/frontend.md` — every section MUST be filled (no `<>` placeholders). The lead is the reviewer; the lead does NOT review the integration-to-develop PR (founder reviewer rule, locked 2026-06-10).
 
-**Architecture compliance:**
+Specialist coverage of the checks below:
+
+- **`meesell-angular-service-builder` is responsible for:** Architecture compliance items naming `services/dashboard.service.ts` (no manual subscribe in service, no BehaviorSubject, no write methods), DashboardService block items, Build (`ng build`), spec test (`ng test` portion for `dashboard.service.spec.ts`), and the `DashboardQuery` / `ProductListItem.status` type contract.
+- **`meesell-angular-component-builder` is responsible for:** Architecture compliance items for components (OnPush on all 5 components, standalone, no PrimeNG direct imports), StatusBadgeComponent contract (2 branches only), ProfileCompletenessBanner contract (boolean trigger + localStorage key + 24h snooze), Soft-delete keyboard accessibility, Visual evidence (screenshots), spec tests for the 4 components, `app.routes.ts` modification.
+
+**Architecture compliance (both specialists):**
 - [ ] No `import { ... } from 'primeng/...'` in any file under `features/dashboard/`. Run ESLint or grep.
 - [ ] All 5 new components have `changeDetection: ChangeDetectionStrategy.OnPush`.
 - [ ] No manual `.subscribe()` in templates. Async pipe or signals only.
@@ -1126,7 +1240,7 @@ The frontend lead (`meesell-frontend-coordinator`) runs this checklist before ap
 - [ ] `ng build` passes.
 - [ ] `ng test` shows all specs green.
 
-### 8.3 Re-dispatch Triggers
+### Re-dispatch triggers
 
 For each failure mode, the exact re-dispatch preamble to prepend to the base dispatch template follows. Increment the session ordinal `{N}` on each re-dispatch.
 
@@ -1249,13 +1363,13 @@ Update ProfileCompletenessBanner to use the exact key "dashboard.banner.snoozed_
 Do not use any other key name or format.
 ```
 
-### 8.4 Iteration Limit
+### Iteration limit
 
 Maximum 3 re-dispatches per specialist before escalating to the founder. Each re-dispatch increments the session ordinal (session-2, session-3, session-4). After 3 failed attempts the lead opens a founder-decision question via an Inter-lead Request documented in `docs/status/STATUS_BACKEND.md` or `docs/status/STATUS_FRONTEND.md` with a BLOCKER marker.
 
 ---
 
-## 9. Acceptance Gate
+## Acceptance gate
 
 This feature is "done" when ALL of the following are true. No partial-done state is acceptable.
 
@@ -1298,44 +1412,31 @@ This feature is "done" when ALL of the following are true. No partial-done state
 
 ---
 
-## 10. Risk Register
+## Risk register
 
-**R1 — catalog.list_products N+1 query under high product counts**
+Each risk is feature-specific to tracking-dashboard and references a concrete mitigation surface (a section, file, or memo path).
 
-Description: If `catalog/repository.py list_paginated()` is implemented with per-product sub-queries instead of a single paginated SQL call, P95 will exceed 200ms for sellers with more than ~20 products.
+| # | Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|---|
+| R1 | `catalog.list_products` N+1 query under high product counts | Medium | High (P95 budget breach per §13.H) | Backend review's Performance verification section requires P95 ≤ 200ms evidence against a 100-row seed. If breached, re-dispatch services-builder with the "Trigger: P95 > 200ms" preamble from Review + iteration protocol → Re-dispatch triggers. EXPLAIN ANALYZE checkpoint at PR review. |
+| R2 | pg_trgm GIN index missing for V1.5 search prep | Low (V1) / High (V1.5) | Low (V1 — not used) / High (V1.5 search latency) | Open inter-lead request to `meesell-data-engineer` at V1.5 kickoff — NOT now. Recorded in `.claude/agent-memory/meesell-data-engineer/feature_tracking-dashboard.md` at V1.5 feature planning time. V1 acceptance gate does NOT require the index. |
+| R3 | ProfileCompletenessBanner dismiss-fatigue degrading to never-shown | Medium | Medium (onboarding completion slows) | 24h snooze cap (NOT "remind never") enforced per Decision D1. The banner resurfaces once daily until the seller completes the profile. Frontend review's ProfileCompletenessBanner contract section validates the localStorage key + 24h ms math. There is no "never show again" option by founder ruling. |
+| R4 | V1.5 amendment elevates dashboard to image/pricing/export summary composition | Low (V1) / Medium (V1.5) | Medium (forces §13 amendment + new dispatch templates) | Tracked as known future scope expansion. At V1.5 planning, re-open this FEATURE_PLAN.md with a new Revision history entry. The Dispatch templates section's services-builder + api-routes-builder sub-sections would need amendment sub-sections added. The §2.D matrix would need a founder ruling to elevate dashboard from 8 to 11 cross-module calls. NOT a V1 action. |
+| R5 | Soft-delete race condition during paginated list query | Low | Low (one-refresh UX artifact, by design) | `catalog/repository.py list_paginated()` applies `deleted_at IS NULL` filter at the SQL level on every query — stable cursor across refreshes. The race produces a one-refresh artifact (row appears then vanishes on next page refresh) which is acceptable UX. No distributed transaction or locking required. Documented in the services-builder dispatch's Acceptance criteria + Hard constraints sections: "the soft-delete filter race produces a one-refresh artifact — this is by design. Do not attempt to solve it with application-level locking." |
 
-Mitigation: EXPLAIN ANALYZE checkpoint at backend lead review (see §8.1 performance check). If N+1 found, re-dispatch services-builder with the P95 trigger preamble from §8.3.
+Notes on the table:
 
-V1 risk level: Medium (catalog-form was built before dashboard — if its list_paginated already exists and is correct, risk is Low).
-
-**R2 — pg_trgm GIN index missing for V1.5 search prep**
-
-Description: When §13.A.1 is lifted in V1.5 and `search` is restored to `DashboardQuery`, the ILIKE query on `products.name` requires a GIN index on `products.name` with `pg_trgm` for acceptable latency. V1 does not need this index. If it is not added at V1.5 kickoff, search will be slow on sellers with large catalogs.
-
-Mitigation: Open an inter-lead request to `meesell-data-engineer` at V1.5 kickoff — NOT now. This is a pre-planned future action, not a V1 action. Record this note in the data engineer's MEMORY.md at V1.5 feature planning time.
-
-**R3 — ProfileCompletenessBanner dismiss-fatigue degrading to never-shown**
-
-Description: If sellers see the banner on every login and dismiss it immediately, the snooze UX degrades over time as sellers become conditioned to dismiss before reading.
-
-Mitigation: 24h snooze cap (not "remind never") enforced per D1. The cap ensures the banner resurfaces once daily until the seller actually completes the profile. There is no "never show again" option by founder decision.
-
-**R4 — V1.5 amendment elevates dashboard to image/pricing/export summary composition**
-
-Description: The §2.D matrix founder ruling kept the dashboard at exactly 8 cross-module calls (catalog + customer only). If V1.5 elevates dashboard to also call `image.service.summary`, `pricing.service.summary`, and `export.service.summary` (elevating to 11 cross-module calls), this forces a §13 amendment + new dispatch templates + new service composition logic.
-
-Mitigation: Tracked as a known future scope expansion. At V1.5 planning, re-open this FEATURE_PLAN.md with a new revision history entry. The dispatch templates in §7.1 and §7.2 would need amendment sub-sections added. This is not a V1 action.
-
-**R5 — Soft-delete race condition during paginated list query**
-
-Description: If a product is soft-deleted (DELETE /api/v1/products/{id} via the catalog endpoint) while a dashboard paginated query is in flight, the deleted row may appear in the response and then be absent on the next page refresh.
-
-Mitigation: `catalog/repository.py list_paginated()` applies `deleted_at IS NULL` filter at the SQL level on every query. This is a stable cursor — the filter is consistent. The race produces a one-refresh artifact (row appears then vanishes) which is acceptable UX. No distributed transaction or locking required. Document this in `services-builder` dispatch as: "the soft-delete filter race produces a one-refresh artifact — this is by design. Do not attempt to solve it with application-level locking."
+- **R1 likelihood is Medium because** catalog-form ships BEFORE tracking-dashboard (per Decision D4) — if catalog-form's `list_paginated` already exists and is correct (single paginated SQL call, not per-product sub-queries), R1 collapses to Low. The risk re-elevates if catalog-form's review missed the N+1 check.
+- **R2 is split-state** — V1 is Low/Low because search is deferred; V1.5 elevation is High/High because pg_trgm + GIN is the only practical index choice for ILIKE-on-text. The memo to data-engineer is the trigger.
+- **R3 is bounded** — Decision D1's snooze design has a hard 24h cap, so the failure mode degrades the *speed* of onboarding completion, not its possibility.
+- **R4's mitigation explicitly DOES NOT include preemptive scaffolding** — building toward 11 cross-module calls before V1.5 lock would violate the §2.D matrix and the modular monolith discipline locked in §13.D.
+- **R5 is treated as an acceptable UX artifact** — solving it would require distributed locking or read-after-write coordination, both incompatible with the zero-egress posture of §13.H. The artifact is rare (requires a delete during pagination) and self-corrects on next refresh.
 
 ---
 
-## 11. Revision History
+## Revision history
 
-| Date | Author | Session | Change |
+| Version | Date | Author | Change |
 |---|---|---|---|
-| 2026-06-10 | Director (`mesell-tracking-dashboard-planning-session-1`) | Initial | Initial lock — D-A/D-B/D-C/D-D operational + D1/D2/D3/D4 scope decisions; agent lineup; code surfaces; documentation deliverables; 4 dispatch templates (7.1–7.4) with full 7-sub-section structure; review + iteration protocol (8.1–8.4 including 7 re-dispatch triggers); acceptance gate (9); risk register (10). §13.A.1 amendment reconciliations documented in §1.1. |
+| v1 | 2026-06-10 | `mesell-tracking-dashboard-planning-session-1` | Initial planning — 8 founder decisions locked (D-A/D-B/D-C/D-D operational + D1/D2/D3/D4 scope); agent lineup (2 leads x 2 specialists); code surfaces (backend + frontend); documentation deliverables; 4 dispatch templates with full sub-section structure; review and iteration protocol with 7 re-dispatch triggers; acceptance gate; risk register; §13.A.1 amendment reconciliations documented as preamble; structural exception §13.D (no `repository.py` for dashboard) documented verbatim. |
+| v2 | 2026-06-10 | `mesell-tracking-dashboard-amendment-session-1` | Canonical pattern v2 conformance — headings normalized (no numeric prefix, no emoji, exact capitalization per the canonical pattern); Branch setup + Memory protocol promoted to top-level sections (content extracted from Decisions D-B and D-C stubs, which were preserved as brief summaries pointing to the new top-level sections); dispatch template internals (`## Feature context`, `## Mission`, etc.) demoted to fenced code blocks with leading-space prefix so they remain readable to specialists but do not match `^## ` grep; specialist sub-sections renamed from `### 7.N specialist-slug` to `### {specialist-slug}` with a one-paragraph dispatching-lead intro; Documentation deliverables sub-headings renamed (`### 5.1` → `### Backend documentation`, etc.); Review and iteration protocol sub-headings renamed (`### 8.1` → `### Backend review`, etc.) and augmented with per-specialist coverage paragraphs + explicit PR-template gate references; Risk register converted to canonical 5-column table format with per-row commentary; Revision history converted to canonical 4-column table format; Table of Contents and Status Preamble relocated as preamble prose (no headings). Architectural distinctive preserved verbatim: §13.D no-`repository.py` structural exception unchanged everywhere it appears in the plan. |
