@@ -1,29 +1,40 @@
 # Session Dispatch: Microservices Migration
 **Session name:** `mesell-microservices-backend-session-1`
 **Project:** `/Users/mugunthansrinivasan/Project/mesell`
-**Status:** BLOCKED — requires Session 1 (repo-management) complete first
+**Status:** READY — S1 complete, Model C ACTIVE (2026-06-10), pilot-hardened (PILOT_REPORT.md)
 
 ---
 
 ## Prerequisite
-Session 1 (repo-management) must be COMPLETE before this session starts.
-`develop` and `staging` branches must exist.
+Session 1 (repo-management) is COMPLETE. Model C is ACTIVE (2026-06-10).
+`develop` and `staging` branches exist.
 
 ---
 
 ## Mission
-Review and ratify the Microservices Migration Master Plan. Lock the
-architecture decisions. Author Sub-Plan A (export service extraction)
-and begin execution of the first extraction.
+The Microservices Migration Master Plan is **already ratified** — LOCKED
+2026-06-10 as the **post-V1 roadmap** (revision v1.1 carries the
+compliance-audit §5.G). Ratification is DONE; do NOT re-ratify.
+
+Remaining scope for this session is the plan's later steps: author Sub-Plan A
+(export service extraction) and begin execution of the first extraction.
+
+**Context — execution is post-V1.** Impact analysis found that full extraction
+of the 8-service topology forces a VM upgrade to **≥ e2-standard-4** (the
+extracted topology needs ≈1600m+ CPU vs the ~950m the current free
+e2-standard-2 affords). This is the concern owned by the S4 sibling
+(infra-microservices) — sequence accordingly.
 
 ---
 
 ## Read first (in this order)
-1. `docs/plans/microservices_migration/MASTER_PLAN.md` — the plan to ratify
-2. `docs/plans/infra/microservices_infra_plan.md` — infra constraints that affect
+1. `docs/plans/microservices_migration/MASTER_PLAN.md` — the LOCKED plan (post-V1 roadmap, v1.1)
+2. `docs/plans/repo_management/PILOT_REPORT.md` — Model C pilot findings (F1–F3)
+3. `docs/plans/repo_management/MASTER_PLAN.md` §1.2/§6.5/§9.5 as amended v1.1 (F1–F3)
+4. `docs/plans/infra/microservices_infra_plan.md` — infra constraints that affect
    code decisions (database schema-per-service, PgBouncer, connection pool limits)
-3. `docs/BACKEND_ARCHITECTURE.md` — current modular monolith state
-4. `.claude/agent-memory/meesell-backend-coordinator/MEMORY.md`
+5. `docs/BACKEND_ARCHITECTURE.md` — current modular monolith state
+6. `.claude/agent-memory/meesell-backend-coordinator/MEMORY.md`
 
 ---
 
@@ -52,12 +63,17 @@ and begin execution of the first extraction.
 
 ## What to produce
 
-### Step 1 — Ratify the plan
-- Change STATUS in `docs/plans/microservices_migration/MASTER_PLAN.md` → APPROVED
-- Record the 3 decisions above in a `## Decisions` section at the top of the plan
+### Step 1 — Ratify the plan — DONE (do not repeat)
+- ✅ Plan already LOCKED 2026-06-10 as the post-V1 roadmap (revision v1.1,
+  §5.G compliance audit). No re-ratification needed.
+- The 3 decisions below remain OPEN sub-plan-authoring questions — resolve them
+  while authoring Sub-Plan A, not as a master-plan ratification gate.
 
 ### Step 2 — Create the feature branch
 - Create `feature/microservices-export/backend` from `develop`
+- **F1 (pilot ruling):** the integration branch for this feature is
+  `feature/microservices-export/integration` — open the group PR against the
+  integration branch, NOT a bare `feature/microservices-export`.
 
 ### Step 3 — Author Sub-Plan A
 Dispatch `meesell-backend-coordinator` to produce:
@@ -72,17 +88,17 @@ execute the export service extraction on `feature/microservices-export/backend`
 
 ### Step 5 — Commit + PR
 Commit on `feature/microservices-export/backend`
-Open PR to `feature/microservices-export` using `.github/PULL_REQUEST_TEMPLATE/backend.md`
+Open PR to `feature/microservices-export/integration` (F1) using `.github/PULL_REQUEST_TEMPLATE/backend.md`
 Update `docs/status/feature_board_backend.md`
 
 ---
 
 ## Acceptance gate — session is DONE when
-- [ ] MASTER_PLAN.md status = APPROVED
-- [ ] All 3 decisions recorded in the plan
+- [x] MASTER_PLAN.md status = LOCKED (done 2026-06-10, post-V1 roadmap v1.1)
+- [ ] 3 sub-plan-authoring decisions recorded in Sub-Plan A
 - [ ] `feature/microservices-export/backend` branch exists
 - [ ] SUB_PLAN_A committed
-- [ ] Export service extraction committed + PR open
+- [ ] Export service extraction committed + PR open against `feature/microservices-export/integration` (F1)
 
 ---
 

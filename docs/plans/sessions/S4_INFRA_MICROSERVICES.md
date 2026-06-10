@@ -1,39 +1,51 @@
 # Session Dispatch: Infra — Microservices
 **Session name:** `mesell-infra-microservices-infra-session-1`
 **Project:** `/Users/mugunthansrinivasan/Project/mesell`
-**Status:** BLOCKED — requires Session 1 complete; can run parallel with Session 2
+**Status:** READY — S1 complete, Model C ACTIVE (2026-06-10), pilot-hardened (PILOT_REPORT.md). Can run parallel with S2.
 
 ---
 
 ## Prerequisite
-Session 1 (repo-management) must be COMPLETE.
+Session 1 (repo-management) is COMPLETE. Model C is ACTIVE (2026-06-10).
 Session 2 (microservices) Sub-Plan A should be in progress or complete —
 infra session can run in parallel with Session 2 on non-overlapping work.
 
 ---
 
 ## Mission
-Review and ratify the Infra Microservices Plan. Lock the VM sizing, gateway
-routing, and DB isolation decisions. Execute the infrastructure preparation
-that unblocks the first microservice extraction.
+Review and ratify the Infra Microservices Plan (`docs/plans/infra/microservices_infra_plan.md`)
+— **this ratification is genuinely still pending and IS this session's gate.**
+Lock the VM sizing, gateway routing, and DB isolation decisions. Execute the
+infrastructure preparation that unblocks the first microservice extraction.
+
+**Context — the MS MASTER_PLAN is already LOCKED** (post-V1 roadmap, 2026-06-10);
+only the *infra* sub-plan ratification remains. Impact analysis found the current
+free **e2-standard-2 CANNOT host the extracted 8-service topology** (≈1600m+ CPU
+required vs ~950m the free tier affords). The VM sizing decision in this session
+**must therefore account for ≥ e2-standard-4** (≈₹2.5–6k/month depending on tier).
+Execution is **post-V1**.
 
 ---
 
 ## Read first (in this order)
 1. `docs/plans/infra/microservices_infra_plan.md` — the plan to ratify
-2. `docs/INFRASTRUCTURE_ARCHITECTURE.md` — current live state
-3. `docs/DEVOPS_ARCHITECTURE.md` — current CI/CD pipeline
-4. `k8s/` — all current manifests
-5. `.claude/agent-memory/meesell-infra-builder/MEMORY.md`
+2. `docs/plans/repo_management/PILOT_REPORT.md` — Model C pilot findings (F1–F3)
+3. `docs/plans/repo_management/MASTER_PLAN.md` §1.2/§6.5/§9.5 as amended v1.1 (F1–F3)
+4. `docs/INFRASTRUCTURE_ARCHITECTURE.md` — current live state
+5. `docs/DEVOPS_ARCHITECTURE.md` — current CI/CD pipeline
+6. `k8s/` — all current manifests
+7. `.claude/agent-memory/meesell-infra-builder/MEMORY.md`
 
 ---
 
 ## Open decisions — get founder answer in this session
 
-1. **Dev VM resize: e2-standard-2 → e2-standard-4**
-   - 8 microservices cannot fit in 2 vCPU. Non-negotiable for migration.
-   - Cost: ~₹3,500/month vs ~₹1,750/month
-   - Confirm to proceed OR select `e2-standard-4` vs `e2-standard-8`
+1. **Dev VM resize: e2-standard-2 → ≥ e2-standard-4**
+   - Confirmed by impact analysis: the extracted 8-service topology needs
+     ≈1600m+ CPU; the current free e2-standard-2 affords only ~950m. The
+     existing topology cannot fit in 2 vCPU. **Non-negotiable for migration.**
+   - Cost: ~₹2.5–6k/month (vs ~₹1,750/month today), tier-dependent.
+   - Confirm to proceed OR select `e2-standard-4` vs `e2-standard-8`.
 
 2. **MS-GW-1: API gateway routing strategy**
    - Option A: Path-prefix routing (`api.mesell.xyz/catalog/`, `/iam/`, etc.)
@@ -60,6 +72,9 @@ that unblocks the first microservice extraction.
 
 ### Step 2 — Create the feature branch
 - Create `feature/microservices-infra-prep/infra` from `develop`
+- **F1 (pilot ruling):** the integration branch for this feature is
+  `feature/microservices-infra-prep/integration` — open the group PR against the
+  integration branch, NOT a bare `feature/microservices-infra-prep`.
 
 ### Step 3 — Execute MS-ENV-1: Dev VM resize
 Dispatch `meesell-infra-builder` to:
@@ -82,19 +97,19 @@ Dispatch `meesell-infra-builder` to:
 
 ### Step 6 — Commit + PR
 Commit on `feature/microservices-infra-prep/infra`
-Open PR to `feature/microservices-infra-prep`
+Open PR to `feature/microservices-infra-prep/integration` (F1)
 Update `docs/status/feature_board_infra.md`
 Update `docs/INFRASTRUCTURE_ARCHITECTURE.md` with all changes
 
 ---
 
 ## Acceptance gate — session is DONE when
-- [ ] MASTER_PLAN.md status = APPROVED
-- [ ] Dev VM resized to e2-standard-4, K8s nodes healthy
+- [ ] `microservices_infra_plan.md` status = APPROVED (this session's ratification gate)
+- [ ] Dev VM resized to ≥ e2-standard-4, K8s nodes healthy
 - [ ] PgBouncer running, existing services connect through it
 - [ ] Gateway IngressRoute template committed and tested
 - [ ] INFRASTRUCTURE_ARCHITECTURE.md updated
-- [ ] PR open against `feature/microservices-infra-prep`
+- [ ] PR open against `feature/microservices-infra-prep/integration` (F1)
 
 ---
 
