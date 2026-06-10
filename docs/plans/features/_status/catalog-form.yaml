@@ -2,7 +2,7 @@ feature: "catalog-form"
 session: "mesell-catalog-form-amendment-session-1"
 worktree: "/tmp/mesell-wt/catalog-form"
 branch: "feature/catalog-form/planning"
-status: "PLAN_READY"
+status: "IN_REVIEW"
 last_updated: "2026-06-10T12:00:00Z"
 feature_plan_path: "docs/plans/features/catalog-form/FEATURE_PLAN.md"
 feature_plan_line_count: 1065
