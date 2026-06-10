@@ -2,12 +2,12 @@ feature: "catalog-form"
 session: "mesell-catalog-form-amendment-session-1"
 worktree: "/tmp/mesell-wt/catalog-form"
 branch: "feature/catalog-form/planning"
-status: "PLAN_READY"
-last_updated: "2026-06-10T11:59:14Z"
+status: "IN_REVIEW"
+last_updated: "2026-06-10T12:00:51Z"
 feature_plan_path: "docs/plans/features/catalog-form/FEATURE_PLAN.md"
 feature_plan_line_count: 1064
-pr_number: 7
-pr_url: "https://github.com/Mugunthan93/pull/7"
+pr_number: 15
+pr_url: "https://github.com/Mugunthan93/mesell/pull/15"
 outstanding_founder_decisions:
   - "D1 — locked (Scope confirmation — F3 verbatim + autofill OUT)"
   - "D2 — locked (FEATURE_CATALOG_FORM_ENABLED dev=true staging=false until soak)"
@@ -16,6 +16,9 @@ outstanding_founder_decisions:
   - "O2 — locked (Branch creation playbook — lazy creation per master plan §1.2)"
   - "O3 — locked (Per-feature memory hook — feature_{slug}.md memo files)"
 notes: |
+  Amendment committed on top of feature/catalog-form/planning. Awaiting founder review on PR #15.
+  PR #7 (original session-1 FEATURE_PLAN.md) was MERGED earlier; this amendment opened a NEW PR
+  per dispatch Step 7 conditional.
   Amended to canonical pattern v2 — 11 sections in locked order.
   Renamed: "Branch creation playbook" → "Branch setup"; "Per-feature memory protocol" → "Memory protocol".
   Relocated: "Why this feature plan exists" (ad-hoc h2) → preamble paragraphs between metadata table
@@ -24,5 +27,4 @@ notes: |
   Acceptance gate: injected V1_FEATURE_SPEC.md §F3.AC1-AC5 verbatim bullets; added pytest + ng test
   commands; broke out CI gates 1-5 individually; rolled up documentation deliverables.
   Revision history: appended v2 row recording all amendments.
-  Final FEATURE_PLAN.md line count: 1064 (was 1014; net +50 from richer §9 + §10 + §11 minus preamble dedup).
-  Ready for amendment commit on top of PR #7 (still OPEN per session-1 close-out).
+  Final FEATURE_PLAN.md line count: 1064 (was 1014; net +50).
