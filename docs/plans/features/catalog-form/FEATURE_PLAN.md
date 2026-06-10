@@ -18,6 +18,19 @@
 
 ---
 
+The Fast Catalog Form is the **central spine** of MeeSell. `BACKEND_ARCHITECTURE.md §10.A` calls it *"the most-called module in the architecture"* and §16.H / §21 (microservices migration §3.B) make it the **8th-and-LAST** extraction target in V1.5 precisely because four other modules depend on its service surface (`image`, `pricing`, `dashboard`, `export`). Every product flows through it; every catalog-touching feature reads from it. Getting the contract right here means 4 downstream features land cleanly in parallel; getting it wrong means re-coordination across the entire backend lead chain.
+
+This plan locks **before** any line of production code is written. The reason is the **`assert_product_ownership(product_id, user_id)` cross-module signature** at §10.C. Once `services-builder` ships this method, four sibling features (`ai-autofill`, `image-precheck`, `live-preview`, `xlsx-export`) will import it. A rename or signature drift after-the-fact forces simultaneous PRs across all four. The dispatch templates in §7 of this plan cite the locked signature verbatim and forbid variation; that is the single most important contract this plan defends.
+
+Beyond the cross-module seam, catalog-form locks **three operational patterns** that propagate through V1:
+1. **Autosave coalescing** (`PATCH /products/{id}` with 5-min audit-event coalescing per `MVP_ARCH §11.4`). This pattern is reused by `image-precheck` polling and `xlsx-export` status reads.
+2. **Schema-driven field rendering** (the `templates.schema_jsonb` envelope per `BACKEND_ARCHITECTURE.md §5A`, 11 primitives, `is_advanced` allowlist, `compliance_shape` standard/collapsed). Every downstream feature that touches product fields must agree to this contract.
+3. **Draft recovery** (`product_drafts` table + `GET /products/{id}/draft` per §10.B.6 + `MVP_ARCH §11.6`). The pattern is the seller-trust foundation — if a browser tab dies, the seller's work survives.
+
+The Risk Register (§10) tracks five feature-specific risks plus the master plan §1.2 group-token caveat (R6). The dispatch templates (§7) are ready for each lead to paste with the `{N}` session number filled in — no further authoring should be needed at coding time. The review-and-iteration protocol (§8) caps re-dispatches at 3 per specialist before founder escalation, matching the master plan §7.5 48-hour SLA.
+
+---
+
 ## Decisions
 
 Six decisions locked by founder before this plan was authored. Recorded verbatim. Three are scope decisions (D1/D2/D3) from the original `PLANNING_DISPATCH.md` Step 1; three are operational decisions (O1/O2/O3) added by founder during this planning session.
@@ -105,21 +118,6 @@ This is the **lazy-creation path** per master plan §1.2 — minimizes founder c
   This is how the agent grounds itself in which feature's context to load.
 - Session-close protocol appends learnings to the **feature memo** AND updates the **index in `MEMORY.md`**.
 - Role-level wisdom (e.g., "always use SQLAlchemy 2.0 typed `select`", "Tailwind 4 syntax for arbitrary values") stays in the main `MEMORY.md`, **NOT** in per-feature memos.
-
----
-
-## Why this feature plan exists
-
-The Fast Catalog Form is the **central spine** of MeeSell. `BACKEND_ARCHITECTURE.md §10.A` calls it *"the most-called module in the architecture"* and §16.H / §21 (microservices migration §3.B) make it the **8th-and-LAST** extraction target in V1.5 precisely because four other modules depend on its service surface (`image`, `pricing`, `dashboard`, `export`). Every product flows through it; every catalog-touching feature reads from it. Getting the contract right here means 4 downstream features land cleanly in parallel; getting it wrong means re-coordination across the entire backend lead chain.
-
-This plan locks **before** any line of production code is written. The reason is the **`assert_product_ownership(product_id, user_id)` cross-module signature** at §10.C. Once `services-builder` ships this method, four sibling features (`ai-autofill`, `image-precheck`, `live-preview`, `xlsx-export`) will import it. A rename or signature drift after-the-fact forces simultaneous PRs across all four. The dispatch templates in §9 of this plan cite the locked signature verbatim and forbid variation; that is the single most important contract this plan defends.
-
-Beyond the cross-module seam, catalog-form locks **three operational patterns** that propagate through V1:
-1. **Autosave coalescing** (`PATCH /products/{id}` with 5-min audit-event coalescing per `MVP_ARCH §11.4`). This pattern is reused by `image-precheck` polling and `xlsx-export` status reads.
-2. **Schema-driven field rendering** (the `templates.schema_jsonb` envelope per `BACKEND_ARCHITECTURE.md §5A`, 11 primitives, `is_advanced` allowlist, `compliance_shape` standard/collapsed). Every downstream feature that touches product fields must agree to this contract.
-3. **Draft recovery** (`product_drafts` table + `GET /products/{id}/draft` per §10.B.6 + `MVP_ARCH §11.6`). The pattern is the seller-trust foundation — if a browser tab dies, the seller's work survives.
-
-The Risk Register (§12) tracks five feature-specific risks plus the master plan §1.2 group-token caveat (R6). The dispatch templates (§9) are ready for each lead to paste with the `{N}` session number filled in — no further authoring should be needed at coding time. The review-and-iteration protocol (§10) caps re-dispatches at 3 per specialist before founder escalation, matching the master plan §7.5 48-hour SLA.
 
 ---
 
@@ -251,7 +249,7 @@ N/A.
 
 ---
 
-## Branch creation playbook
+## Branch setup
 
 Operationalizes O2. Per master plan §1.2.
 
@@ -272,7 +270,7 @@ Operationalizes O2. Per master plan §1.2.
 
 ---
 
-## Per-feature memory protocol
+## Memory protocol
 
 Operationalizes O3. Catalog-form working agreement.
 
@@ -922,24 +920,75 @@ For each specialist, the lead reviews the PR against the master plan §5.2 backe
 
 The catalog-form feature is "done" when **ALL** of the following are true:
 
-- [ ] All 6 specialists' PRs merged to `feature/catalog-form` (3 backend + 3 frontend; data is conditional).
-- [ ] Integration tests pass on `feature/catalog-form`:
+### V1_FEATURE_SPEC.md §F3 acceptance criteria (verbatim from spec lines 145-150)
+
+- [ ] **§F3.AC1** — Form renders ≤50 fields without lag (<500 ms first paint after schema fetch)
+- [ ] **§F3.AC2** — Every field shows the XLSX help text on hover/tap
+- [ ] **§F3.AC3** — Compulsory fields marked with red asterisk; form cannot proceed if any blank
+- [ ] **§F3.AC4** — Autosave writes to `products.fields_jsonb` and shows "Saved" indicator
+- [ ] **§F3.AC5** — Browser reload resumes from last saved state
+
+### Specialist PR completion
+
+- [ ] All 6 specialists' PRs merged to `feature/catalog-form` (3 backend: database-builder, api-routes-builder, services-builder; 3 frontend: angular-component-builder, angular-service-builder, angular-ui-styler; data: xlsx-parser conditional — only if `help_text` sweep returns gaps).
+
+### Integration tests green on `feature/catalog-form`
+
+- [ ] Command: `cd backend && pytest tests/test_catalog_form_integration.py -v` returns 3/3 green:
   - `TestFullProductLifecycle` (create → autosave 3× → preview → mark ready → soft-delete)
   - `TestDraftRecoveryAfterSimulatedClose` (autosave 2× → kill connection → reopen → GET /draft returns latest)
   - `TestCrossModuleOwnershipAssertion` (user A creates; user B 404s on every endpoint)
-- [ ] All 5 CI gates green per master plan §2.1: 1 (unit), 2 (smoke), 3 (lint); gates 4 (integration) and 5 (golden_roundtrip) advisory but reviewed.
-- [ ] Feature flag staging soak criteria from D2 met: (a) network-flap test passes, (b) draft-recovery test passes, (c) cross-tenant leak test passes, (d) concurrent-edit race passes, (e) 48h dev soak no P0/P1.
-- [ ] OpenAPI regenerated; `/openapi.json` reviewed by backend lead.
-- [ ] All documentation deliverables present (V1_FEATURE_SPEC.md §F3 implemented stamp, OpenAPI entries, cross-module signature docstrings, `tests/lint/import_rules.toml` entries, `MVP_ARCH §11.4` cross-link, BACKEND_ARCHITECTURE.md §10 sentinel flip).
-- [ ] `feature_board_backend.md`, `feature_board_frontend.md`, and (if data fired) `feature_board_data.md` all show MERGED for catalog-form with PR links.
-- [ ] Each agent's `feature_catalog-form.md` memo updated with session-close learnings.
-- [ ] PR `feature/catalog-form` → `develop` opened by backend lead, approved by founder, merged.
+- [ ] Frontend spec command: `cd frontend && ng test --include='**/catalog-form/**'` returns green including 11-primitive renderer coverage + unknown-primitive throw assertion.
+
+### Feature-flag staging soak criteria (from D2)
+
+- [ ] (a) Autosave network-flap test passes on staging.
+- [ ] (b) Draft-recovery test passes on browser-reload simulation.
+- [ ] (c) Cross-tenant `assert_product_ownership` leak test passes (user A → user B receives 404).
+- [ ] (d) Concurrent-edit race test passes (two tabs PATCHing same product within 100ms; last-write-wins on JSONB merge; both writes captured in `product_drafts.autosave_count`).
+- [ ] (e) 48-hour dev soak with no P0/P1 alerts before flipping `FEATURE_CATALOG_FORM_ENABLED=true` on staging.
+
+### CI gates (per master plan §2.1)
+
+- [ ] CI gate 1 (unit tests) green on `feature/catalog-form`.
+- [ ] CI gate 2 (smoke tests) green on `feature/catalog-form`.
+- [ ] CI gate 3 (lint — ruff + ESLint + `tests/lint/import_rules.toml` audit) green on `feature/catalog-form`.
+- [ ] CI gate 4 (integration tests — advisory but reviewed) green on `feature/catalog-form`.
+- [ ] CI gate 5 (golden_roundtrip — advisory but reviewed) green on `feature/catalog-form`.
+
+### Documentation deliverables (cross-reference §4)
+
+- [ ] OpenAPI regenerated; `/openapi.json` reviewed by backend lead; includes the 5 mounted catalog routes per §10.B.1 / .2 / .4 / .5 / .6.
+- [ ] V1_FEATURE_SPEC.md §F3 stamped `implemented YYYY-MM-DD` with PR link.
+- [ ] BACKEND_ARCHITECTURE.md §10 sentinel flipped from `spec` to `implemented YYYY-MM-DD with PR #<num>` (append-only).
+- [ ] Cross-module signature docstrings on the 4 PUBLIC methods of `app/modules/catalog/service.py` per §16.A consumer-reference convention.
+- [ ] `tests/lint/import_rules.toml` entries added for the 4 new cross-module call sites (image, pricing, dashboard, export).
+- [ ] `docs/MVP_ARCHITECTURE.md §11.4` cross-link to the merged `catalog.service.patch_product` coalescing helper implementation.
+- [ ] `docs/status/STATUS_BACKEND.md` Updates Log entry with PR URL.
+
+### Status board + memory hygiene
+
+- [ ] `feature_board_backend.md`, `feature_board_frontend.md`, and (if data fired) `feature_board_data.md` all show MERGED for catalog-form with PR links in Notes.
+- [ ] Each agent's `feature_catalog-form.md` memo updated with session-close learnings per O3.
+
+### Founder merge gate
+
+- [ ] PR `feature/catalog-form` → `develop` opened by backend lead, approved by founder, merged (per master plan §6 reviewer rule).
 
 ---
 
 ## Risk register
 
-Top 5 risks specific to catalog-form, plus one bonus (R6) governance caveat.
+Top 5 risks specific to catalog-form, plus one bonus (R6) governance caveat. Summary table follows the canonical pattern v2 shape; the per-risk `### R{N}` subsections below give the full rationale.
+
+| # | Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|---|
+| R1 | Migration head divergence between dev and staging blocks merge to `develop` | Medium | High (P0 — blocks merge) | Backend lead requires services-builder to run `alembic heads` against BOTH dev AND staging clones before authoring; on divergence open memo to infra lead per master plan §7.5; converge staging → dev (NEVER reverse). Rebase migration before opening PR. See `MVP_ARCH §2.6`. |
+| R2 | Autosave hammers Postgres under network-flap retry storms after reconnect burst | Medium | Medium (P1 — pool saturation at scale) | Frontend exponential backoff with jitter, cap 30s, max 5 attempts; backend per-IP rate limit 600/h on PATCH per §10.B.2; 5-min audit coalescing per `MVP_ARCH §11.4` bounds audit_events writes. |
+| R3 | Change-category UX loses seller fields_jsonb data on accidental default-confirm | Medium | High (P1 — user-trust risk) | Confirm button MUST be labeled "Discard fields and switch category" (explicit, no default-confirm); component-builder dispatch template enforces this. One-time snapshot to `product_drafts` BEFORE reset gives 5-min support recovery window. |
+| R4 | FieldRendererComponent fails silently on unmapped primitive in V1.5 category additions | Low | Medium (P2 — V1.5 risk) | `FieldRendererComponent` MUST `throw new UnknownPrimitiveError(primitive)` on unknown primitives (NEVER silent skip); spec test covers all 11 V1 primitives PLUS the unknown-primitive throw case. §5A.D amendment is the V1.5 unblock path. |
+| R5 | Downstream sibling features race the catalog-form merge and lock conflicting `assert_product_ownership` signatures | High | High (P1 — cross-feature contract drift) | Backend lead publishes the locked `assert_product_ownership` signature in `feature_board_backend.md` Notes column AS SOON AS services-builder PR opens; sibling-feature planners cite the locked form; lead reviews every sibling services-builder template before approving. §10.A + §10.C cited verbatim in dispatch templates. |
+| R6 | `feature/catalog-form/planning` group token "planning" violates master plan §1.2 taxonomy `{backend, frontend, ai, data, infra}` | High (already occurred) | Low (P3 — governance debt) | Flag as candidate for §1.2 amendment after this plan ships (add `planning` + `docs` as 6th/7th tokens); OR future features use `docs-only` PRs to `docs/<feature>/planning` branch without group-style suffix. Founder rules on standardization. |
 
 ### R1 — Migration head divergence between dev and staging
 
@@ -1011,4 +1060,6 @@ Top 5 risks specific to catalog-form, plus one bonus (R6) governance caveat.
 
 | Version | Date | Author | Change |
 |---|---|---|---|
-| 0.1 | 2026-06-10 | meesell-backend-coordinator | Initial DRAFT authored. 6 founder-locked decisions (D1/D2/D3 scope + O1/O2/O3 operational). 7 dispatch templates (3 backend + 3 frontend + 1 conditional data). Awaiting founder review. |
+| 0.1 (v1) | 2026-06-10 | meesell-backend-coordinator (planning-session-1/2) | Initial DRAFT authored. 6 founder-locked decisions (D1/D2/D3 scope + O1/O2/O3 operational). 7 dispatch templates (3 backend + 3 frontend + 1 conditional data). Awaiting founder review. |
+| v2 | 2026-06-10 | mesell-catalog-form-amendment-session-1 | Pattern v2 conformance — heading normalization (`Branch creation playbook` → `Branch setup`, `Per-feature memory protocol` → `Memory protocol`); ad-hoc `Why this feature plan exists` relocated to preamble paragraphs (content preserved verbatim with cross-references updated §9→§7, §10→§8, §12→§10); Risk register restructured to canonical summary table (R1-R6 details preserved as `### R{N}` subsections below the table); Acceptance gate expanded with V1_FEATURE_SPEC.md §F3.AC1-AC5 verbatim bullets, integration-test command, frontend spec command, and explicit CI gate 1-5 + documentation deliverable rollup. 11 sections in canonical order; no content removed. |
+| v3 | 2026-06-10 | mesell-catalog-form-amendment-session-1 | Pattern conformance audit — confirmed `## Per-feature memos (index)` at line 297 is inside a `\`\`\`markdown` fence and is NOT a real h2 heading; all 11 canonical h2 headings verified in locked order; all specialist headings in Dispatch templates already at h3 level. No structural changes required; revision history updated to record audit completion. |
