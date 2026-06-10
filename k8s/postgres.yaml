@@ -1,23 +1,55 @@
+# k8s/postgres.yaml
+# ============================================================================
+# DOCUMENTATION ONLY — DO NOT `kubectl apply` THIS FILE.
+# ============================================================================
+# PostgreSQL is a Terraform-managed StatefulSet. Terraform owns the live
+# resource (module.postgres_dev, see infra/terraform/modules/postgres/main.tf).
+# This file mirrors the LIVE cluster state for human reference. Applying it
+# would conflict with Terraform's StatefulSet (different kind, different secret
+# wiring) and is forbidden by playbook §0.
+#
+# LIVE STATE (verified 2026-06-08):
+#   kind:        StatefulSet (NOT Deployment)  — pod `postgres-0`, namespace `dev`
+#   image:       postgres:16
+#   service:     `postgres` (headless, clusterIP: None) on 5432
+#   secret:      `postgres-credentials` (username/password/database) via
+#                valueFrom: secretKeyRef — NOT backend-secrets, NOT envFrom.
+#                This is the Day-1 bootstrap pattern (playbook §5.1) preserved
+#                by Terraform. The application reaches Postgres using
+#                POSTGRES_PASSWORD from backend-secrets (must match this value).
+#   resources:   requests cpu=200m mem=500Mi ; limits cpu=1 mem=1Gi
+#                (fits e2-standard-4 headroom — left at live values, NOT bumped)
+#   storage:     20Gi PVC (volumeClaimTemplate `data`, K3s local-path)
+#   PGDATA:      /var/lib/postgresql/data/pgdata
+#
+# NOTE on §20.C: the §20 hard rule "use envFrom: secretRef: backend-secrets"
+# applies to the *application* containers (api, worker). The Postgres
+# StatefulSet itself is bootstrap infrastructure and keeps its dedicated
+# `postgres-credentials` Secret. This is a recorded D-flag (D2): the §20 sketch
+# proposed a Deployment + backend-secrets for Postgres, but live TF-managed
+# state is the SSOT (playbook §0).
+# ----------------------------------------------------------------------------
 apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: postgres-data
-  namespace: meesell
-spec:
-  accessModes: ["ReadWriteOnce"]
-  resources:
-    requests:
-      storage: 20Gi
----
-apiVersion: apps/v1
-kind: Deployment
+kind: Service
 metadata:
   name: postgres
-  namespace: meesell
+  namespace: dev
 spec:
+  clusterIP: None
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      name: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: dev
+spec:
+  serviceName: postgres
   replicas: 1
-  strategy:
-    type: Recreate
   selector:
     matchLabels:
       app: postgres
@@ -28,49 +60,52 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: postgres:16-alpine
+          image: postgres:16
           ports:
             - containerPort: 5432
           env:
-            - name: POSTGRES_DB
-              value: meesell
             - name: POSTGRES_USER
-              value: meesell
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: username
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: meesell-secrets
-                  key: POSTGRES_PASSWORD
+                  name: postgres-credentials
+                  key: password
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: database
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
           resources:
             requests:
-              cpu: "250m"
-              memory: "512Mi"
+              cpu: "200m"
+              memory: "500Mi"
             limits:
               cpu: "1"
-              memory: "1.5Gi"
+              memory: "1Gi"
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "meesell", "-d", "meesell"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "meesell", "-d", "meesell"]
+            initialDelaySeconds: 30
+            periodSeconds: 15
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
-          readinessProbe:
-            exec:
-              command: ["pg_isready", "-U", "meesell"]
-            initialDelaySeconds: 5
-            periodSeconds: 5
-      volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: postgres-data
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: postgres
-  namespace: meesell
-spec:
-  selector:
-    app: postgres
-  ports:
-    - port: 5432
-      targetPort: 5432
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi

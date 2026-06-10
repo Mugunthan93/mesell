@@ -1,109 +1,97 @@
-// app.routes.ts — Top-level route table.
-// AMENDMENT 2026-06-06 (Phase 2 app shell): Restructured into two layout groups.
-// Auth layout (no sidebar): /, /signup, /login, /onboarding
-// Shell layout (dark sidebar, authGuard): /dashboard, /catalogs/*, /profile
-// Playground: flat route, no layout wrapper.
-
 import { Routes } from '@angular/router';
-import { authGuard } from '@core/auth/auth.guard';
-import { MeeAuthLayoutComponent } from './layouts/auth/auth-layout.component';
-import { MeeShellComponent } from './layouts/shell/shell.component';
+import { authGuard } from './core/guards/auth.guard';
 
 export const routes: Routes = [
-  // ── AUTH LAYOUT (no sidebar, centered card) ──────────────────────────
-  // Mounts MeeAuthLayoutComponent as layout; children render inside the card.
+  // Root — public landing page
   {
     path: '',
-    component: MeeAuthLayoutComponent,
-    children: [
-      // Route 1 — Landing — /
-      {
-        path: '',
-        loadChildren: () =>
-          import('./features/landing/landing.routes').then(m => m.LANDING_ROUTES),
-      },
-
-      // Route 2 — Signup — /signup
-      // Route 3 — Login  — /login
-      // Route 4 — Onboarding — /onboarding (auth-guarded; served in auth layout before profile)
-      // ACCOUNT_ROUTES internally defines path: 'signup' | 'login' | 'onboarding' | 'profile'
-      // Mounting at path: '' so those relative paths resolve correctly.
-      {
-        path: '',
-        loadChildren: () =>
-          import('./features/account/account.routes').then(m => m.ACCOUNT_ROUTES),
-      },
-    ],
+    loadComponent: () =>
+      import('./features/landing/landing.component').then(m => m.LandingComponent),
+    pathMatch: 'full',
   },
 
-  // ── SHELL LAYOUT (dark sidebar, all authenticated routes) ─────────────
+  // Auth pages — top-level routes (each page wraps itself in AuthLayoutComponent)
+  {
+    path: 'login',
+    loadComponent: () =>
+      import('./features/auth/login.component').then(m => m.LoginComponent),
+  },
+  {
+    path: 'signup',
+    loadComponent: () =>
+      import('./features/auth/signup.component').then(m => m.SignupComponent),
+  },
+  {
+    path: 'otp-verify',
+    loadComponent: () =>
+      import('./features/auth/otp-verify/otp-verify.component').then(m => m.OtpVerifyComponent),
+  },
+
+  // Protected area — Shell layout (single empty-path parent, no ambiguity)
   {
     path: '',
-    component: MeeShellComponent,
-    // canActivate: [authGuard], // TEMP: disabled for dev preview
+    loadComponent: () =>
+      import('./layouts/shell/shell.component').then(m => m.ShellComponent),
+    canActivate: [authGuard],
     children: [
-      // Route 5 — Dashboard — /dashboard
       {
         path: 'dashboard',
-        loadChildren: () =>
-          import('./features/dashboard/dashboard.routes').then(m => m.DASHBOARD_ROUTES),
+        loadComponent: () =>
+          import('./features/dashboard/dashboard.component').then(m => m.DashboardComponent),
       },
-
-      // Route 6 — Smart Picker — /catalogs/new
+      {
+        path: 'catalogs',
+        loadComponent: () =>
+          import('./features/catalogs/catalog-list.component').then(m => m.CatalogListComponent),
+      },
       {
         path: 'catalogs/new',
-        loadChildren: () =>
-          import('./features/smart-picker/smart-picker.routes').then(m => m.SMART_PICKER_ROUTES),
+        loadComponent: () =>
+          import('./features/catalog-new/catalog-new.component').then(m => m.CatalogNewComponent),
       },
-
-      // Routes 7-10 — Catalog sub-routes
+      {
+        path: 'profile',
+        loadComponent: () =>
+          import('./features/profile/profile.component').then(m => m.ProfileComponent),
+      },
+      {
+        path: 'onboarding',
+        loadComponent: () =>
+          import('./features/account/onboarding/onboarding.component')
+            .then(m => m.OnboardingComponent),
+      },
       {
         path: 'catalogs/:id/edit',
         loadChildren: () =>
-          import('./features/catalog-form/catalog-form.routes').then(m => m.CATALOG_FORM_ROUTES),
+          import('./features/catalog-form/catalog-form.routes')
+            .then(m => m.CATALOG_FORM_ROUTES),
       },
       {
         path: 'catalogs/:id/images',
-        loadChildren: () =>
-          import('./features/images/images.routes').then(m => m.IMAGES_ROUTES),
+        loadComponent: () =>
+          import('./features/images/image-uploader/image-uploader.component')
+            .then(m => m.ImageUploaderComponent),
       },
       {
         path: 'catalogs/:id/preview',
-        loadChildren: () =>
-          import('./features/preview/preview.routes').then(m => m.PREVIEW_ROUTES),
+        loadComponent: () =>
+          import('./features/preview/preview/preview.component')
+            .then(m => m.PreviewComponent),
       },
       {
         path: 'catalogs/:id/pricing',
-        loadChildren: () =>
-          import('./features/pricing/pricing.routes').then(m => m.PRICING_ROUTES),
+        loadComponent: () =>
+          import('./features/pricing/pricing/pricing.component')
+            .then(m => m.PricingComponent),
       },
-
-      // Route 11 — Export
       {
         path: 'catalogs/:id/export',
-        loadChildren: () =>
-          import('./features/export/export.routes').then(m => m.EXPORT_ROUTES),
-      },
-
-      // Route 12 — Profile — /profile
-      {
-        path: 'profile',
-        loadChildren: () =>
-          import('./features/account/account.routes').then(m => m.ACCOUNT_ROUTES),
+        loadComponent: () =>
+          import('./features/export/export/export.component')
+            .then(m => m.ExportComponent),
       },
     ],
   },
 
-  // ── Design System Playground — flat route, no layout, dev tool only ──
-  {
-    path: 'playground',
-    loadComponent: () =>
-      import('./playground/playground.component').then(m => m.PlaygroundComponent),
-  },
-
-  // Wildcard redirect — must be LAST
-  {
-    path: '**',
-    redirectTo: '',
-  },
+  { path: '**', redirectTo: 'login' },
 ];

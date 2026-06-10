@@ -5,6 +5,102 @@ Business-logic specialist for MeeSell. Owns service layer (ai_engine call site, 
 
 ---
 
+## D4 §20.5 CI YAML CONSTRUCTED (2026-06-09, .gitlab-ci.yml)
+
+### Scope
+Micro-dispatch `meesell-services-builder` solo. D4 founder-approved Option A: produce `.gitlab-ci.yml` ONLY (the previously-missing CI YAML §20 sub-session never produced). Zero `backend/app/` changes; zero architecture-doc edits (§5.0). On branch `claude/meesell-project-setup-Tl7DS`, no commit (master handles git).
+
+### What I did
+Created `/Users/mugunthansrinivasan/Project/mesell/.gitlab-ci.yml` (283 LOC). 6 stages sequential per §19.G, gated via `needs:` chain (unit→smoke→lint→integration→golden_roundtrip):
+- **unit** `cd backend && pytest -m "unit"` — dummy env, no services.
+- **smoke** `cd backend && pytest -m "smoke"` — boot+schema, `needs:[unit]`.
+- **lint** (§16.E HARD RULE, separate build-failing stage, `needs:[smoke]`) — 4 commands, ALL from `backend/`: `lint-imports --config tests/lint/import_rules.toml` (Contracts 1-7) + `python tests/lint/check_scope_to_user.py` (8) + `python tests/lint/check_no_meesho_symbols_outside_export.py` (9) + `python tests/lint/check_message_id_regex.py` (10).
+- **integration** `cd backend && pytest -m "integration"` `needs:[lint]` — services `postgres:16` (alias postgres) + `valkey/valkey:8` (alias valkey); `DATABASE_URL=postgresql+asyncpg://meesell:meesell@postgres:5432/meesell_test`, `VALKEY_URL=redis://valkey:6379`.
+- **golden_roundtrip** `pytest -m "golden_roundtrip"` `needs:[integration]` — same services.
+- **nightly** schedule-only — 2 jobs both `needs:[golden_roundtrip]`: `nightly_slow_perf` (`pytest -m "slow or perf"`, `PYTEST_RUN_SLOW=1`) + `nightly_ai_eval` (`pytest -m "ai_eval"`, `RUN_AI_EVAL=1`, `GEMINI_API_KEY=$GEMINI_API_KEY`).
+
+### Locked patterns / decisions (reusable)
+- **Schedule gating idiom:** stages 1-5 use `rules: [{if: schedule → never}, {when: on_success}]`; nightly uses `rules: [{if: schedule → on_success}, {when: never}]`. This keeps MR pipelines off nightly AND keeps nightly from re-running PR-only gates. `$CI_PIPELINE_SOURCE == "schedule"` is the discriminator.
+- **All pytest + lint run from `backend/`** via `cd backend && ...` — pytest.ini, import_rules.toml, and the 3 AST scanners all resolve paths relative to backend/.
+- **lint-imports invocation is `--config tests/lint/import_rules.toml`** — the TOML uses `[tool.importlinter]` namespace (§19 D-flag); `import-linter>=2.0,<3` already in requirements.txt.
+- **base image `python:3.12-slim`**; pip cache `.cache/pip` keyed on `backend/requirements.txt` files-hash so a lock change busts it.
+- **YAML anchors:** `.install_deps` (`before_script: pip install -r backend/requirements.txt`) + `.dummy_env` (CI-safe placeholder SECRET_KEY/MSG91_*/REFRESH_TOKEN_PEPPER/RAZORPAY_WEBHOOK_SECRET) merged into jobs via `<<: *anchor`. Real values via `$VAR` CI/CD variables on integration+. NO hard-coded secrets.
+- **Dummy-env jobs (unit/smoke/lint)** need no Postgres/Valkey — app Pydantic Settings only require values present/well-formed to import modules.
+- Verified: `python3 -c "import yaml; yaml.safe_load(...)"` → YAML VALID + structural asserts (6 stages, anchor merges, needs chain, services, 4 lint commands, schedule gating) all pass.
+
+### Hand-off
+- **meesell-infra-builder**: register GitLab nightly schedule (Settings→CI/CD→Pipeline schedules, e.g. cron `0 18 * * *`) so nightly jobs fire; populate 5 protected/masked CI/CD variables (`SECRET_KEY`, `MSG91_API_KEY`/`MSG91_SENDER_ID`/`MSG91_ROUTE`, `REFRESH_TOKEN_PEPPER`, `RAZORPAY_WEBHOOK_SECRET`, `GEMINI_API_KEY`). L2 Secret Manager names align.
+- D4 escalation CLOSED.
+
+---
+
+## §19 CI gates CONSTRUCTED (2026-06-08, Wave 7 step 2)
+
+### Scope
+Sub-session `meesell-backend-construction-19-tests-1`. Solo dispatch acting as both meesell-services-builder (primary — AST scanners + perf tests + pytest fixtures + CI integration) AND meesell-database-builder (per-test transaction `db` fixture posture review + multi-tenant isolation regression). Wave 7 step 2 per founder's sequential plan.
+
+### What I did
+- **7 import-linter contracts** (`backend/tests/lint/import_rules.toml`, 1247 LOC): expressed §16.E's 7 logical contracts as **27 per-source sub-contracts** because import-linter v2's `forbidden` contract structurally rejects pairs that share descendants (e.g. `source=app.modules.iam` + `forbidden=app.modules.iam.repository`). Per-source expansion: Contract 1 → 8 sub-contracts (one per domain module excluding own repository); Contract 4 → 8 (own schemas); Contract 7 → 8 (own router + tasks); Contracts 2, 3, 5 stay single. Intra-module self-import allowlist (`__init__.py` router re-exports + intra-module router→service / service→repository / service→tasks / service→schemas chains) added via `ignore_imports` + `unmatched_ignore_imports_alerting = "none"` so cross-module enforcement stays sharp while legitimate intra-module loads pass. Final result: **27 kept / 0 broken** against live codebase.
+
+- **Contract 8 — `scope_to_user` AST scanner** (`tests/lint/check_scope_to_user.py`, 244 LOC): walks every public method in `app/modules/{customer,catalog,image,pricing,export}/repository.py` and asserts `user_id` is in the signature. Allowlist via `SCANNED_MODULES` constant (excludes `iam` (users IS the principal per §15.B special-case), `category` (global tables per §16.F.2), `dashboard` (no repository per §16.F.1)). `KNOWN_DEVIATIONS` frozenset documents `app.modules.pricing.repository.insert_calc` as the one pre-existing exception (tenancy upstream via `catalog.assert_product_ownership` per the function's own docstring).
+
+- **Contract 9 — M10 forbidden-symbol AST scanner** (`tests/lint/check_no_meesho_symbols_outside_export.py`, 242 LOC): walks `app/**/*.py` (excluding `app/modules/export/**` + `app/adapters/gcs.py` per §14.J + §15.F) checking 4 AST node kinds — `ast.Name`, `ast.Attribute`, `ast.keyword`, `ast.arg` — for the 3 forbidden symbols (`meesho_column_header` / `meesho_column_index` / `enum_codes_map`). Docstring string literals NOT walked per L_export_M10_AST_scanner spec line. `KNOWN_DOCSTRING_HITS` frozenset documents 6 pre-existing string-literal mentions (3 in `app/shared/models/template.py` JSON-shape docstring + 3 in `app/modules/export/{schemas,__init__}.py` docstrings) for forward-compat documentation.
+
+- **Contract 10 — i18n message_id regex scanner** (`tests/lint/check_message_id_regex.py`, 152 LOC): loads `app.i18n.messages_en.VALIDATION_MESSAGES` at runtime and asserts every key matches §5A.H regex `^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$`. Reports 55 keys all PASS against current registry. The existing `tests/test_messages_en_id_regex.py` continues to provide belt-and-braces parametrised coverage.
+
+- **4 pytest wrappers** (`tests/lint/test_*.py`, 73-171 LOC each): `test_import_contracts.py` runs `lint-imports` via subprocess with venv-binary auto-discovery (resolves `lint-imports` via `shutil.which` then `sys.prefix/{bin,Scripts}/lint-imports`); the other 3 wrappers invoke their scanners in-process and include counter-example tests (synthetic temp directories with a violating `repository.py` / `service.py`).
+
+- **6 §19.D pytest fixtures** appended to `backend/tests/conftest.py` (existing 343 LOC → 621 LOC): `valkey` (real per-test connection to all 4 logical DBs (0/1/2/3) via dev tunnel, FLUSHDB on teardown, returns `dict[name, Redis]`), `mock_ai_ops_client` (AsyncMock for `call_gemini` patched on source + 4 consumers), `mock_msg91_adapter` (AsyncMock for `send_otp` patched on source + iam consumers), `mock_gcs_adapter` (in-memory `dict[str, bytes]` backing the 4 GCS async surfaces, patched on source + 4 image/export consumers), `mock_razorpay_adapter` (MagicMock for `verify_webhook_signature`). The pre-existing `db` fixture already implements the §19.D per-test transaction + ROLLBACK pattern — preserved unchanged.
+
+- **4 performance test files** (`tests/perf/`, 74-152 LOC each + 152 LOC conftest with `assert_p95_within_budget` / `assert_value_within_budget` helpers): `test_category_schema_p95.py` (cache hit ≤ 50 ms / miss ≤ 200 ms), `test_category_browse_p95.py` (≤ 200 ms), `test_export_pipeline.py` (≤ 30 s), `test_ai_cost_average.py` (≤ ₹0.05 over 7-day audit_events rolling window). All marked `@pytest.mark.slow + @pytest.mark.perf`. **Suite-wide skip via `pytest_collection_modifyitems` hook** in `tests/perf/conftest.py` — gates BEFORE fixture instantiation (the `db` fixture connects at fixture setup), so fast-lane PR runs skip the suite cleanly without DB-connect errors.
+
+- **Multi-tenant isolation regression** (`tests/integration/test_multi_tenant_isolation.py`, 278 LOC): 4 attack vectors per §19.H + §15.B as separate test methods inside `TestMultiTenantIsolation`. Direct ORM INSERT to build User A / User B (bypassing OTP per §19.D fixture posture); `app.core.auth.issue_access_token` mints the User B JWT; the 4 vectors exercise GET preview / list / PATCH autosave / POST image-upload as User B against User A's product. Asserts 404 (preferred) or 403 (acceptable) — both are no-leak outcomes per §15.B 3-layer defense.
+
+- **`backend/pytest.ini` markers** + addopts per §19.D: 7 markers registered (`unit`, `integration`, `golden_roundtrip`, `ai_eval`, `slow`, `smoke`, `perf`); `--strict-markers --strict-config -ra` added. `asyncio_default_fixture_loop_scope = session` preserved (load-bearing for the `dev_engine` pattern). `testpaths = tests` preserved.
+
+- **`backend/requirements.txt`** appended `import-linter>=2.0,<3`.
+
+### Decisions made (FLAGGED — for master review at hand-off)
+
+1. **TOML namespace fork from §16.E sketch.** §16.E uses bare `[importlinter]` for clarity; the runtime import-linter package requires `[tool.importlinter]` (per `importlinter.adapters.user_options.TomlFileUserOptionReader` line 90). Implementation uses runtime-required namespace; semantic count of "7 import-linter contracts" preserved via per-source expansion. **No architecture-doc edit per §5.0 — documented inline in the TOML header comment.**
+
+2. **Per-source expansion of Contracts 1, 4, 7.** import-linter v2's `forbidden` contract rejects source/forbidden pairs that share descendants. Expanded as: Contract 1 → 8 sub-contracts (one per source module); Contract 4 → 8; Contract 7 → 8. **Semantic count remains "7 logical contracts" per §19.C.** Documented inline. Suggest §19.C amendment NOTE for future readers ("Contracts 1/4/7 implemented as N=8 per-source sub-contracts each — see import_rules.toml header").
+
+3. **`KNOWN_DEVIATIONS` allowlist for Contract 8.** `pricing.repository.insert_calc` lacks `user_id` because the `pricing_calcs` table FKs on `product_id`, and the tenancy gate is enforced upstream at `catalog.assert_product_ownership` per the function's own docstring (lines 8-11). Added to the scanner's allowlist with inline citation. **NO modification to §12 LOCKED CONSTRUCTED code per §5.0 + §18-precedent ("don't touch other sub-sessions' LOCKED code unless necessary").** Suggest V1.5 ticket: widen `insert_calc` signature to accept `user_id: UUID` for defence-in-depth.
+
+4. **L_iam_1 NOT addressed in §19.** The latent says `core/auth.py` raises 2-segment IDs (e.g. `auth.token_missing`) but i18n + §5A.H regex require 3-segment. Contract 10 scans `app.i18n.messages_en.VALIDATION_MESSAGES` keys (all 55 PASS), NOT the runtime ID strings raised by exceptions. The 2-segment exception IDs WILL produce missing-key resolver fallbacks at runtime per §5A.I (which logs WARNING and returns the verbatim ID — a degraded UX but not a crash). **Out of §19 scope per the construction prompt's "DO NOT amend per-module test plans" rule + §5.0.** Already in latent backlog as L_iam_1.
+
+5. **L_iam_2 V0-rot cleanup PARTIAL.** `tests/test_config.py` (5 failures) + `tests/test_worker_db_isolation.py` (3 V0-rot failures referencing `app.database`, `async_session_maker`, `app.services.image_processor`) NOT remediated in this sub-session — tunnel was down for the duration so failure causes can't be confirmed. **Recommend §20 sub-session pick up V0-rot cleanup once §20 deployment dispatch goes out.**
+
+6. **Tunnel down during sub-session.** `nc -zv localhost 5433` returned `Connection refused` throughout the session — autossh process exists (PID 82990 → `gcp-nexus` alias) but the forwarding was not active. Boot smoke (`test_app_boot_integration`) + schema smoke (`test_database`) + new multi-tenant regression COULD NOT be exercised. Lint suite (18 PASS), perf suite (5 skip), 92 non-DB tests verified. **Master must re-run boot+schema+multi-tenant after tunnel restoration to close §19 acceptance.**
+
+### Tests added (in this sub-session)
+- **18 pytest tests under `tests/lint/`**: 1 import-linter wrapper (2 sub-asserts) + 4 scope_to_user wrapper + 6 M10 forbidden-symbol wrapper + 6 message_id regex wrapper — ALL PASS in 0.31s.
+- **5 perf tests under `tests/perf/`**: ALL SKIP cleanly per `PYTEST_RUN_SLOW=1` gate. `PYTEST_RUN_SLOW=1` invocation will exercise the 4 budgets — requires tunnel + V1.5 export-pipeline seed harness for the 30s budget test.
+- **4 multi-tenant integration tests under `tests/integration/`**: collected cleanly; will exercise the 4 §15.B attack vectors once tunnel is restored.
+
+### Acceptance status
+
+| # | Criterion | Status |
+|---|---|---|
+| 1 | 7 import-linter contracts in `tests/lint/import_rules.toml` matching §16.E | ✅ 27 kept / 0 broken |
+| 2 | 3 custom AST scanners (Contracts 8, 9, 10) + counter-example tests | ✅ all 3 scan PASS; counter-examples flag synthetic violations |
+| 3 | 4 perf test files in `tests/perf/` with locked budgets per §19.E | ✅ 4 files, skip cleanly under PR gate |
+| 4 | `tests/conftest.py` with 6 locked fixtures per §19.D | ✅ all 6 in place (`db` pre-existed, 5 new appended) |
+| 5 | `pytest.ini` markers per §19.D + `perf` | ✅ 7 markers + addopts |
+| 6 | `test_multi_tenant_isolation.py` 4 attack vectors | ✅ written, awaiting tunnel for run |
+| 7 | All 10 CI contracts PASS against current codebase | ✅ Contracts 1-10 all PASS (Contracts 1-7: 27 sub-contracts kept; Contracts 8-10: scanners exit 0) |
+| 8 | Coverage targets met (80% line / 100% branch on critical paths) | ⏸ DEFERRED — coverage harness requires tunnel for integration tests |
+| 9 | ~88 test classes per §19.B inventory all PASS | ⏸ DEFERRED — DB-dependent tests cannot run without tunnel |
+| 10 | Universal: ruff clean | ✅ (3 auto-fixed) |
+
+### Hand-offs queued
+- **§20 deployment sub-session**: pick up L_iam_2 V0-rot cleanup (5 `test_config.py` failures + 3 `test_worker_db_isolation.py` failures); wire the CI YAML to invoke the 4 `pytest -m` stages per §19.G; populate the 3 PENDING Secret Manager secrets (`refresh-token-pepper`, `razorpay-webhook-secret`, `langfuse-secret-key`).
+- **meesell-infra-builder**: restore the dev tunnel (autossh) so master can verify §19 acceptance criteria #8 + #9.
+- **V1.5 tickets queued** (D-flags for master ratification): (a) §19.C amendment NOTE on per-source expansion of Contracts 1/4/7; (b) widen `pricing.repository.insert_calc` signature to accept `user_id: UUID` (defence-in-depth); (c) L_iam_1 resolution — migrate `core/auth.py` exception IDs from 2-segment to 3-segment per §5A.H.
+
+---
+
 ## §5 shared CONSTRUCTED (2026-06-06)
 
 ### Scope
@@ -1220,3 +1316,385 @@ on §12 dispatch.
 | prewarm_top_categories real impl | reference | lazy-imports category.service from inside the fn (avoids circular); uses `make_worker_session()`; warms tree + top n schemas; try/except per step |
 | integration test skip-on-404 (D4) | reference | category integration tests skip when router 404s — survives parallel api-routes-builder dispatch |
 | get_commission None→Decimal('0.00') (D5) | reference | no-row → CategoryNotFoundError; row + null commission → 0.00 (pricing applies default at call site) |
+
+## §10 catalog — CONSTRUCTED 2026-06-07 (sub-session 1)
+
+| Memory key | type | content |
+| ---------- | ---- | ------- |
+| §10 catalog service surface (10 methods) | reference | route-internal: create_product / patch_product / autofill_product / get_preview / soft_delete / get_draft; cross-module: assert_product_ownership / get_product_for_export / list_products / get_validation_summary |
+| §10 ProductNotFoundError uniform collapse | reference | repository.find_by_id collapses (non-existent | cross-tenant | soft-deleted) → None; service raises ProductNotFoundError uniformly — no leak between cases |
+| §10 plan_guard wiring (D5 — service-level) | reference | create_product: plan_guard("product_count", db=db) FIRST → category.assert_category_exists → customer.assert_eligible_for_super_id → catalog select/create → insert; autofill_product: plan_guard("ai_autofill_hourly") |
+| §10 schema-driven validation (D3 — 3-segment IDs) | reference | dispatch through schema field's data_type + primitive + enum_resolver; unknown→`validation.fields.unknown_key`; text_short>100→`validation.{canonical}.too_long`; static enum miss→`validation.{canonical}.invalid_enum_value`; category enum via `category.service.get_field_enum`; multi-violation→first drives validation_message_id, rest in `details: list[str]` |
+| §10 product_drafts wrapper (D1 — applied) | reference | draft_jsonb = {"fields": <merged>, "autosave_count": N}; saved_at→last_updated; legacy rows coerce to autosave_count=1; repository._unwrap_draft_payload is the canonical reader |
+| §10 audit_mw coalesce regex deviation (D2) | reference | `_AUTOSAVE_PATH = ^/api/v1/products/[0-9a-fA-F-]+/(draft|autosave)/?$` does NOT match `PATCH /products/{id}`; audit row writes per PATCH (no coalescing in V1); §4.G amendment queued — NOT a §10 blocker |
+| §10 graceful fallback symmetry | reference | autofill_product handles BOTH `BudgetExceededError` raise AND `AIResponse.parsed.fallback_offered=True` AND empty `parsed.fields` — all 3 → `AutofillResponse(suggestions={}, applied={}, fallback_offered=True)` with HTTP 200 |
+| §10 ai_suggestions persistence | reference | overwrite (not merge) per call — each Auto-fill replaces ai_suggestions_jsonb with the full payload; history lives in audit_events |
+| §10 autofill confidence default (D4) | reference | _DEFAULT_AUTOFILL_CONFIDENCE=0.9 — above the 0.85 auto-apply floor; emission IS the confidence signal (prompt instructs model to omit unsure fields) |
+| §10 default catalog name (D5) | reference | `{user_id_last4_hex}-Drafts-{YYYYMMDD-HHMM}` — uses user_id-last-4 instead of phone-last-4 to avoid hot-path DB read; UX layer may rewrite |
+| §10 super_id resolution | reference | _resolve_super_id_for_category(category_id) reads `schema["super_id"]` from category.fetch_schema cache; defensive return None skips the eligibility gate |
+| §10 cross-module surface stability | reference | assert_product_ownership / get_product_for_export / list_products / get_validation_summary form the V1.5 gRPC interface per §10.K — the 4 RPCs |
+| §10 image/pricing forward-compat | reference | get_preview and get_product_for_export defensively try `from app.modules import image` — empty image_urls/refs when §11 not yet present (parallel-dispatch safe) |
+
+## §11 image — CONSTRUCTED 2026-06-07 (sub-session: meesell-backend-construction-11-image-1)
+
+| Memory key | type | content |
+| ---------- | ---- | ------- |
+| §11 image service surface (6 methods) | reference | route-internal: upload_image / list_images; cross-module: get_image_urls (catalog) / get_image_bytes (export) / write_precheck_result (Celery worker) / summary (dashboard) — all async, all take db kwarg |
+| §11 image repository (7 methods + helper) | reference | insert / find_by_product / find_by_id / find_by_slot / update_precheck_result / soft_delete_by_idx / summarize_by_products; _owned_product_ids_subquery helper applies scope_to_user(select(ProductORM.id), user_id) — §19 grep anchor for tables w/o direct user_id column |
+| §11 GCS path locked convention | reference | `meesell-images/{user_id}/{product_id}/{idx}.jpg` — grep-anchored in service._gcs_path_for + reproduced in repository docstrings; tested via stub_gcs_upload call inspection |
+| §11 product_images missing soft-delete columns (D1) | reference | MVP_ARCH §2.5 DDL + ORM model lack deleted_at + updated_at; repository workarounds: filter status != 'deleted' (not deleted_at IS NULL); find_by_slot returns any row regardless (DB UNIQUE is real gate); update_precheck_result drops updated_at = NOW(); soft_delete_by_idx writes status='deleted' (internal helper only — no DELETE-image endpoint in V1) |
+| §11 ImageUrl __str__ shim (D3) | reference | frozen dataclass ImageUrl carries __str__ returning self.signed_url so catalog.service.get_preview defensive `tuple(str(u) for u in urls)` shim works unchanged; future catalog cleanup may use `.signed_url` |
+| §11 Celery task is sync (V1) | reference | @shared_task(name="image.precheck", bind=True, max_retries=2, retry_backoff=True); body uses asyncio.run(_run_precheck_pipeline(...)) for async work; UUIDs serialised to str across JSON boundary |
+| §11 watermark budget defensive try (D4) | reference | tasks._check_watermark wraps ai_ops.client.call_gemini in try/except BudgetExceededError even though client catches internally — belt-and-suspenders for §11.K int #2 stub_call_gemini_budget_exceeded raising directly |
+| §11 5-step pipeline (AI track) | reference | _check_jpeg (Pillow open + format==JPEG) / _check_color_space (mode → RGB|CMYK|Gray) / _check_resolution (≥1500x1500) / _check_white_background (4-corner 5x5 sample, threshold 235/255) / _check_watermark (Gemini Vision); only the 4 deterministic checks gate final_status="ready" — watermark step informational per §11.J + §6A.F |
+| §11 image.precheck.completed audit | reference | _emit_precheck_completed_audit writes AuditEvent direct ORM (entity_type="product_image", entity_id=image_id, metadata_jsonb={precheck_jsonb, final_status, emitted_at}); drops on failure with warning log — same pattern as §6A.D cost_tracker._write_audit_row |
+| §11 i18n wording fixes (D5) | reference | validation.image.invalid_format "JPEG and PNG" → "JPEG"; validation.image.invalid_idx "1 and 6" → "1 and 4"; 5 IDs themselves unchanged |
+| §11 cross-module backward-compat with §10 | reference | catalog.service.get_preview lines 822-833 defensive integration WORKS UNCHANGED because ImageUrl.__str__ returns signed_url; integration test int #3 covers this contract |
+| §11 PrecheckResult.to_jsonb shape | reference | dict with 5 keys + watermark_confidence; deterministic_checks_pass property excludes watermark step (informational) — final_status="ready" iff property True |
+
+## §12 pricing — CONSTRUCTED 2026-06-07 (sub-session: meesell-backend-construction-12-pricing-1)
+
+| Memory key | type | content |
+| ---------- | ---- | ------- |
+| §12 pricing service surface | reference | route-internal: calculate(user_id, product_id, request, *, db) -> PriceCalcResponse; cross-module (OPTIONAL §13): get_last_calc(user_id, product_id, *, db) -> PricingCalc \| None — V1 dashboard does NOT call this per founder ruling §2 (matrix stays at 8 ✓) |
+| §12 P&L locked formula | reference | seller_price = input_cost × (1 + target_margin_pct/100); denom = 1 - commission_pct/100 - (gst_pct/100) × (commission_pct/100); mrp = seller_price / denom; commission_amount = mrp × commission_pct/100; gst_amount = commission_amount × gst_pct/100 (GST charged on commission, not full MRP); meesho_price = mrp; profit = seller_price - input_cost; profit_pct = profit / input_cost × 100; ALL quantize ROUND_HALF_EVEN to 2 dp |
+| §12-PRICING-D1 commission missing signal | feedback | category.service.get_commission returns Decimal('0.00') (NOT None) for missing-commission case per Wave 3 LOCKED docstring "NEVER None — pricing service fails over to a default". Pricing treats == 0 as missing-signal and raises CommissionMissingError. Safe in V1 because no legitimately 0% Meesho category exists. **Why**: §9 docstring explicit; **How to apply**: V1.5 if a real 0% category ever lands, widen §9 with separate get_commission_or_none surface |
+| §12-PRICING-D2 golden formula vs spec | feedback | §12.J test #3 prose says mrp ≈ 151.52 but formula yields 130 / 0.823 ≈ 157.96. Followed formula; documented in unit test docstring. **Why**: locked formula is the contract; prose golden is spec drafting error. **How to apply**: when spec prose and locked formula diverge, formula wins; assert formula-derived value in tests with D-flag annotation |
+| §12-PRICING-D3 3 exception classes per §12.G | reference | PricingError base + InvalidPriceInputError (400 / validation.price.invalid_input) + CommissionMissingError (422 / pricing.commission.missing). Master prompt's "5 classes" count was actually the 5 i18n message_id keys (3 alerts are domain dataclass values per §12.F, NOT exceptions) |
+| §12-PRICING-D3a 3-segment ID convention | reference | Use pricing.commission.missing (3-segment) NOT pricing.commission_missing (2-segment shorthand in §12.G prose). §5A.H regex locks 3-segment; i18n/messages_en.py ships 3-segment already. Same precedent as §7 iam D3, §8 customer D5, §9 category D3, §10 catalog D3 |
+| §12-PRICING-D4 DDL is the law | feedback | pricing_calcs DDL (Wave 1 LOCKED §5.E ORM) has structured columns: mrp/meesho_price/seller_price/commission_pct/gst_pct/margin/margin_pct/created_at — NOT {user_id, input_jsonb, output_jsonb, calculated_at} per §12.B.1 step 8 prose. **Why**: ORM model docstring explicitly designs tenancy via product→catalog→user FK chain (no user_id column on pricing_calcs). **How to apply**: persist structured columns; tenancy via (a) service-layer assert_product_ownership upstream + (b) repository JOIN through products with Product.user_id == user_id as §16 grep-anchor. margin column = computed profit; margin_pct = computed profit_pct |
+| §12 alert thresholds (strict inequalities) | reference | LOW_MARGIN: profit_pct < 10 (warning); HIGH_MRP_MULTIPLIER: mrp / input_cost > 3 (warning); THIN_PROFIT: profit < 50 INR (info). All STRICT — at boundary no alert fires. Multiple can fire (e.g., low margin + thin profit) |
+| §12 _generate_alerts pure function | reference | accepts PnLBreakdown + input_cost kwarg; returns list[PricingAlert]; no I/O; defensive input_cost > 0 guard for HIGH_MRP_MULTIPLIER (Pydantic gt=0 should prevent but pure helper can be called directly in unit tests) |
+| §12 denom positive guard | reference | _compute_pnl guards against denom <= 0 by raising InvalidPriceInputError ("Commission + GST combine to a non-positive denominator") — defensive for V1.5 override surface; V1 commission ∈ [0,100] and gst=18 keep denom ∈ (0.82, 1.0] |
+| §12 append-only audit invariant | reference | pricing_calcs is the audit trail. insert_calc is the ONLY mutator; no UPDATE method on repository. Each calculate() call → new row. Test #2 verifies 3 calcs → 3 rows (commits between calcs in integration test because Postgres NOW() is transaction-bound per D5) |
+| §12-PRICING-D5 transaction-bound NOW() in tests | reference | Postgres NOW() = transaction_timestamp() — same for all statements in one tx. Test that asserts ordering of multiple INSERTs must commit between calls + sleep(0.01) to get distinct created_at. Production reality: each HTTP request = own tx → distinct NOW() automatically |
+| §12 cross-module import allowlist | reference | service.py imports: catalog.service (assert_product_ownership) + category.service (get_commission). NO catalog.repository, NO category.repository, NO adapters.gemini, NO ai_ops.client, NO Razorpay/MSG91/GCS. Pricing is deterministic math per §12.H. shared.models.product is permitted (ORM is cross-module per §16 — only repository is module-private) |
+| §12 latent bug §0.E RESOLVED | project | DELETE backend/app/services/pricing_engine.py FIRST per §12.A (verified zero importers via grep before deletion); new modules/pricing/{7 files} replaces it cleanly; new PricingAlert in modules/pricing/domain.py replaces deleted legacy schemas/pricing.PricingAlert; boot-smoke green after rm. L1 latent retired |
+| §12 NO Celery tasks | reference | NO tasks.py in pricing subtree (unlike §11 image which has tasks.py for precheck pipeline). Pricing is synchronous — math is sub-millisecond; sellers tweak target_margin_pct interactively |
+| §12 V1.5 forward-compat | reference | PriceCalcRequest carries override_commission_pct + override_gst_pct as Optional V1.5+ fields. V1 IGNORES them (service uses category-resolved commission + DEFAULT_GST_PCT=18). V1.5 Pro-tier may honor them — schema doesn't break |
+| §12 incidental §11 cleanup | reference | §11 image dispatch left test_app_boot_integration.py out of sync (image router was mounted but allowed_paths/expected_count not updated). Folded the fix into §12: added /api/v1/products/{id}/images to allowed_paths + bumped expected_count 25 → 27 (+1 image +1 pricing). No behavior change to image module |
+
+## §13 dashboard — CONSTRUCTED 2026-06-07 (sub-session: meesell-backend-construction-13-dashboard-1)
+
+| Memory key | type | content |
+| ---------- | ---- | ------- |
+| §13 dashboard service surface | reference | ONE public method: `list_products_for_dashboard(user_id, query: DashboardQuery, db: AsyncSession) -> DashboardResponse`. ONE private pure function: `_compose_response(*, paginated: PaginatedProductsInternal, completeness: ProfileCompleteness) -> DashboardResponse`. No other public methods — dashboard is a leaf consumer on §2.D matrix (no producer surface) |
+| §13 cross-module calls (exactly 2) | reference | catalog.service.list_products(user_id, pagination, db) per §16.B row 6; customer.service.get_onboarding_completeness(user_id, db) per §16.B row 7. NO other module calls (matrix kept at 8 ✓ for V1; V1.5 may elevate to 11 ✓ for image/pricing/export summary() opt-ins) |
+| §13 NO repository.py (structural) | reference | dashboard subtree has 5 source files: __init__, router, service, schemas, domain (empty body), exceptions. Absent repository.py is intentional design per §13.D + §3.C deviation. Tenancy enforced upstream at catalog.repository (§10.D) + customer.repository (§8.D) — dashboard never sees raw SQL |
+| §13-DASHBOARD-D3 amendment §13.A.1 filter/search → V1.5 | feedback | Founder ruling 2026-06-07 deferred status_filter + search query params to V1.5. ProductListItem.status narrowed from Literal["draft","ready","exported"] to Literal["draft","ready"]. DashboardQuery shrinks from 4 fields to 2. **Why**: catalog.Pagination is locked at (page, limit) only; status_filter+search would require §10 catalog amendment, plus "exported" status would need either exports table JOIN or denormalised is_exported on products. Day-1 sellers (0-5 products in Tirupur) don't need filter/search; V1.5 ships with catalog Pagination extension. **How to apply**: V1 ships `page`+`limit` only; V1.5 lifts §13.A.1, restores 4-field query, restores 3-value status Literal, requires concurrent §10 catalog amendment |
+| §13-DASHBOARD-D4 dashboard.domain.Pagination reuses catalog's | feedback | Post-amendment, dashboard's local Pagination would be identical to catalog.domain.Pagination (page, limit only). To avoid duplication, dashboard.service imports catalog.domain.Pagination directly. Permitted by §16 Rule 4 (domain.py is cross-module exchange currency for types in public service signatures). dashboard/domain.py is empty body — kept for §3.C canonical subtree completeness. **Why**: V1 amendment makes the shapes identical; **How to apply**: don't duplicate the dataclass; import the producer's type |
+| §13-DASHBOARD-D5 _compose_response purity | reference | Pure function — no I/O, no DB, no await, no clock reads, no randomness. Maps catalog.Product → ProductListItem (renames .id → .product_id) and customer.ProfileCompleteness → ProfileCompletenessSummary (1:1). Tested in isolation via test_response_composition.TestComposeResponsePure (deterministic outputs for given inputs). Separates composition from orchestration so service-level unit tests don't need to mock both consumed services to test the shape |
+| §13 stub_consumed_services fixture pattern | reference | Patch the dashboard service module's BOUND imports: `dashboard_service_module.catalog_service.list_products` + `.customer_service.get_onboarding_completeness` via monkeypatch. The aliases are bound at import time (`from app.modules.catalog import service as catalog_service`), so the patch lands on the consumer's namespace and the stubs reach the service. Returns a `configure(items, total, completeness)` callable for per-test shaping. Tracks call args in `state["calls"]` for forward-verification |
+| §13 empty inventory → 200 not 404 | reference | First-time seller with zero products → service returns DashboardResponse(products=[], total=0, page, limit, onboarding_completeness=ProfileCompleteness(0,10,0,0, False)). §8 customer.get_onboarding_completeness no-profile branch returns the zero shape (NOT raises). §13.B status code lock — empty inventory is a valid 200, NOT 404 |
+| §13 ProductListItem.status narrowing safety | reference | After §13.A.1 amendment, ProductListItem.status = Literal["draft","ready"] matches catalog.domain.Product.status exactly. Pydantic validates the value on construction — if catalog ever emits an unexpected status the response builder will raise pydantic.ValidationError → 500 via §4.F. Acts as a structural guard against future catalog.Product.status widening that forgets to update dashboard |
+| §13 integration tests pattern (§12 precedent) | reference | Service-level integration: seed user + seller_profile + products via ORM directly (bypassing §10 catalog.create_product to avoid §8 eligibility setup); invoke dashboard.service.list_products_for_dashboard; assert response shape. HTTP-level coverage delegated to §15 contract suite. Uses db_session + use_live_valkey fixtures. Phone prefix +9155500XXXXX for cleanup convention |
+| §13 template parser_version VARCHAR(8) constraint | reference | shared.models.template.Template.parser_version is mapped_column(String(8)) — strict 8 character cap. Test fixtures must use short codes like "dash1.0", NOT "dashboard-integ-1.0". Same constraint applies to ANY integration test that seeds templates directly (precedent for other constructors) |
+| §13 sample_products fixture: status passthrough | reference | sample_products fixture builds 3 frozen Product instances with status sequence [ready, draft, draft]. Used by test_response_composition + test_empty_state to verify status_passthrough without mocking the entire catalog service |
+| §13 no AI Ops integration | reference | dashboard imports nothing from app.ai_ops, app.adapters, or app.ai_ops.client. Zero vendor egress per §13.H. P95 ≤ 200ms budget per §1.E is structurally honored — no third-party round-trips to absorb the latency. Cache helper NOT participating (high write churn from product PATCH would tank hit rate per §13.I) |
+
+## §14 export — CONSTRUCTED 2026-06-08 (sub-session: meesell-backend-construction-14-export-1)
+
+Heavy-lift slice. Authored 6 source files + 10 unit test modules (33 sub-tests) + 3 integration tests + 15-fixture JSON corpus + fixture runner (17 sub-tests). Celery `include=` populated. All 64 export tests + 8 boot-smoke + 200 Wave 1–5 regression tests PASS. Ruff clean. M10 boundary holds.
+
+| Memory key | type | content |
+| ---------- | ---- | ------- |
+| §14 export service surface (3 public + 1 cross-module + 10 worker-internal) | reference | public: initiate_export(user_id, product_id, request, db) → ExportInitiatedResponse; get_export(user_id, export_id, db) → ExportResponse. cross-module (V1 unused): summary(user_id, product_ids, db) → dict[UUID, ExportStatusSummary]. worker-internal: _run_export_pipeline + 9 named step helpers (_resolve_schema, _select_strategy, _build_row, _apply_strategy, _translate_enums, _reorder_columns, _restore_aliases, _write_xlsx, _round_trip_validate, _package_images_zip). Router calls accept db positionally — service signatures match router's `await service.initiate_export(user_id=..., db=db)` convention |
+| §14 export repository (5 methods) | reference | insert / find_by_id / update_status_ready / update_status_failed / summarize_by_products. All async. All use scope_to_user(user_id) directly on ExportORM (§19 grep anchor). _orm_to_domain helper applies the D1-D4 derivations (initiated_at←created_at; completed_at→None; format derived from zip_gcs_path or pending hint; error_code parsed from error_message prefix; round_trip_validated=True when status='ready') |
+| §14-EXPORT-D1 DDL no initiated_at/completed_at/updated_at | feedback | exports DDL ships with only `created_at`. Map: API initiated_at ← DDL created_at; API completed_at = None always. update_status_ready/failed signatures keep completed_at param for forward-compat but DROP it at SQL layer. **Why**: Wave 1 DDL is fixed; protocol §5.0 forbids sub-session migrations. **How to apply**: V1.5 migration adds initiated_at + completed_at columns; remove `del completed_at` lines |
+| §14-EXPORT-D2 DDL no format column | feedback | DDL has no format column. Pipeline carries format in Celery payload. API GET derives format from zip_gcs_path (NOT NULL → xlsx_with_images; NULL → xlsx_only). For pending rows, service writes Valkey DB 0 key `export:format:{export_id}` 10-min TTL on insert; API reads for pending-window cosmetic accuracy. **Why**: format MUST round-trip in the API contract but the DDL is fixed. **How to apply**: V1.5 migration adds format column; remove the Valkey hint |
+| §14-EXPORT-D3 DDL no error_code column | feedback | DDL has no error_code column. update_status_failed concatenates `f"[{code}] {message}"` into the existing error_message column. API GET parses the bracketed prefix back. 4 codes: enum_validation_failed / compliance_strategy_failed / xlsx_build_failed / round_trip_mismatch (per §14.H). _parse_error_code helper is defensive against malformed prefixes. **Why**: §14.B.2 wire contract requires error_code; DDL doesn't support it. **How to apply**: V1.5 migration adds error_code; update_status_failed switches to writing both columns |
+| §14-EXPORT-D4 round_trip_validated implied TRUE | feedback | DDL has no boolean column. Per MVP_ARCH §5.7, status='ready' invariant requires round-trip pass (else pipeline raises RoundTripValidationError → status='failed'). _orm_to_domain returns round_trip_validated=True iff status='ready', None otherwise. **Why**: contract derivation removes a column. **How to apply**: no migration needed for V1.5 unless we want to record the diagnostic from RoundTripResult |
+| §14-EXPORT-D5 status='pending' explicit override | reference | DDL status server_default = 'processing' but §14 uses 'pending'. repository.insert() passes status='pending' explicitly to override server_default. Status transitions only pending→ready OR pending→failed; legacy 'processing' never written by this module |
+| §14-EXPORT-D6 download_url column vestigial | reference | DDL ships `download_url TEXT` column that §14.B.2 doesn't use (signed URLs generated fresh per response per §6.D). Module leaves it NULL; never reads/writes |
+| §14-EXPORT-D7 alias restoration is RUNTIME NO-OP | feedback | §14.C step 7 spec mentions `category.service.fetch_xlsx_aliases(category_id)` but §16.B.1 locks export's category surface at fetch_schema + get_field_enum only. RESOLUTION: meesho_column_header is sourced from schema["fields"][i].meesho_column_header in _build_row directly. Seed pipeline (per MVP_ARCH §3) pre-embeds typo-preserved headers in templates.schema_jsonb.fields[*].meesho_column_header. field_aliases.for_xlsx_export=TRUE is consumed at SEED time only; runtime does NOT query that table. _restore_aliases is retained as explicit no-op so §14.C 9-step contract is structurally honored. **Why**: avoids cross-module surface widening; seed embedding makes runtime restoration redundant. **How to apply**: when V2 marketplaces diverge from seed-embedded headers, _restore_aliases is the insertion point |
+| §14-EXPORT-D8 Celery task name + retry locks | reference | @shared_task(name="export.xlsx", bind=True, max_retries=1, retry_backoff=True) per §14.E locked. Master prompt's "export.generate"/max_retries=2 was non-normative drift; §14.E line 5427 governs |
+| §14-EXPORT-D9 GCS paths LOCKED | reference | XLSX: `meesell-exports/{user_id}/{export_id}/sheet.xlsx`; ZIP: `meesell-exports/{user_id}/{export_id}/images.zip` per §14.I. NOT `{export_id}.xlsx` (drift). Grep-anchored in service.py + integration test asserts the exact path |
+| §14-EXPORT-D10 exception class names LOCKED | reference | ProductNotReadyForExportError (NOT ProductNotReadyError), RoundTripValidationError (NOT RoundTripMismatchError) per §14.H |
+| §14-EXPORT-D11 3-segment ID normalisation | feedback | §14.H prose lists 2-segment shorthand (export.not_found, export.product_not_ready, etc.). i18n/messages_en.py already ships canonical 3-segment IDs from §5A construction (export.lookup.not_found, export.product.not_ready, export.front_image.missing, export.enum.validation_failed, export.compliance.strategy_failed, export.xlsx.build_failed, export.round_trip.mismatch). Exception classes wire to the canonical 3-segment IDs. Same precedent as §7 D2, §8 D5, §9 D3, §10 D3, §11 D2, §12 D3a. **Why**: §5A.H regex requires 3-segment; spec prose is shorthand. **How to apply**: every new module's validation_message_id MUST conform to §5A.H regex regardless of how the spec text inlines them |
+| §14-EXPORT-D12 MeeshoExportAdapter is V2 seam | feedback | Domain ships MarketplaceExportAdapter ABC + V1 concrete MeeshoExportAdapter, but the V1 pipeline runs through service._run_export_pipeline directly (invoked by Celery task). MeeshoExportAdapter.export raises NotImplementedError in V1 — kept as future-proofing seam for V2 multi-marketplace per §14.L. **Why**: pipeline-as-service-helpers makes per-step unit testing simpler than adapter-method orchestration. **How to apply**: V2 expansion populates the body + shifts Celery dispatch through the adapter |
+| §14 Celery enqueue pattern | reference | service.initiate_export calls `export_xlsx_task.delay(str(export.id), str(user_id))` — same pattern as §11 image.service. Avoids importing `app.workers.celery_app` at request time (the celery_app singleton reads `settings.CELERY_BROKER_URL` which is a PRE-EXISTING config gap — env var supplies value to Celery but Settings model doesn't expose the field). Task name binding preserved at @shared_task decorator. **TBD V1.5:** add CELERY_BROKER_URL/CELERY_RESULT_BACKEND to shared/config.py Settings |
+| §14 cross-module call sites | reference | service.py imports: catalog.service (assert_product_ownership + get_product_for_export), customer.service (get_compliance_block), category.service (fetch_schema + get_field_enum), image.service (list_images). NO repository imports across module boundaries per §16. NO ai_ops/adapters imports except adapters.gcs (the one egress) |
+| §14 Layer 3 hallucination guardrail | reference | _translate_enums looks up each column's canonical value in field_enum_values.enum_entries via category.service.get_field_enum. Unknown canonical → ExportEnumValidationError (500 / export.enum.validation_failed). FieldEnumNotFoundError + CategoryNotFoundError = "not an enum field" pass-through. Empty/None values bypass the lookup (no false enum rejection on optional empty fields). Single point of structural F3 enforcement (philosophy "never send invalid enum to Meesho") — the deterministic safety net under AI Layers 1+2 in §6A.E |
+| §14 StandardComplianceStrategy NON-pollution rule | reference | _apply_strategy with StandardComplianceStrategy ONLY replaces existing compliance columns (by canonical_name match); does NOT append compliance canonicals that aren't in the schema. Schema is authoritative column inventory per §5A.B + §14.K fixture 1 (saree schema has 3 fields, NOT 9 LM fields). Strategy itself emits 9 columns (unit-testable via strategy.apply); the merge logic decides which to keep |
+| §14 CollapsedComplianceStrategy ", " separator + drop-empties | reference | concatenate (name, address, pincode) with ", " separator; drop empty + whitespace-only entries before join (`if not str(raw).strip(): continue`). All-None triple → empty string (not "None, None, None"). Default headers "Manufacturer Details" / "Packer Details" / "Importer Details" overridable via schema column_header_map. Filters the 9 LM canonicals from row.columns + appends 3 derived columns |
+| §14 round-trip validator comparison rules | reference | compares header row (strict) + data row (via str() to tolerate int/float/Decimal round-trip). XLSX coerces "" to None on read → both expected and parsed normalised to "" via `"" if x is None else x`. RoundTripResult.mismatches reports canonical_name strings (seller-friendly); diagnostic carries the prose summary used for the error_message |
+| §14 15-fixture runner pattern | reference | tests/integration/golden_round_trip/fixture_NN_<name>.json files + test_golden_fixtures_runner.py iterator. Each fixture: input_snapshot + schema + expected_xlsx_canonical (+ optional enum_payloads). Runner reconstructs XlsxRowSpec from expected_xlsx_canonical + schema headers → _write_xlsx → _round_trip_validate. Parametrised over all 15 fixtures + extra parametrised enum-translation pass for the 2 enum-bearing fixtures (9 + 10). 17 sub-tests total. test_fixture_count_is_exactly_15 locks the matrix size |
+| §14 mock-stub conftest pattern | reference | stub_cross_module fixture monkeypatches BOUND imports inside service.py (catalog_service.assert_product_ownership, .get_product_for_export, customer_service.get_compliance_block, category_service.fetch_schema, .get_field_enum, image_service.list_images) — same pattern as §13 dashboard. Returns a `configure(*, snapshot, compliance, schema, enum_payloads, enum_raises, images, ownership_raises)` callable. stub_gcs patches the 3 gcs_adapter methods. stub_celery patches export_xlsx_task.delay (NOT celery_app.send_task) per the D8 enqueue switch |
+| §14 worker session pattern | reference | _run_export_pipeline opens its own `async with make_worker_session() as db:` (Celery has no request scope). _persist_failure uses its OWN second worker session so a failure during the main pipeline session doesn't poison the failure-persistence write. Both call await db.commit() explicitly (no get_db autocommit) |
+| §14 tests outcome | reference | 10 unit modules (33 sub-tests) + 3 integration (4 sub-tests) + 1 fixture runner (17 sub-tests) + 9 router tests (api-routes-builder parallel) = 63 export tests + 8 boot smoke + 200 Wave 1-5 regression = 271 PASS, 0 fail. Ruff clean on all authored files |
+| §14 hand-offs queued | reference | (a) §18 celery_app.py include= already populated for export — partial complete. (b) §19 Contract 9 AST scanner — verify M10 boundary holds (only allowed hits: app/modules/export/ + app/adapters/gcs.py + app/shared/models/template.py docstring example). (c) §18 settings: add CELERY_BROKER_URL/CELERY_RESULT_BACKEND fields to shared/config.py Settings (pre-existing gap; env var supplies celery_app.py value but Settings model doesn't expose). (d) DB migration V1.5: add initiated_at/completed_at/format/error_code/round_trip_validated columns to exports table (D1-D4 unwind); when columns land, remove the `del` statements in repository.py and the Valkey hint in service.py |
+
+
+---
+
+## §18 Celery wiring CONSTRUCTED (2026-06-08)
+
+### Scope
+Sub-session `meesell-backend-construction-18-celery-1`.  Solo dispatch.
+§18 = the operational glue layer that lets the 2 V1 Celery tasks
+(image.precheck + export.xlsx) run reliably: Valkey wiring, worker
+invariants, task registration, worker JWT re-validation.
+
+### Files modified (1)
+- `backend/app/workers/celery_app.py` — full rewrite from 40 LOC →
+  241 LOC.
+  - §18.E: BROKER_URL + RESULT_BACKEND_URL derived from
+    `settings.VALKEY_URL` via local `_build_url_for_db` helper
+    (mirrors `shared.valkey._build_url_for_db`; equivalence guarded by
+    `tests.test_celery_broker_db.test_broker_db_matches_shared_valkey_helper`).
+  - §18.B: `include=["app.modules.image.tasks", "app.modules.export.tasks"]`
+    — exactly 2 V1 modules, no V0 leftovers.
+  - §18.G: `task_reject_on_worker_lost=True` preserved (session 2 G3 lock).
+  - §18.F: `task_prerun` signal handler scoped to
+    `{image.precheck, export.xlsx}` whitelist.  Re-validates `user_id`
+    via SELECT-by-id existence check against `users` table; raises
+    `Reject(requeue=False)` on miss.  Fails OPEN on transient DB error.
+
+### Files deleted (1)
+- `backend/app/workers/generation_tasks.py` — V0 leftover (catalog.generate
+  + sku.regenerate decorators).  Deleted in session 2 final purge,
+  accidentally restored, re-deleted here.  workers/ now matches §3.I
+  canonical 2-file subtree.
+
+### Files modified (test infra, 2)
+- `backend/tests/conftest.py` — removed `CELERY_BROKER_URL` +
+  `CELERY_RESULT_BACKEND` env-var defaults (was `/11` + `/12`).  Celery's
+  env-var resolution order (`os.environ.get('CELERY_BROKER_URL') or
+  self.first(...)`) hijacked the `Celery(broker=...)` constructor arg
+  and silently broke the §18.E lock.  Replaced with defensive
+  `os.environ.pop()` calls.  No test consumed these values functionally.
+- `backend/tests/test_worker_db_isolation.py` — removed test #4
+  (`test_generation_tasks_use_make_worker_session`) which referenced the
+  deleted module.  RETIRED banner in its place.  Also removed unused
+  `import pytest` (ruff F401, pre-existing).
+
+### Tests added (5 modules, 26 sub-tests, all PASS)
+- `tests/test_celery_app_include_list.py` (4) — include-list exact match,
+  V0-forbidden negative, V1 tasks discoverable at boot via
+  `loader.import_default_modules()`, only-2-V1-tasks cardinality.
+- `tests/test_celery_broker_db.py` (4) — broker path /1,
+  endswith('/1'), redis scheme, equivalence with
+  `shared.valkey._build_url_for_db`.
+- `tests/test_celery_result_backend_db.py` (4) — result path /2,
+  endswith('/2'), redis scheme, broker+result share host:port diff DB.
+- `tests/test_task_reject_on_worker_lost.py` (5) —
+  `task_reject_on_worker_lost=True`, companion `task_acks_late=True`,
+  `worker_prefetch_multiplier=1`, JSON serialisation locked,
+  `Asia/Kolkata` timezone.
+- `tests/test_worker_user_revalidation.py` (9) — filter discipline
+  (non-V1 task no-op), missing-user → `Reject(requeue=False)` for both
+  V1 tasks, existing-user passthrough, kwarg extraction, malformed
+  user_id rejected, DB-error fail-open, no-user_id no-op, whitelist
+  cardinality.
+
+### Decisions FLAGGED (D-flag log — not in locked architecture)
+**D1 — VALKEY_URL → broker_url + result_backend derivation (§18.E).**
+The §14 hand-off said *"add CELERY_BROKER_URL/CELERY_RESULT_BACKEND
+fields to shared/config.py Settings"*; §18 chose VALKEY_URL derivation
+per the §18.E explicit lock instead.  Avoids 2 new Settings fields +
+matches §5.C factory allocation discipline.  Settings cleanup of the
+hand-off-suggested fields NOT REQUIRED.
+
+**D2 — §18.F enforcement layer = task_prerun signal handler, not
+in-task call.**
+§18.F LOCKED prose specifies `_validate_user_or_abort` lives inside
+each `tasks.py`.  The §11.E + §14.E LOCKED CONSTRUCTED tasks.py files
+do NOT include the call — adding it would breach §5.0 NON-NEGOTIABLE.
+§18 enforces at the worker layer via a Celery `task_prerun` signal
+handler scoped to the 2 V1 task names.  Same observable invariant;
+LOCKED §11/§14 code untouched.
+
+**D3 — V1 User model has NO `disabled` / `deleted_at` columns.**
+§18.F prose mentions both conditions; V1 reduces to SELECT-by-id
+existence check.  V1.5 ships soft-delete columns; the prerun handler
+extends to `WHERE id=$1 AND disabled=False AND deleted_at IS NULL`
+without a §18 amendment.
+
+**D4 — Workers env-var pollution cleanup (conftest.py).**
+Tests/conftest.py previously set `CELERY_BROKER_URL=/11` +
+`CELERY_RESULT_BACKEND=/12` to avoid accidental GCP worker pickup;
+Celery's env-var resolution order hijacked the §18.E lock.  Defensive
+`os.environ.pop` replaces the `setdefault` calls.
+
+**D5 — Local `_build_url_for_db` helper duplicates `shared.valkey`
+copy.**
+Rationale: avoid an import cycle between `workers/` and
+`shared/valkey` + Celery wants URL strings not Redis clients.  Two
+helpers are equivalence-tested.
+
+**D6 — V1 `_user_exists_sync` fails OPEN on DB transient error.**
+Spec §18.F doesn't prescribe behaviour on DB outage; we favour
+task-body retry (the standard error path) over hard reject (which
+loses an audit trail of WHY).  Tested.
+
+**D7 — Whitelist hard-coded to `{image.precheck, export.xlsx}`.**
+Adding a 3rd entry silently expands §18.F enforcement to a task that
+hasn't been audited for the `(entity_id, user_id)` positional contract.
+Tested.
+
+### Acceptance gate (7 dispatch-brief criteria)
+1. include list exactly `[image.tasks, export.tasks]`              — PASS
+2. broker /1; result_backend /2                                    — PASS
+3. `task_reject_on_worker_lost=True` preserved                     — PASS
+4. Worker user re-validation implemented + tested (9 sub-tests)   — PASS
+5. image.precheck + export.xlsx discoverable at boot              — PASS
+6. Failure mode wiring (deferred to §11.E + §14.E ownership)      — PASS
+7. 5 unit-test modules with 5+ sub-tests (delivered 5 mods/26 subs)— PASS
+
+Plus universal: boot smoke PASS (34 routes); ruff clean on all 7
+touched files; §18 regression 26/26 PASS; Wave 1-3 cross-cutting
+regression 230 PASS + 3 PRE-EXISTING failures (test_worker_db_isolation
+test #2 / test #3 / test #5 reference V0 `app/database.py` broken
+import + `async_session_maker` legacy name — predate §18).
+
+### Latent bugs CLOSED in this sub-session
+**L18.1 — `settings.CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND`
+non-existent.**  Settings fields broke celery_app.py boot
+(AttributeError at import).  CLOSED by VALKEY_URL derivation per §18.E.
+The §14 hand-off entry "§18 settings: add CELERY_BROKER_URL/
+CELERY_RESULT_BACKEND fields" is now SUPERSEDED — V1 uses VALKEY_URL
+derivation; no Settings fields needed.
+
+**L18.2 — workers/generation_tasks.py V0 leftover.**  Violated §3.I
+canonical 2-file subtree.  CLOSED by deletion.
+
+### Hand-offs queued
+- **§19 test infrastructure**: V0-rot cleanup backlog includes
+  `test_worker_db_isolation.py` 3 PRE-EXISTING failures (V0
+  `app/database.py` with broken `from app.config import settings`
+  import; legacy `async_session_maker` references vs V1
+  `AsyncSessionLocal`; V0 `app/services/image_processor.run_pipeline`).
+  Out of §18 scope; not a regression.
+- **§20 deployment (Celery worker pod manifests)**: consume the locked
+  `BROKER_URL` / `RESULT_BACKEND_URL` string-form invariants — broker
+  on `/1`, results on `/2`; single Valkey instance.  Worker pod
+  replica count per §18.C (image: 2 pods × concurrency=4 = 8 max) +
+  §18.D (export: 2 pods × concurrency=2 = 4 max).  §20 picks whether
+  to separate worker pools (4 total worker pods, 2 per queue) OR mix
+  (2 pods × concurrency=4 with prefetch=1 for fairness).
+- **V1.5 User model migration**: add `disabled BOOL DEFAULT false`,
+  `deleted_at TIMESTAMPTZ NULL`.  The §18.F task_prerun handler
+  extends to `WHERE id=$1 AND disabled=False AND deleted_at IS NULL`
+  without requiring a §18 amendment.
+- **API routes builder**: the §14 `service.initiate_export` enqueue
+  pattern was `export_xlsx_task.delay(str(export.id), str(user_id))`.
+  §18 confirms this is the correct pattern; no settings change needed.
+
+### Memory index additions
+| Entry | Type | Summary |
+|---|---|---|
+| §18 Celery wiring CONSTRUCTED | project | celery_app.py rewritten 40→241 LOC; broker/result derive from VALKEY_URL via local _build_url_for_db; task_prerun signal handler enforces §18.F user re-validation without touching LOCKED §11/§14 tasks.py |
+| §18-CELERY-D1 VALKEY_URL derivation | reference | broker = _build_url_for_db(settings.VALKEY_URL, 1); result_backend = _build_url_for_db(settings.VALKEY_URL, 2). NO CELERY_BROKER_URL/CELERY_RESULT_BACKEND Settings fields needed |
+| §18-CELERY-D2 task_prerun signal handler | reference | @task_prerun.connect handler in workers/celery_app.py filters to {image.precheck, export.xlsx} whitelist; raises Reject(requeue=False) on missing user. §11/§14 LOCKED tasks.py NOT modified |
+| §18-CELERY-D3 User model V1 fields | reference | V1 User has only (id, phone, email, plan, created_at, last_login_at). No disabled/deleted_at — V1.5 adds those + handler extension is forward-compat |
+| §18-CELERY-D4 conftest env-var pollution | reference | tests/conftest.py CELERY_BROKER_URL=/11 + CELERY_RESULT_BACKEND=/12 setdefault calls REMOVED (replaced with os.environ.pop). Celery env-var resolution hijacked broker= constructor arg |
+| §18-CELERY-D5 _build_url_for_db duplication | reference | Local copy in workers/celery_app.py mirrors shared.valkey copy; avoids import cycle + Celery wants URL strings. Equivalence guarded by test_broker_db_matches_shared_valkey_helper |
+| §18-CELERY-D6 fail-open on transient DB error | reference | _user_exists_sync returns True on RuntimeError in _user_exists_async; task body retries via repo layer + Celery autoretry. §18.F observability rule |
+| §18-CELERY-D7 whitelist cardinality lock | reference | _TASKS_REQUIRING_USER_REVALIDATION = frozenset({"image.precheck", "export.xlsx"}). Adding a 3rd entry silently expands enforcement; tested |
+| Workers §3.I subtree | reference | workers/ MUST contain exactly __init__.py + celery_app.py. generation_tasks.py / image_tasks.py / scrape_tasks.py are all V0 leftovers; deletion is the correct cleanup |
+| Celery env-var resolution order | reference | os.environ.get('CELERY_BROKER_URL') wins over Celery(broker=...) constructor arg. Document at celery/app/utils.py:103. Tests/conftest MUST NOT set these env vars or §18.E lock is silently bypassed |
+| V0 pre-existing rot (V0 path scan) | reference | app/database.py exists with broken `from app.config import settings` import; legacy app.services.image_processor.run_pipeline still references async_session_maker. test_worker_db_isolation.py test #2/#3/#5 fail because of this. Out of §18 scope; §19 V0 cleanup backlog |
+| §18 hand-offs | reference | §20 worker pod manifests consume BROKER_URL/RESULT_BACKEND_URL invariants; V1.5 User migration adds disabled+deleted_at columns (handler is forward-compat); §14 enqueue pattern `export_xlsx_task.delay(str(export.id), str(user_id))` confirmed |
+
+---
+
+## F-15-1 export worker terminal audit rows IMPLEMENTED (2026-06-09)
+
+### Scope
+Micro-task. Founder ruled Option A (implement, not V1.5-defer). Touched ONLY
+`backend/app/modules/export/tasks.py`. No commit. Branch
+`claude/meesell-project-setup-Tl7DS`. BACKEND_ARCHITECTURE.md untouched (§5.0).
+
+### Defect (from §15/§22 audit, MEDIUM)
+`export/tasks.py` docstring lines 15-18 CLAIMED audit writes for
+`export.completed`/`export.failed` were "embedded in the service-level pipeline"
+(`_run_export_pipeline`), but ZERO `AuditEvent(event_type="export.*")` calls
+existed anywhere in the export module. False claim → MEDIUM defect F-15-1.
+
+### What I did
+- Added imports mirroring image/tasks.py: `from datetime import datetime, timezone`,
+  `from sqlalchemy.exc import SQLAlchemyError`,
+  `from app.shared.database import AsyncSessionLocal`,
+  `from app.shared.models.audit_event import AuditEvent`.
+- New async helper `_emit_export_terminal_audit(*, user_id, export_id, event_type,
+  error)` — byte-for-byte same pattern as
+  `image/tasks.py:_emit_precheck_completed_audit` (own `AsyncSessionLocal()`
+  session, `session.add(row)` + `await session.commit()`, drop-on-failure via
+  `except (SQLAlchemyError, Exception) as exc: logger.warning(...)`).
+- `export.completed` written at terminal SUCCESS (after
+  `asyncio.run(_run_export_pipeline(...))` returns, before the return dict).
+- `export.failed` written at terminal FAILURE — GATED on
+  `self.request.retries >= self.max_retries` so it fires ONCE on the final
+  retries-exhausted attempt. Transient first-attempt failures that later succeed
+  record only `export.completed`. Written BEFORE `raise self.retry(exc=exc)`.
+- Task body is SYNC (`@shared_task`, not async) so the helper is invoked via
+  `asyncio.run(_emit_export_terminal_audit(...))` (same as the pipeline call).
+- Corrected docstring lines 15-18 to state writes are in the worker task.
+- `__all__` now exports `_emit_export_terminal_audit` for unit tests.
+
+### AuditEvent field shape (LOCKED — confirmed from shared/models/audit_event.py)
+Constructor kwargs used: `user_id` (UUID, FK RESTRICT), `event_type` (String(40)),
+`entity_type` (String(20), nullable), `entity_id` (UUID, nullable), `diff_jsonb`
+(JSONB, nullable — None here), `metadata_jsonb` (JSONB, nullable — carries
+`export_id`/`emitted_at`/optional `error`). `id` is BIGSERIAL Identity(always)
+— do NOT set. `occurred_at` server_default NOW() — do NOT set.
+For export terminal events: entity_type="export", entity_id=exports.id.
+
+### Pattern locked (reusable for any worker terminal audit)
+Workers have NO request-close hook → audit_mw post-commit path cannot fire →
+every Celery terminal event needs a DIRECT `AuditEvent(...)` write in its own
+`AsyncSessionLocal()` session, drop-on-failure with WARNING. Canonical reference:
+`image/tasks.py:370-409`. The `metadata_jsonb` (NOT a dedicated `meta` column) is
+where worker context (entity ids, timestamps, error repr) goes. There is NO
+`core.audit_helpers` module — import `AuditEvent` directly from the ORM model.
+
+### Verification
+- `ast.parse` OK; `from app.modules.export import tasks` imports clean; `__all__`
+  resolves `['export_xlsx_task', '_emit_export_terminal_audit']`.
+- `grep -n "AuditEvent\|export.completed\|export.failed" app/modules/export/tasks.py`
+  → 2+ AuditEvent-related call sites, both event types present.
+- ruff NOT installed in backend/.venv this session — skipped (import + AST clean).
+
+### Follow-up queued
+- services-builder: write `tests/test_export_tasks.py` asserting both event_type
+  writes + the `retries >= max_retries` gate (mock AsyncSessionLocal +
+  `self.request.retries`). Not done in this no-test micro-task.
+- F-15-1 MEDIUM blocker CLOSED in STATUS_BACKEND. F6 (api-routes-builder) + F7
+  (services-builder, audit_mw read-flood) still open per §15/§17.
+
+---
+
+## V0 ARTIFACT DELETE + V0-ROT TEST CLEANUP + COMMIT (2026-06-09, branch claude/meesell-project-setup-Tl7DS)
+
+### Scope
+Solo micro-dispatch. Pre-§22 §3 audit item "V0-rot tests" + V0 source purge. infra-builder had halted at Step 2 because 4 V0-era test files imported soon-to-be-deleted paths. Closes the L_iam_2 V0-rot item flagged in my §19 memory. Commit `43abd23`. DO NOT touch BACKEND_ARCHITECTURE.md (§5.0).
+
+### What I did
+1. Surgical excise — `backend/tests/test_worker_db_isolation.py` (the ONE file kept):
+   - Repointed two `patch("app.database.create_async_engine"|"async_sessionmaker")` targets -> `app.shared.database.*` (the V1 module). Preserved the still-valid `test_make_worker_session_disposes_engine_after_each_call` V1 test rather than deleting it.
+   - REMOVED entire `test_run_pipeline_uses_make_worker_session_not_global_session_maker` (it did `import app.services.image_processor` + `inspect.getsource(ip_mod.run_pipeline)` — pure V0). Replaced with a RETIRED comment block (merged with the existing #4 RETIRED block).
+   - Result: file has NO live import / patch-target of `app.services`/`app.database` (only prose mentions inside the RETIRED comment). 4 V1 isolation tests preserved.
+   - KEPT: `async_session_maker` string literals in assertion messages (lines ~38-41, ~114-115) — they assert about V1 SOURCE CONTENT (get_db must contain it; make_worker_session must NOT), NOT module imports. Do not strip these.
+2. Deleted 3 pure-V0 test files: `test_storage.py` (imports app.services.storage -> V1 is app.adapters.gcs), `test_ai_engine.py` (app.services.ai_engine -> V1 app.adapters.gemini), `test_integration_third_party.py` (both). V1 equivalents covered by tests/test_gcs_adapter.py + test_gemini_adapter.py.
+3. Deleted 5 V0 source artifacts: `app/middleware/`, `app/routers/`, `app/schemas/`, `app/services/`, `app/database.py`. `app/data/` PRESERVED (separate decision pending — do NOT delete).
+4. Verified clean collection: `cd backend && .venv/bin/python -m pytest --collect-only -q` -> exit 0, 815 tests, 0 errors.
+5. Staged + committed backend/app + requirements.txt + pytest.ini + Dockerfile(.worker) + alembic/ + tests/ + scripts/ + .gitlab-ci.yml + docs/. Commit 43abd23, 274 files, +35429/-4275.
+
+### CRITICAL CATCH — §5.0 guard
+`git add docs/` swept in a pre-existing 208-line working-tree modification to `docs/BACKEND_ARCHITECTURE.md` (NOT authored by me — already M in the tree). Per §5.0 NON-NEGOTIABLE I ran `git reset HEAD docs/BACKEND_ARCHITECTURE.md` BEFORE committing. Verified post-commit: `git show --name-only 43abd23 | grep BACKEND_ARCHITECTURE` -> NOT in commit. The 208-line mod remains UNCOMMITTED in the working tree for its owner to disposition.
+LESSON: whenever a task says "git add docs/" AND "do not touch <doc>", reset that doc OUT of the index before committing — `git add <dir>/` stages ALL pre-existing modifications in that dir, not only yours.
+
+### Secrets scan (locked routine for commit tasks)
+Before every commit: filenames `git diff --cached --name-only | grep -iE "\.env|secret|\.pem$|\.key$"` + added content `git diff --cached | grep "^\+" | grep -iE "AKIA[0-9A-Z]{16}|BEGIN .*PRIVATE KEY|AIza[0-9A-Za-z_-]{30,}|sk_live_|rzp_live_|xoxb-"`. This task: all clean.
+
+### Left unstaged (intentional / out of scope)
+- `backend/tests/eval/smart_picker/fixtures.json` (M) — pre-existing mod, AI-coordinator territory, not mine.
+- `backend/tests/eval/smart_picker/eval_results.json` (??) — untracked runtime eval artifact, gitignore candidate.
+- frontend/, k8s/, .claude/agent-memory/, themes/, archive/ — deliberately excluded per the staging instruction.
+
+### Env facts re-confirmed
+- venv = `backend/.venv/bin/python` (Python 3.11.14, NOT 3.12 as CLAUDE.md claims).
+- pytest MUST run from `backend/` (pytest.ini + import_rules.toml + AST scanners resolve relative to backend/).
+- V1 DB module is `app.shared.database` (engine, AsyncSessionLocal, make_worker_session, get_db). Old `app.database` is GONE.
+
+---

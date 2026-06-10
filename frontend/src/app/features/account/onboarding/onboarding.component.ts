@@ -1,191 +1,168 @@
-// features/account/onboarding/onboarding.component.ts
-// Mat-stepper shell for /onboarding — 3-step wizard skeleton.
-//
-// Dispatch 1: stepper structure, correct signals, navigation stubs, i18n keys.
-// Dispatch 2: SuperCategoryChipsComponent (Phase 2 categories) + ComplianceStepComponent (Phase 3).
-// Dispatch 3: OnboardingApiService wired to onSubmit() + real backend submission.
-
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   inject,
   signal,
-  ViewChild,
 } from '@angular/core';
-import { Router, RouterModule } from '@angular/router';
-import { MatStepper, MatStepperModule } from '@angular/material/stepper';
-import { MatButtonModule } from '@angular/material/button';
-import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { MatIconModule } from '@angular/material/icon';
-import { TranslocoPipe } from '@jsverse/transloco';
-import { SuperCategoryChipsComponent } from '../components/super-category-chips/super-category-chips.component';
-import { ComplianceStepComponent, FieldSpec } from '../components/compliance-step/compliance-step.component';
+import {
+  AbstractControl,
+  FormBuilder,
+  ReactiveFormsModule,
+  ValidationErrors,
+  ValidatorFn,
+  Validators,
+} from '@angular/forms';
+import { Router } from '@angular/router';
+import { AuthLayoutComponent } from '../../../layouts/auth-layout/auth-layout.component';
+import {
+  MeeButtonComponent,
+  MeeInputComponent,
+  MeeStepsComponent,
+} from '../../../ui';
+import type { MeeStep } from '../../../ui';
+
+/** GST pattern: 15-char GSTIN format */
+const GST_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+
+/** Validator that only applies GST pattern when the field has a non-empty value. */
+export function optionalGstValidator(): ValidatorFn {
+  return (control: AbstractControl): ValidationErrors | null => {
+    const value = (control.value as string | null | undefined) ?? '';
+    if (!value.trim()) return null;
+    return GST_PATTERN.test(value) ? null : { gstPattern: true };
+  };
+}
 
 @Component({
-  selector: 'mee-onboarding-wizard',
+  selector: 'mee-onboarding',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    RouterModule,
-    MatStepperModule,
-    MatButtonModule,
-    MatProgressSpinnerModule,
-    MatIconModule,
-    TranslocoPipe,
-    SuperCategoryChipsComponent,
-    ComplianceStepComponent,
+    ReactiveFormsModule,
+    AuthLayoutComponent,
+    MeeStepsComponent,
+    MeeInputComponent,
+    MeeButtonComponent,
   ],
   template: `
-    <div class="min-h-screen bg-bg flex items-center justify-center p-4">
-      <div class="w-full max-w-2xl bg-surface rounded-mee-lg shadow-mee-2">
+    <mee-auth-layout>
+      <!-- Decorative progress indicator -->
+      <mee-steps
+        [steps]="steps"
+        [active_index]="1"
+      />
 
-        <div class="p-6 border-b border-outline">
-          <h1 class="text-mee-2xl font-bold text-on-surface">
-            {{ 'onboarding.title' | transloco }}
-          </h1>
-        </div>
-
-        <mat-stepper [linear]="false" #stepper class="mee-onboarding-stepper">
-
-          <!-- STEP 1: Business Details -->
-          <mat-step [completed]="phase1Submitted()">
-            <ng-template matStepLabel>
-              {{ 'onboarding.steps.businessDetails' | transloco }}
-            </ng-template>
-            <div class="p-4 sm:p-6">
-              <p class="text-mee-lg font-semibold text-on-surface mb-2">
-                {{ 'onboarding.phase1.title' | transloco }}
-              </p>
-              <p class="text-mee-sm text-on-surface-variant mb-6">
-                {{ 'onboarding.phase1.help' | transloco }}
-              </p>
-              <!-- Phase 1 form fields land in a future dispatch -->
-              <div class="h-32 rounded-mee-md bg-surface-variant flex items-center justify-center text-mee-sm text-on-surface-variant">
-                {{ 'onboarding.phase1.placeholder' | transloco }}
-              </div>
-            </div>
-            <div class="flex justify-end gap-2 px-4 pb-4">
-              <button mat-flat-button color="primary" (click)="onPhase1Next()">
-                {{ 'onboarding.actions.next' | transloco }}
-              </button>
-            </div>
-          </mat-step>
-
-          <!-- STEP 2: Product Categories -->
-          <mat-step [completed]="phase2Submitted()">
-            <ng-template matStepLabel>
-              {{ 'onboarding.steps.productCategories' | transloco }}
-            </ng-template>
-            <div class="p-4 sm:p-6">
-              <p class="text-mee-lg font-semibold text-on-surface mb-2">
-                {{ 'onboarding.phase2.title' | transloco }}
-              </p>
-              <p class="text-mee-sm text-on-surface-variant mb-6">
-                {{ 'onboarding.phase2.help' | transloco }}
-              </p>
-              <mee-super-category-chips
-                (selectionChange)="selectedSuperCategories.set($event)">
-              </mee-super-category-chips>
-            </div>
-            <div class="flex justify-between gap-2 px-4 pb-4">
-              <button mat-stroked-button matStepperPrevious>
-                {{ 'onboarding.actions.back' | transloco }}
-              </button>
-              <button mat-flat-button color="primary" (click)="onPhase2Next()">
-                {{ 'onboarding.actions.next' | transloco }}
-              </button>
-            </div>
-          </mat-step>
-
-          <!-- STEP 3: Compliance -->
-          <mat-step>
-            <ng-template matStepLabel>
-              {{ 'onboarding.steps.compliance' | transloco }}
-            </ng-template>
-            <div class="p-4 sm:p-6">
-              <p class="text-mee-lg font-semibold text-on-surface mb-2">
-                {{ 'onboarding.phase3.title' | transloco }}
-              </p>
-              <p class="text-mee-sm text-on-surface-variant mb-6">
-                {{ 'onboarding.phase3.help' | transloco }}
-              </p>
-              @if (selectedSuperCategories().length === 0) {
-                <div class="rounded-mee-md bg-surface-variant flex items-center justify-center p-6 text-mee-sm text-on-surface-variant">
-                  {{ 'onboarding.phase3.noCategories' | transloco }}
-                </div>
-              } @else {
-                <div class="space-y-6">
-                  @for (id of selectedSuperCategories(); track id) {
-                    <div class="rounded-mee-md border border-outline p-4">
-                      <mee-compliance-step
-                        [superCategoryId]="id"
-                        [fields]="complianceFields()[id] ?? []"
-                        [saving]="saving()"
-                        (formSubmit)="onComplianceSubmit(id, $event)"
-                        (formBack)="stepper.previous()">
-                      </mee-compliance-step>
-                    </div>
-                  }
-                </div>
-              }
-            </div>
-            <div class="flex justify-between gap-2 px-4 pb-4">
-              <button mat-stroked-button matStepperPrevious>
-                {{ 'onboarding.actions.back' | transloco }}
-              </button>
-              <button mat-flat-button color="primary" (click)="onSubmit()" [disabled]="saving()">
-                @if (saving()) {
-                  <mat-spinner diameter="16" class="inline-block mr-2"></mat-spinner>
-                }
-                {{ 'onboarding.actions.completeSetup' | transloco }}
-              </button>
-            </div>
-          </mat-step>
-
-        </mat-stepper>
-
+      <div class="mt-6 mb-4">
+        <h1
+          class="text-center font-bold"
+          style="font-size: 22px; color: var(--mee-color-on-surface);"
+        >
+          Set up your business
+        </h1>
+        <p
+          class="text-center mt-1"
+          style="font-size: 14px; color: var(--mee-color-on-surface-muted);"
+        >
+          Tell us about your shop
+        </p>
       </div>
-    </div>
+
+      <form [formGroup]="form" (ngSubmit)="onSubmit()" novalidate class="flex flex-col gap-4">
+
+        <mee-input
+          [label]="'Business / Shop Name'"
+          [required]="true"
+          [error]="businessNameError()"
+          formControlName="businessName"
+        />
+
+        <mee-input
+          [label]="'City'"
+          [required]="true"
+          [error]="cityError()"
+          formControlName="city"
+        />
+
+        <mee-input
+          [label]="'GST Number (optional)'"
+          [error]="gstError()"
+          formControlName="gstNumber"
+        />
+
+        <mee-button
+          [label]="'Save & Continue'"
+          [loading]="loading()"
+          [disabled]="form.invalid || loading()"
+          [fullWidth]="true"
+          [variant]="'primary'"
+          (clicked)="onSubmit()"
+        />
+
+      </form>
+
+      <p
+        class="text-center mt-4"
+        style="font-size: 12px; color: var(--mee-color-on-surface-muted);"
+      >
+        You can update this later.
+      </p>
+    </mee-auth-layout>
   `,
 })
-export class OnboardingWizardComponent {
+export class OnboardingComponent {
+  private readonly fb = inject(FormBuilder);
   private readonly router = inject(Router);
 
-  @ViewChild('stepper') stepper!: MatStepper;
+  readonly steps: MeeStep[] = [
+    { label: 'Account' },
+    { label: 'Business' },
+    { label: 'Done' },
+  ];
 
-  // Component-local reactive state
-  readonly loading = signal(false);  // future: true while fetching required-fields
-  readonly saving  = signal(false);  // true while submitting Phase 3
+  readonly loading = signal<boolean>(false);
+  readonly submitted = signal<boolean>(false);
 
-  readonly selectedSuperCategories = signal<string[]>([]); // Phase 2 output
-  readonly phase1Submitted = signal(false); // set true when Phase 1 Next is clicked (stub)
-  readonly phase2Submitted = signal(false); // set true when Phase 2 Next is clicked (stub)
+  readonly form = this.fb.group({
+    businessName: ['', [Validators.required, Validators.minLength(2), Validators.maxLength(100)]],
+    city: ['Tirupur', [Validators.required, Validators.maxLength(60)]],
+    gstNumber: ['', [optionalGstValidator()]],
+  });
 
-  // Keyed by super_id. Populated from onboarding-api.service.ts in the next dispatch.
-  // Empty for now — compliance steps render with no fields until the API service lands.
-  readonly complianceFields = signal<Record<string, FieldSpec[]>>({});
+  readonly businessNameError = computed<string | undefined>(() => {
+    if (!this.submitted()) return undefined;
+    const ctrl = this.form.get('businessName');
+    if (!ctrl?.errors) return undefined;
+    if (ctrl.errors['required']) return 'Business name is required.';
+    if (ctrl.errors['minlength']) return 'Business name must be at least 2 characters.';
+    if (ctrl.errors['maxlength']) return 'Business name must be 100 characters or fewer.';
+    return undefined;
+  });
 
-  onPhase1Next(): void {
-    this.phase1Submitted.set(true);
-    this.stepper?.next();
-  }
+  readonly cityError = computed<string | undefined>(() => {
+    if (!this.submitted()) return undefined;
+    const ctrl = this.form.get('city');
+    if (!ctrl?.errors) return undefined;
+    if (ctrl.errors['required']) return 'City is required.';
+    if (ctrl.errors['maxlength']) return 'City must be 60 characters or fewer.';
+    return undefined;
+  });
 
-  onPhase2Next(): void {
-    this.phase2Submitted.set(true);
-    this.stepper?.next();
-  }
-
-  onComplianceSubmit(superCategoryId: string, values: Record<string, string | null>): void {
-    // TODO(dispatch-4): call onboardingApiService.patchCompliance(superCategoryId, values)
-    console.debug('[onboarding] compliance submitted for', superCategoryId, values);
-  }
+  readonly gstError = computed<string | undefined>(() => {
+    if (!this.submitted()) return undefined;
+    const ctrl = this.form.get('gstNumber');
+    if (!ctrl?.errors) return undefined;
+    if (ctrl.errors['gstPattern']) return 'Enter a valid 15-character GSTIN (e.g. 29ABCDE1234F1Z5).';
+    return undefined;
+  });
 
   onSubmit(): void {
-    this.saving.set(true);
-    // TODO(dispatch-4): replace with onboardingApiService.submitCompliance() chain
+    this.submitted.set(true);
+    if (this.form.invalid || this.loading()) return;
+    this.loading.set(true);
     setTimeout(() => {
-      this.saving.set(false);
-      this.router.navigateByUrl('/dashboard');
-    }, 300);
+      this.loading.set(false);
+      void this.router.navigate(['/dashboard']);
+    }, 1500);
   }
 }

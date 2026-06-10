@@ -1,211 +1,381 @@
-// features/preview/preview/preview.component.ts
-// Selector: mee-preview
-// Route: /catalogs/:id/preview — pure presentation, read-only per §13
-
 import {
   ChangeDetectionStrategy,
   Component,
-  inject,
   OnInit,
+  computed,
+  inject,
   signal,
 } from '@angular/core';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { EMPTY } from 'rxjs';
-import { catchError } from 'rxjs/operators';
-import { MatTabsModule } from '@angular/material/tabs';
-import { MatButtonModule } from '@angular/material/button';
-import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { TranslocoModule } from '@jsverse/transloco';
+import { ActivatedRoute, Router } from '@angular/router';
 
-import { PreviewApiService, PreviewData } from '../preview-api.service';
-import { LoadingSpinnerComponent } from '@shared/components/loading-spinner/loading-spinner.component';
-import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
-import { PreviewFeedComponent } from './preview-feed/preview-feed.component';
-import { PreviewDetailComponent } from './preview-detail/preview-detail.component';
+import {
+  MeeButtonComponent,
+  MeeCardComponent,
+  MeeSkeletonComponent,
+} from '../../../ui';
+import { PageHeaderComponent } from '../../../shared';
+
+import {
+  PreviewData,
+  PreviewTab,
+  MobileTile,
+  SIMULATED_PREVIEW,
+  FEED_TITLE_LIMIT,
+  MOBILE_TITLE_LIMIT,
+  DESKTOP_BREAKPOINT_PX,
+  isTitleTruncated,
+  truncateTitle,
+  buildMobileTiles,
+  resolveEditProductId,
+} from './preview.model';
 
 @Component({
-  selector: 'mee-preview',
+  selector: 'app-preview',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    RouterLink,
-    MatTabsModule,
-    MatButtonModule,
-    MatSnackBarModule,
-    TranslocoModule,
-    LoadingSpinnerComponent,
-    EmptyStateComponent,
-    PreviewFeedComponent,
-    PreviewDetailComponent,
+    MeeButtonComponent,
+    MeeCardComponent,
+    MeeSkeletonComponent,
+    PageHeaderComponent,
   ],
-  styles: [`
-    :host { display: block; }
-    .preview-page {
-      max-width: 960px;
-      margin: 0 auto;
-      padding: 24px 16px;
-    }
-    .preview-header {
-      margin-bottom: 24px;
-    }
-    .preview-header h1 {
-      font-size: 22px;
-      font-weight: 700;
-      color: var(--mee-color-on-surface);
-      margin: 0 0 4px;
-    }
-    .preview-header p {
-      font-size: 13px;
-      color: #6B7280;
-      margin: 0;
-    }
-    .preview-tab-content {
-      padding: 24px 0;
-      display: flex;
-      justify-content: center;
-    }
-    .preview-actions {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-top: 32px;
-      gap: 12px;
-    }
-    .loading-wrap {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 300px;
-    }
-    @media (max-width: 480px) {
-      .preview-actions {
-        flex-direction: column;
-      }
-      .preview-actions button, .preview-actions a {
-        width: 100%;
-      }
-    }
-  `],
   template: `
-    <div class="preview-page">
+    <div class="flex flex-col gap-6 p-4 max-w-screen-xl mx-auto">
+
       <!-- Page header -->
-      <div class="preview-header">
-        <h1>{{ 'preview.title' | transloco }}</h1>
-        <p>See how your listing will appear on Meesho</p>
-      </div>
+      <mee-page-header
+        title="Product Preview"
+        subtitle="How your listing looks on Meesho"
+      />
 
-      <!-- Loading state -->
+      <!-- Loading state: show card skeletons while data simulates -->
       @if (loading()) {
-        <div class="loading-wrap">
-          <mee-loading-spinner [diameter]="40" caption="Loading preview..." />
+        <div class="flex flex-col gap-4 lg:flex-row">
+          <div class="flex-1"><mee-skeleton variant="card" /></div>
+          <div class="flex-1"><mee-skeleton variant="card" /></div>
+          <div class="flex-1"><mee-skeleton variant="card" /></div>
         </div>
-      }
+      } @else {
 
-      <!-- Error / missing data state -->
-      @if (!loading() && !previewData()) {
-        <mee-empty-state
-          icon="preview"
-          headline="Some fields are missing. Go back to edit your product."
-          ctaLabel="Go to Edit"
-          (ctaClick)="navigateToEdit()"
-        />
-      }
-
-      <!-- Preview tabs -->
-      @if (!loading() && previewData()) {
-        <mat-tab-group animationDuration="150ms" aria-label="Preview tabs">
-          <!-- Feed view tab -->
-          <mat-tab [label]="'preview.tab.feed' | transloco">
-            <div class="preview-tab-content">
-              <mee-preview-feed [previewData]="previewData()!" />
-            </div>
-          </mat-tab>
-
-          <!-- Detail view tab -->
-          <mat-tab [label]="'preview.tab.detail' | transloco">
-            <div class="preview-tab-content">
-              <mee-preview-detail [previewData]="previewData()!" />
-            </div>
-          </mat-tab>
-        </mat-tab-group>
-
-        <!-- Navigation actions -->
-        <div class="preview-actions">
-          <button
-            mat-stroked-button
-            (click)="navigateBack()"
-            class="min-h-[44px]"
-            aria-label="Go back to images"
-          >
-            Back to Images
-          </button>
-
-          <button
-            mat-flat-button
-            color="primary"
-            (click)="navigateNext()"
-            class="min-h-[44px]"
-            aria-label="Go to pricing"
-            id="next-step-btn"
-          >
-            Next: Set Pricing
-          </button>
+        <!-- Mobile-only tab chips: Feed / Detail / Mobile -->
+        <div class="flex gap-2 lg:hidden" role="tablist" aria-label="Preview surfaces">
+          @for (tab of tabs; track tab.key) {
+            <button
+              role="tab"
+              [attr.aria-selected]="activeTab() === tab.key"
+              class="min-h-[44px] px-4 rounded-full text-sm font-medium transition-colors"
+              [style]="activeTab() === tab.key
+                ? 'background:var(--mee-color-primary);color:var(--mee-color-on-primary);'
+                : 'background:var(--mee-color-surface-variant);color:var(--mee-color-on-surface);'"
+              (click)="onTabChange(tab.key)"
+            >{{ tab.label }}</button>
+          }
         </div>
+
+        <!-- Preview surfaces: 3-column on desktop, single tab-controlled on mobile -->
+        <div class="flex flex-col gap-6 lg:flex-row lg:gap-4">
+
+          <!-- SURFACE 1 — Feed Thumbnail -->
+          @if (isDesktop() || activeTab() === 'feed') {
+            <div class="flex-1 flex flex-col gap-2" role="tabpanel" aria-label="Feed thumbnail">
+              <mee-card>
+                <div class="flex flex-col" style="background:var(--mee-color-surface);">
+
+                  <!-- Product image 160×200 -->
+                  <div
+                    class="w-full overflow-hidden rounded-t"
+                    style="height:200px;background:var(--mee-color-surface-variant);"
+                  >
+                    <img
+                      [src]="preview()?.primary_image_url"
+                      alt="Product image"
+                      class="w-full h-full object-cover"
+                      onerror="this.style.display='none'"
+                    />
+                  </div>
+
+                  <div class="p-3 flex flex-col gap-1">
+                    <!-- Truncation warning chip -->
+                    @if (titleTruncated()) {
+                      <span
+                        class="text-xs font-semibold px-2 py-0.5 rounded self-start"
+                        style="background:var(--mee-color-warning-light, rgba(234,179,8,0.15));color:var(--mee-color-warning, #ca8a04);"
+                      >Title cuts at char {{ feedLimit }}</span>
+                    }
+
+                    <!-- Truncated title -->
+                    <p
+                      class="text-sm font-semibold leading-snug"
+                      style="color:var(--mee-color-on-surface);"
+                    >{{ truncatedFeedTitle() }}</p>
+
+                    <!-- Price + rating row -->
+                    <div class="flex items-center justify-between mt-1">
+                      <span
+                        class="text-base font-bold"
+                        style="color:var(--mee-color-on-surface);"
+                      >&#8377;{{ preview()?.mrp }}</span>
+                      <span
+                        class="text-xs"
+                        style="color:var(--mee-color-on-surface-muted, #6b7280);"
+                      >&#9733; 4.2 (120)</span>
+                    </div>
+
+                    <!-- Free delivery label -->
+                    <p
+                      class="text-xs"
+                      style="color:var(--mee-color-success, #16a34a);"
+                    >FREE delivery</p>
+                  </div>
+
+                </div>
+              </mee-card>
+              <p
+                class="text-xs text-center font-medium"
+                style="color:var(--mee-color-on-surface-muted, #6b7280);"
+              >Feed thumbnail</p>
+            </div>
+          }
+
+          <!-- SURFACE 2 — Detail Page -->
+          @if (isDesktop() || activeTab() === 'detail') {
+            <div class="flex-1 flex flex-col gap-2" role="tabpanel" aria-label="Detail page">
+              <mee-card>
+                <div class="flex flex-col" style="background:var(--mee-color-surface);">
+
+                  <!-- Full-width product image -->
+                  <div
+                    class="w-full overflow-hidden rounded-t"
+                    style="height:240px;background:var(--mee-color-surface-variant);"
+                  >
+                    <img
+                      [src]="preview()?.primary_image_url"
+                      alt="Product image"
+                      class="w-full h-full object-cover"
+                      onerror="this.style.display='none'"
+                    />
+                  </div>
+
+                  <!-- Image dot indicators -->
+                  <div class="flex justify-center gap-1.5 pt-2">
+                    @for (url of preview()?.image_urls ?? []; track $index) {
+                      <span
+                        class="block rounded-full"
+                        [style]="$index === 0
+                          ? 'width:8px;height:8px;background:var(--mee-color-primary);'
+                          : 'width:6px;height:6px;background:var(--mee-color-outline);'"
+                        [attr.aria-label]="'Image ' + ($index + 1)"
+                      ></span>
+                    }
+                  </div>
+
+                  <div class="p-3 flex flex-col gap-2">
+                    <!-- Full title -->
+                    <h2
+                      class="text-sm font-semibold leading-snug"
+                      style="color:var(--mee-color-on-surface);"
+                    >{{ preview()?.title }}</h2>
+
+                    <!-- Price -->
+                    <p
+                      class="text-lg font-bold"
+                      style="color:var(--mee-color-on-surface);"
+                    >&#8377;{{ preview()?.mrp }}</p>
+
+                    <!-- Commission + GST -->
+                    <div class="flex gap-3 flex-wrap">
+                      <span
+                        class="text-xs"
+                        style="color:var(--mee-color-on-surface-muted, #6b7280);"
+                      >Commission: {{ preview()?.commission_pct }}%</span>
+                      <span
+                        class="text-xs"
+                        style="color:var(--mee-color-on-surface-muted, #6b7280);"
+                      >GST: {{ preview()?.gst_pct }}%</span>
+                    </div>
+
+                    <!-- Category path -->
+                    <p
+                      class="text-xs"
+                      style="color:var(--mee-color-on-surface-muted, #6b7280);"
+                    >{{ preview()?.category_path }}</p>
+
+                    <!-- Simulated CTAs (non-interactive, visual only) -->
+                    <div class="flex gap-2 mt-1">
+                      <span
+                        class="flex-1 text-center py-2 rounded text-sm font-semibold"
+                        style="border:1px solid var(--mee-color-primary);color:var(--mee-color-primary);"
+                        aria-hidden="true"
+                      >Add to cart</span>
+                      <span
+                        class="flex-1 text-center py-2 rounded text-sm font-semibold"
+                        style="background:var(--mee-color-primary);color:var(--mee-color-on-primary);"
+                        aria-hidden="true"
+                      >Buy now</span>
+                    </div>
+                  </div>
+
+                </div>
+              </mee-card>
+              <p
+                class="text-xs text-center font-medium"
+                style="color:var(--mee-color-on-surface-muted, #6b7280);"
+              >Detail page</p>
+            </div>
+          }
+
+          <!-- SURFACE 3 — Mobile Grid Card (2-up style) -->
+          @if (isDesktop() || activeTab() === 'mobile') {
+            <div class="flex-1 flex flex-col gap-2" role="tabpanel" aria-label="Mobile grid card">
+              <mee-card>
+                <div
+                  class="p-2"
+                  style="background:var(--mee-color-surface);"
+                >
+                  <!-- 2-up mobile grid: two tiles side-by-side -->
+                  <div class="grid grid-cols-2 gap-2">
+                    @for (tile of mobileTiles(); track $index) {
+                      <div
+                        class="flex flex-col gap-1"
+                        style="background:var(--mee-color-surface-variant);border-radius:var(--mee-radius-sm, 4px);overflow:hidden;"
+                      >
+                        <!-- Tile image -->
+                        <div style="height:100px;background:var(--mee-color-outline);">
+                          <img
+                            [src]="tile.imageUrl"
+                            alt="Product tile"
+                            class="w-full h-full object-cover"
+                            onerror="this.style.display='none'"
+                          />
+                        </div>
+
+                        <!-- Truncated title + price -->
+                        <div class="p-1 flex flex-col gap-0.5">
+                          <p
+                            class="text-xs font-medium leading-tight"
+                            style="color:var(--mee-color-on-surface);"
+                          >{{ tile.truncatedTitle }}</p>
+                          <p
+                            class="text-xs font-bold"
+                            style="color:var(--mee-color-on-surface);"
+                          >&#8377;{{ preview()?.mrp }}</p>
+                        </div>
+                      </div>
+                    }
+                  </div>
+                </div>
+              </mee-card>
+              <p
+                class="text-xs text-center font-medium"
+                style="color:var(--mee-color-on-surface-muted, #6b7280);"
+              >Mobile grid card</p>
+            </div>
+          }
+
+        </div>
+
+        <!-- Title truncation warning panel -->
+        @if (titleTruncated()) {
+          <div
+            class="rounded-lg p-4 flex gap-3 items-start"
+            style="background:var(--mee-color-warning-light, rgba(234,179,8,0.1));border:1px solid var(--mee-color-warning, #ca8a04);"
+            role="alert"
+            aria-live="polite"
+          >
+            <span
+              class="text-lg leading-none"
+              aria-hidden="true"
+              style="color:var(--mee-color-warning, #ca8a04);"
+            >&#9888;</span>
+            <div class="flex flex-col gap-1">
+              <p
+                class="text-sm font-semibold"
+                style="color:var(--mee-color-warning, #ca8a04);"
+              >Title truncation warning</p>
+              <p
+                class="text-sm"
+                style="color:var(--mee-color-on-surface);"
+              >
+                &ldquo;{{ truncatedFeedTitle() }}&rdquo;
+                &mdash; title cut at char {{ feedLimit }} on mobile feed view.
+              </p>
+              <p
+                class="text-xs mt-1"
+                style="color:var(--mee-color-on-surface-muted, #6b7280);"
+              >
+                Your title is {{ preview()?.title?.length ?? 0 }} chars.
+                Aim for &#8804;{{ feedLimit }} chars for the best feed appearance.
+              </p>
+            </div>
+          </div>
+        }
+
+        <!-- Edit product CTA -->
+        <div class="flex justify-start">
+          <mee-button
+            label="Edit product"
+            variant="secondary"
+            (clicked)="onEditProduct()"
+          />
+        </div>
+
       }
     </div>
   `,
 })
 export class PreviewComponent implements OnInit {
-  private readonly route = inject(ActivatedRoute);
+  private readonly route  = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly previewApi = inject(PreviewApiService);
-  private readonly snackBar = inject(MatSnackBar);
 
-  readonly loading = signal<boolean>(true);
-  readonly previewData = signal<PreviewData | null>(null);
+  // Component state
+  readonly loading   = signal<boolean>(true);
+  readonly preview   = signal<PreviewData | null>(null);
+  readonly activeTab = signal<PreviewTab>('feed');
+  readonly isDesktop = signal<boolean>(
+    typeof window !== 'undefined' ? window.innerWidth >= DESKTOP_BREAKPOINT_PX : true
+  );
 
-  private get productId(): string {
-    return this.route.snapshot.parent?.paramMap.get('id') ??
-           this.route.snapshot.paramMap.get('id') ?? '';
-  }
+  // Public constants exposed to template
+  readonly feedLimit   = FEED_TITLE_LIMIT;
+  readonly mobileLimit = MOBILE_TITLE_LIMIT;
+
+  // Derived display values — delegate to pure model functions
+  readonly titleTruncated = computed<boolean>(
+    () => isTitleTruncated(this.preview()?.title)
+  );
+
+  readonly truncatedFeedTitle = computed<string>(
+    () => truncateTitle(this.preview()?.title, FEED_TITLE_LIMIT)
+  );
+
+  readonly mobileTiles = computed<MobileTile[]>(
+    () => buildMobileTiles(this.preview())
+  );
+
+  // Tab definitions — used in the mobile chip row
+  readonly tabs: Array<{ key: PreviewTab; label: string }> = [
+    { key: 'feed',   label: 'Feed' },
+    { key: 'detail', label: 'Detail' },
+    { key: 'mobile', label: 'Mobile' },
+  ];
 
   ngOnInit(): void {
-    const id = this.productId;
-    if (!id) {
+    // Simulate 800ms network delay before presenting preview data
+    setTimeout(() => {
+      this.preview.set(SIMULATED_PREVIEW);
       this.loading.set(false);
-      return;
-    }
-
-    this.previewApi.getPreview(id).pipe(
-      catchError((err: unknown) => {
-        this.loading.set(false);
-        const status = (err as { status?: number })?.status;
-        if (status !== 404) {
-          this.snackBar.open('Failed to load preview. Please try again.', 'Dismiss', {
-            duration: 4000,
-            panelClass: ['mee-snackbar-error'],
-          });
-        }
-        return EMPTY;
-      }),
-    ).subscribe((data) => {
-      this.previewData.set(data);
-      this.loading.set(false);
-    });
+    }, 800);
   }
 
-  navigateToEdit(): void {
-    const id = this.productId;
-    void this.router.navigate(['/catalogs', id, 'edit']);
+  onTabChange(tab: PreviewTab): void {
+    this.activeTab.set(tab);
   }
 
-  navigateBack(): void {
-    const id = this.productId;
-    void this.router.navigate(['/catalogs', id, 'images']);
-  }
-
-  navigateNext(): void {
-    const id = this.productId;
-    void this.router.navigate(['/catalogs', id, 'pricing']);
+  onEditProduct(): void {
+    const productId = resolveEditProductId(
+      this.route.snapshot.paramMap.get('id'),
+      this.preview()?.product_id
+    );
+    this.router.navigate(['/catalogs', productId, 'edit']);
   }
 }

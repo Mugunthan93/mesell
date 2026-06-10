@@ -1,97 +1,310 @@
-// features/export/export/export.component.ts
-// Visual shell — stub data only, no service injection per task scope.
+import {
+  ChangeDetectionStrategy,
+  Component,
+  OnDestroy,
+  OnInit,
+  computed,
+  inject,
+  signal,
+} from '@angular/core';
+import { Router } from '@angular/router';
 
-import { ChangeDetectionStrategy, Component } from '@angular/core';
-import { MatIconModule } from '@angular/material/icon';
-import { StatusBadgeComponent } from '@shared/components/status-badge/status-badge.component';
+import { MeeBadgeComponent }        from '../../../ui';
+import { MeeButtonComponent }       from '../../../ui';
+import { MeeCardComponent }         from '../../../ui';
+import { MeeProgressBarComponent }  from '../../../ui';
+import { PageHeaderComponent }      from '../../../shared';
+import { StatusBadgeComponent }     from '../../../shared';
 
-interface ExportHistoryRow {
-  date: string;
-  products: string;
-  status: 'ready' | 'failed';
-  downloadLabel: string;
-}
+import {
+  type ExportStatus,
+  type ValidationChecks,
+  type ValidationCheckItem,
+  SIMULATED_PASSING_CHECKS,
+  MOCK_DOWNLOAD_URL,
+  buildCheckItems,
+  allChecksPassed,
+  canGenerate,
+} from './export.model';
+
+/** Increment per tick (10 per 500 ms → 100% in ~5 s). */
+const PROGRESS_TICK = 10;
+/** Interval in milliseconds. */
+const TICK_INTERVAL_MS = 500;
 
 @Component({
-  selector: 'mee-export',
+  selector: 'app-export',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MatIconModule, StatusBadgeComponent],
+  imports: [
+    MeeBadgeComponent,
+    MeeButtonComponent,
+    MeeCardComponent,
+    MeeProgressBarComponent,
+    PageHeaderComponent,
+    StatusBadgeComponent,
+  ],
   template: `
-    <!-- Page header -->
-    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px;">
-      <div>
-        <h1 style="font-size:22px; font-weight:700; color:#1F2937; margin:0;">Export Catalog</h1>
-        <p style="font-size:13px; color:#6B7280; margin:4px 0 0 0;">Generate Meesho-compatible CSV for upload</p>
-      </div>
-    </div>
+    <div class="max-w-5xl mx-auto px-4 py-6 space-y-6">
 
-    <!-- Ready-to-export summary card -->
-    <div style="background:#ffffff; border-radius:12px; padding:24px; box-shadow:0 1px 3px rgba(0,0,0,0.08); margin-bottom:16px;">
-      <div style="display:flex; align-items:center; gap:16px;">
-        <div style="width:48px; height:48px; min-width:48px; background:#F0FDF4; border-radius:50%; display:flex; align-items:center; justify-content:center;">
-          <mat-icon style="font-size:24px; width:24px; height:24px; color:#16A34A;">inventory_2</mat-icon>
-        </div>
-        <div>
-          <div style="font-size:18px; font-weight:700; color:#1F2937;">8 products ready to export</div>
-          <div style="font-size:13px; color:#6B7280; margin-top:2px;">All images validated · Quality score ≥ 80</div>
-        </div>
-      </div>
-    </div>
+      <!-- Page Header -->
+      <mee-page-header
+        title="Export Catalog"
+        subtitle="Generate Meesho-format XLSX"
+      />
 
-    <!-- Warning banner -->
-    <div style="background:#FFFBEB; border:1px solid #FDE68A; border-radius:10px; padding:14px 16px; margin-bottom:16px; display:flex; gap:10px; align-items:flex-start;">
-      <mat-icon style="font-size:20px; width:20px; height:20px; color:#D97706; flex-shrink:0; margin-top:1px;">warning_amber</mat-icon>
-      <span style="font-size:13px; color:#92400E;">3 products are still in Draft state and will not be included.</span>
-    </div>
+      <!-- Main layout: stacked on mobile, 2-col on desktop -->
+      <div class="flex flex-col gap-6 lg:flex-row lg:items-start">
 
-    <!-- Export button -->
-    <button
-      type="button"
-      style="display:flex; align-items:center; justify-content:center; gap:8px; width:100%; height:50px; background:#F26B23; color:#ffffff; border:none; border-radius:10px; font-size:16px; font-weight:700; cursor:pointer;"
-    >
-      <mat-icon>download</mat-icon>
-      Export to Meesho CSV
-    </button>
+        <!-- LEFT: VALIDATION GATE -->
+        <div class="lg:w-2/5 space-y-4">
+          <mee-card>
+            <div class="p-2 space-y-4">
 
-    <!-- Past exports section -->
-    <div style="margin-top:32px;">
-      <h2 style="font-size:16px; font-weight:700; color:#374151; margin:0 0 12px 0;">Export History</h2>
+              <h2 class="text-base font-semibold" style="color: var(--mee-color-on-surface)">
+                Pre-export checklist
+              </h2>
 
-      <!-- Table card -->
-      <div style="background:#ffffff; border-radius:10px; overflow:hidden;">
-        <!-- Header row -->
-        <div style="display:grid; grid-template-columns:1fr 1fr 1fr 80px; background:#F9FAFB; border-bottom:1px solid #E5E7EB;">
-          <div style="padding:10px 16px; font-size:11px; font-weight:700; color:#6B7280; text-transform:uppercase; letter-spacing:0.05em;">Date</div>
-          <div style="padding:10px 16px; font-size:11px; font-weight:700; color:#6B7280; text-transform:uppercase; letter-spacing:0.05em;">Products</div>
-          <div style="padding:10px 16px; font-size:11px; font-weight:700; color:#6B7280; text-transform:uppercase; letter-spacing:0.05em;">Status</div>
-          <div style="padding:10px 16px; font-size:11px; font-weight:700; color:#6B7280; text-transform:uppercase; letter-spacing:0.05em;">Download</div>
-        </div>
+              <table class="w-full text-sm" aria-label="Validation checklist">
+                <thead>
+                  <tr>
+                    <th class="text-left py-1 font-medium" style="color: var(--mee-color-on-surface-muted)">
+                      Check
+                    </th>
+                    <th class="text-right py-1 font-medium" style="color: var(--mee-color-on-surface-muted)">
+                      Result
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (check of checkItems(); track check.label) {
+                    <tr class="border-t" style="border-color: var(--mee-color-outline)">
+                      <td class="py-2" style="color: var(--mee-color-on-surface)">
+                        {{ check.label }}
+                      </td>
+                      <td class="py-2 text-right">
+                        <mee-badge
+                          [value]="check.ok ? 'PASS' : 'FAIL'"
+                          [severity]="check.ok ? 'success' : 'danger'"
+                        />
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
 
-        <!-- Data rows -->
-        @for (row of historyRows; track row.date) {
-          <div style="display:grid; grid-template-columns:1fr 1fr 1fr 80px; border-bottom:1px solid #F9FAFB;">
-            <div style="padding:12px 16px; font-size:14px; color:#1F2937;">{{ row.date }}</div>
-            <div style="padding:12px 16px; font-size:14px; color:#1F2937;">{{ row.products }}</div>
-            <div style="padding:12px 16px;">
-              <mee-status-badge [status]="row.status" />
-            </div>
-            <div style="padding:12px 16px; font-size:14px;">
-              @if (row.status === 'ready') {
-                <a href="#" style="color:#F26B23; text-decoration:none; font-weight:500;">{{ row.downloadLabel }}</a>
+              @if (allChecksPassed()) {
+                <p class="text-sm" style="color: var(--mee-color-success)">
+                  All checks passed. Ready to generate export.
+                </p>
               } @else {
-                <span style="color:#9CA3AF;">—</span>
+                <p class="text-sm" style="color: var(--mee-color-error)">
+                  Some checks failed. Please fix issues before exporting.
+                </p>
               }
+
             </div>
-          </div>
-        }
+          </mee-card>
+
+          <!-- Generate Export button -->
+          <mee-button
+            label="Generate Export"
+            variant="primary"
+            [fullWidth]="true"
+            [disabled]="!canGenerate()"
+            [loading]="exportStatus() === 'processing'"
+            (clicked)="onGenerate()"
+          />
+        </div>
+
+        <!-- RIGHT: PROGRESS / DOWNLOAD / ERROR cards -->
+        <div class="lg:w-3/5 space-y-4">
+
+          <!-- Progress card: visible during processing -->
+          @if (exportStatus() === 'processing') {
+            <mee-card>
+              <div class="p-2 space-y-4">
+                <div class="flex items-center gap-3">
+                  <mee-status-badge status="processing" />
+                  <span class="text-sm font-medium" style="color: var(--mee-color-on-surface)">
+                    Generating XLSX + images&hellip;
+                  </span>
+                </div>
+                <mee-progress-bar
+                  [value]="progress()"
+                  label="Generating&hellip;"
+                  [show_value]="true"
+                />
+              </div>
+            </mee-card>
+          }
+
+          <!-- Download card: visible when ready -->
+          @if (exportStatus() === 'ready') {
+            <mee-card>
+              <div class="p-2 space-y-4">
+                <div class="flex items-center gap-3">
+                  <mee-status-badge status="ready" />
+                </div>
+                <p class="text-base font-semibold" style="color: var(--mee-color-on-surface)">
+                  Your export is ready!
+                </p>
+                <p class="text-xs" style="color: var(--mee-color-on-surface-muted)">
+                  Link expires in 1 hour.
+                </p>
+                <mee-button
+                  label="Download XLSX"
+                  variant="secondary"
+                  [fullWidth]="true"
+                  (clicked)="onDownload()"
+                />
+                <mee-button
+                  label="Back to Dashboard"
+                  variant="ghost"
+                  [fullWidth]="true"
+                  (clicked)="onBackToDashboard()"
+                />
+              </div>
+            </mee-card>
+          }
+
+          <!-- Error card: visible on failure -->
+          @if (exportStatus() === 'failed') {
+            <mee-card>
+              <div class="p-2 space-y-4">
+                <div class="flex items-center gap-3">
+                  <mee-status-badge status="failed" />
+                </div>
+                <p class="text-sm" style="color: var(--mee-color-on-surface)">
+                  Export failed. Please try again.
+                </p>
+                <mee-button
+                  label="Retry"
+                  variant="danger"
+                  [fullWidth]="true"
+                  (clicked)="onRetry()"
+                />
+              </div>
+            </mee-card>
+          }
+
+          <!-- Idle placeholder -->
+          @if (exportStatus() === 'idle') {
+            <mee-card>
+              <div class="p-2">
+                <p class="text-sm py-6 text-center" style="color: var(--mee-color-on-surface-muted)">
+                  Click "Generate Export" to start XLSX generation.
+                </p>
+              </div>
+            </mee-card>
+          }
+
+        </div>
       </div>
+
     </div>
   `,
 })
-export class ExportComponent {
-  readonly historyRows: ExportHistoryRow[] = [
-    { date: '05 Jun 2026', products: '11 products', status: 'ready', downloadLabel: 'Download' },
-    { date: '01 Jun 2026', products: '8 products', status: 'failed', downloadLabel: '—' },
-  ];
+export class ExportComponent implements OnInit, OnDestroy {
+  private readonly router = inject(Router);
+
+  // ── State signals ──────────────────────────────────────────────────────────
+
+  readonly exportStatus  = signal<ExportStatus>('idle');
+  readonly progress      = signal<number>(0);
+  readonly downloadUrl   = signal<string | null>(null);
+  readonly exportId      = signal<string | null>(null);
+
+  /** All 4 validation checks (simulated as all-pass per journey step 10). */
+  readonly validationChecks = signal<ValidationChecks>(SIMULATED_PASSING_CHECKS);
+
+  /** Interval handle stored for clearInterval on destroy / ready / retry. */
+  private pollingIntervalId: ReturnType<typeof setInterval> | null = null;
+
+  // ── Computed ───────────────────────────────────────────────────────────────
+
+  /** Flat list of check items for @for iteration. Delegates to pure function. */
+  readonly checkItems = computed<ValidationCheckItem[]>(
+    () => buildCheckItems(this.validationChecks())
+  );
+
+  /** All 4 checks must pass. Delegates to pure function. */
+  readonly allChecksPassed = computed<boolean>(
+    () => allChecksPassed(this.validationChecks())
+  );
+
+  /**
+   * Generate button is enabled only when all checks pass AND status is idle.
+   * Delegates to pure function.
+   */
+  readonly canGenerate = computed<boolean>(
+    () => canGenerate(this.exportStatus(), this.validationChecks())
+  );
+
+  // ── Lifecycle ──────────────────────────────────────────────────────────────
+
+  ngOnInit(): void {
+    // Validation checks are synchronous in V1 simulation — already initialised via signal default.
+    // In Wave 6, this would call GET /products/:id/export-validation.
+  }
+
+  ngOnDestroy(): void {
+    this.clearPollInterval();
+  }
+
+  // ── Behaviours ─────────────────────────────────────────────────────────────
+
+  /**
+   * Start simulated XLSX generation.
+   * State machine: idle → processing → ready (after ~5 s).
+   */
+  onGenerate(): void {
+    if (!this.canGenerate()) return;
+
+    this.exportStatus.set('processing');
+    this.progress.set(0);
+
+    this.pollingIntervalId = setInterval(() => {
+      this.progress.update(p => p + PROGRESS_TICK);
+
+      if (this.progress() >= 100) {
+        this.clearPollInterval();
+        this.exportStatus.set('ready');
+        this.downloadUrl.set(MOCK_DOWNLOAD_URL);
+        this.exportId.set('mock-export-' + Date.now());
+      }
+    }, TICK_INTERVAL_MS);
+  }
+
+  /**
+   * Open the download URL in a new tab.
+   * Uses window.open — NOT Router.navigate (external URL).
+   */
+  onDownload(): void {
+    const url = this.downloadUrl();
+    if (url) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  }
+
+  /** Reset state machine back to idle so the user can re-trigger. */
+  onRetry(): void {
+    this.clearPollInterval();
+    this.exportStatus.set('idle');
+    this.progress.set(0);
+    this.downloadUrl.set(null);
+  }
+
+  onBackToDashboard(): void {
+    void this.router.navigate(['/dashboard']);
+  }
+
+  // ── Private helpers ────────────────────────────────────────────────────────
+
+  private clearPollInterval(): void {
+    if (this.pollingIntervalId !== null) {
+      clearInterval(this.pollingIntervalId);
+      this.pollingIntervalId = null;
+    }
+  }
 }

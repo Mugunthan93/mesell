@@ -27,3 +27,5 @@ k8s/meesell-worker-sa-key.json
 dump.rdb
 appendonlydir/
 frontend/.angular/
+archive/
+themes/sakai-ng/

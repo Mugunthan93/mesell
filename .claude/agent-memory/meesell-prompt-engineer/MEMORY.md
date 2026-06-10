@@ -70,3 +70,24 @@ You'll iterate the TEMPLATE body until `run_eval(workload).passed == True` for e
 | Output shape locks | reference | smart_picker emits `{"suggestions": [{"category_id", "confidence", "reasons"}]}`; autofill emits `{"fields": {<canonical>: <value>}}`; watermark emits `{"has_watermark": bool, "confidence": float}` |
 | Versioning | reference | V1 ships `_v1` per workload, hardcoded; V1.5 A/B routing via Valkey flag `meesell:ai_ops:active_version:{workload}` is locked but DEFERRED |
 | Per-call cost target | reference | ≤ ₹0.05 average per MVP_ARCH §8.2 — autofill's enum-allowlist block is the largest single token cost |
+
+## §10 catalog autofill.v1 — CONSUMED 2026-06-07 (sub-session 1)
+
+| Memory key | type | content |
+| ---------- | ---- | ------- |
+| autofill.v1 template inputs (consumed by §10) | reference | catalog.service.autofill_product passes {{product_spec}} = "<description>\n\nAlready filled:\n  k: v\n...\n\nFill only these fields:\n  - k\n..."; {{schema}} = "- {canonical} ({data_type}, {marker}) allowed=[...]\n..." with top-10 enum preview per field |
+| autofill output → AutofillSuggestion mapping | reference | service treats every emitted field with confidence=0.9 (D4); maps to AutofillSuggestionInternal(canonical_name, value, confidence, source="ai"); auto-apply floor 0.85 per MVP_ARCH §5.2 |
+| autofill graceful fallback shape | reference | parsed.fields empty / malformed / fallback_offered=True → catalog returns AutofillResponse(suggestions={}, applied={}, fallback_offered=True) HTTP 200 — symmetric with §9 smart_picker |
+| Layer 2 enum guardrail integration | reference | catalog._resolve_allowed_enums builds the dict — static reads inline enum_values; category fetches via category.service.get_field_enum; passed to call_gemini.allowed_enums kwarg |
+
+## §11 watermark.v1 — CONSUMED 2026-06-07 (sub-session: meesell-backend-construction-11-image-1)
+
+| Memory key | type | content |
+| ---------- | ---- | ------- |
+| watermark.v1 template inputs (consumed by §11) | reference | image.tasks._check_watermark passes prompt_vars={} (no template variables) and image_bytes=<bytes from GCS download>; rendered_by="vision"; Layer 1 prefix enforced by guardrail.apply_prompt_constraint per §6A.E |
+| watermark.v1 expected output contract | reference | {"has_watermark": bool, "confidence": float ∈ [0,1]} — Layer 2 guardrail validates shape per §6A.E; fallback on malformed → outcome "uncertain" + confidence None |
+| watermark fallback envelope | reference | call_gemini internally returns parsed = {"has_watermark": None, "confidence": 0.0, "watermark_check": "skipped_budget"} on BudgetExceededError per §6A.F; tasks._check_watermark detects via parsed.get("watermark_check") == "skipped_budget" |
+| watermark output → PrecheckResult mapping | reference | _check_watermark returns (outcome, confidence): outcome ∈ {"no_watermark", "has_watermark", "uncertain", "skipped_budget"}; PrecheckResult.watermark_check carries it verbatim; PrecheckResult.watermark_confidence carries the float or None |
+| watermark is INFORMATIONAL (founder ruling) | reference | overall image status="ready" if 4 deterministic checks pass — watermark outcome does NOT gate status; budget exhaustion is non-blocking; sellers not penalised |
+| watermark.v1 template is V1 baseline | reference | TEMPLATE already drafted in ai_ops/prompts/watermark_v1.py (services-builder seeded during Wave 1 §6A); content covers: watermark definition (semi-transparent logo / text stamp / signature / "for sale only" marker), what it is NOT (printed brand label / sticker / texture), output JSON contract, false-positive bias rationale (Meesho rejects at listing time so flag saves a later rejection). Ready for §19 golden-eval tuning |
+| watermark.v1 golden eval target | reference | 30 images, 50/50 watermarked/clean, target accuracy ≥ 85% per MVP_ARCH §8.5; fixtures live in tests/eval/watermark/fixtures.json (to be created); maintained by meesell-image-precheck-builder per §6A.H |

@@ -1,0 +1,73 @@
+<div class="shell-layout">
+  <!-- Desktop sidebar -->
+  <nav class="sidebar-desktop" aria-label="Main navigation">
+    <div class="sidebar-brand">MeeSell</div>
+    <ul class="sidebar-nav">
+      @for (item of navItems; track item.route) {
+        <li>
+          <a [routerLink]="item.route"
+             routerLinkActive="nav-item--active"
+             class="nav-item">
+            <i [class]="item.icon" aria-hidden="true"></i>
+            <span>{{ item.label }}</span>
+          </a>
+        </li>
+      }
+    </ul>
+  </nav>
+
+  <!-- Mobile sidebar overlay (PrimeNG v21 Drawer) -->
+  <p-drawer
+    [visible]="mobileSidebarVisible()"
+    (visibleChange)="mobileSidebarVisible.set($event)"
+    styleClass="mee-mobile-sidebar"
+    [modal]="true">
+    <div class="sidebar-brand sidebar-brand--light">MeeSell</div>
+    <ul class="sidebar-nav">
+      @for (item of navItems; track item.route) {
+        <li>
+          <a [routerLink]="item.route"
+             routerLinkActive="nav-item--active"
+             class="nav-item"
+             (click)="mobileSidebarVisible.set(false)">
+            <i [class]="item.icon" aria-hidden="true"></i>
+            <span>{{ item.label }}</span>
+          </a>
+        </li>
+      }
+    </ul>
+  </p-drawer>
+
+  <!-- Main content area -->
+  <div class="shell-main">
+    <!-- Top header -->
+    <header class="shell-header">
+      <button
+        class="hamburger"
+        aria-label="Open navigation"
+        aria-haspopup="true"
+        (click)="mobileSidebarVisible.set(true)">
+        <i class="pi pi-bars" aria-hidden="true"></i>
+      </button>
+      <div class="header-spacer"></div>
+      <div class="user-menu-trigger">
+        <div class="avatar"
+             role="button"
+             tabindex="0"
+             aria-haspopup="true"
+             aria-label="User menu"
+             (click)="userMenu.toggle($event)"
+             (keydown.enter)="userMenu.toggle($event)"
+             (keydown.space)="userMenu.toggle($event)">
+          {{ userInitials }}
+        </div>
+        <p-menu #userMenu [model]="userMenuItems" [popup]="true" />
+      </div>
+    </header>
+
+    <!-- Page content -->
+    <main class="page-content">
+      <router-outlet />
+    </main>
+  </div>
+</div>
