@@ -58,12 +58,12 @@ The full scope, locked:
 ### A — Lead/Agent assignment lockdown
 **Locked answer:** *Lock the canonical lineup; no other agents touch ai-autofill.*
 
-(See "Lead/Agent assignment" section below for the table.)
+(See "Agent lineup" section below for the table.)
 
 ### B — Branch lifecycle for this feature
 **Locked answer:** *Lock the sequence; no pre-creation of feature/group branches in this planning session.*
 
-(See "Branch lifecycle for this feature" section below.)
+(See "Branch setup" section below.)
 
 ### C — Cross-feature memory protocol
 **Locked answer:** *Lock the 3-mechanism protocol (feature-tagged session entries + per-agent register + one-shot broadcast).*
@@ -72,7 +72,7 @@ A follow-up PR will amend `MASTER_PLAN.md §6` and `§7` so the pattern applies 
 
 ---
 
-## Lead/Agent assignment
+## Agent lineup
 
 The 4 leads and 5 specialists (1 conditional) listed below are the **canonical lineup** for ai-autofill. No other agent in the 18-agent fleet may modify code under the ai-autofill code surfaces. Specifically out of scope and forbidden to touch ai-autofill files: `meesell-database-builder`, `meesell-auth-builder`, `meesell-infra-builder`, `meesell-angular-ui-styler`, `meesell-legal-writer`, `meesell-category-picker-builder`, `meesell-image-precheck-builder`, `meesell-scraper-maintainer`. If any of those agents is mistakenly asked to act on ai-autofill, they refuse with "defer to `meesell-<correct-role>`".
 
@@ -86,30 +86,6 @@ The 4 leads and 5 specialists (1 conditional) listed below are the **canonical l
 | `meesell-data-engineer` | `meesell-xlsx-parser` *(CONDITIONAL)* | **ONLY** if `tests/eval/autofill/test_enum_validity.py` surfaces invalid-enum hits traceable to stale entries in `backend/app/data/field_aliases.json`. Refresh the affected `enum_values` from the latest Meesho XLSX source. Default expectation: no work — the `field_aliases` seed is stable. If triggered, the dispatch follows the conditional template under "Dispatch templates" below. |
 
 **Lead approval chain (per `MASTER_PLAN.md §2.1`):** Each specialist's PR on `feature/ai-autofill/{group}` → `feature/ai-autofill` is reviewed and merged by **the group's lead**. The aggregated `feature/ai-autofill` → `develop` PR is reviewed and merged by the **founder** per `MASTER_PLAN.md §2.2`. The founder is the sole reviewer at the integration layer; leads are the sole reviewers at the group layer.
-
----
-
-## Branch lifecycle for this feature
-
-This planning session creates exactly ONE branch. All other branches in the ai-autofill family are created later, by the relevant lead, at dispatch time.
-
-### Created in this planning session
-| Branch | Parent | Purpose | Lifetime |
-|---|---|---|---|
-| `feature/ai-autofill/planning` | `origin/develop` | Carries this `FEATURE_PLAN.md`. Merges to `develop` after founder review. | Deleted 24 h after planning PR merges. |
-
-### Created LATER (NOT in this session)
-| Order | Branch | Parent | Created by | Created when | Lifetime |
-|---|---|---|---|---|---|
-| 1 | `feature/ai-autofill` | `develop` | Founder OR the first lead to dispatch | **AFTER** `smart-picker` AND `catalog-form` both merge to `develop` per D3 | Deleted 24 h after `feature/ai-autofill` → `develop` PR merges |
-| 2 | `feature/ai-autofill/ai` | `feature/ai-autofill` | `meesell-ai-coordinator` | When AI lead dispatches `prompt-engineer` (can run first, decoupled from BE/FE in calendar but not in merge order) | Deleted 24 h after group PR merges |
-| 3 | `feature/ai-autofill/backend` | `feature/ai-autofill` | `meesell-backend-coordinator` | When backend lead dispatches `services-builder` and/or `api-routes-builder` | Deleted 24 h after group PR merges |
-| 4 | `feature/ai-autofill/frontend` | `feature/ai-autofill` | `meesell-frontend-coordinator` | When frontend lead dispatches `angular-component-builder` and/or `angular-service-builder` | Deleted 24 h after group PR merges |
-| 5 | `feature/ai-autofill/data` *(CONDITIONAL)* | `feature/ai-autofill` | `meesell-data-engineer` | ONLY if `xlsx-parser` is triggered by enum drift in eval | Deleted 24 h after group PR merges |
-
-**Group-PR merge order to `feature/ai-autofill`:** No strict order required between BE / FE / AI groups. The `feature/ai-autofill` → `develop` integration PR is gated on ALL three (plus data if triggered) having merged to `feature/ai-autofill` per `MASTER_PLAN.md §2.5`.
-
-**Slug discipline:** `ai-autofill` is the locked slug. Never `ai_autofill`, `aiautofill`, `autofill`, `ai-auto-fill`. Session names, branch names, file paths, board entries, and PR titles all use `ai-autofill`.
 
 ---
 
@@ -193,6 +169,134 @@ Every item below MUST exist alongside the merged code before the `feature/ai-aut
 ### Cross-cutting
 - **`docs/V1_FEATURE_SPEC.md §F4`** stamped "implemented YYYY-MM-DD" with the feature PR link.
 - **No** modification to `MASTER_PLAN.md` from this feature — the `§6/§7` amendment (resolution C) is a SEPARATE PR.
+
+---
+
+## Branch setup
+
+This planning session creates exactly ONE branch. All other branches in the ai-autofill family are created later, by the relevant lead, at dispatch time.
+
+### Created in this planning session
+| Branch | Parent | Purpose | Lifetime |
+|---|---|---|---|
+| `feature/ai-autofill/planning` | `origin/develop` | Carries this `FEATURE_PLAN.md`. Merges to `develop` after founder review. | Deleted 24 h after planning PR merges. |
+
+### Created LATER (NOT in this session)
+| Order | Branch | Parent | Created by | Created when | Lifetime |
+|---|---|---|---|---|---|
+| 1 | `feature/ai-autofill` | `develop` | Founder OR the first lead to dispatch | **AFTER** `smart-picker` AND `catalog-form` both merge to `develop` per D3 | Deleted 24 h after `feature/ai-autofill` → `develop` PR merges |
+| 2 | `feature/ai-autofill/ai` | `feature/ai-autofill` | `meesell-ai-coordinator` | When AI lead dispatches `prompt-engineer` (can run first, decoupled from BE/FE in calendar but not in merge order) | Deleted 24 h after group PR merges |
+| 3 | `feature/ai-autofill/backend` | `feature/ai-autofill` | `meesell-backend-coordinator` | When backend lead dispatches `services-builder` and/or `api-routes-builder` | Deleted 24 h after group PR merges |
+| 4 | `feature/ai-autofill/frontend` | `feature/ai-autofill` | `meesell-frontend-coordinator` | When frontend lead dispatches `angular-component-builder` and/or `angular-service-builder` | Deleted 24 h after group PR merges |
+| 5 | `feature/ai-autofill/data` *(CONDITIONAL)* | `feature/ai-autofill` | `meesell-data-engineer` | ONLY if `xlsx-parser` is triggered by enum drift in eval | Deleted 24 h after group PR merges |
+
+**Group-PR merge order to `feature/ai-autofill`:** No strict order required between BE / FE / AI groups. The `feature/ai-autofill` → `develop` integration PR is gated on ALL three (plus data if triggered) having merged to `feature/ai-autofill` per `MASTER_PLAN.md §2.5`.
+
+**Slug discipline:** `ai-autofill` is the locked slug. Never `ai_autofill`, `aiautofill`, `autofill`, `ai-auto-fill`. Session names, branch names, file paths, board entries, and PR titles all use `ai-autofill`.
+
+---
+
+## Memory protocol
+
+### Required reads at coding-session start
+
+Memories leads MUST read at coding-session start:
+- `.claude/agent-memory/meesell-ai-coordinator/MEMORY.md`
+- `.claude/agent-memory/meesell-backend-coordinator/MEMORY.md`
+- `.claude/agent-memory/meesell-frontend-coordinator/MEMORY.md`
+- `.claude/agent-memory/meesell-data-engineer/MEMORY.md`
+
+### Cross-feature memo contracts
+
+- ai-autofill consumes the category tree contract from `smart-picker` — the `ai_ops` integration contract (workload Literal, allowed_enums shape) established by smart-picker is the dependency gate for the AI lead dispatch.
+- ai-autofill consumes the catalog-form page surface from `catalog-form` — the `catalog-form.component.ts` mounting point and the `CatalogService` base class shape from catalog-form are required before frontend specialists can build autofill wiring.
+
+### Naming convention for new memos
+
+Naming convention for new memos created during this feature: `ai_autofill_feature.md` (under each specialist agent's memory directory, e.g. `.claude/agent-memory/meesell-services-builder/ai_autofill_feature.md`).
+
+### Cross-feature memory protocol (mechanisms)
+
+This protocol applies to every specialist dispatched on ai-autofill. It will be promoted to a `MASTER_PLAN.md` amendment after this planning PR merges so it applies uniformly to all 9 V1 features (resolution C ratified by founder in this session).
+
+#### Mechanism 1 — Feature-tagged session entries (MANDATORY)
+
+Every session entry appended to an agent's `MEMORY.md` MUST begin with this exact header:
+
+```markdown
+## Session mesell-ai-autofill-{group}-session-{N} — YYYY-MM-DD
+**Feature:** ai-autofill
+**My slice:** <one-line description of this session's specific work>
+**Branch:** feature/ai-autofill/{group}
+**PR:** #<num> (filled in at PR-open time)
+
+### What I did
+- ...
+
+### What I learned
+- ...
+
+### Pointers for future sessions on ai-autofill
+- ...
+```
+
+Rationale: `grep "Feature: ai-autofill" .claude/agent-memory/meesell-*/MEMORY.md` returns every entry across the fleet that touched this feature. Attribution is mechanical, not interpretive.
+
+#### Mechanism 2 — "Features I'm involved in" register
+
+Each involved agent's `MEMORY.md` gets a top-level register table, updated whenever the agent is newly dispatched on a feature or a feature's status changes. The register must appear ABOVE the session-entries list. Format:
+
+```markdown
+## Features I'm involved in
+| Feature | My slice | Branch pattern | Plan | Status |
+|---|---|---|---|---|
+| smart-picker | <slice> | feature/smart-picker/{group} | docs/plans/features/smart-picker/FEATURE_PLAN.md | <Status> |
+| catalog-form | <slice> | feature/catalog-form/{group} | docs/plans/features/catalog-form/FEATURE_PLAN.md | <Status> |
+| ai-autofill | <slice> | feature/ai-autofill/{group} | docs/plans/features/ai-autofill/FEATURE_PLAN.md | <Status> |
+```
+
+The agent reads this register at session start. Status values follow `MASTER_PLAN.md §6.3`: `PENDING · IN PROGRESS · IN REVIEW · MERGED · BLOCKED`.
+
+#### Mechanism 3 — One-shot fan-out broadcast at planning-PR merge
+
+When the founder merges this planning PR to `develop`, a **single broadcast pass** writes a short feature-register stub to **every agent in the 18-agent fleet** — both involved and not-involved. The broadcast is the FIRST action listed under Acceptance gate below.
+
+For involved agents, the stub:
+
+```markdown
+## Feature register entry — ai-autofill (broadcast YYYY-MM-DD)
+- Spec: docs/V1_FEATURE_SPEC.md §F4
+- Plan: docs/plans/features/ai-autofill/FEATURE_PLAN.md
+- My role: <slice>
+- Branch pattern: feature/ai-autofill/{group}
+- Sibling features currently in flight: smart-picker, catalog-form, image-precheck
+- I will be dispatched when: <prerequisite from D3>
+- I will NOT be dispatched if: <out-of-scope trigger>
+```
+
+For NOT-involved agents (e.g. `meesell-database-builder`, `meesell-auth-builder`, `meesell-infra-builder`, `meesell-angular-ui-styler`, `meesell-legal-writer`, `meesell-category-picker-builder`, `meesell-image-precheck-builder`, `meesell-scraper-maintainer`), the stub:
+
+```markdown
+## Feature register entry — ai-autofill (broadcast YYYY-MM-DD)
+- Spec: docs/V1_FEATURE_SPEC.md §F4
+- Plan: docs/plans/features/ai-autofill/FEATURE_PLAN.md
+- My role: NONE — I am NOT involved in ai-autofill. Refuse with "defer to meesell-<correct-role>" if asked.
+```
+
+#### Read protocol at session start (for every involved specialist)
+
+1. Read this `FEATURE_PLAN.md` in full.
+2. Read own `MEMORY.md` — scan ONLY entries tagged `Feature: ai-autofill` plus general/reference entries. Ignore other-feature entries unless cross-cutting.
+3. Read the "Features I'm involved in" register at top of own `MEMORY.md`.
+4. Read the lead's `docs/status/feature_board_<domain>.md` to see all active features the lead is touching.
+5. Read sibling-specialist `MEMORY.md` files referenced in the dispatch template's Mandatory reads list (filtered the same way — only `Feature: ai-autofill` plus general entries).
+
+#### Write protocol at session close (for every involved specialist)
+
+1. Append the Mechanism 1 session entry with mandatory header to own `MEMORY.md`.
+2. Update the Mechanism 2 register row for ai-autofill.
+3. Update the lead's `feature_board_<domain>.md` row per `MASTER_PLAN.md §6.5`.
+4. Confirm 1+2+3 in the final report (it is a check-list item in every dispatch template).
 
 ---
 
@@ -613,91 +717,6 @@ Refresh the `enum_values` for the specific category/field pairs flagged by promp
 
 ---
 
-## Cross-feature memory protocol
-
-This protocol applies to every specialist dispatched on ai-autofill. It will be promoted to a `MASTER_PLAN.md` amendment after this planning PR merges so it applies uniformly to all 9 V1 features (resolution C ratified by founder in this session).
-
-### Mechanism 1 — Feature-tagged session entries (MANDATORY)
-
-Every session entry appended to an agent's `MEMORY.md` MUST begin with this exact header:
-
-```markdown
-## Session mesell-ai-autofill-{group}-session-{N} — YYYY-MM-DD
-**Feature:** ai-autofill
-**My slice:** <one-line description of this session's specific work>
-**Branch:** feature/ai-autofill/{group}
-**PR:** #<num> (filled in at PR-open time)
-
-### What I did
-- ...
-
-### What I learned
-- ...
-
-### Pointers for future sessions on ai-autofill
-- ...
-```
-
-Rationale: `grep "Feature: ai-autofill" .claude/agent-memory/meesell-*/MEMORY.md` returns every entry across the fleet that touched this feature. Attribution is mechanical, not interpretive.
-
-### Mechanism 2 — "Features I'm involved in" register
-
-Each involved agent's `MEMORY.md` gets a top-level register table, updated whenever the agent is newly dispatched on a feature or a feature's status changes. The register must appear ABOVE the session-entries list. Format:
-
-```markdown
-## Features I'm involved in
-| Feature | My slice | Branch pattern | Plan | Status |
-|---|---|---|---|---|
-| smart-picker | <slice> | feature/smart-picker/{group} | docs/plans/features/smart-picker/FEATURE_PLAN.md | <Status> |
-| catalog-form | <slice> | feature/catalog-form/{group} | docs/plans/features/catalog-form/FEATURE_PLAN.md | <Status> |
-| ai-autofill | <slice> | feature/ai-autofill/{group} | docs/plans/features/ai-autofill/FEATURE_PLAN.md | <Status> |
-```
-
-The agent reads this register at session start. Status values follow `MASTER_PLAN.md §6.3`: `PENDING · IN PROGRESS · IN REVIEW · MERGED · BLOCKED`.
-
-### Mechanism 3 — One-shot fan-out broadcast at planning-PR merge
-
-When the founder merges this planning PR to `develop`, a **single broadcast pass** writes a short feature-register stub to **every agent in the 18-agent fleet** — both involved and not-involved. The broadcast is the FIRST action listed under Acceptance gate below.
-
-For involved agents, the stub:
-
-```markdown
-## Feature register entry — ai-autofill (broadcast YYYY-MM-DD)
-- Spec: docs/V1_FEATURE_SPEC.md §F4
-- Plan: docs/plans/features/ai-autofill/FEATURE_PLAN.md
-- My role: <slice>
-- Branch pattern: feature/ai-autofill/{group}
-- Sibling features currently in flight: smart-picker, catalog-form, image-precheck
-- I will be dispatched when: <prerequisite from D3>
-- I will NOT be dispatched if: <out-of-scope trigger>
-```
-
-For NOT-involved agents (e.g. `meesell-database-builder`, `meesell-auth-builder`, `meesell-infra-builder`, `meesell-angular-ui-styler`, `meesell-legal-writer`, `meesell-category-picker-builder`, `meesell-image-precheck-builder`, `meesell-scraper-maintainer`), the stub:
-
-```markdown
-## Feature register entry — ai-autofill (broadcast YYYY-MM-DD)
-- Spec: docs/V1_FEATURE_SPEC.md §F4
-- Plan: docs/plans/features/ai-autofill/FEATURE_PLAN.md
-- My role: NONE — I am NOT involved in ai-autofill. Refuse with "defer to meesell-<correct-role>" if asked.
-```
-
-### Read protocol at session start (for every involved specialist)
-
-1. Read this `FEATURE_PLAN.md` in full.
-2. Read own `MEMORY.md` — scan ONLY entries tagged `Feature: ai-autofill` plus general/reference entries. Ignore other-feature entries unless cross-cutting.
-3. Read the "Features I'm involved in" register at top of own `MEMORY.md`.
-4. Read the lead's `docs/status/feature_board_<domain>.md` to see all active features the lead is touching.
-5. Read sibling-specialist `MEMORY.md` files referenced in the dispatch template's Mandatory reads list (filtered the same way — only `Feature: ai-autofill` plus general entries).
-
-### Write protocol at session close (for every involved specialist)
-
-1. Append the Mechanism 1 session entry with mandatory header to own `MEMORY.md`.
-2. Update the Mechanism 2 register row for ai-autofill.
-3. Update the lead's `feature_board_<domain>.md` row per `MASTER_PLAN.md §6.5`.
-4. Confirm 1+2+3 in the final report (it is a check-list item in every dispatch template).
-
----
-
 ## Review + iteration protocol
 
 For each specialist dispatch, this section defines what the lead checks before approving the specialist's PR, what triggers a re-dispatch, what the re-dispatch prompt looks like, and the maximum iteration count.
@@ -838,7 +857,7 @@ The top 5 risks specific to this feature, with mitigation owners.
 
 ---
 
-## Follow-up actions (NOT in this PR)
+### Follow-up actions (NOT in this PR)
 
 Three follow-up actions are queued from this planning session. None of them are in this PR — each gets its own separate PR after this one merges:
 
@@ -852,4 +871,5 @@ Three follow-up actions are queued from this planning session. None of them are 
 
 | Version | Date | Author | Change |
 |---|---|---|---|
-| 0.1 | 2026-06-10 | mesell-ai-autofill-planning-session-1 (master) | Initial DRAFT authored. Founder D1/D2/D3 locked. Founder structural resolutions A (Lead/Agent assignment), B (Branch lifecycle), C (Cross-feature memory protocol) locked. Three follow-up PRs queued. |
+| v1 | 2026-06-10 | mesell-ai-autofill-planning-session-1 (master) | Initial DRAFT authored. Founder D1/D2/D3 locked. Founder structural resolutions A (Lead/Agent assignment), B (Branch lifecycle), C (Cross-feature memory protocol) locked. Three follow-up PRs queued. |
+| v2 | 2026-06-10 | mesell-ai-autofill-amendment-session-1 | Canonical pattern v2 conformance: Lead/Agent assignment → Agent lineup; Branch lifecycle for this feature → Branch setup; ## Memory protocol added (consolidated 5 ad-hoc cross-feature memory h2 sections as subsections); ## Follow-up actions demoted to h3 under ## Risk register; 11 canonical h2 headings verified in locked order. |
