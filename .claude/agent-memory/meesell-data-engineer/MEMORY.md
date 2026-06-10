@@ -184,7 +184,23 @@ BACKEND / FRONTEND / AI sessions are now fully unblocked. Hand-offs documented i
 - No MASTER_PLAN modifications.
 - No STATUS_DATA.md modifications (this is repo governance, not a feature chunk — confirmed scope-out).
 
+### 2026-06-10 — Knowledge-sync survey: stale-stub + naming-drift findings (mesell-knowledge-sync-data-session-1)
+Read-only pipeline survey. Surprising/non-obvious findings only:
+
+1. **`backend/app/data/category_attributes.json` and `meesho_categories.json` are STALE HAND-STUBS, not pipeline output.** Both dated May 27 (pre-parse). `category_attributes.json` = 16 hardcoded categories (Kurtis/Sarees/etc.) with `required/optional/default_return_rate` — a quality-engine return-rate stub, NOT the 3,772-leaf attribute schema. `meesho_categories.json` = a hand-typed 6-super-cat nav tree with made-up sub-cats (e.g. "Beauty & Personal Care") that do NOT match the real `meesho_category_tree.json` super-category names. The REAL derived corpus lives in `backend/app/data/meesho_category_tree.json` (1.7MB, 3,772 leaves, API-sourced 2026-06-03) + the DB seed pipeline. The two stubs are legacy/quality-engine fixtures — must NOT be confused with the canonical category data. Watch for downstream code reading the wrong file.
+
+2. **My spec names `category_attributes.json` as a derived file I schema-version. It is NOT pipeline-derived.** The actual derived artifacts are `meesho_category_tree.json` (tree) + DB tables seeded from `data/parsed/batch_*.json`. The schema-versioned surface is the batch JSON `parser_version` (currently 0.2) and the alias `_meta.version` (currently 1) — NOT a version stamp inside category_attributes.json.
+
+3. **No scraper tooling exists yet.** No `scripts/scrape*`, no `data/snapshots/`, no Playwright scraper. `meesell-scraper-maintainer` has produced zero artifacts. The 2026-06-03 tree came from a direct Meesho API call (`api:bulkCatalogUpload/fetchCategoryTreeOld`), recorded in the tree's `source` field — not from the scraper. Quarterly refresh has no executable scraper pathway today.
+
+4. **Count reconciliation (all within locked tolerance, documented in seed_all.py):** templates SSoT 3,557 → actual 3,566 (+9, from schema groups differing only by enum_source/help_text); field_enum_values SSoT 49,295 → actual 49,259 (−36, from alias-collision dedup of duplicate (category_id, canonical) pairs). field_aliases exact 67. categories exact 3,772. `leaf_id_to_schema_hash.json` confirms 3,772 leaves → 3,566 distinct hashes on disk.
+
+5. **Naming drift: SSoT/analysis say "16+ alias families"; actual `canonical_field_aliases.json` has 23 families and seeds 67 field_aliases rows.** `_meta.version=1`. onboarding_extension_map is keyed by numeric super_id strings (e.g. "26", "19_36_37_14_88_34") not super-category names.
+
+6. **30 super-categories in the real tree** (tree meta: super_category_count=30, category_count=234, sub_category_count=1046), vs the 6 invented in the stub `meesho_categories.json`. 12 parse batches grouped these 30 supers thematically.
+
 ## MEMORY.md
+- [Knowledge-sync survey 2026-06-10](#2026-06-10--knowledge-sync-survey-stale-stub--naming-drift-findings-mesell-knowledge-sync-data-session-1) — category_attributes.json + meesho_categories.json are stale hand-stubs; real corpus is meesho_category_tree.json + DB seed; no scraper exists yet; count tolerances locked in seed_all.py
 - [Session mesell-repo-management-session-1](#session-mesell-repo-management-session-1--step-5--data-engineer-spec-evolved-into-data-lead-spec-feature_board_datamd-initialised) — Data Lead spec rewrite + feature_board_data.md initialisation per MASTER_PLAN §6 + §7
 - [Founder's batch workflow preference](#2026-06-04--founders-batch-workflow-preference-locked) — full-corpus, batch-by-batch, discussion-gated
 - [Workspace hook conflict fallback](#2026-06-04--workspace-hook-conflict--one-time-fallback-pattern) — when meesell-* dispatch is blocked, use nexus python-developer-agent with memory routed to meesell-*/MEMORY.md

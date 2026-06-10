@@ -5,3 +5,6 @@
 - [cert-manager chart key changed v1.14 → v1.15](feedback_cert_manager_chart_value.md) — installCRDs (v1.14) vs crds.enabled (v1.15+); wrong key silently skips CRD install
 - [MeeSell Waves 3-5 complete](project_meesell_wave_3_5_complete.md) — UI Kit + Composites + 11 features built 2026-06-10; build clean, boundary clean, ready for Wave 6 API wiring
 - [MeeSell session 2 handoff](project_meesell_session2_handoff.md) — full state as of 2026-06-10; 7 founder CI actions pending; doc-verification dispatch ready; session 3 is mesell-master-session-3
+- [MeeSell session 3 state](project_meesell_session3_state.md) — ACTIVE session; 6-lead knowledge sync verdicts + 10-item founder decision/action queue (2026-06-10)
+- [MeeSell xlsx-export planning](project_meesell_xlsx_export_planning.md) — FEATURE_PLAN.md authored + committed (a31adf1) + PR #9 opened under serial Step 8; parallel-sessions interrupt landed retroactively; artifacts held for master consolidation
+- [MeeSell auth-otp planning](project_meesell_auth_otp_planning.md) — FEATURE_PLAN.md complete (1561 lines, c1a41e9); D1-D4 locked; backend ~95% done, frontend ~30%; lead memories pre-seeded; awaiting master consolidation
