@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-infra-builder`
 **Domain:** infra
-**Last updated:** 2026-06-10 (housekeeping-v1 MERGED to feature/housekeeping-v1, PR #27)
+**Last updated:** 2026-06-10 (gate4-confirmation IN PROGRESS — MF §9 Gate 4 hosting confirmation)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -11,6 +11,7 @@
 
 | Feature | Group branch | Status | Current session | Last touched | Blocking | Notes |
 |---|---|---|---|---|---|---|
+| gate4-confirmation | chore/gate4-confirmation | IN PROGRESS | mesell-gate4-confirmation-infra-session-1 | 2026-06-10 | none | MF MASTER_PLAN §9 Gate 4 technical confirmation (read-only); authors GATE4_CONFIRMATION.md |
 
 ## Recently merged (last 14 days)
 
