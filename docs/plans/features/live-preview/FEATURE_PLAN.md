@@ -171,44 +171,6 @@ PHASE D (after component-builder complete):
 
 ---
 
-## Branch setup
-
-> **Per parallel-sub-session coordination interrupt (2026-06-10):** this planning session DOES NOT cut any branch. The master Director session reconciles all 9 feature plans and creates feature branches centrally. The dispatch-order branch model below is the TARGET that master should create; the section is documented here so the implementing leads have the canonical map when work starts.
-
-### Branches that master should create (all cut from `develop`)
-
-| Branch | Cut from | Purpose | Who commits here |
-|--------|----------|---------|-----------------|
-| `feature/live-preview` | `develop` | Integration branch — sub-branches merge into here; final PR to `develop` | Only merge commits from sub-branches |
-| `feature/live-preview/backend` | `feature/live-preview` | All backend specialist work | `meesell-services-builder`, `meesell-api-routes-builder` |
-| `feature/live-preview/frontend` | `feature/live-preview` | All frontend specialist work | `meesell-angular-service-builder`, `meesell-angular-component-builder`, `meesell-angular-ui-styler` |
-| `feature/live-preview/infra` | `feature/live-preview` | All infra work | `meesell-infra-builder` |
-
-### PR flow (coding stage — to be executed AFTER master consolidates planning)
-
-```
-feature/live-preview/backend  ──┐
-feature/live-preview/frontend ──┤──► feature/live-preview ──► develop
-feature/live-preview/infra    ──┘
-```
-
-- Each group branch opens a PR to `feature/live-preview` (NOT directly to `develop`)
-- `feature/live-preview/backend` PR reviewed and approved by `meesell-backend-coordinator`
-- `feature/live-preview/frontend` PR reviewed and approved by `meesell-frontend-coordinator`
-- `feature/live-preview/infra` PR self-reviewed by `meesell-infra-builder`, then founder gate
-- Integration PR (`feature/live-preview` → `develop`) opened only after all 3 group PRs are merged; founder does final review with visual-diff screenshots attached
-
-### PR templates
-
-| PR | Template file |
-|----|--------------|
-| `feature/live-preview/backend` → `feature/live-preview` | `.github/PULL_REQUEST_TEMPLATE/backend.md` |
-| `feature/live-preview/frontend` → `feature/live-preview` | `.github/PULL_REQUEST_TEMPLATE/frontend.md` |
-| `feature/live-preview/infra` → `feature/live-preview` | `.github/PULL_REQUEST_TEMPLATE/infra.md` |
-| `feature/live-preview` → `develop` | `.github/PULL_REQUEST_TEMPLATE/feature.md` (if exists, else `.github/PULL_REQUEST_TEMPLATE/frontend.md` — frontend is the most-involved track) |
-
----
-
 ## Code surfaces
 
 ### Backend
@@ -311,6 +273,129 @@ These must exist alongside the merged code. Each is an acceptance gate item.
 | 8 | **Founder visual-diff screenshot pair** — MeeSell preview vs real Meesho listing for the same product (one product, all 3 views: feed, detail, mobile) attached to the integration PR body | `meesell-angular-ui-styler` (captures) + founder (approves) | In PR `feature/live-preview` → `develop` |
 | 9 | **`V1_FEATURE_SPEC.md §F6` implementation stamp** — "implemented YYYY-MM-DD PR#N" appended to the acceptance criteria block | `meesell-backend-coordinator` | After `feature/live-preview` → `develop` merges |
 | 10 | **`BACKEND_ARCHITECTURE.md §10.C` sentinel** — one-line commit reference proving `get_preview` is on-disk | `meesell-backend-coordinator` | After `feature/live-preview` → `develop` merges |
+
+---
+
+## Branch setup
+
+> **Per parallel-sub-session coordination interrupt (2026-06-10):** this planning session DOES NOT cut any branch. The master Director session reconciles all 9 feature plans and creates feature branches centrally. The dispatch-order branch model below is the TARGET that master should create; the section is documented here so the implementing leads have the canonical map when work starts.
+
+### Branches that master should create (all cut from `develop`)
+
+| Branch | Cut from | Purpose | Who commits here |
+|--------|----------|---------|-----------------|
+| `feature/live-preview` | `develop` | Integration branch — sub-branches merge into here; final PR to `develop` | Only merge commits from sub-branches |
+| `feature/live-preview/backend` | `feature/live-preview` | All backend specialist work | `meesell-services-builder`, `meesell-api-routes-builder` |
+| `feature/live-preview/frontend` | `feature/live-preview` | All frontend specialist work | `meesell-angular-service-builder`, `meesell-angular-component-builder`, `meesell-angular-ui-styler` |
+| `feature/live-preview/infra` | `feature/live-preview` | All infra work | `meesell-infra-builder` |
+
+### PR flow (coding stage — to be executed AFTER master consolidates planning)
+
+```
+feature/live-preview/backend  ──┐
+feature/live-preview/frontend ──┤──► feature/live-preview ──► develop
+feature/live-preview/infra    ──┘
+```
+
+- Each group branch opens a PR to `feature/live-preview` (NOT directly to `develop`)
+- `feature/live-preview/backend` PR reviewed and approved by `meesell-backend-coordinator`
+- `feature/live-preview/frontend` PR reviewed and approved by `meesell-frontend-coordinator`
+- `feature/live-preview/infra` PR self-reviewed by `meesell-infra-builder`, then founder gate
+- Integration PR (`feature/live-preview` → `develop`) opened only after all 3 group PRs are merged; founder does final review with visual-diff screenshots attached
+
+### PR templates
+
+| PR | Template file |
+|----|--------------|
+| `feature/live-preview/backend` → `feature/live-preview` | `.github/PULL_REQUEST_TEMPLATE/backend.md` |
+| `feature/live-preview/frontend` → `feature/live-preview` | `.github/PULL_REQUEST_TEMPLATE/frontend.md` |
+| `feature/live-preview/infra` → `feature/live-preview` | `.github/PULL_REQUEST_TEMPLATE/infra.md` |
+| `feature/live-preview` → `develop` | `.github/PULL_REQUEST_TEMPLATE/feature.md` (if exists, else `.github/PULL_REQUEST_TEMPLATE/frontend.md` — frontend is the most-involved track) |
+
+---
+
+## Memory protocol
+
+Agents are stateless across sessions — the only continuity they have is their `MEMORY.md`. Without explicit memory updates after each specialist session, re-dispatches (retries, review-requested revisions, future cross-feature references) are blind to what was already built. This is the founder's #1 cross-cutting concern (mesell-live-preview-planning-session-1: "agent will become lack of which feature updated need to add in which area").
+
+### Protocol — mandatory for every dispatch in this feature
+
+Every dispatch template above ends with a **Memory update** block. The agent MUST:
+
+1. Create (or update) `.claude/agent-memory/{agent-name}/live_preview_feature.md` — the feature memory file for this agent
+2. Add a one-line pointer to it in their `MEMORY.md` index under `## live-preview` section
+3. Commit both the code AND the memory file on the same branch (memory and code stay in sync; master consolidation handles the actual commit)
+4. Include `Memory update: DONE | SKIPPED (reason)` in the final report sent back to the lead
+
+If the agent cannot write to memory (e.g., a blocker prevented code completion), they still write a memory entry recording the blocker and their partial state.
+
+### Pre-dispatch memory seeding
+
+The 3 **lead agents** are seeded with live-preview awareness BY THIS PLANNING SESSION (files created below). Specialist agents write their own memory when they complete their session; they do not need pre-seeding because they receive a full dispatch template with all context.
+
+**Lead memory files created by this planning session:**
+- `.claude/agent-memory/meesell-backend-coordinator/live_preview_feature.md` ✅
+- `.claude/agent-memory/meesell-frontend-coordinator/live_preview_feature.md` ✅
+- `.claude/agent-memory/meesell-infra-builder/live_preview_feature.md` ✅
+
+### Per-agent memory spec
+
+What each agent MUST record in `live_preview_feature.md` when they complete their session:
+
+| Agent | What to record |
+|-------|----------------|
+| `meesell-backend-coordinator` | Which specialists were dispatched, which phase, PR# of feature/live-preview/backend, blockers if any, feature_board_backend.md status row for live-preview |
+| `meesell-frontend-coordinator` | Which specialists were dispatched, which phase, PR# of feature/live-preview/frontend, blockers if any, feature_board_frontend.md status row, ui-styler iteration count (especially if used the D6 4-iteration exception) |
+| `meesell-infra-builder` | K8s manifests touched (exact paths), dry-run results, PR# of feature/live-preview/infra, rollout-runbook path, feature_board_infra.md status row |
+| `meesell-services-builder` | `get_preview` final implementation summary (truncation strategy, ownership-assertion order, cross-module call to image), `core/feature_flags.py` summary, unit test count + pass status |
+| `meesell-api-routes-builder` | `PreviewResponse` final 11-field shape, route line in `catalog/routes.py`, `FEATURE_LIVE_PREVIEW_ENABLED` config.py addition, integration test count |
+| `meesell-angular-service-builder` | `PreviewService` public API (method signatures + refreshTrigger$ shape), guard registration in app.routes.ts, environment.* additions |
+| `meesell-angular-component-builder` | Component selectors, view-switching strategy (query param contract), CDK drag attachment, image-preload strategy, spec test count |
+| `meesell-angular-ui-styler` | Meesho design tokens (CSS custom property names + values), visual diff result (qualitative percentage per founder), iteration count, screenshots attached count |
+
+### Memory file template (use this structure for `live_preview_feature.md`)
+
+```markdown
+---
+name: live-preview-feature
+description: live-preview Feature 6 — what this agent built, files it owns, contracts it implemented
+metadata:
+  type: project
+---
+
+Feature: live-preview (Feature 6 of 9)
+Branch: feature/live-preview/{backend|frontend|infra}
+Session: mesell-live-preview-{group}-session-{N}
+Date: YYYY-MM-DD
+Status: COMPLETE | PARTIAL | BLOCKED
+
+## What I built
+<list of files created/modified with one-line description of what each does>
+
+## Key contracts I implemented
+<critical decisions, method signatures, config values — anything the next specialist needs to know>
+
+## What the next agent in the chain needs from my output
+<specific outputs: schema shape, interface signatures, mounted paths, env var names, etc.>
+
+## PR
+feature/live-preview/{backend|frontend|infra} PR #<N> — <status: open|merged|blocked>
+
+## Iteration count (for visibility into re-dispatches)
+<N of 3 default, or N of 4 for ui-styler>
+
+## Blockers
+<none | specific blocker with context>
+```
+
+### Cross-feature memory hygiene (founder's stated concern)
+
+When an agent works on multiple features in succession (e.g., `meesell-services-builder` works on catalog-form, then live-preview, then xlsx-export):
+
+- Each feature has its OWN `{feature-slug}_feature.md` file — never mixed
+- The agent's `MEMORY.md` index lists every feature they've touched under separate `### {feature-slug}` headings
+- When dispatched on feature N, the agent reads `MEMORY.md` + the relevant `{feature-slug}_feature.md` — NOT the other features' files
+- No file in `.claude/agent-memory/` belongs to multiple features. Cross-feature insights stay in the `MEMORY.md` index as separate `### sessions/observations` entries.
 
 ---
 
@@ -1127,91 +1212,6 @@ Iteration {M} of {3 default | 4 for ui-styler visual-diff per D6}.
 
 ---
 
-## Memory management
-
-Agents are stateless across sessions — the only continuity they have is their `MEMORY.md`. Without explicit memory updates after each specialist session, re-dispatches (retries, review-requested revisions, future cross-feature references) are blind to what was already built. This is the founder's #1 cross-cutting concern (mesell-live-preview-planning-session-1: "agent will become lack of which feature updated need to add in which area").
-
-### Protocol — mandatory for every dispatch in this feature
-
-Every dispatch template above ends with a **Memory update** block. The agent MUST:
-
-1. Create (or update) `.claude/agent-memory/{agent-name}/live_preview_feature.md` — the feature memory file for this agent
-2. Add a one-line pointer to it in their `MEMORY.md` index under `## live-preview` section
-3. Commit both the code AND the memory file on the same branch (memory and code stay in sync; master consolidation handles the actual commit)
-4. Include `Memory update: DONE | SKIPPED (reason)` in the final report sent back to the lead
-
-If the agent cannot write to memory (e.g., a blocker prevented code completion), they still write a memory entry recording the blocker and their partial state.
-
-### Pre-dispatch memory seeding
-
-The 3 **lead agents** are seeded with live-preview awareness BY THIS PLANNING SESSION (files created below). Specialist agents write their own memory when they complete their session; they do not need pre-seeding because they receive a full dispatch template with all context.
-
-**Lead memory files created by this planning session:**
-- `.claude/agent-memory/meesell-backend-coordinator/live_preview_feature.md` ✅
-- `.claude/agent-memory/meesell-frontend-coordinator/live_preview_feature.md` ✅
-- `.claude/agent-memory/meesell-infra-builder/live_preview_feature.md` ✅
-
-### Per-agent memory spec
-
-What each agent MUST record in `live_preview_feature.md` when they complete their session:
-
-| Agent | What to record |
-|-------|----------------|
-| `meesell-backend-coordinator` | Which specialists were dispatched, which phase, PR# of feature/live-preview/backend, blockers if any, feature_board_backend.md status row for live-preview |
-| `meesell-frontend-coordinator` | Which specialists were dispatched, which phase, PR# of feature/live-preview/frontend, blockers if any, feature_board_frontend.md status row, ui-styler iteration count (especially if used the D6 4-iteration exception) |
-| `meesell-infra-builder` | K8s manifests touched (exact paths), dry-run results, PR# of feature/live-preview/infra, rollout-runbook path, feature_board_infra.md status row |
-| `meesell-services-builder` | `get_preview` final implementation summary (truncation strategy, ownership-assertion order, cross-module call to image), `core/feature_flags.py` summary, unit test count + pass status |
-| `meesell-api-routes-builder` | `PreviewResponse` final 11-field shape, route line in `catalog/routes.py`, `FEATURE_LIVE_PREVIEW_ENABLED` config.py addition, integration test count |
-| `meesell-angular-service-builder` | `PreviewService` public API (method signatures + refreshTrigger$ shape), guard registration in app.routes.ts, environment.* additions |
-| `meesell-angular-component-builder` | Component selectors, view-switching strategy (query param contract), CDK drag attachment, image-preload strategy, spec test count |
-| `meesell-angular-ui-styler` | Meesho design tokens (CSS custom property names + values), visual diff result (qualitative percentage per founder), iteration count, screenshots attached count |
-
-### Memory file template (use this structure for `live_preview_feature.md`)
-
-```markdown
----
-name: live-preview-feature
-description: live-preview Feature 6 — what this agent built, files it owns, contracts it implemented
-metadata:
-  type: project
----
-
-Feature: live-preview (Feature 6 of 9)
-Branch: feature/live-preview/{backend|frontend|infra}
-Session: mesell-live-preview-{group}-session-{N}
-Date: YYYY-MM-DD
-Status: COMPLETE | PARTIAL | BLOCKED
-
-## What I built
-<list of files created/modified with one-line description of what each does>
-
-## Key contracts I implemented
-<critical decisions, method signatures, config values — anything the next specialist needs to know>
-
-## What the next agent in the chain needs from my output
-<specific outputs: schema shape, interface signatures, mounted paths, env var names, etc.>
-
-## PR
-feature/live-preview/{backend|frontend|infra} PR #<N> — <status: open|merged|blocked>
-
-## Iteration count (for visibility into re-dispatches)
-<N of 3 default, or N of 4 for ui-styler>
-
-## Blockers
-<none | specific blocker with context>
-```
-
-### Cross-feature memory hygiene (founder's stated concern)
-
-When an agent works on multiple features in succession (e.g., `meesell-services-builder` works on catalog-form, then live-preview, then xlsx-export):
-
-- Each feature has its OWN `{feature-slug}_feature.md` file — never mixed
-- The agent's `MEMORY.md` index lists every feature they've touched under separate `### {feature-slug}` headings
-- When dispatched on feature N, the agent reads `MEMORY.md` + the relevant `{feature-slug}_feature.md` — NOT the other features' files
-- No file in `.claude/agent-memory/` belongs to multiple features. Cross-feature insights stay in the `MEMORY.md` index as separate `### sessions/observations` entries.
-
----
-
 ## Acceptance gate
 
 This feature is "done" (ready for `feature/live-preview` → `develop` PR) when ALL of the following are true:
@@ -1261,13 +1261,72 @@ This feature is "done" (ready for `feature/live-preview` → `develop` PR) when 
 
 ## Risk register
 
-| # | Risk | Likelihood | Impact | Mitigation |
-|---|------|-----------|--------|------------|
-| 1 | **Meesho redesigns their feed-card mid-V1, making our clone stale** | Medium — Meesho ships UI changes quarterly; we have no visibility into their roadmap | High — our differentiator (faithful render) erodes overnight; sellers lose trust in the preview accuracy | The feature flag (D3) IS the kill-switch. If Meesho redesigns: set `FEATURE_LIVE_PREVIEW_ENABLED=false` across all envs (5-minute rollback per the runbook), users see "Preview unavailable" placeholder, ui-styler dispatched for a re-clone iteration. The CSS custom properties contract in `preview.scss` makes token-swap re-cloning fast (no DOM changes needed). Rollback cost: ~5 minutes + 1-3 hours ui-styler re-clone vs the alternative of weeks of customer complaints. |
-| 2 | **Mobile swipe fails on iOS Safari due to gesture handling quirks** | Medium — iOS Safari has historically been quirky with CDK drag-drop on horizontal scroll | High — Tirupur seller audience is heavily iOS Safari (per `BUSINESS_STRATEGY.md` — verify); broken swipe means broken core UX | Frontend lead checklist item #8 requires manual swipe test on iOS Safari + Android Chrome BEFORE PR approval. CDK drag-drop has documented iOS workarounds (use `cdkDragLockAxis="x"` + native CSS `scroll-snap-type: x mandatory` as fallback). If CDK fails on iOS: re-dispatch component-builder with "fallback to native horizontal scroll + scroll-snap-align" preserving the same user experience without the JS gesture handler. |
-| 3 | **Image preload bandwidth blows the 1s render budget on slow 3G** | Medium-High — Tirupur audience on 4G/3G with varying signal; 4 images × ~200KB each = ~800KB initial load on detail page | High — fails the 1s spec criterion (D1); users see spinner instead of preview, defeats the purpose | Component-builder template (D) explicitly requires: only `first_image_url` is eagerly loaded; the rest of `image_carousel_urls` are lazy via `loading="lazy"` + Intersection Observer. The 1s budget is measured to FIRST CONTENTFUL PAINT of the feed-thumbnail OR detail PAGE-with-first-image, NOT all-images-loaded. If still over budget: pre-generate WebP variants in `image.service.upload` (V1.5 scope; V1 ships with whatever Pillow + the image_processor.py emits). |
-| 4 | **Title truncation edge cases on emoji / RTL / combining-character strings** | Medium — Tirupur sellers may use Tamil (Brahmic combining marks) and emoji in product titles | Medium — incorrect truncation can split a combining mark from its base character (renders as ◌), or split a flag emoji into the two regional indicator code points (renders as separate letters) | The services-builder unit test plan (Template A) includes a fixture for emoji at position 28. V1 ships with `title[:30]` (Python code-point slicing) — correct for BMP code points AND most emoji as single code points, but NOT correct for ZWJ-joined emoji sequences (e.g., 👨‍👩‍👧 is 5 code points). V1.5 upgrade: use `regex` library `\X` (grapheme cluster) matching. Documented in the services-builder template hard constraints. If a real-world title triggers a split that looks broken, the fix is a re-dispatch services-builder with the V1.5 upgrade pulled forward (~2h of work). |
-| 5 | **V1 single-variant limit becomes the support-load top complaint** | High — sellers often have 3-5 variants per product (color, size); rendering only 1 makes the preview look incomplete | Medium — sellers complain but don't churn (preview is a confidence aid, not a blocker on listing creation); supports increases but ship velocity preserved | The V1.5 variant-matrix is already scoped (`variant_swatches: list[VariantSwatch]` is plural-typed — frontend just iterates instead of `[0]`). When complaint volume crosses ~10/week, prioritize the V1.5 dispatch (estimated ~4-6h). Document in the rollout runbook as a known limitation with timeline ("variant matrix in V1.5, target Q3"). |
+The 5 top risks for this feature, ranked by combined likelihood × impact. Each risk includes a specific mitigation that traces to a dispatch template, runbook artifact, or escalation procedure. The original tabular summary is preserved as a quick-scan index; per-risk detail follows.
+
+### Risk summary (quick-scan index)
+
+| # | Risk | Likelihood | Impact |
+|---|------|-----------|--------|
+| R1 | Meesho redesigns their feed-card mid-V1, making our clone stale | Medium | High |
+| R2 | Mobile swipe fails on iOS Safari due to gesture handling quirks | Medium | High |
+| R3 | Image preload bandwidth blows the 1s render budget on slow 3G | Medium-High | High |
+| R4 | Title truncation edge cases on emoji / RTL / combining-character strings | Medium | Medium |
+| R5 | V1 single-variant limit becomes the support-load top complaint | High | Medium |
+
+### R1 — Meesho redesigns their feed-card mid-V1, making our clone stale
+
+**Likelihood:** Medium — Meesho ships UI changes quarterly; we have no visibility into their roadmap.
+**Impact:** High — our differentiator (faithful render) erodes overnight; sellers lose trust in the preview accuracy.
+**Mitigation:** The feature flag (D3) IS the kill-switch. If Meesho redesigns: set `FEATURE_LIVE_PREVIEW_ENABLED=false` across all envs (5-minute rollback per the runbook), users see "Preview unavailable" placeholder, ui-styler dispatched for a re-clone iteration. The CSS custom properties contract in `preview.scss` makes token-swap re-cloning fast (no DOM changes needed). Rollback cost: ~5 minutes + 1-3 hours ui-styler re-clone vs the alternative of weeks of customer complaints.
+
+### R2 — Mobile swipe fails on iOS Safari due to gesture handling quirks
+
+**Likelihood:** Medium — iOS Safari has historically been quirky with CDK drag-drop on horizontal scroll.
+**Impact:** High — Tirupur seller audience is heavily iOS Safari (per `BUSINESS_STRATEGY.md` — verify); broken swipe means broken core UX.
+**Mitigation:** Frontend lead checklist item #8 requires manual swipe test on iOS Safari + Android Chrome BEFORE PR approval. CDK drag-drop has documented iOS workarounds (use `cdkDragLockAxis="x"` + native CSS `scroll-snap-type: x mandatory` as fallback). If CDK fails on iOS: re-dispatch component-builder with "fallback to native horizontal scroll + scroll-snap-align" preserving the same user experience without the JS gesture handler.
+
+### R3 — Image preload bandwidth blows the 1s render budget on slow 3G
+
+**Likelihood:** Medium-High — Tirupur audience on 4G/3G with varying signal; 4 images × ~200KB each = ~800KB initial load on detail page.
+**Impact:** High — fails the 1s spec criterion (D1); users see spinner instead of preview, defeats the purpose.
+**Mitigation:** Component-builder template (D) explicitly requires: only `first_image_url` is eagerly loaded; the rest of `image_carousel_urls` are lazy via `loading="lazy"` + Intersection Observer. The 1s budget is measured to FIRST CONTENTFUL PAINT of the feed-thumbnail OR detail PAGE-with-first-image, NOT all-images-loaded. If still over budget: pre-generate WebP variants in `image.service.upload` (V1.5 scope; V1 ships with whatever Pillow + the image_processor.py emits).
+
+### R4 — Title truncation edge cases on emoji / RTL / combining-character strings
+
+**Likelihood:** Medium — Tirupur sellers may use Tamil (Brahmic combining marks) and emoji in product titles.
+**Impact:** Medium — incorrect truncation can split a combining mark from its base character (renders as ◌), or split a flag emoji into the two regional indicator code points (renders as separate letters).
+**Mitigation:** The services-builder unit test plan (Template A) includes a fixture for emoji at position 28. V1 ships with `title[:30]` (Python code-point slicing) — correct for BMP code points AND most emoji as single code points, but NOT correct for ZWJ-joined emoji sequences (e.g., 👨‍👩‍👧 is 5 code points). V1.5 upgrade: use `regex` library `\X` (grapheme cluster) matching. Documented in the services-builder template hard constraints. If a real-world title triggers a split that looks broken, the fix is a re-dispatch services-builder with the V1.5 upgrade pulled forward (~2h of work).
+
+### R5 — V1 single-variant limit becomes the support-load top complaint
+
+**Likelihood:** High — sellers often have 3-5 variants per product (color, size); rendering only 1 makes the preview look incomplete.
+**Impact:** Medium — sellers complain but don't churn (preview is a confidence aid, not a blocker on listing creation); supports increases but ship velocity preserved.
+**Mitigation:** The V1.5 variant-matrix is already scoped (`variant_swatches: list[VariantSwatch]` is plural-typed — frontend just iterates instead of `[0]`). When complaint volume crosses ~10/week, prioritize the V1.5 dispatch (estimated ~4-6h). Document in the rollout runbook as a known limitation with timeline ("variant matrix in V1.5, target Q3").
+
+### Risk monitoring + escalation triggers
+
+- **Monitoring sources:** `feature_board_frontend.md` (PR review comments), Sentry/Cloud Logging for runtime errors (especially CDK drag failures on iOS), weekly seller feedback survey (variant complaints), Meesho marketplace browser checks every 2-4 weeks (early-warning for R1 redesign signal).
+- **Escalation path:** ui-styler / component-builder iterate within their D6 cap (3 default, 4 for ui-styler visual-diff); if mitigation requires architectural change (e.g., dropping CDK drag for native scroll, or pulling V1.5 grapheme-cluster matching forward), the feature freezes on `feature/live-preview` and founder ratifies the change in the integration-PR conversation before re-dispatch.
+- **Risk transition triggers:** R1 → critical when any sibling tells the founder "the preview no longer matches the live Meesho page"; R2 → critical on any user-reported "swipe doesn't work" Sentry event; R3 → critical when first-contentful-paint P95 measured on real device crosses 1500ms; R4 → critical on any rendered title containing `◌` or a half-emoji visible in screenshots; R5 → critical when variant-complaint count exceeds 10/week.
+
+### Mitigation ownership and tracking
+
+Each risk has a designated owner who is responsible for monitoring its trigger conditions and dispatching the mitigation when needed. This prevents "everyone watches → no one watches" diffusion of responsibility.
+
+| Risk | Owner | Tracking artifact |
+|------|-------|-------------------|
+| R1 (Meesho redesign) | `meesell-frontend-coordinator` | Quarterly visual-diff audit ticket in `feature_board_frontend.md`; ui-styler re-dispatch on trigger |
+| R2 (iOS swipe) | `meesell-angular-component-builder` (via `meesell-frontend-coordinator`) | Sentry alert rule `error.type contains "TouchEvent"`; component-builder re-dispatch on trigger |
+| R3 (3G render budget) | `meesell-angular-component-builder` (via `meesell-frontend-coordinator`) | Cloud Logging metric `first_contentful_paint_p95` on `/catalogs/*/preview` route; component-builder re-dispatch on trigger |
+| R4 (truncation edge cases) | `meesell-services-builder` (via `meesell-backend-coordinator`) | Backend unit test fixture `test_get_preview_truncation_emoji`; services-builder re-dispatch with V1.5 grapheme-cluster matcher on trigger |
+| R5 (single-variant complaints) | Founder | Weekly support-volume review; explicit V1.5 ticket creation when count crosses 10/week |
+
+### Audit cadence
+
+A risk-register-review checkpoint runs at every PR milestone for this feature:
+- **Before integration PR merge:** founder confirms all 5 risks remain at their assessed likelihood/impact; any escalation triggers met → freeze and re-dispatch.
+- **30 days post-merge:** owners report whether their risk has manifested in production. New risks (if any) added to v0.3 of this document.
+- **90 days post-merge OR at next feature plan amendment:** full re-baseline of risk register; closed risks removed; new risks added.
 
 ---
 
@@ -1276,3 +1335,4 @@ This feature is "done" (ready for `feature/live-preview` → `develop` PR) when 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-06-10 | mesell-live-preview-planning-session-1 | Initial FEATURE_PLAN.md authored. Decisions D1-D6 recorded verbatim. All 6 specialist dispatch templates drafted. Branch setup section documented as TBD by master consolidation (per parallel-sub-session coordination interrupt). Memory management section with cross-feature hygiene addressing founder's stated concern. Risk register with 5 risks (Meesho redesign, iOS swipe, 3G bandwidth, truncation edge cases, V1 variant limit). |
+| 0.2 | 2026-06-10 | mesell-live-preview-amendment-session-1 | Pattern conformance — section ordering normalized to canonical pattern v2: Code surfaces moved to position 3, Documentation deliverables to position 4, Branch setup to position 5, Memory protocol to position 6 (renamed from "Memory management"), Dispatch templates to position 7, Review + iteration protocol to position 8. Risk register restructured to per-risk subsections (≥60 lines, content preserved verbatim from v0.1, with new Risk monitoring + escalation triggers subsection). NOTE: mandatory read `docs/plans/features/_CANONICAL_PATTERN.md` did NOT exist on the worktree — founder approved best-effort conformance using the amendment dispatch's Step 5 enumeration + Step 4 templates as source-of-truth. |
