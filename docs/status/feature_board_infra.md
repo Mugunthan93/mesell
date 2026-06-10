@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-infra-builder`
 **Domain:** infra
-**Last updated:** 2026-06-10 (gate4-confirmation IN PROGRESS — MF §9 Gate 4 hosting confirmation)
+**Last updated:** 2026-06-10 (gate4-confirmation MERGED to develop, PR #33)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -11,12 +11,12 @@
 
 | Feature | Group branch | Status | Current session | Last touched | Blocking | Notes |
 |---|---|---|---|---|---|---|
-| gate4-confirmation | chore/gate4-confirmation | IN PROGRESS | mesell-gate4-confirmation-infra-session-1 | 2026-06-10 | none | MF MASTER_PLAN §9 Gate 4 technical confirmation (read-only); authors GATE4_CONFIRMATION.md |
 
 ## Recently merged (last 14 days)
 
 | Feature | Merged to | Date | PR | Notes |
 |---|---|---|---|---|
+| gate4-confirmation | develop | 2026-06-10 | #33 (merge f30d61f) | MF §9 Gate 4 hosting confirmation — VERDICT CONFIRMED-WITH-CONDITIONS (6 conditions feed Sub-plan 7) |
 | housekeeping-v1 | feature/housekeeping-v1 | 2026-06-10 | #27 (squash 6096244) | dead GitLab CI removal + SA key disk hygiene |
 
 ## Inter-lead requests open

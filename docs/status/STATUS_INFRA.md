@@ -1380,3 +1380,17 @@ LIVE EVIDENCE captured: node allocatable 2000m CPU / ~7.94Gi mem; requests 1650m
 Board sweep (session-start): Active features table empty; Recently merged = housekeeping-v1 (#27). No rows untouched 7+ days. No inter-lead requests open.
 Next: author docs/plans/infra/GATE4_CONFIRMATION.md, then commit on chore/gate4-confirmation -> PR -> develop -> merge.
 =========
+
+=== UPDATE: 2026-06-10 GATE4-MF-CONFIRMATION SESSION-END ===
+Session: mesell-gate4-confirmation-infra-session-1
+Deliverable: docs/plans/infra/GATE4_CONFIRMATION.md (~140 lines) — MERGED to develop via PR #33 (merge commit f30d61f).
+VERDICT: CONFIRMED-WITH-CONDITIONS.
+  A1 Routing: CONFIRMED — Traefik host-based, per-host LE certs; shell swaps on live dev.mesell.xyz Ingress (no cert churn); remotes go to new remotes.mesell.xyz outside K3s (GCP-managed cert).
+  A2 Deployability: CONFIRMED — single AR repo holds multiple image streams (mfe-shell = free add); 6 remotes are GCS/CDN static (0 in-cluster pods); CI = paths-filter matrix + 2 cloudbuild files.
+  A3 Resources: CONFIRMED for Option C ONLY. Live dev node 2000m alloc / 1650m (82%) requested / ~350m CPU headroom. Option A (in-cluster remotes ~500m) does NOT fit current 2-vCPU VM; Option C (remotes off-cluster) fits.
+  A4 CSP: CONFIRMED, greenfield — no CSP/Dockerfile/nginx.conf/Middleware exists today; authored via shell nginx.conf OR CSP-only Traefik Middleware (must not touch CORS or refresh-cookie); needs script-src/connect-src for remotes.mesell.xyz.
+Conditions (6, feed Sub-plan 7): C-RES-1 (Option A infeasible), C-RES-2 (ship Option C), C-ROUTE-1 (new host A record + GCP-managed cert), C-CI-1 (replace single-frontend cloudbuild), C-CSP-1 (author CSP before first remote), C-STAGING-1 (staging remotes off-cluster too).
+Ratification deferred to founder S5 window (NOT this session).
+Mutations: ZERO cluster / ZERO terraform / ZERO manifest edits. Only new file GATE4_CONFIRMATION.md + board/STATUS updates.
+Board sweep (session-end): gate4-confirmation moved IN PROGRESS -> Recently merged (#33). Active features empty. No rows untouched 7+ days. No inter-lead requests open.
+=========
