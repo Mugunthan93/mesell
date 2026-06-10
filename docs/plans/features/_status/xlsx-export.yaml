@@ -1,0 +1,46 @@
+feature: "xlsx-export"
+session: "mesell-xlsx-export-amendment-session-1"
+worktree: "/tmp/mesell-wt/xlsx-export"
+branch: "feature/xlsx-export/planning"
+status: "IN_REVIEW"
+last_updated: "2026-06-10T12:18:00Z"
+feature_plan_path: "docs/plans/features/xlsx-export/FEATURE_PLAN.md"
+feature_plan_line_count: 1852
+pr_number: 22
+pr_url: "https://github.com/Mugunthan93/mesell/pull/22"
+outstanding_founder_decisions: []
+notes: |
+  Amended to canonical pattern v2 — 11 sections in locked order.
+  Amendment PR #22 open against develop.
+
+  Original planning PR #9 already merged 2026-06-10T10:57:21Z. This amendment
+  adds commit 92e1b68 on top of the same feature/xlsx-export/planning branch.
+
+  Verification (Step 5): code-fence-aware awk grep on `^## ` returns exactly
+  11 lines in canonical order — Decisions / Agent lineup / Code surfaces /
+  Documentation deliverables / Branch setup / Memory protocol / Dispatch
+  templates / Review + iteration protocol / Acceptance gate / Risk register /
+  Revision history.
+
+  Universal-gap sections were ALREADY present in v1 (Review + iteration
+  protocol, Acceptance gate, Risk register with 6 risks, Revision history) —
+  preserved verbatim, only heading prefixes stripped.
+
+  New canonical sections authored fresh: Branch setup (slot 5, ~90 lines),
+  Memory protocol (slot 6, ~120 lines). Memory protocol incorporates the
+  relocated Cross-agent broadcast protocol as the final ### subsection.
+
+  Relocations applied: Common dispatch preamble (was ## 6) demoted to
+  ### Common preamble inside ## Dispatch templates. Cross-agent broadcast
+  protocol (was ## 9) relocated as ### Cross-agent broadcast protocol inside
+  ## Memory protocol. Glossary (was ## 12) demoted to ### Glossary inside
+  ## Documentation deliverables. Status preamble (was ## 1) + Pre-flight
+  reality check (was ### 1.1) preserved as preamble prose before ## Decisions.
+
+  Section moves: ## Agent lineup moved from slot 4 to canonical slot 2.
+
+  File grew 1711 → 1852 lines (+141). Net additions are §Branch setup +
+  §Memory protocol; broadcast protocol content recovered into Memory protocol,
+  not lost.
+
+  Founder review pending on PR #22.
