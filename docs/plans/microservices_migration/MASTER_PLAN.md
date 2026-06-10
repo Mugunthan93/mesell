@@ -282,7 +282,7 @@ Each sub-plan is one module extraction (one file in `docs/plans/microservices_mi
 | E | `SUB_PLAN_05_customer_extraction.md` | `customer` | **M** | A, B, C, D complete; HTTP shims for customer's consumers (catalog, export, dashboard) ready | meesell-services-builder + meesell-api-routes-builder + meesell-database-builder (seller_profile schema migration) + meesell-infra-builder | 5-7 days |
 | F | `SUB_PLAN_06_category_extraction.md` | `category` | **L** | A, B, C, D, E complete; cache contract preserved on extracted pod | meesell-services-builder + meesell-api-routes-builder + meesell-category-picker-builder (verifies Smart Picker ranking pipeline) + meesell-database-builder (4 global tables schema move) + meesell-infra-builder + Valkey DB 3 contract review | 7-10 days (heaviest cache layer, 4 global tables, single-flight on 291 brand-pattern enums) |
 | G | `SUB_PLAN_07_iam_extraction.md` | `iam` | **L** | A, B, C, D, E, F complete; every other service has local JWT validation via vendored `core/auth.py`; refresh-token allowlist Valkey contract preserved | meesell-auth-builder + meesell-api-routes-builder + meesell-services-builder (MSG91/razorpay adapters) + meesell-database-builder (users schema migration) + meesell-infra-builder | 7-10 days (critical-path module, every other service depends on JWT validation working) |
-| H | `SUB_PLAN_08_catalog_extraction.md` | `catalog` | **XL** | A-G complete; 4 downstream callers (image, pricing, dashboard, export) all running in HTTP-shim mode against monolithic catalog | meesell-services-builder + meesell-api-routes-builder + meesell-database-builder (3 tables schema migration: catalogs/products/product_drafts) + meesell-infra-builder + cross-coordinator review (FE for response shape, AI for autofill) | 10-15 days (the spine; 6 endpoints, autosave hot path, AI auto-fill seam, cross-module ownership assertion) |
+| H | `SUB_PLAN_08_catalog_extraction.md` | `catalog` | **XL** | A-G complete; 4 downstream callers (image, pricing, dashboard, export) all running in HTTP-shim mode against monolithic catalog | meesell-services-builder + meesell-api-routes-builder + meesell-database-builder (3 tables schema migration: catalogs/products/product_drafts) + meesell-infra-builder + cross-coordinator review (FE for response shape, AI for autofill) | 10-15 days (the spine; 6 endpoints, autosave hot path, AI auto-fill seam, cross-module ownership assertion). **Program-completion note: catalog is the last extraction — the program (A–H) is NOT declared complete until the post-extraction repo-management compliance audit at §5.G passes.** |
 
 **Total estimated effort:** 42-61 person-days across the 8 sub-plans. Assumes 1 specialist per dispatch with coordinator review interleaved; parallelization is limited by the strict order dependency.
 
@@ -366,6 +366,10 @@ Rationale:
 - Each service ships `core/metrics.py` with the same 7 singletons locked at §15.J (`HTTP_REQUEST_DURATION`, `HTTP_REQUESTS_TOTAL`, `AI_OPS_COST_INR`, `AI_OPS_BUDGET_ALARM`, `I18N_MISSING_KEY`, `CELERY_QUEUE_DEPTH`, `AUTH_TOKEN_REFRESH_FAILED`). Per-service label `service="<name>"` distinguishes them in queries.
 - Prometheus ServiceMonitor (or scrape_config) updated to list all 8 ClusterIPs.
 - LangFuse traces continue to flow from `ai_ops/client.py` in each AI-consuming service (category, catalog, image) with `service` tag — same dashboard, per-service breakdown.
+
+### 5.G Program-completion gate — post-extraction repo-management compliance audit
+
+**Post-extraction repo-management compliance audit (founder-mandated 2026-06-10).** Before the extraction program (A–H) is declared complete: (a) re-verify the Model C convention against the 8-service topology where a backend 'feature' = a service — branch model, PR templates, boards, merge gates, session naming; (b) verify hybrid-mode CI behaved as specified across extractions; (c) audit agent obedience during migration (worktrees, allowlists, boards, iteration caps, rollback contract adherence); (d) report to founder; (e) amend repo_management/MASTER_PLAN.md if drifted. Owner: meesell-backend-coordinator with master-session review.
 
 ---
 
@@ -454,6 +458,7 @@ Today `products.user_id REFERENCES users(id)` enforces that every product has a 
 | Version | Date | Author | Change |
 |---------|------|--------|--------|
 | 1.0 | 2026-06-10 | founder + master Director session | Ratified DRAFT → LOCKED as V1.5/V2 roadmap. Execution begins post-V1-launch. A–H order locked per §16.H. ai_ops + middleware decisions stay deferred to Sub-Plan A. Noted: full extraction forces VM upgrade e2-standard-2 → ≥e2-standard-4 (~₹2.5–6k/mo) at execution time. |
+| 1.1 | 2026-06-10 | founder + master Director session | Embedded founder-mandated post-extraction repo-management compliance audit into program completion criteria. |
 
 ---
 

@@ -233,9 +233,13 @@ Each sub-plan = one remote extraction = one downstream dispatch doc (`SUB_PLAN_<
 | 4 | **mfe-dashboard extraction** | F1 landing · F6 dashboard | M | Sub-plan 1; public-vs-private routing pattern validated | meesell-angular-component-builder |
 | 5 | **mfe-catalog extraction** | F7 smart-picker · F8 catalog-form · F9 images · F10 preview | L | Sub-plans 1–4 complete; shared Product/Catalog model promoted to `libs/core/models` | meesell-angular-component-builder + meesell-angular-service-builder (for catalog services) |
 | 6 | **mfe-auth extraction (last)** | F2 login · F3 signup · F4 otp-verify | M | Sub-plans 1–5 complete; AuthService singleton + refresh-token flow proven across at least 3 remotes | meesell-angular-service-builder (auth flow critical) |
-| 7 | **Federation Cutover & Hardening** — turn off shell-internal fallbacks, enforce CSP, version-pin manifest for staging/prod, smoke test full app | all remotes | M | Sub-plans 1–6 complete | meesell-frontend-coordinator + meesell-infra-builder |
+| 7 | **Federation Cutover & Hardening** — turn off shell-internal fallbacks, enforce CSP, version-pin manifest for staging/prod, smoke test full app, **+ post-cutover repo-management compliance audit (see §5.1)** | all remotes | M | Sub-plans 1–6 complete | meesell-frontend-coordinator + meesell-infra-builder |
 
 Estimates use S = single session, M = 1–2 sessions, L = 2–3 sessions.
+
+### 5.1 Sub-plan 7 completion criteria — post-cutover repo-management compliance audit
+
+**Post-cutover repo-management compliance audit (founder-mandated 2026-06-10).** Before Sub-plan 7 is declared complete: (a) re-verify the Model C convention (feature/{name}/{group} branching, PR templates, feature boards, lead merge gates, session naming) still maps cleanly onto the 6-remote topology where a frontend 'feature' = a remote; (b) audit agent obedience during the migration itself — worktree isolation used, file allowlists respected, boards updated at IN REVIEW/MERGED transitions, iteration caps honored; (c) report findings to the founder; (d) amend docs/plans/repo_management/MASTER_PLAN.md if the convention drifted. Owner: meesell-frontend-coordinator with master-session review.
 
 ---
 
@@ -333,6 +337,7 @@ Before Sub-plan 0 begins, the following must be true:
 |---|---|---|
 | 2026-06-10 | Initial DRAFT — strangler-fig migration, 6 remotes, Native Federation, pricing pilot, auth last | meesell-frontend-coordinator |
 | 2026-06-10 | v1.0 — Ratified DRAFT → APPROVED. Founder ruling: federation executes BEFORE Wave 6 — §9 Gate 2 satisfied via its "explicitly deprioritised" branch. Lead's calculated cost of this ordering (+2 agent-sessions ≈ 28% Wave-6 rework; auth-singleton P0 risk Med→High) acknowledged and accepted; offset: API wiring lands once in its final per-remote home. Gates 3 (38 TestBed failures triaged) and 4 (infra confirms K3s/Traefik N+1 + editable CSP) remain hard preconditions for Sub-plan 0. | founder + master Director session |
+| 2026-06-10 | Embedded founder-mandated post-cutover repo-management compliance audit into Sub-plan 7 completion criteria | founder + master Director session |
 
 ---
 
