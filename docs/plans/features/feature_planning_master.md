@@ -11,7 +11,7 @@
 
 | # | Feature              | Session                                          | Status       | FEATURE_PLAN.md path                                | Last updated | Notes |
 |---|----------------------|--------------------------------------------------|--------------|-----------------------------------------------------|--------------|-------|
-| 1 | auth-otp             | mesell-auth-otp-planning-session-1               | PLAN READY   | docs/plans/features/auth-otp/FEATURE_PLAN.md        | 2026-06-10   | D1/D2/D3 locked; all secrets LIVE; ready for founder review |
+| 1 | auth-otp             | mesell-auth-otp-planning-session-1               | IN REVIEW    | docs/plans/features/auth-otp/FEATURE_PLAN.md        | 2026-06-10   | PR #3 open; D1/D2/D3 locked; all secrets LIVE |
 | 2 | smart-picker         | mesell-smart-picker-planning-session-1           | NOT STARTED  | docs/plans/features/smart-picker/FEATURE_PLAN.md    | -            | -     |
 | 3 | catalog-form         | mesell-catalog-form-planning-session-1           | NOT STARTED  | docs/plans/features/catalog-form/FEATURE_PLAN.md    | -            | -     |
 | 4 | ai-autofill          | mesell-ai-autofill-planning-session-1            | NOT STARTED  | docs/plans/features/ai-autofill/FEATURE_PLAN.md     | -            | -     |
@@ -57,6 +57,7 @@ A sub-session for feature `{feature-slug}` MUST:
 
 | Date | Feature | Event | Reference |
 |------|---------|-------|-----------|
+| 2026-06-10 | auth-otp | IN REVIEW — PR #3 open: https://github.com/Mugunthan93/mesell/pull/3 | mesell-auth-otp-planning-session-1 |
 | 2026-06-10 | auth-otp | PLAN READY — FEATURE_PLAN.md authored; PR opening on feature/auth-otp/planning | mesell-auth-otp-planning-session-1 |
 | 2026-06-10 | auth-otp | IN PROGRESS — session opened, mandatory reads complete, D1/D2/D3 locked | mesell-auth-otp-planning-session-1 |
 | 2026-06-10 | (governance) | Master tracker initialised | mesell-repo-management-session-1 |
