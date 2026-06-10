@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-infra-builder`
 **Domain:** infra
-**Last updated:** 2026-06-10 (gate4-confirmation MERGED to develop, PR #33)
+**Last updated:** 2026-06-11 (auth-otp infra IN REVIEW — PR feature/auth-otp/infra → feature/auth-otp/integration)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -11,6 +11,7 @@
 
 | Feature | Group branch | Status | Current session | Last touched | Blocking | Notes |
 |---|---|---|---|---|---|---|
+| auth-otp | feature/auth-otp/infra | IN REVIEW | — | 2026-06-11 | — | FE-D5 env-var wiring (dev=30/120; staging overlay=60/300) + auth-secret-rotation runbook. Base=feature/auth-otp/integration. |
 
 ## Recently merged (last 14 days)
 
