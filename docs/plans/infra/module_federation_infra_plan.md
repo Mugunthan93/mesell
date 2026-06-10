@@ -1,6 +1,6 @@
 # Module Federation Infrastructure Master Plan
 
-**STATUS: DRAFT — produced by meesell-infra-builder 2026-06-10**
+**STATUS: APPROVED 2026-06-10 — ratified by founder. Hosting model LOCKED: Option C (shell in-cluster + 6 remotes GCS/CDN static at remotes.mesell.xyz). Gate-4 conditions C-RES-1/2, C-ROUTE-1, C-CI-1, C-CSP-1, C-STAGING-1 adopted as Sub-plan 7 requirements. See docs/plans/infra/GATE4_CONFIRMATION.md.**
 
 **Scope:** Infrastructure changes required to evolve the MeeSell frontend from a single Angular nginx pod into a Module Federation topology — one shell app plus N independently built, deployed, and versioned remote micro-frontends.
 
@@ -125,7 +125,7 @@ The shell still owns the public URL (`dev.mesell.xyz`). Remotes are served eithe
 
 ### 2.3 Recommendation
 
-**Option (C) — Hybrid: shell in K3s, remotes in GCS + Cloud CDN — for V1.**
+**Option (C) — Hybrid: shell in K3s, remotes in GCS + Cloud CDN — for V1. [LOCKED 2026-06-10 by founder.]** Shell stays in-cluster (backend-service swap on `dev.mesell.xyz`, no cert churn); the 6 remotes are GCS/CDN static at `remotes.mesell.xyz`, OUTSIDE K3s (zero pods, no VM upgrade for federation). The fallback to Option A below is therefore CLOSED — Option C is the committed model.
 
 Why:
 - Shell is the auth-aware piece that mutates per release (route table changes, auth interceptor changes). Keeping it in K3s makes it deploy through the same pipeline as the backend: image build, rollout, smoke check.
@@ -678,4 +678,13 @@ Complexity: S (≤ 1 day), M (2-3 days), L (≥ 4 days). Dependencies refer to o
 
 ---
 
-**End of plan. This is a DRAFT — to be reviewed by the founder before any sub-plan is dispatched.**
+**End of plan.**
+
+---
+
+## 10. Revision History
+
+| Date | Status | Change | By |
+|---|---|---|---|
+| 2026-06-10 | DRAFT | Initial draft authored. | meesell-infra-builder |
+| 2026-06-10 | APPROVED | Ratified by founder via master-session ruling. Hosting model LOCKED = Option C (shell in-cluster + 6 remotes GCS/CDN static at `remotes.mesell.xyz`); Option A fallback CLOSED. Gate-4 conditions C-RES-1, C-RES-2, C-ROUTE-1, C-CI-1, C-CSP-1, C-STAGING-1 adopted as binding Sub-plan 7 requirements. CSP authored greenfield (shell nginx.conf or CSP-only Traefik Middleware) — must NOT disturb CORS/refresh-cookie behavior. See `docs/plans/infra/GATE4_CONFIRMATION.md`. | meesell-infra-builder (S5 — master dispatch) |
