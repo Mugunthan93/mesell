@@ -1,6 +1,6 @@
 # MeeSell Frontend — Module Federation Master Plan
 
-**STATUS: DRAFT — produced by meesell-frontend-coordinator 2026-06-10**
+**STATUS: APPROVED 2026-06-10 — ratified by founder. Execution ruling: FEDERATION FIRST (before Wave 6).**
 
 | Field | Value |
 |---|---|
@@ -332,6 +332,7 @@ Before Sub-plan 0 begins, the following must be true:
 | Date | Change | Author |
 |---|---|---|
 | 2026-06-10 | Initial DRAFT — strangler-fig migration, 6 remotes, Native Federation, pricing pilot, auth last | meesell-frontend-coordinator |
+| 2026-06-10 | v1.0 — Ratified DRAFT → APPROVED. Founder ruling: federation executes BEFORE Wave 6 — §9 Gate 2 satisfied via its "explicitly deprioritised" branch. Lead's calculated cost of this ordering (+2 agent-sessions ≈ 28% Wave-6 rework; auth-singleton P0 risk Med→High) acknowledged and accepted; offset: API wiring lands once in its final per-remote home. Gates 3 (38 TestBed failures triaged) and 4 (infra confirms K3s/Traefik N+1 + editable CSP) remain hard preconditions for Sub-plan 0. | founder + master Director session |
 
 ---
 
