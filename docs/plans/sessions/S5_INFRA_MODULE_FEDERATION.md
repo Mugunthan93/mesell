@@ -1,12 +1,12 @@
 # Session Dispatch: Infra — Module Federation
 **Session name:** `mesell-infra-module-federation-infra-session-1`
 **Project:** `/Users/mugunthansrinivasan/Project/mesell`
-**Status:** BLOCKED — requires Session 1 complete; can run parallel with Session 3
+**Status:** READY — S1 complete, Model C ACTIVE (2026-06-10), pilot-hardened (PILOT_REPORT.md). **Priority: HIGH — federation-first ruling makes S5 + S3 the active pair.**
 
 ---
 
 ## Prerequisite
-Session 1 (repo-management) must be COMPLETE.
+Session 1 (repo-management) is COMPLETE. Model C is ACTIVE (2026-06-10).
 Session 3 (module federation) Sub-Plan 0 should be in progress or complete —
 this session prepares the hosting infrastructure for when the first remote
 (mfe-pricing) is ready to deploy.
@@ -14,19 +14,32 @@ this session prepares the hosting infrastructure for when the first remote
 ---
 
 ## Mission
-Review and ratify the Infra Module Federation Plan. Lock the hosting model
-and CDN strategy. Set up the GCS infrastructure and CDN configuration so that
-when Sub-Plan 1 (mfe-pricing pilot) lands, deployment is ready to go.
+Review and ratify the Infra Module Federation Plan (`docs/plans/infra/module_federation_infra_plan.md`)
+— **this ratification is genuinely still pending and IS this session's gate.**
+Lock the hosting model and CDN strategy. Set up the GCS infrastructure and CDN
+configuration so that when Sub-Plan 1 (mfe-pricing pilot) lands, deployment is
+ready to go.
+
+**This session ALSO discharges MF MASTER_PLAN §9 Gate 4** — the infra
+confirmation that S3's Sub-Plan 0 EXECUTION is blocked on. Gate 4 = confirm K3s
++ Traefik can host the shell + 6 remotes and that the CSP header is editable.
+Treat Gate 4 as an explicit acceptance item (see acceptance gate below).
+
+**Priority: HIGH.** The founder's FEDERATION-FIRST ruling makes S5 (this session)
+and S3 the active pair — S3's federation execution waits on Gate 4 from here.
 
 ---
 
 ## Read first (in this order)
 1. `docs/plans/infra/module_federation_infra_plan.md` — the plan to ratify
-2. `docs/plans/module_federation/MASTER_PLAN.md` §4.3 — build pipeline changes
-   that depend on infra (remote-entry URLs, CSP, GCS layout)
-3. `docs/INFRASTRUCTURE_ARCHITECTURE.md` — current state
-4. `docs/DEVOPS_ARCHITECTURE.md` — current CI/CD
-5. `.claude/agent-memory/meesell-infra-builder/MEMORY.md`
+2. `docs/plans/repo_management/PILOT_REPORT.md` — Model C pilot findings (F1–F3)
+3. `docs/plans/repo_management/MASTER_PLAN.md` §1.2/§6.5/§9.5 as amended v1.1 (F1–F3)
+4. `docs/plans/module_federation/MASTER_PLAN.md` §4.3 + §9 (Gate 4) — build pipeline
+   changes that depend on infra (remote-entry URLs, CSP, GCS layout) + the gate
+   this session discharges
+5. `docs/INFRASTRUCTURE_ARCHITECTURE.md` — current state
+6. `docs/DEVOPS_ARCHITECTURE.md` — current CI/CD
+7. `.claude/agent-memory/meesell-infra-builder/MEMORY.md`
 
 ---
 
@@ -67,6 +80,9 @@ when Sub-Plan 1 (mfe-pricing pilot) lands, deployment is ready to go.
 
 ### Step 2 — Create the feature branch
 - Create `feature/module-federation-infra-prep/infra` from `develop`
+- **F1 (pilot ruling):** the integration branch for this feature is
+  `feature/module-federation-infra-prep/integration` — open the group PR against
+  the integration branch, NOT a bare `feature/module-federation-infra-prep`.
 
 ### Step 3 — Execute MF-HOST-1: GCS buckets + CDN
 Dispatch `meesell-infra-builder` to:
@@ -93,20 +109,22 @@ Dispatch `meesell-infra-builder` to:
 
 ### Step 6 — Commit + PR
 Commit on `feature/module-federation-infra-prep/infra`
-Open PR to `feature/module-federation-infra-prep`
+Open PR to `feature/module-federation-infra-prep/integration` (F1)
 Update `docs/status/feature_board_infra.md`
 Update `docs/INFRASTRUCTURE_ARCHITECTURE.md` with all changes
 
 ---
 
 ## Acceptance gate — session is DONE when
-- [ ] MASTER_PLAN.md status = APPROVED
+- [ ] `module_federation_infra_plan.md` status = APPROVED (this session's ratification gate)
+- [ ] **MF §9 Gate 4 discharged:** confirmed K3s + Traefik can host shell + 6
+      remotes AND CSP header is editable (unblocks S3 Sub-Plan 0 execution)
 - [ ] `gs://mesell-remotes-dev` and `gs://mesell-remotes-staging` buckets exist
 - [ ] Cloud CDN backend bucket configured
 - [ ] Shell deployment has `REMOTES_MANIFEST_URL` env var
 - [ ] CSP header allows remote origins
 - [ ] INFRASTRUCTURE_ARCHITECTURE.md updated
-- [ ] PR open against `feature/module-federation-infra-prep`
+- [ ] PR open against `feature/module-federation-infra-prep/integration` (F1)
 
 ---
 
