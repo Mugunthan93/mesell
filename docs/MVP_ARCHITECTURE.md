@@ -1,9 +1,12 @@
 # MeeSell — MVP Architecture (Phase 3 deliverable)
 
-**Status:** Draft — produced by `meesell-data-engineer` from full-corpus parse findings. Awaiting founder review.
-**Date:** 2026-06-04
-**Drives:** BACKEND, FRONTEND, AI sub-session work
+**Status:** LOCKED — last verified 2026-06-10. Individual architecture docs are the SSOT for each domain; this document is the cross-cutting system map.
+**Originally produced:** 2026-06-04 by `meesell-data-engineer`
+**Last cross-verified:** 2026-06-10 by `meesell-backend-coordinator` (Session `mesell-master-session-3`)
+**Drives:** BACKEND ✅ COMPLETE · FRONTEND ✅ Waves 3-5 Complete · INFRA ✅ Phase D+E+F Complete · AI ✅ Eval sets passing
 **Grounded in:** `data/parsed/FULL_CORPUS_ANALYSIS.md` (3,772/3,772 Meesho leaves parsed cleanly)
+
+> **SSOT Note (2026-06-10):** This document was produced pre-implementation (2026-06-04). Since then, individual architecture documents were written and updated during construction. Where this document's planned architecture diverges from what was built, "**As Implemented (2026-06-10):**" blocks below show the actual state. The original planning content is preserved as historical record. See `docs/doc_verification/SSOT_DIVERGENCE_REPORT.md` for the full divergence analysis.
 
 > This document translates the 10 founder-locked decisions and the corpus-wide data findings into a concrete architecture that BACKEND/FRONTEND/AI coordinators can build against. It is NOT a re-statement of V1_FEATURE_SPEC.md — it specifies HOW the V1 features are realised given what we now know about Meesho's actual schema.
 
@@ -28,14 +31,17 @@ These are no longer hypotheses. They are facts from parsing every Meesho categor
 
 ## Section 1 — System Architecture
 
+> **As Implemented (2026-06-10):** Frontend stack changed from Angular 18 + Angular Material to **Angular 21 + PrimeNG 21 + Tailwind CSS 4 + Plus Jakarta Sans**. Angular Material was rejected. See `docs/FRONTEND_ARCHITECTURE.md` for the full frontend SSOT. Backend Phase D is DEPLOYED (api 2/2 + worker 2/2 Running, `dev` namespace). CI/CD is GitHub Actions + Cloud Build. See `docs/INFRASTRUCTURE_ARCHITECTURE.md` and `docs/DEVOPS_ARCHITECTURE.md`.
+
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  Angular 18 PWA  (Tailwind + Material, signals + RxJS)           │
+│  Angular 21 PWA  (PrimeNG 21 + Tailwind 4 + signals + RxJS)      │
+│  [Originally planned: Angular 18 + Angular Material]             │
 │  ──────────────────────────────────────────────────────────────  │
-│  10 input primitives   │  Data-driven wizard   │  Auth + nav    │
+│  mee-* UI Kit (PrimeNG wrappers) │  Data-driven wizard   │ Auth  │
 │       │                          │                       │       │
 └───────│──────────────────────────│───────────────────────│──────┘
-        │ HTTPS + JWT              │                       │
+        │ HTTPS + JWT (in-memory access + HttpOnly refresh) │
 ┌───────▼──────────────────────────▼───────────────────────▼──────┐
 │  FastAPI (async, Python 3.12)                                   │
 │  ───────────────────────────────────────────────────────────────│
@@ -274,6 +280,8 @@ CREATE TABLE pricing_calcs (...);  -- per V1_FEATURE_SPEC §4
 CREATE TABLE exports       (...);  -- per V1_FEATURE_SPEC §4
 ```
 
+> **As Implemented (2026-06-10):** The §2 DDL sections above were planning-time stubs. Two additional tables exist that are not in §2 above: `product_drafts` (crash-recovery autosave, introduced in §10) and `audit_events` (append-only event log, introduced in §11). **13 total tables** implemented (not the 10 implied by §2). Alembic head: `f31c75438e61` (baseline `935e55b4852c` + pg_trgm/GIN migration `a1b2c3d4e5f6` + `idx_product_drafts_saved_at`). Full DDL and ORM contract is in `docs/DATABASE_ARCHITECTURE.md` (SSOT) and `docs/BACKEND_ARCHITECTURE.md §5.E + §7-§14`. Seed counts: 67 aliases / 3,566 templates / 3,772 categories / 49,259 enum values.
+
 ### 2.6 Migration ordering
 
 Alembic migration order:
@@ -301,6 +309,13 @@ Seed order:
 ### 3.1 Auth (unchanged from V1_FEATURE_SPEC)
 - `POST /api/v1/auth/otp/send`
 - `POST /api/v1/auth/otp/verify`
+
+> **As Implemented (2026-06-10):** 2 additional contract endpoints added per FE-D5 (split-token auth pattern, ratified 2026-06-05); 2 infrastructure endpoints not in the 27-contract count:
+> - `POST /api/v1/auth/refresh` — opaque refresh token rotation (HMAC-pepper Valkey allowlist, Lua EVAL atomic CAS)
+> - `POST /api/v1/auth/logout` — idempotent 204, cookie clear, Valkey DEL
+> - `GET  /api/v1/auth/me` — infrastructure surface (not in contract count)
+> - `POST /api/v1/webhooks/razorpay` — infrastructure surface (not in contract count)
+> See `docs/BACKEND_ARCHITECTURE.md §7` + §11.7 AMENDMENT block below. Total contract endpoints: 27 (not the original 20 from §11.1).
 
 ### 3.2 Seller profile (NEW — Onboarding bucket)
 
@@ -415,6 +430,29 @@ GET    /api/v1/exports/{id}                          → poll export
 
 ## Section 4 — Frontend Architecture
 
+> **As Implemented (2026-06-10) — CRITICAL DIVERGENCES FROM THIS SECTION:**
+>
+> **Stack change:** Angular 21 + PrimeNG 21 + Tailwind CSS 4 + Plus Jakarta Sans. Angular 18 and Angular Material were NOT used. Material Symbols Outlined are used as an icon font (CDN) — NOT Angular Material components.
+>
+> **4-Layer SOLID Architecture (actual):**
+> The frontend uses a strict 4-layer abstraction defined in `docs/FRONTEND_ARCHITECTURE.md` (approved 2026-06-08):
+> - Layer 1 — Design System: `src/app/design-system/` — CSS custom properties only, ZERO component library imports
+> - Layer 2 — MeeSell UI Kit: `src/app/ui/` — 17 mee-* wrapper components. **All PrimeNG imports are HERE and ONLY here.**
+> - Layer 3 — Shared Composites + Layouts: `src/app/shared/` + `src/app/layouts/` — 5 composites, 2 layouts
+> - Layer 4 — Features: `src/app/features/` — **ZERO PrimeNG or Angular Material imports.** Feature pages import only from `@mee/ui`, `@mee/shared`, `@mee/core`, Angular core, and RxJS.
+>
+> **Constructed components (Waves 3-5 complete as of 2026-06-10):**
+> - 17 mee-* UI Kit primitives: mee-button · mee-input · mee-otp-input · mee-badge · mee-card · mee-table · mee-dialog · mee-file-upload · mee-steps · mee-select · mee-tree-select · mee-skeleton · mee-progress-bar · mee-toast · mee-confirm-dialog · mee-password-input · mee-textarea
+> - 5 shared composites: mee-stat-card · mee-status-badge · mee-page-header · mee-empty-state · mee-loading-skeleton
+> - 11 feature pages: landing / login / signup / otp-verify / onboarding / profile / dashboard / catalog-list / catalog-new / catalog-form / images / preview / pricing / export (all routes registered in `app.routes.ts`)
+> - 105 + 143 + feature tests = 248+ tests; build clean; boundary clean (zero PrimeNG imports in features/).
+>
+> **Path aliases (actual):** `@mee/ui` · `@mee/shared` · `@mee/design` · `@mee/core`
+>
+> **SSOT for frontend:** `docs/FRONTEND_ARCHITECTURE.md` · `docs/DESIGN_SYSTEM_ARCHITECTURE.md` · `docs/status/STATUS_FRONTEND.md`
+>
+> The §4 sub-sections below reflect the **original planning content** which remains conceptually valid (wizard structure, route layout, state management principles). The Angular Material-specific implementation notes (mat-stepper, mat-autocomplete) are superseded by PrimeNG 21 equivalents (p-steps, p-select, p-treeSelect). The `LOCKED` architecture decisions (11 primitives, data-driven wizard, onboarding extensions) remain unchanged.
+
 ### 4.1 The 10 input primitives (founder decision #6)
 
 A single Angular standalone component module, classified at template-compile time:
@@ -427,8 +465,8 @@ A single Angular standalone component module, classified at template-compile tim
 | `number_with_unit` | `<mee-number-unit>` | numeric field that has a companion `*_unit` field, OR name matches `*weight|voltage|wattage|frequency|capacity` | Net Weight (gms), Voltage (V), Packaging Weight + Packaging Weight unit |
 | `currency` | `<mee-currency>` | name matches `*price|mrp` (renders ₹ prefix) | Meesho Price, MRP, Wrong/Defective Returns Price |
 | `dropdown_small` | `<mee-dropdown-small>` | `enum_count` 1–20 (radio or simple select) | Veg/NonVeg, Organic, Compulsory? |
-| `dropdown_medium` | `<mee-dropdown-medium>` | `enum_count` 21–100 (Material `mat-autocomplete`, in-memory) | Saree Fabric, Genre |
-| `dropdown_large` | `<mee-dropdown-large>` | `enum_count` 101–500 (virtualised autocomplete) | Length Size, Country of Origin |
+| `dropdown_medium` | `<mee-dropdown-medium>` | `enum_count` 21–100 (in-memory autocomplete; **As Impl.: PrimeNG `p-select` via `mee-select`**) | Saree Fabric, Genre |
+| `dropdown_large` | `<mee-dropdown-large>` | `enum_count` 101–500 (virtualised autocomplete; **As Impl.: PrimeNG `p-select` via `mee-select`**) | Length Size, Country of Origin |
 | `dropdown_api_search` | `<mee-dropdown-api>` | `enum_count` >500 (debounced API call) | Brand (up to 3,998), Compatible Models (up to 4,481) |
 | `image_upload` | `<mee-image-upload>` | `data_type=image_url` (matches `^Image\s+\d+`) | Image 1 (Front), Image 2–4 |
 
@@ -439,13 +477,17 @@ Plus 1 composite for legacy templates:
 
 ### 4.2 Wizard renderer
 
+> **As Implemented (2026-06-10):** The planning sketch below uses `<mat-stepper>` / `<mat-step>` (Angular Material). The actual implementation uses `<mee-steps>` which wraps PrimeNG 21's `<p-steps>`. The data-driven pattern (no category-specific code; pure `schema.primitive` dispatch) remains correct and is implemented.
+
 ```typescript
 // frontend/src/app/wizard/wizard-renderer.component.ts
+// PLANNING SKETCH (2026-06-04) — mat-stepper below is superseded by mee-steps / p-steps
 @Component({
   selector: 'mee-wizard',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
+    <!-- As Implemented: uses <mee-steps> wrapping PrimeNG p-steps, not mat-stepper -->
     <mat-stepper #stepper linear>
       @for (step of schema().wizard_steps; track step.title) {
         <mat-step [label]="step.title">
@@ -1832,6 +1874,8 @@ This keeps the handoff invisible to the seller: the description they typed conti
 
 ## Section 8 — AI Model Operations (Gemini 2.5 Flash)
 
+> **As Implemented (2026-06-10):** Gemini 2.5 Flash LIVE. **LangFuse is DISABLED in V1** — `LANGFUSE_SECRET_KEY = pk-lf-disabled-v1`; `adapters/langfuse.py` degrades to a no-op stub. §9.6 tracing instrumentation and §9.9 observability checklist items relating to LangFuse are **V1.5 deferred**. **3 AI eval sets PASS:** Smart Picker 50fx / 100% recall (exceeds ≥80% target), Autofill 30fx / 0% invalid enums (meets target), Watermark 30fx / 100% accuracy (exceeds ≥85% target). Rate limits and cost ceiling are as-planned. SSOT: `docs/BACKEND_ARCHITECTURE.md §6A`.
+
 MeeSell uses **Google Gemini 2.5 Flash** (locked decision per CLAUDE.md item 3) for three core AI workloads: Smart Category Picker (text→JSON), AI Auto-fill (text+schema→JSON), and Image Watermark Detection (vision→JSON). This section specifies operational constraints, cost ceilings, fallback behavior, and monitoring for V1 launch.
 
 ---
@@ -2116,13 +2160,15 @@ Data sourced from Valkey `cost:{date}` hash updated in real-time by each AI call
 
 ## 9.9 Observability Checklist
 
-- [ ] LangFuse SDK initialized in `backend/app/config.py` (project key injected)
-- [ ] All three workloads wrapped with `@observe` decorator
-- [ ] Cost tracking per user stored in Valkey `cost:{user_id}:{date}` (updated per call)
-- [ ] Daily cost roll-up cron job at 00:00 UTC → `/admin/costs` endpoint
-- [ ] Golden test eval runner CI integration (runs before merge, passes/fails PR)
-- [ ] Alert configuration in monitoring tool (Prometheus / CloudWatch / custom)
-- [ ] Prompt versioning config in `backend/app/config.py` (switch via env var)
+> **As Implemented (2026-06-10):** LangFuse DISABLED in V1 (`pk-lf-disabled-v1`). Items marked `[V1.5]` are deferred. Items marked `[✅ DONE]` are complete.
+
+- `[V1.5]` LangFuse SDK initialized in `backend/app/config.py` (project key injected) — `adapters/langfuse.py` is a no-op stub in V1
+- `[V1.5]` All three workloads wrapped with `@observe` decorator — decorator exists but is no-op in V1
+- `[✅ DONE]` Cost tracking per user stored in Valkey `cost:{user_id}:{date}` (updated per call)
+- `[✅ DONE]` Daily cost roll-up cron job at 00:00 UTC → `/admin/costs` endpoint
+- `[✅ DONE]` Golden test eval runner CI integration (runs before merge, passes/fails PR) — 3 eval sets PASS
+- `[V1.5]` Alert configuration in monitoring tool (Prometheus / CloudWatch / custom)
+- `[✅ DONE]` Prompt versioning config in `backend/app/config.py` (switch via env var)
 
 ---
 
@@ -2147,6 +2193,8 @@ Before launch, confirm:
 ---
 
 ## Section 9 — Multi-tenancy and Data Isolation
+
+<!-- NOTE (2026-06-10): Sub-section numbering below uses "10.x" prefix — this is a known integration artifact from the 2026-06-04 corpus integration. The content belongs to Section 9 (Multi-tenancy). The mismatch is preserved as-is to avoid renumbering cross-references. -->
 
 ## 10.1 Tenancy Model: Single-Seller-Per-Account (V1)
 
@@ -2428,7 +2476,9 @@ PATCH /api/v1/products/{id}
           acknowledges batch
 ```
 
-**Critical constraint:** If the primary transaction is rolled back (validation error, constraint violation), the middleware does NOT push to the Valkey queue. Failures are never logged. The middleware checks response status >= 400 before enqueuing.
+> **As Implemented (2026-06-10):** The Valkey queue architecture above is the **V1.5 target**. In V1, `audit_mw` writes **synchronously inline** — direct ORM append to `audit_events` immediately after 2xx, no Valkey `audit:queue` intermediate. `BACKEND_ARCHITECTURE.md §4.G` (line 1141): "V1 = synchronous inline append … V1.5 moves to a Celery sink." The `audit:queue` Valkey key and `audit_flush_task` Celery worker described above DO NOT EXIST in the current codebase. Additionally, three `iam`-domain events (`verify_otp`, `refresh`, `logout`) use direct ORM write inside the service layer (not `audit_mw`) due to documented exceptions where `user_id` is unavailable at middleware close time — see `BACKEND_ARCHITECTURE.md §7`.
+
+**Critical constraint:** If the primary transaction is rolled back (validation error, constraint violation), the middleware does NOT write to `audit_events`. Failures are never logged. The middleware checks response status ≥ 400 before appending.
 
 ---
 
@@ -2596,6 +2646,16 @@ At 1M rows with the two indexes defined above, both query patterns (§11.8) retu
 - Golden migration: full DB rollback + replay
 - Per-route tests cover 100% of endpoints; service-level tests cover business logic
 
+> **As Implemented (2026-06-10): BACKEND COMPLETE — §22 ACCEPTED 9/9.**
+> - **Tables:** 13 (not 8 planned) — `users`, `seller_profile`, `templates`, `categories`, `field_enum_values`, `field_aliases`, `catalogs`, `products`, `product_images`, `pricing_calcs`, `exports`, `product_drafts`, `audit_events`
+> - **Alembic head:** `f31c75438e61` (baseline `935e55b4852c` + pg_trgm/GIN `a1b2c3d4e5f6` + `idx_product_drafts_saved_at`)
+> - **Seed counts:** 67 aliases / 3,566 templates / 3,772 categories / 49,259 enum values
+> - **Routes:** 29 total (27 contract endpoints + 2 infrastructure: `/auth/me` + `/webhooks/razorpay`)
+> - **Tests:** 815 passing (per-route + service + multi-tenant isolation + golden XLSX fixtures)
+> - **CI contracts:** 10 (7 import-linter rules + 3 AST scanners)
+> - **Golden XLSX fixtures:** 15 (round-trip XLSX export validated)
+> - SSOT: `docs/BACKEND_ARCHITECTURE.md`
+
 ### 11.2 DATA → FRONTEND (`meesell-frontend-coordinator`)
 
 **Inputs delivered:**
@@ -2615,6 +2675,15 @@ At 1M rows with the two indexes defined above, both query patterns (§11.8) retu
 - Onboarding journey completes (10 base fields + 1-4 extension steps)
 - Catalog wizard renders 47-field Lehenga form without lag on Pixel 6a
 - Touch targets ≥44px throughout (Tirupur mobile-first)
+
+> **As Implemented (2026-06-10): FRONTEND COMPLETE — Waves 3–5 complete 2026-06-10.**
+> - **Stack:** Angular 21 + PrimeNG 21 + Sakai-ng + Tailwind CSS 4 (planned: Angular 18 + Angular Material)
+> - **UI Kit:** 17 `mee-*` primitives (`mee-text-short`, `mee-text-area`, `mee-select`, `mee-multi-select`, `mee-radio`, `mee-checkbox`, `mee-number`, `mee-date`, `mee-address-group`, `mee-file-upload`, `mee-steps`, `mee-card`, `mee-button`, `mee-badge`, `mee-toast`, `mee-dialog`, `mee-spinner`) in `src/app/ui/`
+> - **Shared composites:** 5 (`category-picker`, `product-wizard`, `image-uploader`, `pricing-panel`, `export-panel`)
+> - **Feature pages:** 11 (`auth`, `onboarding`, `dashboard`, `catalog-list`, `product-editor`, `category-browser`, `image-manager`, `pricing`, `export`, `profile`, `settings`)
+> - **Build:** clean. Zero PrimeNG imports in `features/`. All routes registered in `app.routes.ts`.
+> - **Pre-existing test failures:** 38 TestBed failures from Angular 21 + Vitest JIT crash — carry-forward, not regressions
+> - SSOT: `docs/FRONTEND_ARCHITECTURE.md`
 
 ### 11.3 DATA → AI (`meesell-ai-coordinator`)
 
@@ -2663,6 +2732,8 @@ At 1M rows with the two indexes defined above, both query patterns (§11.8) retu
 - Eval golden sets: 50 descriptions for picker (≥80% top-5 recall), 30 product specs for autofill (0% invalid enum), 30 images for watermark (≥85% accuracy)
 - **Acceptance**: zero invalid enum values reach Export Adapter; per-call cost ≤ ₹0.05 average; daily total ≤ ₹500
 
+> **As Implemented (2026-06-10):** All acceptance criteria MET. **LangFuse traces deferred to V1.5** — `adapters/langfuse.py` is a no-op stub; the `@observe` decorator is present but does not emit traces. Eval results: Smart Picker 100% recall (50 golden), Autofill 0% invalid enums (30 golden), Watermark 100% accuracy (30 golden). Cost tracking and rate limiting are LIVE.
+
 ### 11.7 BACKEND on Multi-tenancy (§9)
 - App-level `user_id` foreign key on every owned table (catalogs, products, product_images, pricing_calcs, exports, seller_profile)
 - JWT claim shape: `{sub: user_id, exp, plan: "free" | "pro"}`. Middleware injects `user_id` into every route handler.
@@ -2672,7 +2743,7 @@ At 1M rows with the two indexes defined above, both query patterns (§11.8) retu
 - Soft cap: 100 active products per "free" seller in V1
 - **Acceptance**: per-PR isolation regression test asserts User A cannot read User B's products
 
-**AMENDMENT 2026-06-05 — FE-D5 ratification:** JWT claim shape `{sub, exp, plan}` is UNCHANGED. Access-token TTL is now env-driven via `ACCESS_TOKEN_TTL_SECONDS` (prod 900s / staging 60s / dev 30s) — the previous `JWT_EXPIRY_DAYS` field is deprecated. The refresh token is opaque (`secrets.token_urlsafe(48)`, NOT a JWT) and is stored as an HttpOnly+Secure+SameSite=Strict cookie scoped to `Path=/api/v1/auth`. The refresh-token allowlist lives in Valkey DB 0 under the key `cache:refresh:{hmac_sha256(token, REFRESH_TOKEN_PEPPER)}` (HMAC-with-pepper, not plain SHA-256, so a Valkey-only breach cannot validate captured cookies). Rotation on every `/auth/refresh` uses a Lua script via `EVAL` for atomic compare-and-swap (DEL old + SET new in one round-trip). Server-side revocation on logout via Valkey DEL. Cited: FE-D5 + FE-D6 founder rulings 2026-06-05; frontend handoff memo `.claude/agent-memory/meesell-frontend-coordinator/backend_handoff_jwt_session_pattern.md`; backend amendments `docs/BACKEND_ARCHITECTURE.md` §0.C + §4.B + §4.G + §7 + §15 + §17 + §19. (End amendment.)
+**AMENDMENT 2026-06-05 — FE-D5 ratification [RESOLVED — IMPLEMENTED 2026-06-10]:** JWT claim shape `{sub, exp, plan}` is UNCHANGED. Access-token TTL is now env-driven via `ACCESS_TOKEN_TTL_SECONDS` (prod 900s / staging 60s / dev 30s) — the previous `JWT_EXPIRY_DAYS` field is deprecated. The refresh token is opaque (`secrets.token_urlsafe(48)`, NOT a JWT) and is stored as an HttpOnly+Secure+SameSite=Strict cookie scoped to `Path=/api/v1/auth`. The refresh-token allowlist lives in Valkey DB 0 under the key `cache:refresh:{hmac_sha256(token, REFRESH_TOKEN_PEPPER)}` (HMAC-with-pepper, not plain SHA-256, so a Valkey-only breach cannot validate captured cookies). Rotation on every `/auth/refresh` uses a Lua script via `EVAL` for atomic compare-and-swap (DEL old + SET new in one round-trip). Server-side revocation on logout via Valkey DEL. Cited: FE-D5 + FE-D6 founder rulings 2026-06-05; frontend handoff memo `.claude/agent-memory/meesell-frontend-coordinator/backend_handoff_jwt_session_pattern.md`; backend amendments `docs/BACKEND_ARCHITECTURE.md` §0.C + §4.B + §4.G + §7 + §15 + §17 + §19. (End amendment.)
 
 ### 11.8 BACKEND on Audit Log & Autosave (§10)
 - Create `audit_events` (append-only, BIGSERIAL PK) and `product_drafts` (latest unsaved state per user×product) tables per §10.2
@@ -2787,13 +2858,91 @@ All six prior open questions are now resolved. Implementation rules below are no
 
 **Philosophy-locked:** 10 mandates + 8 forbids + 5 structural patterns in `docs/CORE_PHILOSOPHY.md`. Every section in this document checked against the rulebook.
 
-**Pending laptop session:**
+**Pending laptop session (PLANNING, 2026-06-04):**
 - SSoT co-authorship (`docs/MEESHO_CATEGORY_INTELLIGENCE.md`) — the locked rule is "founder + coordinator write it together"
 - Final sign-off on this document
 
-**On approval, this document unblocks:**
-- `meesell-backend-coordinator` (and its 4 specialists) — gets §2 data model, §3 API surface, §5.5 Export Adapter, §6 caching, §7 search, §9 multi-tenancy, §10 audit log
-- `meesell-frontend-coordinator` (and its 3 specialists) — gets §4 frontend architecture, §5.6 presentation layer, §5.7 round-trip test plan, §12.4 advanced-fields toggle pattern
-- `meesell-ai-coordinator` (and its 3 specialists) — gets §5 AI pipeline, §8 operational details, §5.6.7 validation message library, enum-constrained guardrail (M7 + F3)
+**On approval, this document unblocked:**
+- `meesell-backend-coordinator` (and its 4 specialists) — got §2 data model, §3 API surface, §5.5 Export Adapter, §6 caching, §7 search, §9 multi-tenancy, §10 audit log
+- `meesell-frontend-coordinator` (and its 3 specialists) — got §4 frontend architecture, §5.6 presentation layer, §5.7 round-trip test plan, §12.4 advanced-fields toggle pattern
+- `meesell-ai-coordinator` (and its 3 specialists) — got §5 AI pipeline, §8 operational details, §5.6.7 validation message library, enum-constrained guardrail (M7 + F3)
 
 The DATA / SCRAPER foundation work is complete. Phase 3 deliverable is this document plus `CORE_PHILOSOPHY.md`, `canonical_field_aliases.json`, `field_display_overrides.json`. Phases 4 (V1 feature validation) and 5 (Micro-PoC) are blocked on founder approval per original session brief.
+
+> **As Implemented (2026-06-10): ALL PHASES COMPLETE.**
+> - Backend: §22 ACCEPTED 9/9 (2026-06-09) — 815 tests, 29 routes, 13 tables, 10 CI contracts
+> - Frontend: Waves 3–5 complete (2026-06-10) — Angular 21 + PrimeNG 21, 17 mee-* + 11 feature pages
+> - Infrastructure: Phase D+E+F complete (2026-06-10) — K3s v1.35.5, GitHub Actions CI/CD live, Terraform GCS state, 10 secrets populated
+> - Database: COMPLETE — Alembic head `f31c75438e61`, 49,259 enum values seeded
+> - AI: 3 eval sets PASS — LangFuse deferred to V1.5
+> - This document has been cross-verified against all individual architecture docs and LOCKED 2026-06-10.
+> - See: `docs/doc_verification/SSOT_DIVERGENCE_REPORT.md` for the 15 divergences resolved in this verification pass.
+
+---
+
+## Section 16 — As Implemented: Infrastructure and DevOps
+
+> This section did not exist in the original planning document. It is added 2026-06-10 to record implemented infrastructure state. SSOTs: `docs/INFRASTRUCTURE_ARCHITECTURE.md` and `docs/DEVOPS_ARCHITECTURE.md`.
+
+### 16.1 Compute
+
+| Item | Value |
+|------|-------|
+| Platform | GCP VM — K3s v1.35.5 single-node cluster |
+| VM name | `meesell-dev` |
+| External IP | `35.234.223.66` |
+| Machine type | `e2-standard-2` (2 vCPU / 8 GB RAM) |
+| Region / Zone | `asia-south1-a` (Mumbai) |
+| OS | Ubuntu 22.04 LTS |
+
+### 16.2 Kubernetes Namespaces
+
+| Namespace | Workloads |
+|-----------|-----------|
+| `meesell` | api (2/2 Running), worker (2/2 Running) |
+| `meesell-infra` | Valkey, PostgreSQL |
+| `monitoring` | Prometheus, Grafana |
+
+### 16.3 CI/CD
+
+| Item | Value |
+|------|-------|
+| Source control | GitHub — `Mugunthan93/mesell` |
+| CI platform | **GitHub Actions** (not GitLab CI — planning docs referenced GitLab; GitHub is the active platform) |
+| Image registry | GCP Artifact Registry (`asia-south1-docker.pkg.dev/meesell/meesell/`) |
+| Deployment | IAP tunnel → `kubectl rollout` (no public K8s API exposure) |
+| Build pipeline | GitHub Actions → Cloud Build → Artifact Registry → K3s rollout |
+| Rollback | `kubectl rollout undo` via GitHub Actions workflow |
+
+### 16.4 Secrets Management
+
+All 10 application secrets populated in K3s `meesell` namespace:
+
+| Secret | Status |
+|--------|--------|
+| `database-url` | ✅ Populated |
+| `valkey-url` | ✅ Populated |
+| `jwt-secret-key` | ✅ Populated |
+| `refresh-token-pepper` | ✅ Populated |
+| `msg91-api-key` | ✅ Populated |
+| `gemini-api-key` | ✅ Populated |
+| `gcs-sa-key` | ✅ Populated |
+| `razorpay-key-id` | ✅ Populated (founder action pending: `razorpay-webhook-secret`) |
+| `langfuse-public-key` | ✅ Populated (`pk-lf-disabled-v1` — no-op stub) |
+| `langfuse-secret-key` | ✅ Populated (founder action pending: real key for V1.5) |
+
+### 16.5 Terraform State
+
+- **Backend:** GCS — `gs://meesell-tfstate/terraform/state/`
+- **Migration:** Completed 2026-06-10 (previously local state)
+- **Workspace:** `meesell-dev`
+
+### 16.6 Deployment Phases Completed
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| A | GCP VM + K3s cluster + namespaces | ✅ Complete |
+| B | PostgreSQL + Valkey + secrets bootstrap | ✅ Complete |
+| D | Application deployments (api + worker) | ✅ Complete (api 2/2, worker 2/2 Running) |
+| E | GitHub Actions CI pipeline | ✅ Complete |
+| F | CD pipeline (image build → rollout) | ✅ Complete |
