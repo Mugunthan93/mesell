@@ -1,0 +1,42 @@
+feature: "xlsx-export"
+session: "mesell-xlsx-export-amendment-session-1"
+worktree: "/tmp/mesell-wt/xlsx-export"
+branch: "feature/xlsx-export/planning"
+status: "PLAN_READY"
+last_updated: "2026-06-10T12:15:15Z"
+feature_plan_path: "docs/plans/features/xlsx-export/FEATURE_PLAN.md"
+feature_plan_line_count: 1852
+pr_number: null
+pr_url: null
+outstanding_founder_decisions: []
+notes: |
+  Amended to canonical pattern v2 — 11 sections in locked order.
+  Verified via `awk` code-fence-aware grep: 11 ## headings, exact canonical order,
+  exact canonical text (no numeric prefixes, no parentheticals).
+
+  Universal-gap sections were ALREADY present in v1 (Review + iteration protocol,
+  Acceptance gate, Risk register with 6 risks, Revision history) — preserved
+  verbatim, only heading prefixes stripped.
+
+  New canonical sections authored fresh: Branch setup (slot 5), Memory protocol
+  (slot 6). Branch setup carries D-B + per-group branch table + creation commands
+  + PR flow ASCII + PR template map + rebase strategy. Memory protocol carries
+  read-paths + cross-feature memos + naming convention + session-close template,
+  plus the relocated Cross-agent broadcast protocol as the final ### subsection.
+
+  Relocations: Common dispatch preamble (was ## 6) demoted to ### Common preamble
+  inside ## Dispatch templates. Cross-agent broadcast protocol (was ## 9)
+  relocated as ### Cross-agent broadcast protocol inside ## Memory protocol.
+  Glossary (was ## 12) demoted to ### Glossary inside ## Documentation
+  deliverables. Status preamble (was ## 1) + Pre-flight reality check (was ### 1.1)
+  preserved as preamble prose before ## Decisions.
+
+  Section moves: ## Agent lineup moved from slot 4 to canonical slot 2 (before
+  ## Code surfaces) per pattern v2.
+
+  File grew 1711 → 1852 lines (+141). Net additions are §Branch setup + §Memory
+  protocol — broadcast protocol content recovered into Memory protocol, not lost.
+
+  Ready for amendment PR. Original planning PR #9 already merged to develop
+  (per backend-coordinator MEMORY.md Step 12). New PR will be opened for the
+  amendment.

@@ -16,15 +16,11 @@
 
 ---
 
-## 1. Status preamble
-
 This document is the executable plan for the **XLSX Export** feature (V1 Feature 9). It locks every operational and scope decision needed by the four involved leads (backend, frontend, data, infra) to dispatch their specialists against. **No production code is written by this session.**
 
 The plan is the merge gate input for the eventual eight per-group PRs that ship the feature. The `## Dispatch templates` section is the canonical copy-paste-ready Agent() prompt body that each lead pastes (with `{N}` session number filled) when dispatching their specialist.
 
-### 1.1 Pre-flight reality check (deltas vs. the dispatch prompt)
-
-The dispatch prompt at `docs/plans/features/xlsx-export/PLANNING_DISPATCH.md` was authored **before** several architecture sections were locked. The plan below has been reconciled against the LOCKED corpus. The following deltas have been applied; each is recorded here so the founder can audit them:
+**Pre-flight reality check (deltas vs. the dispatch prompt).** The dispatch prompt at `docs/plans/features/xlsx-export/PLANNING_DISPATCH.md` was authored **before** several architecture sections were locked. The plan below has been reconciled against the LOCKED corpus. The following deltas have been applied; each is recorded here so the founder can audit them:
 
 | # | Dispatch prompt said | LOCKED reality | Resolution applied |
 |---|---|---|---|
@@ -39,13 +35,13 @@ The dispatch prompt at `docs/plans/features/xlsx-export/PLANNING_DISPATCH.md` wa
 | 9 | `Read docs/plans/features/feature_planning_master.md (master tracker)` (Steps 0.5 + 8.1 + 8.5) | File is **absent** as of 2026-06-10 (deleted between sessions) | Master tracker steps are SKIPPED. The plan PR is the single forward signal. If the master tracker is re-created in a parallel session, this feature's row should be backfilled to `PLAN READY`. |
 | 10 | `Branch from develop; commit FEATURE_PLAN.md` (Step 8.2-8.3) | Director restriction + MeeSell rule (no nexus agents) | Master session runs git directly (the only path — no `meesell-git-manager` exists and MeeSell rule prohibits `nexus:cross-cutting:git-manager`). Branch `feature/xlsx-export/planning` is created off `develop`. |
 
-If any of these deltas conflict with a founder mental model, raise on PR review and the plan will be amended in `## 13. Revision history` rather than mid-flight.
+If any of these deltas conflict with a founder mental model, raise on PR review and the plan will be amended in `## Revision history` rather than mid-flight.
 
 ---
 
-## 2. Decisions (locked 2026-06-10 — founder approval in `mesell-xlsx-export-planning-session-1`)
+## Decisions
 
-### 2.1 Operational decisions
+### Operational decisions
 
 #### D-A — Agent lineup
 
@@ -94,7 +90,7 @@ Specialists are NOT pre-notified. Awareness reaches each specialist at first dis
 
 The protocol is operationalised in §9 (Cross-agent broadcast protocol).
 
-### 2.2 Scope decisions
+### Scope decisions
 
 #### D1 — Scope confirmation
 
@@ -166,7 +162,23 @@ The **§14.I literal reading of "separate bucket meesell-exports"** is amended t
 
 ---
 
-## 3. Code surfaces
+## Agent lineup
+
+Per D-A. Four leads + 7 to 8 specialists. AI track explicitly omitted.
+
+| Lead | Specialists dispatched | What each specialist codes |
+|---|---|---|
+| `meesell-backend-coordinator` | `meesell-services-builder`, `meesell-api-routes-builder`, `meesell-database-builder` | **services-builder (HEAVY):** entire Export Adapter — 9-step pipeline orchestrator + 11 worker-internal helpers per §14.C; 2 ComplianceStrategy concrete classes + `MeeshoExportAdapter` per §14.F; 7 exception classes per §14.H; Layer 3 hallucination guardrail wired at step 5; openpyxl XLSX writer + `_round_trip_validate`; image ZIP packager via `image.service.get_image_bytes`; GCS upload via `adapters.gcs.upload_bytes`; Celery task wiring per §14.E; the 7 i18n keys in `messages_en.py`; the pytest runner for the 15 golden fixtures; the troubleshooting runbook. **api-routes-builder:** 2 route handlers (POST + GET) per §14.B; the 4 Pydantic wire schemas per §14.G; FEATURE flag gate at the POST entry; rate-limit decorator `@rate_limit(scope="export_initiate", limit="10/h", key="user_id")` per §14.J; router test suite. **database-builder:** `exports` table SQLAlchemy ORM model per `MVP_ARCH §2.5`; the Alembic migration with up + down per master plan §3.3; `scope_to_user(user_id)` enforced on the `exports.user_id` tenancy column per §15.B. |
+| `meesell-frontend-coordinator` | `meesell-angular-component-builder`, `meesell-angular-service-builder` | **angular-component-builder:** `ExportPageComponent` (page-level) + `ExportProgressComponent` (polling-status sub-component); under `frontend/src/app/features/export/` per FRONTEND_ARCH Layer 4; uses `mee-*` primitives from `@mee/ui` (button, card, page-header, progress-bar, status-badge) — zero direct PrimeNG imports; multi-error validation render on 422 (`mee-toast` + an inline error list); download CTA when status flips to `ready`; component tests. **angular-service-builder:** `ExportService.initiate(productId)` + `ExportService.pollStatus(exportId)` with exponential backoff polling (1s → 2s → 4s, capped at 60s wall time matching the §F9 30s hard budget + headroom); TypeScript model file mirroring backend Pydantic schemas; error handling for 422 (validation blocked → render error list), 503 (transient GCS failure → retry once then surface), 404 (flag-disabled → render placeholder). |
+| `meesell-data-engineer` | `meesell-xlsx-parser`, `meesell-scraper-maintainer` (conditional) | **xlsx-parser:** 15 golden fixture JSON files per Code surfaces §Backend + §14.K (each fixture is `{input_snapshot, expected_xlsx_canonical}` per §14.K format); fixture README; verification that `templates.schema_jsonb` is comprehensively seeded for the 15 coverage points (each fixture's category_id resolves to a non-empty schema with `meesho_column_header`, `meesho_column_index`, `enum_codes_map`, `compliance_role`, `compliance_shape`); verification that `field_aliases.for_xlsx_export = TRUE` covers the typo restore cases (`no_of_primary_cameras` → `No. of Primiary Cameras`); verification that `field_enum_values.enum_entries` covers all 291 Brand-pattern categories. **scraper-maintainer (CONDITIONAL):** dispatched ONLY if the quarterly Meesho refresh (post `2026-06-04` snapshot) shows template drift on any of the 15 fixture categories — re-scrape, update affected `templates.schema_jsonb` rows, regenerate the affected fixture's `expected_xlsx_canonical`. Default: NOT DISPATCHED for V1. |
+| `meesell-infra-builder` (standalone) | — (no specialists; lead self-dispatches) | Add `export` Celery queue to worker deployment manifest (dev + staging mirror); add GCS lifecycle rule on `meesell-prod-assets` bucket for `meesell-exports/*` prefix (30-day delete); append xlsx-export runbook paragraph to `INFRASTRUCTURE_PLAYBOOK.md`. NO new bucket. NO new IAM binding. NO new K3s Service. |
+| `meesell-ai-coordinator` | (no work — explicitly omitted) | Per §14.A LOCKED. The Layer 3 guardrail is deterministic dictionary lookup, not an AI workload. AI lead is NOT a reviewer on this plan PR. |
+
+**Total: 4 active leads + 6 firm specialists + 1 conditional specialist = 7 firm dispatches + 1 conditional.**
+
+---
+
+## Code surfaces
 
 The full enumeration of files this feature creates (NEW) or modifies (MODIFY). Grouped by group; this becomes the diff scope when leads brief their specialists.
 
@@ -269,25 +281,7 @@ The Layer 3 guardrail lives at step 5 of the pipeline (`_translate_enums` in §1
 | `docs/runbooks/README.md` | MODIFY | services-builder (same PR) | Link the new runbook |
 | `.github/workflows/ci.yml` | MODIFY (if gate-5 not yet wired) | services-builder (in backend PR) | Add gate-5 step: `pytest backend/tests/modules/export/test_round_trip.py --tb=short` — invoked on every backend PR touching `app/modules/export/` OR the golden fixture directory |
 
----
-
-## 4. Agent lineup
-
-Per §2.1 D-A. Four leads + 7 to 8 specialists. AI track explicitly omitted.
-
-| Lead | Specialists dispatched | What each specialist codes |
-|---|---|---|
-| `meesell-backend-coordinator` | `meesell-services-builder`, `meesell-api-routes-builder`, `meesell-database-builder` | **services-builder (HEAVY):** entire Export Adapter — 9-step pipeline orchestrator + 11 worker-internal helpers per §14.C; 2 ComplianceStrategy concrete classes + `MeeshoExportAdapter` per §14.F; 7 exception classes per §14.H; Layer 3 hallucination guardrail wired at step 5; openpyxl XLSX writer + `_round_trip_validate`; image ZIP packager via `image.service.get_image_bytes`; GCS upload via `adapters.gcs.upload_bytes`; Celery task wiring per §14.E; the 7 i18n keys in `messages_en.py`; the pytest runner for the 15 golden fixtures; the troubleshooting runbook. **api-routes-builder:** 2 route handlers (POST + GET) per §14.B; the 4 Pydantic wire schemas per §14.G; FEATURE flag gate at the POST entry; rate-limit decorator `@rate_limit(scope="export_initiate", limit="10/h", key="user_id")` per §14.J; router test suite. **database-builder:** `exports` table SQLAlchemy ORM model per `MVP_ARCH §2.5`; the Alembic migration with up + down per master plan §3.3; `scope_to_user(user_id)` enforced on the `exports.user_id` tenancy column per §15.B. |
-| `meesell-frontend-coordinator` | `meesell-angular-component-builder`, `meesell-angular-service-builder` | **angular-component-builder:** `ExportPageComponent` (page-level) + `ExportProgressComponent` (polling-status sub-component); under `frontend/src/app/features/export/` per FRONTEND_ARCH Layer 4; uses `mee-*` primitives from `@mee/ui` (button, card, page-header, progress-bar, status-badge) — zero direct PrimeNG imports; multi-error validation render on 422 (`mee-toast` + an inline error list); download CTA when status flips to `ready`; component tests. **angular-service-builder:** `ExportService.initiate(productId)` + `ExportService.pollStatus(exportId)` with exponential backoff polling (1s → 2s → 4s, capped at 60s wall time matching the §F9 30s hard budget + headroom); TypeScript model file mirroring backend Pydantic schemas; error handling for 422 (validation blocked → render error list), 503 (transient GCS failure → retry once then surface), 404 (flag-disabled → render placeholder). |
-| `meesell-data-engineer` | `meesell-xlsx-parser`, `meesell-scraper-maintainer` (conditional) | **xlsx-parser:** 15 golden fixture JSON files per §3.1 + §14.K (each fixture is `{input_snapshot, expected_xlsx_canonical}` per §14.K format); fixture README; verification that `templates.schema_jsonb` is comprehensively seeded for the 15 coverage points (each fixture's category_id resolves to a non-empty schema with `meesho_column_header`, `meesho_column_index`, `enum_codes_map`, `compliance_role`, `compliance_shape`); verification that `field_aliases.for_xlsx_export = TRUE` covers the typo restore cases (`no_of_primary_cameras` → `No. of Primiary Cameras`); verification that `field_enum_values.enum_entries` covers all 291 Brand-pattern categories. **scraper-maintainer (CONDITIONAL):** dispatched ONLY if the quarterly Meesho refresh (post `2026-06-04` snapshot) shows template drift on any of the 15 fixture categories — re-scrape, update affected `templates.schema_jsonb` rows, regenerate the affected fixture's `expected_xlsx_canonical`. Default: NOT DISPATCHED for V1. |
-| `meesell-infra-builder` (standalone) | — (no specialists; lead self-dispatches) | Add `export` Celery queue to worker deployment manifest (dev + staging mirror); add GCS lifecycle rule on `meesell-prod-assets` bucket for `meesell-exports/*` prefix (30-day delete); append xlsx-export runbook paragraph to `INFRASTRUCTURE_PLAYBOOK.md`. NO new bucket. NO new IAM binding. NO new K3s Service. |
-| `meesell-ai-coordinator` | (no work — explicitly omitted) | Per §14.A LOCKED. The Layer 3 guardrail is deterministic dictionary lookup, not an AI workload. AI lead is NOT a reviewer on this plan PR. |
-
-**Total: 4 active leads + 6 firm specialists + 1 conditional specialist = 7 firm dispatches + 1 conditional.**
-
----
-
-## 5. Documentation deliverables
+## Documentation deliverables
 
 "Documented" for xlsx-export means **all** of the following exist alongside the merged code. These items are checked in the §10 acceptance gate.
 
@@ -335,11 +329,242 @@ Per §2.1 D-A. Four leads + 7 to 8 specialists. AI track explicitly omitted.
   - Must pass for the PR to merge
 - **Troubleshooting runbook** linked from `docs/runbooks/README.md`
 
+### Glossary
+
+Terminology referenced by the dispatch templates and the review protocol. Authoritative source where ambiguity arises.
+
+| Term | Meaning |
+|---|---|
+| 9-step pipeline | The Export Adapter's ordered transformation chain per `MVP_ARCH §5.5.4`: schema resolve → strategy select → row build → strategy apply → enum translate (Layer 3 guardrail) → column reorder → alias restore → XLSX write → round-trip validate. |
+| ComplianceStrategy | The §14.F Strategy pattern — V1 has 2 concrete classes: `StandardComplianceStrategy` (3,771 templates, 9 fields pass-through) + `CollapsedComplianceStrategy` (Eye-Serum leaf 12378, 9 fields → 3 Details columns). |
+| Layer 3 guardrail | The deterministic safety net at step 5 of the pipeline; dictionary lookup against `field_enum_values.enum_entries` rejects any canonical enum value not registered. Independent of AI. |
+| Round-trip validation | Step 9 — re-parse the just-written XLSX with openpyxl + canonical re-map; assert equivalence with the input snapshot. Holds the line on correctness even if upstream steps drift. |
+| 15-fixture matrix | The §14.K golden coverage matrix — 15 JSON fixtures testing per-category compliance + edge cases (typo restore, large dropdowns, brand patterns, is_advanced, empty optional, weight w/ unit, multi-line, special chars). |
+| M10 boundary | Philosophy M10 — `meesho_column_header`, `meesho_column_index`, `enum_codes_map` exist ONLY inside `app/modules/export/`. The §19 CI linter enforces. |
+| FEATURE_XLSX_EXPORT_ENABLED | The feature flag per master plan §3.2. Dev=true; Staging=false until all 15 fixtures green + manual Meesho upload accepted. |
+| Self-broadcast | The D-C protocol — each lead self-updates their MEMORY.md + feature_board after the plan PR merges. No cross-writes to other agent memories (CLAUDE.md rule #4). |
+
 ---
 
-## 6. Common dispatch template preamble
+## Branch setup
 
-Every dispatch template in §7 uses this preamble. The lead fills `{N}` with the session ordinal (1 on first dispatch; 2 on context-break resume; etc.) and dispatches via the Agent() tool with `subagent_type` set to the specialist's name.
+Per D-B (defer per master plan §1.2). Only `feature/xlsx-export/planning` exists today (created off `develop` for this plan doc). The parent integration branch and per-group branches are created at code-dispatch time. AI does NOT get a branch (no AI work per D-A + §14.A).
+
+| Branch | Cut from | Purpose | Who commits |
+|---|---|---|---|
+| `feature/xlsx-export` | `develop` | Integration branch; only merge commits | Backend lead (merge approval only) |
+| `feature/xlsx-export/backend` | `feature/xlsx-export` | Backend specialist work (services + api-routes + database) | Backend specialists |
+| `feature/xlsx-export/frontend` | `feature/xlsx-export` | Frontend specialist work (component + service) | Frontend specialists |
+| `feature/xlsx-export/data` | `feature/xlsx-export` | Data work (15 golden fixtures + seed verification) | `meesell-xlsx-parser` |
+| `feature/xlsx-export/infra` | `feature/xlsx-export` | Infra work (Celery queue + GCS lifecycle + INFRASTRUCTURE_PLAYBOOK paragraph) | `meesell-infra-builder` (self-dispatch) |
+
+### Creation commands
+
+When the first group is ready to dispatch (gated on `catalog-form` + `image-precheck` merging to `develop` per D3), the founder OR the backend lead runs:
+
+```bash
+cd /Users/mugunthansrinivasan/Project/mesell
+git checkout develop && git pull --ff-only
+git checkout -b feature/xlsx-export
+git push -u origin feature/xlsx-export
+```
+
+Each per-group branch is then cut at its own lead's specialist-dispatch time:
+
+```bash
+git checkout feature/xlsx-export && git pull --ff-only
+git checkout -b feature/xlsx-export/backend     # backend lead's first dispatch
+# OR
+git checkout -b feature/xlsx-export/frontend    # frontend lead's first dispatch
+# OR
+git checkout -b feature/xlsx-export/data        # data lead's first dispatch
+# OR
+git checkout -b feature/xlsx-export/infra       # infra lead self-dispatch
+```
+
+### PR flow (coding stage)
+
+```
+┌────────────────────────────────────┐
+│ feature/xlsx-export/backend        │──┐
+└────────────────────────────────────┘  │
+┌────────────────────────────────────┐  │  4 group PRs (lead reviews each)
+│ feature/xlsx-export/frontend       │──┤  per master plan §6 — each lead
+└────────────────────────────────────┘  │  approves their own group's PR to
+┌────────────────────────────────────┐  │  the integration branch
+│ feature/xlsx-export/data           │──┤
+└────────────────────────────────────┘  │
+┌────────────────────────────────────┐  │
+│ feature/xlsx-export/infra          │──┘
+└────────────────────────────────────┘
+                  │
+                  ▼
+        ┌──────────────────────┐
+        │ feature/xlsx-export  │
+        └──────────────────────┘
+                  │
+                  │  1 integration PR (founder reviews per master plan §6 V1 rule)
+                  ▼
+              ┌─────────┐
+              │ develop │
+              └─────────┘
+```
+
+### PR templates
+
+| Group PR | Template path |
+|---|---|
+| `feature/xlsx-export/backend` → `feature/xlsx-export` | `.github/PULL_REQUEST_TEMPLATE/backend.md` |
+| `feature/xlsx-export/frontend` → `feature/xlsx-export` | `.github/PULL_REQUEST_TEMPLATE/frontend.md` |
+| `feature/xlsx-export/data` → `feature/xlsx-export` | `.github/PULL_REQUEST_TEMPLATE/data.md` |
+| `feature/xlsx-export/infra` → `feature/xlsx-export` | `.github/PULL_REQUEST_TEMPLATE/infra.md` |
+| `feature/xlsx-export` → `develop` (integration) | Compose summary citing all 4 group PR numbers + acceptance gate checklist (see `## Acceptance gate` below) |
+
+### Rebase strategy
+
+When a sibling group PR lands first on `feature/xlsx-export`, the in-flight group rebases its branch on the moved integration tip:
+
+```bash
+git checkout feature/xlsx-export/backend
+git fetch origin
+git rebase origin/feature/xlsx-export
+# resolve conflicts (if any); typical conflict surface is i18n/messages_en.py if
+# multiple groups add keys in the same file
+git push --force-with-lease
+```
+
+The migration order (services-builder PR depends on database-builder PR merge, services-builder PR depends on xlsx-parser PR merge) is documented in `## Review + iteration protocol` → "Cross-lead dependencies during review".
+
+---
+
+## Memory protocol
+
+Per D-C (self-broadcast at plan merge). Coding-session leads + specialists read the agent memories below at session start; the cross-agent broadcast protocol is the operational mechanism that keeps memories fresh.
+
+### Memories the coding-session leads MUST read at start
+
+When any coding-session sub-session opens, the lead reads:
+
+- `.claude/agent-memory/meesell-backend-coordinator/MEMORY.md` (heaviest lead)
+- `.claude/agent-memory/meesell-frontend-coordinator/MEMORY.md`
+- `.claude/agent-memory/meesell-data-engineer/MEMORY.md`
+- `.claude/agent-memory/meesell-infra-builder/MEMORY.md`
+
+When a specialist sub-session opens, the specialist reads:
+
+- Their own `.claude/agent-memory/meesell-{specialist-slug}/MEMORY.md`
+- Their dispatching lead's `MEMORY.md` (above)
+- `.claude/agent-memory/meesell-backend-coordinator/feature_xlsx-export.md` (if it exists — see §Cross-feature memos below)
+
+### Cross-feature memos this feature consumes
+
+`xlsx-export` is a downstream feature — it consumes contracts produced by upstream merges:
+
+| Upstream feature | Contract consumed | Where to find it |
+|---|---|---|
+| `catalog-form` | `catalog.service.assert_product_ownership(product_id, user_id)`, `catalog.service.get_product_for_export(product_id, user_id)`, `products.fields_jsonb` shape, `products.status='ready'` state machine | `.claude/agent-memory/meesell-backend-coordinator/feature_catalog-form.md` (already exists per `mesell-repo-management-session-1` Step 13 broadcast) |
+| `image-precheck` | `image.service.get_image_bytes(image_id, user_id) -> bytes`, `image.service.list_images(product_id, user_id)`, `product_images.status='ready'` precondition | `.claude/agent-memory/meesell-backend-coordinator/feature_image-precheck.md` (authored at image-precheck plan merge) |
+| `auth-otp` | `get_current_user` dependency injection contract; JWT in-memory access pattern (FE-D5) | `.claude/agent-memory/meesell-backend-coordinator/MEMORY.md` Sessions on auth-otp |
+
+If any of the upstream memos are absent when the xlsx-export code dispatch begins, that's a broadcast failure — the lead pauses dispatch and escalates to the founder per the §9.2 broadcast protocol below.
+
+### Naming convention for new memos created during this feature
+
+Use `feature_xlsx-export.md` per the convention established by `feature_catalog-form.md` in `meesell-backend-coordinator/`. NEVER `xlsx-export_feature.md` — pick one convention per feature; the `feature_*` prefix sorts grouped in the directory and matches the convention seeded in this session by the backend coordinator.
+
+Memo lives at:
+
+- `.claude/agent-memory/meesell-backend-coordinator/feature_xlsx-export.md` — authored by backend lead at plan merge per D-C self-broadcast; updated at each coding-session close
+
+Other leads may author their own per-feature memos (e.g., `.claude/agent-memory/meesell-frontend-coordinator/feature_xlsx-export.md`) at their discretion — not required by D-C.
+
+### Session-close memory entries
+
+At each coding-session close, the active agent appends to their own `MEMORY.md`:
+
+```markdown
+## Session mesell-xlsx-export-{group}-session-{N} — YYYY-MM-DD — {one-line outcome}
+
+- Files touched count: {N}
+- Tests added: {N}; tests passing: {N}/{N}
+- Decisions ratified during session: {list of D-numbers or "none"}
+- Blockers carried into next session: {list or "none"}
+- Next-step recommendation: {one sentence}
+```
+
+The session header MUST use this exact format so the next session's resume protocol can locate it by session name.
+
+### Cross-agent broadcast protocol
+
+This sub-section is the **executable plan** for the self-broadcast committed in D-C. Each step is mandatory.
+
+#### Plan PR reviewer list
+
+The PR for this plan (open against `develop`) lists exactly the following GitLab/GitHub reviewers:
+
+- Founder (Mugunthan) — primary approver
+- `meesell-backend-coordinator` (named reviewer / lead reviewer per master plan §5.5; the data PR template is used because data is the most-involved lead, but backend is the heaviest implementation slice)
+- `meesell-frontend-coordinator` (named reviewer)
+- `meesell-data-engineer` (named reviewer + lead reviewer for the data PR template; the most-involved lead per master plan §5.5 reasoning)
+- `meesell-infra-builder` (named reviewer)
+
+The AI lead (`meesell-ai-coordinator`) is NOT a reviewer per the `## Code surfaces` "AI (group: ai)" subsection.
+
+#### Per-lead self-broadcast on plan merge
+
+When this PR merges to `develop`, each named lead reviewer runs the broadcast sequence in their next session. The trigger is "I read the plan PR is merged" — a one-line manual signal (no automation in V1).
+
+**Backend lead broadcast steps:**
+
+1. Open a fresh master-session window and dispatch `meesell-backend-coordinator` with:
+   ```
+   SESSION: mesell-xlsx-export-backend-session-0  (the "session-0" ordinal marks
+            a broadcast-only session, not a specialist dispatch)
+   PROJECT BOUNDARY: /Users/mugunthansrinivasan/Project/mesell
+
+   ## Mission
+   Plan broadcast — xlsx-export FEATURE_PLAN.md merged to develop.
+
+   1. Read docs/plans/features/xlsx-export/FEATURE_PLAN.md (entire doc).
+   2. Append to your MEMORY.md (`.claude/agent-memory/meesell-backend-coordinator/MEMORY.md`):
+      [xlsx-export queued](../../docs/plans/features/xlsx-export/FEATURE_PLAN.md) — V1 Feature 9; awaits catalog-form + image-precheck merge to develop; my role per FEATURE_PLAN.md `## Agent lineup` (backend lead — dispatch services-builder + api-routes-builder + database-builder); 3 specialist dispatches expected.
+   3. Add to docs/status/feature_board_backend.md "Active features" table:
+      | xlsx-export | — | PENDING | — | YYYY-MM-DD | depends on catalog-form + image-precheck | See docs/plans/features/xlsx-export/FEATURE_PLAN.md (FEATURE_PLAN ready; code dispatch gated on upstream features) |
+   4. Commit both files in a single commit:
+      `docs(memory): backend lead broadcast — xlsx-export queued`
+   5. Push (no PR needed — the broadcast commits to develop directly per the master plan §6.5 update protocol, as feature_board updates are not feature work).
+   ```
+2. Confirm in the founder's STATUS_MASTER.md that the broadcast is done.
+
+**Frontend / Data / Infra leads** run the same sequence with their own MEMORY.md + feature_board paths.
+
+**Specialists are NOT dispatched in the broadcast.** Their awareness is deferred to first dispatch — the dispatch templates in `## Dispatch templates` embed the plan path in their mandatory reads.
+
+#### What happens when an upstream feature merges (catalog-form, image-precheck)
+
+When `catalog-form` merges to `develop`, the backend lead's next session can dispatch database-builder (the migration has no upstream code dependency). Services-builder and api-routes-builder still wait for image-precheck to merge.
+
+When `image-precheck` merges to `develop`, the backend lead can dispatch services-builder (which exercises `image.service.get_image_bytes`). At this point all backend dispatches can proceed.
+
+Frontend, data, infra dispatches are NOT blocked by these upstream merges — they can dispatch as soon as the broadcast is done.
+
+#### Plan amendment protocol
+
+If the plan needs to change after it merges (a §14 amendment, a fixture matrix change, a cost-driven scope cut), the protocol is:
+
+1. The change-requesting lead opens a new branch `feature/xlsx-export/plan-amendment-<topic>` off `develop`
+2. They author the amendment as a diff to this FEATURE_PLAN.md
+3. They PR to `develop` with the founder + 3 other leads as reviewers
+4. On merge, each lead re-runs their broadcast (re-reading the plan) and updates the relevant MEMORY.md entry to point at the new revision
+5. The plan's `## Revision history` table gains a row
+
+---
+
+## Dispatch templates
+
+### Common preamble
+
+Every dispatch template below uses this preamble. The lead fills `{N}` with the session ordinal (1 on first dispatch; 2 on context-break resume; etc.) and dispatches via the Agent() tool with `subagent_type` set to the specialist's name.
 
 ```
 SESSION: mesell-xlsx-export-{group}-session-{N}
@@ -352,9 +577,9 @@ feature plan is at:
 
     docs/plans/features/xlsx-export/FEATURE_PLAN.md
 
-Read it first. Your slice is described in §7 of that document under the
-"{specialist-name} dispatch template" subsection. Acceptance criteria, hard
-constraints, files-you-may-touch, and files-you-must-NOT-touch are all there.
+Read it first. Your slice is described in `## Dispatch templates` of that document
+under the "{specialist-name}" subsection. Acceptance criteria, hard constraints,
+files-you-may-touch, and files-you-must-NOT-touch are all there.
 
 ## First action
 1. Read your own agent memory: .claude/agent-memory/{specialist-name}/MEMORY.md
@@ -370,10 +595,6 @@ start entry.
 ```
 
 The per-specialist mandatory reads + acceptance + constraints + files list + report format are below.
-
----
-
-## 7. Dispatch templates
 
 ### 7.1 `meesell-services-builder` (dispatched by `meesell-backend-coordinator`)
 
@@ -1388,7 +1609,7 @@ Three small infra deltas:
 
 ---
 
-## 8. Review + iteration protocol
+## Review + iteration protocol
 
 ### 8.1 Per-specialist lead-review checks
 
@@ -1508,73 +1729,7 @@ When a PR fails review, the lead returns the PR with comments AND a fresh dispat
 
 ---
 
-## 9. Cross-agent broadcast protocol (operationalising D-C)
-
-This section is the **executable plan** for the self-broadcast committed in §2.1 D-C. Each step is mandatory.
-
-### 9.1 Plan PR reviewer list
-
-The PR for this plan (open against `develop`) lists exactly the following GitLab/GitHub reviewers:
-
-- Founder (Mugunthan) — primary approver
-- `meesell-backend-coordinator` (named reviewer / lead reviewer per master plan §5.5; the data PR template is used because data is the most-involved lead, but backend is the heaviest implementation slice)
-- `meesell-frontend-coordinator` (named reviewer)
-- `meesell-data-engineer` (named reviewer + lead reviewer for the data PR template; the most-involved lead per master plan §5.5 reasoning)
-- `meesell-infra-builder` (named reviewer)
-
-The AI lead (`meesell-ai-coordinator`) is NOT a reviewer per §3.5.
-
-### 9.2 Per-lead self-broadcast on plan merge
-
-When this PR merges to `develop`, each named lead reviewer runs the broadcast sequence in their next session. The trigger is "I read the plan PR is merged" — a one-line manual signal (no automation in V1).
-
-**Backend lead broadcast steps:**
-
-1. Open a fresh master-session window and dispatch `meesell-backend-coordinator` with:
-   ```
-   SESSION: mesell-xlsx-export-backend-session-0  (the "session-0" ordinal marks
-            a broadcast-only session, not a specialist dispatch)
-   PROJECT BOUNDARY: /Users/mugunthansrinivasan/Project/mesell
-
-   ## Mission
-   Plan broadcast — xlsx-export FEATURE_PLAN.md merged to develop.
-
-   1. Read docs/plans/features/xlsx-export/FEATURE_PLAN.md (entire doc).
-   2. Append to your MEMORY.md (`.claude/agent-memory/meesell-backend-coordinator/MEMORY.md`):
-      [xlsx-export queued](../../docs/plans/features/xlsx-export/FEATURE_PLAN.md) — V1 Feature 9; awaits catalog-form + image-precheck merge to develop; my role per FEATURE_PLAN.md §4 (backend lead — dispatch services-builder + api-routes-builder + database-builder); 3 specialist dispatches expected.
-   3. Add to docs/status/feature_board_backend.md "Active features" table:
-      | xlsx-export | — | PENDING | — | YYYY-MM-DD | depends on catalog-form + image-precheck | See docs/plans/features/xlsx-export/FEATURE_PLAN.md (FEATURE_PLAN ready; code dispatch gated on upstream features) |
-   4. Commit both files in a single commit:
-      `docs(memory): backend lead broadcast — xlsx-export queued`
-   5. Push (no PR needed — the broadcast commits to develop directly per the master plan §6.5 update protocol, as feature_board updates are not feature work).
-   ```
-2. Confirm in the founder's STATUS_MASTER.md that the broadcast is done.
-
-**Frontend / Data / Infra leads** run the same sequence with their own MEMORY.md + feature_board paths.
-
-**Specialists are NOT dispatched in the broadcast.** Their awareness is deferred to first dispatch — the dispatch templates in §7 embed the plan path in their mandatory reads.
-
-### 9.3 What happens when an upstream feature merges (catalog-form, image-precheck)
-
-When `catalog-form` merges to `develop`, the backend lead's next session can dispatch database-builder (the migration has no upstream code dependency). Services-builder and api-routes-builder still wait for image-precheck to merge.
-
-When `image-precheck` merges to `develop`, the backend lead can dispatch services-builder (which exercises `image.service.get_image_bytes`). At this point all backend dispatches can proceed.
-
-Frontend, data, infra dispatches are NOT blocked by these upstream merges — they can dispatch as soon as the broadcast is done.
-
-### 9.4 Plan amendment protocol
-
-If the plan needs to change after it merges (a §14 amendment, a fixture matrix change, a cost-driven scope cut), the protocol is:
-
-1. The change-requesting lead opens a new branch `feature/xlsx-export/plan-amendment-<topic>` off `develop`
-2. They author the amendment as a diff to this FEATURE_PLAN.md
-3. They PR to `develop` with the founder + 3 other leads as reviewers
-4. On merge, each lead re-runs their §9.2 broadcast (re-reading the plan) and updates the relevant MEMORY.md entry to point at the new revision
-5. The plan's §13 Revision history table gains a row
-
----
-
-## 10. Acceptance gate — when xlsx-export is "done"
+## Acceptance gate
 
 The feature is considered shipped to `develop` (the V1 destination) when **all** of the following are true. The founder verifies before approving the `feature/xlsx-export → develop` PR.
 
@@ -1620,7 +1775,7 @@ The feature is considered shipped to `develop` (the V1 destination) when **all**
 
 ---
 
-## 11. Risk register
+## Risk register
 
 ### 11.1 Risk #1 — Meesho changes a category template mid-V1 invalidating a fixture
 
@@ -1689,23 +1844,9 @@ The feature is considered shipped to `develop` (the V1 destination) when **all**
 
 ---
 
-## 12. Glossary
-
-| Term | Meaning |
-|---|---|
-| 9-step pipeline | The Export Adapter's ordered transformation chain per `MVP_ARCH §5.5.4`: schema resolve → strategy select → row build → strategy apply → enum translate (Layer 3 guardrail) → column reorder → alias restore → XLSX write → round-trip validate. |
-| ComplianceStrategy | The §14.F Strategy pattern — V1 has 2 concrete classes: `StandardComplianceStrategy` (3,771 templates, 9 fields pass-through) + `CollapsedComplianceStrategy` (Eye-Serum leaf 12378, 9 fields → 3 Details columns). |
-| Layer 3 guardrail | The deterministic safety net at step 5 of the pipeline; dictionary lookup against `field_enum_values.enum_entries` rejects any canonical enum value not registered. Independent of AI. |
-| Round-trip validation | Step 9 — re-parse the just-written XLSX with openpyxl + canonical re-map; assert equivalence with the input snapshot. Holds the line on correctness even if upstream steps drift. |
-| 15-fixture matrix | The §14.K golden coverage matrix — 15 JSON fixtures testing per-category compliance + edge cases (typo restore, large dropdowns, brand patterns, is_advanced, empty optional, weight w/ unit, multi-line, special chars). |
-| M10 boundary | Philosophy M10 — `meesho_column_header`, `meesho_column_index`, `enum_codes_map` exist ONLY inside `app/modules/export/`. The §19 CI linter enforces. |
-| FEATURE_XLSX_EXPORT_ENABLED | The feature flag per master plan §3.2. Dev=true; Staging=false until all 15 fixtures green + manual Meesho upload accepted. |
-| Self-broadcast | The §2.1 D-C protocol — each lead self-updates their MEMORY.md + feature_board after the plan PR merges. No cross-writes to other agent memories (CLAUDE.md rule #4). |
-
----
-
-## 13. Revision history
+## Revision history
 
 | Version | Date | Author | Change |
 |---|---|---|---|
-| 0.1 | 2026-06-10 | master Director session (`mesell-xlsx-export-planning-session-1`) | Initial draft. 6 decisions locked (D-A, D-B, D-C, D1, D2, D3). 8 dispatch templates. 15-fixture matrix from §14.K. Architecture corrections vs dispatch prompt documented in §1.1. |
+| v1 | 2026-06-10 | master Director session (`mesell-xlsx-export-planning-session-1`) | Initial draft. 6 decisions locked (D-A, D-B, D-C, D1, D2, D3). 8 dispatch templates. 15-fixture matrix from §14.K. Architecture corrections vs dispatch prompt documented in pre-Decisions preamble. |
+| v2 | 2026-06-10 | master Director session (`mesell-xlsx-export-amendment-session-1`) | Canonical pattern v2 conformance. Heading numeric prefixes stripped + parentheticals removed. `## Agent lineup` moved to canonical slot 2 (was slot 4). `## Branch setup` (slot 5) + `## Memory protocol` (slot 6) authored fresh. `## 6 Common dispatch template preamble` demoted to `### Common preamble` inside `## Dispatch templates`. `## 9 Cross-agent broadcast protocol` relocated as `### Cross-agent broadcast protocol` inside `## Memory protocol`. `## 12 Glossary` demoted to `### Glossary` inside `## Documentation deliverables`. Original `## 1 Status preamble` + `### 1.1 Pre-flight reality check` preserved as preamble prose before `## Decisions`. Content body preserved verbatim per amendment dispatch Case B. |
