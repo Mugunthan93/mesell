@@ -47,6 +47,18 @@ Auth is prerequisite zero. A feature flag that disables auth would disable the e
 
 No parallel UI stub work for sibling features while auth-otp is in flight. Every other feature branch (`feature/smart-picker`, `feature/catalog-form`, etc.) is gated behind auth-otp's merge to develop. The founder opens the next feature branch only after confirming `develop` carries working auth.
 
+### D4 — Agent lineup (confirmed 2026-06-10)
+
+**Answer:** 3 leads + 7 specialists selected by founder.
+
+| Track | Lead | Specialists |
+|-------|------|-------------|
+| Backend | `meesell-backend-coordinator` | `meesell-database-builder`, `meesell-services-builder`, `meesell-auth-builder`, `meesell-api-routes-builder` |
+| Frontend | `meesell-frontend-coordinator` | `meesell-angular-service-builder`, `meesell-angular-component-builder`, `meesell-angular-ui-styler` |
+| Infra | `meesell-infra-builder` (standalone) | — |
+
+**Addition vs original plan:** `meesell-angular-ui-styler` added by founder — handles Tailwind layout, responsive breakpoints, and mobile-first styling for the 3 auth components as a separate pass after component-builder completes. AI track and Data track remain empty (iam has no AI call sites).
+
 ---
 
 ## Agent lineup
@@ -59,6 +71,7 @@ No parallel UI stub work for sibling features while auth-otp is in flight. Every
 | | `meesell-api-routes-builder` | `modules/iam/router.py` · `schemas.py` · amends `main.py` |
 | `meesell-frontend-coordinator` | `meesell-angular-service-builder` | `core/services/auth.service.ts` · `auth.interceptor.ts` (MODIFY) · `refresh.interceptor.ts` (NEW) · `auth.guard.ts` · amends `app.routes.ts` + `app.config.ts` |
 | | `meesell-angular-component-builder` | `features/auth/login/` · `features/auth/signup/` · `features/auth/otp-verify/` (3 standalone components + 1 spec) |
+| | `meesell-angular-ui-styler` | `features/auth/login/login.component.scss` · `features/auth/signup/signup.component.scss` · `features/auth/otp-verify/otp-verify.component.scss` — Tailwind mobile-first layout, spacing, responsive, a11y polish |
 | `meesell-infra-builder` (standalone) | — | K8s deployment env-var additions (ACCESS/REFRESH TTLs + CORS); verify all 4 secrets are wired; `docs/runbooks/auth-secret-rotation.md` |
 
 **AI track:** NO work (auth has no AI call sites — `iam` is the all-`✗` module per `BACKEND_ARCHITECTURE.md §2.D` matrix).
@@ -84,6 +97,10 @@ PHASE D (after C complete, or parallel with C):
   meesell-angular-service-builder  → AuthService + interceptors + guard + routes
   meesell-angular-component-builder → Login/Signup/OtpVerify components
                                        (after service-builder so AuthService interface is stable)
+
+PHASE E (after component-builder complete):
+  meesell-angular-ui-styler        → Tailwind styling for all 3 auth components
+                                       (components must exist before ui-styler can reference selectors + HTML structure)
 ```
 
 ---
@@ -144,6 +161,9 @@ PHASE D (after C complete, or parallel with C):
 | 12 | `frontend/src/app/app.routes.ts` | MODIFY | `meesell-angular-service-builder` |
 | 13 | `frontend/src/app/app.config.ts` | MODIFY | `meesell-angular-service-builder` |
 | 14 | `frontend/src/app/core/services/auth.service.spec.ts` | NEW | `meesell-angular-service-builder` |
+| 15 | `frontend/src/app/features/auth/login/login.component.scss` | NEW | `meesell-angular-ui-styler` |
+| 16 | `frontend/src/app/features/auth/signup/signup.component.scss` | NEW | `meesell-angular-ui-styler` |
+| 17 | `frontend/src/app/features/auth/otp-verify/otp-verify.component.scss` | NEW | `meesell-angular-ui-styler` |
 
 **Notes on `auth.interceptor.ts` (MODIFY):**
 Rename conceptually to JWT Bearer interceptor (file name `auth.interceptor.ts` retained — matches Wave 2B scaffold). Reads `AuthService.token()` signal; if non-null, clones request with `Authorization: Bearer <token>`. Sets `withCredentials: true` ONLY on requests whose URL contains `/api/v1/auth/` (enables cookie send on refresh/logout). All other requests: `withCredentials: false`.
@@ -959,6 +979,111 @@ Blockers / notes:
 
 ---
 
+### Template H — `meesell-angular-ui-styler`
+
+**Dispatched by:** `meesell-frontend-coordinator`
+**Phase:** E (after angular-component-builder complete — components must exist before styling)
+**Branch:** `feature/auth-otp/frontend`
+
+```
+PROJECT BOUNDARY: You are working on project "mesell" at /Users/mugunthansrinivasan/Project/mesell.
+DO NOT read, write, or reference files outside this path.
+
+SESSION: mesell-auth-otp-frontend-session-1
+Lead: meesell-frontend-coordinator
+
+## Your mission
+Apply Tailwind CSS mobile-first styling to the 3 auth page components (Login, Signup, OtpVerify).
+The components are already built by angular-component-builder — your job is STYLING ONLY.
+Do NOT modify TypeScript logic, template structure, or reactive form setup.
+
+## Mandatory reads (in this order)
+1. docs/FRONTEND_ARCHITECTURE.md (Layer 1 design tokens; Layer 2 mee-* component palette; Tailwind 4 config; non-negotiable UI rules)
+2. docs/V1_FEATURE_SPEC.md §F1 (auth user journey — understand the screens before styling them)
+3. frontend/src/app/features/auth/ (READ the existing component .html files before writing any SCSS — understand the HTML structure you are styling)
+4. .claude/agent-memory/meesell-angular-ui-styler/MEMORY.md
+
+## Acceptance criteria
+- [ ] `frontend/src/app/features/auth/login/login.component.scss` created:
+  - Centered card layout (max-width 400px on tablet+; full-width on mobile 360px)
+  - Phone input row with "+91" prefix clearly visible
+  - Submit button full-width, proper spacing
+  - Error state visually distinct (uses design token for error colour — NOT hard-coded hex)
+- [ ] `frontend/src/app/features/auth/signup/signup.component.scss` created:
+  - Mirrors login card layout
+  - Optional email field visually de-emphasised vs phone field
+  - "Already have an account?" link correctly spaced at bottom
+- [ ] `frontend/src/app/features/auth/otp-verify/otp-verify.component.scss` created:
+  - OTP digit boxes evenly spaced, readable on 360px
+  - Countdown timer text de-emphasised (smaller, muted colour)
+  - Resend link visually disabled (greyed) until countdown reaches 0
+  - Error states (rate-limit, expired) use alert colour from design tokens
+- [ ] All 3 components:
+  - Mobile-first: designed at 360px, tested at 768px and 1280px
+  - NO hard-coded hex colours — use Tailwind design tokens or CSS custom properties from Layer 1
+  - WCAG AA contrast on all text and interactive elements
+  - Tailwind classes preferred over custom SCSS; custom SCSS only for structural overrides Tailwind cannot express
+- [ ] `pnpm build` clean after styling changes (< 90s)
+- [ ] Screenshots at 360px + 1280px for all 3 components included in PR body
+
+## Hard constraints
+- Styling ONLY — do NOT modify `.component.ts`, `.component.html`, or `.component.spec.ts` files
+- No direct PrimeNG CSS overrides (e.g., no `.p-inputtext { ... }`) — override only via `mee-*` wrapper selectors or Tailwind utilities on the host element
+- No `!important` in SCSS — if specificity is a problem, fix the selector chain, don't override it
+- `MeeAuthLayoutComponent` provides the outer card shell — do NOT duplicate card styling in component SCSS (it lives in the layout layer)
+- All spacing via Tailwind scale (4, 8, 12, 16, 24, 32 px) — NOT arbitrary values like `p-[13px]`
+- OnPush components: avoid CSS that relies on DOM state not reflected in template bindings
+
+## Files you MAY touch
+- `frontend/src/app/features/auth/login/login.component.scss` (NEW)
+- `frontend/src/app/features/auth/signup/signup.component.scss` (NEW)
+- `frontend/src/app/features/auth/otp-verify/otp-verify.component.scss` (NEW)
+
+## Files you must NOT touch
+- `frontend/src/app/features/auth/**/*.ts` (owned by angular-component-builder)
+- `frontend/src/app/features/auth/**/*.html` (owned by angular-component-builder)
+- `frontend/src/app/features/auth/**/*.spec.ts` (owned by angular-component-builder)
+- `frontend/src/app/core/` (owned by angular-service-builder)
+- `frontend/src/app/ui/` (Layer 2 — read-only)
+- `frontend/src/app/layouts/` (Layer 3 — read-only)
+- `frontend/src/app/design-system/` (Layer 1 — read-only)
+- Any backend or infra files
+
+## Final report format
+```
+REPORT: meesell-angular-ui-styler
+Session: mesell-auth-otp-frontend-session-1
+Status: COMPLETE | BLOCKED | PARTIAL
+
+Files created:
+- frontend/src/app/features/auth/login/login.component.scss
+- frontend/src/app/features/auth/signup/signup.component.scss
+- frontend/src/app/features/auth/otp-verify/otp-verify.component.scss
+
+Design decisions:
+- Card layout approach: <describe>
+- Colour tokens used: <list design token names>
+- Custom SCSS (non-Tailwind): <describe any, or NONE>
+
+Responsive: designed at 360px | tested at 768px | tested at 1280px
+
+Build check: pnpm build succeeded in <Xs> (target < 90s)
+
+Screenshots:
+- Login 360px: attached
+- Login 1280px: attached
+- Signup 360px: attached
+- OtpVerify 360px: attached
+
+WCAG AA contrast: confirmed | issues found: <list>
+
+Blockers / notes:
+<none | specific issue>
+```
+```
+
+---
+
 ## Review + iteration protocol
 
 ### Backend group PR (`feature/auth-otp/backend` → `feature/auth-otp`)
@@ -1022,13 +1147,17 @@ This is iteration {M} of 3. If the fix is not applied by session-3, escalate to 
 | 8 | Screenshots at 360px and 1280px attached for Login, Signup, OtpVerify | present | Missing — return to component-builder |
 | 9 | OtpVerify reads phone from route query params — NOT from localStorage | confirmed | localStorage read — re-dispatch component-builder |
 | 10 | Refresh interceptor does NOT intercept 401s from `/api/v1/auth/` routes | confirmed | Infinite refresh loop risk — re-dispatch service-builder |
+| 11 | No hard-coded hex colours in `*.component.scss` — design tokens / Tailwind only | confirmed | Hard-coded hex found — re-dispatch ui-styler citing FRONTEND_ARCHITECTURE.md Layer 1 |
+| 12 | No direct PrimeNG CSS class overrides in component SCSS (e.g. `.p-inputtext`) | confirmed | Override found — re-dispatch ui-styler; fix via mee-* host selector |
+| 13 | All 3 components legible at 360px (screenshots in PR body) | present | Missing screenshots — return PR to ui-styler |
+| 14 | `pnpm build` clean after SCSS additions | < 90s | Build broke or ≥ 90s — stop, investigate before re-dispatch |
 
 **Re-dispatch preamble template (frontend):**
 
 ```
 PREVIOUS RUN FAILED — {check description}
 
-[Paste original Template E or F here]
+[Paste original Template E, F, or H here — whichever specialist failed]
 
 ## Correction for this re-dispatch
 Previous session failed check #{N}: {specific failure}.
