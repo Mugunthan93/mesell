@@ -1,0 +1,12 @@
+feature: "smart-picker"
+session: "mesell-smart-picker-amendment-session-1"
+worktree: "/tmp/mesell-wt/smart-picker"
+branch: "feature/smart-picker/planning"
+status: "IN_REVIEW"
+last_updated: "2026-06-10T12:00:00Z"
+feature_plan_path: "docs/plans/features/smart-picker/FEATURE_PLAN.md"
+feature_plan_line_count: 1039
+pr_number: 17
+pr_url: "https://github.com/Mugunthan93/mesell/pull/17"
+outstanding_founder_decisions: []
+notes: "Amendment session complete. PR open for founder review."
