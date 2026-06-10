@@ -19,11 +19,15 @@
     "@angular/platform-browser": "^21.2.0",
     "@angular/router": "^21.2.0",
     "@primeuix/themes": "^2.0.3",
+    "@softarc/native-federation-node": "^3.3.4",
+    "es-module-shims": "^1.5.12",
     "primeng": "^21.1.9",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
   },
   "devDependencies": {
+    "@angular-architects/native-federation": "^21.2.3",
+    "@angular-devkit/build-angular": "^21.2.14",
     "@angular/build": "^21.2.14",
     "@angular/cli": "^21.2.14",
     "@angular/compiler-cli": "^21.2.0",

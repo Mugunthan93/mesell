@@ -2,8 +2,8 @@ import { Component, Input } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { LoadingSkeletonComponent } from './loading-skeleton.component';
-import { MeeSkeletonComponent } from '../../ui';
-import type { MeeSkeletonVariant } from '../../ui';
+import { MeeSkeletonComponent } from '@mesell/ui-kit';
+import type { MeeSkeletonVariant } from '@mesell/ui-kit';
 
 // Stub mee-skeleton to avoid PrimeNG in tests — use @Input to avoid NG8109 signal warnings
 @Component({

@@ -25,12 +25,12 @@ import {
   MeeSelectComponent,
   MeeTextareaComponent,
   MeeToastService,
-} from '../../../ui';
+} from '@mesell/ui-kit';
 import {
   LoadingSkeletonComponent,
   PageHeaderComponent,
   StatusBadgeComponent,
-} from '../../../shared';
+} from '@mesell/composites';
 
 import type { FieldGroup, FieldSchema } from '../models/field-schema.model';
 import { CatalogFormApiService } from '../services/catalog-form-api.service';

@@ -12,8 +12,8 @@ import {
   MeeButtonComponent,
   MeeCardComponent,
   MeeSkeletonComponent,
-} from '../../../ui';
-import { PageHeaderComponent } from '../../../shared';
+} from '@mesell/ui-kit';
+import { PageHeaderComponent } from '@mesell/composites';
 
 import {
   PreviewData,

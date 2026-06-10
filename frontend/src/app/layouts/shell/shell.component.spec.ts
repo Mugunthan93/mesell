@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { Component } from '@angular/core';
 import { ShellComponent } from './shell.component';
-import { AuthService } from '../../core/services/auth.service';
+import { AuthService } from '@mesell/core';
 
 // Minimal stubs for PrimeNG components to avoid jsdom rendering issues
 @Component({ selector: 'p-drawer', standalone: true, template: '<ng-content />' })

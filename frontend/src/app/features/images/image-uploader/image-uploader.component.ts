@@ -16,14 +16,14 @@ import {
   MeeCardComponent,
   MeeFileUploadComponent,
   MeeProgressBarComponent,
-} from '../../../ui';
-import type { MeeFileUploadEvent } from '../../../ui';
+} from '@mesell/ui-kit';
+import type { MeeFileUploadEvent } from '@mesell/ui-kit';
 
 import {
   PageHeaderComponent,
   StatusBadgeComponent,
   LoadingSkeletonComponent,
-} from '../../../shared';
+} from '@mesell/composites';
 
 import {
   buildPrecheckItems,

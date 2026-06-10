@@ -3,9 +3,9 @@ import {
 } from '@angular/core';
 
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { AuthService } from '../../core/services/auth.service';
-import { MeeDrawerComponent, MeeMenuComponent } from '../../ui';
-import type { MeeMenuItem } from '../../ui';
+import { AuthService } from '@mesell/core';
+import { MeeDrawerComponent, MeeMenuComponent } from '@mesell/ui-kit';
+import type { MeeMenuItem } from '@mesell/ui-kit';
 
 @Component({
   selector: 'mee-shell',

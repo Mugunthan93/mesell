@@ -5,7 +5,7 @@ import {
   input,
   output,
 } from '@angular/core';
-import { MeeButtonComponent } from '../../ui';
+import { MeeButtonComponent } from '@mesell/ui-kit';
 
 @Component({
   selector: 'mee-empty-state',
