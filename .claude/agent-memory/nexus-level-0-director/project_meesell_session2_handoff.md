@@ -60,6 +60,6 @@ metadata:
 
 ## Frontend Gate 5 reminder
 
-Waves 3-5 work is uncommitted. Before committing, founder should run `pnpm start` and visually check all 11 routes at 360px + 1280px (Gate 5 visual review).
+~~Waves 3-5 work is uncommitted~~ **STALE — committed 2026-06-10 as `7001b44` (Angular 21 + PrimeNG 21 migration).** Gate 5 visual review (all 11 routes at 360px + 1280px via `pnpm start`) may still be pending founder eyes — verify before Wave 6.
 
 **Why**: Preserve this pattern — all Wave 5 component tests use pure-function `.model.ts` extraction (no TestBed) because Angular 21 + Vitest + PrimeNG 21 TestBed crashes. Fix is a meesell-angular-ui-styler Wave 6 infra task.
