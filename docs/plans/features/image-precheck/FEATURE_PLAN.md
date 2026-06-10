@@ -142,172 +142,6 @@ PHASE E (after angular-service-builder complete):
 
 ---
 
-## Branch setup
-
-> **When to create:** After PR for this `feature/image-precheck/planning` branch merges to `develop` AND the founder confirms `feature/catalog-form` has merged to `develop` (per D3 sequencing). Until both preconditions met, the coding branches DO NOT exist.
-
-### Branches to create (all cut from `develop`, after `catalog-form` merges)
-
-| Branch | Cut from | Purpose | Who commits here |
-|--------|----------|---------|-----------------|
-| `feature/image-precheck` | `develop` | Integration branch — sub-branches merge into here; final PR to `develop` | Only merge commits from sub-branches |
-| `feature/image-precheck/backend` | `feature/image-precheck` | All backend specialist work | `meesell-database-builder`, `meesell-services-builder`, `meesell-api-routes-builder` |
-| `feature/image-precheck/ai` | `feature/image-precheck` | All AI specialist work | `meesell-prompt-engineer`, `meesell-image-precheck-builder` |
-| `feature/image-precheck/frontend` | `feature/image-precheck` | All frontend specialist work | `meesell-angular-service-builder`, `meesell-angular-component-builder` |
-| `feature/image-precheck/infra` | `feature/image-precheck` | All infra work (standalone) | `meesell-infra-builder` |
-
-### Creation commands (run by founder after this planning PR merges + catalog-form has merged)
-
-```bash
-# Ensure develop is current
-git checkout develop && git pull origin develop
-
-# Create integration branch
-git checkout -b feature/image-precheck
-git push -u origin feature/image-precheck
-
-# Create 4 group branches from the integration branch
-git checkout -b feature/image-precheck/backend feature/image-precheck
-git push -u origin feature/image-precheck/backend
-
-git checkout -b feature/image-precheck/ai feature/image-precheck
-git push -u origin feature/image-precheck/ai
-
-git checkout -b feature/image-precheck/frontend feature/image-precheck
-git push -u origin feature/image-precheck/frontend
-
-git checkout -b feature/image-precheck/infra feature/image-precheck
-git push -u origin feature/image-precheck/infra
-
-# Return to integration branch
-git checkout feature/image-precheck
-```
-
-### PR flow (coding stage)
-
-```
-feature/image-precheck/backend  ──┐
-feature/image-precheck/ai       ──┤
-feature/image-precheck/frontend ──┼──► feature/image-precheck ──► develop
-feature/image-precheck/infra    ──┘
-```
-
-- Each group branch opens a PR to `feature/image-precheck` (NOT directly to `develop`)
-- `feature/image-precheck/backend` PR reviewed and merged by `meesell-backend-coordinator`
-- `feature/image-precheck/ai` PR reviewed and merged by `meesell-ai-coordinator`
-- `feature/image-precheck/frontend` PR reviewed and merged by `meesell-frontend-coordinator`
-- `feature/image-precheck/infra` PR self-reviewed by `meesell-infra-builder`, then merged
-- Integration PR (`feature/image-precheck` → `develop`) opened only after **all 4 group PRs** are merged; founder does final review per repo MASTER §2.2
-
-### PR templates
-
-| PR | Template file |
-|----|--------------|
-| `feature/image-precheck/backend` → `feature/image-precheck` | `.github/PULL_REQUEST_TEMPLATE/backend.md` |
-| `feature/image-precheck/ai` → `feature/image-precheck` | `.github/PULL_REQUEST_TEMPLATE/ai.md` |
-| `feature/image-precheck/frontend` → `feature/image-precheck` | `.github/PULL_REQUEST_TEMPLATE/frontend.md` |
-| `feature/image-precheck/infra` → `feature/image-precheck` | `.github/PULL_REQUEST_TEMPLATE/infra.md` |
-| `feature/image-precheck` → `develop` | `.github/PULL_REQUEST_TEMPLATE/feature.md` (NEW — to be drafted in repo MASTER §9.2 sub-plan; until then use ai.md as fallback per dispatch instruction "AI is the most-involved lead — image-precheck-builder + prompt-engineer + the ≥85% accuracy gate are the primary acceptance signal") |
-
-### Rebase discipline (per repo MASTER §1.4 rule 2)
-
-When ANY of the 4 group PRs merges to `feature/image-precheck`, the other 3 in-flight branches **rebase** onto the new tip (never merge). Specifically:
-
-```bash
-# Example: ai branch merged first. backend rebases:
-git checkout feature/image-precheck/backend
-git fetch origin
-git rebase origin/feature/image-precheck
-git push --force-with-lease origin feature/image-precheck/backend
-```
-
-The lead supervises this rebase to avoid losing in-flight work. The `--force-with-lease` flag is mandatory (NOT `--force`) so a concurrent specialist push isn't silently overwritten.
-
-### Cleanup (post-merge)
-
-- `feature/image-precheck/{group}` branches: deleted within 24h of each group's PR merge (GitHub auto-delete enabled).
-- `feature/image-precheck`: deleted within 24h of merging to `develop`.
-
----
-
-## Memory namespace convention
-
-This plan installs a **per-feature memory namespace** convention to solve the multi-feature-in-flight problem: when a specialist (e.g. `meesell-services-builder`) works on `image-precheck` AND `ai-autofill` in parallel, its memory must not become a tangle of "which observation belongs to which feature."
-
-### File naming
-
-Every agent that touches `image-precheck` writes feature-scoped notes to files prefixed `feature_image_precheck_*.md` inside its own memory directory at `.claude/agent-memory/meesell-<role>/`. Examples:
-
-```
-.claude/agent-memory/meesell-services-builder/
-├── MEMORY.md                                          ← index (must add "Features in flight" section)
-├── feature_image_precheck_celery_task_design.md       ← scoped to image-precheck
-├── feature_image_precheck_gcs_path_lock.md            ← scoped to image-precheck
-├── feature_image_precheck_session_1_handoff.md        ← scoped to image-precheck
-├── feature_ai_autofill_session_1_handoff.md           ← scoped to ai-autofill (future)
-└── reference_*.md / project_*.md                      ← cross-feature topics (existing pre-feature convention)
-```
-
-### MEMORY.md index addition (one-time, when first feature work starts)
-
-Every agent adds a new section to its `MEMORY.md`:
-
-```markdown
-## Features in flight
-
-| Feature slug | Status | Last entry | Files |
-|---|---|---|---|
-| image-precheck | IN PROGRESS | YYYY-MM-DD | feature_image_precheck_*.md |
-| ai-autofill | PENDING | — | — |
-| smart-picker | MERGED YYYY-MM-DD | YYYY-MM-DD | feature_smart_picker_session_*.md (kept for 14d) |
-```
-
-This is the per-feature index. The existing `MEMORY.md (Index)` section at the top remains the cross-feature topic index. Both coexist.
-
-### Per-feature first-action protocol
-
-Every dispatch template in `## Dispatch templates` includes this line in its "Mandatory reads" block:
-
-```bash
-ls .claude/agent-memory/meesell-<my-role>/feature_image_precheck_*.md 2>/dev/null
-```
-
-The specialist runs this command first, then reads every file found, BEFORE reading the broader spec docs. This is the per-feature context-resume protocol — recovering "what did I (or my previous session) leave undone on THIS feature."
-
-### Session-end memory write rule
-
-Every specialist must, before declaring `Status: COMPLETE`:
-
-1. Append a session-close note to `feature_image_precheck_session_{N}_handoff.md`. Format:
-   ```markdown
-   ## Session mesell-image-precheck-{group}-session-{N} — YYYY-MM-DD
-   Files touched: <list>
-   Locked decisions: <list>
-   Open items: <list — for next session or other specialist>
-   Hand-off to: <other specialist or lead>
-   ```
-2. Update the `## Features in flight` table in `MEMORY.md` — change Last entry date + Files list.
-
-The lead's merge gate REJECTS PRs where the specialist's memory write is missing (founder visibility into specialist discipline). Specialists report `Memory update: DONE | SKIPPED (reason)` in the Final Report — SKIPPED requires a written reason in the PR comments.
-
-### Lead pre-seeding (before any specialist dispatch)
-
-Each of the 4 leads, BEFORE dispatching their first specialist on `image-precheck`, writes one bootstrap file to their own memory:
-
-```
-.claude/agent-memory/meesell-<lead-role>/feature_image_precheck_lead_bootstrap.md
-```
-
-Contents:
-- Pointer to this `FEATURE_PLAN.md` (path + commit SHA at planning lock time)
-- The dispatch order from `## Agent lineup → Dispatch order (critical path)` above (lead's group only)
-- The branch creation commands from `## Branch setup` above (the lead's own group branch)
-- The merge-gate checklist for the lead's group (from `## Review + iteration protocol` below)
-
-This is the lead's "what am I responsible for on this feature" cheat sheet — readable in 60 seconds at the start of every session.
-
----
-
 ## Code surfaces
 
 Every file the feature creates or modifies, grouped by domain. Status: NEW | MODIFY.
@@ -418,6 +252,193 @@ These must exist alongside the merged code. Each is an acceptance gate item the 
 | 11 | **ai_eval CI gate** extended in `.github/workflows/ci.yml` to include `pytest tests/eval/watermark/` and `pytest tests/eval/precheck_smoke/` in the nightly job | `meesell-infra-builder` | `feature/image-precheck/infra` |
 | 12 | **V1_FEATURE_SPEC.md §F5 implementation stamp** after develop merge (deliverable #2 in Docs code surfaces table above) | `meesell-backend-coordinator` | Post-develop-merge follow-up |
 | 13 | **BACKEND_ARCHITECTURE.md §11 sentinel** after develop merge (deliverable #3 in Docs code surfaces table above) | `meesell-backend-coordinator` | Post-develop-merge follow-up |
+
+---
+
+## Branch setup
+
+> **When to create:** After PR for this `feature/image-precheck/planning` branch merges to `develop` AND the founder confirms `feature/catalog-form` has merged to `develop` (per D3 sequencing). Until both preconditions met, the coding branches DO NOT exist.
+
+### Branches to create (all cut from `develop`, after `catalog-form` merges)
+
+| Branch | Cut from | Purpose | Who commits here |
+|--------|----------|---------|-----------------|
+| `feature/image-precheck` | `develop` | Integration branch — sub-branches merge into here; final PR to `develop` | Only merge commits from sub-branches |
+| `feature/image-precheck/backend` | `feature/image-precheck` | All backend specialist work | `meesell-database-builder`, `meesell-services-builder`, `meesell-api-routes-builder` |
+| `feature/image-precheck/ai` | `feature/image-precheck` | All AI specialist work | `meesell-prompt-engineer`, `meesell-image-precheck-builder` |
+| `feature/image-precheck/frontend` | `feature/image-precheck` | All frontend specialist work | `meesell-angular-service-builder`, `meesell-angular-component-builder` |
+| `feature/image-precheck/infra` | `feature/image-precheck` | All infra work (standalone) | `meesell-infra-builder` |
+
+### Creation commands (run by founder after this planning PR merges + catalog-form has merged)
+
+```bash
+# Ensure develop is current
+git checkout develop && git pull origin develop
+
+# Create integration branch
+git checkout -b feature/image-precheck
+git push -u origin feature/image-precheck
+
+# Create 4 group branches from the integration branch
+git checkout -b feature/image-precheck/backend feature/image-precheck
+git push -u origin feature/image-precheck/backend
+
+git checkout -b feature/image-precheck/ai feature/image-precheck
+git push -u origin feature/image-precheck/ai
+
+git checkout -b feature/image-precheck/frontend feature/image-precheck
+git push -u origin feature/image-precheck/frontend
+
+git checkout -b feature/image-precheck/infra feature/image-precheck
+git push -u origin feature/image-precheck/infra
+
+# Return to integration branch
+git checkout feature/image-precheck
+```
+
+### PR flow (coding stage)
+
+```
+feature/image-precheck/backend  ──┐
+feature/image-precheck/ai       ──┤
+feature/image-precheck/frontend ──┼──► feature/image-precheck ──► develop
+feature/image-precheck/infra    ──┘
+```
+
+- Each group branch opens a PR to `feature/image-precheck` (NOT directly to `develop`)
+- `feature/image-precheck/backend` PR reviewed and merged by `meesell-backend-coordinator`
+- `feature/image-precheck/ai` PR reviewed and merged by `meesell-ai-coordinator`
+- `feature/image-precheck/frontend` PR reviewed and merged by `meesell-frontend-coordinator`
+- `feature/image-precheck/infra` PR self-reviewed by `meesell-infra-builder`, then merged
+- Integration PR (`feature/image-precheck` → `develop`) opened only after **all 4 group PRs** are merged; founder does final review per repo MASTER §2.2
+
+### PR templates
+
+| PR | Template file |
+|----|--------------|
+| `feature/image-precheck/backend` → `feature/image-precheck` | `.github/PULL_REQUEST_TEMPLATE/backend.md` |
+| `feature/image-precheck/ai` → `feature/image-precheck` | `.github/PULL_REQUEST_TEMPLATE/ai.md` |
+| `feature/image-precheck/frontend` → `feature/image-precheck` | `.github/PULL_REQUEST_TEMPLATE/frontend.md` |
+| `feature/image-precheck/infra` → `feature/image-precheck` | `.github/PULL_REQUEST_TEMPLATE/infra.md` |
+| `feature/image-precheck` → `develop` | `.github/PULL_REQUEST_TEMPLATE/feature.md` (NEW — to be drafted in repo MASTER §9.2 sub-plan; until then use ai.md as fallback per dispatch instruction "AI is the most-involved lead — image-precheck-builder + prompt-engineer + the ≥85% accuracy gate are the primary acceptance signal") |
+
+### Rebase strategy (per repo MASTER §1.4 rule 2)
+
+When ANY of the 4 group PRs merges to `feature/image-precheck`, the other 3 in-flight branches **rebase** onto the new tip (never merge). Specifically:
+
+```bash
+# Example: ai branch merged first. backend rebases:
+git checkout feature/image-precheck/backend
+git fetch origin
+git rebase origin/feature/image-precheck
+git push --force-with-lease origin feature/image-precheck/backend
+```
+
+The lead supervises this rebase to avoid losing in-flight work. The `--force-with-lease` flag is mandatory (NOT `--force`) so a concurrent specialist push isn't silently overwritten.
+
+### Cleanup (post-merge)
+
+- `feature/image-precheck/{group}` branches: deleted within 24h of each group's PR merge (GitHub auto-delete enabled).
+- `feature/image-precheck`: deleted within 24h of merging to `develop`.
+
+---
+
+## Memory protocol
+
+This plan installs a **per-feature memory namespace** convention to solve the multi-feature-in-flight problem: when a specialist (e.g. `meesell-services-builder`) works on `image-precheck` AND `ai-autofill` in parallel, its memory must not become a tangle of "which observation belongs to which feature."
+
+### Memories the coding-session leads MUST read at session start
+
+Every coding session for `image-precheck` opens with the lead reading these `MEMORY.md` files in order:
+
+1. `.claude/agent-memory/meesell-ai-coordinator/MEMORY.md` — most-involved lead per Agent lineup; carries the watermark-cost decision and the §F5 D1/D2/D3 ratification
+2. `.claude/agent-memory/meesell-backend-coordinator/MEMORY.md` — owns §11 image module lock, the 4-slot CHECK constraint, the §11.A seam between services-builder and image-precheck-builder
+3. `.claude/agent-memory/meesell-frontend-coordinator/MEMORY.md` — owns the Layer 4 path correction `features/images/` (NOT `pages/image-uploader/`) and the `featureFlagGuard` integration
+4. `.claude/agent-memory/meesell-infra-builder/MEMORY.md` — owns the GCS bucket layout, IAM scope, K8s manifest contracts, runbook location
+
+Each specialist additionally reads its OWN memory before any task per the `meesell-*` agent spec mandatory-first-action protocol.
+
+### Cross-feature memos
+
+This feature consumes a contract from a prior feature: `catalog.service.assert_product_ownership(product_id, user_id)` from `feature/catalog-form`. The consumer is `meesell-services-builder` (image module). The consuming agent reads the producer's session-close memo at:
+
+- `.claude/agent-memory/meesell-services-builder/feature_catalog_form_session_*_handoff.md` (whichever the latest session is)
+
+If this memo is missing or stale (older than 14 days), the lead opens an inter-lead request via `feature_board_backend.md` "Inter-lead requests open" pointing at the producer.
+
+### File naming
+
+Every agent that touches `image-precheck` writes feature-scoped notes to files prefixed `feature_image_precheck_*.md` inside its own memory directory at `.claude/agent-memory/meesell-<role>/`. Examples:
+
+```
+.claude/agent-memory/meesell-services-builder/
+├── MEMORY.md                                          ← index (must add "Features in flight" section)
+├── feature_image_precheck_celery_task_design.md       ← scoped to image-precheck
+├── feature_image_precheck_gcs_path_lock.md            ← scoped to image-precheck
+├── feature_image_precheck_session_1_handoff.md        ← scoped to image-precheck
+├── feature_ai_autofill_session_1_handoff.md           ← scoped to ai-autofill (future)
+└── reference_*.md / project_*.md                      ← cross-feature topics (existing pre-feature convention)
+```
+
+The single convention picked for THIS feature is `feature_image_precheck_*.md` (NOT the file-system-sorted variant `image_precheck_feature_*.md`). Leads enforce one convention per feature per `_CANONICAL_PATTERN.md` §6 guidance.
+
+### MEMORY.md index addition (one-time, when first feature work starts)
+
+Every agent adds a new section to its `MEMORY.md`:
+
+### Features in flight
+
+| Feature slug | Status | Last entry | Files |
+|---|---|---|---|
+| image-precheck | IN PROGRESS | YYYY-MM-DD | feature_image_precheck_*.md |
+| ai-autofill | PENDING | — | — |
+| smart-picker | MERGED YYYY-MM-DD | YYYY-MM-DD | feature_smart_picker_session_*.md (kept for 14d) |
+
+This is the per-feature index. The existing `MEMORY.md (Index)` section at the top remains the cross-feature topic index. Both coexist.
+
+### Per-feature first-action protocol
+
+Every dispatch template in `## Dispatch templates` includes this line in its "Mandatory reads" block:
+
+```bash
+ls .claude/agent-memory/meesell-<my-role>/feature_image_precheck_*.md 2>/dev/null
+```
+
+The specialist runs this command first, then reads every file found, BEFORE reading the broader spec docs. This is the per-feature context-resume protocol — recovering "what did I (or my previous session) leave undone on THIS feature."
+
+### Session-close memory entries
+
+Every specialist must, before declaring `Status: COMPLETE`:
+
+1. Append a session-close note to `feature_image_precheck_session_{N}_handoff.md`. Format:
+   ```markdown
+   ## Session mesell-image-precheck-{group}-session-{N} — YYYY-MM-DD
+   Files touched: <list>
+   Locked decisions: <list>
+   Open items: <list — for next session or other specialist>
+   Blockers carried: <list — what cannot be closed without other agents>
+   Next-step recommendation: <single sentence>
+   Hand-off to: <other specialist or lead>
+   ```
+2. Update the `### Features in flight` table in `MEMORY.md` — change Last entry date + Files list.
+
+The lead's merge gate REJECTS PRs where the specialist's memory write is missing (founder visibility into specialist discipline). Specialists report `Memory update: DONE | SKIPPED (reason)` in the Final Report — SKIPPED requires a written reason in the PR comments.
+
+### Lead pre-seeding (before any specialist dispatch)
+
+Each of the 4 leads, BEFORE dispatching their first specialist on `image-precheck`, writes one bootstrap file to their own memory:
+
+```
+.claude/agent-memory/meesell-<lead-role>/feature_image_precheck_lead_bootstrap.md
+```
+
+Contents:
+- Pointer to this `FEATURE_PLAN.md` (path + commit SHA at planning lock time)
+- The dispatch order from `## Agent lineup → Dispatch order (critical path)` above (lead's group only)
+- The branch creation commands from `## Branch setup` above (the lead's own group branch)
+- The merge-gate checklist for the lead's group (from `## Review + iteration protocol` below)
+
+This is the lead's "what am I responsible for on this feature" cheat sheet — readable in 60 seconds at the start of every session.
 
 ---
 
@@ -1548,7 +1569,7 @@ The feature is "done" (ready for `feature/image-precheck` → `develop` PR by fo
 - [ ] **`V1_FEATURE_SPEC.md §F5` amended inline** with the D1 decision (4 slots, 40 MB cap) as an AMENDMENT block
 - [ ] **`.claude/agents/meesell-image-precheck-builder.md` line 84 corrected** to match D1
 - [ ] **All 4 leads have updated their `feature_board_<domain>.md`** rows to `MERGED` and moved to "Recently merged"
-- [ ] **All 8 specialists have written `feature_image_precheck_session_*_handoff.md`** to their respective memory directories AND updated their `MEMORY.md` "Features in flight" section per the §Memory namespace convention
+- [ ] **All 8 specialists have written `feature_image_precheck_session_*_handoff.md`** to their respective memory directories AND updated their `MEMORY.md` "Features in flight" section per the §Memory protocol
 - [ ] **No specialist exceeded 3 iteration cycles** without founder escalation
 - [ ] **No `feature/image-precheck/{group}` branch open > 5 calendar days** without lead escalation
 - [ ] **Staging flag `FEATURE_IMAGE_PRECHECK_ENABLED` remains `false`** at this stage — the 3-gate staging promotion happens via a SEPARATE `feature/feature-flag/staging-image-precheck-on` micro-branch after this feature lands on develop (per D2)
@@ -1561,14 +1582,14 @@ After all gates pass, `meesell-backend-coordinator` (largest contributor — bac
 
 Top 5 risks specific to this feature.
 
-| # | Risk | Severity | Likelihood | Mitigation |
-|---|------|---------|-----------|------------|
-| R1 | **Gemini Vision JSON-mode regression breaks the watermark parser.** Gemini API changes the JSON output shape silently (extra field, renamed field, wrapped in `{response: {...}}`) — the `WatermarkResponse` Pydantic parser rejects, Layer 2 retries, eventually returns safe fallback. Accuracy drops to 0% on the golden set; the watermark step becomes effectively dead. | P0 | Medium | Layer 2 guardrail re-validation per §6A.E catches parser failures. Eval runner asserts shape match — a regression surfaces immediately. Mitigation: prompt-engineer pins the model version in `models/gemini-2.5-flash`, treats the prompt registry as the rollback point (revert to a prior version if v1 degrades). Operational: ai lead checks LangFuse traces weekly for parser failure rate; >5% triggers an investigation. |
-| R2 | **GCS upload latency blows the 8s/image budget under congested networks.** Slow user uplink + GCS regional latency push the multipart upload past 8s; Celery task starts before bytes are fully written; pipeline fails or watermark step times out. | P1 | Medium | Bytes are validated + Pillow-read BEFORE GCS upload (§11.B.1 step 3) — the 8s budget is for the WORKER pipeline, not the user-facing upload. The route returns 202 immediately after GCS write succeeds; the user experience does NOT block on the 8s budget. Mitigation: services-builder confirms `adapters.gcs.upload_bytes` uses chunked upload (>5MB threshold) and the `httpx.AsyncClient` has a 30s timeout (allows slow networks). Operational: infra-builder watches Prometheus `gcs_upload_duration_seconds` p95 — alert if > 15s. |
-| R3 | **Watermark per-call vision cost exceeds the locked ≤₹0.05 ceiling.** Vision calls are multimodal; observed cost in practice may be ₹0.06-0.08. The ai-coordinator merge gate rejects PRs with cost > ₹0.05. | P1 | High | Prompt-engineer measures per-call cost on a 5-image sample run before opening PR. If observed > ₹0.05: prompt-engineer escalates to founder for a vision-specific ceiling (e.g., "text ≤ ₹0.05, vision ≤ ₹0.08") via a `meesell-ai-coordinator.md` Stop Conditions amendment. **Founder pre-decision recommended** before prompt-engineer dispatch to avoid mid-iteration escalation. Mitigation: shorten the system prompt; use `max_output_tokens=64` since the response is just `{has_watermark: bool, confidence: float}`. |
-| R4 | **White-BG heuristic false-positive on light-but-not-white backgrounds.** 4-corner × 16px patches with mean ≥ 240 threshold rejects images with very light gray, cream, or off-white backgrounds that Meesho would accept. Sellers' legitimate products fail; conversion friction. | P1 | High | The threshold (240) and patch count (4) and patch size (16x16) are V1 algorithm choices documented in the module header. V1.5 iteration: image-precheck-builder gathers founder-reported false-positives, tunes threshold to 235 or moves to a histogram-based heuristic. Mitigation: the white-BG check is one of 4 deterministic checks; failing it does NOT block re-upload — the user sees a clear "Use plain white background" fix hint and can re-shoot. Acceptable V1 friction trade-off given the founder's pull-only-good-images-on-Meesho philosophy. |
-| R5 | **Celery worker pod OOM on large image batches.** A user uploads 4 × 10 MB images simultaneously; worker concurrency=4 + Pillow `Image.open` holds 4 × 40 MB of decoded bitmaps in memory + Gemini SDK overhead → potentially > 1 GB RSS. Worker pod K8s memory limit (default ~1Gi) triggers OOM kill. | P1 | Low | Worker concurrency = 4 is matched to the 8s/image budget (concurrent capacity), not to a memory budget. Mitigation: infra-builder sets worker pod memory limit to **2 Gi** (currently ungrounded — confirm in K8s manifests). Pillow `img.close()` called explicitly after each precheck. If OOMs are observed in dev, reduce concurrency to 2 and accept the throughput hit. Operational: infra-builder watches `pod_memory_working_set_bytes` p95 — alert if > 1.5 Gi. |
-| R6 (watch) | **30-image golden set staleness as seller image styles evolve.** Watermark detection performance is bound to the fixture. As real-world watermarks evolve (TikTok-style large translucent overlays, AI-generated watermarks), the V1 golden set undertests against the production distribution. | P2 | Medium | Quarterly re-baseline of the golden set by prompt-engineer (add 10 fresh watermark examples; retire 5 outdated ones). Tied to the data scraper refresh cadence per `meesell-scraper-maintainer`'s quarterly window. V1.5: add a "report incorrect classification" hook in the frontend; collect founder-flagged misclassifications as new fixture candidates. |
+| # | Risk | Likelihood | Impact | Mitigation |
+|---|------|-----------|--------|------------|
+| R1 | **Gemini Vision JSON-mode regression breaks the watermark parser.** Gemini API changes the JSON output shape silently (extra field, renamed field, wrapped in `{response: {...}}`) — the `WatermarkResponse` Pydantic parser rejects, Layer 2 retries, eventually returns safe fallback. Accuracy drops to 0% on the golden set; the watermark step becomes effectively dead. | Medium | P0 | Layer 2 guardrail re-validation per §6A.E catches parser failures. Eval runner asserts shape match — a regression surfaces immediately. Mitigation: prompt-engineer pins the model version in `models/gemini-2.5-flash`, treats the prompt registry as the rollback point (revert to a prior version if v1 degrades). Operational: ai lead checks LangFuse traces weekly for parser failure rate; >5% triggers an investigation. |
+| R2 | **GCS upload latency blows the 8s/image budget under congested networks.** Slow user uplink + GCS regional latency push the multipart upload past 8s; Celery task starts before bytes are fully written; pipeline fails or watermark step times out. | Medium | P1 | Bytes are validated + Pillow-read BEFORE GCS upload (§11.B.1 step 3) — the 8s budget is for the WORKER pipeline, not the user-facing upload. The route returns 202 immediately after GCS write succeeds; the user experience does NOT block on the 8s budget. Mitigation: services-builder confirms `adapters.gcs.upload_bytes` uses chunked upload (>5MB threshold) and the `httpx.AsyncClient` has a 30s timeout (allows slow networks). Operational: infra-builder watches Prometheus `gcs_upload_duration_seconds` p95 — alert if > 15s. |
+| R3 | **Watermark per-call vision cost exceeds the locked ≤₹0.05 ceiling.** Vision calls are multimodal; observed cost in practice may be ₹0.06-0.08. The ai-coordinator merge gate rejects PRs with cost > ₹0.05. | High | P1 | Prompt-engineer measures per-call cost on a 5-image sample run before opening PR. If observed > ₹0.05: prompt-engineer escalates to founder for a vision-specific ceiling (e.g., "text ≤ ₹0.05, vision ≤ ₹0.08") via a `meesell-ai-coordinator.md` Stop Conditions amendment. **Founder pre-decision recommended** before prompt-engineer dispatch to avoid mid-iteration escalation. Mitigation: shorten the system prompt; use `max_output_tokens=64` since the response is just `{has_watermark: bool, confidence: float}`. |
+| R4 | **White-BG heuristic false-positive on light-but-not-white backgrounds.** 4-corner × 16px patches with mean ≥ 240 threshold rejects images with very light gray, cream, or off-white backgrounds that Meesho would accept. Sellers' legitimate products fail; conversion friction. | High | P1 | The threshold (240) and patch count (4) and patch size (16x16) are V1 algorithm choices documented in the module header. V1.5 iteration: image-precheck-builder gathers founder-reported false-positives, tunes threshold to 235 or moves to a histogram-based heuristic. Mitigation: the white-BG check is one of 4 deterministic checks; failing it does NOT block re-upload — the user sees a clear "Use plain white background" fix hint and can re-shoot. Acceptable V1 friction trade-off given the founder's pull-only-good-images-on-Meesho philosophy. |
+| R5 | **Celery worker pod OOM on large image batches.** A user uploads 4 × 10 MB images simultaneously; worker concurrency=4 + Pillow `Image.open` holds 4 × 40 MB of decoded bitmaps in memory + Gemini SDK overhead → potentially > 1 GB RSS. Worker pod K8s memory limit (default ~1Gi) triggers OOM kill. | Low | P1 | Worker concurrency = 4 is matched to the 8s/image budget (concurrent capacity), not to a memory budget. Mitigation: infra-builder sets worker pod memory limit to **2 Gi** (currently ungrounded — confirm in K8s manifests). Pillow `img.close()` called explicitly after each precheck. If OOMs are observed in dev, reduce concurrency to 2 and accept the throughput hit. Operational: infra-builder watches `pod_memory_working_set_bytes` p95 — alert if > 1.5 Gi. |
+| R6 (watch) | **30-image golden set staleness as seller image styles evolve.** Watermark detection performance is bound to the fixture. As real-world watermarks evolve (TikTok-style large translucent overlays, AI-generated watermarks), the V1 golden set undertests against the production distribution. | Medium | P2 | Quarterly re-baseline of the golden set by prompt-engineer (add 10 fresh watermark examples; retire 5 outdated ones). Tied to the data scraper refresh cadence per `meesell-scraper-maintainer`'s quarterly window. V1.5: add a "report incorrect classification" hook in the frontend; collect founder-flagged misclassifications as new fixture candidates. |
 
 ---
 
@@ -1576,7 +1597,8 @@ Top 5 risks specific to this feature.
 
 | Version | Date | Author | Change |
 |---------|------|--------|--------|
-| 0.1 | 2026-06-10 | mesell-image-precheck-planning-session-1 | Initial draft. D1/D2/D3 locked. 8 dispatch templates. Review protocol with 3-iteration max. 5 risks + 1 watch item. Branch creation playbook + memory namespace convention added. Awaiting founder review. |
+| v1 | 2026-06-10 | mesell-image-precheck-planning-session-1 | Initial draft. D1/D2/D3 locked. 8 dispatch templates. Review protocol with 3-iteration max. 5 risks + 1 watch item. Branch creation playbook + memory namespace convention added. Awaiting founder review. |
+| v2 | 2026-06-10 | mesell-image-precheck-amendment-session-1 | Canonical pattern v2 conformance — reordered Code surfaces + Documentation deliverables before Branch setup + Memory protocol per `_CANONICAL_PATTERN.md` locked order; renamed `## Memory namespace convention` → `## Memory protocol`; demoted ad-hoc `## Features in flight` h2 to `### Features in flight` h3 inside Memory protocol; added `### Memories the coding-session leads MUST read at session start` and `### Cross-feature memos` subsections per canonical §6 spec; renamed Risk register column `Severity` → `Impact` and reordered columns to canonical `Likelihood | Impact`; added `### Session-close memory entries` with the 5-field canonical handoff format. Pre-amendment audit found 11 of 11 canonical sections present (no missing universal-gap sections), 4 mis-ordered, 1 ad-hoc heading at wrong depth. |
 
 ---
 

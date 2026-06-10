@@ -1,0 +1,24 @@
+feature: "image-precheck"
+session: "mesell-image-precheck-amendment-session-1"
+worktree: "/tmp/mesell-wt/image-precheck"
+branch: "feature/image-precheck/planning"
+status: "IN_REVIEW"
+last_updated: "2026-06-10T12:52:02Z"
+feature_plan_path: "docs/plans/features/image-precheck/FEATURE_PLAN.md"
+feature_plan_line_count: 1606
+pr_number: 14
+pr_url: "https://github.com/Mugunthan93/mesell/pull/14"
+outstanding_founder_decisions: []
+notes: |
+  Amendment session confirmed FEATURE_PLAN.md is fully conformant with canonical pattern v2.
+  All 11 canonical h2 headings present in locked order. No structural amendments required.
+
+  Audit findings:
+  - ## Iteration {2 or 3} at line 1532 is INSIDE a code fence (re-dispatch template prompt body) — not a structural h2, no fix needed
+  - All 8 specialist dispatch templates are at h3 level (### Template X) — already correct
+  - Revision history v2 row present from prior amendment commit 0b2d22d
+
+  PR #14 open against develop, awaiting founder review.
+  Branch: feature/image-precheck/planning
+
+  2026-06-10: Amendment session was interrupted before the final status flip; this commit completes it (PLAN_READY -> IN_REVIEW).
