@@ -3,3 +3,5 @@
 - [Namecheap domain lookup script](reference_namecheap_lookup.md) — scripts/namecheap-domain-lookup.mjs uses env-var credentials, supports 2FA, for mesell.xyz lookups
 - [Namecheap rate limit hits at ~5 attempts](feedback_namecheap_rate_limit.md) — device-verification flow locks for 45 min after a few failed codes; persist browser session or use API
 - [cert-manager chart key changed v1.14 → v1.15](feedback_cert_manager_chart_value.md) — installCRDs (v1.14) vs crds.enabled (v1.15+); wrong key silently skips CRD install
+- [MeeSell Waves 3-5 complete](project_meesell_wave_3_5_complete.md) — UI Kit + Composites + 11 features built 2026-06-10; build clean, boundary clean, ready for Wave 6 API wiring
+- [MeeSell session 2 handoff](project_meesell_session2_handoff.md) — full state as of 2026-06-10; 7 founder CI actions pending; doc-verification dispatch ready; session 3 is mesell-master-session-3
