@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-infra-builder`
 **Domain:** infra
-**Last updated:** 2026-06-10 (initial creation)
+**Last updated:** 2026-06-10 (housekeeping-v1 MERGED to feature/housekeeping-v1, PR #27)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -16,6 +16,7 @@
 
 | Feature | Merged to | Date | PR | Notes |
 |---|---|---|---|---|
+| housekeeping-v1 | feature/housekeeping-v1 | 2026-06-10 | #27 (squash 6096244) | dead GitLab CI removal + SA key disk hygiene |
 
 ## Inter-lead requests open
 
