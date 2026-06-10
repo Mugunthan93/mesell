@@ -1,0 +1,12 @@
+feature: "ai-autofill"
+session: "mesell-ai-autofill-amendment-session-1"
+worktree: "/tmp/mesell-wt/ai-autofill"
+branch: "feature/ai-autofill/planning"
+status: "PLAN_READY"
+last_updated: "2026-06-10T12:00:00Z"
+feature_plan_path: "docs/plans/features/ai-autofill/FEATURE_PLAN.md"
+feature_plan_line_count: 875
+pr_number: null
+pr_url: null
+outstanding_founder_decisions: []
+notes: "Amendment session complete — canonical pattern v2 conformance verified. 11 h2 headings in locked order."
