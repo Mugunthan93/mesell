@@ -1,0 +1,31 @@
+# k8s/overlays/staging/kustomization.yaml
+#
+# Staging-namespace overlay for the meesell-config ConfigMap.
+#
+# Per INFRASTRUCTURE_PLAYBOOK.md (namespace conventions): the `staging` namespace
+# is "populated ... with mirror of `dev` via Kustomize overlays." This overlay is
+# the auth-otp (FE-D5) staging surface.
+#
+# Self-contained design: rather than cross-referencing the flat dev base (which is
+# namespace=dev and would force a kustomize directory cycle since the overlay lives
+# under k8s/), this overlay carries its own staging ConfigMap (config.yaml here). When
+# the dev base k8s/config.yaml changes, mirror non-auth fields here in the same PR.
+#
+# Diff vs dev base (k8s/config.yaml): APP_ENV=staging, ACCESS=60, REFRESH=300,
+# CORS=https://staging.mesell.xyz. Everything else identical.
+#
+# Secret refs (REFRESH_TOKEN_PEPPER, RAZORPAY_WEBHOOK_SECRET, ...) are identical to dev
+# and come from the same GCP Secret Manager secrets. The `backend-secrets` k8s Secret in
+# the staging namespace is populated at deploy time the same way dev was
+# (see k8s/secrets.yaml.example). This overlay carries NO secret values.
+#
+# Apply at NORMAL DEPLOY TIME (NOT in this session — manifests-only):
+#   kubectl apply -k k8s/overlays/staging --dry-run=server   # validate first
+#   kubectl apply -k k8s/overlays/staging                    # apply
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: staging
+
+resources:
+  - config.yaml

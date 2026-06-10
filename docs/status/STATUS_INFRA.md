@@ -1394,3 +1394,26 @@ Ratification deferred to founder S5 window (NOT this session).
 Mutations: ZERO cluster / ZERO terraform / ZERO manifest edits. Only new file GATE4_CONFIRMATION.md + board/STATUS updates.
 Board sweep (session-end): gate4-confirmation moved IN PROGRESS -> Recently merged (#33). Active features empty. No rows untouched 7+ days. No inter-lead requests open.
 =========
+
+=== UPDATE: 2026-06-11 AUTH-OTP INFRA SESSION-1 (work done) ===
+Session: mesell-auth-otp-infra-session-1
+Branch: feature/auth-otp/infra (worktree /tmp/mesell-wt/auth-otp-infra). Base: feature/auth-otp/integration (backend PR #44 MERGED into it).
+Playbook section applied: §0 (live state is SSOT) + namespace-conventions/safe-deploy block (L799-820: staging via Kustomize overlays, dry-run-before-apply). Rule: manifests + docs ONLY; zero cluster/kubectl/terraform mutations — apply happens at normal deploy time.
+
+RE-AUDIT GAP LIST (vs FEATURE_PLAN Template G acceptance):
+  - ALREADY DONE (by §20 session 2026-06-08): config.yaml carries ACCESS/REFRESH TTL + CORS_ALLOWED_ORIGINS + CORS_ALLOW_CREDENTIALS; secrets.yaml.example carries REFRESH_TOKEN_PEPPER + RAZORPAY_WEBHOOK_SECRET refs. So "add env vars" was mostly a no-op.
+  - GAP 1 (fixed): k8s/config.yaml (namespace=dev) held PROD values 900/604800 + all-origin CORS. Corrected to dev values ACCESS=30 / REFRESH=120 / CORS=https://dev.mesell.xyz.
+  - GAP 2 (fixed): no staging surface existed (flat k8s/, all namespace:dev). Authored Kustomize staging overlay k8s/overlays/staging/ (self-contained ConfigMap: ns=staging, APP_ENV=staging, ACCESS=60 / REFRESH=300 / CORS=https://staging.mesell.xyz). Per playbook L801 (staging via Kustomize overlays).
+  - GAP 3 (fixed): docs/runbooks/auth-secret-rotation.md created — §1 dev/staging natural-expiry rotation, §2 prod (V1.5) dual-pepper version-tagged grace window (R5), §3 emergency mass-revocation (targeted DEL cache:refresh:* preferred over FLUSHDB; blast radius documented), §4 pre-flight checklist, §5 follow-ups.
+
+FOUNDER-FLAGS (in PR body):
+  - F1: APP_ENV="production" remains in k8s/config.yaml (namespace=dev). Pre-existing inconsistency, NOT in Template G acceptance list, and touches backend cookie Secure/Domain semantics — left as-is, flagged for founder/backend decision rather than silently changed.
+  - F2: Backend refresh-key derivation is SINGLE-PEPPER + UNVERSIONED (cache:refresh:{digest}, auth.py::refresh_allowlist_key). The R5 dual-pepper/version-tagged grace path in runbook §2 is NOT yet implemented — backend follow-up required before V1.5 prod. Until then prod pepper rotation is a hard cutover (incident-only). dev/staging unaffected (short TTL).
+  - F3: Cluster UNREACHABLE this session (34.180.58.185:6443 connection refused). True `kubectl apply --dry-run=server` impossible offline. Validation used: kustomize build (renders clean, exit 0) + python yaml.safe_load_all structural check (all 3 files valid; ConfigMap name/ns correct). Server-side dry-run is a deploy-time precondition — re-run before apply.
+
+Validation: dev base `kubectl kustomize k8s/overlays/staging` and python yaml checks PASS. Secrets re-verified LIVE via `gcloud secrets versions list` (refresh-token-pepper, razorpay-webhook-secret, msg91-auth-key, jwt-secret — all 1 ENABLED, values never printed).
+Cost impact: ₹0/month (env-var + ConfigMap overlay + doc only).
+MSG91 IP whitelist: NOT verified this session (cluster unreachable; no OTP send possible). Carry-forward to the dev smoke gate (S1.5) — verify 122.164.85.51 (or current founder IP) is whitelisted before backend marks gate-2 green.
+Board: auth-otp row = IN REVIEW (PR-open transition per D2; Current session cleared).
+Next: open infra->integration PR (squash, self-review checklist), then OPEN (do NOT merge) integration->develop PR with founder gate line.
+=========
