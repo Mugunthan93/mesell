@@ -370,6 +370,8 @@ Migration test results:
 - alembic upgrade head: PASS | FAIL (paste output)
 - alembic downgrade -1: PASS | FAIL (paste output)
 
+Memory update: DONE (.claude/agent-memory/meesell-database-builder/auth_otp_feature.md written + committed) | SKIPPED (reason: <why>)
+
 Blockers / notes:
 <none | specific issue>
 ```
@@ -446,6 +448,8 @@ Files modified:
 
 send_otp signature implemented:
 async def send_otp(self, phone: str, otp: str, template_id: str) -> Msg91Response
+
+Memory update: DONE (.claude/agent-memory/meesell-services-builder/auth_otp_feature.md written + committed) | SKIPPED (reason: <why>)
 
 Blockers / notes:
 <none | specific issue>
@@ -579,6 +583,8 @@ config.py changes summary:
 Unit test results:
 pytest tests/unit/iam/test_service.py -v: PASS | FAIL (paste summary)
 
+Memory update: DONE (.claude/agent-memory/meesell-auth-builder/auth_otp_feature.md written + committed) | SKIPPED (reason: <why>)
+
 Blockers / notes:
 <none | specific issue>
 ```
@@ -687,6 +693,8 @@ Endpoint list:
 Unit test results: PASS | FAIL (paste summary)
 Integration test results: PASS | FAIL (paste summary)
 OpenAPI review: confirmed auto-generated from schemas
+
+Memory update: DONE (.claude/agent-memory/meesell-api-routes-builder/auth_otp_feature.md written + committed) | SKIPPED (reason: <why>)
 
 Blockers / notes:
 <none | specific issue>
@@ -809,6 +817,8 @@ ng test -- --include='**/auth.service.spec.ts' : PASS | FAIL (paste summary)
 
 Build check: pnpm build succeeded in <Xs> (target < 90s)
 
+Memory update: DONE (.claude/agent-memory/meesell-angular-service-builder/auth_otp_feature.md written + committed) | SKIPPED (reason: <why>)
+
 Blockers / notes:
 <none | specific issue>
 ```
@@ -927,6 +937,8 @@ Screenshots attached:
 - LoginComponent at 360px: yes/no
 - LoginComponent at 1280px: yes/no
 
+Memory update: DONE (.claude/agent-memory/meesell-angular-component-builder/auth_otp_feature.md written + committed) | SKIPPED (reason: <why>)
+
 Blockers / notes:
 <none | specific issue>
 ```
@@ -1034,6 +1046,8 @@ MSG91 IP whitelist note: <confirmed working | needs update for 122.164.85.51>
 
 Cost impact: ₹0/month (env var additions only)
 
+Memory update: DONE (.claude/agent-memory/meesell-infra-builder/auth_otp_feature.md written + committed) | SKIPPED (reason: <why>)
+
 Blockers / notes:
 <none | specific issue>
 ```
@@ -1138,6 +1152,8 @@ Screenshots:
 - OtpVerify 360px: attached
 
 WCAG AA contrast: confirmed | issues found: <list>
+
+Memory update: DONE (.claude/agent-memory/meesell-angular-ui-styler/auth_otp_feature.md written + committed) | SKIPPED (reason: <why>)
 
 Blockers / notes:
 <none | specific issue>
@@ -1290,6 +1306,81 @@ This feature is "done" (ready for `feature/auth-otp` → `develop` PR) when ALL 
 
 ---
 
+## Memory management
+
+Agents are stateless across sessions — the only continuity they have is their `MEMORY.md`. Without explicit memory updates after each specialist session, re-dispatches (retries, review-requested revisions, future cross-feature references) are blind to what was already built.
+
+### Protocol — mandatory for every dispatch in this feature
+
+Every dispatch template in this plan ends with a **Memory update** block. The agent MUST:
+
+1. Create (or update) `.claude/agent-memory/{agent-name}/auth_otp_feature.md` — the feature memory file for this agent
+2. Add a one-line pointer to it in their `MEMORY.md` index under `## auth-otp`
+3. Commit both the code AND the memory file on the same branch (memory and code stay in sync)
+4. Include `Memory update: DONE | SKIPPED (reason)` in the final report sent back to the lead
+
+If the agent cannot write to memory (e.g., a blocker prevented code completion), they still write a memory entry recording the blocker and their partial state.
+
+### Pre-dispatch memory seeding
+
+The 3 **lead agents** are seeded with auth-otp awareness before the first dispatch (done by this planning session — see files created below). Specialist agents write their own memory when they complete their session; they do not need pre-seeding because they receive a full dispatch template with all context.
+
+**Lead memory files created by this planning session:**
+- `.claude/agent-memory/meesell-backend-coordinator/auth_otp_feature.md` ✅
+- `.claude/agent-memory/meesell-frontend-coordinator/auth_otp_feature.md` ✅
+- `.claude/agent-memory/meesell-infra-builder/auth_otp_feature.md` ✅
+
+### Per-agent memory spec
+
+What each agent MUST record in `auth_otp_feature.md` when they complete their session:
+
+| Agent | What to record |
+|-------|----------------|
+| `meesell-backend-coordinator` | Which specialists were dispatched, which phase, PR# of feature/auth-otp/backend, blockers if any, feature_board_backend.md status |
+| `meesell-frontend-coordinator` | Which specialists were dispatched, which phase, PR# of feature/auth-otp/frontend, blockers if any, feature_board_frontend.md status |
+| `meesell-infra-builder` | Files written (exact paths), dry-run result, PR# of feature/auth-otp/infra, MSG91 IP whitelist confirmed/blocked |
+| `meesell-database-builder` | `User` model column names + types, Alembic revision ID, current head after `alembic upgrade head`, `shared/models/__init__.py` export confirmed |
+| `meesell-services-builder` | `Msg91Adapter` public method signatures (`send_otp`, `verify_otp` or equivalent), env var name used (`MSG91_AUTH_KEY`), async HTTP client used (httpx/aiohttp) |
+| `meesell-auth-builder` | `IamService` public method signatures (6 methods), Lua SHA1 digest stored on instance (so the next session knows the `SCRIPT LOAD` pattern is in place), HMAC key format confirmed, cookie `Path` and `Domain` values used |
+| `meesell-api-routes-builder` | 6 endpoint paths + HTTP verbs, Pydantic schema class names, how `iam_router` is mounted in `main.py` (prefix, tags), integration test file path |
+| `meesell-angular-service-builder` | `AuthService` public API (signal name, method signatures), interceptor registration order in `app.config.ts`, route paths added to `app.routes.ts` |
+| `meesell-angular-component-builder` | Component selectors, reactive form control names for each component, navigation targets, `mee-*` primitives used |
+| `meesell-angular-ui-styler` | Tailwind design tokens used, any custom SCSS decisions, WCAG AA contrast confirmed, responsive breakpoints tested |
+
+### Memory file template (use this structure for `auth_otp_feature.md`)
+
+```markdown
+---
+name: auth-otp-feature
+description: auth-otp Feature 1 — what this agent built, files it owns, contracts it implemented
+metadata:
+  type: project
+---
+
+Feature: auth-otp (Feature 1 of 9)
+Branch: feature/auth-otp/{backend|frontend|infra}
+Session: mesell-auth-otp-{group}-session-{N}
+Date: YYYY-MM-DD
+Status: COMPLETE | PARTIAL | BLOCKED
+
+## What I built
+<list of files created/modified with one-line description of what each does>
+
+## Key contracts I implemented
+<critical decisions, method signatures, config values — anything the next specialist needs to know>
+
+## What the next agent in the chain needs from my output
+<specific outputs: model shape, interface signatures, mounted paths, etc.>
+
+## PR
+feature/auth-otp/{backend|frontend|infra} PR #<N> — <status: open|merged|blocked>
+
+## Blockers
+<none | specific blocker with context>
+```
+
+---
+
 ## Risk register
 
 | # | Risk | Likelihood | Impact | Mitigation |
@@ -1307,3 +1398,6 @@ This feature is "done" (ready for `feature/auth-otp` → `develop` PR) when ALL 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-06-10 | mesell-auth-otp-planning-session-1 | Initial FEATURE_PLAN.md authored. Decisions D1/D2/D3 recorded. All 7 specialist dispatch templates drafted. |
+| 0.2 | 2026-06-10 | mesell-auth-otp-planning-session-1 | D4 recorded (agent lineup confirmed by founder). meesell-angular-ui-styler added — Phase E, 3 SCSS surfaces, Template H, 4 frontend review checks. |
+| 0.3 | 2026-06-10 | mesell-auth-otp-planning-session-1 | Branch setup section added — 4 coding branches documented, creation commands, PR flow, PR templates. |
+| 0.4 | 2026-06-10 | mesell-auth-otp-planning-session-1 | Memory management section added — protocol, per-agent spec table, memory file template. Memory update line added to all 8 dispatch template report formats. Lead agent memories pre-seeded (backend-coordinator, frontend-coordinator, infra-builder). |

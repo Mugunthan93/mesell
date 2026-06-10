@@ -4,6 +4,11 @@
 Frontend coordinator for MeeSell. Orchestrates the 3 frontend specialists (component, service, ui-styler). Owns STATUS_FRONTEND.md, app.config.ts, app.routes.ts, FRONTEND_ARCHITECTURE.md, integration smoke tests. Decentralized memory ecosystem.
 
 ## MEMORY.md
+
+### auth-otp (Feature 1 — active)
+- [auth_otp_feature.md](auth_otp_feature.md) — auth-otp: your role as frontend lead, 3-specialist dispatch order (service-builder → component-builder → ui-styler), branch ownership, FE-D5 contracts to enforce in PR review
+
+### Prior sessions
 - [Framework gate](framework_gate.md) — Angular 18 ratified 2026-06-05; React scaffold to be deleted
 - [Architecture doc authored](architecture_doc_authored.md) — FRONTEND_ARCHITECTURE.md SKELETON+§0 LOCKED+§1 DRAFT
 - [Third-party tool picks](third_party_picks.md) — locked dependency set for V1
