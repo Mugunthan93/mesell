@@ -199,8 +199,15 @@ variable "gcp_api_services" {
     # billingbudgets.googleapis.com, which manages the budget resources themselves.
     "cloudbilling.googleapis.com",
     "cloudresourcemanager.googleapis.com",
+    # Phase E additions (2026-06-10):
+    # - cloudbuild: required for `gcloud builds submit` from GitHub Actions. Already
+    #   enabled out-of-band during Phase D (image builds); adding here adopts the API
+    #   into TF state. Apply is idempotent (no-op for already-enabled APIs).
+    # - iap: required for `gcloud compute start-iap-tunnel` from the deploy job.
+    "cloudbuild.googleapis.com",
+    "iap.googleapis.com",
   ]
-  description = "GCP APIs to enable via google_project_service in apis.tf. Applied before any module. cloudresourcemanager.googleapis.com is added here to ensure the data.google_project data source in main.tf resolves cleanly."
+  description = "GCP APIs to enable via google_project_service in apis.tf. Applied before any module. cloudresourcemanager.googleapis.com is added here to ensure the data.google_project data source in main.tf resolves cleanly. cloudbuild + iap added in Phase E to support GitHub Actions image builds and IAP-tunneled deploys."
 }
 
 # --- Billing ---
@@ -209,4 +216,20 @@ variable "budget_amount_inr" {
   type        = number
   default     = 25000
   description = "Monthly budget cap in INR for the GCP billing budget. The billing account 01620D-6785AB-0E4698 is INR-denominated (confirmed via Cloud Billing API). ₹25,000 ≈ $300 = free-credit equivalent. Alerts fire at 50%, 75%, and 90% consumed."
+}
+
+# --- GitHub Actions WIF (Phase E — 2026-06-10) ---
+# Spec: docs/DEVOPS_ARCHITECTURE.md §4. Defaults are repository-specific and
+# expected to be the right values for V1; override in dev.tfvars if needed.
+
+variable "github_repository" {
+  type        = string
+  default     = "Mugunthan93/mesell"
+  description = "GitHub repository path used in the GitHub Actions WIF attribute condition and impersonation member string. Format: <owner>/<repo>. Restricts WIF token exchange to GitHub Actions runs in this specific repository only. A workflow in any other repo cannot exchange a token for meesell-github-ci."
+}
+
+variable "github_ci_service_account_id" {
+  type        = string
+  default     = "meesell-github-ci"
+  description = "Short service account ID for the GitHub Actions CI identity. Full email will be meesell-github-ci@project-1f5cbf72-2820-4cdb-949.iam.gserviceaccount.com. SEPARATE from var.ci_service_account_id (which is meesell-prod-ci, the GitLab SA) per founder decision D6 (2026-06-09). A compromise of either CI surface cannot affect the other."
 }

@@ -51,6 +51,28 @@ output "wif_provider_name" {
   description = "Full WIF provider resource name. Set as WORKLOAD_IDENTITY_PROVIDER in GitLab CI project variables (masked)."
 }
 
+# --- GitHub Actions WIF outputs (Phase E — 2026-06-10) ---
+# After terraform apply, copy these into GitHub repository Variables (NOT Secrets —
+# neither value is sensitive) at Settings → Secrets and variables → Actions → Variables:
+#   GCP_WIF_PROVIDER  ← github_wif_provider_name
+#   GCP_CI_SA_EMAIL   ← github_ci_sa_email
+# Read with: `terraform output github_wif_provider_name && terraform output github_ci_sa_email`.
+
+output "github_wif_provider_name" {
+  value       = module.ci_identity.github_wif_provider_name
+  description = "Full GitHub Actions WIF provider resource name. Copy into GitHub repository Variable GCP_WIF_PROVIDER. See docs/DEVOPS_ARCHITECTURE.md §4.4."
+}
+
+output "github_ci_sa_email" {
+  value       = module.ci_identity.github_ci_sa_email
+  description = "Email of the meesell-github-ci service account. Copy into GitHub repository Variable GCP_CI_SA_EMAIL. See docs/DEVOPS_ARCHITECTURE.md §4.4."
+}
+
+output "github_ci_sa_impersonation_member" {
+  value       = module.ci_identity.github_ci_sa_impersonation_member
+  description = "The principalSet:// member string for GitHub Actions runs from Mugunthan93/mesell. Used in additional IAM bindings outside the ci_identity module."
+}
+
 output "ci_sa_impersonation_member" {
   value       = module.ci_identity.ci_sa_impersonation_member
   description = "The principalSet member string used in the WIF → SA IAM binding. For reference only."

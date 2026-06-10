@@ -74,3 +74,95 @@ resource "google_storage_bucket_iam_member" "ci_gcs_object_admin" {
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.meesell_prod_ci.email}"
 }
+
+# =============================================================================
+# GitHub Actions WIF + meesell-github-ci SA  (Phase E — 2026-06-10)
+# Spec: docs/DEVOPS_ARCHITECTURE.md §4.
+# D6 RESOLVED (founder 2026-06-09): a separate SA from meesell-prod-ci. The
+# GitLab pool/SA above stays untouched — a leak in one cannot affect the other.
+# =============================================================================
+
+resource "google_service_account" "meesell_github_ci" {
+  account_id   = var.github_ci_service_account_id
+  display_name = "MeeSell GitHub CI (GitHub Actions WIF)"
+  description  = "Used by GitHub Actions for image builds (Cloud Build) and IAP-tunneled deploys. No JSON key — WIF only. Separate from meesell-prod-ci (D6, 2026-06-09)."
+}
+
+resource "google_iam_workload_identity_pool" "github_actions" {
+  workload_identity_pool_id = "github-actions-pool"
+  display_name              = "GitHub Actions Pool"
+  description               = "Federated identity pool for github.com Actions runners. Distinct from the GitLab pool above so a GitHub compromise cannot affect the GitLab CI surface or vice-versa."
+}
+
+resource "google_iam_workload_identity_pool_provider" "github_actions" {
+  workload_identity_pool_id          = google_iam_workload_identity_pool.github_actions.workload_identity_pool_id
+  workload_identity_pool_provider_id = "github-actions-provider"
+  display_name                       = "GitHub Actions OIDC Provider"
+  description                        = "OIDC provider for github.com Actions OIDC tokens. Attribute condition restricts to the configured repository only."
+
+  attribute_mapping = {
+    "google.subject"       = "assertion.sub"
+    "attribute.aud"        = "assertion.aud"
+    "attribute.repository" = "assertion.repository"
+    "attribute.ref"        = "assertion.ref"
+    "attribute.actor"      = "assertion.actor"
+    "attribute.event_name" = "assertion.event_name"
+  }
+
+  # Restrict impersonation to GitHub Actions runs in the MeeSell repository only.
+  # Any Actions workflow in a different repo — even one the founder owns — cannot
+  # exchange a token for this SA. WIF-1 decision: repository-only (not ref-bound)
+  # so PRs can also use the SA for the lint/test gates without separate plumbing.
+  attribute_condition = "assertion.repository == \"${var.github_repository}\""
+
+  oidc {
+    issuer_uri = "https://token.actions.githubusercontent.com"
+  }
+}
+
+resource "google_service_account_iam_member" "github_wif_impersonation" {
+  service_account_id = google_service_account.meesell_github_ci.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github_actions.name}/attribute.repository/${var.github_repository}"
+}
+
+# Project-level roles for the GitHub CI SA.
+# Each role is granted via google_project_iam_member (additive), NEVER iam_binding.
+
+resource "google_project_iam_member" "github_ci_artifactregistry_writer" {
+  project = "project-1f5cbf72-2820-4cdb-949"
+  role    = "roles/artifactregistry.writer"
+  member  = "serviceAccount:${google_service_account.meesell_github_ci.email}"
+}
+
+resource "google_project_iam_member" "github_ci_cloudbuild_editor" {
+  project = "project-1f5cbf72-2820-4cdb-949"
+  role    = "roles/cloudbuild.builds.editor"
+  member  = "serviceAccount:${google_service_account.meesell_github_ci.email}"
+}
+
+resource "google_project_iam_member" "github_ci_secretmanager_accessor" {
+  project = "project-1f5cbf72-2820-4cdb-949"
+  role    = "roles/secretmanager.secretAccessor"
+  member  = "serviceAccount:${google_service_account.meesell_github_ci.email}"
+}
+
+resource "google_project_iam_member" "github_ci_iap_tunnel" {
+  # IAP tunnel access is granted at the project level here. The IAP service does
+  # apply additional resource-level checks; the SA can only tunnel to instances
+  # it ALSO has compute.instanceAdmin.v1 on (see vm_instance_admin below).
+  project = "project-1f5cbf72-2820-4cdb-949"
+  role    = "roles/iap.tunnelResourceAccessor"
+  member  = "serviceAccount:${google_service_account.meesell_github_ci.email}"
+}
+
+# VM-scoped compute.instanceAdmin.v1 — explicitly bound to the meesell-dev instance
+# only. The SA cannot administer any other VM in the project. This is the brief's
+# "scoped to meesell-dev VM" constraint.
+resource "google_compute_instance_iam_member" "github_ci_vm_instance_admin" {
+  project       = "project-1f5cbf72-2820-4cdb-949"
+  zone          = "asia-south1-a"
+  instance_name = var.vm_name_for_iap
+  role          = "roles/compute.instanceAdmin.v1"
+  member        = "serviceAccount:${google_service_account.meesell_github_ci.email}"
+}

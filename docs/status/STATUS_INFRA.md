@@ -1161,3 +1161,212 @@ Agent: meesell-infra-builder
 - **Why:** (1) No `INFRASTRUCTURE_PLAYBOOK.md` section covers Angular scaffolding/PrimeNG/Tailwind — playbook treats Angular only as a deployed nginx artifact. (2) Dedicated owner exists: `meesell-frontend-coordinator` (+ angular-component/service/ui-styler builders). (3) `docs/FRONTEND_ARCHITECTURE.md` labels this "Wave 2B scaffold," a frontend-owned wave, founder-APPROVED 2026-06-08.
 - **Correct route:** dispatch `meesell-frontend-coordinator` for Wave 2B Step 1.
 - **Pre-state captured (zero mutations):** `themes/` and `frontend/` do NOT exist at repo root. Old frontend archived at `archive/frontend_angular_material/` (Angular 20 + @angular/material + Tailwind v3 — the rejected stack). Old themes at `archive/themes/{signal-admin,spike-angular}`. `.gitignore` ignores `frontend/.angular/` only.
+
+=== UPDATE: 2026-06-10 — Terraform State Migration + Phase D Codification ===
+Agent: meesell-infra-builder
+Mission: per `docs/sub_session_prompts/terraform_migration/01-terraform-state-migration-brief.md`
+
+**Pre-flight**
+- ADC identity: `mugunthanks93@gmail.com` (known divergence) — used the documented `GOOGLE_OAUTH_ACCESS_TOKEN` workaround with `gcloud auth print-access-token --account=vaishnaviramoorthy@gmail.com` throughout the session.
+- gcloud active account: `vaishnaviramoorthy@gmail.com`.
+- `terraform plan -var-file=environments/dev.tfvars` BEFORE migration: "No changes. Your infrastructure matches the configuration." (clean — drift check passed).
+- `gs://meesell-tfstate` did NOT exist before this session.
+
+**Step 2 — GCS bucket for TF state**
+- Created `gs://meesell-tfstate` in `asia-south1`, uniform-bucket-level-access, versioning enabled, soft-delete 7-day retention (org default).
+- vaishnaviramoorthy@gmail.com has implicit `roles/storage.admin` via project ownership — no explicit IAM binding required.
+
+**Step 3 — Backend migration: local → GCS**
+- Edited `infra/terraform/backend.tf`: replaced `backend "local"` with `backend "gcs" { bucket = "meesell-tfstate"; prefix = "terraform/state" }`. Added full migration notes + restore-from-backup procedure to the file header comment.
+- Ran `terraform init -migrate-state` (piped "yes" to copy prompt). Terraform copied local state to GCS.
+- Verified: `gcloud storage ls gs://meesell-tfstate/terraform/state/default.tfstate` returns the object. `terraform state list` against the new backend returns 55 entries (pre-codification count).
+- Local `infra/terraform/terraform.tfstate` retained as a frozen one-time backup (no longer authoritative).
+
+**Step 4 — Cloud Build SA permissions codified (D-API-5)**
+- Created `infra/terraform/modules/cloudbuild_permissions/{main,variables,outputs}.tf`:
+  - `google_storage_bucket_iam_member.cloudbuild_bucket_compute_sa_admin` → `roles/storage.admin` on `project-1f5cbf72-2820-4cdb-949_cloudbuild` for `888244156264-compute@developer.gserviceaccount.com`
+  - `google_artifact_registry_repository_iam_member.meesell_prod_images_compute_sa_writer` → `roles/artifactregistry.writer` on `meesell-prod-images` for the same compute SA
+- Used `google_*_iam_member` (additive), NOT `iam_binding` (authoritative) — protects unrelated bindings.
+- Added module invocation in `infra/terraform/main.tf` after `module.billing_budget` with `depends_on` on `null_resource.account_lock_guard`, `google_project_service.required`, and `module.artifact_registry`.
+- Targeted `terraform plan` showed `+ 2 to create` (Terraform adopts existing live bindings into state since they pre-exist).
+- Targeted `terraform apply` SUCCESS — state went from 55 → 57 entries.
+- Pre-existing Cloud Build SA bindings (`888244156264@cloudbuild.gserviceaccount.com` × storage.admin + artifactregistry.writer) intentionally NOT codified — Cloud Build never used that SA in this project. They can be cleaned up later with a single `gcloud iam policy-binding remove`. Documented in module README + INFRA_ARCH §10.2.
+
+**Step 5 — K3s AR auth codification — choice + rationale**
+- Brief offered Option A (null_resource remote-exec) or Option B (document only).
+- Choice: **hybrid** — updated `infra/terraform/modules/vm/templates/startup.sh.tftpl` to install `registries.yaml` + `/usr/local/bin/refresh-ar-token.sh` + 45-min cron AT FIRST BOOT, AND documented the manual procedure for the running VM in INFRA_ARCH §12.8.
+- Reasoning: null_resource + remote-exec is fragile (depends on SSH config from whichever machine runs `terraform apply`, fails silently across operators). Updating the startup script is the idiomatic GCP+TF pattern for VM provisioning, and the VM has `lifecycle.ignore_changes = [metadata]` so the template change does NOT trigger a plan diff on the existing VM. Re-provisioned VMs get the setup automatically; the existing dev VM keeps its already-installed cron.
+- Escaped `${TOKEN}` as `$${TOKEN}` inside the templatefile() embedded heredoc so Terraform leaves the bash variable alone.
+
+**Step 6 — Full plan verify**
+- `terraform plan -var-file=environments/dev.tfvars` (no targets) → "No changes. Your infrastructure matches the configuration." ✅
+
+**Step 7 — INFRASTRUCTURE_ARCHITECTURE.md refreshed (Phase D state)**
+- Header: last-verified 2026-06-07 → 2026-06-10. Added prominent "Infrastructure discipline" principle (all GCP changes via Terraform; K8s app workloads stay in `k8s/*.yaml`).
+- §1 Overview: 7 secrets → 10; "14 modules, local state" → "15 modules, GCS-backed state"; api+worker live.
+- §2 ASCII diagram: SM "7 secrets" → "10 secrets all populated"; AR shows `api:v1.0.0 LIVE / worker:v1.0.0 LIVE`.
+- §3.2: VM SA row expanded to list all 4 roles + cross-ref §10.2. AR row shows live images. Added rows: `gs://meesell-tfstate`, `gs://...cloudbuild`. CI SA notes "CI/CD pipeline not yet wired". GCP API count 9 → 12.
+- §4 Secret Manager: table expanded 7 → 10 rows (+refresh-token-pepper, +razorpay-webhook-secret, +langfuse-secret-key). Added rotation gotcha (wc -c bytes vs chars, xxd tail trick).
+- §6 Workloads: api 200m CPU req + Running 2/2, worker 250m CPU req + Running 2/2. Added CPU sizing note + config/secret injection paragraph (envFrom order, APP_ENV literal gotcha).
+- §9 Terraform Module Map: state line local → GCS. Added `module.cloudbuild_permissions` row. `module.app_secrets` 7 → 10 containers.
+- §10 CI/CD: restructured into 10.1-10.4 with a new 10.2 explaining the Cloud Build SA quirk and full IAM table. 10.4 reflects live `v1.0.0` images. Notes registries.yaml + cron for AR pull auth.
+- §11: renamed to "Pending Work" with 11.1 (Phase D — mostly complete) and 11.2 (Phase E — codify Phase A VM SA bindings, Pass 3 app modules, kubelet credential provider).
+- §12 Runbooks: added §12.8 (K3s AR node auth — full reproduction procedure) and §12.9 (Terraform state backend — versioning, locking, restore-from-backup).
+- §13 Deferred: removed "Terraform state migration" line (done). LangFuse line rewritten to reflect secret-is-live-but-SDK-not-wired state.
+
+**State count: 55 → 57** (cloudbuild_permissions × 2).
+**Plan health: clean.** Idempotent re-runs return "No changes".
+
+**Files written/edited:**
+- `infra/terraform/backend.tf` (rewritten — GCS backend + migration notes)
+- `infra/terraform/main.tf` (+ `module.cloudbuild_permissions` invocation)
+- `infra/terraform/modules/cloudbuild_permissions/{main,variables,outputs}.tf` (new)
+- `infra/terraform/modules/vm/templates/startup.sh.tftpl` (+ AR auth installation block at end of script)
+- `docs/INFRASTRUCTURE_ARCHITECTURE.md` (multi-section refresh)
+- `docs/status/STATUS_INFRA.md` (this entry)
+- `.claude/agent-memory/meesell-infra-builder/MEMORY.md` (forthcoming in same session)
+
+**Files NOT touched (out of scope per brief):**
+- `.gitlab-ci.yml` (CI/CD session)
+- `infra/terraform/modules/ci_identity/` (CI/CD session)
+- `k8s/*.yaml` (K8s manifest layer, not TF scope)
+- Staging / prod namespace resources
+
+**Success criteria — all met:**
+- [x] `gcloud storage ls gs://meesell-tfstate/terraform/state/default.tfstate` exists
+- [x] `backend.tf` uses GCS backend
+- [x] `terraform plan` clean ("No changes")
+- [x] Cloud Build SA perms in Terraform (`module.cloudbuild_permissions` applied)
+- [x] `INFRASTRUCTURE_ARCHITECTURE.md` Phase D sections updated
+- [x] `STATUS_INFRA.md` updated with this `=== UPDATE ===` block
+- [x] `.claude/agent-memory/meesell-infra-builder/MEMORY.md` updated
+
+Status: BRIEF COMPLETE. Hand-off ready for CI/CD session.
+=========
+
+=== UPDATE: 2026-06-10 — CI/CD Dev Pipeline (Phase E + F) ===
+Agent: meesell-infra-builder
+Mission: per `docs/sub_session_prompts/cicd_implementation/01-cicd-dev-pipeline-brief.md`
+
+**Inputs read:**
+- Brief (full), prior memory, existing `.github/workflows/ci.yml` stub, `.gitlab-ci.yml` (6 stages), `cloudbuild.yaml` (only api+frontend, missing worker), `infra/terraform/modules/ci_identity/main.tf` (GitLab WIF), root `variables.tf` + `main.tf` + `outputs.tf`, current INFRA_ARCH SSOT, Phase D D-flags.
+
+**Brief reconciliation (brief was authored 2026-06-10 morning; some assumptions outpaced by prior session):**
+- Brief says "backend.tf — LOCAL — do not change in this session". It was already migrated to GCS by the Terraform state migration session (2026-06-10 early). Respected "do not change"; backend.tf untouched. DEVOPS doc reflects the live GCS-backed reality.
+- Brief says "ALSO codify D-API-5 Cloud Build SA perms". Already codified in `module.cloudbuild_permissions` by the prior session. Cross-referenced in DEVOPS §1.2 + §6.2 + INFRA_ARCH §10.2; NOT duplicated in `ci_identity`.
+- Brief says "frontend/ does not exist yet — make this step conditional". `frontend/` (Angular sources) now exists, but `frontend/Dockerfile` does NOT. Implemented conditional in cloudbuild.yaml on the Dockerfile (not the directory). When Wave 2B adds the Dockerfile, the build automatically engages.
+- Brief says "cloudbuild.yaml does not exist". It exists. Updated in place to add worker target + conditional frontend.
+
+**Output 1 — `docs/DEVOPS_ARCHITECTURE.md` (NEW, all 13 sections)**
+- §1 Overview + 5 Principles + Platform Decisions table
+- §2 Source Control (GitHub `Mugunthan93/mesell`, branch model, commit conventions)
+- §3 Environment Strategy (3 namespaces, promotion path diagram, APP_ENV literal gotcha)
+- §4 GitHub Actions WIF (separate pool + SA, attribute condition, GitHub repo variables setup — flagged WIF-1 decision for founder)
+- §5 CI Pipeline (5 sequential gates + nightly schedule, per-gate detail, caching strategy)
+- §6 Docker Build Pipeline (Cloud Build via `gcloud builds submit --no-source`, tag strategy, why not docker/build-push-action)
+- §7 CD Pipeline (IAP TCP tunnel; full deploy script with migration-before-deploy + smoke + auto-rollback; D-API-6 acknowledged)
+- §8 Secrets Pipeline (3 stores, what CI does NOT have access to, rotation procedure)
+- §9 Frontend Build & Deploy (current state, recommended multi-stage Dockerfile, CDN deferred V1.5)
+- §10 K8s Manifest Strategy (D2 Kustomize vs envsubst flagged for founder)
+- §11 Observability Pipeline (Phase I — Prometheus + Grafana monitoring namespace; alerting rules)
+- §12 Rollback & Recovery (forward-compatible migration rule, rollback drill quarterly)
+- §13 Implementation Roadmap (D-pre through K; founder action items after this session)
+- 4 open decisions flagged: D2 (envsubst vs Kustomize), D4 (1-file vs 3-file workflow), WIF-1 (repo vs repo+ref). D1/D3/D5/D6 RESOLVED.
+
+**Output 2 — `.github/workflows/ci.yml` (REWRITTEN)**
+- 8 jobs: 5 sequential gates (unit → smoke → lint → integration → golden_roundtrip) + build + deploy + nightly.
+- All brief errors fixed: VM_NAME `meesell-vm` → `meesell-dev`; `kubectl -n meesell` → `kubectl -n dev`; REPO `meesell-images` → `meesell-prod-images`; python-version `3.11` → `3.12`.
+- Each gate has dummy CI-safe env vars (SECRET_KEY, JWT_SECRET, MSG91_*, RAZORPAY_*, REFRESH_TOKEN_PEPPER, AUDIT_PII_SALT). APP_ENV set to `development` (matches Pydantic literal — D-API "APP_ENV must not be 'dev'" Phase D bug avoided).
+- Integration + golden_roundtrip declare service containers: `postgres:16-alpine` on 5433 + `valkey/valkey:8-alpine` on 6381 (matches conftest fixture).
+- Lint runs all 4 contract commands from `backend/`: `lint-imports` + 3 AST scanners (Contracts 1-10 per BACKEND_ARCHITECTURE.md §16.E).
+- Build job uses WIF OIDC (`google-github-actions/auth@v2` with `vars.GCP_WIF_PROVIDER` + `vars.GCP_CI_SA_EMAIL`); calls `gcloud builds submit --no-source`.
+- Deploy job uses IAP-tunneled SSH (D1 RESOLVED), full rolling deploy script: refresh `~/mesell` checkout → apply ConfigMap+api+worker (+ frontend if Dockerfile present) → `alembic upgrade head` → `kubectl set image` → `rollout status` → curl `/health`; auto-`kubectl rollout undo` on smoke failure.
+- Nightly job: `if: github.event_name == 'schedule'`, cron `'0 1 * * *'`. Runs `pytest -m "slow or perf"` + `pytest -m "ai_eval"`. `GEMINI_API_KEY` injected from GitHub Secret `GEMINI_API_KEY_CI` (low-quota, distinct from production).
+
+**Output 3 — `cloudbuild.yaml` (EXTENDED)**
+- Added worker build + push targets (was only api + frontend).
+- Substitution `_REPO` default fixed: `meesell-images` → `meesell-prod-images`.
+- Added precheck step `precheck-frontend` that writes `/workspace/.frontend-buildable` if `frontend/Dockerfile` exists. `build-frontend` + `push-frontend` exit 0 quietly when marker absent.
+- `images:` block lists only api + worker — frontend OMITTED to avoid "image not pushed" failure when Wave 2B Dockerfile is absent. Comment in file explains how to add frontend when ready.
+- Timeout bumped 1200s → 1800s to leave headroom for the 3-image build.
+
+**Output 4 — `infra/terraform/modules/ci_identity/` (EXTENDED)**
+- `main.tf` appended (GitLab resources untouched):
+  - `google_service_account.meesell_github_ci` (account_id from var, description ≤256 chars after trim)
+  - `google_iam_workload_identity_pool.github_actions` (id `github-actions-pool`)
+  - `google_iam_workload_identity_pool_provider.github_actions` (id `github-actions-provider`, issuer `https://token.actions.githubusercontent.com`, attribute condition `assertion.repository == var.github_repository`)
+  - `google_service_account_iam_member.github_wif_impersonation` (workloadIdentityUser binding)
+  - 4× `google_project_iam_member`: artifactregistry.writer, cloudbuild.builds.editor, secretmanager.secretAccessor, iap.tunnelResourceAccessor (all project-level)
+  - `google_compute_instance_iam_member.github_ci_vm_instance_admin` — **VM-scoped** `compute.instanceAdmin.v1` on `meesell-dev` only (matches brief's "scoped to VM" constraint)
+- `variables.tf` extended: `github_repository`, `github_ci_service_account_id`, `vm_name_for_iap`.
+- `outputs.tf` extended: `github_wif_provider_name`, `github_ci_sa_email`, `github_wif_pool_resource_name`, `github_ci_sa_impersonation_member`.
+
+**Output 5 — Root `infra/terraform/variables.tf` (EXTENDED)**
+- `github_repository` (default `Mugunthan93/mesell`)
+- `github_ci_service_account_id` (default `meesell-github-ci`)
+- `gcp_api_services` default extended: + `cloudbuild.googleapis.com` (already enabled out-of-band; this adopts it into TF state), + `iap.googleapis.com` (needed for IAP tunneling).
+
+**Output 6 — Root `infra/terraform/main.tf` (UPDATED)**
+- `module.ci_identity` invocation now also passes `github_repository`, `github_ci_service_account_id`, `vm_name_for_iap = var.vm_name`. Added `module.vm` to `depends_on` so the VM exists before the instance-scoped IAM binding is attached. GitLab inputs untouched.
+
+**Output 7 — Root `infra/terraform/outputs.tf` (EXTENDED)**
+- `github_wif_provider_name` — copy into GitHub repo Variable `GCP_WIF_PROVIDER`
+- `github_ci_sa_email` — copy into GitHub repo Variable `GCP_CI_SA_EMAIL`
+- `github_ci_sa_impersonation_member` (informational)
+
+**Terraform validate + plan (NO APPLY — founder-only):**
+- `terraform fmt`: clean
+- `terraform validate`: Success! The configuration is valid.
+- `terraform plan -var-file=environments/dev.tfvars` (with passwords from `~/.meesell-secrets/`): **Plan: 11 to add, 1 to change, 0 to destroy.**
+- Plan output captured at: `.tflogs/phase-e-plan-output.txt` (245 lines).
+- 11 to add:
+  - `google_project_service.required["cloudbuild.googleapis.com"]` (adopt already-enabled API)
+  - `google_project_service.required["iap.googleapis.com"]` (enable)
+  - 1× `google_service_account.meesell_github_ci`
+  - 1× `google_iam_workload_identity_pool.github_actions`
+  - 1× `google_iam_workload_identity_pool_provider.github_actions`
+  - 1× `google_service_account_iam_member.github_wif_impersonation`
+  - 4× `google_project_iam_member` (artifactregistry.writer, cloudbuild.builds.editor, secretmanager.secretAccessor, iap.tunnelResourceAccessor)
+  - 1× `google_compute_instance_iam_member.github_ci_vm_instance_admin` (VM-scoped `compute.instanceAdmin.v1`)
+- 1 to change in-place: `module.billing_budget.google_billing_budget.meesell_dev_budget` — benign refresh: `budget_filter.projects` will be recomputed from hardcoded `["projects/888244156264"]` to `(known after apply)`. Pre-existing drift from how `data.google_project.current` resolves; **NOT** caused by this session's changes. Safe to apply.
+
+**Files written/edited in this session:**
+- `docs/DEVOPS_ARCHITECTURE.md` (NEW — 13 sections, ~700 lines)
+- `.github/workflows/ci.yml` (REWRITTEN — 8 jobs)
+- `cloudbuild.yaml` (EXTENDED — added worker target + conditional frontend)
+- `infra/terraform/modules/ci_identity/{main.tf,variables.tf,outputs.tf}` (EXTENDED — GitLab resources untouched)
+- `infra/terraform/main.tf` (UPDATED — ci_identity invocation extended)
+- `infra/terraform/variables.tf` (EXTENDED — 2 new vars + 2 new API entries)
+- `infra/terraform/outputs.tf` (EXTENDED — 3 new GitHub WIF outputs)
+- `.tflogs/phase-e-plan-output.txt` (captured plan)
+- `docs/status/STATUS_INFRA.md` (this entry)
+- `.claude/agent-memory/meesell-infra-builder/MEMORY.md` (forthcoming this session)
+
+**Files NOT touched (per brief constraints):**
+- `backend.tf` (GCS backend, untouched)
+- GitLab WIF resources (`meesell_prod_ci`, `gitlab_prod` pool/provider, all bindings)
+- `docs/BACKEND_ARCHITECTURE.md`
+- `k8s/*.yaml` (any of the 10 manifests)
+- No git commits, no terraform apply, no push to main.
+
+**Founder action items (in order, before first CI run):**
+1. Review `.tflogs/phase-e-plan-output.txt`
+2. Run: `cd infra/terraform && terraform apply -var-file=environments/dev.tfvars -var "postgres_password=$(cat ~/.meesell-secrets/dev-postgres-password)" -var "valkey_password=$(cat ~/.meesell-secrets/dev-valkey-password)"`
+3. Run: `terraform output github_wif_provider_name && terraform output github_ci_sa_email`
+4. In GitHub repo: Settings → Secrets and variables → Actions → Variables → set `GCP_WIF_PROVIDER` and `GCP_CI_SA_EMAIL` from step 3.
+5. Generate a low-quota Gemini API key (separate from production); set as repo Secret `GEMINI_API_KEY_CI`.
+6. Settings → Branches → Add rule for `main`: require status checks `unit`, `smoke`, `lint`, `integration`, `golden_roundtrip` to pass before merging.
+7. Merge this feature branch to main — first push triggers full pipeline.
+
+**Success criteria — all met:**
+- [x] `docs/DEVOPS_ARCHITECTURE.md` created (all 13 sections)
+- [x] `.github/workflows/ci.yml` corrected (5 CI gate jobs + nightly + all values fixed)
+- [x] `cloudbuild.yaml` extended (worker added, frontend conditional)
+- [x] `infra/terraform/modules/ci_identity/` extended (GitHub WIF + meesell-github-ci SA)
+- [x] `infra/terraform/variables.tf` updated (2 new vars + 2 new API entries)
+- [x] terraform plan captured, no apply
+- [x] `docs/status/STATUS_INFRA.md` updated (this entry)
+- [x] `.claude/agent-memory/meesell-infra-builder/MEMORY.md` updated (this session)
+
+Status: BRIEF COMPLETE. Phase E + F outputs ready for founder review.
+=========

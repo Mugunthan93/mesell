@@ -58,6 +58,49 @@ systemctl is-active k3s || { echo "ERROR: k3s service is not active after instal
 sleep 30
 kubectl get nodes || { echo "WARNING: kubectl get nodes failed immediately after install — this may be transient. Check systemctl status k3s after a few minutes." ; }
 
+# --- Artifact Registry node auth (Phase D codification, 2026-06-10) ---
+# K3s does NOT bundle a credential helper for GCP Artifact Registry. We configure
+# /etc/rancher/k3s/registries.yaml with an OAuth token from the GCE metadata server,
+# refreshed every 45 minutes by a cron job (token TTL is 60 min — 15-min cushion).
+# The VM SA (888244156264-compute@developer.gserviceaccount.com) has
+# roles/artifactregistry.reader on meesell-prod-images via module.cloudbuild_permissions
+# and the historical Phase A gcloud binding, so the metadata token can pull images.
+# Production upgrade path: kubelet-credential-providers + cloud-provider-gcp
+# (`gcp-cloud-credential-provider` binary). Deferred to staging/prod cluster setup.
+echo "--- Installing AR node auth (registries.yaml + refresh cron)..."
+
+# Refresh script — fetches a fresh token and rewrites registries.yaml on each invocation.
+cat > /usr/local/bin/refresh-ar-token.sh <<'SCRIPT'
+#!/bin/bash
+set -e
+TOKEN=$(curl -sf -H "Metadata-Flavor: Google" \
+  "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+cat > /etc/rancher/k3s/registries.yaml <<YAML
+configs:
+  "asia-south1-docker.pkg.dev":
+    auth:
+      username: oauth2accesstoken
+      password: "$${TOKEN}"
+YAML
+SCRIPT
+chmod +x /usr/local/bin/refresh-ar-token.sh
+
+# Write the initial registries.yaml so containerd has auth from the very first pod pull.
+/usr/local/bin/refresh-ar-token.sh
+
+# Cron — every 45 min. Idempotent: grep -v strips any prior entry before re-adding.
+(crontab -l 2>/dev/null | grep -v refresh-ar-token; \
+  echo "*/45 * * * * /usr/local/bin/refresh-ar-token.sh >> /var/log/ar-token-refresh.log 2>&1") \
+  | crontab -
+
+# Restart K3s so containerd picks up the new registries.yaml. K3s loads this file
+# at start-up; without the restart, the auth would not take effect until the next reboot.
+systemctl restart k3s
+sleep 15
+systemctl is-active k3s || { echo "WARNING: k3s did not come back active after AR auth install — investigate /var/log/syslog." >&2; }
+echo "--- AR node auth installed and K3s restarted."
+
 echo "=== meesell-dev startup script COMPLETE: $(date -u +%Y-%m-%dT%H:%M:%SZ) ==="
 echo "Next step: retrieve kubeconfig per playbook §3.3:"
 echo "  gcloud compute scp meesell-dev:/etc/rancher/k3s/k3s.yaml ~/.kube/meesell-dev.yaml --zone=asia-south1-a"
