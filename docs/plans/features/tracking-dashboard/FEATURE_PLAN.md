@@ -4,7 +4,7 @@
 **Session:** `mesell-tracking-dashboard-planning-session-1`
 **Output branch:** `feature/tracking-dashboard/planning` (SHA at plan authoring: `9a2b25c`)
 **Operative spec:** `docs/BACKEND_ARCHITECTURE.md` §13, as amended by §13.A.1 (2026-06-07)
-**Version:** 1.0 — Initial lock
+**Version:** 2.0 — Canonical pattern v2 conformance (v1.0 = 2026-06-10 initial lock; v2.0 = 2026-06-10 amendment in `mesell-tracking-dashboard-amendment-session-1`)
 
 ---
 
@@ -1426,11 +1426,19 @@ Each risk is feature-specific to tracking-dashboard and references a concrete mi
 
 Notes on the table:
 
-- **R1 likelihood is Medium because** catalog-form ships BEFORE tracking-dashboard (per Decision D4) — if catalog-form's `list_paginated` already exists and is correct (single paginated SQL call, not per-product sub-queries), R1 collapses to Low. The risk re-elevates if catalog-form's review missed the N+1 check.
-- **R2 is split-state** — V1 is Low/Low because search is deferred; V1.5 elevation is High/High because pg_trgm + GIN is the only practical index choice for ILIKE-on-text. The memo to data-engineer is the trigger.
-- **R3 is bounded** — Decision D1's snooze design has a hard 24h cap, so the failure mode degrades the *speed* of onboarding completion, not its possibility.
-- **R4's mitigation explicitly DOES NOT include preemptive scaffolding** — building toward 11 cross-module calls before V1.5 lock would violate the §2.D matrix and the modular monolith discipline locked in §13.D.
-- **R5 is treated as an acceptable UX artifact** — solving it would require distributed locking or read-after-write coordination, both incompatible with the zero-egress posture of §13.H. The artifact is rare (requires a delete during pagination) and self-corrects on next refresh.
+- **R1 likelihood is Medium because** catalog-form ships BEFORE tracking-dashboard (per Decision D4) — if catalog-form's `list_paginated` already exists and is correct (single paginated SQL call, not per-product sub-queries), R1 collapses to Low. The risk re-elevates if catalog-form's review missed the N+1 check. Detection mechanism: integration test `test_dashboard_list_full_flow.py` includes a P95 timing assertion. If it ever fails, the failure mode is N+1 in 90% of cases. Escalation: 3 failed re-dispatches under the "Trigger: P95 > 200ms" preamble triggers an Inter-lead Request to the catalog-form maintainer (likely also `meesell-backend-coordinator` since both features share the lead).
+- **R2 is split-state** — V1 is Low/Low because search is deferred; V1.5 elevation is High/High because pg_trgm + GIN is the only practical index choice for ILIKE-on-text. The memo to data-engineer is the trigger. The memo lives at `.claude/agent-memory/meesell-data-engineer/feature_tracking-dashboard.md` (note: this file does NOT exist in V1 because the data-engineer is omitted from this feature per Decision D-A; the file is CREATED at V1.5 planning). Backend lead is responsible for opening this memo when the §13.A.1 amendment is lifted.
+- **R3 is bounded** — Decision D1's snooze design has a hard 24h cap, so the failure mode degrades the *speed* of onboarding completion, not its possibility. Observation method post-launch: query `onboarding_complete=false` users with banner shown ≥ N times. If a single user dismisses the banner ≥ 14 times in 14 days without completing the profile, that is a UX signal for V1.5 redesign (e.g., progressive disclosure, modal at first-login). NOT a V1 action — V1 ships the 24h snooze as designed.
+- **R4's mitigation explicitly DOES NOT include preemptive scaffolding** — building toward 11 cross-module calls before V1.5 lock would violate the §2.D matrix and the modular monolith discipline locked in §13.D. The current `dashboard/service.py` `list_products_for_dashboard` signature MUST NOT accept image/pricing/export-related parameters in V1. If a specialist adds them (e.g., `include_image_summary: bool = False`), the lead rejects the PR — the V1.5 elevation requires a fresh founder decision in this FEATURE_PLAN.md's Decisions section, not a forward-compatible parameter slot.
+- **R5 is treated as an acceptable UX artifact** — solving it would require distributed locking or read-after-write coordination, both incompatible with the zero-egress posture of §13.H. The artifact is rare (requires a delete during pagination) and self-corrects on next refresh. Frontend product-row component does NOT display "this product was just deleted by another tab" toast — that would require a stable client-side identity check and is out of scope. The post-delete UI behaviour is: the deleted row vanishes on next paginated fetch; if the page becomes empty after deletion, the empty-state CTA renders.
+
+Risk monitoring across the dispatch lifecycle:
+
+- Backend lead reviews R1 at services-builder PR review (Performance verification check). R1 carries forward as a regression risk into V1.5 (search will compound the N+1 risk on the same query).
+- Backend lead schedules R2 as a V1.5-planning memo. No V1 action.
+- Frontend lead reviews R3 at component-builder PR review (ProfileCompletenessBanner contract check). Post-launch instrumentation hook is out of scope for V1.
+- Both leads review R4 at every PR review on this feature — the rejection criterion is concrete and verifiable.
+- Frontend lead acknowledges R5 in the PR description (single sentence: "soft-delete race is acknowledged as a one-refresh UX artifact per FEATURE_PLAN.md Risk register R5").
 
 ---
 
