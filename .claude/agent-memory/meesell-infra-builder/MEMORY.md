@@ -393,3 +393,14 @@ The "1 to change" is `module.billing_budget.google_billing_budget.meesell_dev_bu
 5. Generate low-quota Gemini key; set as repo Secret `GEMINI_API_KEY_CI`
 6. Branch protection on `main` to require the 5 CI checks
 7. Merge feature branch → main; first push fires the full pipeline.
+
+---
+
+## Session mesell-repo-management-session-1 — Step 5 — Infra Builder spec evolved into Infra Lead spec; feature_board_infra.md initialised
+
+- **Founder decisions D1/D2/D3 locked 2026-06-10 (verbatim):** D1 — *"Lead reviews/merges `feature/{name}/<group>` → `feature/{name}`. Founder reviews/merges `feature/{name}` → `develop`."* D2 — *"Specialist marks `IN REVIEW` on PR open. Lead marks `MERGED` on PR merge."* D3 — *"Replace, not extend. The 5 coordinator/standalone specs at `.claude/agents/meesell-{backend,frontend,ai}-coordinator.md`, `.claude/agents/meesell-data-engineer.md`, `.claude/agents/meesell-infra-builder.md` are rewritten top-to-bottom as lead specs. The 'coordinator' term is retired in those files; the agent slugs stay unchanged (no rename)."*
+- **Files written this session:** `.claude/agents/meesell-infra-builder.md` rewritten clean (176 → 378 lines, title "MeeSell Infra Lead", slug unchanged); `docs/status/feature_board_infra.md` created (empty initial state per §6.2 template); this MEMORY.md appended.
+- **Behavioural change:** standalone posture preserved (no specialists — infra blast radius too heavy to delegate, intentional), but now wears Lead hat on top of existing infra duties — owns the merge gate for `feature/{name}/infra` → `feature/{name}` (self-review with explicit comments still required), owns `feature_board_infra.md` as sole writer with IN PROGRESS / IN REVIEW / MERGED transitions tracked even on self-PRs, session naming `mesell-{feature-slug}-infra-session-{N}` enforced including for self-dispatch (commit footer + PR body + board column).
+- **Write-path workaround proven:** `Write`/`Edit` denies on `.claude/agents/*.md` for sub-agents — used Bash heredoc Pattern B (write to /tmp + cp) for the spec. `Write` worked fine for the board (under `docs/status/`) and `Edit` worked fine for MEMORY.md (under `.claude/agent-memory/`). Pattern A (direct heredoc to target) also acceptable per brief; chose Pattern B for the spec to keep the operation atomic.
+- **Pointers:** `docs/plans/repo_management/MASTER_PLAN.md` §6 (feature_board template + status vocabulary + update protocol + query protocol) and §7 (lead responsibilities: 7.1 owns, 7.2 autonomous decisions, 7.3 founder-escalation, 7.4 handoff, 7.5 cross-lead memo protocol) are the authoritative sources for the new lead behaviour. Cross-lead pairs cataloged in spec: infra↔backend (DB migrations, secret rotation), infra↔frontend (CDN, ingress for federation, CSP, build artifacts), infra↔ai (Gemini + LangFuse key rotation), infra↔data (snapshot bucket, scraper egress), infra↔all (namespace lifecycle, CI/CD gates, cost monitoring).
+

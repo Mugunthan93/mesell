@@ -150,7 +150,42 @@ BACKEND / FRONTEND / AI sessions are now fully unblocked. Hand-offs documented i
 
 **Verdict for founder review:** ready. Recommended dispatch order R1+R3 (parallel) → R2 → R5-G10 → R4. Total V1 effort ~5–6 person-days, half of which is founder-bounded content authoring.
 
+## Session mesell-repo-management-session-1 — Step 5 — Data Engineer spec evolved into Data Lead spec; feature_board_data.md initialised
+
+**Date:** 2026-06-10 (initial creation)
+**Branch:** repo-management/foundation (off origin/develop)
+**Trigger:** MASTER_PLAN.md ratified APPROVED 2026-06-10. Step 5 of the rollout: rewrite the 5 lead specs.
+
+**Founder decisions locked verbatim:**
+- D1 — Merge gate: Lead reviews/merges `feature/{name}/<group>` → `feature/{name}`. Founder reviews/merges `feature/{name}` → `develop`.
+- D2 — Board updates: Specialist marks `IN REVIEW` on PR open. Lead marks `MERGED` on PR merge.
+- D3 — Spec rewrite: Clean replacement. Slug stays `meesell-data-engineer`. Title and framing change to "Data Lead". "Coordinator" framing in the body is retired.
+
+**Files written:**
+- `.claude/agents/meesell-data-engineer.md` — top-to-bottom rewrite (6,268 → 19,212 bytes). Frontmatter slug/model/tools unchanged; description rewritten. Body now leads with Identity-as-Lead, then Owns / Merge gate / Update protocol / Cross-lead coordination / Session naming, then Mandatory First Action (updated read order to include MASTER_PLAN + feature_board_data.md), Decentralized Memory (preserved), Hard Constraints (preserved + 4 new NEVER + 2 new ALWAYS), Project Context (preserved), Specialists you dispatch (new dedicated section), Scope IN/OUT (preserved + merge gate + board), Operating Procedure (preserved + board update steps), Reporting Format (preserved + Session + Board sweep lines), Stop Conditions (preserved + 2 new), Hand-off Protocol (reframed around board).
+- `docs/status/feature_board_data.md` — created per MASTER_PLAN §6.2 template. Empty active/recent/inter-lead tables, status vocabulary, brief Acceptance gate note pointing at `.github/PULL_REQUEST_TEMPLATE/data.md`.
+
+**Behavioural change (forward-going):**
+- I am now a **lead**, not a coordinator. I approve and merge `feature/{name}/data` → `feature/{name}` PRs in the data domain. I do NOT approve `feature/{name}` → `develop` — that's the founder's gate.
+- I am the **sole writer** of `docs/status/feature_board_data.md`. I never touch another lead's board.
+- Every specialist dispatch carries the session name `mesell-{feature}-data-session-{N}`.
+- Cross-lead coordination uses the memo protocol — write to `.claude/agent-memory/meesell-data-engineer/handoff_<topic>.md`, open an "Inter-lead requests open" row on my own board, 48-hr SLA before founder escalation.
+- Board sweeps at session start AND session end. 7+ day untouched rows flagged in Notes and STATUS_DATA.md.
+
+**Pointers:**
+- MASTER_PLAN.md §1 (branch model), §2 (merge flow — D1 lives at §2.1/§2.2), §4 (session naming), §5.5 (data PR template), §6 (feature_board.md — D2 lives at §6.5), §7 (lead responsibilities — §7.1 ownership, §7.3 escalation, §7.5 cross-lead).
+- Decision D3 explicit at MASTER_PLAN.md "Decisions" table — slug retained, framing replaced.
+
+**Non-impact areas (verified untouched per task constraints):**
+- No other `meesell-*.md` agent spec touched.
+- No other `feature_board_*.md` touched (only `feature_board_data.md` created).
+- No `backend/`, `frontend/`, `k8s/`, `infra/`, `terraform/`, `data/`, `themes/` files touched.
+- No commits made.
+- No MASTER_PLAN modifications.
+- No STATUS_DATA.md modifications (this is repo governance, not a feature chunk — confirmed scope-out).
+
 ## MEMORY.md
+- [Session mesell-repo-management-session-1](#session-mesell-repo-management-session-1--step-5--data-engineer-spec-evolved-into-data-lead-spec-feature_board_datamd-initialised) — Data Lead spec rewrite + feature_board_data.md initialisation per MASTER_PLAN §6 + §7
 - [Founder's batch workflow preference](#2026-06-04--founders-batch-workflow-preference-locked) — full-corpus, batch-by-batch, discussion-gated
 - [Workspace hook conflict fallback](#2026-06-04--workspace-hook-conflict--one-time-fallback-pattern) — when meesell-* dispatch is blocked, use nexus python-developer-agent with memory routed to meesell-*/MEMORY.md
 - [SSoT integration is manual](#2026-06-04--ssot-integration-is-manual-never-automated) — coordinator + founder write it, never the specialist
