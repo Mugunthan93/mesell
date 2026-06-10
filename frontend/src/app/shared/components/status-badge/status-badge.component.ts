@@ -6,55 +6,34 @@ import { ImagePrecheckResult } from '@shared/enums/image-precheck-result.enum';
 
 type StatusValue = ProductStatus | ExportStatus | ImagePrecheckResult;
 
-interface BadgeStyle {
-  background: string;
-  color: string;
-  borderColor: string;
-}
-
-const STATUS_STYLES: Record<string, BadgeStyle> = {
-  draft: { background: '#F3F4F6', color: '#6B7280', borderColor: '#D1D5DB' },
-  ready: { background: '#DCFCE7', color: '#15803D', borderColor: '#BBF7D0' },
-  exported: { background: '#DBEAFE', color: '#1D4ED8', borderColor: '#BFDBFE' },
-  live: { background: '#DBEAFE', color: '#1D4ED8', borderColor: '#BFDBFE' },
-  processing: { background: '#FEF3C7', color: '#D97706', borderColor: '#FDE68A' },
-  pending: { background: '#FEF3C7', color: '#D97706', borderColor: '#FDE68A' },
-  failed: { background: '#FEE2E2', color: '#DC2626', borderColor: '#FECACA' },
-  deleted: { background: '#FEE2E2', color: '#DC2626', borderColor: '#FECACA' },
+const STATUS_CLASSES: Record<string, string> = {
+  draft:      'bg-gray-100 text-gray-500 border-gray-200',
+  ready:      'bg-green-100 text-green-700 border-green-200',
+  exported:   'bg-blue-100 text-blue-700 border-blue-200',
+  live:       'bg-blue-100 text-blue-700 border-blue-200',
+  processing: 'bg-amber-100 text-amber-600 border-amber-200',
+  pending:    'bg-amber-100 text-amber-600 border-amber-200',
+  failed:     'bg-red-100 text-red-600 border-red-200',
+  deleted:    'bg-red-100 text-red-600 border-red-200',
 };
 
-const DEFAULT_STYLE: BadgeStyle = {
-  background: '#F3F4F6',
-  color: '#6B7280',
-  borderColor: '#D1D5DB',
-};
-
-const BASE_STYLE = [
-  'display: inline-flex',
-  'align-items: center',
-  'font-size: 11px',
-  'font-weight: 600',
-  'padding: 2px 8px',
-  'border-radius: 999px',
-  'border: 1px solid',
-  'letter-spacing: 0.04em',
-  'text-transform: uppercase',
-  'white-space: nowrap',
-].join('; ');
+const DEFAULT_CLASSES = 'bg-gray-100 text-gray-500 border-gray-200';
 
 @Component({
   selector: 'mee-status-badge',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <span [style]="badgeStyle()">{{ status() }}</span>
+    <span
+      class="inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-full border tracking-[0.04em] uppercase whitespace-nowrap"
+      [class]="badgeClass()"
+    >{{ status() }}</span>
   `,
 })
 export class StatusBadgeComponent {
   readonly status = input.required<StatusValue>();
 
-  readonly badgeStyle = computed(() => {
-    const s = STATUS_STYLES[this.status() as string] ?? DEFAULT_STYLE;
-    return `${BASE_STYLE}; background: ${s.background}; color: ${s.color}; border-color: ${s.borderColor};`;
+  readonly badgeClass = computed(() => {
+    return STATUS_CLASSES[this.status() as string] ?? DEFAULT_CLASSES;
   });
 }

@@ -470,7 +470,7 @@ The Module Catalog is the **ownership map** for specialists. When the founder di
 
 **Cross-module dependencies (service calls only, per §16):**
 - Calls `catalog.service.list_products(user_id, pagination)` for the primary listing.
-- Calls `customer.service.get_profile_completeness(user_id)` for onboarding-progress badges.
+- Calls `customer.service.get_onboarding_completeness(user_id)` for onboarding-progress badges.
 - (Optionally) calls `image.service.summary(product_ids)`, `pricing.service.summary(product_ids)`, `export.service.summary(product_ids)` for status-column hydration in the listing.
 
 **Adapters used:** none.
@@ -1136,7 +1136,7 @@ Each middleware is documented below: purpose (1 line), position in the chain, `r
 - Position: 7th — **runs AFTER the route handler**.
 - Reads `request.state.{user_id, request_id}`, route path, response status. Reads response body for diff capture (autosave PATCH events only — see coalescing below).
 - Failure mode: drop-on-failure with logged warning — observability MUST NOT block business path per §1.E LangFuse rule.
-- **Coalescing.** Coalesces same-key `(user_id, product_id)` PATCH events within a 5-minute window per `MVP_ARCH §11.4` — 30× volume reduction for autosave. Non-autosave events (`product.export`, `seller_profile.update`, `auth.login`) are NEVER coalesced — each occurrence is a distinct audit fact per §11.4.
+- **Coalescing.** Coalesces same-key `(user_id, product_id)` PATCH events within a 5-minute window per `MVP_ARCH §11.4` — 30× volume reduction for autosave. Non-autosave events (`export.initiated`, `customer.profile_updated`, `auth.login.success`) are NEVER coalesced — each occurrence is a distinct audit fact per §11.4.
 - **PII scrubbing.** Before any row is written, `phone` is replaced with `SHA-256(phone + PII_SALT)`, `FSSAI_no` / `GST_no` are stripped, per MVP_ARCH §11.9. PII_SALT lives in `shared/config.AUDIT_PII_SALT`.
 - **Write posture.** V1 = **synchronous inline append** per MVP_ARCH §11.3 (current traffic floor justifies it). V1.5 moves to a Celery sink per MVP_ARCH §14 — `core/middleware/audit_mw.py` becomes `enqueue(audit_event_task)` without changing the call site.
 - Owner: `meesell-services-builder`.
@@ -2742,7 +2742,7 @@ Locked test classes per the §19 SKELETON amendment that absorbed FE-D5 per coor
 
 ### 7.K Extraction notes (V1.5+)
 
-Per §21 extraction order, `iam` is the **2nd-easiest** module to extract after `export`. Data surface: 1 table (`users`). Public contract is already an interface — `core/auth.get_current_user` becomes a remote JWT-validation HTTP call in V1.5 (the iam-pod exposes `POST /internal/auth/validate` returning `CurrentUser`). At extraction time:
+Per §21.B extraction order, `iam` is the **7th module to extract** (second-to-last, before `catalog`). The reason: every authenticated route in the monolith consumes `core/auth_mw.get_current_user` — all 6 earlier modules must already have their `get_current_user` shim wired to the extracted `iam-svc` before `iam` itself can safely split off. Data surface: 1 table (`users`). Public contract is already an interface — `core/auth.get_current_user` becomes a remote JWT-validation HTTP call in V1.5 (the iam-pod exposes `POST /internal/auth/validate` returning `CurrentUser`). At extraction time:
 1. Lift `modules/iam/` to its own pod (FastAPI + iam-only).
 2. Repoint `core/auth.py`'s `get_current_user` to call the extracted iam-pod via HTTP instead of decoding JWT in-process (or keep in-process decoding + remote `users` lookup — TBD per §21).
 3. Move the Valkey DB 0 allowlist keys to the extracted iam-pod's Valkey, or share the existing Valkey via cluster.
@@ -2775,7 +2775,7 @@ The 5 endpoint contracts below are normative. Request/response shapes reference 
 
 - **Request:** no body. Authorization: `Bearer <access_token>` per §4.B.
 - **Response 200:** `SellerProfileResponse` (full profile shape per §8.E).
-- **Response 404:** profile does not exist yet (first-time seller, expected state — frontend redirects to the onboarding wizard). Envelope `validation_message_id="customer.profile_not_found"`.
+- **Response 404:** profile does not exist yet (first-time seller, expected state — frontend redirects to the onboarding wizard). Envelope `validation_message_id="customer.profile.not_found"`.
 - **Rate limit:** per-IP fallback only (no per-user — frontend polls on every page load per §4.G).
 - **Status codes:** 200, 401, 404.
 - **Audit:** NONE (read-only — same posture as §7.B.5 `/me` for the same flood-prevention reason).
@@ -2792,12 +2792,12 @@ Covers the 9 Legal Metrology fields + `country_of_origin`.
 - **Status codes:** 200, 400 (`validation.{field}.invalid_format`), 401, 422 (Pydantic aggregate).
 - **Audit:** middleware emits `customer.profile.updated` carrying the **changed field NAMES only** (NOT values — values may include PII per `MVP_ARCH §11.9`; field names are safe).
 - **JWT required:** yes.
-- **Flow:** `customer.service.upsert_profile(user_id, patch)` → repository upserts the row → recomputes `profile_complete` flag → returns full profile.
+- **Flow:** `customer.service.upsert_profile(user_id, patch)` → repository upserts the row → recomputes `onboarding_complete` flag → returns full profile.
 
 #### 8.B.3 `PATCH /api/v1/seller-profile/active-categories` — declare/update active super-categories
 
 - **Request body (Pydantic):** `PatchActiveCategoriesRequest({active_super_categories: list[str]})`. **Replaces the array entirely** (NOT additive — declares the seller's current sell-in scope).
-- **Response 200:** `SellerProfileResponse` (updated profile with new `active_super_categories` + recomputed `profile_complete`).
+- **Response 200:** `SellerProfileResponse` (updated profile with new `active_super_categories` + recomputed `onboarding_complete`).
 - **Rate limit:** `@rate_limit(scope="active_categories", limit="60/h", key="user_id")`.
 - **Status codes:** 200, 401, 422 (`validation.super_category.unknown` — when any `super_id` in the array does not exist in the `categories.super_id` distinct set).
 - **Audit:** middleware emits `customer.active_categories.updated` with the new array (no PII concern — `super_id`s are reference data per `MVP_ARCH §11.9`).
@@ -2805,7 +2805,7 @@ Covers the 9 Legal Metrology fields + `country_of_origin`.
 - **Flow:** `customer.service.set_active_categories(user_id, super_ids)`:
   1. Validate each `super_id` exists in the `categories.super_id` distinct set (cached read via `core/cache.py` — global data per §4.D).
   2. Repository updates `active_super_categories TEXT[]`.
-  3. Recompute `profile_complete` (false if any newly declared `super_id` requires compliance extension keys that are not yet present in `compliance_extensions`).
+  3. Recompute `onboarding_complete` (false if any newly declared `super_id` requires compliance extension keys that are not yet present in `compliance_extensions`).
   4. Return updated profile.
 
 #### 8.B.4 `PATCH /api/v1/seller-profile/compliance/{super_id}` — set compliance extension for one declared super-category
@@ -2813,15 +2813,15 @@ Covers the 9 Legal Metrology fields + `country_of_origin`.
 - **Request body (Pydantic):** `PatchComplianceExtensionRequest` — `dict[str, Any]` shape; the super_id-specific required keys are validated by the service against `COMPLIANCE_EXTENSION_MAP` (§8.F). Example for `super_id=26` (Grocery): `{"fssai_license_number": "10012345678901", "fssai_expiry": "2027-12-31"}`.
 - **Response 200:** `SellerProfileResponse`.
 - **Rate limit:** `@rate_limit(scope="compliance_update", limit="60/h", key="user_id")`.
-- **Status codes:** 200, 401, 404 (`customer.super_category_not_declared` — `super_id` not in `active_super_categories`), 422 (`customer.compliance_missing_fields` — required keys absent; envelope payload lists which keys are missing).
+- **Status codes:** 200, 401, 404 (`customer.super_category.not_declared` — `super_id` not in `active_super_categories`), 422 (`customer.compliance.missing_fields` — required keys absent; envelope payload lists which keys are missing).
 - **Audit:** middleware emits `customer.compliance.updated` with `{super_id, updated_keys}` (NO values — license numbers are PII per `MVP_ARCH §11.9`).
 - **JWT required:** yes.
 - **Flow:** `customer.service.set_compliance_extension(user_id, super_id, payload)`:
   1. Read current profile.
-  2. Verify `super_id IN active_super_categories`. If not → 404 `customer.super_category_not_declared`.
+  2. Verify `super_id IN active_super_categories`. If not → 404 `customer.super_category.not_declared`.
   3. Validate `payload` against `COMPLIANCE_EXTENSION_MAP[super_id]` (required keys per `MVP_ARCH §2.2`).
   4. Repository updates `compliance_extensions` JSONB at the `{super_id}` key (JSONB merge — does NOT affect other super_ids' entries).
-  5. Recompute `profile_complete`.
+  5. Recompute `onboarding_complete`.
   6. Return updated profile.
 
 #### 8.B.5 `GET /api/v1/seller-profile/required-fields` — drives the frontend onboarding wizard
@@ -2851,13 +2851,13 @@ async def get_profile(user_id: UUID) -> SellerProfile:
     """Raises ProfileNotFoundError if no row exists. Consumed by catalog/export/dashboard cross-module."""
 
 async def upsert_profile(user_id: UUID, patch: PatchProfileRequest) -> SellerProfile:
-    """First PATCH creates row; subsequent PATCH updates. Recomputes profile_complete on every call."""
+    """First PATCH creates row; subsequent PATCH updates. Recomputes onboarding_complete on every call."""
 
 async def set_active_categories(user_id: UUID, super_ids: list[str]) -> SellerProfile:
-    """Replaces active_super_categories entirely; validates each super_id; recomputes profile_complete."""
+    """Replaces active_super_categories entirely; validates each super_id; recomputes onboarding_complete."""
 
 async def set_compliance_extension(user_id: UUID, super_id: str, payload: dict) -> SellerProfile:
-    """JSONB-merge update at the {super_id} key in compliance_extensions; recomputes profile_complete."""
+    """JSONB-merge update at the {super_id} key in compliance_extensions; recomputes onboarding_complete."""
 
 async def get_required_fields(user_id: UUID) -> RequiredFieldsResponse:
     """Drives onboarding wizard. Cached 60s per §4.D; invalidated on PATCH."""
@@ -2865,7 +2865,7 @@ async def get_required_fields(user_id: UUID) -> RequiredFieldsResponse:
 async def get_compliance_block(user_id: UUID) -> ComplianceBlock:
     """Cross-module call from export.service. Returns the 9 standard fields + country_of_origin."""
 
-async def get_profile_completeness(user_id: UUID) -> ProfileCompleteness:
+async def get_onboarding_completeness(user_id: UUID) -> ProfileCompleteness:
     """Cross-module call from dashboard.service. Returns counts + completeness flag."""
 
 async def assert_eligible_for_super_id(user_id: UUID, super_id: str) -> None:
@@ -2909,7 +2909,7 @@ class SellerProfileResponse(BaseModel):
     # Conditional compliance, JSONB shape per MVP_ARCH §2.2
     compliance_extensions: dict[str, dict]  # {super_id: {key: value, ...}}
     # Bookkeeping
-    profile_complete: bool
+    onboarding_complete: bool
     created_at: datetime
     updated_at: datetime
 
@@ -2931,7 +2931,7 @@ class PatchActiveCategoriesRequest(BaseModel):
 
 class PatchComplianceExtensionRequest(BaseModel):
     # super_id-specific; service-layer validation against COMPLIANCE_EXTENSION_MAP.
-    # Pydantic schema accepts any dict; service rejects malformed payloads with 422 customer.compliance_missing_fields.
+    # Pydantic schema accepts any dict; service rejects malformed payloads with 422 customer.compliance.missing_fields.
     model_config = ConfigDict(extra="allow")
 
 class RequiredFieldsResponse(BaseModel):
@@ -2975,7 +2975,7 @@ class SellerProfile:
     country_of_origin: str
     active_super_categories: list[str]
     compliance_extensions: dict[str, dict]
-    profile_complete: bool
+    onboarding_complete: bool
     created_at: datetime
     updated_at: datetime
 
@@ -3000,7 +3000,7 @@ class ProfileCompleteness:
     base_total_count: int          # always 10 (9 LM fields + country_of_origin)
     extension_complete_count: int
     extension_total_count: int     # depends on active_super_categories
-    profile_complete: bool         # mirrors the seller_profile.profile_complete flag
+    onboarding_complete: bool         # mirrors the seller_profile.onboarding_complete flag
 
 @dataclass(frozen=True)
 class ComplianceExtensionSpec:
@@ -3013,7 +3013,7 @@ class ComplianceExtensionSpec:
                       # others are conditional per MVP_ARCH §0 premise #7
 ```
 
-The `COMPLIANCE_EXTENSION_MAP: dict[str, ComplianceExtensionSpec]` constant is locked to the **6 entries** per `MVP_ARCH §2.2`:
+The `COMPLIANCE_EXTENSION_MAP: dict[str, ComplianceExtensionSpec]` constant is locked to **6 source rules covering 11 super_id keys** per `MVP_ARCH §2.2` (Beauty's 6 super_ids each map to the same shared `ComplianceExtensionSpec` instance for O(1) lookup by `super_id`; the 5 single-super rules map 1:1):
 
 - `"26"` Grocery — required `[fssai_license_number]` + optional `[fssai_expiry]`, **compulsory=True**.
 - `"13"` Kids — optional `[bis_isi_certification_number]`, compulsory=False.
@@ -3032,7 +3032,7 @@ class CustomerError(MeesellError):
 
 class ProfileNotFoundError(CustomerError):
     status_code = 404
-    validation_message_id = "customer.profile_not_found"
+    validation_message_id = "customer.profile.not_found"
 
 class InvalidPincodeError(CustomerError):
     status_code = 422
@@ -3044,15 +3044,15 @@ class InvalidSuperCategoryError(CustomerError):
 
 class SuperCategoryNotDeclaredError(CustomerError):
     status_code = 404
-    validation_message_id = "customer.super_category_not_declared"
+    validation_message_id = "customer.super_category.not_declared"
 
 class ComplianceExtensionMissingFieldsError(CustomerError):
     status_code = 422
-    validation_message_id = "customer.compliance_missing_fields"
+    validation_message_id = "customer.compliance.missing_fields"
 
 class ProfileIncompleteForCategoryError(CustomerError):
     status_code = 422
-    validation_message_id = "customer.profile_incomplete_for_category"
+    validation_message_id = "customer.profile.incomplete_for_category"
     # Raised by customer.service.assert_eligible_for_super_id when catalog tries to
     # create a product in a category whose super_id requires a compliance extension
     # the seller has not yet provided.
@@ -3069,7 +3069,7 @@ class ProfileIncompleteForCategoryError(CustomerError):
 - **Plan guard (§4.E):** **NOT participating** in V1 — `customer` endpoints are profile-management, not feature-budget-consuming. The §4.E 4-resource `Literal` (`product_count`, `ai_autofill`, `smart_picker`, `create_product`) does not include profile updates.
 - **Tenancy (§4.C):** YES — `seller_profile.user_id` is the PK; every repository query passes through `scope_to_user(user_id)` per the §4.C locked rule for owned tables.
 - **Cache helper (§4.D):** the `/required-fields` response is cache-eligible per §8.B.5 — key `seller_profile_required_fields:{user_id}:v{cache_version}` TTL 60s, invalidated on any profile PATCH. The `categories.super_id` distinct set lookup (used by `set_active_categories` validation) is also cache-eligible per §4.D (global reference data).
-- **i18n (§5A.I):** the 6 customer-specific `validation_message_id`s (`customer.profile_not_found`, `validation.pincode.invalid_format`, `validation.super_category.unknown`, `customer.super_category_not_declared`, `customer.compliance_missing_fields`, `customer.profile_incomplete_for_category`) land in `i18n/messages_en.py` during the services-builder construction dispatch.
+- **i18n (§5A.I):** the 6 customer-specific `validation_message_id`s (`customer.profile.not_found`, `validation.pincode.invalid_format`, `validation.super_category.unknown`, `customer.super_category.not_declared`, `customer.compliance.missing_fields`, `customer.profile.incomplete_for_category`) land in `i18n/messages_en.py` during the services-builder construction dispatch.
 
 ### 8.J Test plan
 
@@ -3078,13 +3078,13 @@ Locked test classes for §19 consolidation. Pytest fixtures use a real Postgres 
 **Unit tests (`backend/tests/modules/customer/`):**
 1. **Profile upsert idempotency** — first PATCH creates the row, subsequent PATCH updates the same row, returns the same `user_id`.
 2. **Pincode regex enforcement** — invalid pincodes (5 digits, 7 digits, alphanumeric) → 422 with `validation_message_id="validation.pincode.invalid_format"`.
-3. **Compliance extension validation per super_id** — Grocery (`super_id=26`) requires `fssai_license_number`; missing → 422 `customer.compliance_missing_fields` with envelope payload listing the missing keys.
-4. **`profile_complete` flag recomputation** — true iff all 10 base fields are present AND all `active_super_categories`' compulsory extension keys are present; recomputed on every PATCH (B.2 / B.3 / B.4).
+3. **Compliance extension validation per super_id** — Grocery (`super_id=26`) requires `fssai_license_number`; missing → 422 `customer.compliance.missing_fields` with envelope payload listing the missing keys.
+4. **`onboarding_complete` flag recomputation** — true iff all 10 base fields are present AND all `active_super_categories`' compulsory extension keys are present; recomputed on every PATCH (B.2 / B.3 / B.4).
 5. **Eye-Serum case** — `customer` stores ONLY the 9 standard fields regardless of the seller's active categories (the `compliance_shape="collapsed"` lookup is `export`'s concern per §5A.F + `§12.6`).
 
 **Integration tests (`backend/tests/integration/test_customer_*.py`):**
-1. **Full onboarding flow** — sign up via §7 OTP-verify → first PATCH base profile → first PATCH active-categories `["26"]` (Grocery) → first PATCH compliance/26 → `/required-fields` shows `profile_complete=true`.
-2. **Cross-module call** — `catalog.service.create_product` calls `customer.service.assert_eligible_for_super_id(user_id, super_id)`; on a profile lacking the required extension → 422 `customer.profile_incomplete_for_category` (the §10 `PROFILE_INCOMPLETE_FOR_CATEGORY` gate per `MVP_ARCH §3.3`).
+1. **Full onboarding flow** — sign up via §7 OTP-verify → first PATCH base profile → first PATCH active-categories `["26"]` (Grocery) → first PATCH compliance/26 → `/required-fields` shows `onboarding_complete=true`.
+2. **Cross-module call** — `catalog.service.create_product` calls `customer.service.assert_eligible_for_super_id(user_id, super_id)`; on a profile lacking the required extension → 422 `customer.profile.incomplete_for_category` (the §10 `PROFILE_INCOMPLETE_FOR_CATEGORY` gate per `MVP_ARCH §3.3`).
 
 ### 8.K Extraction notes (V1.5+)
 
@@ -3512,13 +3512,13 @@ The 6 endpoint contracts below are normative. Request/response shapes reference 
 - **Response 201** (Pydantic, §10.E): `ProductResponse` — full product shape including the new `product_id`, the resolved `catalog_id`, `category_id`, an empty `fields_jsonb={}`, an empty `ai_suggestions_jsonb={}`, `status="draft"`, and timestamps.
 - **Rate limit:** `@rate_limit(scope="create_product", limit="20/h", key="user_id")` per §4.E (`create_product_hourly`). Per-IP fallback per §4.G.
 - **Plan guard:** `core.plan_guard.enforce_plan_limit(user_id, plan, resource="product_count", delta=1)` per §4.E — V1 hard cap **100 active products per user** (active = `deleted_at IS NULL`); raises `plan.limit_exceeded` mapped to 402. Note: the rate-limit decorator (`create_product_hourly=20/h`) and the plan-guard check (`product_count=100`) are **orthogonal** — RL caps creation velocity, plan guard caps cumulative inventory. Both must pass.
-- **Status codes:** 201, 400 (`validation.*` for malformed UUIDs / over-long name), 401 (`auth.token_*`), 402 (`plan.limit_exceeded` from plan_guard or `rate_limit.exceeded` from rate_limit_mw), 404 (`catalog.catalog_not_found` when `catalog_id` non-null and not owned, OR `category.not_found` from the cross-module assert), 422 (`customer.profile_incomplete_for_category` — see flow step 3 below).
+- **Status codes:** 201, 400 (`validation.*` for malformed UUIDs / over-long name), 401 (`auth.token_*`), 402 (`plan.limit_exceeded` from plan_guard or `rate_limit.exceeded` from rate_limit_mw), 404 (`catalog.catalog_not_found` when `catalog_id` non-null and not owned, OR `category.not_found` from the cross-module assert), 422 (`customer.profile.incomplete_for_category` — see flow step 3 below).
 - **Audit posture:** `audit_mw` emits `catalog.product.created` event on 2xx per §4.G + `MVP_ARCH §11.3`. `actor_user_id` from `request.state.user`, `payload_jsonb = {product_id, catalog_id, category_id}` — no name, no field content (PII per `MVP_ARCH §11.9`).
 - **JWT required:** yes (`Depends(get_current_user)` per §4.B).
 - **Flow** (service-layer, locked sequence):
   1. `core.plan_guard.enforce_plan_limit(user_id, plan, "product_count", delta=1)` — fails fast with 402 BEFORE any DB write; uses `repository.count_active_products(user_id)` per §10.D.
   2. `category.service.assert_category_exists(category_id)` per §9.C cross-module surface — raises `category.not_found` mapped to 404 if not in the global category tree.
-  3. Get `super_id` from the category row; call `customer.service.assert_eligible_for_super_id(user_id, super_id)` per §8.C — raises `customer.profile_incomplete_for_category` mapped to 422 if the seller has not completed the compliance extension for that super_id (e.g., trying to create a Beauty product without the license trio).
+  3. Get `super_id` from the category row; call `customer.service.assert_eligible_for_super_id(user_id, super_id)` per §8.C — raises `customer.profile.incomplete_for_category` mapped to 422 if the seller has not completed the compliance extension for that super_id (e.g., trying to create a Beauty product without the license trio).
   4. If `catalog_id` is `None`: `repository.create_catalog(user_id, name=default_name)` returns a new `Catalog` row; otherwise `repository.find_catalog_by_id(user_id, catalog_id)` — 404 if not owned.
   5. `repository.insert_product(user_id, catalog_id, category_id, name)` — inserts a row with `status="draft"`, `fields_jsonb={}`, `ai_suggestions_jsonb={}`, `deleted_at=NULL`.
   6. `await db.commit()` per the §4.G commit-then-audit invariant (M8); audit_mw emits the `catalog.product.created` event post-2xx.
@@ -3933,7 +3933,7 @@ Test fixtures: a `conftest.py` per `backend/tests/modules/catalog/` provides (a)
 2. **Schema fetch is hot-path.** Every PATCH (the highest-QPS endpoint) calls `category.service.fetch_schema` per §10.B.2 step 2 + the in-process cache hit on §6.7. Extraction moves this from a Valkey hit (~1ms) to a network call (~10ms) **per PATCH**. V1.5 must either keep `category` and `catalog` co-located, OR push the schema into a CDN-friendly read-replica.
 3. **The compliance gate spans modules.** `create_product` step 3 (per §10.B.1) chains `category → customer → catalog` in a single request. Extraction means this chain becomes 3 RPCs instead of 3 function calls; the failure modes multiply (any one can timeout).
 
-Per §21, the recommended V1.5 extraction order is `iam → customer → category → image → pricing → dashboard → export → catalog (last)`. Catalog is the spine; extracting it first risks the kind of cascading-failure outage that the modular-monolith decision was meant to defer.
+Per §21.B, the recommended V1.5 extraction order is `export → dashboard → image → pricing → customer → category → iam → catalog (last)`. Catalog is the spine; extracting it first risks the kind of cascading-failure outage that the modular-monolith decision was meant to defer.
 
 The two facets that DO transfer cleanly to extraction: (a) the §10.E Pydantic schemas are already the wire-format (no internal-vs-external shape divergence); (b) the §10.C cross-module service surface (`assert_product_ownership`, `get_product_for_export`, `list_products`, `get_validation_summary`) is the natural V1.5 gRPC service definition — the four method signatures become the four RPCs.
 
@@ -4221,6 +4221,11 @@ def image_precheck_task(self, image_id: UUID, user_id: UUID) -> None:
                   prompt_vars={},
                   image_bytes=bytes,
               ) — Layer 2 guardrail validates {has_watermark: bool, confidence: float}
+
+    **Audit write (V1 canonical per-site pattern per §15.E):** on task completion,
+    `image.precheck.completed` is written via a direct `AuditEvent(...)` ORM insert
+    inside `async with AsyncSessionLocal() as session:`. No shared helper exists —
+    see §15.E V1 direct-write canonical pattern.
               shape per §6A.E. On BudgetExceededError → precheck_jsonb.watermark_check
               = "skipped_budget" per §6A.F graceful fallback (informational,
               non-blocking — status still resolves to "ready" if steps 1-4 pass).
@@ -4437,7 +4442,7 @@ The construction dispatch produces 5 unit + 3 integration test classes covering 
 - The 2 API endpoints (`POST` + `GET`) extract to their own FastAPI pod with GCS adapter access + Postgres FK to `products`.
 - The Celery worker for `image.precheck` becomes a dedicated worker pod scaled independently from the catalog/dashboard workers.
 - The `catalog.service.assert_product_ownership` cross-module call becomes an HTTP call (likely `GET /api/v1/internal/catalog/products/{id}/ownership?user_id=...` against the still-monolith catalog service). The service signature is already designed for this transition: `async`, raises typed `CatalogNotFoundError` exception, no implicit DB-session sharing.
-- The `image.service.get_image_urls` / `get_image_bytes` cross-module reads from `catalog` / `export` similarly become HTTP calls — the contracts are already locked at this section.
+- The `image.service.get_image_urls` / `get_image_bytes` cross-module reads from `catalog` / `export` similarly become HTTP calls — the contracts are already locked at this section. **V1.5 note:** `get_image_bytes` returns raw `bytes`, which is not JSON-transportable across a service boundary. The V1.5 extraction plan must replace any `get_image_bytes` call site with a signed-URL method returning a `str` URL (e.g. `get_image_signed_url(image_id, user_id) -> str`), allowing the export pipeline to download directly from GCS rather than proxying bytes through the image-svc pod.
 - Signed-URL generation, GCS path convention, and 4-slot rule travel with the extracted service unchanged.
 
 API surface stays small (2 endpoints), which is the structural reason `image` extracts cleanly while `catalog` does not (catalog is the call hub with 6 endpoints + 4 cross-module consumers — the V1.5 hardest target per §21).
@@ -4810,17 +4815,41 @@ Network of records on extraction: copy `pricing_calcs` rows by `user_id` in batc
 
 ## Section 13 — Module: `dashboard`
 
-STATUS: LOCKED (2026-06-05)
+STATUS: LOCKED (2026-06-05) — AMENDED 2026-06-07 (see §13.A.1 — filter/search deferred to V1.5)
 
 ### 13.A Preamble
 
 §13 specifies the `dashboard` module — the seller's tracking view for Feature 8 (Tracking Dashboard) per `docs/V1_FEATURE_SPEC.md` Feature 8. **Owner specialists:** `meesell-api-routes-builder` (route handler + Pydantic schemas) + `meesell-services-builder` (read-aggregation composition logic) per §2.7. **NO AI track collaboration** — pure read aggregation with no Gemini call, no `ai_ops` invocation, no prompt-engineer participation. **Leaf module on the cross-module call graph** per §2.D: dashboard → customer ✓, dashboard → catalog ✓; every other cell is `✗` per the founder ruling that kept the matrix at exactly 8 ✓ (no elevation in V1 to image / pricing / export `summary()` opt-ins).
 
-`dashboard` is **the purest demonstration of the modular monolith discipline** described in §2.7's preamble. It owns ZERO tables (the only domain module besides `core/` — and `core/` is not a domain module — with no DDL footprint at all per `MVP_ARCH §2`). It has NO `repository.py` file in its subtree (a structural deviation from the §3.C canonical per-module 7-file layout, locked here explicitly so the absence reads as intentional design — not omission). It reads NOTHING directly — every data access flows through `catalog.service.list_products(...)` and `customer.service.get_profile_completeness(...)` per §10.C + §8.C, which themselves own the `scope_to_user(user_id)` enforcement at their respective repository layers per §4.C. Dashboard's role is purely **composing** pre-scoped, pre-validated, pre-shaped results from the two consumed services into a single wire-shaped `DashboardResponse`.
+`dashboard` is **the purest demonstration of the modular monolith discipline** described in §2.7's preamble. It owns ZERO tables (the only domain module besides `core/` — and `core/` is not a domain module — with no DDL footprint at all per `MVP_ARCH §2`). It has NO `repository.py` file in its subtree (a structural deviation from the §3.C canonical per-module 7-file layout, locked here explicitly so the absence reads as intentional design — not omission). It reads NOTHING directly — every data access flows through `catalog.service.list_products(...)` and `customer.service.get_onboarding_completeness(...)` per §10.C + §8.C, which themselves own the `scope_to_user(user_id)` enforcement at their respective repository layers per §4.C. Dashboard's role is purely **composing** pre-scoped, pre-validated, pre-shaped results from the two consumed services into a single wire-shaped `DashboardResponse`.
 
 When V1.5 extraction lands per §21, dashboard becomes its own **BFF (backend-for-frontend) pod** with **zero data-layer migration** — every cross-module Python call simply swaps in-process invocation for HTTP. There are no Alembic migrations to detach, no foreign-key cascade to redirect, no row-level locks to coordinate. The extraction reduces to: change `from app.modules.catalog.service import list_products` to `httpx.AsyncClient().get(CATALOG_SVC_URL + "/products?...")`, plus a service-discovery config change. This is why dashboard (alongside `export` per §2.8) is one of the **easiest V1.5 extractions** in the codebase, in contrast to `catalog` which is the hardest per §10.K.
 
 Surfaces **1 endpoint** in V1, which is the **only listing GET in the §0.C 27-endpoint contract** (note: `GET /api/v1/products` belongs to dashboard, not catalog — per §2.7 ownership lock; `catalog` owns CREATE/PATCH/AUTOFILL/PREVIEW/DELETE/DRAFT-RECOVER but not the LIST). §13 does NOT specify any table DDL (dashboard owns NONE — see §13.L scope-out), does NOT specify any repository methods (NO repository file exists for dashboard — see §13.D), does NOT specify the §14 `export.service.summary()` opt-in for richer status badges (forward-referenced to V1.5 amendment if/when founder elevates the §2.D matrix beyond 8 ✓).
+
+### 13.A.1 AMENDMENT 2026-06-07 — filter/search deferred to V1.5
+
+**Founder ruling 2026-06-07 (founder Mugunthan, post-construction ratification on `meesell-backend-construction-13-dashboard-1` D3 escalation; see STATUS_MASTER Master Decisions Log entry 2026-06-07 for process posture):** the `status_filter` and `search` query parameters specified in §13.B and the `status_filter` / `search` fields on `DashboardQuery` + `Pagination` specified in §13.E + §13.F are **DEFERRED to V1.5**. The `status` Literal on `ProductListItem` in §13.E is **narrowed from `Literal["draft", "ready", "exported"]` to `Literal["draft", "ready"]` for V1**.
+
+**Why:** the §10 catalog module (LOCKED + CONSTRUCTED 2026-06-07) ships a `Pagination(page, limit)` shape and `list_paginated` SQL that supports neither status filtering nor name search. Extending catalog's V1 contract to add those two predicates would (a) breach the §10 LOCKED contract without a §10 amendment, (b) require an `exports` JOIN or denormalisation to support the `"exported"` literal (which lives on the `exports` table per §14, not on `products.status`), and (c) cost ~4–6 hours of catalog-side change for a UX feature that V1 sellers (0–5 products at launch in Tirupur) do not need. V1 dashboard ships with `page` + `limit` only.
+
+**Operative override for V1 construction:**
+
+| §13 sub-section | Original (LOCKED 2026-06-05) | V1 (AMENDED 2026-06-07) |
+|---|---|---|
+| §13.B query params | `page`, `limit`, `status_filter`, `search` | `page`, `limit` (only) |
+| §13.B response `status` field | `Literal["draft" \| "ready" \| "exported"]` | `Literal["draft" \| "ready"]` |
+| §13.B status code 400 trigger list | includes `status_filter` invalid, `search > 100 chars` | drops those triggers; 400 reduces to `page < 1` OR `limit < 1` OR `limit > 100` |
+| §13.E `DashboardQuery` | 4 fields | 2 fields (`page`, `limit`) |
+| §13.E `ProductListItem.status` | 3-value Literal | 2-value Literal |
+| §13.F `Pagination` dataclass | 4 fields | 2 fields (`page`, `limit`) — and now equals `catalog.domain.Pagination`; dashboard imports it directly from catalog instead of redefining |
+| §13.J unit test #1 | 5 rejection cases (page, limit×2, status_filter, search) | 3 rejection cases (page, limit×2); drops `status_filter` and `search` cases |
+
+**Method-name correction:** §13.B.4 prose refers to `customer.service.get_onboarding_completeness(user_id)` per §8.C — this is the operative method name (the §8 surface ships as `get_onboarding_completeness`, not `get_profile_completeness`). No amendment needed; the §13 prose is already correct.
+
+**§13.L V1.5 deferral entry:** the V1.5 `dashboard` filter/search restoration is bound to a §10 catalog amendment that extends `Pagination` + `list_products` + `list_paginated` with `status_filter` + `search` predicates (and, if `"exported"` status filtering returns, an `EXISTS (SELECT 1 FROM exports WHERE product_id = …)` predicate or a denormalised `is_exported` column). The V1.5 amendment lifts §13.A.1, restores the 4-field `DashboardQuery`, restores the 3-value `ProductListItem.status`, and re-elevates §13.J test #1 to the 5-case form.
+
+**Nothing else in §13 is amended.** The §13.D no-repository structural exception, the §13.G single exception class (`InvalidPaginationError`), the §13.H zero-adapter constraint, the §13.I cross-cutting posture (rate-limit per-IP only, NO plan_guard, NO audit, NO cache, NO AI), and the §13.K extraction notes all stand verbatim.
 
 ### 13.B Endpoint surfaces
 
@@ -4855,12 +4884,12 @@ The module surfaces **1 endpoint** in the locked §0.C 27-endpoint contract.
     "total": 42,
     "page": 1,
     "limit": 20,
-    "profile_completeness": {
+    "onboarding_completeness": {
         "base_complete_count": 8,
         "base_total_count": 10,
         "extension_complete_count": 2,
         "extension_total_count": 3,
-        "profile_complete": false
+        "onboarding_complete": false
     }
 }
 ```
@@ -4885,7 +4914,7 @@ The module surfaces **1 endpoint** in the locked §0.C 27-endpoint contract.
 
 1. **Pydantic validation** — query parameters are validated against `DashboardQuery`. Out-of-bound values raise `InvalidPaginationError` per §13.G → 400 with `validation.dashboard.invalid_pagination`.
 2. **Service call to catalog** — `await catalog.service.list_products(user_id, Pagination(page, limit, status_filter, search))` per §10.C. Returns a `PaginatedProducts({products: list[Product], total: int, page: int, limit: int})` domain object where each `Product` carries `{product_id, name, category_id, status, created_at, updated_at}` per the catalog domain shape locked in §10.F. **`scope_to_user(user_id)` is enforced at catalog's repository layer per §10.D** — dashboard never sees a raw SQL query; the tenancy contract is upstream.
-3. **Service call to customer** — `await customer.service.get_profile_completeness(user_id)` per §8.C. Returns a `ProfileCompleteness({base_complete_count, base_total_count, extension_complete_count, extension_total_count, profile_complete})` domain object per the customer domain shape locked in §8.F. **`scope_to_user(user_id)` is enforced at customer's repository layer per §8.D** — same posture as the catalog call.
+3. **Service call to customer** — `await customer.service.get_onboarding_completeness(user_id)` per §8.C. Returns a `ProfileCompleteness({base_complete_count, base_total_count, extension_complete_count, extension_total_count, onboarding_complete})` domain object per the customer domain shape locked in §8.F. **`scope_to_user(user_id)` is enforced at customer's repository layer per §8.D** — same posture as the catalog call.
 4. **Compose response** — `_compose_response(paginated, completeness)` (pure function per §13.C) builds the `DashboardResponse` Pydantic model. V1 does NOT call `image.service.summary(...)` per §11.C OPTIONAL surface, does NOT call `pricing.service.summary(...)` per §12.C OPTIONAL surface, does NOT call `export.service.summary(...)` per §14 forthcoming OPTIONAL surface. Per-product status badges in V1 are inferred from `product.status` field only (one of `draft` / `ready` / `exported`); richer derived badges (e.g., "watermark detected" / "low margin") wait for V1.5 matrix elevation.
 5. **Return 200** with the composed `DashboardResponse`.
 
@@ -4900,7 +4929,7 @@ async def list_products_for_dashboard(
 ) -> DashboardResponse:
     """
     Compose the dashboard view by aggregating catalog.list_products
-    and customer.get_profile_completeness for the requesting seller.
+    and customer.get_onboarding_completeness for the requesting seller.
     Owns no data access; pure delegation + composition.
     """
 ```
@@ -4979,7 +5008,7 @@ class ProfileCompletenessSummary(BaseModel):
     base_total_count: int  # always 10 per §8.F ProfileCompleteness
     extension_complete_count: int
     extension_total_count: int
-    profile_complete: bool
+    onboarding_complete: bool
 
 
 class DashboardResponse(BaseModel):
@@ -4988,7 +5017,7 @@ class DashboardResponse(BaseModel):
     total: int
     page: int
     limit: int
-    profile_completeness: ProfileCompletenessSummary
+    onboarding_completeness: ProfileCompletenessSummary
 ```
 
 `base_total_count` is documented as always `10` (the 10 base seller-profile fields per §8.F + `MVP_ARCH §3.2`); the field is sent over the wire anyway so the frontend can render `8 of 10` without re-hardcoding the denominator. `extension_total_count` varies by the seller's `active_super_categories` per §8.B `COMPLIANCE_EXTENSION_MAP`.
@@ -5042,7 +5071,7 @@ Just one concrete exception class. Most failures the dashboard endpoint can surf
 
 - **401 Unauthorized** — raised by `auth_mw` per §4.B before the handler runs; never reaches dashboard code.
 - **404 Not Found (product-level)** — not applicable; dashboard returns a list, and an empty list is a valid 200 (NOT 404 — empty seller inventory is a real state).
-- **500 Internal Server Error** — raised generically by the §4.F handler if `catalog.service.list_products` or `customer.service.get_profile_completeness` throws an unexpected exception; the underlying module's error code surfaces in the response body.
+- **500 Internal Server Error** — raised generically by the §4.F handler if `catalog.service.list_products` or `customer.service.get_onboarding_completeness` throws an unexpected exception; the underlying module's error code surfaces in the response body.
 
 The Pydantic `DashboardQuery` validator catches `page < 1` / `limit > 100` / invalid `status_filter` Literal / `search` length BEFORE handler execution, and the §4.F handler chain renders the resulting `ValidationError` as 400 with `validation.dashboard.invalid_pagination` per §5A.D convention.
 
@@ -5057,7 +5086,7 @@ Dashboard does not import from `app.adapters.*`. Per the §1.E egress map, the d
 - **Rate-limit decorators (§4.E):** per-IP fallback only via `@rate_limit(scope="dashboard_list", limit=..., key="ip")`. No per-user limit configured — dashboard is polled on every page load and refresh button, and a per-user limit would create UX friction for legitimate sellers.
 - **Plan guard (§4.E):** NOT participating in V1. Dashboard is one of the 3 modules excluded from plan_guard alongside `customer` (§8) and `pricing` (§12). There is no plan-gated resource consumed by listing products.
 - **Audit middleware (§4.G + §11.9):** NONE. Read-only endpoint posture per the §9 category-endpoints model. The `audit_mw` skips writes on `GET` requests by default; dashboard inherits that default without override.
-- **Tenancy (§4.C):** NOT participating at the repository level (no repository exists). The consumed service methods `catalog.service.list_products` and `customer.service.get_profile_completeness` each enforce `scope_to_user(user_id)` at their own repository layer per §10.D + §8.D. Dashboard's role is composing pre-scoped results; it never sees a raw query and never asserts tenancy itself.
+- **Tenancy (§4.C):** NOT participating at the repository level (no repository exists). The consumed service methods `catalog.service.list_products` and `customer.service.get_onboarding_completeness` each enforce `scope_to_user(user_id)` at their own repository layer per §10.D + §8.D. Dashboard's role is composing pre-scoped results; it never sees a raw query and never asserts tenancy itself.
 - **Cache helper (§4.D):** NOT participating. Per-user data with high write churn (every PATCH on products invalidates the listing); the hit rate would be too low to justify the cache-key plumbing. V1.5 may revisit if seller dashboards hit a poll-rate that the per-IP rate limit doesn't absorb.
 - **AI Ops (§6A):** NONE.
 - **i18n (§5A.D):** 1 dashboard-specific `validation_message_id` lands in `backend/app/i18n/messages_en.py` during the `services-builder` dispatch — `validation.dashboard.invalid_pagination`. The English string content is owned by the specialist; coordinator owns only the ID.
@@ -5078,13 +5107,13 @@ Per §19, the dashboard module's test surface is the lightest in the codebase: 3
 
 2. **`test_response_composition`** — verifies `_compose_response` is correct in isolation:
    - Mocked `catalog.list_products` returns 3 products + `total=42` (3 of 42 page).
-   - Mocked `customer.get_profile_completeness` returns specific counts.
-   - Verify `DashboardResponse.products` has 3 items, `total=42`, `page` and `limit` echo the request, and `profile_completeness` mirrors the mocked completeness shape.
+   - Mocked `customer.get_onboarding_completeness` returns specific counts.
+   - Verify `DashboardResponse.products` has 3 items, `total=42`, `page` and `limit` echo the request, and `onboarding_completeness` mirrors the mocked completeness shape.
 
 3. **`test_empty_state_response`** — boundary case for first-time sellers:
    - Mocked `catalog.list_products` returns empty list + `total=0`.
    - Dashboard returns 200 with `products=[]` and `total=0` (NOT 404 — empty inventory is a valid state).
-   - `profile_completeness` still surfaces (the seller still has a profile even with zero products).
+   - `onboarding_completeness` still surfaces (the seller still has a profile even with zero products).
 
 **Integration tests** (`backend/tests/integration/test_dashboard_*.py`):
 
@@ -5092,7 +5121,7 @@ Per §19, the dashboard module's test surface is the lightest in the codebase: 3
    - Seller signs up via §7 (`POST /otp/send` + `POST /otp/verify`) → JWT.
    - Seller creates 5 products via §10 (`POST /products` × 5).
    - Seller calls `GET /api/v1/products?page=1&limit=20` with JWT.
-   - Response: 200, `products` length 5, `total=5`, `profile_completeness` reflecting the seller's onboarding state.
+   - Response: 200, `products` length 5, `total=5`, `onboarding_completeness` reflecting the seller's onboarding state.
 
 2. **`test_dashboard_cross_tenant_isolation`** — the tenancy contract verified end-to-end through dashboard:
    - User A has 3 products, User B has 2 products (both created via §10 paths).
@@ -5115,6 +5144,7 @@ Per §19, the dashboard module's test surface is the lightest in the codebase: 3
 - **The frontend dashboard component rendering** — owned by `meesell-frontend-coordinator` + `meesell-angular-component-builder` in `FRONTEND_ARCHITECTURE.md`. §13 specifies the wire shape only.
 - **Aggregation-heavy reports or analytics dashboards** (e.g., monthly revenue rollups, per-category conversion funnels) — V1.5+ feature; not in the §0.C 27-endpoint contract; not §13's scope.
 - **The seller's first-time empty-state UX copy and CTAs** — frontend concern. §13 only guarantees the empty list is a valid 200 (not a 404 redirect).
+- **Filter (`status_filter`) and search (`search`) query parameters on `GET /api/v1/products`** — deferred to V1.5 per §13.A.1. V1 dashboard ships with `page` + `limit` only. The V1.5 restoration is bound to a §10 catalog amendment that extends `Pagination` + `list_products` + `list_paginated` with the two predicates and (if `"exported"` returns to the status Literal) an `EXISTS (SELECT 1 FROM exports WHERE product_id = …)` predicate or a denormalised `is_exported` column on `products`.
 
 ---
 
@@ -5472,6 +5502,13 @@ def export_xlsx_task(self, export_id: UUID, user_id: UUID) -> None:
     access JWT that initiated the export may have expired during the
     task's pending window; the user-existence check is the sufficient
     surrogate at task time).
+
+    Audit writes (V1 canonical per-site pattern per §15.E):
+    - `export.completed` is written on terminal SUCCESS via a direct
+      AuditEvent(...) ORM insert inside async with AsyncSessionLocal().
+    - `export.failed` is written on terminal FAILURE (retries >= max_retries)
+      via the same pattern.
+    No shared audit_helpers module — per-site write is V1 standard.
     """
     import asyncio
     asyncio.run(_run_export_pipeline_with_error_handling(export_id, user_id))
@@ -6003,7 +6040,7 @@ Per-module participation cross-references the cross-cutting bullets locked in ea
 | dashboard (§13) | none (no repository file per §13.D) | N/A — consumed services enforce per §13.I | N/A | — |
 | export (§14) | `exports` | yes via `scope_to_user` per §14.D | consumes catalog's gate via `get_product_for_export` per §14.C | yes GCS path `meesell-exports/{user_id}/{export_id}.zip` per §6.D + §14.E |
 
-**V1.5 RLS migration (deferred per `MVP_ARCH §9` + §14).** PostgreSQL Row-Level Security predicates will replace app-level `scope_to_user`; the cross-module service surfaces (`assert_product_ownership`, `get_compliance_block`, `get_profile_completeness`, `list_products`) become extracted-pod HTTP boundaries per §21 extraction path. The 3-layer defense survives extraction unchanged — Layer 1 moves into Postgres (RLS predicate), Layer 2 moves into per-pod HTTP gate, Layer 3 stays as GCS path convention.
+**V1.5 RLS migration (deferred per `MVP_ARCH §9` + §14).** PostgreSQL Row-Level Security predicates will replace app-level `scope_to_user`; the cross-module service surfaces (`assert_product_ownership`, `get_compliance_block`, `get_onboarding_completeness`, `list_products`) become extracted-pod HTTP boundaries per §21 extraction path. The 3-layer defense survives extraction unchanged — Layer 1 moves into Postgres (RLS predicate), Layer 2 moves into per-pod HTTP gate, Layer 3 stays as GCS path convention.
 
 ---
 
@@ -6041,6 +6078,8 @@ Per-module participation cross-references the cross-cutting bullets locked in ea
 | export (§14) | no per §14.J | — | — | — |
 
 **What is NOT cached (locked at §4.D).** Per-user write-heavy data — `products` (PATCH burst from autosave), `pricing_calcs` (re-computed on every input change), `exports` (single-use ZIPs) — because the invalidation rate exceeds the read rate, so caching adds cost without benefit.
+
+**Customer direct-invalidation carve-out (§8.I).** `customer.service` is the one module that actively invalidates its own cache keys on write. On `PATCH /seller-profile`, `PATCH /seller-profile/active-categories`, and `PATCH /seller-profile/compliance/{super_id}`, the service layer calls `core/cache.invalidate(key)` for `seller_profile_required_fields:{user_id}` and the super_id distinct set immediately after the DB commit — ensuring the next read gets a fresh value rather than a stale 60s/1h cached result. This goes through `core/cache` (the sole Valkey helper), not directly to Valkey, so it does NOT violate the "domain modules NEVER call `valkey.get`/`valkey.set` directly" rule above.
 
 ---
 
@@ -6091,6 +6130,8 @@ LIMIT :limit OFFSET :offset
 | `image.precheck.completed` | Celery worker context (no request close) | §11.E |
 | `export.completed` / `export.failed` | Celery worker context (no request close) | §14.E |
 | `razorpay.webhook.captured` | Captured before user context resolved | §7.B.6 |
+
+**V1 direct-write canonical pattern.** All documented exception events above use a per-site direct `AuditEvent(event_type=..., user_id=..., ...)` ORM write inside an `async with AsyncSessionLocal() as session:` block (`session.add(row); await session.commit()`). `core/audit_helpers` does NOT exist in V1 — the per-site write is intentional: it avoids coupling Celery worker context (which has no FastAPI request) to a middleware abstraction. V1.5 may unify all writes (middleware path + exception path) into a shared `audit.write` Celery task sink; until then, per-site is the V1 standard. Builders MUST follow this pattern for any new direct-write event — do NOT create a helper module.
 
 **5-minute coalescing.** Per `MVP_ARCH §11.4`, `audit_mw` coalesces consecutive `(user_id, product_id, event_type="catalog.product.updated")` PATCH events within a 5-minute window into a single audit row — yields ~30× volume reduction during the autosave typing burst (a seller editing 10 fields generates one row, not 10). The coalescing applies ONLY to `catalog.product.updated` per §10.I; other event types never coalesce.
 
@@ -6337,7 +6378,7 @@ The §2.D matrix locks **exactly 8 ✓ cells** of cross-module dependency. Each 
 | 4 | `pricing` | `catalog` | `catalog.service.assert_product_ownership(product_id, user_id)` | Tenancy gate before price-calc-row write (same 3-layer defense) | §10.C + §12.B.1 |
 | 5 | `pricing` | `category` | `category.service.get_commission(category_id)` | Commission % lookup for the P&L formula (§12.E `compute_pnl_breakdown`) | §9.C + §12.B.1 |
 | 6 | `dashboard` | `catalog` | `catalog.service.list_products(user_id, pagination)` | Paginated product listing for Feature 8 (`GET /api/v1/products`) | §10.C + §13.B.1 |
-| 7 | `dashboard` | `customer` | `customer.service.get_profile_completeness(user_id)` | Onboarding-progress badge on the dashboard response envelope | §8.C + §13.B.1 |
+| 7 | `dashboard` | `customer` | `customer.service.get_onboarding_completeness(user_id)` | Onboarding-progress badge on the dashboard response envelope | §8.C + §13.B.1 |
 | 8 | `export` | (4 callees — see §16.B.1 below) | — | Heaviest cross-module consumer; counted as 4 distinct ✓ cells in the §2.D matrix | §14.C |
 
 **§16.B.1 Export's 4 calls (the 8th matrix row, expanded).** Export consumes 4 distinct service surfaces — counted as 4 ✓ cells in the §2.D matrix but listed as a single matrix row for readability:
@@ -6347,7 +6388,7 @@ The §2.D matrix locks **exactly 8 ✓ cells** of cross-module dependency. Each 
 | 8a | `catalog` | `catalog.service.get_product_for_export(product_id, user_id)` | Fetch product + AI attributes for XLSX row composition | §10.C + §14.B.1 |
 | 8b | `customer` | `customer.service.get_compliance_block(user_id)` | Inject FSSAI / BIS / license values into compliance columns | §8.C + §14.B.1 |
 | 8c | `category` | `category.service.fetch_schema(category_id)` + `category.service.get_field_enum(category_id, name)` | Resolve canonical → Meesho-raw enum codes per F2.4 `for_xlsx_export` | §9.C + §14.B.1 |
-| 8d | `image` | `image.service.get_image_bytes(image_id, user_id)` | Read watermarked image bytes for ZIP bundling | §11.C + §14.B.1 |
+| 8d | `image` | `image.service.list_images(product_id, user_id)` | Retrieve image URL list for ZIP download + bundling in export pipeline | §11.C + §14.B.1 |
 
 **§16.B.2 The 8-count is the matrix count, not the service-method count.** The 4 callee modules (`customer`, `category`, `catalog`, `image`) expose **6 distinct service methods** across all 8 ✓ cells — some methods are shared by multiple callers:
 - `catalog.service.assert_product_ownership` is consumed by image (call #3), pricing (call #4) → counted twice in the matrix, exists once on the catalog service surface.
@@ -6386,7 +6427,7 @@ The **rule of thumb**: a `domain.py` dataclass is public iff at least one `servi
 
 **Rule 6 (corollary): `router.py` is NEVER cross-module imported.** No module imports another module's `router.py` — that file binds HTTP paths only. Even self-imports of `router.py` happen only at `app/main.py` registration time.
 
-**Rule 7 (corollary): `tasks.py` is NEVER cross-module imported.** Celery task references are by **task name string** (`"image.precheck"`, `"export.generate"` per §3.I), not by Python import. Cross-module task enqueue uses `celery_app.send_task("image.precheck", ...)` not `from app.modules.image.tasks import precheck`. This preserves the V1.5 extraction story for Celery tasks (the worker pod may live in a separate process; the task name is the stable handle).
+**Rule 7 (corollary): `tasks.py` is NEVER cross-module imported.** Celery task references are by **task name string** (`"image.precheck"`, `"export.xlsx"` per §3.I), not by Python import. Cross-module task enqueue uses `celery_app.send_task("image.precheck", ...)` not `from app.modules.image.tasks import precheck`. This preserves the V1.5 extraction story for Celery tasks (the worker pod may live in a separate process; the task name is the stable handle).
 
 ---
 
@@ -6607,7 +6648,7 @@ The §3.C 7-file canonical subtree and the §15.B "every owned-table query has u
 **Exception 1: `dashboard` has NO `repository.py`** (locked at §13.D).
 - The §3.C 7-file canonical subtree is INTENTIONALLY violated by `dashboard`.
 - `modules/dashboard/` has 5 files: `router.py`, `service.py`, `schemas.py`, `domain.py`, `exceptions.py`. NO `repository.py`, NO `tasks.py`.
-- All data flows through `catalog.list_products(user_id, pagination)` + `customer.get_profile_completeness(user_id)` per §15.B 3-layer defense — `dashboard` is a pure composition layer.
+- All data flows through `catalog.list_products(user_id, pagination)` + `customer.get_onboarding_completeness(user_id)` per §15.B 3-layer defense — `dashboard` is a pure composition layer.
 - §13.D documents this as "the purest demonstration of modular monolith discipline" — `dashboard` owns ZERO tables.
 - **CI linter impact:** §19 must allowlist `dashboard` as "no repository expected" — the `repository.py is PRIVATE` rule (§16.E contract 1) does not list `app.modules.dashboard.repository` because the file does not exist.
 - **V1.5/V2 extension:** If dashboard ever needs its own table (e.g. a precomputed materialized view), §13 amendment must introduce the repository — which would simultaneously retire the "purest modular monolith demo" claim.
@@ -6739,7 +6780,7 @@ A reviewer evaluating §16 asks: "are the 8 allowed calls correctly mapped to th
 
 ## Section 17 — Endpoint Inventory
 
-STATUS: LOCKED (2026-06-06)
+STATUS: LOCKED (2026-06-06) — AMENDED 2026-06-09
 
 ### 17.A Preamble
 
@@ -6759,31 +6800,31 @@ The table columns are: **#** (row number), **Method** (HTTP verb), **Path** (URL
 
 | # | Method | Path | Owning Module | Auth | Rate Limit | Plan Guard | Audit Event | Locking section |
 |---|--------|------|---------------|------|-----------|-----------|-------------|-----------------|
-| 1 | POST | `/api/v1/auth/otp/send` | `iam` | none | 3/h/phone | — | `otp.send.requested` | §7.B.1 |
-| 2 | POST | `/api/v1/auth/otp/verify` | `iam` | none | 10/h/phone | — | `auth.login` | §7.B.2 |
-| 3 | POST | `/api/v1/auth/refresh` | `iam` | cookie-only | 60/h/user | — | `auth.refresh` | §7.B.3 |
-| 4 | POST | `/api/v1/auth/logout` | `iam` | cookie-only | 60/h/user | — | `auth.logout` | §7.B.4 |
+| 1 | POST | `/api/v1/auth/otp/send` | `iam` | none | 3/h/phone | — | — | §7.B.1 |
+| 2 | POST | `/api/v1/auth/otp/verify` | `iam` | none | 10/h/phone | — | `auth.login.success` / `auth.login.failed` | §7.B.2 |
+| 3 | POST | `/api/v1/auth/refresh` | `iam` | cookie-only | 60/h/user | — | `auth.token.refreshed` / `auth.token.refresh_failed` | §7.B.3 |
+| 4 | POST | `/api/v1/auth/logout` | `iam` | cookie-only | none | — | `auth.logout` | §7.B.4 |
 | 5 | GET | `/api/v1/seller-profile` | `customer` | JWT | per-IP only | — | — | §8.B.1 |
-| 6 | PATCH | `/api/v1/seller-profile` | `customer` | JWT | 20/h/user | — | `seller_profile.update` | §8.B.2 |
-| 7 | PATCH | `/api/v1/seller-profile/active-categories` | `customer` | JWT | 20/h/user | — | `seller_profile.active_categories_update` | §8.B.3 |
-| 8 | PATCH | `/api/v1/seller-profile/compliance/{super_id}` | `customer` | JWT | 20/h/user | — | `seller_profile.compliance_update` | §8.B.4 |
+| 6 | PATCH | `/api/v1/seller-profile` | `customer` | JWT | 60/h/user | — | `customer.profile_updated` | §8.B.2 |
+| 7 | PATCH | `/api/v1/seller-profile/active-categories` | `customer` | JWT | 60/h/user | — | `customer.active_categories.updated` | §8.B.3 |
+| 8 | PATCH | `/api/v1/seller-profile/compliance/{super_id}` | `customer` | JWT | 60/h/user | — | `customer.compliance_updated` | §8.B.4 |
 | 9 | GET | `/api/v1/seller-profile/required-fields` | `customer` | JWT | per-IP only | — | — | §8.B.5 |
 | 10 | GET | `/api/v1/categories/suggest?q=...` | `category` | JWT | 100/h/user | `smart_picker_hourly` | — | §9.B.1 |
 | 11 | GET | `/api/v1/categories/browse?q=&super_id=&limit=&offset=` | `category` | JWT | per-IP only | — | — | §9.B.2 |
 | 12 | GET | `/api/v1/categories` | `category` | JWT | per-IP only | — | — | §9.B.3 |
 | 13 | GET | `/api/v1/categories/{id}/schema` | `category` | JWT | per-IP only | — | — | §9.B.4 |
 | 14 | GET | `/api/v1/categories/{id}/field-enum/{name}` | `category` | JWT | per-IP only | — | — | §9.B.5 |
-| 15 | POST | `/api/v1/products` | `catalog` | JWT | 20/h/user | `create_product_hourly` + `product_count` | `product.create` | §10.B.1 |
-| 16 | PATCH | `/api/v1/products/{id}` | `catalog` | JWT | per-IP only | — | `product.patch` (coalesced 5-min per §15.E) | §10.B.2 |
-| 17 | POST | `/api/v1/products/{id}/autofill` | `catalog` | JWT | 50/h/user | `ai_autofill_hourly` | `product.autofill` | §10.B.3 |
+| 15 | POST | `/api/v1/products` | `catalog` | JWT | 20/h/user | `create_product_hourly` + `product_count` | `catalog.product.created` | §10.B.1 |
+| 16 | PATCH | `/api/v1/products/{id}` | `catalog` | JWT | per-IP only | — | `catalog.product.updated` (coalesced 5-min per §15.E) | §10.B.2 |
+| 17 | POST | `/api/v1/products/{id}/autofill` | `catalog` | JWT | 50/h/user | `ai_autofill_hourly` | `catalog.autofill.invoked` | §10.B.3 |
 | 18 | GET | `/api/v1/products/{id}/preview` | `catalog` | JWT | per-IP only | — | — | §10.B.4 |
-| 19 | DELETE | `/api/v1/products/{id}` | `catalog` | JWT | 10/h/user | — | `product.delete` | §10.B.5 |
+| 19 | DELETE | `/api/v1/products/{id}` | `catalog` | JWT | 60/h/user | — | `catalog.product.deleted` | §10.B.5 |
 | 20 | GET | `/api/v1/products/{id}/draft` | `catalog` | JWT | per-IP only | — | — | §10.B.6 |
 | 21 | POST | `/api/v1/products/{id}/images` | `image` | JWT | 10/min/user | — | `image.upload.received` | §11.B.1 |
 | 22 | GET | `/api/v1/products/{id}/images` | `image` | JWT | per-IP only | — | — | §11.B.2 |
-| 23 | POST | `/api/v1/products/{id}/price-calc` | `pricing` | JWT | 30/h/user | — | `pricing.calc.created` | §12.B.1 |
+| 23 | POST | `/api/v1/products/{id}/price-calc` | `pricing` | JWT | per-IP only | — | `pricing.calculated` | §12.B.1 |
 | 24 | GET | `/api/v1/products` | `dashboard` | JWT | per-IP only | — | — | §13.B.1 |
-| 25 | POST | `/api/v1/exports` | `export` | JWT | 5/h/user | — | `product.export.initiated` | §14.B.1 |
+| 25 | POST | `/api/v1/products/{id}/export-xlsx` | `export` | JWT | 5/h/user | — | `export.initiated` | §14.B.1 |
 | 26 | GET | `/api/v1/exports/{id}` | `export` | JWT | per-IP only | — | — | §14.B.2 |
 | 27 | (reserved — counter alignment, see note below) | — | — | — | — | — | — | — |
 
@@ -6796,11 +6837,11 @@ This counter-alignment note is preserved verbatim so future amendments do NOT re
 | # | Method | Path | Owning Module | Auth | Rate Limit | Plan Guard | Audit Event | Locking section |
 |---|--------|------|---------------|------|-----------|-----------|-------------|-----------------|
 | I1 | GET | `/api/v1/auth/me` | `iam` | JWT | per-IP only | — | — | §7.B.5 |
-| I2 | POST | `/api/v1/webhooks/razorpay` | `iam` | signature (HMAC body) | per-IP only | — | `razorpay.webhook.received` | §7.B.6 |
+| I2 | POST | `/api/v1/webhooks/razorpay` | `iam` | signature (HMAC body) | per-IP only | — | `razorpay.webhook.captured` | §7.B.6 |
 
-These 2 infrastructure surfaces bring the total HTTP routes mounted on `app/main.py` to **29** (the 27 contract endpoints + 2 infrastructure). The 29-count is the operational deployment-side reality; the 27-count is the contract narrative. Both counts are correct in their respective contexts.
+These 2 infrastructure surfaces bring the total HTTP routes mounted on `app/main.py` to **28** (the 26 distinct contract routes + 2 infrastructure). The 28-count is the operational deployment-side reality; the 27-count is the contract narrative (row 27 in §17.B is a counter-alignment placeholder per §17.B.1 reconciliation arithmetic). Both counts are correct in their respective contexts.
 
-**§17.B.3 Plus `/health` and FastAPI defaults.** The `/health` liveness endpoint (mounted at root, NOT under `/api/v1/`) plus the 5 FastAPI default routes (`/docs`, `/redoc`, `/openapi.json`, `/`, `/favicon.ico`) bring the total app surface to **35** routes. These 6 framework / health surfaces are NOT in any contract count — they are FastAPI / K8s deployment plumbing.
+**§17.B.3 Plus `/health` and FastAPI defaults.** The `/health` liveness endpoint (mounted at root, NOT under `/api/v1/`) plus 5 FastAPI framework routes (`/docs`, `/docs/oauth2-redirect`, `/redoc`, `/openapi.json`, `/favicon.ico`) bring the total app surface to **34** routes. These 6 framework / health surfaces are NOT in any contract count — they are FastAPI / K8s deployment plumbing.
 
 ---
 
@@ -6808,21 +6849,21 @@ These 2 infrastructure surfaces bring the total HTTP routes mounted on `app/main
 
 Of the 27 contract endpoints + 2 infrastructure surfaces:
 
-- **JWT-protected (Bearer access token):** 22 endpoints — every authenticated user-facing endpoint (rows 5-26 in §17.B plus I1).
+- **JWT-protected (Bearer access token):** 23 endpoints — every authenticated user-facing endpoint (rows 5-26 in §17.B plus I1).
 - **Cookie-only (refresh token):** 2 endpoints — rows 3-4 (`/auth/refresh` + `/auth/logout`). These DO NOT carry an `Authorization: Bearer` header; the HttpOnly refresh cookie IS the credential per §4.B FE-D5 amendment.
 - **No auth (public):** 2 endpoints — rows 1-2 (`/auth/otp/send` + `/auth/otp/verify`). These are pre-login surfaces.
 - **HMAC signature auth:** 1 endpoint — I2 (`/webhooks/razorpay`). Razorpay signs the request body; backend verifies via `adapters.razorpay.verify_webhook_signature` per §6.E + §7.B.6.
 
-The 22 JWT-protected routes use the same `get_current_user` FastAPI dependency per §4.B — the dep returns 401 with `validation_message_id="auth.unauthorized"` on any of: missing header, malformed token, expired token, signature failure.
+The 23 JWT-protected routes use the same `get_current_user` FastAPI dependency per §4.B — the dep returns 401 with `validation_message_id="auth.unauthorized"` on any of: missing header, malformed token, expired token, signature failure.
 
 ---
 
 ### 17.D Rate limit distribution
 
-Per the §4.G `rate_limit_mw.py` decorator pattern (per-route via `@rate_limit(...)`) the 29 surfaces split as follows:
+Per the §4.G `rate_limit_mw.py` decorator pattern (per-route via `@rate_limit(...)`) the 28 surfaces split as follows:
 
-- **Per-user sliding-hour limits:** 13 routes (rows 6, 7, 8, 10, 15, 17, 19, 23, 25 + the 2 OTP/phone routes 1-2 + the 2 refresh/user routes 3-4).
-- **Per-IP only (DDoS gate):** 14 routes (every read-only GET + the autosave PATCH row 16 + introspection I1 + webhook I2). Per-IP only means no per-user accounting — the global Valkey key `meesell:rl:ip:{ip}:1m` enforces a 100/min/IP ceiling per §4.H.
+- **Per-user sliding-hour limits:** 9 routes (rows 3, 6, 7, 8, 10, 15, 17, 19, 25). Row 3 (`/auth/refresh`) is cookie-authenticated but has a per-user limit (60/h). Rows 6–8 (customer PATCH) and rows 10, 15, 17, 19, 25 are the primary write/AI surfaces.
+- **Per-IP only (DDoS gate):** 16 routes (every read-only GET + the autosave PATCH row 16 + price-calc row 23 + logout row 4 + introspection I1 + webhook I2). Row 4 (logout) carries no per-user decorator — idempotent; global per-IP ceiling applies. Row 23 (price-calc) is per-IP only per §12.B.1. Per-IP means no per-user accounting — the global Valkey key `meesell:rl:ip:{ip}:1m` enforces a 100/min/IP ceiling per §4.H.
 - **Per-minute burst limit:** 1 route (row 21 `POST /products/{id}/images`, 10/min/user per §11.B.1 — minute-window enforcement protects against image-upload storms).
 - **Per-phone limit (NOT per-user):** 2 routes (rows 1-2 `/auth/otp/*` — the phone IS the identifier pre-login; 3/h/phone send + 10/h/phone verify per §7.B.1-2).
 
@@ -6853,25 +6894,24 @@ Per §15.E + the per-module audit subsections, the audit_events table receives w
 
 | Audit event name | Triggering endpoint | Coalescing | Locking |
 |------------------|---------------------|-----------|---------|
-| `otp.send.requested` | row 1 | no | §7.I |
-| `auth.login` | row 2 (on 200) | no | §7.I |
-| `auth.refresh` | row 3 (on 200) | no | §7.I + §15.H |
+| `auth.login.success` / `auth.login.failed` | row 2 (on 200 / on 4xx) | no | §7.I |
+| `auth.token.refreshed` / `auth.token.refresh_failed` | row 3 (on 200 / on 4xx) | no | §7.I + §15.H |
 | `auth.logout` | row 4 (always on 204) | no | §7.I + §15.H |
-| `seller_profile.update` | row 6 (on 200) | no | §8.I |
-| `seller_profile.active_categories_update` | row 7 (on 200) | no | §8.I |
-| `seller_profile.compliance_update` | row 8 (on 200) | no | §8.I |
-| `product.create` | row 15 (on 201) | no | §10.I |
-| `product.patch` | row 16 (on 200) | **YES, 5-min window per `(user_id, product_id)` per §15.E** | §10.I + §15.E |
-| `product.autofill` | row 17 (on 200) | no | §10.I |
-| `product.delete` | row 19 (on 204) | no | §10.I |
+| `customer.profile_updated` | row 6 (on 200) | no | §8.I |
+| `customer.active_categories.updated` | row 7 (on 200) | no | §8.I |
+| `customer.compliance_updated` | row 8 (on 200) | no | §8.I |
+| `catalog.product.created` | row 15 (on 201) | no | §10.I |
+| `catalog.product.updated` | row 16 (on 200) | **YES, 5-min window per `(user_id, product_id)` per §15.E** | §10.I + §15.E |
+| `catalog.autofill.invoked` | row 17 (on 200) | no | §10.I |
+| `catalog.product.deleted` | row 19 (on 204) | no | §10.I |
 | `image.upload.received` | row 21 (on 202) | no | §11.J |
 | `image.precheck.completed` | (worker context — NOT route-triggered) | no | §11.J (documented exception: written directly from Celery task per §11.E + §6A.D pattern) |
-| `pricing.calc.created` | row 23 (on 201) | no | §12.I |
-| `product.export.initiated` | row 25 (on 202) | no | §14.J |
+| `pricing.calculated` | row 23 (on 201) | no | §12.I |
+| `export.initiated` | row 25 (on 202) | no | §14.J |
 | `product.export.completed` | (worker context — NOT route-triggered) | no | §14.J (documented exception per §14.E worker context + §6A.D pattern) |
-| `razorpay.webhook.received` | I2 (on 200, only after HMAC verify passes) | no | §7.I |
+| `razorpay.webhook.captured` | I2 (on 200, only after HMAC verify passes) | no | §7.I |
 
-**14 distinct audit event names** are emitted across V1 — 11 from HTTP routes + 3 from Celery worker context (`image.precheck.completed`, `product.export.completed`, plus the `ai_ops.call.completed` audit event from §6A.D AI-cost-recording exception which is emitted from `ai_ops/client.py` not a domain module).
+**19 distinct audit event names** are emitted across V1 — 16 from HTTP route processing (including conditional `.success`/`.failed` and `.refreshed`/`.refresh_failed` variants at rows 2 and 3) + 3 from Celery worker context (`image.precheck.completed`, `product.export.completed`, and `ai_ops.call.completed` per §6A.D AI-cost-recording exception from `ai_ops/client.py`). Row 1 (`/auth/otp/send`) emits NO audit event — the send endpoint is a pre-login surface with no resolvable `user_id` and no audit value per §7.I.
 
 PII redaction (per §15.E + `MVP_ARCH §11.9` — `phone` → SHA-256 hash with `AUDIT_PII_SALT`) applies uniformly; the audit_mw middleware (§4.G) handles redaction inline for HTTP-triggered events; the worker-context events redact at write time inside `core/audit_helpers.py` (the §15.E shared helper).
 
@@ -6879,15 +6919,15 @@ PII redaction (per §15.E + `MVP_ARCH §11.9` — `phone` → SHA-256 hash with 
 
 ### 17.G Cross-cutting summary
 
-**29 routes mounted on `app/main.py` after construction.** This is the assertion the §19 boot integration tests verify (`tests/test_app_boot_integration.py` currently passes at 7/7 with 9 routes; post-construction the assertion increments to 35 routes when accounting for `/health` + FastAPI defaults per §17.B.3).
+**28 routes mounted on `app/main.py` after construction.** This is the assertion the §19 boot integration tests verify (`tests/test_app_boot_integration.py` currently passes at 7/7 with 9 routes; post-construction the assertion increments to 34 routes when accounting for `/health` + FastAPI defaults per §17.B.3).
 
-**2 Celery task names registered on `celery_app`:** `image.precheck` (§11.E) and `export.generate` (§14.E). These are the ONLY domain-module-owning Celery tasks in V1; no other module has a `tasks.py` per §3.C canonical 7-file subtree (the 2 modules with `tasks.py` are explicitly `image` and `export`). §18 expands the Celery task contract.
+**2 Celery task names registered on `celery_app`:** `image.precheck` (§11.E) and `export.xlsx` (§14.E). These are the ONLY domain-module-owning Celery tasks in V1; no other module has a `tasks.py` per §3.C canonical 7-file subtree (the 2 modules with `tasks.py` are explicitly `image` and `export`). §18 expands the Celery task contract.
 
 **Rate-limit decorator scopes consolidated:**
 - `phone` scope: 2 routes (rows 1-2).
 - `user` scope (sliding-hour): 13 routes.
 - `user` scope (sliding-minute): 1 route (row 21).
-- `IP` scope (DDoS gate, always on): all 29 routes.
+- `IP` scope (DDoS gate, always on): all 28 routes.
 
 The per-IP DDoS limit at the middleware level is GLOBAL — every route passes through `rate_limit_mw`. The decorator-tagged limits are ADDITIONAL per-route enforcement on top of the global DDoS ceiling.
 
@@ -6900,9 +6940,9 @@ The per-IP DDoS limit at the middleware level is GLOBAL — every route passes t
 - **Request and response wire shapes** (Pydantic schemas) — per-module §X.E subsections (`§7.E`, `§8.E`, `§9.E`, `§10.E`, `§11.F`, `§12.E`, `§13.E`, `§14.G`). §17 only records that a wire shape exists for each endpoint; the contents are owned by the per-module locks.
 - **Service-layer signatures** (the methods called by route handlers) — per-module §X.C subsections.
 - **Cross-module call signatures** — §16.B (the 8-call matrix consolidated from §2.D).
-- **Celery task contracts** (`image.precheck`, `export.generate`) — §18.
+- **Celery task contracts** (`image.precheck`, `export.xlsx`) — §18.
 - **Test coverage per endpoint** — §19 (every contract endpoint has at least 1 happy-path integration test).
-- **K3s manifest mapping** (which routes serve from which pod) — §20 (V1 = all 29 routes from a single FastAPI pod; V1.5 per-module extraction redistributes routes per §21).
+- **K3s manifest mapping** (which routes serve from which pod) — §20 (V1 = all 28 routes from a single FastAPI pod; V1.5 per-module extraction redistributes routes per §21).
 - **V1.5 extraction shim wiring** — §16.G + §21.
 
 A reviewer evaluating §17 asks: "are the 27 rows correctly mapped to module owners, do auth / rate-limit / plan-guard / audit columns match per-module specs, does the I1/I2 + counter-alignment note resolve the §0.C 27-count?" — NOT "what does the response body of `GET /products` look like?" (that's §13.E) or "how does the catalog spine extract in V1.5?" (that's §16.H + §21).
@@ -6911,11 +6951,23 @@ A reviewer evaluating §17 asks: "are the 27 rows correctly mapped to module own
 
 ## Section 18 — Background Jobs (Celery)
 
-STATUS: LOCKED (2026-06-06)
+STATUS: LOCKED (2026-06-06) — AMENDED 2026-06-08 (see §18.A.1 — Celery task name harmonization with §14.E owning section; §18.F.1 — Worker JWT re-validation implementation moved from inline tasks.py to centralized task_prerun signal handler in celery_app.py) — AMENDED 2026-06-09 (§18.B + §18.D path correction: `POST /api/v1/exports` → `POST /api/v1/products/{id}/export-xlsx` per owning §14.B.1 + Wave 8 §17 audit ruling)
 
 ### 18.A Preamble
 
 §18 enumerates the **Celery job catalog** for V1: which modules emit jobs, which workers consume them, queue layout in Valkey DB 1 (broker) + DB 2 (results), retry policy, idempotency posture, and worker concurrency budget. Per §3.I + §3.C canonical 7-file subtree, only **2 modules have a `tasks.py`** in V1 — `image` and `export`. All other modules (`iam`, `customer`, `category`, `catalog`, `pricing`, `dashboard`) are synchronous request/response; they do not emit Celery tasks.
+
+### 18.A.1 AMENDMENT 2026-06-08 — Celery task name harmonization with §14.E owning section
+
+**Founder ruling 2026-06-08 (founder Mugunthan, post-construction ratification on `meesell-backend-construction-14-export-1` D8 escalation; see STATUS_MASTER Master Decisions Log entry 2026-06-08):** the V1 export Celery task name is canonicalized to **`"export.xlsx"`** (matching §14.E line 5427 which has always read `@celery_app.task(name="export.xlsx", ...)`).
+
+**Why:** Prior to 2026-06-08, §14.E read `"export.xlsx"` while §16.E rule 7 corollary, §17 (×2), §18.B inventory table, §18.D task contract section (heading + body + code sketch), §18.H cross-cutting, and §18.I failure-mode section all read `"export.generate"`. This was an internal LOCK inconsistency baked in on 2026-06-05 — NOT a sub-session error. The §14 sub-session (`meesell-backend-construction-14-export-1`) correctly followed §14.E (the owning section) when constructing `app/modules/export/tasks.py`, producing `@shared_task(name="export.xlsx", ...)`. Master surfaced the cross-section discrepancy; founder ruled `"export.xlsx"` wins.
+
+**Rationale for `"export.xlsx"` over `"export.generate"`:** (a) §14.E is the owning section per §3.I — task name should propagate FROM the owner; (b) format-explicit naming preserves V1.5 room (`export.csv`, `export.pdf`); (c) zero code changes — `app/modules/export/tasks.py` was already shipped + tested with `"export.xlsx"` (64/64 tests PASS); (d) the alternative would require touching the LOCKED CONSTRUCTED §14 code, which would breach §5.0 NON-NEGOTIABLE.
+
+**Operative override (replacing all `"export.generate"` references throughout the LOCKED doc with `"export.xlsx"`):** §16.E rule 7 corollary, §17 line 6909 + line 6928, §18.B inventory table row, §18.D heading + task name + code sketch, §18.H AI calls cross-reference, §18.I failure-mode bullet — all renamed in this amendment. The §14.E owning section is unchanged (was always `"export.xlsx"`).
+
+**Nothing else in §14 / §16 / §17 / §18 is amended.** The `max_retries=1` setting, `retry_backoff=True`, idempotency posture (status='failed' + new UUID on retry), 9-step pipeline, F3 Layer 3 guardrail, GCS subdir layout, round-trip validator, V2 marketplace adapter seam, and §18 worker JWT re-validation rule (§18.F) all stand verbatim.
 
 §18 does NOT re-specify task internals — the 5-step image precheck pipeline algorithm is owned by `meesell-image-precheck-builder` per §11.E; the 9-step export pipeline is owned by `meesell-services-builder` per §14.E. What §18 DOES specify is the queue contract, retry + DLQ policy, worker startup posture, idempotency rules, and how Valkey wiring works in the worker process — the operational glue that lets the per-module tasks run reliably.
 
@@ -6928,11 +6980,11 @@ A reviewer evaluating §18 asks: "are the 2 queue contracts correct, is retry po
 | Task name | Owner module | Owner specialist | Locking section | Max retries | Retry backoff | Idempotency |
 |-----------|--------------|------------------|-----------------|------------|---------------|-------------|
 | `image.precheck` | `image` | `meesell-services-builder` + `meesell-image-precheck-builder` (algorithm) | §11.E | 2 | `True` (Celery exponential backoff) | Yes — re-running on the same `image_id` produces the same `precheck_jsonb` result (idempotent at the row level — `UPDATE product_images SET precheck_jsonb=...`) |
-| `export.generate` | `export` | `meesell-services-builder` | §14.E | 1 | `True` | Yes — exports row carries `status="failed"` on terminal failure; re-trigger from `POST /api/v1/exports` creates a NEW row with a NEW UUID, never reuses |
+| `export.xlsx` | `export` | `meesell-services-builder` | §14.E | 1 | `True` | Yes — exports row carries `status="failed"` on terminal failure; re-trigger from `POST /api/v1/products/{id}/export-xlsx` creates a NEW row with a NEW UUID, never reuses |
 
 **§18.B.1 The 2-task floor is the V1 ceiling.** No other module emits Celery tasks in V1. The `ai_ops` layer's Gemini calls are synchronous (await within the request handler) — they do NOT enqueue. The audit_events writes are synchronous inline per §4.G `audit_mw` (V1.5 may move to a Celery sink per `MVP_ARCH §14` — that adds a 3rd task at V1.5 dispatch time, NOT V1).
 
-Cross-reference: the `MVP_ARCH §5.5.10` performance budget (≤ 30 s end-to-end export pipeline) is consumed by `export.generate`; the `MVP_ARCH §11.5` budget (≤ 5 s image precheck) is consumed by `image.precheck`.
+Cross-reference: the `MVP_ARCH §5.5.10` performance budget (≤ 30 s end-to-end export pipeline) is consumed by `export.xlsx`; the `MVP_ARCH §11.5` budget (≤ 5 s image precheck) is consumed by `image.precheck`.
 
 ---
 
@@ -6970,15 +7022,15 @@ def image_precheck(self, image_id: str, user_id: str) -> None:
 
 ---
 
-### 18.D `export.generate` — task contract
+### 18.D `export.xlsx` — task contract
 
-**Task name (Celery registration):** `export.generate`
+**Task name (Celery registration):** `export.xlsx`
 
 **Owner file:** `app/modules/export/tasks.py` (per §3.C + §14.E).
 
 **Signature (locked at §14.E):**
 ```python
-@shared_task(name="export.generate", bind=True, max_retries=1, retry_backoff=True)
+@shared_task(name="export.xlsx", bind=True, max_retries=1, retry_backoff=True)
 def export_generate(self, export_id: str, user_id: str) -> None:
     """Run 9-step export pipeline for a user's catalog/category/products subset.
 
@@ -6997,9 +7049,9 @@ def export_generate(self, export_id: str, user_id: str) -> None:
 
 **Idempotency:** `UPDATE exports SET status="completed", xlsx_url=..., zip_url=... WHERE id=export_id` — re-running the task on the same `export_id` regenerates the same artifacts (the input rows are immutable-while-processing per §14.E). If the worker dies mid-pipeline, the Celery `task_reject_on_worker_lost=True` setting (locked session 2 G3 cleanup) requeues the task — the partial GCS objects are overwritten on retry.
 
-**Retry posture:** On exception, Celery retries 1 time with exponential backoff (1s, 2s). After 1 failed retry, the worker writes `exports.status="failed"` with the `error_code` field populated per the §14.H error taxonomy — NO DLQ in V1, the failed exports row IS the dead-letter record. The seller polls (row 26) and sees the failure; UI offers a "retry" button that creates a NEW `POST /api/v1/exports` (new UUID, new row).
+**Retry posture:** On exception, Celery retries 1 time with exponential backoff (1s, 2s). After 1 failed retry, the worker writes `exports.status="failed"` with the `error_code` field populated per the §14.H error taxonomy — NO DLQ in V1, the failed exports row IS the dead-letter record. The seller polls (row 26) and sees the failure; UI offers a "retry" button that creates a NEW `POST /api/v1/products/{id}/export-xlsx` (new UUID, new row).
 
-**Audit event:** `product.export.completed` — written DIRECTLY from the worker via `core/audit_helpers.audit_event_write(...)` per §15.E (same documented exception pattern as §6A.D + §7.I + §11.E). The HTTP-triggered companion event `product.export.initiated` is written by the audit_mw at route response time per §17.F.
+**Audit event:** `product.export.completed` — written DIRECTLY from the worker via `core/audit_helpers.audit_event_write(...)` per §15.E (same documented exception pattern as §6A.D + §7.I + §11.E). The HTTP-triggered companion event `export.initiated` is written by the audit_mw at route response time per §17.F.
 
 ---
 
@@ -7021,7 +7073,57 @@ Per §5.C + `CLAUDE.md` Valkey DB mapping:
 
 **Locked rule (§1.G):** workers re-validate `user_id` against the `users` table before executing business logic. Rationale: the JWT token was already consumed at the HTTP route; the worker receives only the `user_id` claim from the task payload. If the user has been deleted (V1.5 admin action) between task enqueue and worker pickup, the worker MUST refuse to execute.
 
-**Implementation pattern (locked):**
+#### 18.F.1 AMENDMENT 2026-06-08 — Implementation via Celery task_prerun signal handler (V1 canonical)
+
+**Founder ruling 2026-06-08 (founder Mugunthan, post-construction ratification on `meesell-backend-construction-18-celery-1` D2 escalation; see STATUS_MASTER Master Decisions Log entry 2026-06-08):** the V1 canonical implementation pattern for §18.F worker JWT re-validation is a **Celery `task_prerun` signal handler in `app/workers/celery_app.py`** scoped to a hardcoded whitelist of V1 task names — NOT an inline `_validate_user_or_abort` helper inside each `tasks.py`. The original implementation pattern shown below (lines 7079–7090 in pre-amendment numbering) is preserved as documentation of the *observable invariant* but is NOT the operative V1 implementation.
+
+**Why (engineering rationale):**
+
+1. **Centralization** — one signal handler in `celery_app.py` enforces re-validation across all V1 tasks, vs per-task implementations that risk drift between image's check and export's check.
+2. **Explicit opt-in via whitelist** — `_TASKS_REQUIRING_USER_REVALIDATION = frozenset({"image.precheck", "export.xlsx"})` makes the scope auditable in one place; future tasks must explicitly join the whitelist.
+3. **Preserves §11.E + §14.E LOCKED CONSTRUCTED `tasks.py` code untouched** — the §18 sub-session avoided modifying other sub-sessions' owned code, which would have introduced regression risk into the LOCKED §11/§14 test suites without a corresponding re-dispatch coordination protocol.
+4. **Same observable security guarantee** — the signal handler runs BEFORE the task body executes; raising `celery.exceptions.Reject(requeue=False)` on missing user terminates the task without retry, identical to the original `UserNotFoundError` semantics. 9 sub-tests cover filter, kwarg extraction, kwarg+positional, missing/existing/malformed user_id, DB-error fail-open, no-op, whitelist cardinality.
+5. **V1.5 forward-compat** — when the User model gains `disabled` / `deleted_at` columns, the signal handler's existence-check extends to `WHERE id=$1 AND disabled=False AND deleted_at IS NULL` in ONE place, vs editing each `tasks.py` separately.
+
+**V1 operative implementation (locked):**
+
+```python
+# app/workers/celery_app.py — V1 canonical §18.F enforcement
+from celery.exceptions import Reject
+from celery.signals import task_prerun
+
+_TASKS_REQUIRING_USER_REVALIDATION = frozenset({
+    "image.precheck",
+    "export.xlsx",
+})
+
+@task_prerun.connect
+def _revalidate_user_pre_task(sender=None, task_id=None, task=None,
+                              args=None, kwargs=None, **_extra) -> None:
+    """§18.F worker JWT re-validation. Whitelisted to V1 tasks only.
+    Raises Reject(requeue=False) if user_id not in users table."""
+    task_name = getattr(task, "name", None) or getattr(sender, "name", None)
+    if task_name not in _TASKS_REQUIRING_USER_REVALIDATION:
+        return
+    user_id_str = _extract_user_id_from_args(tuple(args or ()), dict(kwargs or {}))
+    if user_id_str is None:
+        return  # task body raises on missing positional arg
+    if not _user_exists_sync(user_id_str):
+        raise Reject(reason=f"user {user_id_str} not found", requeue=False)
+```
+
+**DB error posture (locked):** `_user_exists_sync` fails OPEN on transient DB errors (returns `True`), allowing the task body's repository layer to surface the DB error normally rather than hard-rejecting at the signal handler with no audit trail of WHY. This is the V1 posture — V1.5 may revisit for hardened multi-tenant deployments.
+
+**Signal contract assumption (locked):** both V1 tasks accept `(entity_id, user_id)` positionally; `_extract_user_id_from_args` reads `kwargs["user_id"]` first, then falls back to `args[1]`. Future V1.5 tasks joining the whitelist MUST honor this positional convention OR `_extract_user_id_from_args` must be extended.
+
+**What §18.F.1 does NOT change:** §1.G locked rule (workers re-validate user_id against users table before executing business logic) and the observable security guarantee (task terminated without retry on missing user — user-deletion is a permanent condition) both stand verbatim. Only the *implementation location* moved from per-task `tasks.py` files to the centralized `celery_app.py` signal handler.
+
+---
+
+#### 18.F.0 Original implementation pattern (pre-amendment 2026-06-08, preserved for documentation)
+
+The following pattern was the originally-locked implementation prior to the §18.F.1 amendment. Preserved here for historical reference; **NOT the operative V1 implementation** — see §18.F.1 above:
+
 ```python
 # app/modules/image/tasks.py + app/modules/export/tasks.py — common pattern
 async def _validate_user_or_abort(user_id: UUID, session: AsyncSession) -> None:
@@ -7031,7 +7133,7 @@ async def _validate_user_or_abort(user_id: UUID, session: AsyncSession) -> None:
         raise UserNotFoundError(user_id=user_id)
 ```
 
-Called as the FIRST line of every Celery task body after `_setup_db_session()`. The exception terminates the task (no retry — user-deletion is a permanent condition).
+In the pre-amendment pattern, this helper was to be called as the FIRST line of every Celery task body after `_setup_db_session()`. The exception terminated the task (no retry — user-deletion is a permanent condition). The V1.5 amendment may restore this pattern IF per-task validation logic diverges enough to warrant per-task implementations.
 
 ---
 
@@ -7045,7 +7147,7 @@ The setting is locked here at §18.G to preserve discoverability for future cons
 
 ### 18.H Cross-cutting integration
 
-**§6A AI calls fire from tasks.** The `image.precheck` task invokes `ai_ops.client.call_gemini(workload="watermark", ...)` at step 5 per §11.E. This is the ONLY V1 cross-cutting integration between Celery and `ai_ops/`. The `export.generate` task does NOT invoke AI — export is deterministic per §14.A.
+**§6A AI calls fire from tasks.** The `image.precheck` task invokes `ai_ops.client.call_gemini(workload="watermark", ...)` at step 5 per §11.E. This is the ONLY V1 cross-cutting integration between Celery and `ai_ops/`. The `export.xlsx` task does NOT invoke AI — export is deterministic per §14.A.
 
 **Cost tracking writes audit_events directly per §6A.D.** When `image.precheck` calls Gemini at step 5, `ai_ops/cost_tracker.py` writes the `ai_ops.call.completed` audit event INLINE inside `ai_ops/client.py` per §6A.D — this is the 3rd documented exception to the "audit_mw writes audit_events" rule. The worker context does NOT have an audit_mw available, so the inline write is necessary.
 
@@ -7059,7 +7161,7 @@ The setting is locked here at §18.G to preserve discoverability for future cons
 
 **V1 has NO Dead Letter Queue (DLQ).** Failed tasks after `max_retries` exhausted are recorded in the owning table:
 - `image.precheck` failure → `product_images.status = "failed_precheck"` with `precheck_jsonb.error = <error_code>`.
-- `export.generate` failure → `exports.status = "failed"` with `exports.error_code = <code>` per the §14.H error taxonomy.
+- `export.xlsx` failure → `exports.status = "failed"` with `exports.error_code = <code>` per the §14.H error taxonomy.
 
 These status values ARE the dead-letter records. The seller-facing UI surfaces the failure and offers a manual retry (which creates a NEW row, NEW UUID, NEW task). The operator dashboard (V1.5 — not in scope here) will query these tables for failure rates.
 
@@ -7224,7 +7326,7 @@ Performance tests are pytest-marked `perf` and `slow` — gated by `PYTEST_RUN_S
 **Backend coverage targets for V1:**
 
 - **80% module-level line coverage** for `app/modules/*/service.py` and `app/modules/*/repository.py` (the two layers that hold business logic). `pytest-cov` measures via `pytest --cov=app.modules --cov-fail-under=80`.
-- **100% endpoint coverage** — every contract endpoint (27 per §17.B + 2 infrastructure = 29 total) has at least 1 happy-path integration test. Asserted by a custom test (`tests/lint/check_endpoint_coverage.py`) that introspects FastAPI's `app.routes` and cross-references with the integration test inventory.
+- **100% endpoint coverage** — every contract endpoint (26 distinct per §17.B + 2 infrastructure = 28 total) has at least 1 happy-path integration test. Asserted by a custom test (`tests/lint/check_endpoint_coverage.py`) that introspects FastAPI's `app.routes` and cross-references with the integration test inventory.
 - **Schemas.py + router.py + domain.py + exceptions.py NOT in coverage scope** — these are declarative layers (Pydantic models, FastAPI route bindings, frozen dataclasses, exception classes). Their correctness is asserted by the integration tests, not by coverage of their own lines.
 
 Coverage reports surface in CI as a comment on the PR; coverage drop > 5% triggers a review block.
@@ -7714,7 +7816,7 @@ A reviewer evaluating §21 asks: "is the order traceable to §16.H, do per-modul
 
 ## Section 22 — Acceptance & Sign-Off
 
-STATUS: LOCKED (2026-06-06)
+STATUS: LOCKED (2026-06-06) — AMENDED 2026-06-09 (§22.B Feature 9 + §22.C: export path + route count corrections per Wave 8 §17 audit Option A ruling)
 
 ### 22.A Preamble
 
@@ -7747,7 +7849,7 @@ A reviewer evaluating §22 asks: "does every V1_FEATURE_SPEC feature have a back
 **Feature 3 — Catalog Wizard (§10).**
 - ✓ 6 catalog endpoints live per §10.B (rows 15-20 in §17.B).
 - ✓ Schema validation against `templates.schema_jsonb` envelope per §5A.B (top-level 6 keys + per-field 9 keys + 11-primitive mapping).
-- ✓ Autosave coalescing per `MVP_ARCH §11.4` — `product.patch` events coalesced 5-min/`(user_id, product_id)` per §15.E.
+- ✓ Autosave coalescing per `MVP_ARCH §11.4` — `catalog.product.updated` events coalesced 5-min/`(user_id, product_id)` per §15.E.
 - ✓ Draft recovery via `GET /api/v1/products/{id}/draft` per §10.B.6.
 
 **Feature 4 — AI Auto-fill (§10.B.3).**
@@ -7775,12 +7877,12 @@ A reviewer evaluating §22 asks: "does every V1_FEATURE_SPEC feature have a back
 
 **Feature 8 — Dashboard (§13).**
 - ✓ `GET /api/v1/products` paginated listing per §13.B.1.
-- ✓ `profile_completeness` badge composed from `customer.service.get_profile_completeness(user_id)` per §16.B.
+- ✓ `onboarding_completeness` badge composed from `customer.service.get_onboarding_completeness(user_id)` per §16.B.
 - ✓ NO repository file in `modules/dashboard/` per §13.D (the §16.F structural exception preserved).
 - ✓ P95 ≤ 200 ms per §19.E.
 
 **Feature 9 — XLSX Export (§14).**
-- ✓ 2 export endpoints live: `POST /api/v1/exports` (202) + `GET /api/v1/exports/{id}` per §14.B.
+- ✓ 2 export endpoints live: `POST /api/v1/products/{id}/export-xlsx` (202) + `GET /api/v1/exports/{id}` per §14.B.
 - ✓ 9-step Celery pipeline operational per §14.E.
 - ✓ 2 ComplianceStrategy concretes (`StandardComplianceStrategy` + `CollapsedComplianceStrategy`) per §14.F + §0.G §12.6.
 - ✓ 15 golden round-trip XLSX fixtures pass per §14.K (one per super-category + Eye-Serum collapsed variant).
@@ -7794,7 +7896,7 @@ A reviewer evaluating §22 asks: "does every V1_FEATURE_SPEC feature have a back
 **Surface count.**
 - ✓ 27 contract endpoints live per §17.B.
 - ✓ 2 infrastructure surfaces live per §17.B (I1 `/me` + I2 `/webhooks/razorpay`).
-- ✓ Total 29 routes mounted on `app/main.py` — asserted by boot smoke test per §19.B Layer 5 (target line: 35 routes including `/health` + FastAPI defaults).
+- ✓ Total 28 routes mounted on `app/main.py` — asserted by boot smoke test per §19.B Layer 5 (target line: 34 routes including `/health` + FastAPI defaults per §17.B.3).
 
 **i18n.**
 - ✓ All ~50 i18n message IDs populated in `app/i18n/messages_en.py` per §15.K consolidation.

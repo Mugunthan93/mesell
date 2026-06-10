@@ -1,10 +1,16 @@
 // vitest.config.ts — per §19 (test strategy) + §3.B (root file)
-// Uses Vitest with jsdom for Angular 18 service/pipe/interceptor unit tests.
+// Uses Vitest with jsdom for Angular 18 service/pipe/interceptor/component unit tests.
 // Component tests (requiring template compilation) use TestBed + Angular's test utilities.
-// NOTE: @analogjs/vitest-angular@1.x ships an Angular CLI builder, not a Vite plugin.
-//       The scaffold-phase unit tests are TypeScript-level tests that do not require
-//       the Analog Vite plugin. Full component test suite setup is deferred to
-//       meesell-angular-component-builder which will evaluate the plugin landscape at that time.
+//
+// styleUrl resolution pattern:
+//   @analogjs/vitest-angular@1.x ships Angular CLI builders, not a Vite plugin.
+//   Components that use `styleUrl` require Angular's JIT ResourceLoader to resolve SCSS paths.
+//   In jsdom, relative URLs fail (no document.baseURI). Fix: provide a no-op ResourceLoader
+//   in each spec's TestBed providers:
+//     { provide: ResourceLoader, useValue: { get: (_url: string) => Promise.resolve('') } }
+//   This pattern is established in dashboard.component.spec.ts and product-row.component.spec.ts.
+//   app.component.spec.ts remains excluded — it uses the same scaffold-phase pattern that
+//   predates the established fix and has not been migrated yet.
 
 import { defineConfig } from 'vitest/config';
 import path from 'path';

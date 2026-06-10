@@ -26,3 +26,4 @@ k8s/meesell-worker-sa-key.json
 *.log
 dump.rdb
 appendonlydir/
+frontend/.angular/

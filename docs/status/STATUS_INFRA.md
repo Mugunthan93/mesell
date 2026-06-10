@@ -18,6 +18,9 @@ Phase B closed (5 multi-SAN-equivalent ingresses live: `studio`, `api`, `dev`, `
 - **Tooling** — `Makefile.tf` Pass 1 + Pass 2 + Pass 2b targets, `scripts/tf-preflight.sh` (Layer E gate), `scripts/namecheap-*.mjs` (Playwright DNS helpers), `~/.meesell-secrets/` (chmod 700, files chmod 600).
 - **Docs** — SSOT at `docs/INFRASTRUCTURE_ARCHITECTURE.md`. Operational runbooks (IP rotation, ADC token workaround, TF state debug, secret verification, cert-manager chart version) captured in that doc.
 
+## Recent Ops
+- **2026-06-09 — Razorpay TEST credential rotation (Secret Manager).** Added version 2 to `razorpay-key-id` (TEST key, `rzp_test_*`) and `razorpay-key-secret`. Both containers pre-existed (from Phase A v1). Used `printf '%s' | gcloud secrets versions add --data-file=-` (no trailing newline; hexdump-verified no `0a` byte). Both secrets now show versions 1+2 ENABLED; apps reading `latest` pick up v2. Maps to `RAZORPAY_KEY_ID`/`RAZORPAY_KEY_SECRET` (`backend/app/shared/config.py:62-63`). Account `vaishnaviramoorthy@gmail.com`, project `project-1f5cbf72-2820-4cdb-949`.
+
 ## In Progress
 - (none)
 
@@ -1088,3 +1091,73 @@ Out-of-scope guarantee: meesell-vm (34.93.9.139), shotfox-platform, shotfox-mvp1
 Status: PHASE A COMPLETE.
 Next handoff: TF state now reflects valkey maxmemory; dev.tfvars carries new secret IDs but module.app_secrets not yet applied (Phase B candidate).
 =========
+
+=== SESSION: 2026-06-08 — §20 Deployment Topology V1 CONSTRUCTED ===
+Agent: meesell-infra-builder
+Pre-flight: gcloud account=vaishnaviramoorthy@gmail.com (active), project=project-1f5cbf72-2820-4cdb-949, kubectl meesell-dev-master Ready v1.35.5+k3s1. gcloud at /opt/homebrew/bin, kubectl at /usr/local/bin (not on default PATH — must export). Founder IP now 122.164.87.94 (rotated again — firewall not touched this session).
+
+TASK 0 (tunnel): RESTORED. No gcp-mesell SSH alias (~/.ssh/config has only gcp-nexus -> 35.244.22.79, NOT the mesell VM 35.234.223.66). Used `kubectl port-forward svc/postgres 5433:5432 -n dev` (background, log /tmp/meesell-pf-postgres.log). nc 127.0.0.1 5433 succeeds. psql NOT installed locally — used `kubectl exec postgres-0` for DB queries instead.
+
+TASK 1 (secrets): refresh-token-pepper VERSION 1 LIVE (openssl rand -hex 32, 64 bytes). razorpay-webhook-secret + langfuse-secret-key SM containers created, ZERO versions (founder escalations). Pre-snapshot: /tmp/meesell-pre-secrets-state.txt.
+
+TASK 2 (manifests): 9 files updated (frontend.yaml already correct). Live datastore reconciliation: postgres + valkey are TF-managed StatefulSets (module.postgres_dev / module.valkey_dev) reading dedicated postgres-credentials / valkey-credentials secrets via valueFrom — NOT backend-secrets, NOT envFrom. So postgres.yaml + valkey.yaml + ingress.yaml written as DOCUMENTATION-ONLY (DO NOT APPLY headers) matching LIVE state. api/worker/backup-cronjob use backend-secrets + dev namespace. Live verified: postgres:16 200m/500Mi→1/1Gi; valkey/valkey:8 100m/200Mi→500m/512Mi maxmemory 128mb allkeys-lru.
+
+TASK 3 (dry-run): PASS. Full k8s/ client dry-run 0 errors. namespace.yaml would create prod (NOT applied — Week 2 gate).
+
+TASK 4 (V0-rot): tests/test_config.py 5 FAILED — stale: imports app.shared.config but references app.config (module moved to app/shared/config.py; app/config.py gone). Carry-forward for backend specialist. tests/test_celery_*.py 12 PASSED.
+
+TASK 5 (pool budget): postgres 16.14, max_connections=100, current 6 conns. 2 API×15 + 2 worker×15 = 60 < 100. OK.
+
+Security: .gitignore covers k8s/secrets.yaml + *-sa-key.json + .env*. No real secret material in any committed k8s file (only REPLACE-ME + placeholder 'sk-lf-...' in comments).
+
+Hand-off: §22 acceptance next. Founder must populate razorpay-webhook-secret (before §7 iam) and langfuse-secret-key (before §6A ai_ops). See k8s/secrets.yaml.example for exact gcloud commands.
+=========
+
+
+---
+
+=== UPDATE: 2026-06-09 — Phase D DEPLOYED ===
+Agent: meesell-infra-builder
+
+**What was deployed:** V1 backend to `dev` namespace on K3s (meesell-dev, asia-south1).
+
+**Images built (Cloud Build):**
+| Image | Tag | Build ID |
+|---|---|---|
+| `api` | `v1.0.0` + `latest` | `23b3fbad-9ce9-46e8-9177-6fdfe44873c7` (final, with alembic) |
+| `worker` | `v1.0.0` + `latest` | `3f06450a-0b4a-4e3b-af22-18a78b2880bf` |
+| Registry | `asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-prod-images/` | — |
+
+**K8s objects created/applied:**
+- `ConfigMap/meesell-config` (dev) — LANGFUSE_PUBLIC_KEY set to `pk-lf-disabled-v1`
+- `Secret/backend-secrets` (dev) — 20 keys populated from GCP Secret Manager + in-cluster PG/Valkey credentials
+- `Deployment/api` (dev) — 2/2 Running; image `api:latest`; CPU req 200m
+- `Service/api` (dev) — ClusterIP port 80→8000
+- `Deployment/worker` (dev) — 2/2 Running; image `api:latest`; CPU req 250m
+
+**Migration head confirmed:** `f31c75438e61` (`add_idx_product_drafts_saved_at`) — `alembic current` verified in pod.
+
+**Smoke test result:**
+- `curl https://api.mesell.xyz/health` → HTTP 200 `{"status":"healthy","checks":{"postgres":"ok","valkey":"ok"}}` ✅
+- `curl https://api.mesell.xyz/api/v1/categories` → HTTP 401 (expected — auth required, auth middleware working correctly)
+
+**D-flags (Phase D specific):**
+- D-API-1: Worker image uses the `api:latest` image tag (same Dockerfile as API + celery CMD override). This is correct — V1 Celery tasks live in `app/workers/` which is in the api image.
+- D-API-2: `seed_field_aliases.py` does not exist yet in `backend/scripts/` — not a Phase D blocker, seeding deferred to backend team (no seed scripts were written during V1 construction).
+- D-API-3: CPU requests intentionally reduced for dev single-node VM (api: 200m vs spec 500m; worker: 250m vs spec 1000m). Limits unchanged (api: 1000m; worker: 1000m). Revisit when migrating to staging/prod on larger VM.
+- D-API-4: `playwright==1.59.0` remains in `requirements.txt` (V0 leftover) — no browser binaries installed, tasks don't call Playwright in V1. Clean up in V1.5.
+- D-API-5: Cloud Build uses `888244156264-compute@developer.gserviceaccount.com` (Compute Engine default SA) rather than `888244156264@cloudbuild.gserviceaccount.com`. Granted both `roles/storage.admin` on `_cloudbuild` bucket and `roles/artifactregistry.writer` on `meesell-prod-images`. Unusual SA selection — investigate before CI/CD pipeline setup.
+- D-API-6: K3s AR auth via `registries.yaml` with metadata-server token (refreshed every 45 min by cron). This is sufficient for dev. For production, configure `kubelet-credential-providers` with `gcp-cloud-credential-provider` binary.
+
+**Commits on `claude/meesell-project-setup-Tl7DS`:**
+- `814d4c7` fix(worker): remove V0 playwright/chromium, fix celery -A path and add V1 CMD args
+- `880cc3d` fix(deploy): add alembic+scripts to Dockerfile, tune dev CPU requests, fix LANGFUSE key
+=========
+
+## 2026-06-08 23:46 — SCOPE DEFLECTION: Wave 2B Step 1 (frontend scaffold) declined
+
+- **Task received:** "Wave 2B Step 1 — Scaffold new frontend" (clone Sakai-ng, `ng new frontend` Angular 21, install PrimeNG + Tailwind v4, wire + build).
+- **Decision:** DECLINED — out of infra scope. Zero changes made (no clone, no scaffold, no package installs, no file edits).
+- **Why:** (1) No `INFRASTRUCTURE_PLAYBOOK.md` section covers Angular scaffolding/PrimeNG/Tailwind — playbook treats Angular only as a deployed nginx artifact. (2) Dedicated owner exists: `meesell-frontend-coordinator` (+ angular-component/service/ui-styler builders). (3) `docs/FRONTEND_ARCHITECTURE.md` labels this "Wave 2B scaffold," a frontend-owned wave, founder-APPROVED 2026-06-08.
+- **Correct route:** dispatch `meesell-frontend-coordinator` for Wave 2B Step 1.
+- **Pre-state captured (zero mutations):** `themes/` and `frontend/` do NOT exist at repo root. Old frontend archived at `archive/frontend_angular_material/` (Angular 20 + @angular/material + Tailwind v3 — the rejected stack). Old themes at `archive/themes/{signal-admin,spike-angular}`. `.gitignore` ignores `frontend/.angular/` only.

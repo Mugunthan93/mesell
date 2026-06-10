@@ -69,6 +69,7 @@ from app.ai_ops.cost_tracker import (
     compute_cost_inr,
 )
 from app.core.errors import MeesellError
+from app.core.metrics import AI_OPS_BUDGET_ALARM
 from app.shared.config import settings
 from app.shared.valkey import get_valkey_otp
 
@@ -236,6 +237,8 @@ async def check_and_reserve(
     committed = float(result[1])
     pending_or_new_total = float(result[2])
     if ok == 0:
+        # §6A.F 100%+ hard-stop band — Prometheus alarm + structured warn.
+        AI_OPS_BUDGET_ALARM.labels(level="100").inc()
         logger.warning(
             "ai_ops budget hard-stop (workload=%s user=%s committed=%.4f "
             "pending=%.4f estimate=%.4f cap=%.4f)",
@@ -257,6 +260,8 @@ async def check_and_reserve(
     new_total = committed + pending_or_new_total  # committed + (pending+estimate)
     alarm_threshold = settings.AI_BUDGET_ALARM_THRESHOLD * cap_inr
     if new_total >= alarm_threshold:
+        # §6A.F 80%–100% warning band — Prometheus alarm + structured warn.
+        AI_OPS_BUDGET_ALARM.labels(level="80").inc()
         logger.warning(
             "ai_ops budget alarm (workload=%s user=%s spent=%.4f cap=%.4f "
             "pct=%.1f%% threshold=%.1f%%)",
@@ -267,9 +272,6 @@ async def check_and_reserve(
             new_total / cap_inr * 100,
             settings.AI_BUDGET_ALARM_THRESHOLD * 100,
         )
-        # Prometheus counter increment is wired via the per-process
-        # metrics registry; the WARNING log above is the V1 alarm
-        # surface.  V1.5 adds a typed counter when monitoring lands.
 
     return reservation_id
 

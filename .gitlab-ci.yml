@@ -1,0 +1,283 @@
+# =============================================================================
+# MeeSell — GitLab CI pipeline (§19.G + §16.E, D4 §20.5 construction)
+# -----------------------------------------------------------------------------
+# 6 stages, strictly sequential per §19.G. Stages 1-5 gate every MR/push; an MR
+# cannot merge unless stages 1-5 are green. Stage 6 (nightly) runs ONLY on the
+# nightly schedule, never on a per-PR pipeline.
+#
+#   1. unit            pytest -m "unit"             (< 30s, blocks build)
+#   2. smoke           pytest -m "smoke"            (boot + DB schema, < 10s)
+#   3. lint            10 CI linter contracts       (§16.E hard rule — separate
+#                                                    stage that independently
+#                                                    fails the build)
+#   4. integration     pytest -m "integration"      (real Postgres + Valkey)
+#   5. golden_roundtrip pytest -m "golden_roundtrip" (15 XLSX round-trip fixtures)
+#   6. nightly         slow/perf + ai_eval          (schedule-only)
+#
+# All pytest + lint commands run from the backend/ directory: pytest.ini, the
+# import-linter config, and the Contract 8/9/10 scanners all resolve their
+# paths relative to backend/.
+#
+# Secrets are injected via GitLab CI/CD variables ($VAR_NAME) — never hard-coded
+# in this file. Unit/smoke/lint use test-safe dummy values; integration receives
+# the real CI variables for DATABASE_URL / VALKEY_URL / SECRET_KEY etc.
+# =============================================================================
+
+# Base runner image for every job (overridden per-job where services are needed).
+image: python:3.12-slim
+
+stages:
+  - unit
+  - smoke
+  - lint
+  - integration
+  - golden_roundtrip
+  - nightly
+
+# -----------------------------------------------------------------------------
+# Global cache: pip wheels persisted in .cache/pip and keyed on requirements.txt
+# so a dependency change busts the cache, but an unchanged lock reuses wheels.
+# -----------------------------------------------------------------------------
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  PYTHONUNBUFFERED: "1"
+
+cache:
+  key:
+    files:
+      - backend/requirements.txt
+  paths:
+    - .cache/pip
+
+# -----------------------------------------------------------------------------
+# Shared dependency-install template. Every job that runs pytest or the linters
+# inherits this to install backend/requirements.txt into the runner.
+# -----------------------------------------------------------------------------
+.install_deps: &install_deps
+  before_script:
+    - python --version
+    - pip install --upgrade pip
+    - pip install -r backend/requirements.txt
+
+# Test-safe dummy env vars for jobs that do NOT touch Postgres/Valkey
+# (unit, smoke schema-boot, lint). These are static placeholders, not secrets —
+# the app's Pydantic Settings only require the values to be present/well-formed.
+.dummy_env: &dummy_env
+  SECRET_KEY: "ci-dummy-secret-key-not-used-in-prod"
+  MSG91_API_KEY: "ci-dummy-msg91-key"
+  MSG91_SENDER_ID: "MEESEL"
+  MSG91_ROUTE: "4"
+  REFRESH_TOKEN_PEPPER: "ci-dummy-refresh-pepper"
+  RAZORPAY_WEBHOOK_SECRET: "ci-dummy-razorpay-secret"
+
+# =============================================================================
+# STAGE 1 — unit  (§19.G stage 1)
+# Pure-function tests, no I/O. Fast (< 30s). A failure blocks the whole build.
+# No DB / Valkey services; dummy env is enough to import the app modules.
+# =============================================================================
+unit:
+  stage: unit
+  <<: *install_deps
+  variables:
+    <<: *dummy_env
+  script:
+    - cd backend && pytest -m "unit"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - when: on_success
+
+# =============================================================================
+# STAGE 2 — smoke  (§19.G stage 2)
+# Boot + DB-schema smoke tests. Fast (< 10s). Gated behind unit via needs:.
+# Boot smoke imports the FastAPI app and asserts the schema shape; it does not
+# require a live Postgres, so dummy env suffices.
+# =============================================================================
+smoke:
+  stage: smoke
+  needs:
+    - unit
+  <<: *install_deps
+  variables:
+    <<: *dummy_env
+  script:
+    - cd backend && pytest -m "smoke"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - when: on_success
+
+# =============================================================================
+# STAGE 3 — lint  (§19.G stage 3 — §16.E HARD RULE)
+# Runs all 10 CI linter contracts. This stage fails the build independently of
+# the test stages. All four commands run from backend/ because the import-linter
+# config and the Contract 8/9/10 AST scanners resolve paths relative to backend/.
+#   - Contracts 1-7 : lint-imports --config tests/lint/import_rules.toml
+#   - Contract 8    : tests/lint/check_scope_to_user.py (user_id on repository methods)
+#   - Contract 9    : tests/lint/check_no_meesho_symbols_outside_export.py (M10 symbols)
+#   - Contract 10   : tests/lint/check_message_id_regex.py (i18n message-id regex)
+# =============================================================================
+lint:
+  stage: lint
+  needs:
+    - smoke
+  <<: *install_deps
+  variables:
+    <<: *dummy_env
+  script:
+    # Contracts 1-7 — import-linter rule set (§16.E). Config uses the
+    # [tool.importlinter] namespace and is invoked from backend/ per its header.
+    - cd backend && lint-imports --config tests/lint/import_rules.toml
+    # Contract 8 — every domain repository public method must scope to user_id.
+    - cd backend && python tests/lint/check_scope_to_user.py
+    # Contract 9 — Meesho-specific symbols forbidden outside app/modules/export.
+    - cd backend && python tests/lint/check_no_meesho_symbols_outside_export.py
+    # Contract 10 — every i18n message-id matches the §5A.H 3-segment regex.
+    - cd backend && python tests/lint/check_message_id_regex.py
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - when: on_success
+
+# =============================================================================
+# STAGE 4 — integration  (§19.G stage 4)
+# Real Postgres + Valkey via GitLab CI services (~2-5 min). Gated behind lint.
+# DATABASE_URL / VALKEY_URL point at the service containers; SECRET_KEY and the
+# OTP/secret variables are injected from CI/CD variables (real test values).
+# =============================================================================
+integration:
+  stage: integration
+  needs:
+    - lint
+  <<: *install_deps
+  services:
+    - name: postgres:16
+      alias: postgres
+    - name: valkey/valkey:8
+      alias: valkey
+  variables:
+    # Postgres service bootstrap (consumed by the postgres:16 image).
+    POSTGRES_DB: "meesell_test"
+    POSTGRES_USER: "meesell"
+    POSTGRES_PASSWORD: "meesell"
+    # App connection strings pointing at the CI service containers.
+    DATABASE_URL: "postgresql+asyncpg://meesell:meesell@postgres:5432/meesell_test"
+    VALKEY_URL: "redis://valkey:6379"
+    # SECRET_KEY + OTP/secret values come from CI/CD variables when set;
+    # fall back to CI-safe defaults so the suite can boot without external setup.
+    SECRET_KEY: "$SECRET_KEY"
+    MSG91_API_KEY: "$MSG91_API_KEY"
+    MSG91_SENDER_ID: "$MSG91_SENDER_ID"
+    MSG91_ROUTE: "$MSG91_ROUTE"
+    REFRESH_TOKEN_PEPPER: "$REFRESH_TOKEN_PEPPER"
+    RAZORPAY_WEBHOOK_SECRET: "$RAZORPAY_WEBHOOK_SECRET"
+  script:
+    - cd backend && pytest -m "integration"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - when: on_success
+
+# =============================================================================
+# STAGE 5 — golden_roundtrip  (§19.G stage 5)
+# 15 XLSX round-trip fixtures per §14.K (~30s). Gated behind integration.
+# Needs Postgres + Valkey to build/validate the export round-trip end-to-end.
+# =============================================================================
+golden_roundtrip:
+  stage: golden_roundtrip
+  needs:
+    - integration
+  <<: *install_deps
+  services:
+    - name: postgres:16
+      alias: postgres
+    - name: valkey/valkey:8
+      alias: valkey
+  variables:
+    POSTGRES_DB: "meesell_test"
+    POSTGRES_USER: "meesell"
+    POSTGRES_PASSWORD: "meesell"
+    DATABASE_URL: "postgresql+asyncpg://meesell:meesell@postgres:5432/meesell_test"
+    VALKEY_URL: "redis://valkey:6379"
+    SECRET_KEY: "$SECRET_KEY"
+    MSG91_API_KEY: "$MSG91_API_KEY"
+    MSG91_SENDER_ID: "$MSG91_SENDER_ID"
+    MSG91_ROUTE: "$MSG91_ROUTE"
+    REFRESH_TOKEN_PEPPER: "$REFRESH_TOKEN_PEPPER"
+    RAZORPAY_WEBHOOK_SECRET: "$RAZORPAY_WEBHOOK_SECRET"
+  script:
+    - cd backend && pytest -m "golden_roundtrip"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: never
+    - when: on_success
+
+# =============================================================================
+# STAGE 6 — nightly  (§19.G stage 6 — SCHEDULE ONLY)
+# Two jobs that run ONLY on the nightly schedule (never on a per-PR pipeline).
+# Both depend on golden_roundtrip so the nightly run only proceeds after the
+# full PR pipeline (stages 1-5) is green on the scheduled commit.
+#   - nightly_slow_perf : pytest -m "slow or perf"  (gated by PYTEST_RUN_SLOW=1)
+#   - nightly_ai_eval   : pytest -m "ai_eval"       (gated by RUN_AI_EVAL=1)
+# =============================================================================
+nightly_slow_perf:
+  stage: nightly
+  needs:
+    - golden_roundtrip
+  <<: *install_deps
+  services:
+    - name: postgres:16
+      alias: postgres
+    - name: valkey/valkey:8
+      alias: valkey
+  variables:
+    PYTEST_RUN_SLOW: "1"
+    POSTGRES_DB: "meesell_test"
+    POSTGRES_USER: "meesell"
+    POSTGRES_PASSWORD: "meesell"
+    DATABASE_URL: "postgresql+asyncpg://meesell:meesell@postgres:5432/meesell_test"
+    VALKEY_URL: "redis://valkey:6379"
+    SECRET_KEY: "$SECRET_KEY"
+    MSG91_API_KEY: "$MSG91_API_KEY"
+    MSG91_SENDER_ID: "$MSG91_SENDER_ID"
+    MSG91_ROUTE: "$MSG91_ROUTE"
+    REFRESH_TOKEN_PEPPER: "$REFRESH_TOKEN_PEPPER"
+    RAZORPAY_WEBHOOK_SECRET: "$RAZORPAY_WEBHOOK_SECRET"
+  script:
+    - cd backend && pytest -m "slow or perf"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: on_success
+    - when: never
+
+nightly_ai_eval:
+  stage: nightly
+  needs:
+    - golden_roundtrip
+  <<: *install_deps
+  services:
+    - name: postgres:16
+      alias: postgres
+    - name: valkey/valkey:8
+      alias: valkey
+  variables:
+    RUN_AI_EVAL: "1"
+    POSTGRES_DB: "meesell_test"
+    POSTGRES_USER: "meesell"
+    POSTGRES_PASSWORD: "meesell"
+    DATABASE_URL: "postgresql+asyncpg://meesell:meesell@postgres:5432/meesell_test"
+    VALKEY_URL: "redis://valkey:6379"
+    SECRET_KEY: "$SECRET_KEY"
+    # GEMINI_API_KEY is required only for the ai_eval suite; injected from CI/CD.
+    GEMINI_API_KEY: "$GEMINI_API_KEY"
+    MSG91_API_KEY: "$MSG91_API_KEY"
+    MSG91_SENDER_ID: "$MSG91_SENDER_ID"
+    MSG91_ROUTE: "$MSG91_ROUTE"
+    REFRESH_TOKEN_PEPPER: "$REFRESH_TOKEN_PEPPER"
+    RAZORPAY_WEBHOOK_SECRET: "$RAZORPAY_WEBHOOK_SECRET"
+  script:
+    - cd backend && pytest -m "ai_eval"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: on_success
+    - when: never

@@ -232,6 +232,10 @@ class AuditMiddleware(BaseHTTPMiddleware):
         if user_id is None:
             return
 
+        # Gate 2.5 — write-method only; GETs and HEADs never produce audit rows (§17.F)
+        if request.method not in {"POST", "PATCH", "PUT", "DELETE"}:
+            return
+
         path = request.url.path
         is_autosave = bool(_AUTOSAVE_PATH.match(path))
 

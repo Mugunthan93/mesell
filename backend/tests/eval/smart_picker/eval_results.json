@@ -1,0 +1,8 @@
+{
+  "run_date": "2026-06-09",
+  "total_cases": 50,
+  "passed": 50,
+  "accuracy_pct": 100.0,
+  "threshold": 80,
+  "verdict": "PASS"
+}

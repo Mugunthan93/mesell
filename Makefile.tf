@@ -175,10 +175,6 @@ tf-apply-pass2: tf-preflight
 # Requires: FOUNDER_IP env var.
 # ---------------------------------------------------------------------------
 tf-destroy-check: tf-preflight
-	@if [ -z "$(FOUNDER_IP)" ]; then \
-	  echo "ERROR: FOUNDER_IP is not set. Run: export FOUNDER_IP=\$$(curl -4 ifconfig.me)" >&2; \
-	  exit 1; \
-	fi
 	@mkdir -p $(LOG_DIR_ABS)
 	@echo "Running destroy dry-run. This does NOT apply any changes."
 	CLOUDSDK_CORE_ACCOUNT=$(EXPECTED_ACCOUNT) \

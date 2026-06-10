@@ -1,0 +1,91 @@
+// features/dashboard/dashboard/dashboard.component.scss
+// Component-specific layout overrides for DashboardComponent per §3.D file convention.
+// Primary styling via Tailwind utility classes + Spike Angular component overrides.
+// Design tokens: var(--mee-color-*) / var(--mee-space-*) from design-system/_tokens.scss.
+
+.mee-dashboard-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--mee-space-4);
+  height: 100%;
+}
+
+.mee-dashboard-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--mee-space-3);
+}
+
+.mee-search-field {
+  flex: 1;
+  min-width: 200px;
+  max-width: 360px;
+}
+
+.mee-spinner-container {
+  display: flex;
+  justify-content: center;
+  padding: var(--mee-space-6) 0;
+}
+
+.mee-product-table {
+  width: 100%;
+  border-radius: var(--mee-radius-md);
+  overflow: hidden;
+  box-shadow: var(--mee-elevation-1);
+}
+
+.mee-product-row {
+  cursor: pointer;
+
+  &:hover {
+    background: var(--mee-color-surface-variant);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--mee-color-primary);
+    outline-offset: -2px;
+  }
+}
+
+.mee-cell--actions {
+  width: 52px;
+  padding: 0 4px;
+  text-align: right;
+}
+
+.mee-no-results {
+  text-align: center;
+  color: var(--mee-color-on-surface-variant);
+  padding: var(--mee-space-6) 0;
+  font-size: var(--mee-text-sm);
+}
+
+.mee-profile-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--mee-space-2);
+  padding: var(--mee-space-2) var(--mee-space-4);
+  background: color-mix(in srgb, var(--mee-color-secondary) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mee-color-secondary) 20%, transparent);
+  border-radius: var(--mee-radius-sm);
+  font-size: var(--mee-text-sm);
+  color: var(--mee-color-on-surface);
+
+  &__link {
+    color: var(--mee-color-secondary);
+    font-weight: 600;
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+}
+
+// Paginator spacing
+.mee-paginator {
+  background: transparent;
+  border-top: 1px solid var(--mee-color-outline);
+}

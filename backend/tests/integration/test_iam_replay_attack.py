@@ -17,15 +17,17 @@ import pytest
 
 from app.adapters.msg91 import Msg91Response
 
+from tests.integration._cookie_helpers import extract_refresh_cookie
+
 
 pytestmark = pytest.mark.asyncio
 
 
 async def test_replay_of_old_refresh_cookie_after_rotation_returns_401(
-    client, use_live_valkey, monkeypatch
+    iam_client, use_live_valkey, monkeypatch
 ):
     """End-to-end: verify → refresh → replay old cookie → 401."""
-    phone = "+919876500003"
+    phone = "+915550000103"
     otp = "636363"
 
     from app.shared import valkey as _vk_mod
@@ -40,23 +42,25 @@ async def test_replay_of_old_refresh_cookie_after_rotation_returns_401(
     monkeypatch.setattr("app.adapters.msg91.send_otp", _fake_send_otp)
 
     # ── Step 1: verify ─────────────────────────────────────────────────────
-    r1 = await client.post(
+    r1 = await iam_client.post(
         "/api/v1/auth/otp/verify", json={"phone": phone, "otp": otp}
     )
     assert r1.status_code == 200, r1.text
-    old_refresh = r1.cookies.get("refresh_token")
+    old_refresh = extract_refresh_cookie(r1)
     assert old_refresh, "verify response must set refresh_token cookie"
 
     # ── Step 2: refresh — issues a new cookie, invalidates the old ────────
-    r2 = await client.post("/api/v1/auth/refresh")
+    # Forward the OLD cookie explicitly (httpx drops .mesell.xyz cookies).
+    r2 = await iam_client.post(
+        "/api/v1/auth/refresh",
+        headers={"Cookie": f"refresh_token={old_refresh}"},
+    )
     assert r2.status_code == 200, r2.text
-    new_refresh = r2.cookies.get("refresh_token")
+    new_refresh = extract_refresh_cookie(r2)
     assert new_refresh and new_refresh != old_refresh
 
     # ── Step 3: replay the OLD cookie ─────────────────────────────────────
-    # httpx's client auto-replaced the cookie jar entry; to "replay" the
-    # old value we issue the refresh call with an explicit Cookie header.
-    r3 = await client.post(
+    r3 = await iam_client.post(
         "/api/v1/auth/refresh",
         headers={"Cookie": f"refresh_token={old_refresh}"},
     )

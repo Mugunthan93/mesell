@@ -1,25 +1,23 @@
 // shared/components/empty-state/empty-state.component.ts
 
-import { ChangeDetectionStrategy, Component, EventEmitter, input, Output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
+import { MatButtonModule } from '@angular/material/button';
 
 @Component({
   selector: 'mee-empty-state',
   standalone: true,
-  imports: [MatIconModule],
+  imports: [MatIconModule, MatButtonModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding:48px; gap:16px; text-align:center;">
-      <mat-icon style="font-size:48px; width:48px; height:48px; color:#9CA3AF;">{{ icon() }}</mat-icon>
-      <p style="font-size:18px; font-weight:600; color:#1F2937; margin:0;">{{ headline() }}</p>
+    <div class="flex flex-col items-center justify-center p-12 gap-4 text-center">
+      <mat-icon style="font-size:48px; width:48px; height:48px;" class="text-on-surface-variant">{{ icon() }}</mat-icon>
+      <p class="text-lg font-semibold text-on-surface m-0">{{ headline() }}</p>
       @if (body()) {
-        <p style="font-size:14px; color:#6B7280; max-width:360px; margin:0;">{{ body() }}</p>
+        <p class="text-sm text-on-surface-variant max-w-[360px] m-0">{{ body() }}</p>
       }
       @if (ctaLabel()) {
-        <button
-          (click)="ctaClick.emit()"
-          style="background:#F26B23; color:#FFFFFF; border:none; border-radius:8px; padding:10px 20px; font-size:14px; font-weight:600; cursor:pointer; min-height:44px; min-width:44px;"
-        >
+        <button mat-flat-button color="primary" (click)="ctaClick.emit()" class="min-h-[44px]">
           {{ ctaLabel() }}
         </button>
       }
@@ -32,5 +30,5 @@ export class EmptyStateComponent {
   readonly body = input<string | undefined>(undefined);
   readonly ctaLabel = input<string | undefined>(undefined);
 
-  @Output() readonly ctaClick = new EventEmitter<void>();
+  readonly ctaClick = output<void>();
 }

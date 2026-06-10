@@ -1,0 +1,44 @@
+{
+  "name": "Large dropdown — Compatible Models (4,481 values)",
+  "coverage": "Tests `dropdown_api_search` primitive per §5A.C; the largest enum exercise in V1. We test a single VALID canonical value (Pixel 7).",
+  "input_snapshot": {
+    "product": {
+      "fields_jsonb": {
+        "name": "Phone Case",
+        "compatible_model": "google_pixel_7"
+      },
+      "ai_suggestions": {}
+    },
+    "compliance_block": null,
+    "format": "xlsx_only"
+  },
+  "schema": {
+    "fields": [
+      {"canonical_name": "name", "meesho_column_header": "Product Name", "data_type": "text", "primitive": "text_short", "marker": "compulsory", "enum_resolver": null, "is_advanced": false, "help_text": "h", "validation_message_ids": []},
+      {"canonical_name": "compatible_model", "meesho_column_header": "Compatible Model", "data_type": "enum", "primitive": "dropdown_api_search", "marker": "compulsory", "enum_resolver": "category_resolved", "is_advanced": false, "help_text": "h", "validation_message_ids": []}
+    ],
+    "compulsory_count": 2,
+    "optional_count": 0,
+    "total_count": 2,
+    "wizard_step_count": 1,
+    "main_sheet_label": "Phone Case Sheet",
+    "compliance_shape": "standard"
+  },
+  "expected_xlsx_canonical": {
+    "main_sheet_label": "Phone Case Sheet",
+    "columns": [
+      {"canonical_name": "name", "value": "Phone Case"},
+      {"canonical_name": "compatible_model", "value": "Pixel 7"}
+    ]
+  },
+  "enum_payloads": {
+    "compatible_model": {
+      "enum_entries": [
+        {"canonical": "google_pixel_7", "meesho": "Pixel 7", "labels": {"en": "Google Pixel 7"}},
+        {"canonical": "google_pixel_8", "meesho": "Pixel 8", "labels": {"en": "Google Pixel 8"}}
+      ],
+      "total": 2,
+      "truncated": true
+    }
+  }
+}

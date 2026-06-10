@@ -1,0 +1,37 @@
+{
+  "name": "Number with unit — weight: 500 g",
+  "coverage": "2 columns (value + unit) per MVP_ARCH §5.6.1; tests the unit-suffix split-column primitive. V1 stores value + unit as separate fields_jsonb keys; the Export Adapter passes them through as 2 columns.",
+  "input_snapshot": {
+    "product": {
+      "fields_jsonb": {
+        "name": "Sample Product",
+        "weight_value": 500,
+        "weight_unit": "g"
+      },
+      "ai_suggestions": {}
+    },
+    "compliance_block": null,
+    "format": "xlsx_only"
+  },
+  "schema": {
+    "fields": [
+      {"canonical_name": "name", "meesho_column_header": "Product Name", "data_type": "text", "primitive": "text_short", "marker": "compulsory", "enum_resolver": null, "is_advanced": false, "help_text": "h", "validation_message_ids": []},
+      {"canonical_name": "weight_value", "meesho_column_header": "Weight (Value)", "data_type": "number", "primitive": "decimal", "marker": "compulsory", "enum_resolver": null, "is_advanced": false, "help_text": "h", "validation_message_ids": []},
+      {"canonical_name": "weight_unit", "meesho_column_header": "Weight (Unit)", "data_type": "text", "primitive": "dropdown_static", "marker": "compulsory", "enum_resolver": null, "is_advanced": false, "help_text": "h", "validation_message_ids": []}
+    ],
+    "compulsory_count": 3,
+    "optional_count": 0,
+    "total_count": 3,
+    "wizard_step_count": 1,
+    "main_sheet_label": "Weight Sheet",
+    "compliance_shape": "standard"
+  },
+  "expected_xlsx_canonical": {
+    "main_sheet_label": "Weight Sheet",
+    "columns": [
+      {"canonical_name": "name", "value": "Sample Product"},
+      {"canonical_name": "weight_value", "value": 500},
+      {"canonical_name": "weight_unit", "value": "g"}
+    ]
+  }
+}

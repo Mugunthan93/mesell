@@ -44,6 +44,7 @@ ID.  This middleware is registered by ``services-builder`` in
 from __future__ import annotations
 
 import logging
+import time
 from typing import Literal
 from uuid import UUID
 
@@ -54,6 +55,7 @@ from starlette.responses import Response
 from starlette.types import ASGIApp
 
 from app.core.auth import CurrentUser
+from app.core.metrics import HTTP_REQUEST_DURATION, HTTP_REQUESTS_TOTAL
 from app.shared.config import settings
 
 logger = logging.getLogger(__name__)
@@ -82,22 +84,45 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
         # ``request.state.user`` unconditionally per §4.G).
         request.state.user = None
 
+        # §15.J HTTP metrics — every fail-open / success branch below funnels
+        # through ``_timed_call_next`` so latency + count are observed exactly
+        # once per request regardless of which path the JWT decode takes.
+        async def _timed_call_next(req: Request) -> Response:
+            start = time.perf_counter()
+            response = await call_next(req)
+            latency = time.perf_counter() - start
+            # Prefer the matched route TEMPLATE over the raw path so path
+            # params (UUIDs) do not explode label cardinality.  The router
+            # populates ``scope["route"]`` during ``call_next``; fall back to
+            # the raw path when no route matched (404 / mount).
+            route = req.scope.get("route")
+            endpoint = getattr(route, "path", None) or req.url.path
+            method = req.method
+            status_code = str(response.status_code)
+            HTTP_REQUEST_DURATION.labels(
+                endpoint=endpoint, method=method, status_code=status_code
+            ).observe(latency)
+            HTTP_REQUESTS_TOTAL.labels(
+                endpoint=endpoint, method=method, status_code=status_code
+            ).inc()
+            return response
+
         auth_header = request.headers.get("Authorization") or request.headers.get(
             "authorization"
         )
         if not auth_header:
-            return await call_next(request)
+            return await _timed_call_next(request)
 
         # Tolerate small casing / whitespace variations from misbehaved
         # clients but reject anything that is not the canonical
         # ``Bearer <token>`` two-part header.  Malformed → fail-open.
         parts = auth_header.split(None, 1)
         if len(parts) != 2 or parts[0].lower() != "bearer":
-            return await call_next(request)
+            return await _timed_call_next(request)
 
         token = parts[1].strip()
         if not token:
-            return await call_next(request)
+            return await _timed_call_next(request)
 
         try:
             payload = jwt.decode(
@@ -110,7 +135,7 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
             # ImmatureSignatureError, InvalidAudienceError, etc.  Per §4.G we
             # are deliberately silent here — the dep at §4.B is the layer that
             # surfaces the 401 / 403.
-            return await call_next(request)
+            return await _timed_call_next(request)
 
         # Build CurrentUser from the claim payload.  We do NOT hit the
         # database here — that's the dep's job (§4.B).  V1 narrows ``plan`` to
@@ -121,11 +146,11 @@ class AuthContextMiddleware(BaseHTTPMiddleware):
         except (KeyError, ValueError, TypeError):
             # Decoded payload missing/invalid ``sub`` — treat as malformed
             # and leave state.user None.
-            return await call_next(request)
+            return await _timed_call_next(request)
 
         plan: Literal["free"] = "free"  # V1 narrow per §4.B
         request.state.user = CurrentUser(user_id=user_id, plan=plan)
-        return await call_next(request)
+        return await _timed_call_next(request)
 
 
 __all__ = ["AuthContextMiddleware"]

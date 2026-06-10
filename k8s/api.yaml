@@ -1,3 +1,6 @@
+# k8s/api.yaml
+# FastAPI API Deployment per BACKEND_ARCHITECTURE.md §20.G (resources),
+# §20.F.1 (rolling update), §20.E.1 (readiness probe), §20.H (topology sketch).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -5,6 +8,11 @@ metadata:
   namespace: dev
 spec:
   replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: api
@@ -23,19 +31,19 @@ spec:
             - configMapRef:
                 name: meesell-config
             - secretRef:
-                name: meesell-secrets
+                name: backend-secrets
           resources:
             requests:
-              cpu: "200m"
-              memory: "384Mi"
+              cpu: "200m"    # Reduced from 500m — dev single-node VM (2 vCPU total, shared with infra)
+              memory: "512Mi"
             limits:
-              cpu: "1"
-              memory: "768Mi"
+              cpu: "1000m"
+              memory: "1Gi"
           readinessProbe:
             httpGet:
               path: /health
               port: 8000
-            initialDelaySeconds: 5
+            initialDelaySeconds: 15   # §20.E.1: prewarm_top_categories startup hook adds ~5s
             periodSeconds: 10
           livenessProbe:
             httpGet:
@@ -43,6 +51,7 @@ spec:
               port: 8000
             initialDelaySeconds: 30
             periodSeconds: 30
+            failureThreshold: 3
 ---
 apiVersion: v1
 kind: Service

@@ -1,0 +1,34 @@
+{
+  "name": "Multi-line text — description with newlines",
+  "coverage": "Newlines preserved through XLSX encoding (openpyxl \\n handling).",
+  "input_snapshot": {
+    "product": {
+      "fields_jsonb": {
+        "name": "Multi-line Product",
+        "description": "Line 1\nLine 2\nLine 3"
+      },
+      "ai_suggestions": {}
+    },
+    "compliance_block": null,
+    "format": "xlsx_only"
+  },
+  "schema": {
+    "fields": [
+      {"canonical_name": "name", "meesho_column_header": "Product Name", "data_type": "text", "primitive": "text_short", "marker": "compulsory", "enum_resolver": null, "is_advanced": false, "help_text": "h", "validation_message_ids": []},
+      {"canonical_name": "description", "meesho_column_header": "Description", "data_type": "text", "primitive": "text_long", "marker": "compulsory", "enum_resolver": null, "is_advanced": false, "help_text": "h", "validation_message_ids": []}
+    ],
+    "compulsory_count": 2,
+    "optional_count": 0,
+    "total_count": 2,
+    "wizard_step_count": 1,
+    "main_sheet_label": "Multiline Sheet",
+    "compliance_shape": "standard"
+  },
+  "expected_xlsx_canonical": {
+    "main_sheet_label": "Multiline Sheet",
+    "columns": [
+      {"canonical_name": "name", "value": "Multi-line Product"},
+      {"canonical_name": "description", "value": "Line 1\nLine 2\nLine 3"}
+    ]
+  }
+}

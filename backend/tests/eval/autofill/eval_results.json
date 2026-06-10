@@ -1,0 +1,12 @@
+{
+  "run_date": "2026-06-09",
+  "total_cases": 30,
+  "passed": 30,
+  "accuracy_pct": 100.0,
+  "threshold": 100,
+  "verdict": "PASS",
+  "invalid_enum_emissions": 0,
+  "invalid_enum_rate_pct": 0.0,
+  "guardrail_drop_controls_run": 2,
+  "guardrail_drop_controls_passed": 2
+}

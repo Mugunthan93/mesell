@@ -223,3 +223,150 @@ without this. Request master coordinate with cross-cutting session
   for relocation to shared/. Profile session consumes via
   `@shared/components/compliance-step` alias once relocated. No action
   required from profile session yet — coordinate at hand-off time.
+
+=== UPDATE: 2026-06-06 DESIGN SYSTEM INTEGRATION ACKNOWLEDGED ===
+Written by: onboarding sub-session
+Trigger: Master notification — §5A PARTIAL LOCK → FULL LOCK via
+         AMENDMENT 2026-06-06B; design system sub-session deliverables
+         integrated into frontend/src/app/design-system/
+
+READS COMPLETE:
+  ✓ FRONTEND_ARCHITECTURE.md §5A — AMENDMENT 2026-06-06B confirms
+    FULL LOCK. Values portion now AUTHORITATIVE. Key deviations from
+    §5A.C spec text: typeface is Plus Jakarta Sans (not Inter placeholder);
+    bg is #f0f5f9 (not #FFFFFF placeholder); border radius tokens added
+    (7/16/18/full). All other values preserved from placeholder.
+  ✓ _tokens.scss — CSS custom properties LIVE: --mee-color-primary #F26B23,
+    --mee-color-secondary #1E40AF, --mee-color-bg #f0f5f9, --mee-color-surface
+    #ffffff, --mee-color-on-surface #2a3547, --mee-radius-sm/md/lg/full,
+    8pt spacing scale, 3 motion tiers + reduced-motion zeros
+  ✓ _theme.scss — Material M3 theme (mat.$orange-palette primary) + Spike
+    light-theme overrides: --mat-sys-background #f0f5f9, --mat-sys-primary
+    #F26B23, Spike shadow levels (level1/2/3), Spike corner tokens
+  ✓ _typography.scss — Plus Jakarta Sans (Google Fonts 300-800) wired;
+    html/body font-family set; uses var(--mee-text-base) for font-size
+  ✓ _elevation.scss — 4 levels, utility classes available
+  ✓ _motion.scss — 3 tiers + prefers-reduced-motion respected
+  ✓ _component-overrides.scss — Spike Angular 15-component override layer
+    CONFIRMED. Components relevant to onboarding wizard:
+      · SECTION 6 chips-overrides: SuperCategoryChipsComponent's
+        MatChipListbox gets automatic focus-state-layer-color override
+      · SECTION 10 form-field-overrides: 37px container height +
+        corner-radius (var(--mat-sys-corner-medium)) for Phase 1 LM fields
+      · SECTION 7 dialog-overrides: ComplianceStepComponent dialogs/
+        expansion panels inherit 7px corner-radius
+      · SECTION 17 utility classes: .bg-light-primary, .cardWithShadow,
+        .text-muted all available for wizard step cards + chip selection states
+    mat-stepper active step: inherits --mat-sys-primary #F26B23 (MeeSell
+    orange) via M3 color resolution — correct brand prominence for the
+    wizard flow.
+  ✓ breakpoints.ts — BREAKPOINTS.xs = 0 (360px baseline confirmed);
+    onboarding wizard designs mobile-first per Tirupur device floor
+  ✓ tokens.ts — MOTION, COLORS (CSS var refs), COLORS_RESOLVED (hex) all
+    exported. COLORS_RESOLVED.primary = '#F26B23' for any chart.js usage
+    (not applicable to onboarding; noted for completeness)
+  ✓ tailwind.config.js — bg-primary, text-on-surface, p-4, text-mee-base
+    etc. all wired to CSS custom properties. font-family sans = Plus Jakarta
+    Sans + Inter fallback. border-radius-mee-sm/md/lg/full available.
+  ✓ src/styles.scss — import order correct: tokens → theme →
+    component-overrides → tailwind-bridge → typography → elevation → motion
+    → Tailwind directives → snackbar panel classes → offline banner
+
+IMPACT ON IN-FLIGHT DISPATCHES:
+  Current state: no dispatch has shipped yet (pending D2/D3 founder
+  decisions). The design system landing is the best possible timing —
+  first dispatch will use real tokens from the start, no re-styling pass.
+
+  Dispatch scope update (D3 pending) — once founder confirms:
+    OnboardingWizardComponent skeleton:
+      · mat-stepper: uses `color="primary"` → MeeSell orange active indicator
+      · Step containers: `class="mat-mdc-card cardWithShadow"` for wizard
+        card wrapper; OR Tailwind `bg-surface shadow-mee-1`
+      · Phase labels use `class="text-mee-lg font-semibold text-on-surface"`
+    SuperCategoryChipsComponent:
+      · MatChipListbox + MatChipOption with `color="primary"` for selected
+        state → MeeSell orange chip selection
+      · Chip list gap: `gap-2` (Tailwind, = --mee-space-2 = 8px)
+      · Selected chip background: `bg-light-primary` utility class from
+        SECTION 17 → `background: var(--mee-color-primary-light)`
+      · Chip label text: `text-mee-sm` (14px per scale)
+    For all styling: CSS custom property + Tailwind utility classes first;
+    component SCSS only for what Tailwind/Material cannot express.
+    NO hardcoded hex values. NO inline styles.
+
+NO QUESTIONS TRIGGERED for master from the design system values. The
+locked tokens are clean and unambiguous for onboarding's component scope.
+
+Current phase: Pre-dispatch — awaiting founder direction on D2/D3
+               (unchanged from bootstrap state; design system integration
+               does not unblock D2/D3 decisions — those are architectural).
+Next action: On founder D2/D3 confirmation → dispatch meesell-angular-
+             component-builder for Dispatch 1 (wizard skeleton +
+             SuperCategoryChipsComponent) against real locked tokens.
+=========
+
+=== UPDATE: 2026-06-07 DISPATCHES 1-3 COMPLETE ===
+Written by: onboarding sub-session
+Trigger: Founder confirmed sequential individual dispatch per component.
+D2 resolved: implement-then-relocate (executed).
+D3 resolved: dispatched separately, sequentially.
+
+DISPATCH 1 — OnboardingWizardComponent skeleton ✅
+  File: features/account/onboarding/onboarding.component.ts (stub REPLACED)
+  Spec: features/account/onboarding/onboarding.component.spec.ts (4/4 passing)
+  mat-stepper [linear]="false", 3 steps, placeholder content per step.
+  Signals: loading, saving, phase1Submitted, phase2Submitted,
+           selectedSuperCategories (ready for Dispatch wiring).
+  Methods: onPhase1Next(), onPhase2Next(), onSubmit() [stub → /dashboard].
+  i18n: onboarding.* namespace added to en.json (title, steps.*, actions.*,
+        phase1.*, phase2.*, phase3.*).
+  Bundle: onboarding lazy chunk 8.24 kB gzip (≤80 kB budget ✓)
+
+DISPATCH 2 — SuperCategoryChipsComponent ✅
+  File: features/account/components/super-category-chips/
+        super-category-chips.component.ts (stub REPLACED)
+  Spec: super-category-chips.component.spec.ts (4/4 passing)
+  MatChipListbox multiple; 6 chips per COMPLIANCE_EXTENSION_MAP.
+  IDs: '26' Grocery / '13' Kids / '16' Electronics / '19' Beauty /
+       '80' Books / '30' Appliances.
+  Beauty chip emits '19' (primary); full 19/36/37/14/88/34 expansion in
+  onboarding-api.service.ts at Dispatch 4.
+  @Output() selectionChange: EventEmitter<string[]> — preserved from stub.
+  i18n: onboarding.chips.* namespace added (8 keys).
+  Bundle: 1.53 kB gzip additional (well within budget ✓)
+
+DISPATCH 3 — ComplianceStepComponent ✅
+  File: features/account/components/compliance-step/
+        compliance-step.component.ts (stub REPLACED)
+  Spec: compliance-step.component.spec.ts (4/4 passing)
+  Dynamic ReactiveForm from FieldSpec[] input (ngOnChanges rebuild).
+  Field type dispatch: text / date / select with mat-form-field appearance="outline".
+  Philosophy F5 enforced: every field renders <mat-hint> with display_help.
+  Required validation: marks all touched on invalid submit.
+  @Input(): superCategoryId (required), fields (required), completed, saving.
+  @Output(): formSubmit (Record<string, string | null>), formBack.
+  NOTE: FieldSpec defined inline (TODO(cross-cutting) comment) — core/models/
+        field-schema.model.ts carries the catalog wizard shape, NOT the
+        compliance required-fields contract. Cross-cutting session must add
+        a ComplianceFieldSpec interface to core/models/ when it bootstraps.
+  i18n: onboarding.compliance.* added (title, fieldRequired, save).
+  Future: will be relocated to shared/components/compliance-step/ by
+          cross-cutting session (implement-then-relocate complete).
+
+WIRING STILL NEEDED (Dispatch 4 — when B3 resolves):
+  a. Wire SuperCategoryChipsComponent into OnboardingWizardComponent Phase 2
+     step: <mee-super-category-chips (selectionChange)="selectedSuperCategories.set($event)">
+  b. Wire ComplianceStepComponent into Phase 3 step:
+     @for loop over selectedSuperCategories(); one <mee-compliance-step> per id
+  c. Author onboarding-api.service.ts (3 PATCH + 2 GET; BLOCKED on B3)
+  d. Replace onSubmit() stub with real API sequence
+
+B3 STATUS (unchanged — master + cross-cutting attention needed):
+  core/models/seller-profile.model.ts drift still unresolved.
+  ComplianceStepComponent used inline FieldSpec (same workaround pattern
+  as ProfileApiService). Cross-cutting session must add ComplianceFieldSpec
+  to core/models/ before Dispatch 4 can ship onboarding-api.service.ts.
+
+Current phase: Post-dispatch 3 — 3 of 4 dispatches complete.
+               Dispatch 4 blocked on B3 (cross-cutting model fix).
+=========

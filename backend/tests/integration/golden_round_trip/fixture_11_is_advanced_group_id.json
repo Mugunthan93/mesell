@@ -1,0 +1,34 @@
+{
+  "name": "is_advanced field — `group_id` populated",
+  "coverage": "Per §12.4 is_advanced allowlist; verifies `group_id` writes verbatim to XLSX (not stripped by the advanced-toggle).",
+  "input_snapshot": {
+    "product": {
+      "fields_jsonb": {
+        "name": "Sky Blue Kurti S",
+        "group_id": "kurti-sky-blue-S-M-L-XL"
+      },
+      "ai_suggestions": {}
+    },
+    "compliance_block": null,
+    "format": "xlsx_only"
+  },
+  "schema": {
+    "fields": [
+      {"canonical_name": "name", "meesho_column_header": "Product Name", "data_type": "text", "primitive": "text_short", "marker": "compulsory", "enum_resolver": null, "is_advanced": false, "help_text": "h", "validation_message_ids": []},
+      {"canonical_name": "group_id", "meesho_column_header": "Group ID", "data_type": "text", "primitive": "text_short", "marker": "optional", "enum_resolver": null, "is_advanced": true, "help_text": "Used to group product variants.", "validation_message_ids": []}
+    ],
+    "compulsory_count": 1,
+    "optional_count": 1,
+    "total_count": 2,
+    "wizard_step_count": 1,
+    "main_sheet_label": "Apparel Sheet",
+    "compliance_shape": "standard"
+  },
+  "expected_xlsx_canonical": {
+    "main_sheet_label": "Apparel Sheet",
+    "columns": [
+      {"canonical_name": "name", "value": "Sky Blue Kurti S"},
+      {"canonical_name": "group_id", "value": "kurti-sky-blue-S-M-L-XL"}
+    ]
+  }
+}

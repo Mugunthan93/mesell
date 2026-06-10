@@ -144,14 +144,15 @@ VALIDATION_MESSAGES: dict[str, str] = {
         "Description length is out of range. Please adjust it."
     ),
     # ── §11 image (5 module-specific IDs) ────────────────────────────────
+    # Wording updated at §11 construction time per §11.B.1 (JPEG only, 4 slots).
     "validation.image.invalid_format": (
-        "Only JPEG and PNG images are accepted. Please upload a different file."
+        "Only JPEG images are accepted. Please upload a JPEG file."
     ),
     "validation.image.too_large": (
         "This image is too large. Please upload a file under 10 MB."
     ),
     "validation.image.invalid_idx": (
-        "Please choose an image slot between 1 and 6."
+        "Please choose an image slot between 1 and 4."
     ),
     "image.slot.occupied": (
         "This image slot already has an image. Please remove it first or pick another slot."

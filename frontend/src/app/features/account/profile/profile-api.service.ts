@@ -10,37 +10,15 @@
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { ApiClient } from '@core/api/api-client.service';
+import { SellerProfile } from '@core/models/seller-profile.model';
 
 /**
- * CORRECT shape per BACKEND_ARCHITECTURE.md §8.E (LOCKED 2026-06-05).
- * TODO(cross-cutting): core/models/seller-profile.model.ts has shape drift —
- * fields (legalName, gstNumber, businessAddress, superCategoryIds: UUID[])
- * do NOT match this locked shape. When cross-cutting fixes the core model,
- * remove this inline interface and import SellerProfile from @core/models/seller-profile.model.
+ * Backward-compatibility alias for consumers that import SellerProfileCorrect
+ * from this service. core/models/seller-profile.model.ts was fixed per Q-CC-001
+ * (cross-cutting session, 2026-06-07). Profile sub-session should migrate all
+ * imports to '@core/models/seller-profile.model' directly and remove this alias.
  */
-export interface SellerProfileCorrect {
-  user_id: string;
-  // 9 Legal Metrology fields
-  manufacturer_name: string | null;
-  manufacturer_address: string | null;
-  manufacturer_pincode: string | null;
-  packer_name: string | null;
-  packer_address: string | null;
-  packer_pincode: string | null;
-  importer_name: string | null;
-  importer_address: string | null;
-  importer_pincode: string | null;
-  // Universal
-  country_of_origin: string;       // default "India"
-  // Sell-in scope
-  active_super_categories: string[]; // Meesho super_ids e.g. "26", "13" — NOT UUIDs
-  // Conditional compliance per super-category
-  compliance_extensions: Record<string, Record<string, unknown>>; // {super_id: {key: value}}
-  // Bookkeeping
-  profile_complete: boolean;
-  created_at: string;
-  updated_at: string;
-}
+export type SellerProfileCorrect = SellerProfile;
 
 export interface PatchBaseProfilePayload {
   manufacturer_name?: string;

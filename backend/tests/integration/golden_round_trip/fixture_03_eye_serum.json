@@ -1,0 +1,48 @@
+{
+  "name": "Eye-Serum (Beauty, leaf=12378)",
+  "coverage": "Collapsed compliance strategy — 9 → 3 derivation per §0.G §12.6 + §14.F. The single test that exercises CollapsedComplianceStrategy.apply.",
+  "input_snapshot": {
+    "product": {
+      "fields_jsonb": {
+        "name": "Rejuvenating Eye Serum 15ml"
+      },
+      "ai_suggestions": {}
+    },
+    "compliance_block": {
+      "manufacturer_name": "Glow Cosmetics",
+      "manufacturer_address": "9 Beauty Park, Pune",
+      "manufacturer_pincode": "411001",
+      "packer_name": "Glow Packers",
+      "packer_address": "10 Beauty Park, Pune",
+      "packer_pincode": "411002",
+      "importer_name": "Glow Imports",
+      "importer_address": "11 Port Road, Mumbai",
+      "importer_pincode": "400001",
+      "country_of_origin": "IN"
+    },
+    "format": "xlsx_with_images"
+  },
+  "schema": {
+    "fields": [
+      {"canonical_name": "name", "meesho_column_header": "Product Name", "data_type": "text", "primitive": "text_short", "marker": "compulsory", "enum_resolver": null, "is_advanced": false, "help_text": "h", "validation_message_ids": []},
+      {"canonical_name": "manufacturer_details", "meesho_column_header": "Manufacturer Details", "data_type": "text", "primitive": "text_long", "marker": "compulsory", "enum_resolver": null, "is_advanced": false, "help_text": "h", "validation_message_ids": []},
+      {"canonical_name": "packer_details", "meesho_column_header": "Packer Details", "data_type": "text", "primitive": "text_long", "marker": "compulsory", "enum_resolver": null, "is_advanced": false, "help_text": "h", "validation_message_ids": []},
+      {"canonical_name": "importer_details", "meesho_column_header": "Importer Details", "data_type": "text", "primitive": "text_long", "marker": "optional", "enum_resolver": null, "is_advanced": false, "help_text": "h", "validation_message_ids": []}
+    ],
+    "compulsory_count": 3,
+    "optional_count": 1,
+    "total_count": 4,
+    "wizard_step_count": 2,
+    "main_sheet_label": "Eye Serum Sheet",
+    "compliance_shape": "collapsed"
+  },
+  "expected_xlsx_canonical": {
+    "main_sheet_label": "Eye Serum Sheet",
+    "columns": [
+      {"canonical_name": "name", "value": "Rejuvenating Eye Serum 15ml"},
+      {"canonical_name": "manufacturer_details", "value": "Glow Cosmetics, 9 Beauty Park, Pune, 411001"},
+      {"canonical_name": "packer_details", "value": "Glow Packers, 10 Beauty Park, Pune, 411002"},
+      {"canonical_name": "importer_details", "value": "Glow Imports, 11 Port Road, Mumbai, 400001"}
+    ]
+  }
+}

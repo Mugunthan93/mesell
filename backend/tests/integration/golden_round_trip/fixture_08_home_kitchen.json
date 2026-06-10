@@ -1,0 +1,34 @@
+{
+  "name": "Home & Kitchen appliance (super_id=30)",
+  "coverage": "Conditional license; tests the conditional-extension branch per §12.1.",
+  "input_snapshot": {
+    "product": {
+      "fields_jsonb": {
+        "name": "Stainless Steel Pressure Cooker 5L",
+        "isi_mark_present": "Yes"
+      },
+      "ai_suggestions": {}
+    },
+    "compliance_block": null,
+    "format": "xlsx_with_images"
+  },
+  "schema": {
+    "fields": [
+      {"canonical_name": "name", "meesho_column_header": "Product Name", "data_type": "text", "primitive": "text_short", "marker": "compulsory", "enum_resolver": null, "is_advanced": false, "help_text": "h", "validation_message_ids": []},
+      {"canonical_name": "isi_mark_present", "meesho_column_header": "ISI Mark Present", "data_type": "text", "primitive": "text_short", "marker": "compulsory", "enum_resolver": null, "is_advanced": false, "help_text": "h", "validation_message_ids": []}
+    ],
+    "compulsory_count": 2,
+    "optional_count": 0,
+    "total_count": 2,
+    "wizard_step_count": 1,
+    "main_sheet_label": "Home Kitchen Sheet",
+    "compliance_shape": "standard"
+  },
+  "expected_xlsx_canonical": {
+    "main_sheet_label": "Home Kitchen Sheet",
+    "columns": [
+      {"canonical_name": "name", "value": "Stainless Steel Pressure Cooker 5L"},
+      {"canonical_name": "isi_mark_present", "value": "Yes"}
+    ]
+  }
+}

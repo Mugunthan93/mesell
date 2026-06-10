@@ -25,6 +25,7 @@ from contextlib import asynccontextmanager
 import redis.asyncio as redis
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import make_asgi_app
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -36,7 +37,14 @@ from app.core.middleware.plan_guard_mw import PlanGuardMiddleware
 from app.core.middleware.rate_limit_mw import RateLimitMiddleware
 from app.core.middleware.request_id import RequestIdMiddleware
 from app.core.middleware.tenancy_mw import TenancyContextMiddleware
+from app.modules.catalog import catalog_router
+from app.modules.category import category_router
+from app.modules.customer import customer_router
+from app.modules.dashboard import dashboard_router
+from app.modules.export import export_router
 from app.modules.iam import iam_router
+from app.modules.image import image_router
+from app.modules.pricing import pricing_router
 from app.shared.config import settings
 
 logging.basicConfig(level=logging.INFO)
@@ -105,6 +113,34 @@ register_error_handlers(app)
 # + /api/v1/webhooks/razorpay per BACKEND_ARCHITECTURE.md §7.B (LOCKED 2026-06-05).
 app.include_router(iam_router)
 
+# §8 customer — owns /api/v1/seller-profile/* (5 endpoints per §8.B LOCKED 2026-06-05).
+app.include_router(customer_router)
+
+# §9 category — owns /api/v1/categories/* (5 endpoints per §9.B LOCKED 2026-06-05).
+app.include_router(category_router)
+
+# §10 catalog — owns /api/v1/products/* (6 endpoints per §10.B LOCKED 2026-06-05).
+app.include_router(catalog_router)
+
+# §11 image — owns /api/v1/products/{id}/images (2 endpoints per §11.B LOCKED 2026-06-05).
+app.include_router(image_router)
+
+# §12 pricing — owns /api/v1/products/{id}/price-calc (1 endpoint per §12.B LOCKED 2026-06-05).
+# Latent bug §0.E resolved: legacy services/pricing_engine.py deleted at construction time.
+app.include_router(pricing_router)
+
+# §13 dashboard — owns GET /api/v1/products (1 endpoint per §13.B LOCKED 2026-06-05;
+# AMENDED 2026-06-07 §13.A.1 — status_filter + search deferred to V1.5).
+# NOTE: GET /api/v1/products shares the path key /api/v1/products with §10 catalog's
+# POST /api/v1/products. FastAPI registers them as two distinct APIRoute objects;
+# distinct-path count stays at 27, raw APIRoute count rises from 26 to 27.
+app.include_router(dashboard_router)
+
+# §14 export — owns POST /api/v1/products/{id}/export-xlsx + GET /api/v1/exports/{id}
+# (2 endpoints per §14.B LOCKED 2026-06-05). Adds 2 new distinct path keys;
+# expected_count rises from 27 → 29.
+app.include_router(export_router)
+
 if settings.is_dev:
     import os
 
@@ -112,6 +148,14 @@ if settings.is_dev:
 
     os.makedirs("/tmp/meesell", exist_ok=True)
     app.mount("/dev-static", StaticFiles(directory="/tmp/meesell"), name="dev-static")
+
+
+# ── Prometheus metrics scrape (§15.J / F-15-2) ─────────────────────────────
+# Mounted LAST — after every router — so it never shadows a domain path.
+# The 7 §15.J metrics are defined in ``app.core.metrics`` and incremented /
+# observed / set at their respective call sites.  The fail-open auth_mw lets
+# the scrape through without a 401 (see auth_mw.py docstring).
+app.mount("/metrics", make_asgi_app())
 
 
 # ── Health check (preserved from baseline) ─────────────────────────────────

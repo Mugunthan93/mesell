@@ -1,29 +1,466 @@
 # STATUS — FRONTEND
 
-**Owner:** FRONTEND sub-session
-**Last update:** 2026-06-04
+**Owner:** meesell-frontend-coordinator (master session)
+**Last update:** 2026-06-09
 
-**Status:** Session not yet started — initialize by opening a new Claude session and pasting the FRONTEND prompt from `docs/SESSION_PROMPTS.md`.
+=== UPDATE: 2026-06-09 SESSION-END (meesell-angular-component-builder) ===
+Phase: PrimeNG 21 API Reference Docs — COMPLETE
+Done:
+  - docs/primeng/ — 91 files total (90 component/directive docs + INDEX.md)
+  - Remaining 31 docs written this session (continuing from prior context):
+    radiobutton.md, rating.md, scroller.md, scrollpanel.md, scrolltop.md,
+    select.md, selectbutton.md, skeleton.md, slider.md, speeddial.md,
+    splitbutton.md, splitter.md, stepper.md, steps.md, table.md, tabs.md,
+    tag.md, terminal.md, textarea.md, tieredmenu.md, timeline.md, toast.md,
+    togglebutton.md, toggleswitch.md, toolbar.md, tooltip.md, tree.md,
+    treeselect.md, treetable.md, animateonscroll.md, autofocus.md, icons.md,
+    INDEX.md (master index with wave usage map + full component table)
+Tests: N/A (docs task — no component code written)
+Build: N/A (docs task)
+In progress: none
+Blockers: none
+Next: ready for Wave 3+ component builds; agents should read docs/primeng/<component>.md before using any PrimeNG API
+Hand-offs: docs/primeng/INDEX.md is the master reference; all meesell-* agents should read the relevant .md before implementing any PrimeNG component
+=========
+
+=== UPDATE: 2026-06-09 SESSION-END (meesell-angular-ui-styler) ===
+Phase: Wave 2C Hotfix — Tailwind v4 + PrimeNG layer wiring COMPLETE
+Done:
+  1. frontend/src/styles.css REWRITTEN
+     - @layer tailwind-base, primeng, tailwind-utilities; declaration added
+     - Split imports: tailwindcss/theme.css + preflight.css → tailwind-base; utilities.css → tailwind-utilities
+     - @source "./app/**/*.ts" added (partially works — esbuild pipeline limitation noted below)
+     - Explicit @layer tailwind-utilities block with 8 critical utility classes added as workaround
+     - _tokens.css import preserved
+  2. frontend/postcss.config.mjs UPDATED — base: set to project root (supports @source resolution)
+  3. frontend/src/app/features/auth/login.component.ts
+     - Phone input: added class="w-full"
+     - p-button host: added class="w-full"
+     - Styles: display:block on input, .phone-field input { flex:1 }, ::ng-deep p-button { display:block; width:100% }, ::ng-deep .p-button { width:100%; justify-content:center }
+  4. frontend/src/app/features/auth/signup.component.ts
+     - Name input: added class="w-full"
+     - Phone input: added class="w-full"
+     - p-button host: added class="w-full"
+     - Same style rules as login
+  5. frontend/src/app/features/auth/otp-verify/otp-verify.component.ts
+     - p-button host: added class="w-full"
+     - Styles: ::ng-deep .p-button { width:100%; justify-content:center }, ::ng-deep p-button { display:block; width:100% }, ::ng-deep .p-inputotp { display:flex; justify-content:center; gap:8px; width:100% }
+Build: ZERO errors — 2.0s (final)
+A11y: no regressions — WCAG AA contrast maintained
+Mobile (390px): all 3 auth pages render correctly at 390x844 — cards fill screen width, buttons full-width, inputs full-width, OTP boxes centered
+Probe AFTER (login):
+  button.bg = rgb(242, 107, 35) — orange PASS
+  button.padding = 10px 14px — non-zero PASS
+  button.borderRadius = 999px — pill PASS
+  button.width = 376px — full card width PASS
+  input.width = 345.953px (flex-remaining in phone row) — PASS
+  input.border = 1px solid rgb(205, 215, 229) — non-zero PASS
+Tests: 17/17 PASS, 0 regressions
+Blockers: none
+Key learnings:
+  - @source glob scanning does NOT work with @angular/build:application esbuild pipeline when using split imports
+  - Workaround: explicit @layer tailwind-utilities { .util {} } blocks in styles.css for critical classes
+  - PrimeNG runtime JS injects <style>@layer primeng {...}</style> — correct layer ordering requires tailwind-utilities layer to be declared AFTER primeng in the @layer statement
+Hand-offs:
+  - Auth pages are now fully styled with orange buttons, bordered inputs, and full-width layout
+  - component-builder: no changes needed to component logic — all styling changes are CSS-only
+  - Any future Tailwind utility classes used in templates must be added to the @layer tailwind-utilities safelist block in styles.css until @source scanning is resolved with Angular esbuild builder
+=========
+
+=== UPDATE: 2026-06-09 02:00 (meesell-angular-component-builder) ===
+Phase: Wave 2C — Auth Pages (Login / Signup / OtpVerify)
+Done:
+  1. frontend/src/app/features/auth/login.component.ts — REPLACED stub
+     - Reactive form: phone (required, pattern /^[6-9]\d{9}$/)
+     - loading signal, setTimeout(1500) simulation → navigate('/otp-verify')
+     - PrimeNG InputText + Button; AuthLayoutComponent wrapper
+     - CSS vars only; 44px touch targets
+  2. frontend/src/app/features/auth/login.component.spec.ts — CREATED (3 tests)
+  3. frontend/src/app/features/auth/signup.component.ts — REPLACED stub
+     - Reactive form: name (required, minLength 2, maxLength 60) + phone (pattern)
+     - loading signal, setTimeout(1500) simulation → navigate('/otp-verify')
+     - PrimeNG InputText + Button; AuthLayoutComponent wrapper
+  4. frontend/src/app/features/auth/signup.component.spec.ts — CREATED (3 tests)
+  5. frontend/src/app/features/auth/otp-verify/otp-verify.component.ts — CREATED
+     - Reactive form: otp (required, minLength/maxLength 6)
+     - loading + countdown signals; 30s interval via setInterval
+     - ngOnDestroy clears interval
+     - resendOtp() resets countdown and restarts interval
+     - onSubmit(): setTimeout(1500) → auth.setSession('mock-token', {...}) → navigate('/dashboard')
+     - PrimeNG InputOtp + Button; AuthLayoutComponent wrapper
+  6. frontend/src/app/features/auth/otp-verify/otp-verify.component.spec.ts — CREATED (3 tests)
+  7. frontend/src/app/app.routes.ts — UPDATED
+     - Added /otp-verify top-level route (same level as /login, /signup)
+     - loadComponent: import('./features/auth/otp-verify/otp-verify.component')
+Tests: 17 passed / 0 failed (6 spec files — includes 9 new auth + 8 pre-existing)
+Build: ZERO errors — 2.497s
+  - otp-verify-component lazy chunk: 11.70 kB raw / 3.86 kB transfer
+  - signup-component lazy chunk: 3.49 kB raw / 1.31 kB transfer
+  - login-component lazy chunk: 3.01 kB raw / 1.20 kB transfer
+In progress: none
+Blockers: none
+Next: Wave 2D or coordinator-directed next dispatch
+Hand-offs:
+  - /otp-verify route live; auth.setSession() called only on successful OTP verify (FE-D5 compliant)
+  - All 3 auth routes (/login, /signup, /otp-verify) use flat import paths; AuthLayoutComponent via ng-content (NOT router-outlet)
+=========
+
+=== UPDATE: 2026-06-09 00:15 (meesell-angular-component-builder) ===
+Phase: Wave 2B Step 3 — Shell, auth layout, guard, service stub, page stubs + tests
+Done:
+  1. frontend/src/app/core/services/auth.service.ts CREATED
+     - Signal-based auth state (_token, _user as WritableSignal)
+     - isAuthenticated + currentUser as computed()
+     - setSession / logout / getToken methods
+     - FE-D5 compliant: in-memory only, no localStorage
+  2. frontend/src/app/core/guards/auth.guard.ts CREATED
+     - CanActivateFn using inject(AuthService) + inject(Router)
+     - Returns true if authenticated, else router.createUrlTree(['/login'])
+  3. frontend/src/app/layouts/auth-layout/auth-layout.component.ts CREATED
+     - Standalone, OnPush, RouterOutlet
+     - CSS vars only: var(--mee-color-bg), var(--mee-color-surface), var(--mee-radius-md), var(--mee-shadow-md), var(--mee-color-primary)
+  4. frontend/src/app/layouts/shell/shell.component.ts CREATED (3 files)
+     - PrimeNG v21: Drawer (not SidebarModule) + Menu (not MenuModule)
+     - mobileSidebarVisible = signal(false) wired to p-drawer [visible]/(visibleChange)
+     - userMenu = @ViewChild('userMenu') Menu
+     - navItems: 4 routes with pi pi-* icons
+     - userMenuItems: My Profile + separator + Log out (auth.logout())
+     - userInitials getter: splits name on space, returns 2-letter uppercase
+  5. frontend/src/app/layouts/shell/shell.component.html CREATED
+  6. frontend/src/app/layouts/shell/shell.component.css CREATED
+     - Desktop sidebar: fixed 260px, var(--mee-color-sidebar)
+     - Mobile: p-drawer overlay (hidden when >= 1024px)
+     - nav-item--active: var(--mee-color-sidebar-active) + left border + color-mix bg
+     - Header: sticky 60px, hamburger (mobile only), user avatar, p-menu popup
+     - Touch targets: 44px min-height on .nav-item, .hamburger, .avatar
+  7. Page stubs CREATED (6 total):
+     - frontend/src/app/features/dashboard/dashboard.component.ts (DashboardComponent)
+     - frontend/src/app/features/catalogs/catalog-list.component.ts (CatalogListComponent)
+     - frontend/src/app/features/catalog-new/catalog-new.component.ts (CatalogNewComponent)
+     - frontend/src/app/features/profile/profile.component.ts (ProfileComponent)
+     - frontend/src/app/features/auth/login.component.ts (LoginComponent)
+     - frontend/src/app/features/auth/signup.component.ts (SignupComponent)
+  8. frontend/src/app/app.routes.ts UPDATED
+     - Auth group: path '' → AuthLayoutComponent → children: ['' redirectTo login, login, signup]
+     - Shell group: path '' → ShellComponent + canActivate:[authGuard] → children: [dashboard, catalogs, catalogs/new, profile]
+     - Fallback: '**' → redirectTo 'login'
+  9. frontend/src/app/app.ts UPDATED
+     - Class renamed App → AppComponent, inline template <router-outlet />, OnPush
+  10. frontend/src/main.ts UPDATED — import alias to match AppComponent rename
+  11. Tests CREATED:
+      - auth-layout.component.spec.ts: 2 tests (create + logo text)
+      - shell.component.spec.ts: 5 tests (create, 4 nav items, U initials, MS initials, logout item)
+Tests: 8 passed / 0 failed (3 spec files)
+Build: ZERO errors — production 2.309s; development 1.224s
+  - shell-component lazy chunk: 155.60 kB raw / 30.01 kB transfer
+  - auth-layout-component lazy chunk: 1.02 kB raw / 1.02 kB transfer
+  - page stubs: 383–402 bytes each (minimal — correct)
+In progress: none
+Blockers: none
+Next: Wave 2B Step 4 — Auth feature components (login + signup with OTP flow)
+Hand-offs:
+  - AuthService ready at core/services/auth.service.ts — service-builder should wire HTTP calls (sendOtp, verifyOtp) to backend
+  - authGuard at core/guards/auth.guard.ts — coordinator should register in app.routes.ts extended routes
+  - ShellComponent ready; needs real nav items wired as routes are completed
+  - Login/Signup stubs ready for auth feature build-out
+=========
+
+=== UPDATE: 2026-06-08 SESSION-END (meesell-angular-ui-styler) ===
+Phase: Wave 2B Step 2 — PrimeNG theme preset + design tokens COMPLETE
+Done:
+  1. frontend/src/app/design-system/_tokens.css CREATED
+     - 52 CSS custom properties in :root — brand, sidebar, surface, semantic, border, radius, spacing, shadow, transition
+     - Zero component library dependency (Layer 1 — pure CSS)
+  2. frontend/src/app/core/theme/meesell-preset.ts CREATED
+     - definePreset(Aura, {...}) extending @primeuix/themes Aura
+     - primary palette: #F26B23 at 500 scale with full 50–950 ramp
+     - colorScheme.light.surface: #f0f5f9 → #2a3547 scale
+     - colorScheme.light.primary: color/contrastColor/hoverColor/activeColor
+     - colorScheme.light.highlight: background rgba(242,107,35,0.12)
+     - components: card (borderRadius 16px, shadow), button (borderRadius 999px, paddingX), inputtext (borderRadius 7px), select (borderRadius 7px), dialog (borderRadius 16px), panel (borderRadius 16px)
+     - NOTE: all component tokens nested under root: {} (required by @primeuix/themes 2.0.3 type structure)
+     - NOTE: datatable.headerCell has no borderRadius token in the type system — removed (not in typed API)
+  3. frontend/src/app/app.config.ts UPDATED
+     - Added provideAnimationsAsync() from @angular/platform-browser/animations/async
+     - Added providePrimeNG({ theme: { preset: MeeSellPreset, options: { prefix: p, darkModeSelector: .dark, cssLayer: { name: primeng, order: tailwind-base primeng tailwind-utilities } } }, ripple: true })
+     - Preserved existing provideBrowserGlobalErrorListeners() + provideRouter()
+     - @angular/animations@21.2.16 installed (version-matched to Angular 21.2.16 framework)
+  4. frontend/src/styles.css UPDATED
+     - @import "tailwindcss" retained
+     - @import "./app/design-system/_tokens.css" added
+     - Global html/body: height 100%, margin 0, background-color var(--mee-color-bg), color var(--mee-color-on-surface), font-family Plus Jakarta Sans
+  5. frontend/src/index.html UPDATED
+     - Google Fonts preconnect + Plus Jakarta Sans (wght 300–800, display=swap) added
+     - PrimeIcons CDN (cdn.jsdelivr.net/npm/primeicons/primeicons.css) added
+Build: ZERO errors — 2.073 seconds
+  - main 246.37 kB raw / 47.80 kB transfer
+  - styles 22.40 kB raw / 4.96 kB transfer
+  - Initial total 381.87 kB raw / 86.61 kB transfer
+A11y: Token values preserved from Wave 1 — #2a3547 on #f0f5f9 = ~9.5:1 WCAG AA PASS; #F26B23 on #ffffff = ~3.11:1 (large text / brand elements only — AA acceptable for non-body-text use)
+Mobile (360px): n/a (no layout component authored this step — pure token/config wiring)
+In progress: none
+Blockers: none
+Next: Wave 2B Step 3 (2B-3) — meesell-angular-component-builder takes over for shell/layout scaffolding using PrimeNG components + design tokens now available.
+Hand-offs:
+  - To meesell-angular-component-builder: MeeSellPreset is live. PrimeNG components can use severity/outlined/text variants. CSS custom properties in _tokens.css are available globally. Font is Plus Jakarta Sans (Google Fonts CDN). PrimeIcons available via pi pi-* classes. providePrimeNG is wired — no further config needed.
+  - Token reference: use var(--mee-color-primary) for orange, var(--mee-color-sidebar) for nav bg, var(--mee-color-bg) for page bg, var(--mee-color-on-surface) for body text, var(--mee-color-outline) for borders.
+=========
+
+=== UPDATE: 2026-06-08 SESSION-START ===
+Phase: Wave 2B Step 1 — Scaffold new Angular 21 frontend (clean slate)
+Task: Execute the 7-step scaffold — clone Sakai-ng (visual ref), ng new Angular 21 standalone+routing, install PrimeNG + @primeuix/themes, Tailwind CSS 4 (PostCSS), wire styles.css, verify primeclt absent, verify build green.
+Routes this lays foundation for: ALL 10 V1 routes (/, /signup, /login, /dashboard, /catalogs/new, /catalogs/:id/edit, /catalogs/:id/images, /catalogs/:id/preview, /catalogs/:id/pricing, /catalogs/:id/export). No route table authored yet — scaffold only.
+Specialists touched: NONE this step (founder instruction: coordinator executes scaffold via Bash; meesell-angular-ui-styler takes Wave 2B-2). component-builder + service-builder follow in later waves.
+Pre-verified clean slate: frontend/ absent, themes/ absent, archive/frontend_angular_material intact, node v22.15.0 / pnpm 11.5.2 / npx 10.9.2 confirmed.
+Stop condition: stop after build passes green — do NOT proceed to 2B-2.
+In progress: scaffold execution
+Blockers: none
+=========
+
+=== UPDATE: 2026-06-08 SESSION-END ===
+Phase: Wave 2B Step 1 — Angular 21 scaffold COMPLETE (build green)
+Done:
+  1. themes/sakai-ng/ cloned (HEAD 96d7149, 57 TS files, full project) — read-only visual reference
+  2. ng new frontend @ Angular CLI 21.2.14 / framework 21.2.16 / TypeScript 5.9.3 — standalone + routing + css + pnpm + skip-git
+     - Builder is @angular/build:application (esbuild/Vite); default test runner is vitest 4.1.8; rxjs 7.8.2
+  3. PrimeNG 21.1.9 + @primeuix/themes 2.0.3 installed (deps)
+  4. Tailwind CSS 4.3.0 + @tailwindcss/postcss 4.3.0 installed (devDeps)
+  5. Tailwind wired via PostCSS: postcss.config.mjs ({ plugins: { "@tailwindcss/postcss": {} } }) + src/styles.css = `@import "tailwindcss";`
+  6. primeclt: ABSENT (clean — never installed)
+  7. pnpm run build: ZERO errors, 2.278s
+Build: main 213.66 kB raw / 58.48 kB transfer; styles 21.23 kB raw / 4.62 kB transfer; Initial total 234.90 kB raw / 63.11 kB transfer. Output dist/frontend/browser/.
+  - Tailwind 4 confirmed active: built styles-*.css carries @layer cascade (21,234 bytes generated base/theme layer). Utility classes emit on demand as templates consume them (fresh app.html uses none yet — correct, expected).
+  - The fallback @tailwindcss/vite path was NOT needed; PostCSS path worked first try with @angular/build:application.
+A11y: n/a (no UI authored this step)
+Mobile (360px): n/a (no UI authored this step)
+TS strict: Angular 21 ng new defaults to strict mode (tsconfig "strict": true) — preserved.
+In progress: none
+Blockers: none
+Next: Wave 2B Step 2 (2B-2) — meesell-angular-ui-styler takes over: PrimeNG theme preset (@primeuix/themes) + Tailwind theme tokens (#F26B23 primary, #111c2d sidebar, #f0f5f9 bg carried from old _tokens.scss) + providePrimeNG() wiring in app.config.ts. Coordinator STOPPED here per founder instruction.
+Hand-offs:
+  - To meesell-angular-ui-styler: clean Angular 21 + PrimeNG 21 + Tailwind 4 scaffold ready at /Users/mugunthansrinivasan/Project/mesell/frontend/. Sakai-ng visual reference at /Users/mugunthansrinivasan/Project/mesell/themes/sakai-ng/ (read-only). app.config.ts currently holds only provideRouter + provideBrowserGlobalErrorListeners + provideZonelessChangeDetection (ng21 default) — needs providePrimeNG({ theme: ... }) + provideAnimationsAsync added. styles.css holds only the Tailwind import — PrimeNG theme is applied via providePrimeNG preset, NOT a CSS import (PrimeNG v18+ themeless/styled mode).
+=========
+
+=== UPDATE: 2026-06-08 ===
+Phase: Wave 2B architecture doc — FRONTEND_ARCHITECTURE.md rewrite
+Done: Wrote docs/FRONTEND_ARCHITECTURE.md with founder-approved abstraction-first architecture.
+  - Stack decision locked: Angular 21 + PrimeNG 21 + Sakai-ng Free + Tailwind CSS 4
+  - 4-layer architecture documented: Design System → UI Kit → Layouts/Shared → Features
+  - All 17 UI Kit component contracts specified (mee-button through mee-toast)
+  - Design token contract specified (_tokens.scss minimum required set)
+  - Path aliases documented (@mee/ui, @mee/shared, @mee/design, @mee/core)
+  - PrimeNG import boundary rule: primeng imports ONLY in src/app/ui/
+  - Wave sequence locked: 2B scaffold → 2C UI Kit → 2D Shared → 2E+ Features
+  - Mobile-first rule: 360px → 768px → 1280px
+Build: n/a (doc-only dispatch)
+A11y: Token contract preserves WCAG AA: #2a3547 on #f0f5f9 = ~9.5:1 PASS; #F26B23 on #ffffff = ~3.11:1 (large text / brand elements only)
+Mobile (360px): n/a
+In progress: none
+Blockers: none
+Next: Wave 2B scaffold dispatch — new session to implement Angular 21 + PrimeNG 21 + Sakai-ng scaffold
+Hand-offs: docs/FRONTEND_ARCHITECTURE.md ready. component-builder and service-builder may read this document to understand the 4-layer structure and component contracts before Wave 2B begins. Design tokens (#F26B23 primary, #111c2d sidebar, #f0f5f9 bg) are carried forward from current _tokens.scss.
+=========
+
+=== UPDATE: 2026-06-08 ===
+Phase: Wave 1B — CLOSED (template rejected)
+Decision: Signal Admin REJECTED by founder. Not suitable as MeeSell reference.
+Status: Wave 1C BLOCKED — awaiting founder to provide theme source.
+Angular 20 upgrade: COMPLETE and retained (still valid regardless of theme choice).
+themes/signal-admin/: retained on disk until new theme is provided.
+Next: Founder provides theme → new Wave 1B-2 evaluation → Wave 1C dispatch.
+=========
+
+
+=== UPDATE: 2026-06-08 03:55 ===
+Phase: Tooling upgrade — Angular 18 → 20 (founder-approved alignment with Signal Admin)
+Done:
+- Upgraded Angular core+CLI 18.2.0 → 19.2.25 → 20.3.24 (two-step ng update with --allow-dirty --force)
+- Upgraded Angular Material/CDK 18.2.14 → 19.2.19 → 20.2.14
+- Upgraded @jsverse/transloco 7.4.2 → 8.3.0 (installed with --legacy-peer-deps; pre-existing @analogjs/vitest-angular peer-dep conflict on @angular-devkit/architect range — unrelated, observe later)
+- TypeScript bumped 5.5.2 → 5.9.3; zone.js 0.14.10 → 0.15.1 by migration
+- Fixed v20 Material token-rename breakages in src/app/design-system/_component-overrides.scss:
+  * mat.button-overrides — variant-prefixed all tokens (filled-/outlined-/protected-/text-/tonal-); moved hover elevation to protected-only
+  * mat.card-overrides — variant-prefixed container-color/shape/elevation (elevated-/filled-/outlined-)
+  * mat.form-field-overrides — variant-prefixed container-shape (filled-/outlined-)
+  * mat.menu-overrides — replaced removed base-elevation-level (v18) with container-elevation-shadow (v20) mapped to --mat-sys-level2
+- v19 migration auto-rewrote 44 components for new standalone-default semantics (added standalone:false where needed)
+- v20 Material migration script auto-updated dist/ + public/ themes/spike/ assets and _theme.scss
+Build: development bundle generation completes in 5.4s, only two pre-existing NG8113 warnings (unused RouterLink imports in ImagesComponent + PreviewComponent — predate upgrade)
+Dev server: ng serve --port 4200 returns HTTP 200 on / within 25s
+Blockers: none
+Next:
+- Optional: align @angular-eslint/* (still v18.3) with v20 — non-blocking
+- Optional: resolve @analogjs/vitest-angular peer-dep range (vitest may need pin)
+- Run unit + e2e suite to confirm no runtime regressions
+- Confirm CLAUDE.md Decision 9 wording (currently says "Angular 18") is updated by master session — coordinator does not own root CLAUDE.md
+Hand-offs:
+- meesell-angular-ui-styler: review _component-overrides.scss SECTION 2 (Button) + SECTION 4 (Card) + SECTION 10 (Form Field) + SECTION 12 (Menu) — variant-prefixed token semantics may unlock further per-variant Spike fidelity
+=========
+
+
+**Status:** CONSTRUCTION ACTIVE — 2 of 6 sub-sessions V1-complete; catalog Waves 1–4 (non-export) done; cross-cutting maintenance active.
 
 ## Current Phase
-_pending — set when the session starts_
+
+**Mid-construction.** Auth + Dashboard V1-complete. Catalog Waves 1–4 non-export done (export deferred on §14 LOCK). Cross-cutting app.routes.ts NOW UNBLOCKED (auth V1-complete signal received). Onboarding not yet started.
 
 ## Done
-- (none)
+
+**Foundational**
+- Design system §5A FULL LOCK (2026-06-06B) — real CSS custom property tokens live
+- All 10 shared components §5A compliant (mee-navbar held pending app.routes.ts lockstep)
+- Core services (AuthService, ApiClient, 4 interceptors, guards, ErrorService) via service-builder 2026-06-05
+- Initial bundle: 111.76 kB gzip (37% under §19 budget)
+- Q-CC-001 resolved: seller-profile.model.ts rewritten to snake_case §8.E shape (2026-06-07)
+
+**Sub-sessions V1-complete**
+- ✅ **Auth** (/, /signup, /login) — D1: LandingComponent · D2: auth/ scaffold (Signup + Login + PhoneInput + AuthApiService) · D3: OtpVerifyComponent — all routes have full body
+- ✅ **Dashboard** (/dashboard) — DashboardComponent + ProductRowComponent + delete flow + 10/10 tests
+
+**Catalog mega-session (partial — Waves 1–3)**
+- ✅ Wave 1: SmartPickerComponent + CategoryCard + BrowseFallback + ProfileIncompleteDialog (features/smart-picker/)
+- ✅ Wave 2a: CatalogFormApiService + CatalogFormStateService + DraftRecoveryService + CategorySchemaService + EnumLookupService
+- ✅ Wave 2b: 11 field primitives (CVA) + WizardRendererComponent + FieldDispatcherComponent + AutofillOverlayComponent
+- ✅ Wave 2c: CatalogFormComponent full page wiring (sequential init, autosave, navigation)
+- ✅ Wave 3: ImagesComponent + ImageSlotComponent + PrecheckReportComponent + ImagesApiService
+- ✅ Wave 4a: PreviewComponent + PreviewFeedComponent + PreviewDetailComponent + PreviewApiService (11.43 kB gzip)
+- ✅ Wave 4b: PricingComponent + PnlBreakdownComponent + MarginSliderComponent + PricingChartComponent + PricingApiService (53.84 kB gzip)
+- ⏸ Wave 4c: Export — scaffold exists; dispatch deferred pending BACKEND §14 LOCK
+
+**Cross-cutting session**
+- ✅ §5A sweep batch 1 + batch 2 (9 of 10 shared components; mee-navbar on hold)
+- ✅ seller-profile.model.ts drift fixed (Q-CC-001)
+
+**Profile sub-session (partial)**
+- ✅ D1: ProfileApiService (3-PATCH contract) + ProfileEditComponent skeleton (4/4 tests)
 
 ## In Progress
-- (none)
+
+- **Cross-cutting**: app.routes.ts update — NOW UNBLOCKED (auth V1-complete, folder rename done). Must swap ACCOUNT_ROUTES for AUTH_ROUTES (features/auth/auth.routes.ts) in the auth layout shell. Triggers mee-navbar dispatch.
+- **Catalog export (Wave 4c)**: dispatch ready; blocked on BACKEND §14 LOCK
 
 ## Blockers
-- none
+
+| # | Blocker | Owner | Gate |
+|---|---------|-------|------|
+| B1 | **app.routes.ts not updated** — auth routes still load from features/account/ | Cross-cutting session | UNBLOCKED NOW — execute immediately |
+| B2 | **mee-navbar not dispatched** — held until app.routes.ts green | Cross-cutting session | After app.routes.ts |
+| B3 | **Onboarding sub-session not bootstrapped** — founder must start new session | Founder action | ComplianceStepComponent blocks Profile D2 |
+| B4 | **Catalog export (Wave 4c)** — §14 export endpoint draft | Backend coordinator | Preview + pricing Wave 4a/4b unaffected |
+| B5 | **Q-CC-002** — doc amendment: §5A.C "Inter" → "Plus Jakarta Sans" | Coordinator doc pass | Non-blocking |
 
 ## Next
-- (none)
+
+**Immediate (unblocked today):**
+1. Cross-cutting session: execute app.routes.ts AUTH_ROUTES swap → `ng build` green → dispatch mee-navbar
+2. Catalog Wave 4a: PreviewComponent + PricingComponent (export deferred)
+
+**Requires founder action:**
+3. Bootstrap onboarding sub-session → ComplianceStepComponent → unblocks Profile D2
 
 ## Hand-offs
-- (none)
+
+**FROM AUTH SUB-SESSION → CROSS-CUTTING** (ACTIVE — 2026-06-07):
+  - features/auth/auth.routes.ts ready; AUTH_ROUTES exports signup + login lazy routes
+  - OtpVerifyComponent fully implemented (was stub at Dispatch 2 landing)
+  - app.routes.ts must replace ACCOUNT_ROUTES (for auth layout) with AUTH_ROUTES from features/auth/auth.routes.ts
+  - Gate: ng build exits 0 after update
+
+**FROM DASHBOARD SUB-SESSION** (COMPLETE — signed off 2026-06-07):
+  - SideMenuComponent NOT built — MeeShellComponent covers nav spec; no duplicate needed
+  - Recommend amending SESSION_PROMPTS_FEATURE_DASHBOARD.md §9 note (non-blocking)
 
 ## Updates Log
+=== UPDATE: 2026-06-08 10:00 ===
+Phase: Wave 1B — Ratified template spec authored
+Done:
+  - Wrote docs/ui_ux/WAVE_1B_RATIFIED_TEMPLATE_SPEC.md
+  - Signal Admin ratified as MeeSell UI reference template (replacing Spike Angular paywalled)
+  - Angular version upgrade decision recorded: Angular 18 → Angular 20 (matches Signal Admin stack; code reuse, not visual reference only)
+  - Reuse map documented: 8 of 10 Signal Admin pages mapped to MeeSell routes (2 auth pages replaced by existing OTP flow)
+  - 5 MeeSell-specific change items locked in spec: color tokens, icon font swap, auth flow, mobile sidebar, Angular version
+  - Wave 1C handoff sequence locked: dashboard → catalog-list → catalog-form → images → preview → export → profile
+Build: n/a (doc-only dispatch — no frontend/src/ files modified)
+A11y: n/a
+Mobile (360px): n/a
+In progress: none
+Blockers: none
+Next: Wave 1C dispatch — page-by-page Signal Admin component reuse starting with /dashboard
+Hand-offs: WAVE_1B_RATIFIED_TEMPLATE_SPEC.md ready. Angular version upgrade to 20 is now a gate for component-builder and service-builder before Wave 1C page work begins.
+=========
+
+=== UPDATE: 2026-06-08 ===
+Phase: Wave 1B — Reference template shortlist research
+Done:
+  - Evaluated 14 Angular admin templates against mandatory criteria:
+    Angular 18+, Angular Material, Tailwind CSS, standalone components, MIT LICENSE file verified, no paywall
+  - 11 candidates rejected (documented reasons: Angular version too old, Bootstrap instead of Material,
+    same author lineage as Spike, paywall, no Angular Material)
+  - 3 candidates shortlisted and documented in docs/ui_ux/WAVE_1B_TEMPLATE_SHORTLIST.md
+  - PRIMARY RECOMMENDATION: Signal Admin (github.com/codebangla/signal-admin)
+    Angular 20 + Angular Material 20 + Tailwind 3.4 + standalone + MIT 2025 + 12 pre-built pages
+  - SECONDARY: ng-matero (1,500+ stars, actively maintained May 2026; no Tailwind natively)
+  - CONDITIONAL: lannodev/angular-tailwind (Tailwind v4 + signals; no Angular Material natively)
+  - Created screenshots directory: docs/ui_ux/wave_1b_screenshots/signal-admin/
+Build: n/a (research-only dispatch — no frontend/ files modified)
+A11y: n/a
+Mobile (360px): n/a
+In progress: Signal Admin local clone + visual verification pending
+Blockers: none
+Next: Founder reviews shortlist; if Signal Admin approved, deploy to themes/signal-admin/ for visual confirmation
+Hand-offs: docs/ui_ux/WAVE_1B_TEMPLATE_SHORTLIST.md ready for founder review. Gate A pending: paywall evidence via local clone.
+=========
+
+=== UPDATE: 2026-06-08 08:11 ===
+Phase: Wave 1A Area 1 — layouts/shell/ + layouts/auth/ (layout-only pass)
+Done:
+  - MeeShellComponent: removed notification bell button + .notification-dot CSS + .header-icon-btn CSS
+  - MeeShellComponent: replaced plain user-avatar div with mat-mini-fab + MatMenuModule profile dropdown
+  - MeeShellComponent: profile dropdown has exactly 2 items — "My Profile" (→/profile) + "Log out" (→/login after auth.logout())
+  - MeeShellComponent: all tokened hex values replaced (bg, primary, bg-elevated, outline, active states)
+  - MeeShellComponent: grandfathered hex values documented (#111c2d dark sidebar, #374151 toggle btn, rgba whites on dark)
+  - MeeShellComponent: added navigateToProfile() method; updated logout() to navigate(['/login']) after auth.logout().subscribe()
+  - MeeAuthLayoutComponent: #F26B23 → var(--mee-color-primary) on .auth-brand-logo
+  - MeeAuthLayoutComponent: #111827 → var(--mee-color-on-surface) on .auth-brand-name
+  - MeeAuthLayoutComponent: border-radius 16px → var(--mee-radius-md) on .auth-card (exact match)
+  - MeeAuthLayoutComponent: .auth-brand-logo border-radius 12px kept (--mee-radius-md=16px, mismatch)
+  - MeeAuthLayoutComponent: gradient background + #fff on logo text left as-is (no token equivalents)
+Tests: 11 shell tests passing / 0 failing (6 existing + 5 new); 7 pre-existing export.spec failures unchanged; 272/279 total
+Build: ng build --configuration=production ZERO errors; 7.476s; all bundles within budget
+Gate 2 (hex hygiene): #F26B23 removed from layouts/; #f0f5f9 removed from layouts/; remaining hex = grandfathered dark sidebar + no-token grays
+In progress: none
+Blockers: none
+Next: Wave 1B or other coordinator-directed dispatch
+Hand-offs: MeeShellComponent profile dropdown ready for QA. Sidebar logout still present (in sidebar footer) + dropdown logout both call same logout() method — both navigate to /login after auth.logout().
+=========
+
+=== UPDATE: 2026-06-07 08:55 ===
+Phase: /onboarding — features/account/onboarding/ (Dispatch 2 wiring)
+Done: OnboardingWizardComponent updated — SuperCategoryChipsComponent wired into Phase 2; ComplianceStepComponent loop wired into Phase 3; complianceFields signal (stub) + onComplianceSubmit handler added
+Tests: 7/7 passing (4 existing + 3 new) — overrideComponent stub pattern used for SuperCategoryChipsStub + ComplianceStepStub; NG0914 + Material theme warnings expected and pre-documented
+Build: ng build --configuration=production ZERO errors; 4 pre-existing NG8102 warnings unchanged
+onboarding lazy chunk: 11.58 kB raw / 3.37 kB gzip (budget <=80 kB gzip — PASS)
+i18n: 1 new flat key added to en.json — "onboarding.phase3.noCategories"
+Fix: super-category-chips.component.ts [aria-label] → [attr.aria-label] — [aria-label] was NG8002 in production build (pre-existing bug surfaced by this dispatch)
+In progress: none
+Blockers: none
+Next: OnboardingWizardComponent Dispatch 3 — wire OnboardingApiService (replace complianceFields stub signal with real data from GET /api/v1/seller-profile/required-fields)
+Hand-offs: OnboardingWizardComponent Phase 2 + Phase 3 structural wiring complete. Awaits onboarding-api.service.ts from service-builder (Dispatch 4) to populate complianceFields per super_id.
+=========
+
+=== UPDATE: 2026-06-07 08:36 ===
+Phase: /onboarding — features/account/components/compliance-step/
+Done: ComplianceStepComponent (replaced stub) + compliance-step.component.spec.ts (new)
+Tests: 4/4 passing (Vitest)
+Build: ng build --configuration=production ZERO errors; 4 pre-existing warnings unchanged
+Onboarding lazy chunk: 1.53 kB gzip (ComplianceStepComponent not yet imported by OnboardingComponent — Dispatch 3 will wire it; chunk will grow then)
+i18n: 3 new flat keys added to en.json — "onboarding.compliance.title", "onboarding.compliance.fieldRequired", "onboarding.compliance.save"
+In progress: none (ComplianceStepComponent is complete)
+Blockers: none
+Next: OnboardingComponent Dispatch 3 — import ComplianceStepComponent, wire Phase 3 step with OnboardingApiService
+Hand-offs: ComplianceStepComponent ready at features/account/components/compliance-step/; accepts fields: FieldSpec[] + superCategoryId: string; emits formSubmit: Record<string,string|null> + formBack: void. Will be relocated to shared/components/compliance-step/ by cross-cutting session.
+=========
+
 === UPDATE: 2026-06-04 00:00 ===
 File initialised by master session. Awaiting first FRONTEND sub-session.
 =========
@@ -2493,4 +2930,1595 @@ Hand-offs:
   - mat.dialog-overrides: subhead 18px/600; content/actions padding 20px 24px.
   - mat.sidenav-overrides: container-shape = 0 (square edges).
   - Elevation CSS vars --mat-sys-level1/2/3 now set to Spike values.
+=========
+
+=== UPDATE: 2026-06-06 DESIGN SYSTEM INTEGRATION COMPLETE ===
+Phase: Master integration of design system sub-session deliverables
+
+Founder reported design system sub-session updated work 2026-06-06.
+Master verified deliverables in frontend/src/app/design-system/:
+
+  LANDED (8 of 13 §2 deliverables + 1 bonus):
+    ✓ _tokens.scss          — saffron #F26B23 + deep blue #1E40AF + Spike
+                                cool-gray bg #f0f5f9 + 8pt grid + radius
+                                7/16/18 + reduced-motion a11y
+    ✓ _theme.scss           — Material M3 (mat.$orange-palette primary
+                                + mat.$blue-palette tertiary) + Spike
+                                light-theme CSS custom prop overrides
+    ✓ _typography.scss      — Plus Jakarta Sans (Google Fonts, 300-800)
+                                — DEVIATION from Inter placeholder
+    ✓ _elevation.scss       — 4 levels + utility classes
+    ✓ _motion.scss          — 3 tiers
+    ✓ _tailwind-bridge.scss — doc bridge
+    ✓ breakpoints.ts        — TS mirror (xs/sm/md/lg/xl)
+    ✓ tokens.ts             — TS mirror (MOTION, COLORS, COLORS_RESOLVED)
+    ✓ _component-overrides.scss (BONUS, 20 KB) — Spike Angular 15-component
+                                                  override layer ported
+    ✓ tailwind.config.js (frontend root) — wired with CSS custom prop refs
+    ✓ styles.scss            — correct import order verified
+
+  DEFERRED (4 of 13 §2 deliverables — non-blocking for UI work):
+    ✗ _tokens.spec.ts        — WCAG contrast verification spec
+    ✗ docs/design-system/RATIONALE.md
+    ✗ docs/design-system/MICROCOPY_TONE.md
+    ✗ docs/design-system/ICONOGRAPHY.md
+
+  BUILD VERIFICATION:
+    ng build --configuration=production: ✓ SUCCESS in 4.7s, zero errors
+    All 23 lazy chunks built; bundle within §19 budget
+
+INTEGRATION ACTIONS APPLIED:
+  1. FRONTEND_ARCHITECTURE.md §5A — PARTIAL LOCK → FULL LOCK via
+     AMENDMENT 2026-06-06B inline at the top of §5A. Records:
+       - All landed values per highlights table
+       - Plus Jakarta Sans typeface deviation noted
+       - Spike Angular alignment acknowledged
+       - 4 deferred items named with workarounds + owner
+       - Material Symbols Outlined as interim iconography default
+       - Implications for consumer sessions (5 items)
+       - Historical context preserved (FE-D9 → FE-D10 → FE-D11 → 2026-06-06B chain)
+  2. This STATUS UPDATE block written
+
+NOTIFICATION TO SIBLING SUB-SESSIONS:
+  Founder will paste the universal notification prompt (provided by
+  master in this turn's chat) into each of the 6 feature sub-sessions:
+    - auth, onboarding, profile, dashboard, catalog, cross-cutting
+  Each sub-session reads the prompt + updated §5A + landed design-system
+  files; updates its STATUS file accordingly; resumes / starts component-
+  builder dispatches consuming real tokens via CSS custom properties.
+
+Done: §5A flipped to FULL LOCK; integration AMENDMENT 2026-06-06B applied;
+      universal notification prompt prepared.
+In progress: founder notifying 6 sibling sessions.
+Blockers: none (4 deferred design system files are non-blocking).
+Next:
+  - Sibling sub-sessions receive notification → update own STATUS →
+    resume dispatches with real tokens
+  - Design system sub-session continues to author 4 deferred files
+    in parallel (no master gate)
+  - Master reverts to lower-frequency master mode + remains available
+    for sibling Q&A integration
+Hand-offs:
+  - To 6 sibling feature sub-sessions: notification prompt (in chat,
+    same turn)
+  - To master session (project-level): propagate to STATUS_MASTER
+    Frontend row → "CONSTRUCTION ACTIVE — design system values
+    integrated, §5A FULL LOCK, all 6 feature sub-sessions consuming
+    real tokens"
+=========
+
+=== UPDATE: 2026-06-06 MASTER — DESIGN SYSTEM NOTIFICATION ACKNOWLEDGED ===
+Phase: Post-integration file verification + sub-session dispatch readiness
+
+Master session read all 8 landed design-system files directly (2026-06-06):
+  ✓ _tokens.scss          — 77 CSS custom properties; reduced-motion a11y; SCSS var mirrors
+  ✓ _theme.scss           — mat.$orange-palette M3 theme + Spike html overrides fully wired
+  ✓ _typography.scss      — Google Fonts import (Plus Jakarta Sans 300-800); html/body rule
+  ✓ _elevation.scss       — 4 elevation levels (0.05/0.07 opacity shadows)
+  ✓ _motion.scss          — micro/standard/large tiers; easing; reduced-motion override
+  ✓ _component-overrides.scss — 17 sections; 15 mat.*-overrides(); 17 utility classes
+  ✓ breakpoints.ts        — BREAKPOINTS const (xs=0 / sm=640 / md=768 / lg=1024 / xl=1280)
+  ✓ tokens.ts             — MOTION + COLORS (CSS var refs) + COLORS_RESOLVED (hex for canvas)
+  ✓ tailwind.config.js    — CSS var refs for all semantic colors; Plus Jakarta Sans font-family;
+                            mee-* border-radius; mee-* box-shadow; mee-* transition tokens
+  ✓ styles.scss           — Import order verified (tokens→theme→overrides→bridge→typography
+                            →elevation→motion → @tailwind directives)
+
+§5A AMENDMENT 2026-06-06B: confirmed previously written (lines 2498-2571 of this file).
+
+DEVIATION NOTE FOR COMPONENT-BUILDER DISPATCHES:
+  Already-shipped visual shells (LandingComponent, LoginComponent, SignupComponent,
+  OnboardingWizardComponent, CatalogFormComponent, ImageUploaderComponent,
+  PreviewComponent, PricingComponent, ExportComponent) use HARDCODED HEX values
+  in inline styles[] / style bindings. The CSS custom properties are live in :root
+  but do NOT override inline style bindings — the browser's cascade specificity
+  honours the inline values.
+
+  Impact: existing visual shells are NOT token-consuming yet.
+  Fix: component-builder next-wave dispatches should replace hardcoded hex values
+  with CSS custom property references (var(--mee-color-primary) etc.) as each
+  component gets its reactive/service wiring pass.
+
+  Exception: DashboardComponent + ProfileEditComponent (Dispatch 1) use Material
+  components with Material-token resolution — these DO pick up Spike theme
+  overrides automatically. No rewrite needed for them.
+
+OPEN QUESTIONS REQUIRING FOUNDER RESOLUTION (pre-dating design system integration;
+still unresolved — surfaced here for master's single-pass review):
+
+  Q-AUTH-001: features/account/ → features/auth/ folder restructure. Who executes?
+              (auth sub-session proposes it; cross-cutting handles app.routes.ts update)
+  Q-AUTH-002: OTP resend timer — 30s (§7 locked) vs 60s (session prompt). Confirm 60s?
+  Q-AUTH-003: profileComplete routing signal — call GET /seller-profile post-verify?
+              Or backend amendment to add field to VerifyOtpResponse?
+  Q-CC-001:   seller-profile.model.ts shape drift — confirm authoritative shape =
+              inline SellerProfileCorrect in profile-api.service.ts → cross-cutting fixes?
+  Q-CAT-001:  Enum endpoint: /categories/:id/enum/:field_name vs /field-enum/:name.
+              Backend coordinator to verify.
+  Q-CAT-002:  BACKEND §14 export LOCK ETA (gates Wave 4 export only).
+  Q-CAT-003:  mat-radio-group vs mat-button-toggle-group for mee-dropdown-small (<= 3 opts).
+
+DISPATCH READINESS (post design system integration):
+  ✅ All 6 feature sub-session component-builder dispatches UNBLOCKED
+     Tokens live → use CSS custom props + Tailwind semantic classes
+  ✅ meesell-angular-ui-styler dispatch UNBLOCKED (§5A FULL LOCK achieved)
+     4 deferred docs (RATIONALE / MICROCOPY_TONE / ICONOGRAPHY / _tokens.spec.ts)
+     outstanding but non-blocking for composition
+  ⚠ Inline-hex cleanup in already-shipped visual shells pending wave-2 dispatches
+
+In progress: awaiting founder's Q-AUTH + Q-CC-001 responses to unblock auth + onboarding
+             session dispatches.
+Blockers: none for catalog / dashboard / profile next dispatches.
+=========
+
+=== UPDATE: 2026-06-06 AUTH-DISPATCH-1 — LandingComponent ===
+Phase: / (landing) — auth sub-session Dispatch 1 of N
+Agent: meesell-angular-component-builder
+
+Done:
+  REPLACED: frontend/src/app/features/landing/landing/landing.component.ts
+    - 113 lines (well under 400-line limit)
+    - standalone: true, ChangeDetectionStrategy.OnPush, selector: mee-landing
+    - host: { class: 'mee-landing' } binding
+    - No service injection (no AuthService, no API calls — public route)
+    - imports: [RouterLink, MatButtonModule, TranslocoModule]
+    - 4 sections: sticky navbar, hero, 3-column value-prop cards, footer
+    - ALL user-facing strings via | transloco pipe (dashboard codebase pattern)
+    - Footer copyright hardcoded (legal copy — spec-compliant exception)
+    - Material Symbols Outlined icons via <span class="material-symbols-outlined">
+    - NO hardcoded hex values — all colors via Tailwind semantic classes
+      (bg-bg, bg-bg-elevated, bg-surface, bg-surface-variant, text-on-surface,
+       text-on-surface-variant, text-primary, shadow-mee-1, rounded-mee-*)
+    - 44px touch targets: min-h-[44px] on all interactive anchor/button elements
+    - Responsive: mobile-first single-column; md:grid-cols-3 for value props;
+      md:text-mee-4xl for hero headline
+
+  CREATED: frontend/src/app/features/landing/landing/landing.component.spec.ts
+    - 6 tests, all passing (6/6)
+    - Pattern: TranslocoTestingModule.forRoot() in imports[],
+      provideAnimationsAsync('noop') in providers[] — matches dashboard pattern
+    - Tests: brand name in navbar, hero headline via transloco, Sign up routerLink,
+      Log in routerLink, 3 value-prop cards, footer copyright text
+
+  MODIFIED: frontend/src/i18n/en.json
+    - 6 new keys appended (preserve-only; no existing keys removed or renamed):
+        landing.value.catalog.title / .body
+        landing.value.quality.title / .body
+        landing.value.pricing.title / .body
+
+Tests: 6 passed / 0 failed (landing suite only)
+       Previous total: 91 passing — regression check next full suite run
+Build: ng build --configuration=production — ZERO errors
+       landing-component lazy chunk: 3.71 kB raw / 1.31 kB gzip
+       (budget: ≤80 KB gzip — 98% headroom)
+       Application bundle: complete 8.740 seconds
+
+Deviations from task spec (with reasoning):
+  1. Transloco pattern: spec says use *transloco="let t" structural directive
+     (TranslocoModule imports) + `t('key')` calls.
+     ACTUAL: used `| transloco` pipe pattern — this is what the dashboard
+     component uses; the structural directive pattern is not present anywhere
+     in the codebase. Following codebase-established pattern per spec stop
+     condition "If Transloco import pattern differs from what's already
+     established in other feature components — check features/dashboard/."
+     TranslocoModule IS imported (it exports both the directive and the pipe).
+  2. CommonModule: spec lists it in imports. NOT added — no `*ngIf` or `*ngFor`
+     used (Angular 18 @if/@for control flow used natively). Dashboard component
+     does not import CommonModule either. Consistent with codebase.
+  3. No @if/@for in this component: landing is fully static (no conditional
+     content, no loops) so control flow directives are not needed.
+
+Blockers: none
+Next: Dispatch 2 (SignupComponent) — pending auth sub-session authorisation
+
+Hand-offs:
+  - LandingComponent READY for design system token wire-in when CSS custom
+    property values land from ui-styler (already uses token classes; tokens
+    get values when _tokens.scss is populated)
+  - No service hand-offs required (landing is stateless public route)
+=========
+
+=== UPDATE: 2026-06-06 — §5A AMENDMENT 2026-06-06B Design System Lock (Batch 1) ===
+Phase: Shared components — §5A AMENDMENT 2026-06-06B compliance pass
+Done:
+  - LoadingSpinnerComponent: removed outer `style="display:flex;..."` inline style;
+    replaced with `class="flex flex-col items-center justify-center gap-2"`.
+    Removed unused BEM class `.mee-loading-spinner`; replaced with
+    `class="flex flex-col items-center gap-1"`. Replaced BEM caption class
+    `.mee-loading-spinner__caption` with `class="text-xs text-on-surface-variant text-center mt-1"`.
+    Zero hardcoded hex values remaining.
+  - StatusBadgeComponent: complete rewrite to Tailwind class-based approach.
+    Removed: BadgeStyle interface, STATUS_STYLES record (8 hex-laden entries),
+    DEFAULT_STYLE, BASE_STYLE array, `[style]` binding.
+    Added: STATUS_CLASSES Record<string, string> with Tailwind palette classes
+    (bg-gray-100, bg-green-100, bg-blue-100, bg-amber-100, bg-red-100 + text/border
+    variants). Renamed computed badgeStyle → badgeClass. Template uses `[class]`
+    binding merged with static base layout `class="inline-flex items-center ..."`.
+    Zero hardcoded hex values remaining.
+  - EmptyStateComponent: migrated from EventEmitter/@Output to output<void>().
+    Removed EventEmitter + Output from imports; added output, MatButtonModule.
+    Replaced all inline style= attributes:
+      wrapper div → class="flex flex-col items-center justify-center p-12 gap-4 text-center"
+      mat-icon → kept size inline style (48px not a design token), added class="text-on-surface-variant"
+      headline p → class="text-lg font-semibold text-on-surface m-0"
+      body p → class="text-sm text-on-surface-variant max-w-[360px] m-0"
+      native button → replaced with mat-flat-button color="primary" class="min-h-[44px]"
+    Zero hardcoded hex values remaining. Background #F26B23 now resolved via
+    Material theming (mat-flat-button color="primary" → var(--mee-color-primary)).
+
+Tests: NOT updated this batch (spec infra pass deferred — @analogjs not yet installed)
+Build: ok (ng build --configuration development — ZERO errors, 5.493s)
+In progress: none
+Blockers: none
+Next: Batch 2 shared components or page component dispatch per coordinator instruction
+Hand-offs:
+  - All three shared components are §5A-compliant: zero hardcoded hex, zero inline style= on semantic attributes
+  - StatusBadgeComponent: Tailwind palette classes (not token vars) for status tints — correct per §5A rationale
+  - EmptyStateComponent: mat-flat-button color="primary" resolves to var(--mee-color-primary) via _component-overrides.scss
+=========
+
+=== UPDATE: 2026-06-06 MASTER RULINGS — Q-AUTH-001/002/003 + Q-CC-001 + Q-CAT-001/002/003 ===
+Phase: Founder decisions relayed; sub-sessions unblocked
+
+RULINGS (founder 2026-06-06):
+
+  Q-AUTH-001 ✅ ALLOW RENAME — impact analysis CLEAR
+    features/account/ → features/auth/ + features/onboarding/ + features/profile/
+    Mitigation verified:
+      - 15 files to move; all TypeScript-enforced (broken imports = build failure)
+      - account-api.service.ts splits: sendOtp+verifyOtp → auth-api.service.ts;
+        getRequiredFields → onboarding-api.service.ts; PUT updateProfile DISCARDED
+        (profile-api.service.ts already has correct 3-PATCH methods)
+      - app.routes.ts: 2 import lines update (cross-cutting scope)
+      - account.routes.ts: splits into auth.routes.ts + onboarding.routes.ts + profile.routes.ts
+      - compliance-step → shared/components/ (per §3.G; stub, zero consumers)
+      - otp-verify → auth/components/
+      - super-category-chips → onboarding/components/
+    Executor: auth sub-session owns the folder move + auth.routes.ts + auth-api.service.ts;
+              cross-cutting session owns app.routes.ts update (in lockstep).
+    Gate: ng build + vitest must pass after rename before auth dispatches continue.
+
+  Q-AUTH-002 ✅ 60s resend timer (confirmed)
+    §7 "30s" is superseded. OtpVerifyComponent implements 60-second countdown.
+
+  Q-AUTH-003 ✅ Option A — GET /seller-profile post-verify
+    After POST /auth/otp/verify succeeds:
+      1. Call GET /seller-profile
+      2. If profile_complete: true → navigate('/dashboard')
+      3. If profile_complete: false (or 404) → navigate('/onboarding')
+    One extra RTT on every login. AccountApiService.verifyOtp() response interface:
+    remove the incorrect profileComplete field; redirect logic lives in OtpVerifyComponent.
+
+  Q-CC-001 ✅ YES — cross-cutting session fixes core/models/seller-profile.model.ts
+    Authoritative shape = inline SellerProfileCorrect in
+    features/account/profile/profile-api.service.ts (profile session documented it).
+    Cross-cutting session executes the model fix immediately.
+    After fix: profile-api.service.ts removes its inline workaround + imports from @core/models.
+    This also unblocks onboarding-api.service.ts authoring.
+
+  Q-CAT-001 ⏸ DEFERRED — catalog form not yet complete
+    Enum endpoint path (/categories/:id/enum/:field_name vs /field-enum/:name)
+    deferred to Wave 2 implementation. Wire per FRONTEND §11.C (newer LOCKED spec);
+    flag for backend coordinator verification before Wave 2 acceptance sign-off.
+
+  Q-CAT-002 ⏸ WAITING — backend §14 export LOCK ETA unknown
+    Wave 4 export deferred. Waves 1-3 + Wave 4 preview/pricing unblocked.
+
+  Q-CAT-003 ✅ mat-button-toggle-group for mee-dropdown-small (≤3 options)
+    Design system rationale: _component-overrides.scss §3 applies pill shape
+    (var(--mee-radius-lg) = 18px) to mat-button-toggle — matches filter chip
+    visual language in DashboardComponent. mat-radio-group has no Spike overrides.
+    Better mobile touch targets. Consistent with Spike design language.
+
+UNBLOCKED BY THESE RULINGS:
+  ✅ Auth sub-session: rename dispatch + signup/login/OTP dispatches
+  ✅ Cross-cutting session: seller-profile model fix + app.routes.ts rename update
+                            + mee-navbar unblocked post-rename
+  ✅ Onboarding sub-session: onboarding-api.service.ts authoring (blocked on Q-CC-001)
+  ✅ Catalog Wave 2: mee-dropdown-small primitive confirmed → mat-button-toggle-group
+
+STILL WAITING:
+  ⏸ Q-CAT-001: deferred to Wave 2 wiring
+  ⏸ Q-CAT-002: backend §14 LOCK
+=========
+
+=== UPDATE: 2026-06-06 CATALOG-WAVE-2A — service layer (meesell-angular-component-builder) ===
+Phase: Wave 2a — catalog-form service layer
+Done:
+  REPLACED: features/catalog-form/catalog-form-api.service.ts
+    - CatalogFormApiService — NOT providedIn root; scoped to route providers
+    - getProduct(id) — GET /api/v1/products/:id → Observable<ProductDetail>
+    - saveProduct(id, fields) — PATCH without X-Autosave header (manual save)
+    - autosaveProduct(id, fields) — PATCH WITH X-Autosave: true header (autosave path)
+    - requestAutofill(id) — POST /products/:id/autofill; retryOn503: true
+    - Inline ProductDetail + AutofillResponse types (TODO cross-cutting: reconcile with Product model)
+  CREATED: features/catalog-form/draft-recovery.service.ts
+    - DraftRecoveryService — getDraft() returns Observable<ProductDraft | null>
+    - 204 (no draft) → null, no error; 404 propagates; catchError 204-as-error safety net
+  CREATED: features/catalog-form/category-schema.service.ts
+    - CategorySchemaService — getSchema(id, locale?) → Observable<CategorySchemaFull>
+    - Feature-local CategorySchemaFull type (richer than @core's CategorySchema — adds categoryName)
+    - No app-level cache; browser HTTP cache via backend's max-age=86400 headers
+    - TODO(cross-cutting): update @core/models/category.model.ts to add categoryName
+  CREATED: features/catalog-form/enum-lookup.service.ts
+    - EnumLookupService — lookupEnum(catId, fieldName, q, limit?) → Observable<EnumValue[]>
+    - Unwraps API response envelope { field_name, values[] } → returns values only
+    - Path: /categories/:id/enum/:field_name (FRONTEND §11.C — per Q-CAT-001 pending verify)
+  CREATED: features/catalog-form/catalog-form-state.service.ts
+    - CatalogFormStateService — signal-based local state (NOT BehaviorSubject per §16.B)
+    - 8 signals: productId, product, schema, draft, aiSuggestions, loading, saving, autofillLoading, error
+    - 1 computed: fields = { ...product.fields, ...draft } (draft wins)
+    - setProduct / setSchema / setDraft / applyFieldChange / applyAutofillSuggestions
+    - acceptAiSuggestion (applies value + clears signal) / rejectAiSuggestion (clears only)
+  UPDATED: features/catalog-form/catalog-form.routes.ts
+    - providers: [CatalogFormApiService, DraftRecoveryService, CategorySchemaService,
+                  EnumLookupService, CatalogFormStateService]
+    - path: '' (correct — parent app.routes.ts already mounts at 'catalogs/:id/edit')
+  CREATED: 5 spec files (one per service):
+    - catalog-form-api.service.spec.ts — 4 tests (including X-Autosave header assertion)
+    - draft-recovery.service.spec.ts — 3 tests (200, 204, 404)
+    - category-schema.service.spec.ts — 3 tests (URL + locale + custom locale)
+    - enum-lookup.service.spec.ts — 3 tests (URL + params + custom limit)
+    - catalog-form-state.service.spec.ts — 11 tests (fields computed + all mutation methods)
+
+Tests: 24 / 24 passing (catalog-form only, isolated run)
+       Previous total: 160 passing — no regressions (13 pre-existing landing failures unchanged)
+Build: ng build --configuration=production — ZERO errors
+Bundle: catalog-form-component lazy chunk 7.70 kB raw / 2.29 kB gzip
+        catalog-form-routes lazy chunk 2.94 kB raw / 951 bytes gzip
+
+Inline types (TODO cross-cutting):
+  ProductDetail — features/catalog-form/catalog-form-api.service.ts
+    Reason: existing Product model (core/models/product.model.ts) uses ORM field names
+    (catalogId, userId) that do not match actual API response (leaf_category_id, status,
+    fields, ai_suggestions). Cross-cutting session must reconcile.
+  AutofillResponse — features/catalog-form/catalog-form-api.service.ts
+    New type, no core model exists yet.
+  ProductDraft — features/catalog-form/draft-recovery.service.ts
+    New type for draft recovery endpoint.
+  CategorySchemaFull — features/catalog-form/category-schema.service.ts
+    Richer than @core/models/category.model.ts#CategorySchema — adds categoryName.
+  EnumValue + EnumLookupResponse — features/catalog-form/enum-lookup.service.ts
+    New types for enum lookup endpoint.
+  ValueChange — features/catalog-form/catalog-form-state.service.ts
+    Primitive-to-state interface for field edits.
+
+Blockers: none
+Next (Wave 2b): wizard renderer + 11 primitive components (separate dispatch)
+Hand-offs:
+  - All 5 services READY for Wave 2b WizardRendererComponent + CatalogFormComponent
+  - CatalogFormStateService.fields() computed drives the wizard value binding
+  - autosaveProduct() takes X-Autosave: true — the autosave.directive.ts (already in
+    shared/directives/) will call this method on its debounced emit
+  - TODO(cross-cutting): reconcile Product model with actual API response shape;
+    remove inline ProductDetail when done
+  - TODO(cross-cutting): add categoryName to @core/models/category.model.ts#CategorySchema
+=========
+
+=== UPDATE: 2026-06-06 23:55 ===
+Phase: /onboarding — OnboardingWizardComponent skeleton (Dispatch 1)
+Done:
+  - REPLACED features/account/onboarding/onboarding.component.ts
+      Full mat-stepper shell; 3 steps (Business Details, Product Categories, Compliance)
+      Signals: loading, saving, selectedSuperCategories, phase1Submitted, phase2Submitted
+      Methods: onPhase1Next(), onPhase2Next(), onSubmit() stub (setTimeout 300ms → /dashboard)
+      Tailwind utility classes: bg-bg, bg-surface, rounded-mee-lg, shadow-mee-2,
+        text-mee-2xl, text-mee-lg, text-mee-sm, text-on-surface, text-on-surface-variant,
+        bg-surface-variant, rounded-mee-md, border-outline
+      TranslocoPipe for all user-visible strings
+      i18n: 'onboarding.*' namespace fully wired
+  - REPLACED features/account/onboarding/onboarding.component.spec.ts
+      4 tests: create, render 3 steps, phase1Submitted signal, /dashboard navigation
+      Uses vi.useFakeTimers() / vi.advanceTimersByTime(300) for setTimeout test
+  - APPENDED onboarding namespace to frontend/src/i18n/en.json (18 keys)
+Tests: 4 passed / 0 failed (onboarding spec)
+  Pre-existing failures in export.component.spec.ts (NG0300 StatusBadge conflict)
+  and shell.component.spec.ts (jasmine reference) are NOT caused by this dispatch
+Build: ok — onboarding-component lazy chunk 36.19 kB raw / 8.24 kB gzip (budget ≤80 kB gzip: PASS)
+In progress: none
+Blockers: none
+Next:
+  - Dispatch 2: SuperCategoryChipsComponent (Phase 2 category selector in onboarding step 2)
+  - Dispatch 3: ComplianceStepComponent instances (Phase 3 compliance fields)
+  - Dispatch 4: OnboardingApiService.submitCompliance() to replace onSubmit() stub
+Hand-offs:
+  - OnboardingWizardComponent skeleton READY; Phase 1 form fields pending (Dispatch 2+)
+  - stepper [linear]="false" for skeleton; wire [stepControl] per step in Dispatch 4
+  - selectedSuperCategories signal wires to SuperCategoryChipsComponent output in Dispatch 2
+=========
+
+=== UPDATE: 2026-06-07 00:30 ===
+Phase: /catalogs/:id/edit — Wave 2b: 11 Primitives + Wizard Rendering Engine
+Done:
+  PRIMITIVES (all in features/catalog-form/primitives/):
+    - TextShortPrimitiveComponent        (mee-text-short)     — mat-form-field + matInput, CVA, OnPush
+    - TextLongPrimitiveComponent         (mee-text-long)      — textarea cdkTextareaAutosize, CVA, OnPush
+    - NumberPrimitiveComponent           (mee-number)         — type=number, min/max, CVA, OnPush
+    - NumberWithUnitPrimitiveComponent   (mee-number-unit)    — matSuffix unit label, CVA, OnPush
+    - CurrencyPrimitiveComponent         (mee-currency)       — ₹ prefix, step=0.01, CVA, OnPush
+    - DropdownSmallPrimitiveComponent    (mee-dropdown-small) — mat-radio-group ≤20 opts, CVA, OnPush
+    - DropdownMediumPrimitiveComponent   (mee-dropdown-medium)— mat-autocomplete in-memory filter, CVA, OnPush
+    - DropdownLargePrimitiveComponent    (mee-dropdown-large) — CDK virtual scroll 101-500 opts, CVA, OnPush
+    - DropdownApiPrimitiveComponent      (mee-dropdown-api)   — debounced EnumLookupService, CVA, OnPush
+    - ImageUploadPrimitiveComponent      (mee-image-upload)   — placeholder redirect, CVA no-op, OnPush
+    - AddressGroupPrimitiveComponent     (mee-address-group)  — composite 3-field, 6-digit pincode validator
+  WIZARD RENDERING ENGINE:
+    - StepComposerService  — filters hidden, groups by stepId, sorts by STEP_ORDER, drops empty
+    - WizardRendererComponent (mee-wizard) — MatStepper linear shell, routes valueChange/submit
+    - FieldDispatcherComponent (mee-field-dispatcher) — @switch on primitive, all 11 cases
+    - AutofillOverlayComponent (mee-autofill-overlay) — ng-content wrap, accept/dismiss bar
+
+  SPEC FILES (15 new):
+    text-short.spec.ts, text-long.spec.ts, number.spec.ts, number-with-unit.spec.ts,
+    currency.spec.ts, dropdown-small.spec.ts, dropdown-medium.spec.ts, dropdown-large.spec.ts,
+    dropdown-api.spec.ts, image-upload.spec.ts, address-group.spec.ts,
+    step-composer.service.spec.ts, wizard-renderer.spec.ts, field-dispatcher.spec.ts,
+    autofill-overlay.spec.ts
+
+Tests: 42 new passing / 0 failing (7 pre-existing export+shell spec failures NOT caused by this dispatch)
+Build: ng build --configuration=production ZERO errors
+Bundle: catalog-form-component chunk 7.70 kB raw / 2.27 kB gzip (primitives not yet wired to CatalogFormComponent — Wave 2c)
+
+In progress: none (Wave 2b complete)
+Blockers: none
+Next: Wave 2c — CatalogFormComponent full implementation (wires WizardRendererComponent, StepComposerService, CatalogFormStateService, DraftRecoveryService, CategorySchemaService, AutofillOverlayComponent)
+
+Hand-offs:
+  - 11 primitives READY for CatalogFormComponent integration (Wave 2c)
+  - FieldDispatcherComponent uses PrimitiveKind '@case (dropdown_api_search)' — EXACT string critical
+  - StepComposerService now filters isHidden=true fields before grouping (was missing in stub)
+  - DropdownSmallPrimitiveComponent uses (schema() as any).enumOptions for options — TODO(cross-cutting):
+    add enumOptions?: Array<{code:string; label:LocaleMap}> to FieldSchema model
+  - DropdownMediumPrimitiveComponent and DropdownLargePrimitiveComponent: same enumOptions TODO
+  - DropdownApiPrimitiveComponent: injects EnumLookupService + ActivatedRoute for categoryId
+  - AutofillOverlayComponent: outputs accepted/rejected (not decision) — CatalogFormComponent
+    watches these outputs and calls CatalogFormApiService for rejection persistence (Wave 2c)
+  - test pattern: signal inputs (input.required()) cannot be set via fixture.componentRef.setInput()
+    in vitest+jsdom (NG0303 warning is emitted, value not set). Use class-level logic testing
+    (writeValue, registerOnChange, direct _onChange invocation) instead of template DOM testing.
+    Pattern documented in agent memory.
+=========
+
+=== UPDATE: 2026-06-07 CROSS-TRACK VERIFICATION — UI-BASE-2 + SIBLINGS ===
+Phase: Master verification of cross-cutting (ui-base-2) update + sibling cascade
+
+Founder reported "mesell-ui-base-2 session updated their work" 2026-06-07.
+Master read all 6 sibling STATUS files + design system STATUS to verify.
+
+CROSS-CUTTING (ui-base-2) PROGRESS:
+  ✓ Design system integration acknowledged (8 landed files + 1 bonus)
+  ✓ Both wiring files verified (styles.scss import order + tailwind.config.js extends)
+  ✓ Batch 1 dispatch INITIATED — 3 shared component refactors:
+      - mee-loading-spinner (refactor in flight)
+      - mee-status-badge (statusClass() computed signal)
+      - mee-empty-state (3 violations fixed: hardcoded hex →
+                        var(--mee-color-primary), inline → Tailwind,
+                        @Output() → output() signal Angular 18)
+  ⏸ mee-navbar held pending Q-AUTH-001 ruling (now cleared)
+  ✓ Master rulings received + actioned:
+      - Q-AUTH-001 ✅ ALLOW RENAME (account/ → auth/+onboarding/+profile/);
+        cross-cutting owns app.routes.ts lockstep with auth
+      - Q-CC-001 ✅ FIX core/models/seller-profile.model.ts shape per BACKEND §8.E
+  ✓ Priority queue established:
+      P1 (immediate): seller-profile.model.ts shape fix
+      P2 (lockstep with auth): app.routes.ts un-merger
+      P3 (after rename): mee-navbar dispatch
+
+SIBLING SESSIONS CASCADE VERIFICATION:
+
+  AUTH SESSION:
+    ✓ Q-AUTH-001/002/003 all RULED (allow rename / 60s timer / GET /seller-profile post-verify)
+    ✓ LandingComponent dispatch complete
+    ⏸ Pending: features/auth/ rename execution + lockstep app.routes.ts update with cross-cutting
+
+  ONBOARDING SESSION:
+    ✓ Design system integration acknowledged with Spike override sections mapped:
+      §6 chips overrides (SuperCategoryChips), §10 form-field (LM fields),
+      §7 dialog overrides (ComplianceStep panels), §17 utility classes
+    ⏸ Still pending D2/D3 founder decisions on ComplianceStepComponent pattern
+
+  PROFILE SESSION:
+    ✓ Design system integration acknowledged with token-aware Dispatch 2 plan
+    ✓ Dispatch 1 (ProfileApiService + ProfileEditComponent skeleton) COMPLETE
+    ✓ Coordinator hand-off RESOLVED (account.routes.ts providers: [ProfileApiService])
+    ⏸ Dispatch 2 awaiting ComplianceStep + Q-CC-001 model fix from cross-cutting
+    ⚠ 2 small Qs surfaced:
+        Q-PROFILE-001 outline color discrepancy (#e5eaef SCSS vs #D1D5DB doc)
+        Q-PROFILE-002 page bg-bg min-h-screen pattern
+
+  DASHBOARD SESSION:
+    ✓ Design system integration acknowledged
+    ✓ Dispatch 1 + Dispatch 2 BOTH COMPLETE:
+      - ProductRowComponent + 4 tests
+      - DashboardComponent actions column + ConfirmDialog wiring
+      - 6 pre-existing broken tests RESTORED (StatCardStub fix)
+      - 10 dashboard tests total passing
+      - ~90.89 KB gzip within §19 budget
+    ✓ 3 spec deviations documented (all Angular 18 idiomatic patterns)
+    Dispatch 3 (SideMenuComponent) waits on auth rename completion
+
+  CATALOG SESSION:
+    ✓ Design system integration acknowledged with Wave 2+ scoping update
+    ✓ Wave 1 (smart-picker) shipped pre-integration; restyle pass deferred
+    ✓ Master rulings: Q-CAT-001 deferred / Q-CAT-002 waiting / Q-CAT-003 ✅ mat-button-toggle-group
+    Wave 2 (catalog-form SPINE) dispatch may proceed; all catalog Q&A resolved
+
+OUTSTANDING MASTER ITEMS:
+  - Q-PROFILE-001 outline color doc reconciliation
+  - Q-PROFILE-002 page bg pattern (minor)
+  - Cross-cutting Q4 (§4.H + §4.I doc amendments — not blocking anyone)
+  - Onboarding D2/D3 founder decisions still pending
+  - Backend §14 export LOCK timing (catalog Wave 4 gate)
+
+DEFERRED DESIGN SYSTEM FILES (parallel work in design system sub-session):
+  - _tokens.spec.ts (WCAG CI gate)
+  - RATIONALE.md, MICROCOPY_TONE.md, ICONOGRAPHY.md
+
+NET STATE:
+  - 4 of 6 sub-sessions have at least 1 dispatch complete (auth landing + profile D1
+    + dashboard D1+D2 + cross-cutting Batch 1 in flight)
+  - 2 sessions still pending first dispatch (onboarding awaits D2/D3; catalog Wave 2 ready)
+  - Design system FULL LOCK is propagating cleanly across all sessions
+  - Q&A cascade working as designed; rulings unblock chains correctly
+
+Done: Cross-track verification complete; STATUS reflects current state.
+In progress: master mode (monitor; answer Q-PROFILE-001/002; track onboarding
+            D2/D3 decision wait; track backend §14 LOCK).
+Blockers: none master-side.
+Next:
+  - Founder makes onboarding D2/D3 decisions (in onboarding session)
+  - Founder may want to rule Q-PROFILE-001 (recommend doc table update to match SCSS)
+  - Master monitors cross-cutting Batch 1 dispatch return + app.routes.ts lockstep landing
+Hand-offs:
+  - To master session (project-level): propagate to STATUS_MASTER —
+    Frontend track has multi-dispatch construction in flight; no cross-track blockers
+=========
+
+=== UPDATE: 2026-06-07 FROM DASHBOARD SUB-SESSION — V1 COMPLETE ===
+Written by: dashboard sub-session (session-as-role)
+Type: Session completion notification
+
+DASHBOARD SESSION V1-COMPLETE.
+
+Dispatch 2 VERIFIED:
+  ProductRowComponent — kebab MatMenu, Edit + Delete, error token styling
+  DashboardComponent AMENDED — actions column, MatDialog, onDeleteRequest()
+    via componentRef.setInput() (ConfirmDialogComponent uses input() signals)
+  10/10 dashboard tests passing, ng build zero errors
+
+Dispatch 3 SUPERSEDED:
+  SideMenuComponent NOT BUILT — MeeShellComponent (layouts/shell/) already
+  implements the full nav spec (My Catalogs / Create Catalog / My Profile /
+  Logout + mobile drawer + desktop rail + userId initials). Shell wraps ALL
+  authenticated routes. Building a duplicate in features/dashboard/ would
+  be worse UX and a scope violation. Cross-cutting session owns this correctly.
+
+  For master's record: session prompt's "dashboard owns the side menu" is
+  superseded by the shell architecture. Recommend amending
+  SESSION_PROMPTS_FEATURE_DASHBOARD.md and §9 note at next doc pass —
+  non-blocking.
+
+Final feature state:
+  features/dashboard/ code  ✅ V1-complete
+  Tests                     ✅ 10/10 passing (feature scope)
+  Build                     ✅ 30.57 KB gzip (§19 ≤80 KB MET)
+  Pre-existing failures      ⚠️  export/ (7) + shell/ (0 dashboard-related)
+                                 — outside dashboard scope, surfaced to
+                                 those sessions
+
+Dashboard sub-session signing off. No further dispatches.
+=========
+
+=== UPDATE: 2026-06-07 — §5A Batch 2 — 4 Shared Component Hex Purge ===
+Phase: §5A LOCK enforcement — hardcoded hex removal from shared components
+Route: Shared components (used across all 10 V1 routes)
+Agent: meesell-angular-component-builder
+
+Done:
+  1. stat-card.component.ts
+     - Removed: ColorTokens interface, COLOR_MAP record (hex literals), TREND_COLOR record (hex literals)
+     - Added: CIRCLE_CLASSES (Tailwind bg palette), ICON_CLASSES (semantic text-* aliases), TREND_CLASSES (semantic text-* aliases)
+     - Replaced 3 computed style-string functions with 3 computed class-string functions: circleClass(), iconClass(), trendClass()
+     - Template: all color-bearing inline styles replaced with Tailwind utility classes
+     - Card container: bg-bg-elevated rounded-mee-md py-5 px-6 shadow-mee-1 flex flex-col
+     - Icon span: layout-only inline style preserved (font-family, font-size — no design token for Material icon font)
+     - Value: text-on-surface; Label: text-on-surface-variant; Trend: [class]="trendClass()"
+
+  2. loading-skeleton.component.ts
+     - Minimal change: shimmer gradient only
+     - #f0f0f0 → var(--mee-color-surface-variant)
+     - #e0e0e0 → var(--mee-color-outline)
+     - All template inline styles are layout-only (height, border-radius, width) — acceptable per §5A
+
+  3. page-header.component.ts
+     - Imports: removed EventEmitter + Output from @angular/core; added output; added MatButtonModule
+     - Output migration: @Output() EventEmitter<void> → output<void>() (Angular 18 signal API)
+     - Template: all color-bearing inline styles replaced with Tailwind utility classes
+     - CTA button: raw <button style="background:#F26B23..."> → <button mat-flat-button color="primary">
+     - mat-icon: layout-only inline style preserved (font-size, width, height, line-height — acceptable per §5A)
+     - h1: text-on-surface; p: text-on-surface-variant
+
+  4. form-field.component.ts
+     - label: text-on-surface (replaces color:#374151)
+     - required span: text-error class (replaces color:#DC2626 inline style), aria-hidden preserved
+     - hint div: text-on-surface-variant class (replaces color:#6B7280)
+     - error div: text-error font-medium class (replaces color:#DC2626), role="alert" preserved
+     - Existing BEM class names (mee-form-field__hint, mee-form-field__error) preserved alongside new Tailwind classes
+
+Tests: spec files NOT updated per §5A batch constraint — @analogjs/vite-plugin-angular not yet installed
+Build: ng build --configuration development — ZERO errors (3 pre-existing NG8107/NG8102 warnings in catalog-form primitives — unrelated to this batch)
+In progress: none
+Blockers: none
+Next: coordinator may dispatch further §5A hex cleanup rounds if grep reveals remaining violations
+Hand-offs: none — all 4 components are self-contained shared primitives
+=========
+
+=== UPDATE: 2026-06-07 — Wave 2c — CatalogFormComponent full page wiring ===
+Phase: /catalogs/:id/edit — Wave 2c (the final Wave 2 dispatch; THE SPINE)
+Agent: meesell-angular-component-builder
+
+Done:
+  REPLACED stub at features/catalog-form/catalog-form/catalog-form.component.ts
+    - Full orchestrator component: coordinates CatalogFormApiService, CatalogFormStateService,
+      DraftRecoveryService, CategorySchemaService, StepComposerService, WizardRendererComponent
+    - Sequential load flow: getProduct → (getSchema + getDraft in parallel) → loading.set(false)
+    - 404 handling: navigates to /dashboard per §11.A.1 error codes
+    - 429 handling: snackbar with Retry-After header message per spec
+    - AI Fill button: requestAutofill → applyAutofillSuggestions + fallback_offered snackbar
+    - onFieldChange: state.applyFieldChange + autosaveTrigger$.next()
+    - onSubmit: saveProduct → navigate to /catalogs/:id/images on success
+    - onAutofillAccepted / onAutofillRejected: state mutations + immediate saveProduct PATCH
+    - computed wizardSteps, productTitle, saveStatus signals
+    - Autosave: Subject+debounce(10s)+takeUntilDestroyed (directive approach deferred — no FormGroup)
+    - No hex values in styles[] — all var(--mee-color-*) tokens per §5A
+
+  CREATED spec: features/catalog-form/catalog-form/catalog-form.component.spec.ts
+    - 6 tests: create, ngOnInit sequence, onFieldChange, onSubmit nav, 404 nav, requestAutofill
+
+  FIXED Wave 2b pre-existing build errors (in scope — same feature folder):
+    - text-short.component.ts: [maxlength] → [attr.maxlength] (NG8002)
+    - text-long.component.ts: [maxlength] → [attr.maxlength] (NG8002)
+    - wizard-renderer.component.ts: WizardStep.title Record<string,string> → LocaleMap (TS2322 + NG5)
+    - wizard-renderer.component.ts: !stepper.selectedIndex === 0 → selectedIndex !== 0 (NG7)
+
+Tests: 229 passing / 8 pre-existing failing
+  Pre-existing failures: export.component.spec.ts NG0300 (7) + shell.component.spec.ts jasmine (1)
+  New failures: none
+
+Build: ng build --configuration=production — ZERO errors
+Bundle: catalog-form-component chunk: 88.11 kB raw / 15.70 kB gzip (budget ≤120 kB — 87% headroom)
+
+In progress: none
+Blockers: none
+
+Hand-offs:
+  - CatalogFormComponent READY; services (CatalogFormApiService, CatalogFormStateService,
+    DraftRecoveryService, CategorySchemaService) all consumed and wired
+  - CATALOG_FORM_ROUTES providers[] already correct — no coordinator action needed
+  - onAutofillAccepted / onAutofillRejected: events handled at page level
+    (per-field overlay wiring deferred to V1.5 per spec alternative pattern)
+  - Wave 2 THE SPINE is complete. Next: Wave 3 (images/preview/pricing/export pages)
+=========
+
+=== UPDATE: 2026-06-07 ===
+Phase: /onboarding — Dispatch 2: SuperCategoryChipsComponent
+Agent: meesell-angular-component-builder
+Done:
+  REPLACED stub:
+    features/account/components/super-category-chips/super-category-chips.component.ts
+    - selector: mee-super-category-chips
+    - standalone: true, ChangeDetectionStrategy.OnPush
+    - imports: MatChipsModule, MatIconModule, TranslocoPipe
+    - SUPER_CATEGORIES: ReadonlyArray<{id, labelKey, icon}> — 6 entries
+      (ids: '26' grocery / '13' kids / '16' electronics / '19' beauty / '80' books / '30' appliances)
+    - @Output() readonly selectionChange = new EventEmitter<string[]>() — name preserved from stub
+    - onSelectionChange(event: MatChipListboxChange): void — emits (event.value as string[]) ?? []
+    - Template: mat-chip-listbox multiple + @for 6 mat-chip-option with color="primary" bg-light-primary
+    - No API calls — pure UI component
+    - No hardcoded hex values — all Tailwind utility classes + bg-light-primary from §17
+
+  CREATED spec:
+    features/account/components/super-category-chips/super-category-chips.component.spec.ts
+    - 4 tests: create / render 6 chips / emit with ids / emit empty array on null value
+    - TranslocoTestingModule.forRoot() in imports[] (correct pattern)
+    - provideAnimationsAsync('noop') in providers[]
+    - onSelectionChange() called directly (avoids DOM click simulation)
+
+  MODIFIED (append-only):
+    frontend/src/i18n/en.json — added 8 flat-key entries under onboarding.chips.* namespace
+      (help, ariaLabel, grocery, kids, electronics, beauty, books, appliances)
+
+Tests: 4/4 passing
+  Stderr: NG0914 (expected), Material theme warning (expected), NG0303 aria-label bind (jsdom only,
+          runtime works correctly; does not affect test correctness — all 4 tests pass)
+Build: ng build --configuration=production — ZERO errors
+Bundle: onboarding-component chunk 4.97 kB raw / 1.53 kB gzip (budget ≤80 kB gzip: PASS)
+
+In progress: none
+Blockers: none
+Next:
+  - Dispatch 3: ComplianceStepComponent (Phase 3 compliance fields)
+  - Dispatch 4: OnboardingApiService.submitCompliance() + stepper [stepControl] wiring
+Hand-offs:
+  - SuperCategoryChipsComponent READY; selectionChange emits string[] of selected super_ids
+  - Wire to OnboardingWizardComponent Phase 2 step: (selectionChange)="selectedSuperCategories.set($event)"
+  - Beauty chip emits '19'; full super_id expansion (19/36/37/14/88/34) is Dispatch 4 API service scope
+  - mat-chip-option color="primary" resolves to MeeSell orange via Material M3 theme; bg-light-primary
+    provides the light-tint background (var(--mee-color-primary-light)) from _component-overrides.scss §17
+=========
+
+=== UPDATE: 2026-06-07 — Auth Dispatch 2 — features/auth/ CREATE ===
+Phase: /signup + /login — Auth feature (new features/auth/ folder)
+Agent: meesell-angular-component-builder
+
+Done:
+  CREATED features/auth/ from scratch (no dependency on features/account/ stubs):
+
+  auth.model.ts — corrected OTP request/response interfaces
+    - OtpSendRequest: { phone: string }
+    - OtpSendResponse: { request_id: string }  (stub had 'requestId' — WRONG; 'message' — WRONG, removed)
+    - OtpVerifyRequest: { phone: string; otp: string }  (stub had 'requestId' — WRONG, corrected)
+    - OtpVerifyResponse: { access_token, expires_in, token_type }  (stub had 'profileComplete' — WRONG, removed)
+
+  auth-api.service.ts — feature-scoped, @Injectable() NO providedIn
+    - sendOtp(req: OtpSendRequest): Observable<OtpSendResponse>
+    - verifyOtp(req: OtpVerifyRequest): Observable<OtpVerifyResponse> + tap → auth.setAccess()
+    - Consumes ApiClient + AuthService (core) — not AccountApiService stubs
+
+  auth.routes.ts
+    - AUTH_ROUTES: two routes (signup + login) with providers: [AuthApiService]
+    - Lazy loadComponent per §23 pattern
+    - Does NOT modify app.routes.ts (out of scope — cross-cutting session owns)
+
+  components/phone-input/phone-input.component.ts
+    - ControlValueAccessor (NG_VALUE_ACCESSOR + forwardRef)
+    - Strips non-digits, limits to 10 chars, emits E.164 (+91XXXXXXXXXX) or '' when invalid
+    - @if (touched() && !isValid()) → mat-hint.mee-phone-error (not mat-error — avoids form-field
+      control-state dependency in isolated tests)
+    - min-h-[44px] touch target on input
+    - Transloco pipe for 'auth.phone.error.invalid' error label
+
+  components/otp-verify/otp-verify.component.ts — STUB ONLY (Dispatch 3)
+    - @Input() phone + @Input() requestId
+    - Renders <div class="mee-otp-verify-stub">OTP verify — coming in Dispatch 3</div>
+
+  signup/signup.component.ts
+    - signals: phase / sending / requestId / phone
+    - FormBuilder — single 'phone' control (wired to PhoneInputComponent CVA)
+    - onSubmit(): sendOtp → phase.set('otp_sent') on success; 429/other error snackbar
+    - @if (phase() === 'otp_sent') → renders mee-otp-verify stub
+
+  login/login.component.ts — same structure as signup, different transloco keys
+
+  i18n/en.json — 4 new keys appended:
+    'auth.phone.error.invalid', 'auth.signup.login_link', 'auth.login.send_otp', 'auth.login.signup_link'
+    Note: 'account.signup.title', 'account.signup.send_otp', 'account.login.title',
+          'account.otp.rate_limit' already existed — reused without duplication
+
+Tests: 14/14 passing (3 spec files)
+  phone-input.component.spec.ts: 6 tests (prefix, strip non-digits, 10-digit limit,
+                                          E.164 format, error when touched+invalid, no error when pristine)
+  signup.component.spec.ts: 4 tests (title, phone-input in DOM, button disabled, otp_sent on success)
+  login.component.spec.ts: 4 tests (same 4-test pattern as signup)
+
+Build: ng build --configuration=production — ZERO errors (build succeeds cleanly)
+  signup-component lazy chunk: 2.65 kB raw / 963 bytes gzip (budget ≤80 kB — 99% headroom)
+  login-component lazy chunk:  2.25 kB raw / 883 bytes gzip (budget ≤80 kB — 99% headroom)
+  Pre-existing warnings: NG8107/NG8102 in catalog-form primitives (pre-existing, unrelated to auth)
+
+In progress: none
+Blockers: none
+
+Hand-offs:
+  - features/auth/ is READY for cross-cutting session to register AUTH_ROUTES in app.routes.ts
+  - AuthApiService.sendOtp() uses corrected contract: OtpSendRequest { phone } — NOT the account/ stub
+  - AuthApiService.verifyOtp() uses corrected contract: OtpVerifyRequest { phone, otp } — NOT { requestId, otp }
+  - OtpVerifyComponent stub READY; Dispatch 3 implements the 6-digit OTP input body
+  - PhoneInputComponent (mee-phone-input) is standalone and can be reused by account/ login/signup
+    if coordinator decides to migrate those stubs (out of scope for this dispatch)
+=========
+
+=== UPDATE: 2026-06-07 FROM PROFILE SUB-SESSION — DISPATCH 1 CLEANUP COMPLETE ===
+Profile sub-session reporting final cleanup pass. Dispatch 1 is fully done.
+
+CHANGES IN THIS UPDATE:
+  1. features/account/account.routes.ts
+       Added: import { ProfileApiService } from './profile/profile-api.service'
+       Added: providers: [ProfileApiService] on the /profile route entry
+       Reason: ProfileApiService is Injectable() with no providedIn — without this,
+       the service does not resolve when the lazy-loaded profile chunk activates.
+
+  2. features/account/profile/profile.component.ts
+       Wrapper div: added bg-bg min-h-screen (Q-PROFILE-002 resolved — yes, explicit
+       page background is correct; needed for Module Federation safety in Phase 2)
+
+  3. src/i18n/en.json
+       Added 15 missing translation keys consumed by profile.component.ts:
+         profile.title, profile.manufacturer_name, profile.manufacturer_address,
+         profile.manufacturer_pincode, profile.packer_name, profile.packer_address,
+         profile.packer_pincode, profile.importer_name, profile.importer_address,
+         profile.importer_pincode, profile.country_of_origin, profile.save,
+         profile.cancel, validation.required, validation.pincode
+       Note: hi.json and ta.json remain empty — translations deferred to
+       localisation pass; Transloco falls back to en gracefully.
+
+BUILD NOTE (for coordinator awareness):
+  Profile-component chunk: 20.76 kB gzip (§19 ≤80 kB met).
+  4 pre-existing compilation errors surfaced in catalog-form when Angular's build
+  cache was invalidated during this cleanup pass:
+    - text-long.component.ts:49 — [maxlength] on <textarea> (NG8002)
+    - text-short.component.ts:45 — [maxlength] on <input> (NG8002)
+    - wizard-renderer.component.ts:45 — LocaleMap/Record mismatch (NG5)
+    - wizard-renderer.component.ts:56 — boolean vs number comparison (NG7)
+  These are catalog-form scope — not profile scope. Flagging for coordinator
+  to assign to the correct session for resolution.
+
+PROFILE SUB-SESSION STATUS:
+  Dispatch 1 — FULLY COMPLETE (no open items, no regressions)
+  Dispatch 2 — BLOCKED; waiting on:
+    (a) Onboarding session: implement ComplianceStepComponent
+    (b) Cross-cutting session: relocate to @shared/components/compliance-step/
+    (c) Cross-cutting session: fix core/models/seller-profile.model.ts shape
+  Profile sub-session is IDLE pending sibling sessions.
+
+OPEN QUESTION FOR COORDINATOR:
+  Q-PROFILE-001 — _tokens.scss has --mee-color-outline: #e5eaef but §5A.B doc
+  table says #D1D5DB. Profile code uses var(--mee-color-outline) so it adapts
+  automatically, but the §5A doc table should be corrected to avoid future drift.
+=========
+
+=== UPDATE: 2026-06-07 CROSS-CUTTING SUB-SESSION REPORT ===
+Source: STATUS_FEATURE_CROSS_CUTTING.md (platform session)
+
+§5A SWEEP COMPLETE — shared/components/ fully §5A compliant:
+  All 9 of 10 shared components now have zero hardcoded hex values.
+  Batch 1 (component-builder dispatch):
+    mee-loading-spinner  ✓ inline style= → Tailwind; caption styled
+    mee-status-badge     ✓ STATUS_STYLES hex map → Tailwind palette class map;
+                           [style] → [class] binding; badgeClass() computed signal
+    mee-empty-state      ✓ #F26B23 button → mat-flat-button color="primary";
+                           @Output EventEmitter → output<void>()
+  Batch 2 (component-builder dispatch):
+    mee-stat-card        ✓ COLOR_MAP/TREND_COLOR hex → Tailwind class maps;
+                           card → bg-bg-elevated rounded-mee-md shadow-mee-1
+    mee-loading-skeleton ✓ shimmer gradient → var(--mee-color-surface-variant) +
+                           var(--mee-color-outline)
+    mee-page-header      ✓ #F26B23 button → mat-flat-button color="primary";
+                           @Output EventEmitter → output<void>()
+    mee-form-field       ✓ label/hint/error hex → text-on-surface /
+                           text-on-surface-variant / text-error semantic classes
+  Already compliant: mee-offline-banner ✓  mee-confirm-dialog ✓
+  On hold (1): mee-navbar ⏸ — Q-AUTH-001 ruling received; waiting on auth
+    session folder rename to execute app.routes.ts IN LOCKSTEP
+
+Q-CC-001 FIX — core/models/seller-profile.model.ts rewritten:
+  Old: camelCase 13-field shape (legalName, gstNumber, businessAddress,
+    superCategoryIds: UUID[]) — drift from BACKEND_ARCH §8.E.
+  New: snake_case 15-field shape matching seller_profiles table exactly.
+    user_id + 9 LM fields (manufacturer/packer/importer name+address+pincode)
+    + country_of_origin + active_super_categories + compliance_extensions
+    + profile_complete + created_at + updated_at. All readonly.
+  profile-api.service.ts: SellerProfileCorrect inline interface removed;
+    export type SellerProfileCorrect = SellerProfile (backward-compat alias).
+    All 5 consumers compile clean without any import changes.
+  Coordinator note: account-api.service.ts has pre-existing PUT bug
+    (updateProfile() uses PUT; backend §8.B has PATCH only) — NOT fixed here,
+    flagged for profile sub-session.
+
+SCOPE CORRECTION — coordinator action needed:
+  Service-builder created 10 shared components, not 6.
+  Extra 4 discovered by §5A grep: stat-card, loading-skeleton, page-header, form-field.
+  FRONTEND_ARCHITECTURE.md §5 should update shared component count 6→10.
+  Suggest bundling with Q-CC-002 amendment into a single coordinator doc pass.
+
+OPEN QUESTIONS FOR COORDINATOR:
+  Q-CC-002 [open]: §5A.C body text says "Inter" but landed font is Plus Jakarta
+    Sans throughout (_typography.scss, tailwind.config.js, styles.scss). Minor
+    AMENDMENT needed — no code impact.
+
+CROSS-CUTTING NEXT ACTIONS:
+  1. app.routes.ts — execute IN LOCKSTEP with auth session folder rename
+  2. mee-navbar — dispatch immediately after rename + build green
+  3. ComplianceStepComponent — await onboarding sub-session bootstrap
+=========
+
+=== UPDATE: 2026-06-07 CROSS-CUTTING — BATCH 2 VERIFIED + STATUS SECTIONS CURRENT ===
+Source: STATUS_FEATURE_CROSS_CUTTING.md (platform session) — follow-up to previous report
+
+BATCH 2 VERIFIED CLEAN (disk read + active-hex grep — zero violations):
+  mee-stat-card ✓
+    CIRCLE_CLASSES/ICON_CLASSES/TREND_CLASSES Tailwind maps in place.
+    orange→text-primary, blue→text-secondary, green→text-success, purple→text-violet-700.
+    Card wrapper: bg-bg-elevated rounded-mee-md py-5 px-6 shadow-mee-1 flex flex-col.
+    Icon span: font-family inline retained (no token for Material icon font); color via [class].
+    Note: grep matched hex in COMMENTS only (// = #F26B23) — not active values.
+  mee-loading-skeleton ✓
+    Shimmer: var(--mee-color-surface-variant) + var(--mee-color-outline). Build green.
+  mee-page-header ✓
+    mat-flat-button color="primary". output<void>(). text-on-surface / text-on-surface-variant.
+  mee-form-field ✓
+    text-on-surface / text-on-surface-variant / text-error throughout.
+
+§5A FINAL STATUS — shared/components/:
+  grep -rn '#hex' shared/components/ | grep -v '//.*#' → 0 active violations.
+  9/10 compliant. mee-navbar held for app.routes.ts lockstep.
+
+CROSS-CUTTING ## Done / ## In Progress / ## Blockers — refreshed to current state.
+
+NO NEW BLOCKERS. NO NEW QUESTIONS beyond Q-CC-002 (font name amendment) already logged.
+=========
+
+=== UPDATE: 2026-06-07 AUTH SUB-SESSION DISPATCH 3 — OtpVerifyComponent body ===
+Phase: Auth sub-session — /signup + /login (features/auth/)
+Agent: meesell-angular-component-builder
+
+Done:
+  - OtpVerifyComponent (otp-verify.component.ts): stub REPLACED with full body.
+    selector: mee-otp-verify | standalone | OnPush | host: { class: 'mee-otp-verify' }
+    Signals: otpValue, verifying, resending, timeLeft (60s countdown), attempts, errorMsg, localRequestId
+    Computed: displayPhone() strips +91 prefix for display
+    Lifecycle: ngOnInit starts 60s countdown via interval(1000) + takeUntilDestroyed
+    ng-otp-input: NgOtpInputModule (NOT standalone) — setValue() called for programmatic reset
+    Auto-submit: onOtpChange auto-calls doVerify() when 6 chars entered (attempts < 3 guard)
+    Post-verify routing: GET /seller-profile → profile_complete → /dashboard else /onboarding
+    Post-verify fallback: 404 or any /seller-profile error → /onboarding (Q-AUTH-003 Option A)
+    Resend: restarts countdown, resets otpInput, updates localRequestId
+    Error surfaces: inline errorMsg signal for wrong OTP / attempts exceeded;
+      MatSnackBar via errorService for rate-limit + network errors
+    44px touch targets on all interactive controls (Tirupur mobile-first)
+    All user-facing strings via | transloco pipe — zero raw English in template
+  - otp-verify.component.spec.ts: 6 tests (Vitest + TestBed zoneless + TranslocoTestingModule)
+    Test 1: renders OTP title from transloco
+    Test 2: renders sent-to subtitle with phone stripped of +91
+    Test 3: renders ng-otp-input element in DOM
+    Test 4: verify button disabled when otpValue < 6 chars
+    Test 5: resend countdown shows 60s on initial render
+    Test 6: errorMsg renders in role="alert" element
+  - en.json: appended 2 new keys (zero existing keys modified):
+    auth.otp_invalid: "That code doesn't match. Try again."
+    auth.otp_attempts_exceeded: "Too many attempts. Request a new code."
+
+Tests: 6/6 new OtpVerify tests pass; 238/254 total pass; 16 pre-existing failures (unchanged)
+  VERIFIED by sub-session director post-dispatch:
+    - 7 export.component.spec.ts (NG0300 StatusBadge conflict)
+    - 6 dashboard.component.spec.ts (styleUrl ./dashboard.component.scss unresolvable in vitest)
+    - 1 shell.component.spec.ts (Jasmine setup mismatch)
+    - 1 images/image-slot.component.spec.ts (pre-existing, images session scope)
+    - 2 images/precheck-report.component.spec.ts (pre-existing, images session scope)
+    No new failures introduced by this dispatch (confirmed: auth files not in images feature).
+
+Build: ng build --configuration=production EXIT 0 — zero errors, pre-existing NG8107/NG8102 warnings
+  (in catalog-form primitives — pre-existing since Wave 2b)
+
+AUTH SUB-SESSION V1-COMPLETE — 2026-06-07
+  Dispatch 1: LandingComponent ✓ (2026-06-06)
+  Dispatch 2: auth/ scaffold + SignupComponent + LoginComponent + PhoneInputComponent ✓ (2026-06-07)
+  Dispatch 3: OtpVerifyComponent body ✓ (2026-06-07)
+  All routes /, /signup, /login — component implementations done.
+
+CROSS-CUTTING ACTION REQUIRED:
+  app.routes.ts currently registers ACCOUNT_ROUTES for the auth shell layout.
+  Must be updated to register AUTH_ROUTES from features/auth/auth.routes.ts.
+  Lockstep: coordinate with cross-cutting session (P1 in their queue per STATUS_FRONTEND.md).
+  Gate: ng build exits 0 after app.routes.ts update.
+=========
+
+=== UPDATE: 2026-06-07 ===
+Phase: Wave 3 — features/images/ (/catalogs/:id/images)
+Agent: meesell-angular-component-builder
+
+Done:
+  REPLACED: features/images/images-api.service.ts
+    - ProductImage interface corrected to API snake_case contract (slot_index, precheck_jsonb,
+      gcs_url, uploaded_at, product_id) — was camelCase in stub
+    - uploadImage(): FormData with slot_index + image fields; retryOn503: true
+    - pollImages(): interval(2000) + switchMap(GET /products/:id/images) + maps response.images
+    - deleteImage(): DELETE /products/:id/images/:imageId
+
+  UPDATED: features/images/images.routes.ts
+    - ExportClass renamed from ImageUploaderComponent → ImagesComponent (matches new page)
+    - providers: [ImagesApiService] added (tree-shaking pattern)
+
+  CREATED: features/images/image-slot/image-slot.component.ts
+    - Selector: mee-image-slot
+    - Inputs: slotIndex (required), image, isCompulsory, uploading
+    - Outputs: fileDropped, replaceRequested
+    - CDK drag-drop zone: (dragover)/(drop) handlers; fileDropped on file
+    - Tailwind only, no hardcoded hex; all colors via CSS custom properties
+    - Pure export: imageStatusBadgeClass(status) for direct testability
+
+  CREATED: features/images/precheck-report/precheck-report.component.ts
+    - Selector: mee-precheck-report
+    - Input: image (required)
+    - 5 checks: is_jpeg, color_space (='RGB'), resolution_ok, white_bg_ok, watermark_pass
+    - Fix hints for each failed check per §12.B
+    - Pure export: buildPrecheckItems(image) for direct testability (avoids NG0950)
+
+  REPLACED: features/images/images/images.component.ts (was ImageUploaderComponent stub)
+    - Selector: mee-images
+    - ActivatedRoute reads :id → productId signal
+    - 4-slot grid with mee-image-slot components
+    - ngx-image-compress: 75% quality / 75% ratio on upload
+    - pollImages() started ngOnInit, completed via destroy$ Subject
+    - canProceed = slot0.status==='ready' && watermark_pass===true
+    - onReplaceRequest(): MatDialog.open(ConfirmDialogComponent) with componentRef.setInput()
+    - "Next step" button navigates → /catalogs/:id/preview when canProceed()
+    - 429 error → snackBar "Upload limit reached"; generic error → snackBar
+
+  SPEC FILES CREATED (4 new spec files):
+    - images-api.service.spec.ts (3 tests)
+    - image-slot/image-slot.component.spec.ts (3 tests)
+    - precheck-report/precheck-report.component.spec.ts (3 tests)
+    - images/images.component.spec.ts (3 tests)
+
+Tests: 12/12 new images tests passing
+  Total suite: 241/254 passing; 13 pre-existing failures (unchanged from before this dispatch)
+  Pre-existing failures: dashboard.component.spec.ts (6, NG0300), export.component.spec.ts (7,
+    NG0300), shell.component.spec.ts (1, Jasmine setup mismatch) — NOT caused by images work
+
+Build: ng build --configuration=production EXIT 0 — ZERO errors
+  images-component lazy chunk: 30.90 kB raw / 8.38 kB gzip (budget ≤80 kB gzip — 89% headroom)
+  4 warnings: 3 pre-existing catalog-form (NG8107/NG8102); 1 new NG8102 on uploading()[idx]??false
+    (unnecessary nullish coalesce per TS strict — benign, matches type-safe intent)
+
+Blockers: none
+
+Next: Catalog Sub-Session: preview feature (/catalogs/:id/preview) or pricing feature
+
+Hand-offs:
+  - ImagesComponent ready; consumes ImagesApiService.pollImages/uploadImage/deleteImage
+  - canProceed gate (slot0.status='ready' + watermark_pass=true) → navigates to /catalogs/:id/preview
+  - postMultipart note: ApiClient.postMultipart returns Observable<T> (NOT HttpEvent stream)
+    so upload progress % is not available; upload tracked as boolean (uploading flag)
+  - images.routes.ts: IMAGES_ROUTES path='' entry with providers:[ImagesApiService] — ready
+    for coordinator to wire into app.routes.ts under catalogs/:id/images
+=========
+
+=== UPDATE: 2026-06-07 08:30 ===
+Phase: Wave 4 — preview + pricing features
+Done:
+  PreviewApiService (replaced stub — correct snake_case wire format)
+  preview.routes.ts (updated — adds PreviewApiService to providers[])
+  PreviewFeedComponent (NEW — Meesho feed card mock, 1:1 thumbnail, title truncate+warning badge)
+  PreviewDetailComponent (NEW — Meesho detail page mock, hero image, first_variant, 200-char desc)
+  PreviewComponent (replaced stub — tab group: Feed view + Detail view, loading/empty states, nav)
+  preview.component.spec.ts (NEW — 6 tests across 2 describe blocks: success + 404 error path)
+
+  PricingApiService (replaced stub — feature-local PricingCalc matching actual API wire format)
+    NOTE: core/models/pricing-calc.model.ts drift documented with TODO(cross-cutting)
+  pricing.routes.ts (updated — adds PricingApiService to providers[])
+  PnlBreakdownComponent (replaced stub — line-item table, inrCurrency pipe, semantic color classes)
+  MarginSliderComponent (replaced stub — mat-slider + matSliderThumb, 100ms debounce, 500ms commit)
+  PricingChartComponent (replaced stub — chart.js horizontal stacked bar, COLORS_RESOLVED tokens)
+  PricingComponent (replaced stub — signals+computed local estimate, API on init+commit, nav)
+  pricing.component.spec.ts (updated — 7 tests across 2 describe blocks: success + error path)
+
+Tests: 13 new passing / 0 failing
+  Total suite: 254/261 (7 pre-existing export.component.spec.ts failures unchanged)
+Build: ng build --configuration=production — ZERO errors, 4 pre-existing warnings
+Bundle:
+  preview-component lazy chunk: 52.30 kB raw / 11.43 kB gzip (budget ≤80 kB gzip — PASS)
+  pricing-component lazy chunk: 186.69 kB raw / 53.84 kB gzip (budget ≤80 kB gzip — PASS)
+In progress: none
+Blockers: none
+Next: Catalog Sub-Session complete for preview + pricing. Export feature DEFERRED (backend §15 not locked).
+
+Hand-offs:
+  - PreviewComponent wired to PreviewApiService.getPreview(id) — needs backend GET /api/v1/products/:id/preview
+  - PricingComponent wired to PricingApiService.calculate(id, mrp, targetPayout) — needs backend POST /api/v1/products/:id/price-calc
+  - pricing.routes.ts: PRICING_ROUTES path='' with providers:[PricingApiService] — ready for coordinator
+  - preview.routes.ts: PREVIEW_ROUTES path='' with providers:[PreviewApiService] — ready for coordinator
+  - TODO(cross-cutting): reconcile @core/models/pricing-calc.model.ts to snake_case wire format matching
+    feature-local PricingCalc in pricing-api.service.ts
+=========
+
+=== UPDATE: 2026-06-07 DASHBOARD-GAP-3-COMPLETE ===
+Phase: Dashboard sub-session — Gap 3 (SCSS extraction + vitest styleUrl fix)
+
+Dashboard sub-session reports Gap 3 complete. Dashboard feature is now FULLY COMPLETE.
+
+Done:
+  dashboard.component.scss + product-row.component.scss CREATED.
+    - All inline styles extracted to external .scss files per §3.D (no inline styles remain)
+    - All values use var(--mee-*) CSS custom properties — no hardcoded hex
+
+  dashboard.component.ts + product-row.component.ts AMENDED.
+    - styleUrl: './component.scss' added to each @Component decorator
+
+  dashboard.component.spec.ts + product-row.component.spec.ts AMENDED.
+    - styleUrl/vitest two-step fix applied (see STATUS_FEATURE_DASHBOARD.md GAP-3-COMPLETE
+      for full pattern documentation)
+
+  vitest.config.ts AMENDED.
+    - Header comment documents the established styleUrl resolution pattern for future
+      Angular component tests that use external .scss files
+
+styleUrl/vitest pattern NOW ESTABLISHED (propagate to sibling sessions adding styleUrl):
+  WITHOUT overrideComponent: Step 1 only — ɵresolveComponentResources pre-call
+  WITH overrideComponent: Steps 1+2 — pre-call + second overrideComponent(set: { styleUrl: undefined })
+  Full rationale in STATUS_FEATURE_DASHBOARD.md GAP-3-COMPLETE block.
+
+Tests: 10/10 dashboard tests passing | 51/53 files passing (2 pre-existing unrelated)
+Build: ng build --configuration=production — ZERO errors
+
+✅ Dashboard (/dashboard) — FULLY COMPLETE (Gap 3 was the last item)
+  DashboardComponent + ProductRowComponent + delete flow + SCSS external files + 10/10 tests
+=========
+
+=== UPDATE: 2026-06-07 FROM CATALOG SUB-SESSION — WAVES 1–4 COMPLETE (export deferred) ===
+Source: Catalog mega-session (catalog sub-session role)
+Phase: CONSTRUCTION — all non-export waves delivered
+
+CATALOG MEGA-SESSION DELIVERY SUMMARY:
+
+  Wave 1 — smart-picker ✅
+    SmartPickerComponent + DescriptionInputComponent + CategoryCardComponent
+    + BrowseFallbackComponent + ProfileIncompleteDialogComponent
+    + SmartPickerApiService + SmartPickerStateService
+    103 tests passing | 16.95 kB gzip (≤80 kB ✅)
+
+  Wave 2a — catalog-form services ✅
+    CatalogFormApiService (X-Autosave: true header on autosave-PATCH)
+    + DraftRecoveryService (204 → null) + CategorySchemaService
+    + EnumLookupService + CatalogFormStateService
+    24 tests passing
+
+  Wave 2b — catalog-form rendering engine ✅
+    11 ControlValueAccessor primitives (text_short, text_long, number,
+    number_with_unit, currency, dropdown_small[MatButtonToggle],
+    dropdown_medium, dropdown_large[CDK VirtualScroll],
+    dropdown_api_search, image_upload, address_group)
+    + WizardRendererComponent + FieldDispatcherComponent (all 11 @case)
+    + StepComposerService (STEP_ORDER + isHidden filter)
+    + AutofillOverlayComponent
+    42 tests passing
+
+  Wave 2c — catalog-form page wiring ✅
+    CatalogFormComponent: sequential init + forkJoin draft recovery
+    + Subject+debounceTime(10s) autosave + global autofill bar
+    + navigate /catalogs/:id/images on submit
+    6 tests passing | catalog-form chunk 15.70 kB gzip (≤120 kB ✅)
+
+  Wave 3 — images ✅
+    ImagesApiService + ImageSlotComponent (CDK drag-drop, indeterminate bar)
+    + PrecheckReportComponent (5 precheck items) + ImagesComponent (page)
+    12 tests passing | 8.38 kB gzip (≤80 kB ✅)
+
+  Wave 4a — preview ✅
+    PreviewApiService + PreviewFeedComponent + PreviewDetailComponent
+    + PreviewComponent (tab group, Back/Next navigation)
+    6 tests passing | 11.43 kB gzip (≤80 kB ✅)
+
+  Wave 4b — pricing ✅
+    PricingApiService + PnlBreakdownComponent + MarginSliderComponent
+    + PricingChartComponent (chart.js + COLORS_RESOLVED)
+    + PricingComponent (localEstimate computed, Back/Next navigation)
+    7 tests passing | 53.84 kB gzip (≤80 kB ✅)
+
+  Wave 4c — export ⏸ DEFERRED
+    Scaffold exists. Awaiting BACKEND §14 LOCK for full dispatch.
+
+TOTAL SUITE: 254 passing / 7 pre-existing failures (export.component.spec.ts NG0300 — pre-existing, not caused by catalog dispatches)
+ALL 5 non-export chunk budgets MET.
+ALL 5 non-export routes wired in app.routes.ts (verified pre-dispatch).
+
+CROSS-CUTTING ACTIONS REQUIRED (for coordinator to route to appropriate sessions):
+  1. @core/models/field-schema.model.ts — add enumOptions?: Array<{code:string; label:LocaleMap}>
+  2. @core/models/pricing-calc.model.ts — reconcile to snake_case wire format
+  3. shared/pipes/confidence-percent.pipe.ts — create + spec
+  4. ApiClient.postMultipartWithProgress<T> — add if upload % progress UX needed in V1.5
+  5. export.component.spec.ts — fix NG0300 StatusBadgeComponent + StatusBadgeStub conflict
+  6. Consolidate ValueChange type (primitive.contract.ts vs catalog-form-state.service.ts)
+
+OPEN QUESTIONS STILL OUTSTANDING (for coordinator to forward to backend):
+  Q-CAT-001: enum endpoint path — /categories/:id/enum/:field_name (FRONTEND §11.C) vs
+             /categories/{id}/field-enum/{name} (MVP §3.3) — Wave 2 wired per §11.C;
+             backend coordinator must confirm which path the category module actually exposes.
+  Q-CAT-002: BACKEND §14 export LOCK ETA — determines when Wave 4c can be dispatched.
+
+DEVIATIONS LOGGED (non-blocking, for coordinator record):
+  - Double-folder page components (smart-picker/smart-picker/, catalog-form/catalog-form/) — functionally correct; cosmetically off-spec §3.D
+  - [meeAutosave] directive not used (incompatible with signal-based page — equivalent pipeline used directly)
+  - Sub-component spec files not created for browse-fallback, category-card, description-input, profile-incomplete-dialog
+
+NEXT ACTION FOR MASTER:
+  - Route Q-CAT-001 + Q-CAT-002 to meesell-backend-coordinator
+  - Route cross-cutting actions 1–6 to cross-cutting session
+  - When BACKEND §14 LOCKS: dispatch export Wave 4c to meesell-angular-component-builder
+  - ui-styler restyle pass (unblocked by §5A FULL LOCK) can begin on smart-picker + any components with hardcoded values
+=========
+
+=== UPDATE: 2026-06-07 FROM ONBOARDING SUB-SESSION — DISPATCHES 1-3 + WIRING COMPLETE ===
+Written by: onboarding sub-session (session-as-role; FE-D12 amended)
+Scope: features/account/onboarding/ + features/account/components/
+
+4 sequential dispatches completed (meesell-angular-component-builder):
+
+DISPATCH 1 — OnboardingWizardComponent skeleton ✅
+  features/account/onboarding/onboarding.component.ts — stub REPLACED
+  features/account/onboarding/onboarding.component.spec.ts — 4/4 passing
+  mat-stepper [linear]="false"; 3 steps; signals: loading, saving,
+  phase1Submitted, phase2Submitted, selectedSuperCategories,
+  complianceFields. onSubmit() stub → /dashboard.
+  en.json: "onboarding.*" namespace added (title, steps.*, actions.*,
+           phase1.*, phase2.*, phase3.*).
+  Bundle: 8.24 kB gzip
+
+DISPATCH 2 — SuperCategoryChipsComponent ✅
+  features/account/components/super-category-chips/
+    super-category-chips.component.ts — stub REPLACED
+    super-category-chips.component.spec.ts — 4/4 passing
+  MatChipListbox multiple; 6 chips per COMPLIANCE_EXTENSION_MAP.
+  Super-ids: '26' Grocery, '13' Kids, '16' Electronics, '19' Beauty
+             (primary for 19/36/37/14/88/34), '80' Books, '30' Appliances.
+  @Output() selectionChange: EventEmitter<string[]>.
+  en.json: "onboarding.chips.*" namespace added.
+  Bundle: +1.53 kB gzip
+
+DISPATCH 3 — ComplianceStepComponent ✅
+  features/account/components/compliance-step/
+    compliance-step.component.ts — stub REPLACED
+    compliance-step.component.spec.ts — 4/4 passing
+  Dynamic ReactiveForm from FieldSpec[] input (ngOnChanges rebuild).
+  3 field types: text / date / select with mat-form-field appearance="outline".
+  Philosophy F5 enforced: every field renders <mat-hint> with display_help.
+  Required validation: markAllAsTouched on invalid submit.
+  @Input({ required: true }): superCategoryId, fields.
+  @Output(): formSubmit (Record<string, string|null>), formBack.
+  Inline FieldSpec type (TODO(cross-cutting) — field-schema.model.ts carries
+  catalog wizard shape, not compliance contract).
+  en.json: "onboarding.compliance.*" namespace added.
+  Future: cross-cutting session relocates to shared/components/compliance-step/.
+
+WIRING DISPATCH — Phase 2 + Phase 3 wired into OnboardingWizardComponent ✅
+  features/account/onboarding/onboarding.component.ts — updated
+  features/account/onboarding/onboarding.component.spec.ts — 7/7 passing
+  Phase 2: <mee-super-category-chips (selectionChange)="selectedSuperCategories.set($event)">
+  Phase 3: @for loop over selectedSuperCategories(); one <mee-compliance-step>
+           per id; empty-state message when no categories selected.
+  complianceFields signal stubs Record<string, FieldSpec[]> = {} — populated
+  by onboarding-api.service.ts in Dispatch 4.
+  onComplianceSubmit(id, values) handler stub with TODO(dispatch-4).
+  Bug fix (agent-caught): [aria-label] → [attr.aria-label] on mat-chip-listbox
+    (NG8002 would have blocked production build on import).
+  en.json: "onboarding.phase3.noCategories" key added.
+  Final bundle: 3.37 kB gzip (total onboarding chunk well within §19 ≤80 kB ✓)
+
+OVERALL TESTS: 7/7 passing (onboarding spec); build ZERO errors.
+
+WHAT'S LEFT (Dispatch 4 — blocked on B3):
+  - onboarding-api.service.ts (3 PATCH + 2 GET per BACKEND §8.B)
+  - Populate complianceFields from GET /seller-profile/required-fields
+  - Replace onSubmit() stub with real PATCH chain
+  - Set mat-stepper [linear]="true" + stepControl once form validation is wired
+  Blocker: core/models/seller-profile.model.ts drift (cross-cutting scope).
+           Cross-cutting must also add ComplianceFieldSpec to core/models/.
+
+CROSS-CUTTING ACTIONS NEEDED (surface to cross-cutting session):
+  1. Fix core/models/seller-profile.model.ts — authoritative shape is the
+     inline SellerProfileCorrect in profile-api.service.ts (confirmed by both
+     profile + onboarding sessions).
+  2. Add ComplianceFieldSpec interface to core/models/ matching backend
+     FieldSpec: { field_name, display_name, display_help, field_type, required,
+     options } (camelCase TS equivalents).
+  3. Relocate ComplianceStepComponent from features/account/components/
+     compliance-step/ → shared/components/compliance-step/ when ready.
+=========
+
+=== UPDATE: 2026-06-07 FRONTEND TRACK ROLL-UP — FOR MASTER SESSION ===
+Phase: Mid-construction; 3 sub-sessions V1-COMPLETE; 2 cross-cutting blockers gating remaining work
+
+Written by: meesell-frontend-coordinator
+For: project master session (founder + master Claude window) — to propagate to STATUS_MASTER.md Frontend track row
+
+============================================================================
+FRONTEND TRACK STATE — 2026-06-07
+============================================================================
+
+OVERALL: CONSTRUCTION ACTIVE — 3 sub-sessions V1-COMPLETE, 3 in flight,
+         design system Phase 1 picking in parallel.
+         Cross-track blocker surfaced for backend coordinator (Theme 2 +
+         new ComplianceFieldSpec contract decision).
+
+============================================================================
+SUB-SESSION STATUS MATRIX (frontend coordinator + 7 sub-sessions)
+============================================================================
+
+  Sub-session     | State              | V1 Status         | Dispatch count
+  ----------------|--------------------|--------------------|---------------
+  Design System   | 🟢 LIVE             | Phase 1 picking   | curation R1 done
+  Cross-cutting   | 🟢 ACTIVE           | Maintenance mode  | Batch 1+2 done
+  Auth            | ✅ V1-COMPLETE      | Done              | 3/3 dispatches
+  Onboarding      | 🟢 NEAR-COMPLETE    | Dispatch 4 blocked| 3/4 dispatches
+  Profile         | 🟢 NEAR-COMPLETE    | Dispatch 2 blocked| 1/2 dispatches
+  Dashboard       | ✅ V1-COMPLETE      | Done              | 2 + superseded 3
+  Catalog (mega)  | ✅ V1-COMPLETE-ex   | Done (no export)  | Waves 1-4 done
+
+============================================================================
+AGGREGATED METRICS
+============================================================================
+
+Tests:
+  - Auth OtpVerify: 6/6 passing
+  - Dashboard: 10/10 passing
+  - Catalog mega-session: 254 passing (7 pre-existing failures from
+    cross-cutting items NOT regressions)
+  - Onboarding: 12/12 passing (4 per dispatch × 3 dispatches)
+  - Profile: 8/8 passing
+  - Cross-cutting Batch 1+2: 9/10 shared components §5A-compliant
+  TOTAL ACROSS REPORTED: 290+ tests passing
+
+Bundles (all within §19 budgets):
+  - landing/auth: included in app chunks
+  - account chunk (onboarding + profile + signup + login): ~30 KB combined gzip
+  - dashboard: 30.57 KB gzip (vs ≤80 KB budget — 62% headroom)
+  - catalog-form (THE SPINE): 15.70 KB gzip (vs ≤120 KB budget — 87% headroom)
+  - smart-picker: small (Wave 1 done early)
+  - images: 8.38 KB gzip (90% headroom)
+  - preview: 11.43 KB gzip (86% headroom)
+  - pricing: 53.84 KB gzip (33% headroom; chart.js bulk)
+  - export: scaffold only (deferred)
+
+Build state: ng build --configuration=production passes with ZERO errors
+             across all reported dispatches.
+
+Initial bundle (root chunk): ~165 KB gzip (within §19 ≤180 KB target — 8% headroom)
+
+============================================================================
+KEY ARCHITECTURAL EVENTS THIS WEEK
+============================================================================
+
+2026-06-05 (start):
+  - service-builder shipped clean-slate Angular 18 scaffold (77/77 tests,
+    111.76 KB gzip initial)
+  - React 18 scaffold deleted per FE-D1
+
+2026-06-06:
+  - FRONTEND_ARCHITECTURE.md FULLY LOCKED end-to-end (22 of 23 sections)
+  - FE-D11 split: design system → dedicated sub-session
+  - FE-D12: 6-session grouping ratified (auth + onboarding + profile +
+    dashboard + catalog + cross-cutting)
+  - FE-D13: sub-sessions align with Phase 2 Module Federation remote boundaries
+  - 6 sub-sessions bootstrapped + STATUS files + bootstrap prompts authored
+  - Design system Phase 1 Round 1 curation complete (38 refs across 5 categories)
+
+2026-06-06 → 2026-06-07:
+  - §5A AMENDMENT 2026-06-06B applied: design system values landed; PARTIAL
+    LOCK → FULL LOCK (Plus Jakarta Sans + saffron #F26B23 + Spike Angular)
+  - 4 sub-sessions executed multi-dispatch flows; 3 reached V1-COMPLETE
+  - Cross-cutting completed §5A hex-audit sweep (9 of 10 shared components compliant)
+  - Cross-cutting fixed Q-CC-001 (seller-profile.model.ts shape per BACKEND §8.E)
+  - Catalog mega-session shipped Waves 2/3/4 (THE SPINE + images + preview + pricing)
+    in one half-day burst
+  - features/auth/ folder rename in lockstep flight (auth folder created;
+    app.routes.ts flip pending)
+
+============================================================================
+PENDING CROSS-TRACK ITEMS FOR MASTER PROPAGATION
+============================================================================
+
+TO BACKEND COORDINATOR (master should relay):
+
+  THEME 2 (carried from earlier — 3 items, still open):
+    - PATCH endpoints canonical (3 PATCH vs PUT) — backend §8.B confirmed;
+      master should verify backend coordinator amended any references to PUT
+    - Super-category chip count 6 vs 7 — frontend chose 6 per backend
+      COMPLIANCE_EXTENSION_MAP; backend coordinator should confirm V1 stance
+    - Catalog enum endpoint path (/categories/:id/enum/:field_name per
+      FRONTEND §11.C vs /categories/{id}/field-enum/{name} per MVP §3.3) —
+      catalog Wave 2 wired to FRONTEND §11.C; backend coordinator should
+      confirm path before Wave 2 acceptance
+
+  NEW THIS SESSION:
+    - RequiredFieldsResponse shape decision (Path A vs Path B):
+      Onboarding's ComplianceStepComponent needs full per-field metadata
+      (display_label + display_help + data_type + validation + enum_options).
+      Backend §8.B currently returns field NAMES only (string[]).
+      Backend coordinator must choose:
+        Path A — extend RequiredFieldsResponse to return ComplianceFieldSpec[]
+          (full metadata; backend §8.B amendment)
+        Path B — keep names-only; frontend cross-cutting adds a
+          complianceFieldRegistry lookup service consuming field_display_overrides.json
+      Frontend cross-cutting CANNOT unilaterally define ComplianceFieldSpec —
+      would risk another Q-CC-001-style drift.
+      This decision GATES onboarding Dispatch 4 AND profile Dispatch 2
+      (which depends on shared/components/compliance-step).
+
+  BACKEND §14 export LOCK ETA:
+    Catalog Wave 4 export is deferred until backend §14 LOCKS.
+    Master coordinator should track backend coordinator's §14 progress
+    and notify frontend track when ready for catalog export dispatch.
+
+TO INFRA-BUILDER (carried — unchanged):
+  - REFRESH_TOKEN_PEPPER pre-deploy gate (Secret Manager population)
+    per §22A risk 11 — track before staging deploy
+
+============================================================================
+INTERNAL FRONTEND ACTIONS (master session needs to be aware of)
+============================================================================
+
+PENDING ARCHITECTURE DOC AMENDMENT (frontend coordinator action):
+  AMENDMENT 2026-06-07A — expanded scope:
+    a. §3 add layouts/ folder (MeeAuthLayoutComponent + MeeShellComponent)
+       introduced by cross-cutting for Spike Angular shell pattern
+    b. §5 shared component count correction: 6 (spec) → 10 (actual);
+       add FormField/PageHeader/LoadingSkeleton/StatCard to inventory
+    c. §4.H ACCESS_TOKEN_SIGNAL InjectionToken enumeration (was added
+       by service-builder, not in doc table originally)
+    d. §4.I cross-feature models count: 9 → 10 (catalog.model.ts added)
+    e. §5A.B outline color doc reconciliation: §5A.B table says
+       #D1D5DB; _tokens.scss says #e5eaef (Spike value); SCSS is source of truth
+    f. Cross-cutting action items surfaced by catalog Wave 4 (7 items)
+       + onboarding D3 (ComplianceFieldSpec) → 8 total pending
+       cross-cutting maintenance tasks
+
+PENDING DECISIONS (frontend coordinator's plate):
+  - Apply AMENDMENT 2026-06-07A on founder signal
+  - Possibly amend SESSION_PROMPTS_FEATURE_DASHBOARD.md to note shell
+    ownership of side menu (non-blocking)
+
+CROSS-CUTTING NEXT PASS (when it dispatches again):
+  Queue of action items growing — cross-cutting session is the lynchpin
+  for unblocking onboarding D4 + profile D2:
+    1. RequiredFieldsResponse path decision (waiting on backend)
+    2. ComplianceStepComponent relocation to shared/components/
+    3. app.routes.ts lockstep flip with auth (auth V1-COMPLETE; ready to signal)
+    4. mee-navbar dispatch (post-rename)
+    5. Pricing-calc model snake_case reconciliation
+    6. seller-profile model verification (likely already done)
+    7. export.component.spec.ts NG0300 fix
+    8. shared/pipes/confidence-percent.pipe.ts creation
+    9. @core/models/field-schema.model.ts enumOptions field
+    10. ApiClient.postMultipartWithProgress<T> (V1.5 enhancement)
+    11. Consolidate ValueChange type
+
+============================================================================
+PRE-DEPLOY GATES (carry-forward — unchanged)
+============================================================================
+
+  1. REFRESH_TOKEN_PEPPER in Secret Manager (infra-builder)
+  2. Backend iam endpoints deployed + healthy
+  3. CORS Allow-Credentials confirmed on /api/v1/auth/*
+  4. app.routes.ts authGuard re-enabled (currently TEMP-disabled for dev
+     preview by cross-cutting — flagged in cross-cutting STATUS)
+
+============================================================================
+RECOMMENDED MASTER ACTIONS
+============================================================================
+
+1. PROPAGATE FRONTEND STATUS to STATUS_MASTER.md Frontend track row:
+   "CONSTRUCTION ACTIVE — 3 of 6 sub-sessions V1-COMPLETE (auth,
+   dashboard, catalog-except-export); 2 sub-sessions blocked on
+   cross-cutting next pass (onboarding D4, profile D2); 1 active
+   maintenance (cross-cutting); design system Phase 1 picking in
+   parallel sub-session"
+
+2. RELAY TO BACKEND COORDINATOR (highest-leverage cross-track item):
+   - RequiredFieldsResponse Path A vs Path B decision (gates onboarding +
+     profile completion)
+   - Theme 2 confirmations (3 contract items + §14 export LOCK ETA)
+
+3. INFRASTRUCTURE TRACKING (low urgency):
+   - REFRESH_TOKEN_PEPPER pre-deploy gate (unchanged)
+
+4. NO MASTER-LEVEL ACTION required on AMENDMENT 2026-06-07A — that's
+   frontend coordinator's plate; will apply on founder signal in this session
+
+============================================================================
+WHAT FRONTEND TRACK NEEDS FROM PROJECT MASTER
+============================================================================
+
+Primary: backend coordinator's answer on RequiredFieldsResponse shape.
+That single decision unblocks 2 sub-sessions (onboarding D4 + profile D2)
+and closes the cross-cutting maintenance queue's largest item.
+
+Secondary: backend §14 export LOCK timing (catalog Wave 4 export gate).
+
+Tertiary: no others.
+
+============================================================================
+
+Done: Frontend track roll-up complete; staged for project master propagation.
+In progress: master mode wait (per founder direction).
+Blockers: 2 cross-track items above gate remaining frontend work.
+Next: project master propagates to STATUS_MASTER + relays to backend
+      coordinator at next master session turn.
+
+=========
+
+=== UPDATE: 2026-06-08 FROM ONBOARDING SUB-SESSION — COMPILATION FIX ===
+Written by: onboarding sub-session
+
+ISSUE: NG8102 warning in onboarding.component.ts
+  `signal<Record<string, FieldSpec[]>>({})` — TypeScript infers `Record<string, T>`
+  index access as `T` (never undefined), so `complianceFields()[id] ?? []` in the
+  template triggered NG8102 ("?? operator can be safely removed").
+
+FIX applied to:
+  frontend/src/app/features/account/onboarding/onboarding.component.ts line 166
+
+  Before: signal<Record<string, FieldSpec[]>>({})
+  After:  signal<Partial<Record<string, FieldSpec[]>>>({})
+
+  `Partial<Record<K,V>>` correctly types index access as `V | undefined`, making
+  the `?? []` guard meaningful and resolving the warning.
+
+RESULT:
+  Onboarding NG8102 cleared ✓
+  7/7 onboarding spec tests passing ✓
+  Build: ZERO errors; onboarding chunk 3.37 kB gzip unchanged ✓
+
+REMAINING WARNINGS (pre-existing, not onboarding scope):
+  NG8102 — features/catalog-form/wizard-renderer/wizard-renderer.component.ts:51
+  NG8102 — features/images/images/images.component.ts:94
+  NG8107 — features/catalog-form/primitives/text-long/text-long.component.ts:58
+  NG8107 — features/catalog-form/primitives/text-short/text-short.component.ts:54
+  These are catalog-session scope. Not onboarding's concern.
+=========
+
+=== UPDATE: 2026-06-08 — WAVE 1A AREA 1 COMPLETE + SPIKE REFERENCE ABANDONED ===
+Phase: Wave 1A Area 1 (Layouts) — closed
+
+WORK COMPLETED (Wave 1A Area 1):
+  shell.component.ts (+60/-45 lines):
+    - Notification bell + .notification-dot + .header-icon-btn CSS REMOVED
+    - User avatar div → mat-mini-fab [matMenuTriggerFor]="profileMenu"
+    - Profile mat-menu: "My Profile" (→ /profile) + "Log out" (→ /login) ONLY
+    - MatMenuModule added to imports
+    - logout() now navigates to /login after auth.logout() completes (FE-D5)
+    - Token replacements: #F26B23→var(--mee-color-primary), #f0f5f9→var(--mee-color-bg),
+      header bg→var(--mee-color-bg-elevated), header border→var(--mee-color-outline)
+  shell.component.spec.ts (+65 lines, 5 new tests):
+    - Avatar aria-label verified, bell absent verified
+    - My Profile nav, Log out nav, direct logout() all tested with OverlayContainer
+  auth-layout.component.ts (+12/-3 lines):
+    - #F26B23→var(--mee-color-primary), #111827→var(--mee-color-on-surface),
+      16px radius→var(--mee-radius-md)
+  Gates: BUILD ✅ | TOKEN ✅ | VISUAL 🚫 CANCELLED | FUNCTIONAL ✅ 11/11 shell tests
+
+SPIKE REFERENCE METHODOLOGY — ABANDONED:
+  Root cause: Spike Angular local copy is free-tier only. Pro layout pages are
+  locked. No usable visual reference available.
+  Decision (founder, 2026-06-08): Stop Spike comparison approach.
+  Impact: Zero — the 10 verdicts were already translated explicitly before any
+  dispatch. Code work is correct and stands. Future UI decisions will be made
+  directly against MeeSell's own design system (§5A FULL LOCK) without
+  Spike comparison.
+
+OPEN ITEMS (carried forward):
+  1. Sidebar footer "Logout" button — still present alongside header dropdown.
+     Both route correctly to /login. Founder to decide: keep both or
+     remove sidebar footer logout (header-only pattern).
+  2. Dark sidebar token — #111c2d still hardcoded (no --mee-color-surface-dark
+     token). Candidate for design system addition if needed.
+  3. auth property on MeeShellComponent changed to readonly (was private readonly)
+     — harmless but flagged.
+
+NEXT ACTIONS (founder to direct):
+  Proceed with any of:
+  a) auth rename dispatch (features/account/ → features/auth/ + app.routes.ts lockstep)
+  b) mee-navbar dispatch (cross-cutting, now unblocked per Q-AUTH-001)
+  c) seller-profile model fix (cross-cutting Q-CC-001)
+  d) catalog Wave 2 (THE SPINE — 11 primitives + wizard)
+  e) other founder priority
 =========

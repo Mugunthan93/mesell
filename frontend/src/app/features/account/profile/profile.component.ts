@@ -51,7 +51,7 @@ function optionalPincodeValidator(control: AbstractControl): ValidationErrors | 
     TranslocoPipe,
   ],
   template: `
-    <div class="mee-profile-edit max-w-2xl mx-auto p-4">
+    <div class="mee-profile-edit bg-bg min-h-screen max-w-2xl mx-auto p-4">
       @if (loading()) {
         <mat-spinner diameter="32" aria-label="Loading profile…"></mat-spinner>
       } @else {

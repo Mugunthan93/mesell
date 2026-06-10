@@ -12,6 +12,25 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { of, throwError } from 'rxjs';
 import { delay } from 'rxjs/operators';
 
+// Two-step styleUrl resolution for JIT+overrideComponent tests:
+//
+// Step 1 — pre-call ɵresolveComponentResources before configureTestingModule:
+//   Angular JIT marks components with `styleUrl` as "pending resolution". The getter
+//   for type[ɵNG_COMP_DEF] THROWS if accessed while pending. This happens at
+//   configureTestingModule time (isStandaloneComponent check), so we must pre-resolve.
+//
+// Step 2 — provide ResourceLoader that returns empty content:
+//   overrideComponent() adds DashboardComponent to pendingComponents, causing
+//   compileTypesSync() to call ɵcompileComponent with FRESH metadata (styleUrl restored).
+//   compileComponents() then calls ɵresolveComponentResources(resolver) where resolver
+//   uses ResourceLoader.get(url). In jsdom the default ResourceLoader uses fetch which
+//   fails on relative paths (no document.baseURI). We provide a no-op that returns ''.
+//
+// Both steps are needed for components that use overrideComponent + styleUrl.
+// Components without overrideComponent only need step 1 (see product-row.spec.ts).
+import { ɵresolveComponentResources as resolveComponentResources } from '@angular/core';
+import { ResourceLoader } from '@angular/compiler';
+
 import { DashboardComponent } from './dashboard.component';
 import {
   DashboardApiService,
@@ -20,6 +39,8 @@ import {
 import { ErrorService } from '@core/services/error.service';
 import { StatusBadgeComponent } from '@shared/components/status-badge/status-badge.component';
 import { EmptyStateComponent } from '@shared/components/empty-state/empty-state.component';
+import { StatCardComponent } from '@shared/components/stat-card/stat-card.component';
+import { ProductRowComponent } from '../components/product-row/product-row.component';
 
 // ── Stubs for sub-components with required inputs ──
 // These allow testing DashboardComponent in isolation without sub-component
@@ -40,6 +61,16 @@ class EmptyStateStub {
   ctaLabel = '';
   ctaClick = new (class { emit = () => {} })();
 }
+
+// ProductRowComponent has input.required<ProductListItem>() — must be stubbed to avoid NG0950
+// during MatTable's internal render cycles when column 'actions' is present.
+@Component({ selector: 'mee-product-row', standalone: true, template: '' })
+class ProductRowStub {}
+
+// StatCardComponent has input.required<string>() for label and value — must be stubbed to
+// avoid NG0950 when the dashboard renders the KPI stat card row.
+@Component({ selector: 'mee-stat-card', standalone: true, template: '' })
+class StatCardStub {}
 
 // ── Helpers ──
 
@@ -115,6 +146,21 @@ describe('DashboardComponent', () => {
     listProductsSpy = vi.fn();
     showErrorSpy = vi.fn();
 
+    // Step 1: resolve pending styleUrl queue BEFORE configureTestingModule.
+    // configureTestingModule calls getComponentDef() which hits the ɵcmp getter. The getter
+    // throws if metadata.styleUrl is still set. Pre-resolving marks it cleared.
+    await resolveComponentResources(() => Promise.resolve(''));
+
+    // Step 2: configure compiler ResourceLoader before configureTestingModule.
+    // overrideComponent() causes compileTypesSync() to call ɵcompileComponent() with
+    // FRESH resolved metadata (styleUrl re-added from @Component decorator via MetadataOverrider).
+    // compileComponents() then calls ɵresolveComponentResources(resolver) where resolver
+    // uses the COMPILER's ResourceLoader (not the test module injector — different injector).
+    // ResourceLoader must be overridden via configureCompiler(), not configureTestingModule().
+    TestBed.configureCompiler({
+      providers: [{ provide: ResourceLoader, useValue: { get: (_url: string) => Promise.resolve('') } }],
+    });
+
     await TestBed.configureTestingModule({
       imports: [
         DashboardComponent,
@@ -137,12 +183,20 @@ describe('DashboardComponent', () => {
         },
       ],
     })
-    // Override sub-components with stubs so DashboardComponent is tested in isolation.
-    // StatusBadgeComponent uses input.required() which triggers NG0950 during
-    // mat-table's internal render cycles without stable input binding.
+    // Override 1: replace input.required() sub-components with stubs.
+    // StatusBadgeComponent, ProductRowComponent, StatCardComponent all use input.required()
+    // which triggers NG0950 during Angular's render cycles.
     .overrideComponent(DashboardComponent, {
-      remove: { imports: [StatusBadgeComponent, EmptyStateComponent] },
-      add: { imports: [StatusBadgeStub, EmptyStateStub] },
+      remove: { imports: [StatusBadgeComponent, EmptyStateComponent, StatCardComponent, ProductRowComponent] },
+      add: { imports: [StatusBadgeStub, EmptyStateStub, StatCardStub, ProductRowStub] },
+    })
+    // Override 2: clear styleUrl so compileTypesSync() does NOT re-queue DashboardComponent
+    // for async resource resolution. When overrideComponent() adds DashboardComponent to
+    // pendingComponents, compileTypesSync() calls ɵcompileComponent() with freshly-resolved
+    // metadata via MetadataOverrider — which includes the original styleUrl value. By setting
+    // styleUrl: undefined here, the new metadata has no pending resource and needs no fetch.
+    .overrideComponent(DashboardComponent, {
+      set: { styleUrl: undefined, styles: [] },
     })
     .compileComponents();
   });

@@ -11,10 +11,10 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
   `],
   template: `
     <div class="mee-form-field">
-      <label style="font-size:13px; font-weight:500; color:#374151; display:block; margin-bottom:6px;">
+      <label class="text-[13px] font-medium text-on-surface block mb-1.5">
         {{ label() }}
         @if (required()) {
-          <span aria-hidden="true" style="color:#DC2626; margin-left:2px;">*</span>
+          <span aria-hidden="true" class="text-error ml-0.5">*</span>
         }
       </label>
 
@@ -23,13 +23,13 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
       </div>
 
       @if (hint()) {
-        <div class="mee-form-field__hint" style="font-size:12px; color:#6B7280; margin-top:4px;">
+        <div class="mee-form-field__hint text-xs text-on-surface-variant mt-1">
           {{ hint() }}
         </div>
       }
 
       @if (error()) {
-        <div class="mee-form-field__error" role="alert" style="font-size:12px; color:#DC2626; font-weight:500; margin-top:4px;">
+        <div class="mee-form-field__error text-xs text-error font-medium mt-1" role="alert">
           {{ error() }}
         </div>
       }

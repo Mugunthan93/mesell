@@ -19,5 +19,11 @@ httpx==0.27.0
 pytest==8.3.0
 pytest-asyncio==0.24.0
 
+# §15.J observability — Prometheus metrics scrape (F-15-2)
+prometheus-client>=0.20,<1
+
 # Scraping (Meesho competitive research)
 playwright==1.59.0
+
+# §19 CI gates — Contracts 1-7 import-linter rule set per §16.E
+import-linter>=2.0,<3

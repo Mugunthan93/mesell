@@ -1,0 +1,1247 @@
+# §19.C Contracts 1-7 — import-linter rule set per §16.E.
+#
+# All contracts MUST pass in CI; a single violation fails the build.
+# Invoke via ``lint-imports --config tests/lint/import_rules.toml`` from
+# the ``backend/`` directory.
+#
+# Three implementation notes vs the §16.E sketch:
+#
+# 1. **TOML namespace.** §16.E uses bare ``[importlinter]`` for clarity. The
+#    runtime ``import-linter`` package requires the ``[tool.importlinter]``
+#    namespace when loading TOML config (per
+#    ``importlinter.adapters.user_options.TomlFileUserOptionReader``).
+#
+# 2. **Per-source expansion of "module-private" rules.** import-linter's
+#    ``forbidden`` contract rejects source/forbidden pairs that share
+#    descendants — e.g. ``source=app.modules.iam`` + ``forbidden=
+#    app.modules.iam.repository`` is structurally rejected. The §16.E
+#    intent of "module X.* MUST NOT import module Y.<private> for X ≠ Y"
+#    is therefore expanded into one sub-contract per source module, whose
+#    ``forbidden_modules`` list excludes that source module's own private
+#    files. Semantic count remains the §19.C "7 logical import-linter
+#    contracts" + 3 AST scanners.
+#
+# 3. **Intra-module self-import allowlist.** Every domain module re-exports
+#    its router via ``__init__.py`` so ``app/main.py`` can mount it
+#    (per §16.B locked pattern). When a cross-module service-to-service
+#    call uses ``from app.modules.other import ...``, Python's import system
+#    pulls in the re-export side-effect, which import-linter sees as a
+#    transitive chain. The intra-module self-imports below allowlist these
+#    re-export chains without weakening cross-module enforcement.
+#    ``unmatched_ignore_imports_alerting = "none"`` lets the same kitchen-sink
+#    list serve every sub-contract — entries that don't apply to a given
+#    contract are silently skipped.
+#
+# Contracts 8-10 (custom AST scanners) live as sibling files:
+#   * check_scope_to_user.py                       (§15.B + §16.F.2)
+#   * check_no_meesho_symbols_outside_export.py    (§14.J + §15.F + L_export_M10)
+#   * check_message_id_regex.py                    (§5A.H)
+
+[tool.importlinter]
+root_package = "app"
+include_external_packages = false
+
+
+# ============================================================================
+# Contract 1 — repository.py is PRIVATE per §16.C Rule 2 + §19.C
+# Expansion: 8 sub-contracts, one per source domain module. dashboard has no
+# repository per §16.F.1 so the dashboard sub-contract forbids all 7 OTHER
+# repositories; the other 7 sub-contracts exclude their own repository.
+# ============================================================================
+
+[[tool.importlinter.contracts]]
+name = "Contract 1.iam — iam does not import other modules' repository"
+type = "forbidden"
+source_modules = ["app.modules.iam"]
+forbidden_modules = [
+    "app.modules.customer.repository",
+    "app.modules.category.repository",
+    "app.modules.catalog.repository",
+    "app.modules.image.repository",
+    "app.modules.pricing.repository",
+    "app.modules.export.repository",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    # __init__.py router re-exports — §16.B locked pattern.
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    # Intra-module: router → service.
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    # Intra-module: service → repository (own repo only — that IS what we
+    # want each service to use; the §16.E sketch's ignore_imports self-import
+    # carve-out).
+    "app.modules.iam.service -> app.modules.iam.repository",
+    "app.modules.customer.service -> app.modules.customer.repository",
+    "app.modules.category.service -> app.modules.category.repository",
+    "app.modules.catalog.service -> app.modules.catalog.repository",
+    "app.modules.image.service -> app.modules.image.repository",
+    "app.modules.pricing.service -> app.modules.pricing.repository",
+    "app.modules.export.service -> app.modules.export.repository",
+    # Lazy intra-module: service <-> tasks (image, export only per §3.I).
+    "app.modules.image.service -> app.modules.image.tasks",
+    "app.modules.image.tasks -> app.modules.image.service",
+    "app.modules.image.tasks -> app.modules.image.repository",
+    "app.modules.export.service -> app.modules.export.tasks",
+    "app.modules.export.tasks -> app.modules.export.service",
+    "app.modules.export.tasks -> app.modules.export.repository",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contract 1.customer — customer does not import other modules' repository"
+type = "forbidden"
+source_modules = ["app.modules.customer"]
+forbidden_modules = [
+    "app.modules.iam.repository",
+    "app.modules.category.repository",
+    "app.modules.catalog.repository",
+    "app.modules.image.repository",
+    "app.modules.pricing.repository",
+    "app.modules.export.repository",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    "app.modules.iam.service -> app.modules.iam.repository",
+    "app.modules.customer.service -> app.modules.customer.repository",
+    "app.modules.category.service -> app.modules.category.repository",
+    "app.modules.catalog.service -> app.modules.catalog.repository",
+    "app.modules.image.service -> app.modules.image.repository",
+    "app.modules.pricing.service -> app.modules.pricing.repository",
+    "app.modules.export.service -> app.modules.export.repository",
+    "app.modules.image.service -> app.modules.image.tasks",
+    "app.modules.image.tasks -> app.modules.image.service",
+    "app.modules.image.tasks -> app.modules.image.repository",
+    "app.modules.export.service -> app.modules.export.tasks",
+    "app.modules.export.tasks -> app.modules.export.service",
+    "app.modules.export.tasks -> app.modules.export.repository",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contract 1.category — category does not import other modules' repository"
+type = "forbidden"
+source_modules = ["app.modules.category"]
+forbidden_modules = [
+    "app.modules.iam.repository",
+    "app.modules.customer.repository",
+    "app.modules.catalog.repository",
+    "app.modules.image.repository",
+    "app.modules.pricing.repository",
+    "app.modules.export.repository",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    "app.modules.iam.service -> app.modules.iam.repository",
+    "app.modules.customer.service -> app.modules.customer.repository",
+    "app.modules.category.service -> app.modules.category.repository",
+    "app.modules.catalog.service -> app.modules.catalog.repository",
+    "app.modules.image.service -> app.modules.image.repository",
+    "app.modules.pricing.service -> app.modules.pricing.repository",
+    "app.modules.export.service -> app.modules.export.repository",
+    "app.modules.image.service -> app.modules.image.tasks",
+    "app.modules.image.tasks -> app.modules.image.service",
+    "app.modules.image.tasks -> app.modules.image.repository",
+    "app.modules.export.service -> app.modules.export.tasks",
+    "app.modules.export.tasks -> app.modules.export.service",
+    "app.modules.export.tasks -> app.modules.export.repository",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contract 1.catalog — catalog does not import other modules' repository"
+type = "forbidden"
+source_modules = ["app.modules.catalog"]
+forbidden_modules = [
+    "app.modules.iam.repository",
+    "app.modules.customer.repository",
+    "app.modules.category.repository",
+    "app.modules.image.repository",
+    "app.modules.pricing.repository",
+    "app.modules.export.repository",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    "app.modules.iam.service -> app.modules.iam.repository",
+    "app.modules.customer.service -> app.modules.customer.repository",
+    "app.modules.category.service -> app.modules.category.repository",
+    "app.modules.catalog.service -> app.modules.catalog.repository",
+    "app.modules.image.service -> app.modules.image.repository",
+    "app.modules.pricing.service -> app.modules.pricing.repository",
+    "app.modules.export.service -> app.modules.export.repository",
+    "app.modules.image.service -> app.modules.image.tasks",
+    "app.modules.image.tasks -> app.modules.image.service",
+    "app.modules.image.tasks -> app.modules.image.repository",
+    "app.modules.export.service -> app.modules.export.tasks",
+    "app.modules.export.tasks -> app.modules.export.service",
+    "app.modules.export.tasks -> app.modules.export.repository",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contract 1.image — image does not import other modules' repository"
+type = "forbidden"
+source_modules = ["app.modules.image"]
+forbidden_modules = [
+    "app.modules.iam.repository",
+    "app.modules.customer.repository",
+    "app.modules.category.repository",
+    "app.modules.catalog.repository",
+    "app.modules.pricing.repository",
+    "app.modules.export.repository",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    "app.modules.iam.service -> app.modules.iam.repository",
+    "app.modules.customer.service -> app.modules.customer.repository",
+    "app.modules.category.service -> app.modules.category.repository",
+    "app.modules.catalog.service -> app.modules.catalog.repository",
+    "app.modules.image.service -> app.modules.image.repository",
+    "app.modules.pricing.service -> app.modules.pricing.repository",
+    "app.modules.export.service -> app.modules.export.repository",
+    "app.modules.image.service -> app.modules.image.tasks",
+    "app.modules.image.tasks -> app.modules.image.service",
+    "app.modules.image.tasks -> app.modules.image.repository",
+    "app.modules.export.service -> app.modules.export.tasks",
+    "app.modules.export.tasks -> app.modules.export.service",
+    "app.modules.export.tasks -> app.modules.export.repository",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contract 1.pricing — pricing does not import other modules' repository"
+type = "forbidden"
+source_modules = ["app.modules.pricing"]
+forbidden_modules = [
+    "app.modules.iam.repository",
+    "app.modules.customer.repository",
+    "app.modules.category.repository",
+    "app.modules.catalog.repository",
+    "app.modules.image.repository",
+    "app.modules.export.repository",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    "app.modules.iam.service -> app.modules.iam.repository",
+    "app.modules.customer.service -> app.modules.customer.repository",
+    "app.modules.category.service -> app.modules.category.repository",
+    "app.modules.catalog.service -> app.modules.catalog.repository",
+    "app.modules.image.service -> app.modules.image.repository",
+    "app.modules.pricing.service -> app.modules.pricing.repository",
+    "app.modules.export.service -> app.modules.export.repository",
+    "app.modules.image.service -> app.modules.image.tasks",
+    "app.modules.image.tasks -> app.modules.image.service",
+    "app.modules.image.tasks -> app.modules.image.repository",
+    "app.modules.export.service -> app.modules.export.tasks",
+    "app.modules.export.tasks -> app.modules.export.service",
+    "app.modules.export.tasks -> app.modules.export.repository",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contract 1.dashboard — dashboard does not import other modules' repository"
+type = "forbidden"
+source_modules = ["app.modules.dashboard"]
+forbidden_modules = [
+    "app.modules.iam.repository",
+    "app.modules.customer.repository",
+    "app.modules.category.repository",
+    "app.modules.catalog.repository",
+    "app.modules.image.repository",
+    "app.modules.pricing.repository",
+    "app.modules.export.repository",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    "app.modules.iam.service -> app.modules.iam.repository",
+    "app.modules.customer.service -> app.modules.customer.repository",
+    "app.modules.category.service -> app.modules.category.repository",
+    "app.modules.catalog.service -> app.modules.catalog.repository",
+    "app.modules.image.service -> app.modules.image.repository",
+    "app.modules.pricing.service -> app.modules.pricing.repository",
+    "app.modules.export.service -> app.modules.export.repository",
+    "app.modules.image.service -> app.modules.image.tasks",
+    "app.modules.image.tasks -> app.modules.image.service",
+    "app.modules.image.tasks -> app.modules.image.repository",
+    "app.modules.export.service -> app.modules.export.tasks",
+    "app.modules.export.tasks -> app.modules.export.service",
+    "app.modules.export.tasks -> app.modules.export.repository",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contract 1.export — export does not import other modules' repository"
+type = "forbidden"
+source_modules = ["app.modules.export"]
+forbidden_modules = [
+    "app.modules.iam.repository",
+    "app.modules.customer.repository",
+    "app.modules.category.repository",
+    "app.modules.catalog.repository",
+    "app.modules.image.repository",
+    "app.modules.pricing.repository",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    "app.modules.iam.service -> app.modules.iam.repository",
+    "app.modules.customer.service -> app.modules.customer.repository",
+    "app.modules.category.service -> app.modules.category.repository",
+    "app.modules.catalog.service -> app.modules.catalog.repository",
+    "app.modules.image.service -> app.modules.image.repository",
+    "app.modules.pricing.service -> app.modules.pricing.repository",
+    "app.modules.export.service -> app.modules.export.repository",
+    "app.modules.image.service -> app.modules.image.tasks",
+    "app.modules.image.tasks -> app.modules.image.service",
+    "app.modules.image.tasks -> app.modules.image.repository",
+    "app.modules.export.service -> app.modules.export.tasks",
+    "app.modules.export.tasks -> app.modules.export.service",
+    "app.modules.export.tasks -> app.modules.export.repository",
+]
+
+
+# ============================================================================
+# Contract 2 — adapters/gemini.py is consumed ONLY via ai_ops/client.py
+# (§16.D.2 + §3.G — the single most important boundary per §16).
+# Domain modules MUST NEVER import app.adapters.gemini directly.
+# ai_ops/client.py is in app.ai_ops (NOT app.modules) so it bypasses this rule.
+#
+# Transitive-chain allowlist:
+#   * `ai_ops.client → adapters.gemini` is the locked single-import-surface
+#     edge per §3.G + §16.D.2. This edge MUST NOT count when checking that
+#     the 8 domain modules don't transitively reach adapters.gemini through
+#     the legitimate ai_ops.client wrapper.
+# ============================================================================
+[[tool.importlinter.contracts]]
+name = "Contract 2 — domain modules MUST NOT import adapters.gemini"
+type = "forbidden"
+source_modules = [
+    "app.modules.iam",
+    "app.modules.customer",
+    "app.modules.category",
+    "app.modules.catalog",
+    "app.modules.image",
+    "app.modules.pricing",
+    "app.modules.dashboard",
+    "app.modules.export",
+]
+forbidden_modules = ["app.adapters.gemini"]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    # The single locked import surface per §3.G — ai_ops.client wraps the
+    # adapter. Counting this edge would render every domain module non-compliant.
+    "app.ai_ops.client -> app.adapters.gemini",
+]
+
+
+# ============================================================================
+# Contract 3 — M10 meesho-format symbols confined to export module + GCS
+# Philosophy locked at §14.J + §15.F + §0.H.
+# Module-level: forbid any module other than export from importing
+# app.modules.export.domain (where XlsxColumnSpec — which CARRIES the
+# forbidden field names — lives). Symbol-level enforcement is Contract 9.
+# ============================================================================
+[[tool.importlinter.contracts]]
+name = "Contract 3 — export.domain is private to export"
+type = "forbidden"
+source_modules = [
+    "app.modules.iam",
+    "app.modules.customer",
+    "app.modules.category",
+    "app.modules.catalog",
+    "app.modules.image",
+    "app.modules.pricing",
+    "app.modules.dashboard",
+    "app.core",
+    "app.shared",
+    "app.ai_ops",
+    "app.i18n",
+]
+forbidden_modules = ["app.modules.export.domain"]
+
+
+# ============================================================================
+# Contract 4 — schemas.py is PRIVATE wire-shape per §16.C Rule 3
+# Same per-source expansion + intra-module allowlist as Contract 1.
+# ============================================================================
+
+[[tool.importlinter.contracts]]
+name = "Contract 4.iam — iam does not import other modules' schemas"
+type = "forbidden"
+source_modules = ["app.modules.iam"]
+forbidden_modules = [
+    "app.modules.customer.schemas",
+    "app.modules.category.schemas",
+    "app.modules.catalog.schemas",
+    "app.modules.image.schemas",
+    "app.modules.pricing.schemas",
+    "app.modules.dashboard.schemas",
+    "app.modules.export.schemas",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    "app.modules.iam.router -> app.modules.iam.schemas",
+    "app.modules.customer.router -> app.modules.customer.schemas",
+    "app.modules.category.router -> app.modules.category.schemas",
+    "app.modules.catalog.router -> app.modules.catalog.schemas",
+    "app.modules.image.router -> app.modules.image.schemas",
+    "app.modules.pricing.router -> app.modules.pricing.schemas",
+    "app.modules.dashboard.router -> app.modules.dashboard.schemas",
+    "app.modules.export.router -> app.modules.export.schemas",
+    "app.modules.iam.service -> app.modules.iam.schemas",
+    "app.modules.customer.service -> app.modules.customer.schemas",
+    "app.modules.category.service -> app.modules.category.schemas",
+    "app.modules.catalog.service -> app.modules.catalog.schemas",
+    "app.modules.image.service -> app.modules.image.schemas",
+    "app.modules.pricing.service -> app.modules.pricing.schemas",
+    "app.modules.dashboard.service -> app.modules.dashboard.schemas",
+    "app.modules.export.service -> app.modules.export.schemas",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contract 4.customer — customer does not import other modules' schemas"
+type = "forbidden"
+source_modules = ["app.modules.customer"]
+forbidden_modules = [
+    "app.modules.iam.schemas",
+    "app.modules.category.schemas",
+    "app.modules.catalog.schemas",
+    "app.modules.image.schemas",
+    "app.modules.pricing.schemas",
+    "app.modules.dashboard.schemas",
+    "app.modules.export.schemas",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    "app.modules.iam.router -> app.modules.iam.schemas",
+    "app.modules.customer.router -> app.modules.customer.schemas",
+    "app.modules.category.router -> app.modules.category.schemas",
+    "app.modules.catalog.router -> app.modules.catalog.schemas",
+    "app.modules.image.router -> app.modules.image.schemas",
+    "app.modules.pricing.router -> app.modules.pricing.schemas",
+    "app.modules.dashboard.router -> app.modules.dashboard.schemas",
+    "app.modules.export.router -> app.modules.export.schemas",
+    "app.modules.iam.service -> app.modules.iam.schemas",
+    "app.modules.customer.service -> app.modules.customer.schemas",
+    "app.modules.category.service -> app.modules.category.schemas",
+    "app.modules.catalog.service -> app.modules.catalog.schemas",
+    "app.modules.image.service -> app.modules.image.schemas",
+    "app.modules.pricing.service -> app.modules.pricing.schemas",
+    "app.modules.dashboard.service -> app.modules.dashboard.schemas",
+    "app.modules.export.service -> app.modules.export.schemas",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contract 4.category — category does not import other modules' schemas"
+type = "forbidden"
+source_modules = ["app.modules.category"]
+forbidden_modules = [
+    "app.modules.iam.schemas",
+    "app.modules.customer.schemas",
+    "app.modules.catalog.schemas",
+    "app.modules.image.schemas",
+    "app.modules.pricing.schemas",
+    "app.modules.dashboard.schemas",
+    "app.modules.export.schemas",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    "app.modules.iam.router -> app.modules.iam.schemas",
+    "app.modules.customer.router -> app.modules.customer.schemas",
+    "app.modules.category.router -> app.modules.category.schemas",
+    "app.modules.catalog.router -> app.modules.catalog.schemas",
+    "app.modules.image.router -> app.modules.image.schemas",
+    "app.modules.pricing.router -> app.modules.pricing.schemas",
+    "app.modules.dashboard.router -> app.modules.dashboard.schemas",
+    "app.modules.export.router -> app.modules.export.schemas",
+    "app.modules.iam.service -> app.modules.iam.schemas",
+    "app.modules.customer.service -> app.modules.customer.schemas",
+    "app.modules.category.service -> app.modules.category.schemas",
+    "app.modules.catalog.service -> app.modules.catalog.schemas",
+    "app.modules.image.service -> app.modules.image.schemas",
+    "app.modules.pricing.service -> app.modules.pricing.schemas",
+    "app.modules.dashboard.service -> app.modules.dashboard.schemas",
+    "app.modules.export.service -> app.modules.export.schemas",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contract 4.catalog — catalog does not import other modules' schemas"
+type = "forbidden"
+source_modules = ["app.modules.catalog"]
+forbidden_modules = [
+    "app.modules.iam.schemas",
+    "app.modules.customer.schemas",
+    "app.modules.category.schemas",
+    "app.modules.image.schemas",
+    "app.modules.pricing.schemas",
+    "app.modules.dashboard.schemas",
+    "app.modules.export.schemas",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    "app.modules.iam.router -> app.modules.iam.schemas",
+    "app.modules.customer.router -> app.modules.customer.schemas",
+    "app.modules.category.router -> app.modules.category.schemas",
+    "app.modules.catalog.router -> app.modules.catalog.schemas",
+    "app.modules.image.router -> app.modules.image.schemas",
+    "app.modules.pricing.router -> app.modules.pricing.schemas",
+    "app.modules.dashboard.router -> app.modules.dashboard.schemas",
+    "app.modules.export.router -> app.modules.export.schemas",
+    "app.modules.iam.service -> app.modules.iam.schemas",
+    "app.modules.customer.service -> app.modules.customer.schemas",
+    "app.modules.category.service -> app.modules.category.schemas",
+    "app.modules.catalog.service -> app.modules.catalog.schemas",
+    "app.modules.image.service -> app.modules.image.schemas",
+    "app.modules.pricing.service -> app.modules.pricing.schemas",
+    "app.modules.dashboard.service -> app.modules.dashboard.schemas",
+    "app.modules.export.service -> app.modules.export.schemas",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contract 4.image — image does not import other modules' schemas"
+type = "forbidden"
+source_modules = ["app.modules.image"]
+forbidden_modules = [
+    "app.modules.iam.schemas",
+    "app.modules.customer.schemas",
+    "app.modules.category.schemas",
+    "app.modules.catalog.schemas",
+    "app.modules.pricing.schemas",
+    "app.modules.dashboard.schemas",
+    "app.modules.export.schemas",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    "app.modules.iam.router -> app.modules.iam.schemas",
+    "app.modules.customer.router -> app.modules.customer.schemas",
+    "app.modules.category.router -> app.modules.category.schemas",
+    "app.modules.catalog.router -> app.modules.catalog.schemas",
+    "app.modules.image.router -> app.modules.image.schemas",
+    "app.modules.pricing.router -> app.modules.pricing.schemas",
+    "app.modules.dashboard.router -> app.modules.dashboard.schemas",
+    "app.modules.export.router -> app.modules.export.schemas",
+    "app.modules.iam.service -> app.modules.iam.schemas",
+    "app.modules.customer.service -> app.modules.customer.schemas",
+    "app.modules.category.service -> app.modules.category.schemas",
+    "app.modules.catalog.service -> app.modules.catalog.schemas",
+    "app.modules.image.service -> app.modules.image.schemas",
+    "app.modules.pricing.service -> app.modules.pricing.schemas",
+    "app.modules.dashboard.service -> app.modules.dashboard.schemas",
+    "app.modules.export.service -> app.modules.export.schemas",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contract 4.pricing — pricing does not import other modules' schemas"
+type = "forbidden"
+source_modules = ["app.modules.pricing"]
+forbidden_modules = [
+    "app.modules.iam.schemas",
+    "app.modules.customer.schemas",
+    "app.modules.category.schemas",
+    "app.modules.catalog.schemas",
+    "app.modules.image.schemas",
+    "app.modules.dashboard.schemas",
+    "app.modules.export.schemas",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    "app.modules.iam.router -> app.modules.iam.schemas",
+    "app.modules.customer.router -> app.modules.customer.schemas",
+    "app.modules.category.router -> app.modules.category.schemas",
+    "app.modules.catalog.router -> app.modules.catalog.schemas",
+    "app.modules.image.router -> app.modules.image.schemas",
+    "app.modules.pricing.router -> app.modules.pricing.schemas",
+    "app.modules.dashboard.router -> app.modules.dashboard.schemas",
+    "app.modules.export.router -> app.modules.export.schemas",
+    "app.modules.iam.service -> app.modules.iam.schemas",
+    "app.modules.customer.service -> app.modules.customer.schemas",
+    "app.modules.category.service -> app.modules.category.schemas",
+    "app.modules.catalog.service -> app.modules.catalog.schemas",
+    "app.modules.image.service -> app.modules.image.schemas",
+    "app.modules.pricing.service -> app.modules.pricing.schemas",
+    "app.modules.dashboard.service -> app.modules.dashboard.schemas",
+    "app.modules.export.service -> app.modules.export.schemas",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contract 4.dashboard — dashboard does not import other modules' schemas"
+type = "forbidden"
+source_modules = ["app.modules.dashboard"]
+forbidden_modules = [
+    "app.modules.iam.schemas",
+    "app.modules.customer.schemas",
+    "app.modules.category.schemas",
+    "app.modules.catalog.schemas",
+    "app.modules.image.schemas",
+    "app.modules.pricing.schemas",
+    "app.modules.export.schemas",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    "app.modules.iam.router -> app.modules.iam.schemas",
+    "app.modules.customer.router -> app.modules.customer.schemas",
+    "app.modules.category.router -> app.modules.category.schemas",
+    "app.modules.catalog.router -> app.modules.catalog.schemas",
+    "app.modules.image.router -> app.modules.image.schemas",
+    "app.modules.pricing.router -> app.modules.pricing.schemas",
+    "app.modules.dashboard.router -> app.modules.dashboard.schemas",
+    "app.modules.export.router -> app.modules.export.schemas",
+    "app.modules.iam.service -> app.modules.iam.schemas",
+    "app.modules.customer.service -> app.modules.customer.schemas",
+    "app.modules.category.service -> app.modules.category.schemas",
+    "app.modules.catalog.service -> app.modules.catalog.schemas",
+    "app.modules.image.service -> app.modules.image.schemas",
+    "app.modules.pricing.service -> app.modules.pricing.schemas",
+    "app.modules.dashboard.service -> app.modules.dashboard.schemas",
+    "app.modules.export.service -> app.modules.export.schemas",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contract 4.export — export does not import other modules' schemas"
+type = "forbidden"
+source_modules = ["app.modules.export"]
+forbidden_modules = [
+    "app.modules.iam.schemas",
+    "app.modules.customer.schemas",
+    "app.modules.category.schemas",
+    "app.modules.catalog.schemas",
+    "app.modules.image.schemas",
+    "app.modules.pricing.schemas",
+    "app.modules.dashboard.schemas",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    "app.modules.iam.router -> app.modules.iam.schemas",
+    "app.modules.customer.router -> app.modules.customer.schemas",
+    "app.modules.category.router -> app.modules.category.schemas",
+    "app.modules.catalog.router -> app.modules.catalog.schemas",
+    "app.modules.image.router -> app.modules.image.schemas",
+    "app.modules.pricing.router -> app.modules.pricing.schemas",
+    "app.modules.dashboard.router -> app.modules.dashboard.schemas",
+    "app.modules.export.router -> app.modules.export.schemas",
+    "app.modules.iam.service -> app.modules.iam.schemas",
+    "app.modules.customer.service -> app.modules.customer.schemas",
+    "app.modules.category.service -> app.modules.category.schemas",
+    "app.modules.catalog.service -> app.modules.catalog.schemas",
+    "app.modules.image.service -> app.modules.image.schemas",
+    "app.modules.pricing.service -> app.modules.pricing.schemas",
+    "app.modules.dashboard.service -> app.modules.dashboard.schemas",
+    "app.modules.export.service -> app.modules.export.schemas",
+]
+
+
+# ============================================================================
+# Contract 5 — ai_ops/ consumed ONLY by category, catalog, image
+# Per §6A.A + §16.D.3 — the 3 AI workload modules.
+# The other 5 (iam, customer, pricing, dashboard, export) MUST NOT import ai_ops.
+#
+# Transitive-chain allowlist:
+#   * The 3 legitimate consumers (category/catalog/image) → ai_ops are
+#     intra-spec edges that must NOT count when checking the OTHER 5
+#     modules' compliance.
+#   * `core.cache` → `app.modules.category.service` is the §4.D pre-warm
+#     startup hook (locked at §4.D + `MVP_ARCH §6.7`) — `core/` legitimately
+#     reaches into category at boot time.
+# ============================================================================
+[[tool.importlinter.contracts]]
+name = "Contract 5 — ai_ops consumed only by category, catalog, image"
+type = "forbidden"
+source_modules = [
+    "app.modules.iam",
+    "app.modules.customer",
+    "app.modules.pricing",
+    "app.modules.dashboard",
+    "app.modules.export",
+]
+forbidden_modules = ["app.ai_ops"]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    # Legitimate ai_ops consumers per §6A.A — these edges MUST NOT count
+    # against the other 5 modules' Contract 5 compliance.
+    "app.modules.category.service -> app.ai_ops.client",
+    "app.modules.category.service -> app.ai_ops.budget_cap",
+    "app.modules.catalog.service -> app.ai_ops.client",
+    "app.modules.catalog.service -> app.ai_ops.budget_cap",
+    "app.modules.image.service -> app.ai_ops.client",
+    "app.modules.image.service -> app.ai_ops.budget_cap",
+    # image.tasks → ai_ops.client is the §11.E watermark Celery task per §6A.E
+    # — image module's tasks.py is a legitimate ai_ops consumer.
+    "app.modules.image.tasks -> app.ai_ops.client",
+    "app.modules.image.tasks -> app.ai_ops.budget_cap",
+    # §4.D pre-warm startup hook — core/cache reaches into category at boot.
+    "app.core.cache -> app.modules.category.service",
+    "app.core.cache -> app.shared.database",
+]
+
+
+# ============================================================================
+# Contract 6 — domain.py cross-module signature rule
+#
+# import-linter cannot enforce signature-based export rules. Enforced by
+# review-checklist per §16.E + §19. Placeholder so the §19.C "7 logical
+# import-linter contracts" framing stays intact.
+# ============================================================================
+# (no executable rule — review-checklist enforcement only)
+
+
+# ============================================================================
+# Contract 7 — router.py + tasks.py are NEVER cross-module imported
+# Per §16.C Rule 6 + Rule 7. Same per-source expansion + intra-module
+# allowlist pattern as Contracts 1, 4.
+# Only image + export have tasks.py per §3.I.
+# ============================================================================
+
+[[tool.importlinter.contracts]]
+name = "Contract 7.iam — iam does not import other modules' router/tasks"
+type = "forbidden"
+source_modules = ["app.modules.iam"]
+forbidden_modules = [
+    "app.modules.customer.router",
+    "app.modules.category.router",
+    "app.modules.catalog.router",
+    "app.modules.image.router",
+    "app.modules.image.tasks",
+    "app.modules.pricing.router",
+    "app.modules.dashboard.router",
+    "app.modules.export.router",
+    "app.modules.export.tasks",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    "app.modules.image.service -> app.modules.image.tasks",
+    "app.modules.image.tasks -> app.modules.image.service",
+    "app.modules.export.service -> app.modules.export.tasks",
+    "app.modules.export.tasks -> app.modules.export.service",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contract 7.customer — customer does not import other modules' router/tasks"
+type = "forbidden"
+source_modules = ["app.modules.customer"]
+forbidden_modules = [
+    "app.modules.iam.router",
+    "app.modules.category.router",
+    "app.modules.catalog.router",
+    "app.modules.image.router",
+    "app.modules.image.tasks",
+    "app.modules.pricing.router",
+    "app.modules.dashboard.router",
+    "app.modules.export.router",
+    "app.modules.export.tasks",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    "app.modules.image.service -> app.modules.image.tasks",
+    "app.modules.image.tasks -> app.modules.image.service",
+    "app.modules.export.service -> app.modules.export.tasks",
+    "app.modules.export.tasks -> app.modules.export.service",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contract 7.category — category does not import other modules' router/tasks"
+type = "forbidden"
+source_modules = ["app.modules.category"]
+forbidden_modules = [
+    "app.modules.iam.router",
+    "app.modules.customer.router",
+    "app.modules.catalog.router",
+    "app.modules.image.router",
+    "app.modules.image.tasks",
+    "app.modules.pricing.router",
+    "app.modules.dashboard.router",
+    "app.modules.export.router",
+    "app.modules.export.tasks",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    "app.modules.image.service -> app.modules.image.tasks",
+    "app.modules.image.tasks -> app.modules.image.service",
+    "app.modules.export.service -> app.modules.export.tasks",
+    "app.modules.export.tasks -> app.modules.export.service",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contract 7.catalog — catalog does not import other modules' router/tasks"
+type = "forbidden"
+source_modules = ["app.modules.catalog"]
+forbidden_modules = [
+    "app.modules.iam.router",
+    "app.modules.customer.router",
+    "app.modules.category.router",
+    "app.modules.image.router",
+    "app.modules.image.tasks",
+    "app.modules.pricing.router",
+    "app.modules.dashboard.router",
+    "app.modules.export.router",
+    "app.modules.export.tasks",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    "app.modules.image.service -> app.modules.image.tasks",
+    "app.modules.image.tasks -> app.modules.image.service",
+    "app.modules.export.service -> app.modules.export.tasks",
+    "app.modules.export.tasks -> app.modules.export.service",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contract 7.image — image does not import other modules' router/tasks"
+type = "forbidden"
+source_modules = ["app.modules.image"]
+forbidden_modules = [
+    "app.modules.iam.router",
+    "app.modules.customer.router",
+    "app.modules.category.router",
+    "app.modules.catalog.router",
+    "app.modules.pricing.router",
+    "app.modules.dashboard.router",
+    "app.modules.export.router",
+    "app.modules.export.tasks",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    "app.modules.image.service -> app.modules.image.tasks",
+    "app.modules.image.tasks -> app.modules.image.service",
+    "app.modules.export.service -> app.modules.export.tasks",
+    "app.modules.export.tasks -> app.modules.export.service",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contract 7.pricing — pricing does not import other modules' router/tasks"
+type = "forbidden"
+source_modules = ["app.modules.pricing"]
+forbidden_modules = [
+    "app.modules.iam.router",
+    "app.modules.customer.router",
+    "app.modules.category.router",
+    "app.modules.catalog.router",
+    "app.modules.image.router",
+    "app.modules.image.tasks",
+    "app.modules.dashboard.router",
+    "app.modules.export.router",
+    "app.modules.export.tasks",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    "app.modules.image.service -> app.modules.image.tasks",
+    "app.modules.image.tasks -> app.modules.image.service",
+    "app.modules.export.service -> app.modules.export.tasks",
+    "app.modules.export.tasks -> app.modules.export.service",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contract 7.dashboard — dashboard does not import other modules' router/tasks"
+type = "forbidden"
+source_modules = ["app.modules.dashboard"]
+forbidden_modules = [
+    "app.modules.iam.router",
+    "app.modules.customer.router",
+    "app.modules.category.router",
+    "app.modules.catalog.router",
+    "app.modules.image.router",
+    "app.modules.image.tasks",
+    "app.modules.pricing.router",
+    "app.modules.export.router",
+    "app.modules.export.tasks",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    "app.modules.image.service -> app.modules.image.tasks",
+    "app.modules.image.tasks -> app.modules.image.service",
+    "app.modules.export.service -> app.modules.export.tasks",
+    "app.modules.export.tasks -> app.modules.export.service",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contract 7.export — export does not import other modules' router/tasks"
+type = "forbidden"
+source_modules = ["app.modules.export"]
+forbidden_modules = [
+    "app.modules.iam.router",
+    "app.modules.customer.router",
+    "app.modules.category.router",
+    "app.modules.catalog.router",
+    "app.modules.image.router",
+    "app.modules.image.tasks",
+    "app.modules.pricing.router",
+    "app.modules.dashboard.router",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.iam -> app.modules.iam.router",
+    "app.modules.customer -> app.modules.customer.router",
+    "app.modules.category -> app.modules.category.router",
+    "app.modules.catalog -> app.modules.catalog.router",
+    "app.modules.image -> app.modules.image.router",
+    "app.modules.pricing -> app.modules.pricing.router",
+    "app.modules.dashboard -> app.modules.dashboard.router",
+    "app.modules.export -> app.modules.export.router",
+    "app.modules.iam.router -> app.modules.iam.service",
+    "app.modules.customer.router -> app.modules.customer.service",
+    "app.modules.category.router -> app.modules.category.service",
+    "app.modules.catalog.router -> app.modules.catalog.service",
+    "app.modules.image.router -> app.modules.image.service",
+    "app.modules.pricing.router -> app.modules.pricing.service",
+    "app.modules.dashboard.router -> app.modules.dashboard.service",
+    "app.modules.export.router -> app.modules.export.service",
+    "app.modules.image.service -> app.modules.image.tasks",
+    "app.modules.image.tasks -> app.modules.image.service",
+    "app.modules.export.service -> app.modules.export.tasks",
+    "app.modules.export.tasks -> app.modules.export.service",
+]

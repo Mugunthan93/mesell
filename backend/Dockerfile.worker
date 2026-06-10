@@ -1,13 +1,11 @@
-# Worker image for the Celery 'scraping' queue — includes Playwright + Chromium.
+# Worker image for the V1 Celery worker — image + export tasks only.
+# No Playwright/Chromium — scraping was V0. V1 workers handle image_tasks + export_tasks
+# per BACKEND_ARCHITECTURE.md §18.B INCLUDE list (app.workers.celery_app).
 # Build: docker build -f Dockerfile.worker -t mesell-worker .
-# The api image (Dockerfile) stays lean; only this worker carries the browser.
 FROM python:3.12-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends gcc libpq-dev && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-# Install Chromium and its system dependencies for Playwright.
-RUN playwright install --with-deps chromium
 COPY app/ ./app/
-CMD ["celery", "-A", "app.workers.celery_app.celery_app", "worker", \
-     "-Q", "scraping,generation,images", "--concurrency", "2", "--loglevel", "info"]
+CMD ["celery", "-A", "app.workers.celery_app", "worker", "--concurrency=4", "--max-tasks-per-child=100", "--loglevel=info"]

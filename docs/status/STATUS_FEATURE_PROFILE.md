@@ -22,6 +22,7 @@ DISPATCH 1 COMPLETE — awaiting sibling sessions for Dispatch 2
 - `profile-api.service.spec.ts` — 4/4 tests passing
 - `profile.component.ts` — stub REPLACED with full skeleton (form, load, save, 404 handling)
 - `profile.component.spec.ts` — 4/4 tests passing
+- `account.routes.ts` — `providers: [ProfileApiService]` added to /profile route (coordinator hand-off resolved)
 
 ## In Progress
 
@@ -42,7 +43,7 @@ _(none — waiting on sibling sessions)_
 
 ## Hand-offs
 
-- **To coordinator (pending):** `account.routes.ts` profile route needs `providers: [ProfileApiService]` added
+- **To coordinator (DONE):** `account.routes.ts` profile route — `providers: [ProfileApiService]` added 2026-06-06
 - **To cross-cutting (pending):** `core/models/seller-profile.model.ts` shape fix per BACKEND §8.E
 - **Waiting from onboarding + cross-cutting:** ComplianceStepComponent in `@shared/components/compliance-step/`
 
@@ -167,10 +168,105 @@ Next: Dispatch 2 — wire ComplianceStepComponent + patchActiveCategories + patc
      into ProfileEditComponent once @shared/components/compliance-step lands
 =========
 
+=== UPDATE: 2026-06-06 DESIGN SYSTEM INTEGRATION ACKNOWLEDGED ===
+Trigger: Master-relayed notification — §5A AMENDMENT 2026-06-06B (design system
+sub-session deliverables integrated by meesell-frontend-coordinator)
+
+READS COMPLETED:
+  ✓ FRONTEND_ARCHITECTURE.md §5A — AMENDMENT 2026-06-06B; STATUS confirmed FULL LOCK
+  ✓ frontend/src/app/design-system/_tokens.scss
+      Primary: #F26B23 · Secondary: #1E40AF · bg: #f0f5f9 · surface: #ffffff
+      on-surface: #2a3547 · outline: #e5eaef (Spike) · radius: 7/16/18/full
+      8-point spacing grid · reduced-motion respected
+  ✓ _theme.scss — Material M3 + Spike light-theme wired
+  ✓ _typography.scss — Plus Jakarta Sans 300-800 Google Fonts; global html/body rule
+  ✓ _elevation.scss, _motion.scss, _component-overrides.scss (15 Material components
+      pre-styled — button pill shape, textfield 37px, dialog, snackbar, etc.)
+  ✓ breakpoints.ts, tokens.ts (TS mirrors)
+  ✓ tailwind.config.js — all semantic colors + radius + elevation + motion wired
+  ✓ styles.scss — import order verified
+
+IMPACT ON DISPATCH 1 WORK (profile.component.ts):
+  NO RE-DISPATCH NEEDED — per §5A implication #5.
+  Existing component is already token-compliant:
+    - Tailwind classes consume locked tokens via tailwind.config.js extensions ✓
+    - mat-raised-button color="primary" → auto-inherits #F26B23 + pill shape ✓
+    - mat-form-field + matInput → auto-inherits Spike textfield overrides ✓
+    - Plus Jakarta Sans applied globally (html/body rule) — no component change ✓
+    - No hardcoded hex values anywhere ✓
+  Minor non-blocker: compliance-step stub uses text-gray-400 (Tailwind default gray)
+    instead of text-on-surface-variant. Stub will be fully replaced in Dispatch 2.
+
+DISPATCH 2 PLAN (token-aware):
+  - Import ComplianceStep via @shared/components/compliance-step alias
+  - Replace stub div with <mee-compliance-step [mode]="'edit'" ...>
+  - Wire patchActiveCategories() + patchComplianceExtension() to saved event
+  - Add bg-bg min-h-screen to page wrapper (per Q-PROFILE-002)
+  - Iconography: Material Symbols Outlined for any icons (interim ratification)
+  - No hardcoded colors — all via CSS custom properties or Tailwind semantic classes
+
+TOKEN DISCREPANCY NOTE (see Q-PROFILE-001 in questions section):
+  _tokens.scss --mee-color-outline: #e5eaef vs §5A.B doc table #D1D5DB.
+  Using var(--mee-color-outline) in code (not the literal). Adapts automatically.
+
+Status: ACTIVE — design system acknowledged; no re-dispatch; waiting on sibling
+sessions (onboarding + cross-cutting) for Dispatch 2
+=========
+
+=== UPDATE: 2026-06-06 COORDINATOR FIX APPLIED ===
+Action: Profile sub-session applied coordinator hand-off item directly.
+
+CHANGE:
+  features/account/account.routes.ts — profile route entry updated:
+    Added `import { ProfileApiService } from './profile/profile-api.service';`
+    Added `providers: [ProfileApiService]` to the /profile route object.
+  Without this, Angular's lazy-load boundary means ProfileApiService (Injectable()
+  with no providedIn) would not resolve when the route chunk loads.
+
+BUILD VERIFICATION:
+  ng build --configuration development — zero errors
+  profile-component chunk: 20.76 kB (§19 ≤80 kB met)
+
+Status after this update:
+  - Coordinator hand-off B (account.routes.ts providers) — RESOLVED ✓
+  - All other blockers unchanged: B3 (ComplianceStep), B4 (un-merger), B2 (core model)
+
+Next: Dispatch 2 — awaiting ComplianceStepComponent from onboarding + cross-cutting
+=========
+
 ## Questions for master
 
-_(sub-session appends here)_
+**Q-PROFILE-001 — outline token value discrepancy:**
+`_tokens.scss` line 36 sets `--mee-color-outline: #e5eaef` (Spike value).
+`FRONTEND_ARCHITECTURE.md §5A.B` table says `--mee-color-outline: #D1D5DB`.
+These do not match. The SCSS file is the source of truth per §5A; I will use
+`var(--mee-color-outline)` (not the literal) so whichever wins, my code adapts.
+But the §5A doc table should be updated for accuracy. Please confirm which value
+is canonical and update the doc table if needed.
+
+**Q-PROFILE-002 — page background class:**
+The profile page uses `max-w-2xl mx-auto p-4` with no explicit page bg. The
+body/html gets `--mee-color-bg: #f0f5f9` globally. Should the profile page
+wrapper explicitly add `bg-bg min-h-screen` to ensure consistent page
+background in any context (e.g. if the page is embedded later), or is the
+global body background sufficient for V1? Will address in Dispatch 2 unless
+master directs otherwise.
 
 ## Questions for sibling sessions
 
-_(sub-session appends here — likely to onboarding + cross-cutting)_
+**To onboarding session:**
+Dispatch 2 is blocked on ComplianceStepComponent. Please notify this session
+(via STATUS_FEATURE_ONBOARDING.md "Questions for sibling sessions" section)
+when ComplianceStepComponent is implemented AND when cross-cutting has
+confirmed the `@shared/components/compliance-step/` relocation path.
+The agreed interface for profile edit mode:
+  `<mee-compliance-step [mode]="'edit'" [profile]="profile()" (saved)="onComplianceSaved($event)">`
+Please confirm this `mode` input + `saved` output shape when you spec the component.
+
+**To cross-cutting session:**
+Two items needed before profile Dispatch 2:
+  1. Fix `core/models/seller-profile.model.ts` to match BACKEND §8.E
+     (manufacturer_name/packer_name/etc. not legalName/gstNumber/etc.)
+  2. Accept the ComplianceStepComponent relocation hand-off from onboarding to
+     `shared/components/compliance-step/` — profile session imports via
+     `@shared/components/compliance-step`

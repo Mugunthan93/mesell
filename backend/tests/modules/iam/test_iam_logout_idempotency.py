@@ -26,26 +26,22 @@ pytestmark = pytest.mark.asyncio
 
 
 async def test_logout_first_call_revokes_then_second_call_is_noop(
-    db_engine, use_live_valkey
+    db, use_live_valkey
 ):
     """First logout → cookie_was_present=True + user_id; second → False + None."""
-    from sqlalchemy.ext.asyncio import async_sessionmaker
-
     from app.shared import valkey as _vk_mod
 
-    Session = async_sessionmaker(db_engine, expire_on_commit=False)
     valkey = await _vk_mod.get_valkey_otp()
 
-    phone = "+919876543299"
+    phone = "+915550000020"
     otp = "777888"
     otp_hash = hashlib.sha256(otp.encode("utf-8")).hexdigest()
     payload = json.dumps({"otp_hash": otp_hash, "attempts": 0, "expires_at": int(time.time()) + 300})
     await valkey.set(f"otp:{phone}", payload, ex=300)
 
-    async with Session() as db:
-        verify = await iam_service.verify_otp_and_issue_tokens(
-            phone=phone, otp=otp, client_ip="192.0.2.10", db=db, valkey=valkey
-        )
+    verify = await iam_service.verify_otp_and_issue_tokens(
+        phone=phone, otp=otp, client_ip="192.0.2.10", db=db, valkey=valkey
+    )
 
     refresh_token = verify.refresh_token
     allowlist_key = refresh_allowlist_key(refresh_token)

@@ -25,9 +25,10 @@ const STEP_TITLES: Record<StepId, LocaleMap> = {
 
 @Injectable()
 export class StepComposerService {
-  /** Groups fields by step_id, drops empty steps, sorts by canonical order */
+  /** Filters hidden fields, groups by step_id, drops empty steps, sorts by canonical order */
   compose(fields: readonly FieldSchema[]): WizardStep[] {
-    const grouped = fields.reduce<Partial<Record<StepId, FieldSchema[]>>>((acc, field) => {
+    const visible = fields.filter(f => !f.isHidden);
+    const grouped = visible.reduce<Partial<Record<StepId, FieldSchema[]>>>((acc, field) => {
       const stepId = field.stepId;
       if (!acc[stepId]) acc[stepId] = [];
       acc[stepId]!.push(field);

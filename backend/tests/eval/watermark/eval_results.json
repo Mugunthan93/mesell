@@ -1,0 +1,10 @@
+{
+  "run_date": "2026-06-09",
+  "total_cases": 30,
+  "passed": 30,
+  "accuracy_pct": 100.0,
+  "threshold": 85,
+  "verdict": "PASS",
+  "watermarked_fixtures": 14,
+  "clean_fixtures": 16
+}
