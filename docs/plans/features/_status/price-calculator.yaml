@@ -1,0 +1,12 @@
+feature: "price-calculator"
+session: "mesell-price-calculator-amendment-session-1"
+worktree: "/tmp/mesell-wt/price-calculator"
+branch: "feature/price-calculator/planning"
+status: "PLAN_READY"
+last_updated: "2026-06-10T12:00:00Z"
+feature_plan_path: "docs/plans/features/price-calculator/FEATURE_PLAN.md"
+feature_plan_line_count: 967
+pr_number: null
+pr_url: null
+outstanding_founder_decisions: []
+notes: "Amendments applied: number prefixes removed, sections renamed and reordered to canonical v2, Operating context converted to preamble, Revision history v2 entry added."

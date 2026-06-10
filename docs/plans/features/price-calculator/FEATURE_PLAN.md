@@ -14,7 +14,6 @@
 
 ---
 
-## 0. Operating context (state audit findings)
 
 This plan is **not greenfield**. A prior session built the pricing module on `origin/develop` before the repo-management MASTER_PLAN was ratified. The findings below shape every later section.
 
@@ -60,7 +59,7 @@ This plan is **not greenfield**. A prior session built the pricing module on `or
 
 ---
 
-## 1. Decisions
+## Decisions
 
 ### 1.A — D1: Build framing → **Audit + Hardening + UI Gap-fill**
 
@@ -110,7 +109,7 @@ Spec test extension: existing `pricing.component.spec.ts` (212 lines) must be sp
 
 ---
 
-## 2. Agent lineup
+## Agent lineup
 
 Per CLAUDE.md MeeSell Agent Ecosystem Rules: only `meesell-*` agents handle MeeSell work. The master Claude session dispatches coordinators; coordinators dispatch their specialists.
 
@@ -134,7 +133,92 @@ The original PLANNING_DISPATCH.md assumed greenfield → 5-6 specialists. Realit
 
 ---
 
-## 3. Branch creation protocol
+## Code surfaces
+
+Every file the feature audit/hardening dispatches will create or modify. Grouped by domain. The "Status" column says what each dispatch does to the file.
+
+### 5.A — Backend
+
+| File | Status | Specialist | Why |
+|---|---|---|---|
+| `backend/app/modules/pricing/__init__.py` | DO NOT TOUCH | — | Already correct per §0.A |
+| `backend/app/modules/pricing/router.py` | MODIFY | api-routes-builder | Add `FEATURE_PRICE_CALCULATOR_ENABLED` flag check at top of handler — return 404 with `validation_message_id="feature.disabled"` when disabled |
+| `backend/app/modules/pricing/schemas.py` | DO NOT TOUCH | — | Already matches §12.E LOCKED |
+| `backend/app/modules/pricing/service.py` | AUDIT (modify only if drift found) | services-builder | Verify `_compute_pnl` formulas match §12.B.1 step 6 byte-for-byte; verify ROUND_HALF_EVEN; verify `_generate_alerts` emits all 3 codes per §12.F thresholds (LOW_MARGIN profit_pct<10, HIGH_MRP_MULTIPLIER mrp/input_cost>3, THIN_PROFIT profit<50). Modify ONLY if drift; otherwise no-op |
+| `backend/app/modules/pricing/domain.py` | DO NOT TOUCH | — | Already matches §12.F LOCKED |
+| `backend/app/modules/pricing/exceptions.py` | DO NOT TOUCH | — | Already matches §12.G LOCKED |
+| `backend/app/modules/pricing/repository.py` | AUDIT (modify only if drift found) | services-builder | Verify `find_latest_by_product` JOIN on `Product.user_id == user_id` is intact (M6 structural enforcement); verify `insert_calc` is append-only (no UPDATE method exists) |
+| `backend/app/shared/models/pricing_calc.py` | DO NOT TOUCH | — | Already matches V1_FEATURE_SPEC §F7 DDL column-by-column |
+| `backend/app/shared/config.py` | MODIFY | api-routes-builder | Add `feature_price_calculator_enabled: bool = True` Settings field |
+| `backend/app/i18n/messages_en.py` | MODIFY | services-builder | Add 1 new key: `"feature.disabled": "This feature is temporarily disabled."` (used by the 404 path) |
+| `backend/alembic/versions/<rev>_pricing_calcs.py` | DO NOT CREATE | — | Table already in baseline migration `935e55b4852c`. No new migration needed |
+| `backend/app/services/pricing_engine.py` | N/A | — | Already deleted in prior gap-pass. §0.E latent bug already resolved. No further action |
+| `backend/tests/modules/pricing/test_alerts.py` | RE-RUN, FIX IF FAIL | services-builder | Confirm green |
+| `backend/tests/modules/pricing/test_commission_missing.py` | RE-RUN, FIX IF FAIL | services-builder | Confirm green |
+| `backend/tests/modules/pricing/test_ownership_gate.py` | RE-RUN, FIX IF FAIL | services-builder | Confirm green |
+| `backend/tests/modules/pricing/test_pnl_formula.py` | RE-RUN + EXTEND | services-builder | Confirm green + add the 10 golden Decimal cases as parametrized cases (see §1.B gate (c)) |
+| `backend/tests/modules/pricing/test_feature_flag.py` | NEW | api-routes-builder | Test: flag=true → 200; flag=false → 404 with `feature.disabled` |
+| `backend/tests/integration/test_pricing_persistence.py` | RE-RUN, FIX IF FAIL | services-builder | Confirm green |
+| `backend/tests/integration/test_pricing_full_flow.py` | RE-RUN, FIX IF FAIL | services-builder | Confirm green |
+| `backend/scripts/seed_category_commissions.py` | NEW (CONDITIONAL) | database-builder | Only if `commission_pct` NULL count > 0 on dev DB |
+| `backend/app/data/category_commissions.json` | NEW (CONDITIONAL) | xlsx-parser (data) | Only if seed gap activates the xlsx-parser dispatch |
+
+### 5.B — Frontend
+
+| File | Status | Specialist | Why |
+|---|---|---|---|
+| `frontend/src/app/features/pricing/pricing/pricing.component.ts` | REFACTOR | angular-component-builder | Reduce from 327 lines to ~150 lines — owns route binding, reactive form, state orchestration. Delegates table to `PnlBreakdownComponent`, slider to `MarginSliderComponent` |
+| `frontend/src/app/features/pricing/pricing/pricing.component.spec.ts` | REFACTOR | angular-component-builder | Trim to page-level tests only — table/slider tests move to child component specs |
+| `frontend/src/app/features/pricing/pricing/pricing.model.ts` | DO NOT TOUCH (or extend with new types) | angular-component-builder | Existing `PnlBreakdown` interface stays. May add `PriceCalcRequest`/`PriceCalcResponse` types if not already present (verify) |
+| `frontend/src/app/features/pricing/pricing/pricing.utils.ts` | DO NOT TOUCH | — | `computePnlBreakdown` + `formatRupee` stay — they are the slider-locality helpers. `PricingService.recomputeFromSnapshot` is a thin wrapper around `computePnlBreakdown` |
+| `frontend/src/app/features/pricing/pricing/pnl-breakdown.component.ts` | NEW | angular-component-builder | 6-row table; `@Input() breakdown: PnlBreakdown`; red row when `margin < 0`; OnPush |
+| `frontend/src/app/features/pricing/pricing/pnl-breakdown.component.spec.ts` | NEW | angular-component-builder | Renders 6 rows; red class applied when margin negative |
+| `frontend/src/app/features/pricing/pricing/margin-slider.component.ts` | NEW | angular-component-builder | Native range slider; injects `PricingService`; emits `breakdownChange` on every tick via local recompute |
+| `frontend/src/app/features/pricing/pricing/margin-slider.component.spec.ts` | NEW | angular-component-builder | Slider drag emits N breakdowns; NO `HttpClient` mock activations expected during drag |
+| `frontend/src/app/features/pricing/pricing/pricing.service.ts` | NEW | angular-service-builder | `calculate()` + `recomputeFromSnapshot()`; standalone injectable |
+| `frontend/src/app/features/pricing/pricing/pricing.service.spec.ts` | NEW | angular-service-builder | `calculate()` hits HttpClient; `recomputeFromSnapshot()` passes the 10 golden Decimal cases |
+| `frontend/src/app/features/pricing/pricing/index.ts` | NEW or MODIFY | angular-component-builder | Public barrel for the feature (preferred Layer 4 pattern) |
+| `frontend/src/app/core/services/feature-flags.service.ts` | VERIFY OR MODIFY | angular-service-builder | Confirm `price_calculator: boolean` is present; if not, add. Read from build-time env per repo-management MASTER_PLAN §3.2 |
+| `frontend/src/app/app.routes.ts` | MODIFY | angular-service-builder | Add `featureFlagGuard` to the `/catalogs/:id/pricing` route entry. If route doesn't exist yet, add it |
+| `frontend/src/app/core/guards/feature-flag.guard.ts` | VERIFY OR NEW | angular-service-builder | Standard pattern — redirect to `<mee-empty-state>` placeholder route or render inline; matches existing FE convention |
+
+### 5.C — AI / Data / Infra / Legal
+
+NONE for V1 except the conditional data dispatch in §5.A.
+
+### 5.D — Documentation
+
+| File | Status | Owner | Change |
+|---|---|---|---|
+| `docs/BACKEND_ARCHITECTURE.md` §12.B.1 step 8 | DOC FIX | services-builder | Change prose from "Persist to `pricing_calcs` table: `{user_id, product_id, input_jsonb, output_jsonb, calculated_at}`" → "Persist to `pricing_calcs` table column-by-column per V1_FEATURE_SPEC §F7 DDL: `{product_id, mrp, meesho_price, seller_price, commission_pct, gst_pct, margin, margin_pct, created_at}`. JSONB persistence was speculative — actual ORM is column-by-column, validated by `shared/models/pricing_calc.py` and the §F7 DDL." |
+| `docs/BACKEND_ARCHITECTURE.md` §12 STATUS block | DOC AMENDMENT | services-builder | Append: "**2026-06-1X amendment:** §0.E latent `services/pricing_engine.py` PricingAlert import bug confirmed resolved by prior gap-pass purge — entire `backend/app/services/` dir absent on develop. No construction action required." |
+| `docs/V1_FEATURE_SPEC.md` §F7 | IMPLEMENTATION STAMP | services-builder | Append after acceptance-criteria block: "**Implemented 2026-06-1X via PR #N** (post-audit + hardening + UI gap-fill — see `docs/plans/features/price-calculator/FEATURE_PLAN.md`)" |
+| `backend/app/modules/pricing/service.py` (`calculate` docstring) | DOCSTRING EXTENSION | services-builder | Reference §12.B.1 step 8 column-by-column persistence; reference column-by-column DDL (NOT JSONB); reference ROUND_HALF_EVEN quantization rule |
+| `frontend/src/app/features/pricing/pricing/margin-slider.component.ts` (class docstring) | NEW DOCSTRING | angular-component-builder | "Slider-locality contract: this component invokes `PricingService.recomputeFromSnapshot` locally on every tick. It MUST NOT call `PricingService.calculate` (the HttpClient surface). Frontend-lead PR review verifies zero `/price-calc` requests during slider drag via Chrome DevTools." |
+| `frontend/src/app/features/pricing/pricing/pnl-breakdown.component.ts` (class docstring) | NEW DOCSTRING | angular-component-builder | "6-row P&L breakdown per V1_FEATURE_SPEC §F7 acceptance criteria. Row sequence: MRP / Meesho Price / Commission / GST / Seller Payout / Net Margin. Red `var(--mee-color-error)` row class applied when `breakdown.margin < 0` (negative-margin warning)." |
+
+---
+
+## Documentation deliverables
+
+"Documented" means the following artifacts ALL exist by the time `feature/price-calculator → develop` PR merges:
+
+1. **Backend API** — OpenAPI shows `POST /api/v1/products/{id}/price-calc` with full `PriceCalcRequest` + `PriceCalcResponse` Decimal-precision fields. Confirm via `curl http://api-dev/openapi.json | jq '.paths."/api/v1/products/{id}/price-calc"'` paste in the PR description.
+2. **Backend service** — `service.calculate` docstring describes snapshotting semantics (commission_pct + gst_pct captured at calc time into `pricing_calcs` row; subsequent reads return frozen snapshot via `get_last_calc`).
+3. **Backend doc defect resolution** — `BACKEND_ARCHITECTURE.md §12.B.1 step 8` amended to column-by-column truth.
+4. **Backend i18n** — `i18n/messages_en.py` carries the new `feature.disabled` key (English string; V1.5 may add Tamil/Hindi).
+5. **Frontend slider-locality docstring** — `MarginSliderComponent` class docstring explicitly states the no-API-call-per-tick contract.
+6. **Frontend breakdown docstring** — `PnlBreakdownComponent` class docstring explicitly states the 6-row sequence + negative-margin red warning.
+7. **Frontend route** — `app.routes.ts` entry for `/catalogs/:id/pricing` has a `featureFlagGuard` and an inline comment citing this FEATURE_PLAN §1.B.
+8. **Cross-cutting feature-spec stamp** — `V1_FEATURE_SPEC.md §F7` carries the "Implemented YYYY-MM-DD via PR #N" stamp linking back to FEATURE_PLAN.md.
+9. **Cross-cutting feature board** — every lead's `feature_board_<domain>.md` row is in the correct state (MERGED on backend + frontend, NOT PARTICIPATING acknowledged on ai/infra, CONDITIONAL closed on data).
+10. **Cross-cutting memory** — every involved specialist's `MEMORY.md` has at least one session-tagged entry per §4.B format.
+
+The lead's PR approval checklist for `feature/price-calculator → develop` MUST tick all 10 items.
+
+---
+
+## Branch setup
 
 Per repo-management MASTER_PLAN.md §1.2 + §2.1. Sessions named per §4.1: `mesell-price-calculator-{group}-session-{N}`.
 
@@ -172,7 +256,7 @@ Per repo-management MASTER_PLAN.md §1.2 + §2.1. Sessions named per §4.1: `mes
 
 ---
 
-## 4. Cross-agent awareness & memory hygiene
+## Memory protocol
 
 Per founder concern: a single specialist works on multiple features over time; without discipline they lose track of which memory entry belongs to which feature. This section installs the 3-layer hygiene that every involved agent honors.
 
@@ -247,92 +331,7 @@ The §7.5 "Cross-lead coordination" protocol in repo-management MASTER_PLAN appl
 
 ---
 
-## 5. Code surfaces
-
-Every file the feature audit/hardening dispatches will create or modify. Grouped by domain. The "Status" column says what each dispatch does to the file.
-
-### 5.A — Backend
-
-| File | Status | Specialist | Why |
-|---|---|---|---|
-| `backend/app/modules/pricing/__init__.py` | DO NOT TOUCH | — | Already correct per §0.A |
-| `backend/app/modules/pricing/router.py` | MODIFY | api-routes-builder | Add `FEATURE_PRICE_CALCULATOR_ENABLED` flag check at top of handler — return 404 with `validation_message_id="feature.disabled"` when disabled |
-| `backend/app/modules/pricing/schemas.py` | DO NOT TOUCH | — | Already matches §12.E LOCKED |
-| `backend/app/modules/pricing/service.py` | AUDIT (modify only if drift found) | services-builder | Verify `_compute_pnl` formulas match §12.B.1 step 6 byte-for-byte; verify ROUND_HALF_EVEN; verify `_generate_alerts` emits all 3 codes per §12.F thresholds (LOW_MARGIN profit_pct<10, HIGH_MRP_MULTIPLIER mrp/input_cost>3, THIN_PROFIT profit<50). Modify ONLY if drift; otherwise no-op |
-| `backend/app/modules/pricing/domain.py` | DO NOT TOUCH | — | Already matches §12.F LOCKED |
-| `backend/app/modules/pricing/exceptions.py` | DO NOT TOUCH | — | Already matches §12.G LOCKED |
-| `backend/app/modules/pricing/repository.py` | AUDIT (modify only if drift found) | services-builder | Verify `find_latest_by_product` JOIN on `Product.user_id == user_id` is intact (M6 structural enforcement); verify `insert_calc` is append-only (no UPDATE method exists) |
-| `backend/app/shared/models/pricing_calc.py` | DO NOT TOUCH | — | Already matches V1_FEATURE_SPEC §F7 DDL column-by-column |
-| `backend/app/shared/config.py` | MODIFY | api-routes-builder | Add `feature_price_calculator_enabled: bool = True` Settings field |
-| `backend/app/i18n/messages_en.py` | MODIFY | services-builder | Add 1 new key: `"feature.disabled": "This feature is temporarily disabled."` (used by the 404 path) |
-| `backend/alembic/versions/<rev>_pricing_calcs.py` | DO NOT CREATE | — | Table already in baseline migration `935e55b4852c`. No new migration needed |
-| `backend/app/services/pricing_engine.py` | N/A | — | Already deleted in prior gap-pass. §0.E latent bug already resolved. No further action |
-| `backend/tests/modules/pricing/test_alerts.py` | RE-RUN, FIX IF FAIL | services-builder | Confirm green |
-| `backend/tests/modules/pricing/test_commission_missing.py` | RE-RUN, FIX IF FAIL | services-builder | Confirm green |
-| `backend/tests/modules/pricing/test_ownership_gate.py` | RE-RUN, FIX IF FAIL | services-builder | Confirm green |
-| `backend/tests/modules/pricing/test_pnl_formula.py` | RE-RUN + EXTEND | services-builder | Confirm green + add the 10 golden Decimal cases as parametrized cases (see §1.B gate (c)) |
-| `backend/tests/modules/pricing/test_feature_flag.py` | NEW | api-routes-builder | Test: flag=true → 200; flag=false → 404 with `feature.disabled` |
-| `backend/tests/integration/test_pricing_persistence.py` | RE-RUN, FIX IF FAIL | services-builder | Confirm green |
-| `backend/tests/integration/test_pricing_full_flow.py` | RE-RUN, FIX IF FAIL | services-builder | Confirm green |
-| `backend/scripts/seed_category_commissions.py` | NEW (CONDITIONAL) | database-builder | Only if `commission_pct` NULL count > 0 on dev DB |
-| `backend/app/data/category_commissions.json` | NEW (CONDITIONAL) | xlsx-parser (data) | Only if seed gap activates the xlsx-parser dispatch |
-
-### 5.B — Frontend
-
-| File | Status | Specialist | Why |
-|---|---|---|---|
-| `frontend/src/app/features/pricing/pricing/pricing.component.ts` | REFACTOR | angular-component-builder | Reduce from 327 lines to ~150 lines — owns route binding, reactive form, state orchestration. Delegates table to `PnlBreakdownComponent`, slider to `MarginSliderComponent` |
-| `frontend/src/app/features/pricing/pricing/pricing.component.spec.ts` | REFACTOR | angular-component-builder | Trim to page-level tests only — table/slider tests move to child component specs |
-| `frontend/src/app/features/pricing/pricing/pricing.model.ts` | DO NOT TOUCH (or extend with new types) | angular-component-builder | Existing `PnlBreakdown` interface stays. May add `PriceCalcRequest`/`PriceCalcResponse` types if not already present (verify) |
-| `frontend/src/app/features/pricing/pricing/pricing.utils.ts` | DO NOT TOUCH | — | `computePnlBreakdown` + `formatRupee` stay — they are the slider-locality helpers. `PricingService.recomputeFromSnapshot` is a thin wrapper around `computePnlBreakdown` |
-| `frontend/src/app/features/pricing/pricing/pnl-breakdown.component.ts` | NEW | angular-component-builder | 6-row table; `@Input() breakdown: PnlBreakdown`; red row when `margin < 0`; OnPush |
-| `frontend/src/app/features/pricing/pricing/pnl-breakdown.component.spec.ts` | NEW | angular-component-builder | Renders 6 rows; red class applied when margin negative |
-| `frontend/src/app/features/pricing/pricing/margin-slider.component.ts` | NEW | angular-component-builder | Native range slider; injects `PricingService`; emits `breakdownChange` on every tick via local recompute |
-| `frontend/src/app/features/pricing/pricing/margin-slider.component.spec.ts` | NEW | angular-component-builder | Slider drag emits N breakdowns; NO `HttpClient` mock activations expected during drag |
-| `frontend/src/app/features/pricing/pricing/pricing.service.ts` | NEW | angular-service-builder | `calculate()` + `recomputeFromSnapshot()`; standalone injectable |
-| `frontend/src/app/features/pricing/pricing/pricing.service.spec.ts` | NEW | angular-service-builder | `calculate()` hits HttpClient; `recomputeFromSnapshot()` passes the 10 golden Decimal cases |
-| `frontend/src/app/features/pricing/pricing/index.ts` | NEW or MODIFY | angular-component-builder | Public barrel for the feature (preferred Layer 4 pattern) |
-| `frontend/src/app/core/services/feature-flags.service.ts` | VERIFY OR MODIFY | angular-service-builder | Confirm `price_calculator: boolean` is present; if not, add. Read from build-time env per repo-management MASTER_PLAN §3.2 |
-| `frontend/src/app/app.routes.ts` | MODIFY | angular-service-builder | Add `featureFlagGuard` to the `/catalogs/:id/pricing` route entry. If route doesn't exist yet, add it |
-| `frontend/src/app/core/guards/feature-flag.guard.ts` | VERIFY OR NEW | angular-service-builder | Standard pattern — redirect to `<mee-empty-state>` placeholder route or render inline; matches existing FE convention |
-
-### 5.C — AI / Data / Infra / Legal
-
-NONE for V1 except the conditional data dispatch in §5.A.
-
-### 5.D — Documentation
-
-| File | Status | Owner | Change |
-|---|---|---|---|
-| `docs/BACKEND_ARCHITECTURE.md` §12.B.1 step 8 | DOC FIX | services-builder | Change prose from "Persist to `pricing_calcs` table: `{user_id, product_id, input_jsonb, output_jsonb, calculated_at}`" → "Persist to `pricing_calcs` table column-by-column per V1_FEATURE_SPEC §F7 DDL: `{product_id, mrp, meesho_price, seller_price, commission_pct, gst_pct, margin, margin_pct, created_at}`. JSONB persistence was speculative — actual ORM is column-by-column, validated by `shared/models/pricing_calc.py` and the §F7 DDL." |
-| `docs/BACKEND_ARCHITECTURE.md` §12 STATUS block | DOC AMENDMENT | services-builder | Append: "**2026-06-1X amendment:** §0.E latent `services/pricing_engine.py` PricingAlert import bug confirmed resolved by prior gap-pass purge — entire `backend/app/services/` dir absent on develop. No construction action required." |
-| `docs/V1_FEATURE_SPEC.md` §F7 | IMPLEMENTATION STAMP | services-builder | Append after acceptance-criteria block: "**Implemented 2026-06-1X via PR #N** (post-audit + hardening + UI gap-fill — see `docs/plans/features/price-calculator/FEATURE_PLAN.md`)" |
-| `backend/app/modules/pricing/service.py` (`calculate` docstring) | DOCSTRING EXTENSION | services-builder | Reference §12.B.1 step 8 column-by-column persistence; reference column-by-column DDL (NOT JSONB); reference ROUND_HALF_EVEN quantization rule |
-| `frontend/src/app/features/pricing/pricing/margin-slider.component.ts` (class docstring) | NEW DOCSTRING | angular-component-builder | "Slider-locality contract: this component invokes `PricingService.recomputeFromSnapshot` locally on every tick. It MUST NOT call `PricingService.calculate` (the HttpClient surface). Frontend-lead PR review verifies zero `/price-calc` requests during slider drag via Chrome DevTools." |
-| `frontend/src/app/features/pricing/pricing/pnl-breakdown.component.ts` (class docstring) | NEW DOCSTRING | angular-component-builder | "6-row P&L breakdown per V1_FEATURE_SPEC §F7 acceptance criteria. Row sequence: MRP / Meesho Price / Commission / GST / Seller Payout / Net Margin. Red `var(--mee-color-error)` row class applied when `breakdown.margin < 0` (negative-margin warning)." |
-
----
-
-## 6. Documentation deliverables
-
-"Documented" means the following artifacts ALL exist by the time `feature/price-calculator → develop` PR merges:
-
-1. **Backend API** — OpenAPI shows `POST /api/v1/products/{id}/price-calc` with full `PriceCalcRequest` + `PriceCalcResponse` Decimal-precision fields. Confirm via `curl http://api-dev/openapi.json | jq '.paths."/api/v1/products/{id}/price-calc"'` paste in the PR description.
-2. **Backend service** — `service.calculate` docstring describes snapshotting semantics (commission_pct + gst_pct captured at calc time into `pricing_calcs` row; subsequent reads return frozen snapshot via `get_last_calc`).
-3. **Backend doc defect resolution** — `BACKEND_ARCHITECTURE.md §12.B.1 step 8` amended to column-by-column truth.
-4. **Backend i18n** — `i18n/messages_en.py` carries the new `feature.disabled` key (English string; V1.5 may add Tamil/Hindi).
-5. **Frontend slider-locality docstring** — `MarginSliderComponent` class docstring explicitly states the no-API-call-per-tick contract.
-6. **Frontend breakdown docstring** — `PnlBreakdownComponent` class docstring explicitly states the 6-row sequence + negative-margin red warning.
-7. **Frontend route** — `app.routes.ts` entry for `/catalogs/:id/pricing` has a `featureFlagGuard` and an inline comment citing this FEATURE_PLAN §1.B.
-8. **Cross-cutting feature-spec stamp** — `V1_FEATURE_SPEC.md §F7` carries the "Implemented YYYY-MM-DD via PR #N" stamp linking back to FEATURE_PLAN.md.
-9. **Cross-cutting feature board** — every lead's `feature_board_<domain>.md` row is in the correct state (MERGED on backend + frontend, NOT PARTICIPATING acknowledged on ai/infra, CONDITIONAL closed on data).
-10. **Cross-cutting memory** — every involved specialist's `MEMORY.md` has at least one session-tagged entry per §4.B format.
-
-The lead's PR approval checklist for `feature/price-calculator → develop` MUST tick all 10 items.
-
----
-
-## 7. Dispatch templates
+## Dispatch templates
 
 One subsection per specialist that will be dispatched. Each template is copy-paste-ready — the lead fills in `{N}` (session ordinal) and the date when they dispatch.
 
@@ -819,7 +818,7 @@ If the data lead has not cut `feature/price-calculator/data` yet, request it bef
 
 ---
 
-## 8. Review + iteration protocol
+## Review + iteration protocol
 
 ### 8.A — What the lead checks before approving each specialist's PR
 
@@ -878,7 +877,7 @@ Then execute the original dispatch (§7.{A-F}) verbatim with the additional acce
 
 ---
 
-## 9. Acceptance gate — when is `price-calculator` "done"?
+## Acceptance gate
 
 This feature is DONE when ALL of the following are true:
 
@@ -894,7 +893,7 @@ This feature is DONE when ALL of the following are true:
 
 ---
 
-## 10. Risk register
+## Risk register
 
 Top 5 risks specific to this feature.
 
@@ -954,11 +953,12 @@ V1_FEATURE_SPEC §F7 explicitly says "RTO/shipping deferred to V1.5". When V1.5 
 
 ---
 
-## 11. Revision history
+## Revision history
 
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-06-10 | master Claude planning session (`mesell-price-calculator-planning-session-1`) | Initial DRAFT. Founder decisions D1/D2/D3 locked verbatim from session AskUserQuestion responses. State audit findings recorded (backend already on develop; FE partially built; §0.E latent bug already resolved; HSN concern obsolete; §12.B.1 step 8 doc defect identified). Operating model (agent lineup + branch creation + memory hygiene) addresses founder concerns A/B/C surfaced in this session. |
+| v2 | 2026-06-10 | mesell-price-calculator-amendment-session-1 | Canonical pattern v2 conformance: removed number prefixes, renamed Branch creation protocol → Branch setup and Cross-agent awareness → Memory protocol, reordered Code surfaces/Documentation deliverables to canonical positions 3/4, converted Operating context h2 to preamble prose, demoted ad-hoc h2 sections to h3 within Memory protocol. |
 
 ---
 
