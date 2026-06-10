@@ -1,7 +1,7 @@
 # Session Dispatch: Infra — Microservices
 **Session name:** `mesell-infra-microservices-infra-session-1`
 **Project:** `/Users/mugunthansrinivasan/Project/mesell`
-**Status:** IN PROGRESS — ratification package returned to founder 2026-06-10. S1 complete, Model C ACTIVE (2026-06-10), pilot-hardened (PILOT_REPORT.md). Can run parallel with S2. The infra DRAFT plan (`docs/plans/infra/microservices_infra_plan.md`) is NOT flipped to APPROVED by this session — the founder rules on it. This session produced the ratification package (appended below) for the master session to put to the founder.
+**Status:** COMPLETE 2026-06-10 — ratification package answered by founder (D3–D5); plan APPROVED. S1 complete, Model C ACTIVE (2026-06-10), pilot-hardened (PILOT_REPORT.md). The infra plan (`docs/plans/infra/microservices_infra_plan.md`) is now **APPROVED** (v1.1): D3 VM `e2-standard-4` pre-approved (~₹2,600/mo, execution-time at first extraction via MS-ENV-2); D4 Traefik path-prefix gateway; D5 pools right-size → PgBouncer-before-cutover. Companion backend rulings D6 (ai_ops vendoring) + D7 (middleware vendored + local JWT) landed in MASTER_PLAN v1.2.
 
 ---
 

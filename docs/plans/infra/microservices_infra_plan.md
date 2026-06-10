@@ -1,6 +1,6 @@
 # Microservices Infrastructure Master Plan
 
-**STATUS: DRAFT — produced by meesell-infra-builder 2026-06-10**
+**STATUS: APPROVED 2026-06-10 — ratified by founder via S4 ratification package. D3 VM e2-standard-4 pre-approved (execution-time, ~₹2,600/mo, founder cost-gate sign-off). D4 Traefik path-prefix gateway. D5 pools right-size → PgBouncer-before-cutover.**
 
 **Scope:** Infrastructure changes required to evolve the MeeSell backend from a single FastAPI api + Celery worker deployment into 8 independently deployable FastAPI microservices (each with its own Celery worker) on the existing K3s cluster.
 
@@ -35,6 +35,8 @@ For this plan, the 8 services correspond to the 8 backend domains carried in `ba
 | 8 | `svc-billing` | Razorpay subscription lifecycle + plan-guard | `app/middleware/plan_guard.py`, Razorpay webhook handler |
 
 The slugs (`svc-*`) are used consistently in K8s resource names, image names, and CI matrix entries.
+
+> **SUPERSEDED 2026-06-10 (founder ratification, this revision) — the 8 service slugs above are NOT authoritative.** The 8-table glossary above was drafted against a pre-LOCK guess at the domain split and invented two non-existent services (`svc-quality`, `svc-billing`) while omitting real modules. The AUTHORITATIVE 8 services are the 8 domain modules locked in `docs/plans/microservices_migration/MASTER_PLAN.md` §1.A / §2.A / §2.D — namely **`iam`, `customer`, `category`, `catalog`, `image`, `pricing`, `dashboard`, `export`** (extracted as `iam-svc`, `customer-svc`, … `export-svc`). There is no `svc-quality` (QualityGate is not a V1 module) and no `svc-billing` (Razorpay webhook + plan_guard live inside `iam`/`core`, not a standalone service). Wherever this document writes `svc-auth`/`svc-quality`/`svc-billing`/etc., read the MASTER_PLAN's module-named services. The DB-schema map (MASTER_PLAN §2.D), the Traefik path-prefix map (MASTER_PLAN §2.C, D4), and the extraction order (MASTER_PLAN §3.B) are the load-bearing authorities.
 
 ---
 
@@ -597,6 +599,8 @@ CPU is the binding constraint. After microservicing with the §6.3 sizing matrix
 
 **Recommendation: (A) for V1 dev**, **(B) when budget allows or when the team grows past 1 backend engineer.** The current ₹25,000 budget cap (`meesell-dev-budget`) is well under the upgraded-VM cost — Option B is affordable from the GCP free credit standpoint.
 
+> **SUPERSEDED 2026-06-10 (D3 founder ruling, this revision).** The "Option (A) for V1 dev" recommendation above is overtaken by **founder ruling D3: the dev VM upgrade `e2-standard-2 → e2-standard-4` is PRE-APPROVED (~₹2,600/mo), to take effect ONLY when extraction begins post-V1.** This is a plan lock, not a purchase — the upgrade is held until the first extraction (Sub-Plan A) is dispatched, then executed via Sub-Plan **MS-ENV-2**. The founder explicitly signed off above the ₹500/mo cost gate, so the §6.3 CPU-budget surgery on `e2-standard-2` (Option A mitigations) is NO LONGER the V1.5 extraction path: **Option (B) `e2-standard-4` is the ratified target the moment extraction starts.** Option (A) remains valid ONLY for the pre-extraction V1 monolith (which already fits the 2 vCPU node). Read every downstream "fit on `e2-standard-2`" mitigation in §6.3 / R-MS-2 / R-MS-13 as a fallback that D3 makes unnecessary at extraction time.
+
 ### 6.2 Staging — recommendation: separate VM (`meesell-staging`)
 
 Today's `staging` is a namespace on `meesell-dev`. After microservicing, the per-pod count goes from 4 to 24 *per environment*. Cramming dev + staging on the same `e2-standard-2` node is unsafe. Three options:
@@ -722,4 +726,13 @@ Each sub-plan is one self-contained infra change. Complexity: S (≤ 1 day), M (
 
 ---
 
-**End of plan. This is a DRAFT — to be reviewed by the founder before any sub-plan is dispatched.**
+**End of plan. APPROVED 2026-06-10 — founder-ratified via the S4 ratification package.**
+
+---
+
+## Revision history
+
+| Version | Date | Author | Change |
+|---|---|---|---|
+| v1.0 | 2026-06-10 | meesell-infra-builder | Initial DRAFT — infra changes to evolve the monolith into 8 microservices on K3s. |
+| v1.1 | 2026-06-10 | meesell-backend-coordinator (landing founder rulings D3–D7) | DRAFT → **APPROVED**. Two must-fix deltas landed: (1) §6.1 Option (A) recommendation SUPERSEDED by **D3** — `e2-standard-4` VM upgrade pre-approved (~₹2,600/mo, founder cost-gate sign-off), execution-time at first extraction via MS-ENV-2; the `e2-standard-2` CPU-budget mitigations become fallback-only. (2) Glossary invented service names (`svc-quality`, `svc-billing`) SUPERSEDED — authoritative 8 services are the MASTER_PLAN §1.A modules (`iam`/`customer`/`category`/`catalog`/`image`/`pricing`/`dashboard`/`export`). Header STATUS records **D4** (Traefik path-prefix gateway) + **D5** (pools right-size → PgBouncer-before-cutover) per the §3.3 / §2.4 recommendations the founder concurred with. |

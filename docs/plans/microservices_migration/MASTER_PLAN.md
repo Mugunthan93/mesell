@@ -218,6 +218,8 @@ Each service has its own Alembic chain, rooted at the schema it owns. Alembic `v
 
 **Recommendation: Option A for V1.5, Option B for V2.** The budget-cap counter already lives in Valkey DB 0 (per §6A.F), so the cross-service state is already shared. Each service consumes the same Python lib. Move to a dedicated ai-ops-svc only when AI workload count grows beyond V1's 3 (smart_picker / autofill / watermark).
 
+> **RESOLVED 2026-06-10 (founder ruling D6 / A1 — see Revision History v1.2).** No longer a deferred recommendation: **`ai_ops/` is a vendored Python-package copy per AI-consuming service (category/catalog/image) at V1.5; promoted to a dedicated `ai-ops-svc` at V2.** The ₹500 daily budget brake stays SHARED via Valkey DB 0 / the audit-DB counter across services regardless of code placement. Sub-Plan A's A1 (analysis+recommendation framing) is superseded by this LOCK.
+
 ---
 
 ## 3. Migration Strategy
@@ -303,6 +305,8 @@ Each sub-plan is one module extraction (one file in `docs/plans/microservices_mi
 ### 5.A Authentication — JWT validation in each service (NOT centralized at gateway)
 
 **Locked policy: each service validates JWTs locally using a vendored `core/auth.py`.**
+
+> **RESOLVED 2026-06-10 (founder ruling D7 / A2 — see Revision History v1.2).** Confirmed against the concrete export-svc middleware list: **the 6-middleware chain (CORS → request_id → auth_mw → tenancy_mw → rate_limit_mw → plan_guard_mw → audit_mw) is VENDORED per service, and JWT VERIFICATION runs LOCALLY in every service.** `iam-svc` owns OTP/login/refresh ONLY — it is NOT consulted per-request for token validation. **Gateway-JWT validation is REJECTED** (Traefik cannot attach the resolved `User`, run plan_guard, or scope_to_user). Sub-Plan A's A2 (analysis+recommendation framing) is superseded by this LOCK.
 
 Rationale:
 - Traefik plugins for JWT validation exist but cannot attach the resolved user to the downstream service's request state, run `plan_guard`, or scope DB queries to the tenant. Each service still needs the `User` object on `request.state.user`.
@@ -459,6 +463,7 @@ Today `products.user_id REFERENCES users(id)` enforces that every product has a 
 |---------|------|--------|--------|
 | 1.0 | 2026-06-10 | founder + master Director session | Ratified DRAFT → LOCKED as V1.5/V2 roadmap. Execution begins post-V1-launch. A–H order locked per §16.H. ai_ops + middleware decisions stay deferred to Sub-Plan A. Noted: full extraction forces VM upgrade e2-standard-2 → ≥e2-standard-4 (~₹2.5–6k/mo) at execution time. |
 | 1.1 | 2026-06-10 | founder + master Director session | Embedded founder-mandated post-extraction repo-management compliance audit into program completion criteria. |
+| 1.2 | 2026-06-10 | founder (rulings) + meesell-backend-coordinator (landing) | **D6 / A1 LOCKED** — `ai_ops/` vendored per AI-service at V1.5 → dedicated `ai-ops-svc` at V2; ₹500 budget brake stays shared via Valkey/DB. §2.E deferral marked RESOLVED. **D7 / A2 LOCKED** — 6-middleware chain vendored per service; JWT verification LOCAL in every service; `iam-svc` owns OTP/login/refresh only; gateway-JWT REJECTED. §5.A confirmed against export-svc middleware list and marked RESOLVED. (Companion infra rulings D3/D4/D5 landed in `docs/plans/infra/microservices_infra_plan.md` v1.1, now APPROVED.) |
 
 ---
 

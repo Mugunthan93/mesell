@@ -31,7 +31,9 @@ are **NOT locked** — they are presented as analysis + recommendation for the
 founder to ratify when the coding session is dispatched. Decision **A3** is a
 confirmation of an already-locked ordering.
 
-### A1 — `ai_ops/` placement (analysis + recommendation, NOT LOCKED)
+> **A1 / A2 NOW LOCKED (founder rulings D6 / D7, 2026-06-10).** The "analysis + recommendation, NOT LOCKED" framing on both A1 and A2 below is SUPERSEDED. The founder ratified both decisions one-by-one on 2026-06-10 (recorded in MASTER_PLAN.md Revision History v1.2): **A1 (D6)** — `ai_ops/` is vendored per AI-consuming service at V1.5, promoted to a dedicated `ai-ops-svc` at V2; budget brake stays shared via Valkey/DB. **A2 (D7)** — the 6-middleware chain is vendored per service with LOCAL JWT verification in every service; gateway-JWT validation is REJECTED. The recommendations below are correct as written — they are now LOCKED, not pending.
+
+### A1 — `ai_ops/` placement (~~analysis + recommendation, NOT LOCKED~~ — **LOCKED 2026-06-10, founder ruling D6**)
 
 **Question (MASTER_PLAN §2.E / S2 open decision #1):** When `export` (and
 later category/catalog/image) extracts, where does the shared `ai_ops/`
@@ -58,7 +60,7 @@ need for per-service AI cost SLOs. **Export extraction proceeds with NO
 ai_ops dependency either way** — this decision does not gate Sub-Plan A
 execution.
 
-### A2 — Shared `core/middleware/` placement (analysis + recommendation, NOT LOCKED)
+### A2 — Shared `core/middleware/` placement (~~analysis + recommendation, NOT LOCKED~~ — **LOCKED 2026-06-10, founder ruling D7**)
 
 **Question (MASTER_PLAN §1.D / §5.A):** Each extracted service needs JWT
 validation, rate limiting, audit logging, request-id propagation. Are these
@@ -491,6 +493,7 @@ Sub-Plan A execution (post-V1) is DONE when:
 | Version | Date | Author | Change |
 |---|---|---|---|
 | v1 | 2026-06-10 | mesell-microservices-backend-session-1 | Initial DRAFT. Sub-Plan A authored per MASTER_PLAN §4 row A + canonical pattern v2.1 (adapted for extraction). A1 (ai_ops) + A2 (middleware) presented as analysis+recommendation — NOT locked, founder-ratified at coding dispatch. A3 (export-first) confirmed. Execution is post-V1. |
+| v2 | 2026-06-10 | meesell-backend-coordinator (landing founder rulings D3–D7) | **A1 / A2 LOCKED** per founder rulings **D6 / D7** (recorded MASTER_PLAN v1.2). A1 (D6): `ai_ops/` vendored per AI-service at V1.5 → `ai-ops-svc` at V2; budget brake shared via Valkey/DB. A2 (D7): 6-mw chain vendored per service, LOCAL JWT verification in every service, gateway-JWT REJECTED, `iam-svc` owns OTP/login/refresh only. The "recommendation, NOT locked" framing on A1/A2 is superseded; recommendations stand as written, now LOCKED. A3 unchanged (already locked). |
 
 ---
 
