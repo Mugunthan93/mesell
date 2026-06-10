@@ -1,0 +1,56 @@
+/* MeeSell Design Tokens — Layer 1. Zero component library dependency.
+   These CSS custom properties survive any UI library swap. */
+
+:root {
+  /* Brand */
+  --mee-color-primary:          #F26B23;
+  --mee-color-primary-light:    rgba(242, 107, 35, 0.12);
+  --mee-color-on-primary:       #FFFFFF;
+
+  /* Sidebar */
+  --mee-color-sidebar:          #111c2d;
+  --mee-color-sidebar-text:     #9fafca;
+  --mee-color-sidebar-active:   #F26B23;
+
+  /* Page surface */
+  --mee-color-bg:               #f0f5f9;
+  --mee-color-surface:          #ffffff;
+  --mee-color-on-surface:       #2a3547;
+  --mee-color-on-surface-muted: #5a6a85;
+
+  /* Semantic */
+  --mee-color-error:            #DC2626;
+  --mee-color-success:          #16A34A;
+  --mee-color-warning:          #D97706;
+  --mee-color-info:             #2563EB;
+
+  /* Border */
+  --mee-color-outline:          #e5eaef;
+  --mee-color-outline-variant:  #dfe5ef;
+
+  /* Radius */
+  --mee-radius-sm:   7px;
+  --mee-radius-md:   16px;
+  --mee-radius-lg:   18px;
+  --mee-radius-full: 999px;
+
+  /* Spacing (4px base) */
+  --mee-space-1:  4px;
+  --mee-space-2:  8px;
+  --mee-space-3:  12px;
+  --mee-space-4:  16px;
+  --mee-space-5:  20px;
+  --mee-space-6:  24px;
+  --mee-space-8:  32px;
+  --mee-space-10: 40px;
+
+  /* Shadow */
+  --mee-shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+  --mee-shadow-md: 0 4px 12px rgba(0,0,0,0.10);
+  --mee-shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+
+  /* Transition */
+  --mee-transition-fast:  150ms ease;
+  --mee-transition-base:  250ms ease;
+  --mee-transition-slow:  400ms ease;
+}

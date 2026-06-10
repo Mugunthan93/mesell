@@ -1,0 +1,23 @@
+/* Layer cascade order declared BEFORE Tailwind's own @layer statement.
+   CSS spec: the first @layer declaration wins for ordering.
+   base (Preflight) < primeng < utilities ensures:
+     - PrimeNG component styles beat the Preflight CSS reset
+     - Tailwind utility classes beat PrimeNG
+   The matching 'order' string in app.config.ts (providePrimeNG cssLayer)
+   must contain all five names: theme, base, primeng, components, utilities. */
+@layer theme, base, primeng, components, utilities;
+
+/* Bare import: @tailwindcss/postcss (loaded via postcss.config.json) scans
+   the entire frontend/src tree for class candidates and generates utilities
+   on demand. No manual safelist or @source directive needed. */
+@import "tailwindcss";
+@import "./app/design-system/_tokens.css";
+
+/* Global body */
+html, body {
+  height: 100%;
+  margin: 0;
+  background-color: var(--mee-color-bg);
+  color: var(--mee-color-on-surface);
+  font-family: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
+}

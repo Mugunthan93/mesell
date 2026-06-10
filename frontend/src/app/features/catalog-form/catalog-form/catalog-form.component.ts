@@ -1,429 +1,474 @@
 // features/catalog-form/catalog-form/catalog-form.component.ts
-// Route: /catalogs/:id/edit
-// Orchestrator: coordinates CatalogFormApiService, CatalogFormStateService,
-// DraftRecoveryService, CategorySchemaService, WizardRendererComponent, StepComposerService.
-// Does NOT render form fields directly — delegates to mee-wizard (WizardRendererComponent).
+// Wave 5 — F8: Catalog Form
+// Route: /catalogs/:id/edit (shell child, auth-guarded)
+// Renders a dynamic category-specific field form using mee-* UI Kit primitives.
+// Dynamic fields use Record<string,unknown> signal — NOT FormGroup (JSONB schema).
+// AI auto-fill highlights compulsory fields in yellow; autosaves on blur/change.
 
 import {
   ChangeDetectionStrategy,
   Component,
-  DestroyRef,
   computed,
+  DestroyRef,
   inject,
   OnInit,
   signal,
 } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
-import { MatButtonModule } from '@angular/material/button';
-import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { MatSnackBar } from '@angular/material/snack-bar';
-import { debounceTime, Subject } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router } from '@angular/router';
+import { Subject } from 'rxjs';
+import { debounceTime } from 'rxjs/operators';
 
-import { CatalogFormApiService } from '../catalog-form-api.service';
-import { CatalogFormStateService } from '../catalog-form-state.service';
-import { DraftRecoveryService } from '../draft-recovery.service';
-import { CategorySchemaService } from '../category-schema.service';
-import { StepComposerService } from '../wizard-renderer/step-composer.service';
-import { WizardRendererComponent } from '../wizard-renderer/wizard-renderer.component';
-import { LoadingSpinnerComponent } from '@shared/components/loading-spinner/loading-spinner.component';
-import { StatusBadgeComponent } from '@shared/components/status-badge/status-badge.component';
-import { ErrorService } from '@core/services/error.service';
-import { ApiError } from '@core/api/api-error';
-import { ValueChange } from '../primitives/primitive.contract';
+import {
+  MeeButtonComponent,
+  MeeInputComponent,
+  MeeSelectComponent,
+  MeeTextareaComponent,
+  MeeToastService,
+} from '../../../ui';
+import {
+  LoadingSkeletonComponent,
+  PageHeaderComponent,
+  StatusBadgeComponent,
+} from '../../../shared';
 
-// AutosaveStatus type mirrors what we drive locally
-type AutosaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+import type { FieldGroup, FieldSchema } from '../models/field-schema.model';
+import { CatalogFormApiService } from '../services/catalog-form-api.service';
 
 @Component({
-  selector: 'mee-catalog-form',
+  selector: 'app-catalog-form',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  providers: [StepComposerService],
+  providers: [CatalogFormApiService],
   imports: [
-    MatButtonModule,
-    MatProgressSpinnerModule,
-    WizardRendererComponent,
-    LoadingSpinnerComponent,
+    MeeButtonComponent,
+    MeeInputComponent,
+    MeeSelectComponent,
+    MeeTextareaComponent,
+    LoadingSkeletonComponent,
+    PageHeaderComponent,
     StatusBadgeComponent,
   ],
   styles: [`
-    :host {
-      display: block;
-      background: var(--mee-color-bg);
-      min-height: 100vh;
-      padding: 24px;
+    :host { display: block; }
+
+    .mee-ai-suggested {
+      background-color: var(--mee-color-warning-light, #fef9c3);
+      border-color: var(--mee-color-warning, #ca8a04);
+      border-radius: 4px;
     }
-    .catalog-form-page {
-      max-width: 900px;
-      margin: 0 auto;
+    .field-wrapper {
+      background-color: transparent;
+      transition: background-color 0.2s ease;
     }
-    .page-header {
+    .field-wrapper.mee-ai-suggested {
+      padding: 6px;
+      outline: 1px solid var(--mee-color-warning, #ca8a04);
+      outline-offset: 2px;
+    }
+    .section-toggle {
       display: flex;
+      width: 100%;
       align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin-bottom: 24px;
-    }
-    .page-header h1 {
-      font-size: 22px;
-      font-weight: 700;
-      color: var(--mee-color-on-surface);
-      margin: 0;
-      flex: 1;
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .error-banner {
-      background: #FEF2F2;
-      border: 1px solid #FECACA;
-      border-radius: var(--mee-radius-md);
-      padding: 12px 16px;
-      color: #991B1B;
-      font-size: 14px;
-      margin-bottom: 16px;
-    }
-    .save-status {
-      position: fixed;
-      bottom: 16px;
-      right: 16px;
-      font-size: 12px;
-      padding: 6px 12px;
-      border-radius: var(--mee-radius-md);
-      background: var(--mee-color-surface);
-      border: 1px solid #E5E7EB;
-      color: var(--mee-color-on-surface);
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.2s ease;
-    }
-    .save-status[data-status='saving'],
-    .save-status[data-status='saved'],
-    .save-status[data-status='error'] {
-      opacity: 1;
-    }
-    .save-status[data-status='error'] {
-      border-color: #FECACA;
-      color: #991B1B;
-      background: #FEF2F2;
-    }
-    .save-status[data-status='saved'] {
-      border-color: #BBF7D0;
-      color: #166534;
-      background: #F0FDF4;
-    }
-    .ai-fill-btn {
+      justify-content: space-between;
+      padding: 10px 0;
+      font-weight: 500;
+      text-align: left;
+      background: none;
+      border: none;
+      border-bottom: 1px solid var(--mee-color-outline);
+      cursor: pointer;
       min-height: 44px;
-      min-width: 44px;
+      color: var(--mee-color-on-surface);
+    }
+    .section-toggle:focus-visible {
+      outline: 2px solid var(--mee-color-primary);
+      outline-offset: 2px;
     }
   `],
   template: `
-    <div class="catalog-form-page">
+    <div class="max-w-2xl mx-auto px-4 py-4">
 
-      <!-- Page header: product name + status badge + AI Fill button -->
-      <div class="page-header">
-        <h1>{{ productTitle() }}</h1>
+      <!-- Page Header -->
+      <mee-page-header
+        [title]="productName()"
+        [subtitle]="categoryPath()"
+      />
 
-        @if (state.product()) {
-          <mee-status-badge [status]="state.product()!.status" />
-        }
-
-        <button
-          mat-raised-button
-          color="accent"
-          class="ai-fill-btn"
-          type="button"
-          [disabled]="state.autofillLoading() || state.loading()"
-          (click)="onRequestAutofill()"
-          aria-label="Fill form fields using AI"
-        >
-          @if (state.autofillLoading()) {
-            <mat-spinner diameter="16" />
-          }
-          AI Fill
-        </button>
-      </div>
-
-      <!-- Loading state -->
-      @if (state.loading()) {
-        <mee-loading-spinner caption="Loading product..." />
-      }
-
-      <!-- Error state -->
-      @if (state.error()) {
-        <div class="error-banner" role="alert">{{ state.error() }}</div>
-      }
-
-      <!-- Wizard — only when schema + product are loaded -->
-      @if (!state.loading() && state.schema() && state.product()) {
-        <mee-wizard
-          [steps]="wizardSteps()"
-          [model]="state.fields()"
-          [aiSuggestions]="state.aiSuggestions()"
-          (valueChange)="onFieldChange($event)"
-          (submit)="onSubmit()"
+      <!-- Status badge + AI fill row -->
+      <div class="flex items-center justify-between mt-3 mb-5">
+        <mee-status-badge [status]="'draft'" />
+        <mee-button
+          label="AI fill"
+          variant="secondary"
+          icon="auto_awesome"
+          [loading]="autofilling()"
+          [disabled]="loading()"
+          (clicked)="onAutofill()"
         />
-      }
-
-      <!-- Autosave status indicator -->
-      <div class="save-status" [attr.data-status]="saveStatus()">
-        @switch (saveStatus()) {
-          @case ('saving') { <span>Saving...</span> }
-          @case ('saved')  { <span>Saved</span> }
-          @case ('error')  { <span>Save failed</span> }
-        }
       </div>
 
+      <!-- Loading skeleton -->
+      @if (loading()) {
+        <div class="flex flex-col gap-4">
+          <mee-loading-skeleton variant="text" [lines]="3" />
+          <mee-loading-skeleton variant="text" [lines]="3" />
+          <mee-loading-skeleton variant="text" [lines]="2" />
+        </div>
+      }
+
+      <!-- Schema field groups -->
+      @if (!loading()) {
+
+        <!-- Compulsory section -->
+        <section aria-labelledby="compulsory-heading" class="mb-4">
+          <button
+            type="button"
+            id="compulsory-heading"
+            class="section-toggle"
+            (click)="compulsoryOpen.set(!compulsoryOpen())"
+            [attr.aria-expanded]="compulsoryOpen()"
+          >
+            <span>Compulsory ({{ compulsoryFields().length }})</span>
+            <span class="text-sm font-normal" style="color: var(--mee-color-on-surface-muted);">
+              {{ compulsoryOpen() ? 'Collapse' : 'Expand' }}
+            </span>
+          </button>
+
+          @if (compulsoryOpen()) {
+            <div class="flex flex-col gap-4 pt-4">
+              @for (field of compulsoryFields(); track field.canonical_name) {
+                <div
+                  class="field-wrapper"
+                  [class.mee-ai-suggested]="isAiSuggested(field.canonical_name)"
+                >
+                  @switch (field.primitive) {
+                    @case ('text_long') {
+                      <mee-textarea
+                        [label]="field.display_name"
+                        [required]="field.required"
+                        [error]="getFieldError(field.canonical_name)"
+                        [hint]="field.help_text"
+                        [rows]="4"
+                        (blur)="onFieldBlur(field.canonical_name, $any($event))"
+                      />
+                    }
+                    @case ('enum') {
+                      <mee-select
+                        [label]="field.display_name"
+                        [options]="field.enum_options ?? []"
+                        [error]="getFieldError(field.canonical_name)"
+                        (value_change)="onFieldChange(field.canonical_name, $event)"
+                      />
+                    }
+                    @default {
+                      <mee-input
+                        [label]="field.display_name"
+                        [required]="field.required"
+                        [error]="getFieldError(field.canonical_name)"
+                        [hint]="field.help_text"
+                        [type]="field.primitive === 'number' ? 'number' : 'text'"
+                        (blur)="onFieldBlur(field.canonical_name, $any($event))"
+                      />
+                    }
+                  }
+                </div>
+              }
+            </div>
+          }
+        </section>
+
+        <!-- Recommended section -->
+        <section aria-labelledby="recommended-heading" class="mb-4">
+          <button
+            type="button"
+            id="recommended-heading"
+            class="section-toggle"
+            (click)="recommendedOpen.set(!recommendedOpen())"
+            [attr.aria-expanded]="recommendedOpen()"
+          >
+            <span>Recommended ({{ recommendedFields().length }})</span>
+            <span class="text-sm font-normal" style="color: var(--mee-color-on-surface-muted);">
+              {{ recommendedOpen() ? 'Collapse' : 'Expand' }}
+            </span>
+          </button>
+
+          @if (recommendedOpen()) {
+            <div class="flex flex-col gap-4 pt-4">
+              @for (field of recommendedFields(); track field.canonical_name) {
+                <div
+                  class="field-wrapper"
+                  [class.mee-ai-suggested]="isAiSuggested(field.canonical_name)"
+                >
+                  @switch (field.primitive) {
+                    @case ('text_long') {
+                      <mee-textarea
+                        [label]="field.display_name"
+                        [required]="field.required"
+                        [error]="getFieldError(field.canonical_name)"
+                        [hint]="field.help_text"
+                        [rows]="4"
+                        (blur)="onFieldBlur(field.canonical_name, $any($event))"
+                      />
+                    }
+                    @case ('enum') {
+                      <mee-select
+                        [label]="field.display_name"
+                        [options]="field.enum_options ?? []"
+                        [error]="getFieldError(field.canonical_name)"
+                        (value_change)="onFieldChange(field.canonical_name, $event)"
+                      />
+                    }
+                    @default {
+                      <mee-input
+                        [label]="field.display_name"
+                        [required]="field.required"
+                        [error]="getFieldError(field.canonical_name)"
+                        [hint]="field.help_text"
+                        [type]="field.primitive === 'number' ? 'number' : 'text'"
+                        (blur)="onFieldBlur(field.canonical_name, $any($event))"
+                      />
+                    }
+                  }
+                </div>
+              }
+            </div>
+          }
+        </section>
+
+        <!-- Optional section -->
+        <section aria-labelledby="optional-heading" class="mb-6">
+          <button
+            type="button"
+            id="optional-heading"
+            class="section-toggle"
+            (click)="optionalOpen.set(!optionalOpen())"
+            [attr.aria-expanded]="optionalOpen()"
+          >
+            <span>Optional ({{ optionalFields().length }})</span>
+            <span class="text-sm font-normal" style="color: var(--mee-color-on-surface-muted);">
+              {{ optionalOpen() ? 'Collapse' : 'Expand' }}
+            </span>
+          </button>
+
+          @if (optionalOpen()) {
+            <div class="flex flex-col gap-4 pt-4">
+              @for (field of optionalFields(); track field.canonical_name) {
+                <div
+                  class="field-wrapper"
+                  [class.mee-ai-suggested]="isAiSuggested(field.canonical_name)"
+                >
+                  @switch (field.primitive) {
+                    @case ('text_long') {
+                      <mee-textarea
+                        [label]="field.display_name"
+                        [required]="field.required"
+                        [rows]="4"
+                        (blur)="onFieldBlur(field.canonical_name, $any($event))"
+                      />
+                    }
+                    @case ('enum') {
+                      <mee-select
+                        [label]="field.display_name"
+                        [options]="field.enum_options ?? []"
+                        (value_change)="onFieldChange(field.canonical_name, $event)"
+                      />
+                    }
+                    @default {
+                      <mee-input
+                        [label]="field.display_name"
+                        [required]="field.required"
+                        [type]="field.primitive === 'number' ? 'number' : 'text'"
+                        (blur)="onFieldBlur(field.canonical_name, $any($event))"
+                      />
+                    }
+                  }
+                </div>
+              }
+            </div>
+          }
+        </section>
+
+        <!-- Footer: autosave indicator + navigation -->
+        <div
+          class="flex items-center justify-between pt-3 pb-4"
+          style="border-top: 1px solid var(--mee-color-outline);"
+        >
+          <span class="text-sm" style="color: var(--mee-color-on-surface-muted);">
+            @switch (saveStatus()) {
+              @case ('saving') { Saving... }
+              @case ('saved')  { Saved }
+              @case ('error')  {
+                <span style="color: var(--mee-color-error);">Save failed</span>
+              }
+              @default { &nbsp; }
+            }
+          </span>
+
+          <div class="flex gap-2">
+            <mee-button
+              label="Back"
+              variant="ghost"
+              (clicked)="onBack()"
+            />
+            <mee-button
+              label="Images"
+              icon="arrow_forward"
+              (clicked)="onNext()"
+            />
+          </div>
+        </div>
+
+      }
     </div>
   `,
 })
 export class CatalogFormComponent implements OnInit {
-
-  // ── DI ─────────────────────────────────────────────────────────────────────
-
-  protected readonly state = inject(CatalogFormStateService);
-  private readonly catalogFormApi = inject(CatalogFormApiService);
-  private readonly draftRecovery = inject(DraftRecoveryService);
-  private readonly categorySchema = inject(CategorySchemaService);
-  private readonly stepComposer = inject(StepComposerService);
-  private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
-  private readonly errorService = inject(ErrorService);
-  private readonly snackBar = inject(MatSnackBar);
+  private readonly route      = inject(ActivatedRoute);
+  private readonly router     = inject(Router);
+  private readonly apiSvc     = inject(CatalogFormApiService);
+  private readonly toast      = inject(MeeToastService);
   private readonly destroyRef = inject(DestroyRef);
 
-  // ── Local state ─────────────────────────────────────────────────────────────
+  // ── Signals ───────────────────────────────────────────────────────────────
+  readonly loading         = signal(true);
+  readonly schema          = signal<FieldGroup[]>([]);
+  readonly fieldValues     = signal<Record<string, unknown>>({});
+  readonly aiSuggestions   = signal<Record<string, unknown>>({});
+  readonly saveStatus      = signal<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  readonly autofilling     = signal(false);
+  readonly compulsoryOpen  = signal(true);
+  readonly recommendedOpen = signal(false);
+  readonly optionalOpen    = signal(false);
+  readonly productId       = signal<string>('');
 
-  /** Autosave status driven by the Subject+debounce autosave pipeline */
-  readonly saveStatus = signal<AutosaveStatus>('idle');
-
-  /**
-   * Autosave pipeline: Subject+debounce(10s) + takeUntilDestroyed.
-   * This is functionally equivalent to the meeAutosave directive.
-   * The directive requires a FormGroup via meeAutosaveControl; since this
-   * component uses signals (no FormGroup), we implement autosave directly.
-   * Pattern: emit on each onFieldChange call → debounce 10s → call autosaveProduct.
-   */
-  private readonly autosaveTrigger$ = new Subject<void>();
-
-  /** The product UUID from the route param :id */
-  private productId = '';
-
-  // ── Computed ────────────────────────────────────────────────────────────────
-
-  /** Wizard steps computed from schema via StepComposerService */
-  readonly wizardSteps = computed(() =>
-    this.stepComposer.compose(this.state.schema() ?? []),
-  );
-
-  /** Product title derived from fields for the page header */
-  readonly productTitle = computed<string>(() => {
-    const fields = this.state.fields();
-    return (fields['title'] as string) || (fields['name'] as string) || 'Untitled product';
+  // ── Computed ──────────────────────────────────────────────────────────────
+  readonly productName = computed<string>(() => {
+    const v = this.fieldValues()['product_title'];
+    return (typeof v === 'string' && v) ? v : 'New Product';
   });
 
-  // ── Lifecycle ────────────────────────────────────────────────────────────────
+  // categoryPath is Wave 6 — simulated for Wave 5
+  readonly categoryPath = computed<string>(() => 'Fashion > Women > Ethnic > Kurti');
 
+  readonly compulsoryFields = computed<FieldSchema[]>(() =>
+    this.schema().find(g => g.group === 'compulsory')?.fields ?? []
+  );
+
+  readonly recommendedFields = computed<FieldSchema[]>(() =>
+    this.schema().find(g => g.group === 'recommended')?.fields ?? []
+  );
+
+  readonly optionalFields = computed<FieldSchema[]>(() =>
+    this.schema().find(g => g.group === 'optional')?.fields ?? []
+  );
+
+  readonly isFormComplete = computed<boolean>(() =>
+    this.compulsoryFields().every(f => !!this.fieldValues()[f.canonical_name])
+  );
+
+  // ── Autosave Subject ──────────────────────────────────────────────────────
+  private readonly autosaveTrigger$ = new Subject<void>();
+
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
   ngOnInit(): void {
-    // Wire up the autosave Subject pipeline (constructor-equivalent injection context)
-    this.autosaveTrigger$.pipe(
-      debounceTime(10_000),
-      takeUntilDestroyed(this.destroyRef),
-    ).subscribe(() => {
-      const pid = this.productId;
-      if (!pid) return;
-      this.saveStatus.set('saving');
-      this.catalogFormApi.autosaveProduct(pid, this.state.fields()).subscribe({
-        next: () => {
-          this.saveStatus.set('saved');
-          // Auto-reset to idle after 3s
-          setTimeout(() => {
-            if (this.saveStatus() === 'saved') this.saveStatus.set('idle');
-          }, 3000);
-        },
-        error: () => {
-          this.saveStatus.set('error');
-        },
-      });
-    });
+    const id = (this.route.snapshot.params['id'] as string | undefined) ?? 'new';
+    this.productId.set(id);
 
-    // 1. Read route param :id
-    const id = this.route.snapshot.paramMap.get('id');
-    if (!id) {
-      // No product ID — navigate to dashboard
-      void this.router.navigate(['/dashboard']);
-      return;
-    }
-    this.productId = id;
-    this.state.loading.set(true);
-    this.state.error.set(null);
+    // Wire autosave pipeline in ngOnInit (DestroyRef injected explicitly — not constructor)
+    this.autosaveTrigger$
+      .pipe(debounceTime(10_000), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.performAutosave());
 
-    // 2a. Fetch product first — schema requires leafCategoryId from product response
-    this.catalogFormApi.getProduct(id).subscribe({
-      next: (product) => {
-        this.state.setProduct(product);
-        this.state.productId.set(id);
-
-        // 2b. Fetch schema (requires leafCategoryId) + draft recovery in parallel
-        let schemaResolved = false;
-        let draftResolved = false;
-
-        const tryFinish = () => {
-          if (schemaResolved && draftResolved) {
-            this.state.loading.set(false);
-          }
-        };
-
-        // Fetch category schema
-        this.categorySchema.getSchema(product.leafCategoryId).subscribe({
-          next: (schema) => {
-            this.state.setSchema(schema.fields);
-            schemaResolved = true;
-            tryFinish();
-          },
-          error: (err: unknown) => {
-            this.state.error.set('Failed to load category fields. Please refresh.');
-            this.errorService.showError(err instanceof Error ? err : new Error('Schema load failed'));
-            schemaResolved = true;
-            this.state.loading.set(false);
-          },
-        });
-
-        // Fetch draft (in parallel with schema)
-        this.draftRecovery.getDraft(id).subscribe({
-          next: (draft) => {
-            // null = no draft (204), non-null = draft exists
-            this.state.setDraft(draft ? draft.fields : null);
-            draftResolved = true;
-            tryFinish();
-          },
-          error: () => {
-            // Draft fetch failure is non-fatal — log and continue
-            draftResolved = true;
-            tryFinish();
-          },
-        });
+    // Load schema (simulated)
+    this.apiSvc.getSchema(id).subscribe({
+      next: (groups) => {
+        this.schema.set(groups);
+        this.loading.set(false);
       },
-      error: (err: unknown) => {
-        this.state.loading.set(false);
-        if (err instanceof ApiError && err.status === 404) {
-          // catalog.product_not_found → navigate to /dashboard
-          void this.router.navigate(['/dashboard']);
-          return;
-        }
-        if (err instanceof ApiError && err.status === 429) {
-          // Rate limit exceeded — use Retry-After header if available
-          const retryAfter = err.raw?.headers?.get('Retry-After');
-          const message = retryAfter
-            ? `Pausing a moment, please try again in ${retryAfter} seconds`
-            : 'Too many requests. Please wait before trying again.';
-          this.snackBar.open(message, 'Dismiss', { duration: 6000 });
-          return;
-        }
-        this.state.error.set('Failed to load product. Please try again.');
-        this.errorService.showError(err instanceof ApiError ? err : new Error('Load failed'));
+      error: () => {
+        this.loading.set(false);
+        this.toast.error('Failed to load product schema. Please refresh.');
       },
     });
   }
 
-  // ── Event handlers ──────────────────────────────────────────────────────────
+  // ── Public helpers ────────────────────────────────────────────────────────
+  isAiSuggested(canonicalName: string): boolean {
+    return canonicalName in this.aiSuggestions();
+  }
 
-  /**
-   * Called on each field change from WizardRendererComponent.
-   * Applies the change to state and triggers debounced autosave.
-   */
-  onFieldChange(change: ValueChange): void {
-    this.state.applyFieldChange(change);
-    // Trigger the 10s-debounced autosave pipeline
+  getFieldError(canonicalName: string): string | undefined {
+    const allFields = [
+      ...this.compulsoryFields(),
+      ...this.recommendedFields(),
+      ...this.optionalFields(),
+    ];
+    const field = allFields.find(f => f.canonical_name === canonicalName);
+    if (!field?.required) return undefined;
+    return !this.fieldValues()[canonicalName]
+      ? `${field.display_name} is required`
+      : undefined;
+  }
+
+  // ── Event handlers ────────────────────────────────────────────────────────
+  onFieldBlur(canonicalName: string, value: string): void {
+    this.fieldValues.update(cur => ({ ...cur, [canonicalName]: value }));
+    this.clearAiSuggestionIfPresent(canonicalName);
     this.autosaveTrigger$.next();
   }
 
-  /**
-   * Triggered by the AI Fill button.
-   * Calls requestAutofill and applies suggestions to state.
-   * Handles fallback_offered + 429 rate limit per §11.A.1.
-   */
-  onRequestAutofill(): void {
-    const pid = this.productId;
-    if (!pid) return;
+  onFieldChange(canonicalName: string, value: unknown): void {
+    this.fieldValues.update(cur => ({ ...cur, [canonicalName]: value }));
+    this.clearAiSuggestionIfPresent(canonicalName);
+    this.autosaveTrigger$.next();
+  }
 
-    this.state.autofillLoading.set(true);
-    this.catalogFormApi.requestAutofill(pid).subscribe({
-      next: (response) => {
-        this.state.applyAutofillSuggestions(response.suggestions);
-        if (response.fallbackOffered) {
-          this.snackBar.open('AI suggestions may not be complete', 'Dismiss', { duration: 4000 });
-        }
-        this.state.autofillLoading.set(false);
+  onAutofill(): void {
+    this.autofilling.set(true);
+    this.apiSvc.autofill(this.productId()).subscribe({
+      next: (suggestions) => {
+        this.aiSuggestions.set(suggestions);
+        this.fieldValues.update(cur => ({ ...cur, ...suggestions }));
+        this.autofilling.set(false);
       },
-      error: (err: unknown) => {
-        this.state.autofillLoading.set(false);
-        if (err instanceof ApiError && err.status === 429) {
-          this.snackBar.open('Daily AI fill limit reached. Try again tomorrow.', 'Dismiss', { duration: 6000 });
-          return;
-        }
-        this.errorService.showError(err instanceof ApiError ? err : new Error('Autofill failed'));
+      error: () => {
+        this.autofilling.set(false);
+        this.toast.error('AI fill failed. Please try again.');
       },
     });
   }
 
-  /**
-   * Called when the seller accepts an AI suggestion for a field.
-   * Accepts the suggestion in state and persists it via saveProduct.
-   */
-  onAutofillAccepted(event: { canonicalName: string; value: unknown }): void {
-    this.state.acceptAiSuggestion(event.canonicalName);
-    const pid = this.productId;
-    if (!pid) return;
-    // Persist the accepted field value immediately (no debounce)
-    this.catalogFormApi.saveProduct(pid, this.state.fields()).subscribe({
-      error: (err: unknown) => {
-        this.errorService.showError(err instanceof ApiError ? err : new Error('Save failed'));
-      },
+  onBack(): void {
+    void this.router.navigate(['/dashboard']);
+  }
+
+  onNext(): void {
+    void this.router.navigate(['/catalogs', this.productId(), 'images']);
+  }
+
+  // ── Private ───────────────────────────────────────────────────────────────
+  private clearAiSuggestionIfPresent(canonicalName: string): void {
+    if (!(canonicalName in this.aiSuggestions())) return;
+    this.aiSuggestions.update(cur => {
+      const { [canonicalName]: _removed, ...rest } = cur;
+      return rest;
     });
   }
 
-  /**
-   * Called when the seller rejects an AI suggestion for a field.
-   * Removes the suggestion from state and persists rejection metadata.
-   */
-  onAutofillRejected(event: { canonicalName: string; rejectedReason: string }): void {
-    this.state.rejectAiSuggestion(event.canonicalName);
-    const pid = this.productId;
-    if (!pid) return;
-    // Persist rejection note — backend merges ai_suggestions_jsonb on receipt
-    const rejectionPayload = {
-      ...this.state.fields(),
-      ai_suggestions: {
-        [event.canonicalName]: { rejected_reason: 'user_rejected' },
-      },
-    };
-    this.catalogFormApi.saveProduct(pid, rejectionPayload).subscribe({
-      error: (err: unknown) => {
-        this.errorService.showError(err instanceof ApiError ? err : new Error('Save failed'));
-      },
-    });
-  }
-
-  /**
-   * Manual save triggered by wizard submit button.
-   * On success: navigate to /catalogs/:id/images.
-   */
-  onSubmit(): void {
-    const pid = this.productId;
-    if (!pid) return;
-
-    this.state.saving.set(true);
-    this.catalogFormApi.saveProduct(pid, this.state.fields()).subscribe({
+  private performAutosave(): void {
+    this.saveStatus.set('saving');
+    this.apiSvc.autosave(this.productId(), this.fieldValues()).subscribe({
       next: () => {
-        this.state.saving.set(false);
-        void this.router.navigate(['/catalogs', pid, 'images']);
+        this.saveStatus.set('saved');
+        setTimeout(() => {
+          if (this.saveStatus() === 'saved') this.saveStatus.set('idle');
+        }, 3000);
+        this.toast.success('Saved');
       },
-      error: (err: unknown) => {
-        this.state.saving.set(false);
-        this.errorService.showError(err instanceof ApiError ? err : new Error('Save failed'));
+      error: () => {
+        this.saveStatus.set('error');
+        this.toast.error('Autosave failed. Check your connection.');
       },
     });
   }

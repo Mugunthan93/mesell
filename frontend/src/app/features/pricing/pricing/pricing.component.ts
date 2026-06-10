@@ -1,293 +1,327 @@
-// features/pricing/pricing/pricing.component.ts
-// Selector: mee-pricing
-// Route: /catalogs/:id/pricing — P&L calculator per §14
-
 import {
   ChangeDetectionStrategy,
   Component,
+  OnInit,
   computed,
   inject,
-  OnInit,
   signal,
 } from '@angular/core';
+import {
+  FormBuilder,
+  ReactiveFormsModule,
+  Validators,
+} from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { EMPTY } from 'rxjs';
-import { catchError } from 'rxjs/operators';
-import { MatButtonModule } from '@angular/material/button';
-import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { TranslocoModule } from '@jsverse/transloco';
 
-import { PricingApiService, PricingCalc } from '../pricing-api.service';
-import { MarginSliderComponent } from '../margin-slider/margin-slider.component';
-import { PnlBreakdownComponent } from '../pnl-breakdown/pnl-breakdown.component';
-import { PricingChartComponent } from '../pricing-chart/pricing-chart.component';
-import { LoadingSpinnerComponent } from '@shared/components/loading-spinner/loading-spinner.component';
+import { MeeBadgeComponent }   from '../../../ui';
+import { MeeButtonComponent }  from '../../../ui';
+import { MeeCardComponent }    from '../../../ui';
+import { MeeInputComponent }   from '../../../ui';
+import { PageHeaderComponent } from '../../../shared';
 
-/** Default initial values per spec §14.D */
-const DEFAULT_MRP = 999;
-const DEFAULT_TARGET_PAYOUT = 500;
+import { computePnlBreakdown, formatRupee } from './pricing.utils';
+import type { PnlBreakdown } from './pricing.model';
 
 @Component({
-  selector: 'mee-pricing',
+  selector: 'app-pricing',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    MatButtonModule,
-    MatSnackBarModule,
-    TranslocoModule,
-    MarginSliderComponent,
-    PnlBreakdownComponent,
-    PricingChartComponent,
-    LoadingSpinnerComponent,
+    ReactiveFormsModule,
+    MeeBadgeComponent,
+    MeeButtonComponent,
+    MeeCardComponent,
+    MeeInputComponent,
+    PageHeaderComponent,
   ],
-  styles: [`
-    :host { display: block; }
-    .pricing-page {
-      max-width: 720px;
-      margin: 0 auto;
-      padding: 24px 16px;
-    }
-    .pricing-header {
-      margin-bottom: 24px;
-    }
-    .pricing-header h1 {
-      font-size: 22px;
-      font-weight: 700;
-      color: var(--mee-color-on-surface);
-      margin: 0 0 4px;
-    }
-    .pricing-header p {
-      font-size: 13px;
-      color: #6B7280;
-      margin: 0;
-    }
-    .pricing-card {
-      background: var(--mee-color-surface);
-      border-radius: var(--mee-radius-md);
-      padding: 24px;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-      margin-bottom: 20px;
-    }
-    .pricing-card-title {
-      font-size: 13px;
-      font-weight: 700;
-      color: var(--mee-color-on-surface);
-      margin: 0 0 16px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .pricing-actions {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-top: 32px;
-      gap: 12px;
-    }
-    .loading-wrap {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      min-height: 300px;
-    }
-    .estimate-banner {
-      font-size: 11px;
-      color: #9CA3AF;
-      text-align: right;
-      margin-bottom: 4px;
-    }
-    @media (max-width: 480px) {
-      .pricing-actions {
-        flex-direction: column;
-      }
-      .pricing-actions button {
-        width: 100%;
-      }
-    }
-  `],
   template: `
-    <div class="pricing-page">
-      <!-- Page header -->
-      <div class="pricing-header">
-        <h1>{{ 'pricing.title' | transloco }}</h1>
-        <p>Adjust your MRP to see how it affects your payout and margin.</p>
+    <div class="max-w-5xl mx-auto px-4 py-6 space-y-6">
+
+      <!-- Page Header -->
+      <mee-page-header
+        title="Price Calculator"
+        subtitle="Set your MRP and see the margin breakdown"
+      />
+
+      <!-- Main layout: stacked on mobile, 2-col on desktop -->
+      <div class="flex flex-col gap-6 lg:flex-row lg:items-start">
+
+        <!-- INPUT SECTION -->
+        <div class="lg:w-2/5">
+          <mee-card>
+            <form [formGroup]="form" class="space-y-4 p-2">
+
+              <h2 class="text-base font-semibold" style="color: var(--mee-color-on-surface)">
+                Enter pricing details
+              </h2>
+
+              <!-- MRP field -->
+              <mee-input
+                label="MRP"
+                type="number"
+                prefix="&#8377;"
+                placeholder="e.g. 899"
+                formControlName="mrp"
+                (change)="onMrpInput()"
+                [error]="mrpError()"
+              />
+
+              <!-- Target margin field -->
+              <mee-input
+                label="Target margin"
+                type="number"
+                prefix="&#8377;"
+                placeholder="e.g. 150"
+                formControlName="target_margin"
+                [error]="targetMarginError()"
+              />
+
+              <!-- Native range slider (no mee-slider primitive exists in UI Kit) -->
+              <div class="space-y-2">
+                <label
+                  class="block text-sm font-medium"
+                  style="color: var(--mee-color-on-surface)"
+                >
+                  Adjust MRP via slider
+                </label>
+                <input
+                  type="range"
+                  [value]="sliderMrp()"
+                  min="100"
+                  max="5000"
+                  step="50"
+                  (input)="onSliderInput($event)"
+                  class="w-full rounded-full outline-none"
+                  style="
+                    accent-color: var(--mee-color-primary);
+                    min-height: 44px;
+                    cursor: pointer;
+                    display: block;
+                  "
+                  aria-label="Adjust MRP"
+                />
+                <div class="flex justify-between text-xs" style="color: var(--mee-color-on-surface-muted)">
+                  <span>&#8377;100</span>
+                  <span class="font-medium" style="color: var(--mee-color-on-surface)">
+                    Current: {{ formatRupeeLabel(sliderMrp()) }}
+                  </span>
+                  <span>&#8377;5,000</span>
+                </div>
+              </div>
+
+              <!-- Calculate button -->
+              <mee-button
+                label="Calculate"
+                variant="primary"
+                [fullWidth]="true"
+                [disabled]="form.invalid"
+                (clicked)="onCalculate()"
+              />
+
+            </form>
+          </mee-card>
+        </div>
+
+        <!-- P&L BREAKDOWN -->
+        <div class="lg:w-3/5">
+          <mee-card>
+            <div class="p-2 space-y-4">
+
+              <h2 class="text-base font-semibold" style="color: var(--mee-color-on-surface)">
+                P&amp;L Breakdown
+              </h2>
+
+              @if (breakdown()) {
+                <table class="w-full text-sm" aria-label="Pricing breakdown">
+                  <tbody>
+                    <tr class="border-b" style="border-color: var(--mee-color-outline)">
+                      <td class="py-2" style="color: var(--mee-color-on-surface-muted)">MRP</td>
+                      <td class="py-2 text-right font-medium" style="color: var(--mee-color-on-surface)">
+                        {{ formatRupeeLabel(breakdown()!.mrp) }}
+                      </td>
+                    </tr>
+                    <tr class="border-b" style="border-color: var(--mee-color-outline)">
+                      <td class="py-2" style="color: var(--mee-color-on-surface-muted)">Meesho Price</td>
+                      <td class="py-2 text-right font-medium" style="color: var(--mee-color-on-surface)">
+                        {{ formatRupeeLabel(breakdown()!.meesho_price) }}
+                      </td>
+                    </tr>
+                    <tr class="border-b" style="border-color: var(--mee-color-outline)">
+                      <td class="py-2" style="color: var(--mee-color-on-surface-muted)">
+                        Commission ({{ breakdown()!.commission_pct }}%)
+                      </td>
+                      <td class="py-2 text-right" style="color: var(--mee-color-on-surface)">
+                        {{ formatRupeeLabel(breakdown()!.commission_amt) }}
+                      </td>
+                    </tr>
+                    <tr class="border-b" style="border-color: var(--mee-color-outline)">
+                      <td class="py-2" style="color: var(--mee-color-on-surface-muted)">
+                        GST ({{ breakdown()!.gst_pct }}%)
+                      </td>
+                      <td class="py-2 text-right" style="color: var(--mee-color-on-surface)">
+                        {{ formatRupeeLabel(breakdown()!.gst_amt) }}
+                      </td>
+                    </tr>
+                    <tr class="border-b-2" style="border-color: var(--mee-color-outline)">
+                      <td class="py-2 font-semibold" style="color: var(--mee-color-on-surface)">
+                        Seller Payout
+                      </td>
+                      <td class="py-2 text-right font-semibold" style="color: var(--mee-color-on-surface)">
+                        {{ formatRupeeLabel(breakdown()!.seller_payout) }}
+                      </td>
+                    </tr>
+                    <tr class="border-b" style="border-color: var(--mee-color-outline)">
+                      <td class="py-2 font-semibold" style="color: var(--mee-color-on-surface)">
+                        Net Margin
+                      </td>
+                      <td
+                        class="py-2 text-right font-semibold"
+                        [style.color]="marginIsPositive()
+                          ? 'var(--mee-color-success)'
+                          : 'var(--mee-color-error)'"
+                      >
+                        {{ formatRupeeLabel(breakdown()!.net_margin) }}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="py-2" style="color: var(--mee-color-on-surface-muted)">Net Margin %</td>
+                      <td
+                        class="py-2 text-right font-medium"
+                        [style.color]="marginIsPositive()
+                          ? 'var(--mee-color-success)'
+                          : 'var(--mee-color-error)'"
+                      >
+                        {{ breakdown()!.net_margin_pct }}%
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <!-- Margin status badge -->
+                <div class="flex items-center gap-2 pt-2">
+                  <mee-badge
+                    [value]="marginIsPositive() ? 'POSITIVE' : 'NEGATIVE'"
+                    [severity]="marginIsPositive() ? 'success' : 'danger'"
+                  />
+                </div>
+
+                <!-- V1 shipping disclaimer -->
+                <p class="text-xs mt-2" style="color: var(--mee-color-on-surface-muted)">
+                  Shipping costs are not included in V1 calculations.
+                </p>
+
+              } @else {
+                <p class="text-sm py-6 text-center" style="color: var(--mee-color-on-surface-muted)">
+                  Enter MRP and target margin above, then click "Calculate" to see your P&amp;L.
+                </p>
+              }
+
+            </div>
+          </mee-card>
+        </div>
+
       </div>
 
-      <!-- Loading state -->
-      @if (loading()) {
-        <div class="loading-wrap">
-          <mee-loading-spinner [diameter]="40" caption="Calculating..." />
-        </div>
-      }
+      <!-- Save & Continue -->
+      <div class="pt-2">
+        <mee-button
+          label="Save &amp; Continue"
+          variant="primary"
+          [fullWidth]="true"
+          (clicked)="onSaveContinue()"
+        />
+      </div>
 
-      @if (!loading()) {
-        <!-- MRP Slider card -->
-        <div class="pricing-card">
-          <p class="pricing-card-title">Set your price</p>
-          <mee-margin-slider
-            [mrp]="mrp()"
-            [minMrp]="50"
-            [maxMrp]="10000"
-            (mrpChanged)="onMrpChanged($event)"
-            (mrpCommitted)="onMrpCommitted($event)"
-          />
-        </div>
-
-        @if (displayCalc()) {
-          <!-- Show estimate banner when no committed calc yet -->
-          @if (!calc()) {
-            <p class="estimate-banner" aria-live="polite">Estimated (move slider to calculate)</p>
-          }
-
-          <!-- P&L Breakdown card -->
-          <div class="pricing-card">
-            <p class="pricing-card-title">Cost breakdown</p>
-            <mee-pnl-breakdown [calc]="displayCalc()!" />
-          </div>
-
-          <!-- Chart card -->
-          <div class="pricing-card">
-            <p class="pricing-card-title">Visual breakdown</p>
-            <mee-pricing-chart [calc]="displayCalc()!" />
-          </div>
-        }
-
-        <!-- Navigation actions -->
-        <div class="pricing-actions">
-          <button
-            mat-stroked-button
-            (click)="navigateBack()"
-            class="min-h-[44px]"
-            aria-label="Go back to preview"
-          >
-            Back to Preview
-          </button>
-
-          <button
-            mat-flat-button
-            color="primary"
-            (click)="navigateNext()"
-            class="min-h-[44px]"
-            aria-label="Go to export"
-            id="next-step-btn"
-          >
-            Next: Export
-          </button>
-        </div>
-      }
     </div>
   `,
 })
 export class PricingComponent implements OnInit {
-  private readonly route = inject(ActivatedRoute);
+  private readonly fb     = inject(FormBuilder);
+  private readonly route  = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly pricingApi = inject(PricingApiService);
-  private readonly snackBar = inject(MatSnackBar);
 
-  /** Committed calc from the API (null until first successful call) */
-  readonly calc = signal<PricingCalc | null>(null);
+  /** Exposed to template (avoids TS strict no-property-access-from-index). */
+  readonly formatRupeeLabel = formatRupee;
 
-  /** Current MRP value tracked by the slider */
-  readonly mrp = signal<number>(DEFAULT_MRP);
-
-  readonly loading = signal<boolean>(true);
-
-  /**
-   * Snapshot of percentage rates from the last committed API call.
-   * Used for local recompute on slider movement (no API call needed).
-   */
-  private ratesSnapshot: { commission_pct: number; gst_pct: number; platform_fee_pct: number } | null = null;
-
-  /**
-   * Local estimate for instant slider feedback.
-   * Per §14.D: fires on every slider move, no API call.
-   */
-  readonly localEstimate = computed<Partial<PricingCalc>>(() => {
-    const snapshot = this.ratesSnapshot;
-    if (!snapshot) return {};
-    const { commission_pct, gst_pct, platform_fee_pct } = snapshot;
-    const mrpVal = this.mrp();
-    const seller_payout = mrpVal * (1 - commission_pct / 100 - gst_pct / 100 - platform_fee_pct / 100);
-    const net_margin_pct = mrpVal > 0 ? (seller_payout / mrpVal) * 100 : 0;
-    return { seller_payout, net_margin_pct };
+  /** Reactive form: MRP + target margin. */
+  readonly form = this.fb.group({
+    mrp:           [899,  [Validators.required, Validators.min(1), Validators.max(99999)]],
+    target_margin: [150,  [Validators.required, Validators.min(0)]],
   });
 
-  /**
-   * Merged display calc: committed calc merged with local estimate overrides
-   * for seller_payout and net_margin_pct (instant feedback while dragging).
-   */
-  readonly displayCalc = computed<PricingCalc | null>(() => {
-    const committed = this.calc();
-    if (!committed) return null;
-    const estimate = this.localEstimate();
-    return {
-      ...committed,
-      mrp: this.mrp(),
-      seller_payout: estimate.seller_payout ?? committed.seller_payout,
-      net_margin_pct: estimate.net_margin_pct ?? committed.net_margin_pct,
-    };
+  /** Mirrors slider thumb position (synced two-way with form MRP control). */
+  readonly sliderMrp = signal<number>(899);
+
+  /** Computed P&L breakdown — null until Calculate is first clicked. */
+  readonly breakdown = signal<PnlBreakdown | null>(null);
+
+  /** Reserved for future async API wiring. */
+  readonly calculating = signal<boolean>(false);
+
+  /** Extracted from route params in ngOnInit. */
+  private productId = '';
+
+  /** True when net_margin is strictly positive. */
+  readonly marginIsPositive = computed<boolean>(
+    () => (this.breakdown()?.net_margin ?? -1) > 0
+  );
+
+  // ── Form validation error messages ──
+
+  readonly mrpError = computed<string | undefined>(() => {
+    const ctrl = this.form.controls.mrp;
+    if (!ctrl.touched || ctrl.valid) return undefined;
+    if (ctrl.hasError('required')) return 'MRP is required.';
+    if (ctrl.hasError('min'))      return 'MRP must be at least 1.';
+    if (ctrl.hasError('max'))      return 'MRP cannot exceed 99,999.';
+    return 'Invalid MRP.';
   });
 
-  private get productId(): string {
-    return this.route.snapshot.parent?.paramMap.get('id') ??
-           this.route.snapshot.paramMap.get('id') ?? '';
-  }
+  readonly targetMarginError = computed<string | undefined>(() => {
+    const ctrl = this.form.controls.target_margin;
+    if (!ctrl.touched || ctrl.valid) return undefined;
+    if (ctrl.hasError('required')) return 'Target margin is required.';
+    if (ctrl.hasError('min'))      return 'Target margin cannot be negative.';
+    return 'Invalid target margin.';
+  });
 
   ngOnInit(): void {
-    const id = this.productId;
-    this.callApi(id, DEFAULT_MRP, DEFAULT_TARGET_PAYOUT);
+    this.productId = this.route.snapshot.paramMap.get('id') ?? '';
   }
 
   /**
-   * Fires on every slider move (100ms debounced inside MarginSliderComponent).
-   * Updates local mrp signal → localEstimate recomputes instantly via computed().
+   * Native range slider moved — sync slider signal AND form MRP control.
+   * Pattern: "native range for V1 margin slider" (no mee-slider primitive exists).
    */
-  onMrpChanged(mrp: number): void {
-    this.mrp.set(mrp);
+  onSliderInput(event: Event): void {
+    const val = (event.target as HTMLInputElement).valueAsNumber;
+    this.sliderMrp.set(val);
+    this.form.patchValue({ mrp: val });
   }
 
   /**
-   * Fires 500ms after slide end — triggers actual API call.
+   * MRP text field changed — clamp and sync slider signal from form value.
    */
-  onMrpCommitted(mrp: number): void {
-    this.mrp.set(mrp);
-    this.callApi(this.productId, mrp, DEFAULT_TARGET_PAYOUT);
-  }
-
-  private callApi(productId: string, mrp: number, targetPayout: number): void {
-    if (!productId) {
-      this.loading.set(false);
-      return;
+  onMrpInput(): void {
+    const val = this.form.controls.mrp.value;
+    if (val !== null && val !== undefined && !isNaN(Number(val))) {
+      const clamped = Math.min(Math.max(Number(val), 100), 5000);
+      this.sliderMrp.set(clamped);
     }
-    this.loading.set(true);
-
-    this.pricingApi.calculate(productId, mrp, targetPayout).pipe(
-      catchError((err: unknown) => {
-        this.loading.set(false);
-        this.snackBar.open('Failed to calculate pricing. Please try again.', 'Dismiss', {
-          duration: 4000,
-          panelClass: ['mee-snackbar-error'],
-        });
-        return EMPTY;
-      }),
-    ).subscribe((result) => {
-      // Snapshot rates for local recompute
-      this.ratesSnapshot = {
-        commission_pct: result.commission_pct,
-        gst_pct: result.gst_pct,
-        platform_fee_pct: result.platform_fee_pct,
-      };
-      this.calc.set(result);
-      this.loading.set(false);
-    });
   }
 
-  navigateBack(): void {
-    const id = this.productId;
-    void this.router.navigate(['/catalogs', id, 'preview']);
+  /** Run client-side P&L calculation. Synchronous — no HTTP in V1 simulation. */
+  onCalculate(): void {
+    if (this.form.invalid) return;
+    this.calculating.set(true);
+    const mrp    = this.form.controls.mrp.value ?? 0;
+    const margin = this.form.controls.target_margin.value ?? 0;
+    this.breakdown.set(computePnlBreakdown(mrp, margin));
+    this.calculating.set(false);
   }
 
-  navigateNext(): void {
-    const id = this.productId;
-    void this.router.navigate(['/catalogs', id, 'export']);
+  /** Navigate forward to the export step. */
+  onSaveContinue(): void {
+    void this.router.navigate(['/catalogs', this.productId, 'export']);
   }
 }
