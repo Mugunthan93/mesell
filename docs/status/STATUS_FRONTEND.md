@@ -5890,3 +5890,98 @@ Hand-offs:
   - meesell-frontend-coordinator: service slice COMPLETE; STEP 3 merge gate ready
     after component-builder delivers rewired component.
 =========
+
+=== UPDATE: 2026-06-11 — image-precheck FRONTEND — HYBRID STEP 2 (component-builder) COMPLETE ===
+Phase: image-precheck (V1 Feature 5) — ImageUploaderComponent rewired onto ImageService + backend contract remap
+Session: mesell-image-precheck-frontend-session-1 (meesell-angular-component-builder)
+Agent: meesell-angular-component-builder (sonnet)
+Branch: feature/image-precheck-frontend @ (see commits below) — PUSHED
+
+Done:
+  image-uploader.component.ts — REWIRED off SIMULATION onto ImageService:
+    - providers: [ImageService] added (feature-scoped; non-root)
+    - SIMULATION const map DELETED (jpeg_format/color_space_rgb keys gone)
+    - simulateSlot() DELETED
+    - URL.createObjectURL usage DELETED
+    - setInterval poll-stub DELETED
+    - Real HTTP wiring: upload(productId, file, idx) per file → startPolling() on 202
+    - pollImages(productId) subscription stored in pollSub; unsubscribed on ngOnDestroy
+    - featureDisabled signal: set true when upload returns EMPTY + no images exist
+    - Graceful disabled/empty state: mee-empty-state shown when featureDisabled()
+    - Slot guard fixed: >= 6 → >= 4 (G4 fix)
+    - Slot idx: 1-based (1..4) — idx = currentImages.length + i + 1 (G4 fix)
+    - is_front = idx === 1 (front image flag)
+    - Header subtitle: "Upload up to 4 images" (G4 text fix)
+    - Slot display: "Slot {{ img.idx }}" (not slot_index+1; not 0-based)
+    - status enum: 'pending' | 'ready' | 'failed_precheck' (G5 fix — was pass/fail)
+    - Re-upload button: @if (img.status === 'failed_precheck') (was 'fail')
+    - canContinue: images.length > 0 && every status === 'ready' (via computeCanContinue)
+    - Thumbnails: img.gcs_url from signed_url (not createObjectURL)
+    - Red border on mee-card for failed_precheck slots
+    - inline precheck-report table: red border variant for failed_precheck panels
+
+  image-uploader.model.ts — REMAPPED to backend contract (R-IP-B):
+    - PrecheckResult / old ProductImage / old PrecheckItem REPLACED by:
+      PrecheckJsonb / new ProductImage (idx 1-based + is_front) / PrecheckItem keyed on PrecheckJsonb
+    - PRECHECK_KEYS: ordered ReadonlyArray of 5 backend keys (jpeg_valid/color_space/resolution_pass/white_background/watermark_check)
+    - PRECHECK_LABELS: backend keys (not legacy keys)
+    - PRECHECK_HINTS: backend keys; canonical §968 wording
+    - buildPrecheckItems: uses PRECHECK_KEYS iteration (not Object.keys)
+    - computeCanContinue: checks status === 'ready' (not 'pass')
+    - statusForMeeStatusBadge: maps 'ready'→'ready', 'failed_precheck'→'failed', 'pending'→'pending'
+    - mapImageSummaryToProductImage: new helper (ImageSummary → ProductImage)
+    - resetSlot: now also clears gcs_url (null) on reset
+    - applySimulationResult REMOVED (simulation dead)
+    - addSlots REMOVED (superseded by component upload flow)
+    - LEGACY type PrecheckResult REMOVED
+
+  image-uploader.component.spec.ts — REWRITTEN to real service contract:
+    - Section A: Pure function model tests (backend keys/enums/mapping)
+      A1: PRECHECK_KEYS — 5 backend keys confirmed, NO old keys
+      A2: PRECHECK_LABELS — labels for all 5 backend keys
+      A3: PRECHECK_HINTS — fix hint copy (§968 canonical wording)
+      A4: buildPrecheckItems — 5-key backend matrix, color_space CMYK, 8 tests
+      A5: slotProgress — 3 tests
+      A6: computeCanContinue — backend 'ready' gate, 6 tests
+      A7: computeActiveExpandedImage — 3 tests
+      A8: toggleExpandedSlot — 3 tests
+      A9: resetSlot — 3 tests (now includes gcs_url cleared)
+      A10: mapImageSummaryToProductImage — 8 tests
+      A11: statusForMeeStatusBadge — backend enum mapping, 3 tests
+    - Section B: ImageService interaction tests (plain fn mocks, no TestBed)
+      B1: upload 1-based idx verified, 3 tests
+      B2: pollImages called after 202; NOT called for EMPTY, 2 tests
+      B3: precheck rows render 5 backend keys, 3 tests
+      B4: canContinue — 'ready' only, 4 tests
+      B5: flag-OFF / empty state — EMPTY+empty list, 3 tests
+      B6: 4-slot guard — 3 tests
+      B7: 1-based idx assignment, 3 tests
+      B8: re-upload path — resetSlot + upload re-called, 2 tests
+
+Build: mfe-catalog development 3.125s — GREEN ≤90s (D12 PASS)
+Build: frontend (shell) development 1.388s — GREEN
+Tests: 48 spec files, 521 tests (up from 482), 0 fail, 0 skip
+Boundary checks:
+  - 0 primeng in image-uploader.component.ts: PASS
+  - 0 localStorage in image-uploader.component.ts: PASS
+  - 0 SIMULATION in image-uploader.component.ts: PASS
+  - 0 createObjectURL in image-uploader.component.ts: PASS
+  - 0 setInterval in image-uploader.component.ts: PASS
+  - 0 old precheck keys (jpeg_format/color_space_rgb/min_resolution/white_bg/no_watermark) as live code: PASS
+  - tsc --noEmit --project apps/mfe-catalog/tsconfig.app.json: CLEAN
+  - 6-slot / 0-based-idx / old-precheck-key remnants: NONE
+Screenshots: NOT CAPTURED (no headless-browser harness available)
+
+Commits: see below (staged on branch)
+Blockers: none
+Next: meesell-frontend-coordinator runs HYBRID STEP 3 merge-gate review
+
+Hand-offs:
+  - meesell-frontend-coordinator (MERGE GATE): all 3 files rewired + tests passing.
+    Acceptance criteria met:
+      slots 6→4 ✅  idx 1-based ✅  precheck keys backend ✅  status enum backend ✅
+      ImageService providers[] ✅  SIMULATION deleted ✅  createObjectURL deleted ✅
+      flag-OFF graceful state ✅  ngOnDestroy subscription cleanup ✅
+      inline precheck-report table retained ✅  48 spec files 521 tests 0 fail ✅
+      builds GREEN (mfe-catalog 3.125s + shell 1.388s) ✅
+=========
