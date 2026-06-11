@@ -5762,3 +5762,54 @@ Hand-offs:
   - meesell-ai-coordinator (FLAGGED, not yet sent): confirm-memo before Wave C/D — AI lane is NOT wiring autofill overlay / precheck-result display (frontend owns the UI rendering of AI-delivered endpoints). Will open at Wave C/D dispatch.
   - meesell-backend-coordinator (FLAGGED, not yet sent): verify live Set-Cookie Path (=/api/v1/auth) + Decimal wire-type + POST /products create body before Wave A/D wiring. Will open at dispatch time.
 =========
+
+=== UPDATE: 2026-06-11 — image-precheck FRONTEND — HYBRID STEP 1 (as-built audit + specialist SPECs) ===
+Phase: image-precheck (V1 Feature 5) — frontend HTTP wiring. Route /catalogs/:id/images (mfe-catalog remote).
+Session: mesell-image-precheck-frontend-session-1
+
+V1 ROUTES / SPECIALISTS THIS TASK TOUCHES:
+  - Route: /catalogs/:id/images (the 9th of the 10 V1 routes; lives inside the mfe-catalog Native-Federation remote, mounted via shell loadChildren('./CatalogRoutes')).
+  - Specialists this feature needs: meesell-angular-service-builder (NEW image.service.ts multipart upload + backoff polling + 404-flag handling) + meesell-angular-component-builder (REWIRE the existing image-uploader.component.ts off SIMULATION onto image.service + contract-key remap + new spec). ui-styler NOT in scope (component absorbs styling per FEATURE_PLAN line 109).
+
+Board sweep (session start): Active features had 1 PENDING row (wave6-api-wiring PLAN, 2026-06-11). NO rows untouched 7+ days. Inter-lead requests open: 7 infra rows (SP07 + per-remote hosting), all OPEN, all <14 days, none stale. Added 1 IN PROGRESS row this session: image-precheck (frontend).
+Board sweep (session end): same; image-precheck row IN PROGRESS with 2 founder rulings flagged in Blocking.
+
+MEMORY REPAIR: my MEMORY.md had an unresolved git merge-conflict (stash markers <<<<<<< Updated upstream / ======= / >>>>>>> Stashed changes at lines 282-338) — two distinct legitimate session blocks (wave6-planning vs smart-picker-port + cutover-closeout + wave6-auth-core-spec) entangled by a sibling stash. REPAIRED keep-both (stripped only the 3 conflict markers, preserved ALL content; the 7-equals marker is distinct from the 9-equals STATUS block separator). Staged in master tree to clear the UU state. Flagged for completeness.
+
+AS-BUILT AUDIT (honest, file:line evidence — do NOT inflate):
+  - The image-uploader UI ALREADY EXISTS, fully built as a SIMULATION shell from Waves 3-5: apps/mfe-catalog/src/app/images/image-uploader/{image-uploader.component.ts, image-uploader.model.ts, image-uploader.component.spec.ts}. It is OnPush standalone, uses mee-* primitives + composites, has a 6-slot grid, an inline precheck-report TABLE (NOT a separate component), setTimeout SIMULATION map + setInterval poll-stub, ngOnDestroy clearInterval.
+  - There is NO image.service.ts (only the component + model). No HTTP. No precheck-report.component.ts (the report is inline in image-uploader template).
+  - There are NO interceptors / ApiClient / ErrorService / NetworkService anywhere (the §4-LOCKED service layer is still DESIGNED-not-BUILT; Wave 6 Wave A builds it). NO feature-flags.service.ts / featureFlagGuard anywhere.
+  - provideHttpClient(withFetch()) EXISTS in shell app.config.ts (L20-ish) AND mfe-catalog main.ts (smart-picker-wiring #98/#101). NO global JWT interceptor — manual Bearer via AuthService.getToken() is the established pattern (CategoryService is the live reference).
+  - mfe-catalog OWNS image UX (catalog.routes.ts `:id/images` → ImageUploaderComponent). Image work = remote-internal edits inside apps/mfe-catalog/. NOT a shell feature, NOT a new remote.
+  - Test baseline = 47 spec files on develop dd5ae0d (image-uploader.component.spec.ts is 1 of them; no image service spec yet).
+  - Backend image module IS on develop (8 files modules/image/*). PR #118 (founder gate, OPEN) adds ONLY the FEATURE_IMAGE_PRECHECK_ENABLED flag-gate (router 404-when-off + config + flag tests + §F5 doc 6→4). So the contract endpoints exist on develop; the flag-gate rides #118.
+
+REAL GAP LIST (G-numbered):
+  - G1: NO image.service.ts — the multipart upload (POST /products/{id}/images, 202) + backoff poll (GET /products/{id}/images) are entirely missing. service-builder builds it (reference: CategoryService).
+  - G2: image-uploader.component.ts is SIMULATION-only — setTimeout SIMULATION map + URL.createObjectURL + setInterval stub. Must be rewired onto image.service (upload→poll→render). component-builder.
+  - G3: CONTRACT KEY MISMATCH (precheck_jsonb). Backend ImageSummary.precheck_jsonb keys = jpeg_valid, color_space, resolution_pass, white_background, watermark_check. As-built UI model keys = jpeg_format, color_space_rgb, min_resolution, white_bg, no_watermark. The labels/hints maps + buildPrecheckItems must remap to the backend keys. NEEDS FOUNDER CONFIRM (R-IP-B) — SPEC assumes backend wins.
+  - G4: SLOT-COUNT + INDEXING MISMATCH. UI = slot_index 0-based, max 6 (`>= 6` guard, 6-entry SIMULATION). Backend = idx 1-based, 1..4 (CHECK constraint, D1-LOCKED 4 slots). UI header text says "Upload up to 6 images". Must become 4 slots, 1-based idx. (V1_FEATURE_SPEC §F5 amended 6→4 in PR #118.)
+  - G5: STATUS-ENUM MISMATCH. UI status union = pending|pass|fail. Backend = pending|ready|failed_precheck. mapping fn statusForMeeStatusBadge must consume the backend enum.
+  - G6: NO feature-flag handling. FEATURE_PLAN D2 wants a featureFlagGuard on the route + a graceful flag-OFF path. As-built: NO flag service/guard exists. Backend behavior when OFF: POST→404, GET→{images:[]}. SPEC handles the 404 in the service error matrix (treat as flag-off → empty/disabled) — does NOT invent a featureFlagGuard infra this slice (that is Wave A / a separate flag-service slice; flagged).
+  - G7: NO graceful-degradation error matrix in the (missing) service. R-W6-1 P0 pattern: every wired service MUST have a catchError matrix (401→logout, 402/404/5xx→fallback, 400→caller). The merge gate REJECTS a wired service with no catchError. service-builder builds it.
+
+REMOTE-OWNERSHIP RULING: mfe-catalog owns image upload UX (port 4205). All image-precheck FE work = remote-internal edits inside apps/mfe-catalog/src/app/images/. NO new remote, NO shell feature. provideHttpClient already present in both shell app.config + mfe-catalog main.ts (no new root wiring needed unless interceptors land).
+
+Done:
+  - Repaired MEMORY.md merge conflict (keep-both).
+  - Full as-built audit (G1–G7) with file:line evidence.
+  - Branch feature/image-precheck-frontend (FLAT) cut off origin/develop dd5ae0d + pushed; worktree /tmp/mesell-wt/image-precheck-frontend.
+  - Board IN PROGRESS row + this STATUS block authored on the branch.
+  - 2 specialist SPECs authored (returned to master for STEP-2 dispatch): service-builder (image.service.ts) + component-builder (rewire image-uploader). SERIAL, service-builder first.
+
+In progress: none (STEP 1 is spec-authoring; STEP 2 = master dispatches specialists; STEP 3 = I run the merge gate).
+Blockers:
+  - R-IP-A (FOUNDER): governing-plan conflict. FEATURE_PLAN.md routes this as the `image-precheck` feature (riding PR #118 backend slice); Wave6 MASTER_PLAN (ACTIVE, founder-ruled) routes image FE wiring as `wave6-images` Wave D lane 1 — gated behind Wave A foundation (interceptors), R-W6-9 (catalog-form wired first, same remote), R-W6-10 (AI confirm-memo). These prescribe DIFFERENT sequencing. Founder must pick the lane before STEP-2 dispatch.
+  - R-IP-B (FOUNDER): precheck_jsonb key remap + slot 6→4 + status enum (G3/G4/G5). SPEC assumes backend contract is authoritative; founder confirms (it is a one-way remap of the UI model, no backend change).
+Next: founder rules R-IP-A + R-IP-B → master dispatches service-builder (STEP 2) → component-builder → I run STEP-3 merge gate.
+Hand-offs:
+  - founder (STATUS_MASTER): R-IP-A + R-IP-B above.
+  - meesell-ai-coordinator (FLAGGED per Wave6 R-W6-10, not yet sent): confirm AI lane is NOT wiring the precheck-result DISPLAY (frontend owns the UI rendering of the backend precheck_jsonb; AI owns only the backend pipeline). Open at STEP-2 dispatch time if founder picks the Wave-D lane.
+  - meesell-backend-coordinator (FLAGGED): PR #118 flag-gate must merge to develop before the flag-OFF 404/empty path can be integration-tested against the real backend (merge-order dependency, not a STEP-1 blocker).
+=========
