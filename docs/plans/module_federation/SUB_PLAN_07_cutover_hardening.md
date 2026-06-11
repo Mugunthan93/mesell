@@ -53,6 +53,8 @@ The MECHANISM (infra's call, two viable layers per Gate-4 Answer 4): (1) `add_he
 
 **FOUNDER-FLAG.** CSP go-live is a production-affecting change with a cross-lead blast radius (a wrong CSP can break the refresh-token flow → silent logout-loops, or break remote loading → blank pages). The founder confirms: **author the CSP with the frontend-owned allowlist above + the infra-owned ADD-ONLY mechanism, smoke-test on dev first, and gate the staging/prod remote cutover on a GREEN CSP smoke (no CORS/refresh-cookie regression).** This is a joint infra↔frontend deliverable — a memo to infra carries the frontend allowlist; infra returns the chosen mechanism + the per-env template. The refresh-cookie non-regression is verified by the BACKEND/auth smoke (the 401-test baseline → refresh → retry still works WITH the CSP active).
 
+> **RULED 2026-06-11 (founder, morning session): APPROVED as recommended.** CSP approach approved — the ADD-ONLY policy is authored at SP07, dev smoke first, with the staging/prod cutover gated on a GREEN CSP smoke (no CORS / refresh-cookie regression). Executes at SP07 cutover as the joint infra↔frontend deliverable described above. This discharges C-CSP-1 and resolves the inherited D14.
+
 ### D43 — Resolve D9: the shell relocation to `apps/shell/` decision — **FOUNDER-FLAG (resolve the deferred D9)**
 
 **Decision.** SP01 D9 (FOUNDER-FLAG) deferred the shell's physical move from `frontend/src/` into `apps/shell/src/` to SP07. SP07 RESOLVES it. Two options:
@@ -64,6 +66,8 @@ The MECHANISM (infra's call, two viable layers per Gate-4 Answer 4): (1) `add_he
 **Rationale.** MASTER_PLAN §2.1 prose specifies `apps/shell/`; the as-built reality (SP0) is `frontend/src/`. SP01 D9 explicitly named SP07 as the resolution point ("a clean later step (a candidate for Sub-plan 7 hardening)"). Resolving it at the cutover, after D41's strip, is the lowest-churn moment.
 
 **FOUNDER-FLAG.** The relocation is a large mechanical diff (every shell path) with zero behaviour benefit beyond topology uniformity + a simpler CI matrix. The founder confirms: **RELOCATE the shell to `apps/shell/` now (recommended — lowest-churn at the post-strip cutover, uniform topology, simpler CI) OR KEEP it at `src/` (zero churn, accept the cosmetic asymmetry).** If KEEP, the Tailwind glob retains `src/**` and the CI matrix keeps a special-case shell rule. Either is federation-correct.
+
+> **RULED 2026-06-11 (founder, morning session): APPROVED as recommended.** Shell relocation to `apps/shell/` approved — execute at SP07 cutover (option 1, RELOCATE). This resolves the deferred D9. The Tailwind `content` glob simplifies to `['apps/**','libs/**']` and the C-CI-1 matrix gets the uniform `apps/<name>/**` rule. The conditional FRONTEND_ARCHITECTURE §2 doc-sync (libs/ + apps/shell topology) is proposed to the founder for §7.3 ratification at execution time — NOT improvised.
 
 ### D44 — Version-pin the per-environment manifests for staging/prod (rollback safety; discharge C-STAGING-1 + the R5 contract-drift mitigation)
 
@@ -105,8 +109,8 @@ where `{version}` is an EXACT build hash/semver per remote (NOT `latest`). The p
 
 ### Founder decisions required
 
-1. **FOUNDER-FLAG D42** — author the CSP with the frontend-owned allowlist + the infra-owned ADD-ONLY mechanism, smoke-test on dev first, gate the staging/prod cutover on a GREEN CSP smoke (no CORS/refresh-cookie regression). Joint infra↔frontend.
-2. **FOUNDER-FLAG D43** — resolve the deferred D9: RELOCATE the shell to `apps/shell/` now (recommended) OR KEEP it at `src/`.
+1. **FOUNDER-FLAG D42** — author the CSP with the frontend-owned allowlist + the infra-owned ADD-ONLY mechanism, smoke-test on dev first, gate the staging/prod cutover on a GREEN CSP smoke (no CORS/refresh-cookie regression). Joint infra↔frontend. — **RULED 2026-06-11 (founder, morning session): APPROVED as recommended.**
+2. **FOUNDER-FLAG D43** — resolve the deferred D9: RELOCATE the shell to `apps/shell/` now (recommended) OR KEEP it at `src/`. — **RULED 2026-06-11 (founder, morning session): APPROVED as recommended (RELOCATE at SP07 cutover).**
 3. **Inherited resolution:** D14 (CSP) is RESOLVED by D42; D9 is RESOLVED by D43. D21 (AuthLayout) + D33 (Product/Catalog) were resolved + merged at SP03/SP05.
 4. **§5.1 audit (D46)** — the founder REVIEWS the audit findings + ratifies any proposed repo-mgmt amendment (§7.3).
 
@@ -376,7 +380,7 @@ When every box is `[x]`, `feature/mfe-cutover/integration` is ready for the foun
   - [ ] (c) findings reported to the founder via `STATUS_FRONTEND.md` → `STATUS_MASTER.md`
   - [ ] (d) a `docs/plans/repo_management/MASTER_PLAN.md` amendment PROPOSED for founder ratification IF the convention drifted (§7.3 — proposed, not improvised)
 - [ ] **Build-budget final:** shell ≤90 s; every remote within its budget (R4); no regression
-- [ ] FOUNDER-FLAGs: D42 (CSP go-live) + D43 (relocation) resolved by the founder; D14 + D9 thereby CLOSED; D21 + D33 already merged
+- [ ] FOUNDER-FLAGs: D42 (CSP go-live) + D43 (relocation) resolved by the founder; D14 + D9 thereby CLOSED; D21 + D33 already merged — *(founder RULED both APPROVED-as-recommended 2026-06-11; this gate is satisfied on execution)*
 - [ ] Infra deploy memo (`handoff_mf_cutover.md`) resolved (the CSP mechanism + per-env templating + the infra-side 4 C-conditions); board inter-lead row CLOSED
 - [ ] `feature_board_frontend.md` row = MERGED; `STATUS_FRONTEND.md` + `STATUS_MASTER.md` appended; `sub_plan_07_cutover.md` written; MASTER_PLAN §5 row 7 = DONE + the §11 close-out
 - [ ] **Founder approval** on `feature/mfe-cutover/integration` → `develop` (founder's gate, NOT the lead's) — AND founder review of the §5.1 audit
@@ -401,4 +405,5 @@ When every box is `[x]`, `feature/mfe-cutover/integration` is ready for the foun
 
 | Version | Date | Author | Change |
 |---|---|---|---|
+| v1.1 | 2026-06-11 | `meesell-frontend-coordinator` (founder-ruling landing session) | Landed the founder's 2026-06-11 morning rulings on the two SP07 FOUNDER-FLAGs: **D42 (CSP go-live) APPROVED as recommended** — ADD-ONLY CSP authored at SP07, dev smoke first, staging/prod cutover gated on a GREEN CSP smoke (no CORS/refresh-cookie regression); discharges C-CSP-1, resolves inherited D14. **D43 (shell relocation) APPROVED as recommended** — RELOCATE the shell to `apps/shell/` at SP07 cutover (option 1), resolving the deferred D9; conditional §2 doc-sync proposed for §7.3 ratification at execution time. Additive RULED annotations on the D42/D43 FOUNDER-FLAG blocks + the Founder-decisions-required summary + the §9 FOUNDER-FLAGs acceptance line. No structural change. |
 | v1 (DRAFT) | 2026-06-10 | `mesell-module-federation-frontend-session-3` (night-run master-session dispatch) | Initial authoring of Sub-Plan 07 — Federation Cutover & Hardening, THE CLOSER (NOT an extraction). Grounded in the post-SP06 state (all 6 remotes extracted, the auth loop closed) + the GATE4_CONFIRMATION.md 6 C-conditions + MASTER_PLAN §5.1. D41–D46: shell strip to a pure host + features/ removal (D41); AUTHOR the production CSP resolving D14 + discharging C-CSP-1, ADD-ONLY so it does NOT strip CORS or the refresh-token Set-Cookie per Gate-4 (D42 FOUNDER-FLAG); resolve the deferred D9 shell relocation (D43 FOUNDER-FLAG, recommend RELOCATE at the post-strip low-churn moment); version-pin the per-env manifests for rollback + the R5 mitigation (D44); discharge ALL 6 Gate-4 C-conditions with evidence (D45); EXECUTE the founder-mandated §5.1 repo-management compliance audit — convention-fit + agent-obedience across SP00-07, report to the founder, propose a repo-mgmt amendment IF drifted (D46, the COMPLETION CRITERION). Heavy cross-lead: the CSP is a joint infra↔frontend deliverable (frontend owns the allowlist, infra the ADD-ONLY mechanism); infra owns 4 of the 6 C-conditions; FIRST sub-plan with TWO group branches (frontend + infra) into one integration. 6 risks incl. the CSP-strips-refresh-cookie P0 (R-SP7-1), the CSP-too-strict-blocks-public-remotes (R-SP7-2), and the audit-drift-unratified (R-SP7-5). TWO new FOUNDER-FLAGs (D42 CSP go-live, D43 relocation); D14 + D9 thereby CLOSED. A CONDITIONAL FRONTEND_ARCHITECTURE §2 doc-sync IF D43 relocates (founder-ratified, §7.3). On completion the migration is COMPLETE and Wave 6 lands per-remote. Awaits founder approval to EXECUTE; gated on SP01–SP06 merged + infra readiness + the D9 resolution. |
