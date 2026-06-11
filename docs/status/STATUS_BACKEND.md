@@ -63,6 +63,20 @@ Sequential: iam → customer → category → catalog DONE. Parallel-eligible fr
 
 ## Updates Log
 
+=== UPDATE: 2026-06-11 HH:MM — auth-otp completion sentinels (V1_FEATURE_SPEC §F1 + BACKEND_ARCHITECTURE §7) ===
+Phase: V1 Feature 1 (Auth — Phone OTP + JWT, FE-D5 split-token) — post-merge-to-develop deliverables #4/#5.
+Session: mesell-auth-otp-backend-session-2
+Board sweep: auth-otp Recently-merged row updated (integration→develop now MERGED, #46 cad0a9a) + new develop-merge row added. dual-pepper-rotation PENDING row unchanged (pre-V1.5-prod gate, not blocking V1). No rows untouched 7+ days flagged (Recently merged within window). Inter-lead requests open: none new.
+Done:
+- PR #46 (`feature/auth-otp/integration` → `develop`, founder-gated) MERGED this morning, merge SHA cad0a9a = backend group #44 + infra group #45. auth-otp fully on develop.
+- V1_FEATURE_SPEC.md Feature 1 stamped: AS-BUILT additive note "implemented 2026-06-11 PR#46" per FEATURE_PLAN §post-merge-stamps prescribed format. Zero restructure of LOCKED doc.
+- BACKEND_ARCHITECTURE.md §7 (`iam`) stamped: AS-BUILT sentinel HTML comment under STATUS line referencing merge SHA cad0a9a. Additive only — no §7 contract change; §7 stays LOCKED (2026-06-05).
+In progress: none — deliverables #4/#5 closed.
+Blockers: none.
+Next: dual-pepper-rotation (R5 follow-up) remains scheduled for pre-V1.5-prod gate; owner meesell-auth-builder when dispatched.
+Hand-offs: none new. Founder owns the next gate (already merged #46). No cross-lead memo required — stamps are backend-internal doc closure.
+=========
+
 === UPDATE: 2026-06-09 — ✅ F-15-2 Prometheus metrics + /metrics mount CONSTRUCTED ===
 Phase: §15.J — Key V1 metrics observability (founder-ruled Option A implement; `meesell-services-builder` solo). Closes §22 MEDIUM defect F-15-2 (was: zero prometheus_client imports, dependency absent, no /metrics mount).
 Done:
