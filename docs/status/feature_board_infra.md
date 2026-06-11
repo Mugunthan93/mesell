@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-infra-builder`
 **Domain:** infra
-**Last updated:** 2026-06-11 (dual-pepper-secret-refs — R5 inter-lead resolved PR #69; ci-activation BLOCKED on backend Gate-1 collection fix)
+**Last updated:** 2026-06-11 (ci-activation env-var gap CLOSED — PR #76 squash 0f44d72; READY for develop→main re-fire by founder)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -11,7 +11,7 @@
 
 | Feature | Group branch | Status | Current session | Last touched | Blocking | Notes |
 |---|---|---|---|---|---|---|
-| ci-activation | (no branch — TF/GitHub-settings ops) | BLOCKED | — | 2026-06-11 | backend — Gate 1 unit collection error (ModuleNotFoundError: app) blocks pipeline; see inter-lead request to backend-coordinator | PR #64 MERGED (merge commit 0ea1988, develop→main, develop preserved). First main pipeline run 27318816408 = FAILURE: Gate 1 unit failed at pytest COLLECTION (conftest `from app.shared.database import` → ModuleNotFoundError: No module named 'app'; no PYTHONPATH/installable pkg). Gates 2-5+build+deploy SKIPPED (sequential needs). 3 frontend jobs GREEN; nightly correctly skipped. WIF/build/deploy unproven (never ran). Fix = BACKEND scope (pytest sys.path / packaging). Check contexts captured in STATUS_INFRA; branch-protection still DEFERRED until green. GEMINI_API_KEY_CI still founder-pending (nightly-only). |
+| ci-activation | (no branch — TF/GitHub-settings ops) | READY-to-refire | — | 2026-06-11 | — | TWO infra blockers now CLOSED. (1) Gate-1 pytest collection: fixed by backend pythonpath=. (PR #73 1e95b2a + PR #74 bb09aea, both founder-authored — duplicate/parallel-lane fixes for the same bug). (2) §5.D config-guard env gap: CLOSED by infra PR #76 (squash 0f44d72, ci.yml) — added the §5.D REQUIRED_FIELDS dummy env to all 6 app-code jobs (unit/smoke +5+DB/Valkey; lint full set since import-linter imports app; integration/golden_roundtrip/nightly +5; nightly real GEMINI_API_KEY untouched). Guard requires 17 vars (not 13 — memo undercount, reconciled). Cold guard run PASS; negative control aborts. READY for founder to open develop→main PR to re-fire the pipeline. First green run materializes check-contexts → then branch-protection on main. GEMINI_API_KEY_CI still founder-pending (nightly-only). Cost ₹0. |
 | auth-otp | feature/auth-otp/infra | IN REVIEW | — | 2026-06-11 | — | FE-D5 env-var wiring (dev=30/120; staging overlay=60/300) + auth-secret-rotation runbook. Base=feature/auth-otp/integration. |
 
 ## Recently merged (last 14 days)
@@ -29,7 +29,7 @@
 | To lead | About feature | Request | Opened | Status |
 |---|---|---|---|---|
 | frontend-coordinator (incoming) | mf-workspace-foundation | MF CI prep C-CI-1 (handoff_mf_ci_prep.md) — replace single-frontend CI with paths-filter matrix before SP1 | 2026-06-10 | RESOLVED via PR #50 (merged develop) — frontend lead marks CLOSED on its own board |
-| backend-coordinator | ci-activation | First main pipeline RED — Gate 1 `pytest -m unit` fails at COLLECTION: `from app.shared.database import` → `ModuleNotFoundError: No module named 'app'`. CI runs `pytest` in `working-directory: backend` with no PYTHONPATH and no installable pkg (`pytest.ini` §19.D LOCKED has no `pythonpath`; no pyproject/setup.py). Fix is backend-owned: add `pythonpath = .` to pytest.ini (founder OK — §19.D locked) OR add pyproject/setup.py + `pip install -e .`. See handoff_ci_gate1_collection.md. | 2026-06-11 | OPEN |
+| backend-coordinator | ci-activation | First main pipeline RED — Gate 1 `pytest -m unit` fails at COLLECTION: `from app.shared.database import` → `ModuleNotFoundError: No module named 'app'`. CI runs `pytest` in `working-directory: backend` with no PYTHONPATH and no installable pkg (`pytest.ini` §19.D LOCKED has no `pythonpath`; no pyproject/setup.py). Fix is backend-owned: add `pythonpath = .` to pytest.ini (founder OK — §19.D locked) OR add pyproject/setup.py + `pip install -e .`. See handoff_ci_gate1_collection.md. | 2026-06-11 | RESOLVED — backend pythonpath fix (#73/#74) closed collection; infra PR #76 (0f44d72) closed the resulting §5.D env-guard gap. Both sides done. |
 
 ---
 
