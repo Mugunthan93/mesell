@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-infra-builder`
 **Domain:** infra
-**Last updated:** 2026-06-11 (C-CI-1 MERGED to develop #50 — federated matrix/paths-filter CI, DISCHARGED-pending-activation)
+**Last updated:** 2026-06-11 (ci-activation — Phase E TF apply DONE + GitHub vars updated; PR #64 develop→main open awaiting founder gate)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -11,6 +11,7 @@
 
 | Feature | Group branch | Status | Current session | Last touched | Blocking | Notes |
 |---|---|---|---|---|---|---|
+| ci-activation | (no branch — TF/GitHub-settings ops) | IN PROGRESS | mesell-ci-activation-session-1 | 2026-06-11 | founder gate — PR #64 + GEMINI_API_KEY_CI | Phase E TF applied (11 add/1 chg/0 destroy): github-actions-pool WIF + meesell-github-ci SA + 5 IAM + cloudbuild/iap APIs. GitHub vars GCP_WIF_PROVIDER+GCP_CI_SA_EMAIL repointed to new TF resources. PR #64 develop→main open (founder approve+merge fires 1st pipeline). GEMINI_API_KEY_CI = founder action (nightly-only). Branch-protection check contexts DEFERRED to post-1st-run. |
 | auth-otp | feature/auth-otp/infra | IN REVIEW | — | 2026-06-11 | — | FE-D5 env-var wiring (dev=30/120; staging overlay=60/300) + auth-secret-rotation runbook. Base=feature/auth-otp/integration. |
 
 ## Recently merged (last 14 days)
