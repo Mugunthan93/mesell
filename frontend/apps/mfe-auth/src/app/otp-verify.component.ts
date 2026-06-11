@@ -8,8 +8,11 @@ import {
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Router } from '@angular/router';
+import { catchError, EMPTY, switchMap } from 'rxjs';
+import { HttpErrorResponse } from '@angular/common/http';
 import { AuthLayoutComponent } from '@mesell/composites';
-import { AuthService } from '@mesell/core';
+import { AuthService, AuthApiService } from '@mesell/core';
+import { NetworkService } from '@mesell/core';
 import { MeeOtpInputComponent } from '@mesell/ui-kit/otp-input/otp-input.component';
 import { MeeButtonComponent } from '@mesell/ui-kit/button/button.component';
 
@@ -21,7 +24,19 @@ import { MeeButtonComponent } from '@mesell/ui-kit/button/button.component';
   template: `
     <mee-auth-layout>
       <h1>Verify your number</h1>
-      <p class="subtitle">We sent a 6-digit code to your mobile</p>
+      <p class="subtitle">We sent a 6-digit code to {{ maskedPhone() }}</p>
+
+      @if (!networkSvc.online()) {
+        <div class="offline-banner" role="alert" aria-live="polite">
+          You are offline. Please check your connection.
+        </div>
+      }
+
+      @if (errorMessage()) {
+        <div class="error-banner" role="alert" aria-live="polite">
+          {{ errorMessage() }}
+        </div>
+      }
 
       <div class="otp-section">
         <label>Enter OTP</label>
@@ -38,7 +53,7 @@ import { MeeButtonComponent } from '@mesell/ui-kit/button/button.component';
       <mee-button
         [label]="'Verify OTP'"
         [loading]="loading()"
-        [disabled]="otpValue().length < 6"
+        [disabled]="otpValue().length < 6 || loading()"
         [fullWidth]="true"
         (clicked)="onSubmit()"
       />
@@ -110,19 +125,56 @@ import { MeeButtonComponent } from '@mesell/ui-kit/button/button.component';
       display: inline-flex;
       align-items: center;
     }
+    .offline-banner {
+      background: var(--mee-color-warning-light, rgba(234,179,8,0.1));
+      border: 1px solid var(--mee-color-warning, #ca8a04);
+      color: var(--mee-color-warning, #ca8a04);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+    .error-banner {
+      background: var(--mee-color-error-light, rgba(239,68,68,0.1));
+      border: 1px solid var(--mee-color-error, #dc2626);
+      color: var(--mee-color-error, #dc2626);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
   `],
 })
 export class OtpVerifyComponent implements OnInit, OnDestroy {
-  private readonly router = inject(Router);
-  private readonly auth   = inject(AuthService);
+  private readonly router   = inject(Router);
+  private readonly auth     = inject(AuthService);
+  private readonly authApi  = inject(AuthApiService);
+  readonly networkSvc       = inject(NetworkService);
 
-  readonly loading   = signal(false);
-  readonly countdown = signal(30);
-  readonly otpValue  = signal<string>('');
+  readonly loading      = signal(false);
+  readonly countdown    = signal(30);
+  readonly otpValue     = signal<string>('');
+  readonly errorMessage = signal<string | null>(null);
+
+  /** Phone received from Router state (login/signup → navigate with state: { phone }) */
+  private _phone: string = '';
 
   private intervalId?: ReturnType<typeof setInterval>;
 
   ngOnInit(): void {
+    // Read phone from Router navigation state.
+    // Navigation state is present when arriving from login/signup.
+    // If directly visiting this URL (no state), redirect to /login (§5.2 spec).
+    const nav = this.router.getCurrentNavigation();
+    const phone = (nav?.extras?.state as { phone?: string })?.phone
+      ?? (window.history.state as { phone?: string })?.phone;
+
+    if (!phone) {
+      // Direct URL visit with no state — redirect to login
+      this.router.navigate(['/login']);
+      return;
+    }
+    this._phone = phone;
     this.startCountdown();
   }
 
@@ -135,23 +187,78 @@ export class OtpVerifyComponent implements OnInit, OnDestroy {
   }
 
   resendOtp(): void {
-    this.countdown.set(30);
-    clearInterval(this.intervalId);
-    this.startCountdown();
+    if (!this._phone) return;
+    this.errorMessage.set(null);
+    this.authApi.sendOtp(this._phone)
+      .pipe(
+        catchError(() => {
+          this.errorMessage.set('Failed to resend OTP. Please try again.');
+          return EMPTY;
+        }),
+      )
+      .subscribe(() => {
+        this.countdown.set(30);
+        clearInterval(this.intervalId);
+        this.startCountdown();
+      });
   }
 
   onSubmit(): void {
-    if (this.otpValue().length < 6) return;
+    if (this.otpValue().length < 6 || this.loading()) return;
+    this.errorMessage.set(null);
     this.loading.set(true);
-    setTimeout(() => {
-      this.loading.set(false);
-      this.auth.setSession('mock-token', {
-        id: 1,
-        name: 'Seller',
-        phone: '+91XXXXXXXXXX',
-      });
-      this.router.navigate(['/dashboard']);
-    }, 1500);
+
+    // Critical order per spec handoff:
+    // 1. verifyOtp() success → (2) auth.setSession(token, user) → (3) auth.scheduleRefresh → (4) navigate
+    this.authApi.verifyOtp(this._phone, this.otpValue())
+      .pipe(
+        switchMap((resp) => {
+          // Hydrate user from /me before calling setSession
+          return this.authApi.me().pipe(
+            catchError(() => {
+              // /me failed — use a minimal user with phone only (graceful fallback)
+              this.auth.setSession(resp.access_token, { phone: this._phone });
+              this.auth.scheduleRefresh(resp.expires_in);
+              this.loading.set(false);
+              this.router.navigate(['/dashboard']);
+              return EMPTY;
+            }),
+            switchMap((meResp) => {
+              // Full hydration: set session with real user data from /me
+              this.auth.setSession(resp.access_token, {
+                phone: meResp.phone,
+                user_id: meResp.user_id,
+                plan: meResp.plan,
+                created_at: meResp.created_at,
+                last_login_at: meResp.last_login_at,
+              });
+              this.auth.scheduleRefresh(resp.expires_in);
+              this.loading.set(false);
+              this.router.navigate(['/dashboard']);
+              return EMPTY;
+            }),
+          );
+        }),
+        catchError((err: HttpErrorResponse) => {
+          this.loading.set(false);
+          if (err.status === 400 || err.status === 401) {
+            this.errorMessage.set('Invalid or expired code. Please try again.');
+          } else if (err.status === 429) {
+            this.errorMessage.set('Too many attempts. Please wait before retrying.');
+          } else {
+            this.errorMessage.set('Something went wrong. Please try again.');
+          }
+          return EMPTY;
+        }),
+      )
+      .subscribe();
+  }
+
+  maskedPhone(): string {
+    if (!this._phone) return 'your mobile';
+    // Show last 4 digits only: e.g. +91XXXXXX1234
+    const digits = this._phone.replace(/\D/g, '');
+    return '+' + digits.slice(0, 2) + 'XXXXXX' + digits.slice(-4);
   }
 
   private startCountdown(): void {
