@@ -1,8 +1,30 @@
 # STATUS — INFRASTRUCTURE
 
 **Owner:** `meesell-infra-builder`
-**Last update:** 2026-06-11 (ci-activation §5.D env-gap closed — PR #76)
+**Last update:** 2026-06-11 (ci-activation — DEPLOY-to-K3s job reached + fixed; live dev rollout GREEN; fix branch fix/ci-deploy-k3s → develop)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
+
+## UPDATE — 2026-06-11 — mesell-ci-activation-infra-session-1 (deploy-to-K3s job fix)
+
+=== STEP: fix the "Deploy to K3s (dev namespace)" job — last red on the main pipeline ===
+Phase: DEVOPS_ARCHITECTURE.md §7 (deploy) + INFRASTRUCTURE_PLAYBOOK §6/§12.8 (K3s AR node auth runbook). ci.yml + k8s/ are infra-owned (Rule 7 standalone — direct execute).
+Session: mesell-ci-activation-infra-session-1
+
+**Run history this push:** main run 27358799380 (PR #114, sha 88c585bd) FAILED at deploy on `compute.projects.get`. Founder granted compute.viewer live (16:02 UTC) + merged PR #116 (TF codified) → fired main run 27360475090 (sha def60521): all 5 gates GREEN, all 8 frontend GREEN, **Build GREEN**, deploy got PAST the auth error but FAILED at `rollout status ... timed out`.
+
+**Three root causes peeled (first time pipeline ever reached deploy):**
+1. `compute.projects.get` 401 (run ...380) — CI SA had instance-scoped instanceAdmin but no PROJECT-level read. FIXED out-of-band by founder + codified in PR #116 (`module.ci_identity` `github_ci_compute_viewer` = roles/compute.viewer, read-only, ₹0). Already on develop+main. NOT my new change — confirmed present.
+2. `ImagePullBackOff 401` on the new image (run ...475090) — K3s `/etc/rancher/k3s/registries.yaml` AR pull token was **46h stale** (last written 2026-06-09 17:31). The 45-min refresh CRON was NEVER installed on the live VM (script `/usr/local/bin/refresh-ar-token.sh` existed; no `/etc/cron.d` entry). Token expired → 401. FIXED: installed `/etc/cron.d/refresh-ar-token` (correct cron.d format WITH `root` user field, `*/45`), seeded `/var/log/refresh-ar-token.log`, refreshed token. K3s reads registries.yaml ONLY at startup (no hot-reload) → restarted k3s to load the fresh token. Token validated directly against AR endpoint = HTTP 200.
+3. `worker Pending / Insufficient cpu` + rollout deadlock — `maxSurge:1/maxUnavailable:0` (surge-before-kill) can't fit a surge pod on the CPU-saturated single node (e2-standard-2, 92% CPU requests at steady state). FIXED: flipped `k8s/api.yaml` + `k8s/worker.yaml` to `maxSurge:0/maxUnavailable:1` (kill-before-surge) so an old pod's CPU frees before the replacement schedules.
+
+**ci.yml hardening:** added a deploy-time `refresh-ar-token.sh` + `systemctl restart k3s` + readyz wait BEFORE the kubectl apply, so the deploy is self-sufficient on token freshness (does not rely on cron timing).
+
+**Live dev state AFTER fix (applied by hand to verify):** api 2/2 + worker 2/2 Running on `api:def60521...`; `https://api.mesell.xyz/health` → HTTP 200 `{"status":"healthy","checks":{"postgres":"ok","valkey":"ok"}}`. This is exactly the state the CI deploy job targets.
+
+**What ships where:** TF compute.viewer fix = already on main (PR #116). Live VM cron + token + k3s restart = applied directly (no repo file). Manifest strategy flip + ci.yml token-refresh = on branch `fix/ci-deploy-k3s` → PR to develop. The deploy job clones `origin/main`, so these two repo changes only take effect after FOUNDER merges develop→main.
+
+**Cost:** ₹0 (compute.viewer is read-only; cron/token/strategy are config; no new billable resource).
+
 
 **Status:** Phase A + Phase B complete. All 5 application subdomains live with valid Let's Encrypt TLS. Core infra (Pass 1 + Pass 2 + Pass 2b) stable. Application image builds (Phase D) pending — nothing in `dev/api`, `dev/worker`, `dev/frontend` until then.
 
