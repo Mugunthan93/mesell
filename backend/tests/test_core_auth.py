@@ -124,17 +124,20 @@ def test_issue_refresh_token_is_opaque_urlsafe() -> None:
 
 
 def test_refresh_allowlist_key_uses_hmac_pepper(monkeypatch) -> None:
-    """Key format is ``cache:refresh:{hmac_sha256(token, REFRESH_TOKEN_PEPPER)}``.
+    """Key format is ``cache:refresh:v{N}:{hmac_sha256(token, REFRESH_TOKEN_PEPPER)}``.
 
-    We monkey-patch the pepper to a known value, compute the expected HMAC by
-    hand, and verify the helper returns the exact same hex digest in the
-    locked key namespace.
+    AMENDED 2026-06-11 (dual-pepper-rotation / R5): the allowlist key now carries
+    the pepper VERSION segment ``v{N}`` so a prod pepper rotation can run a
+    dual-pepper grace window instead of a hard cutover. We monkey-patch the
+    pepper + version to known values, compute the expected HMAC by hand, and
+    verify the helper returns the exact hex digest in the versioned namespace.
     """
     import hashlib
     import hmac as hmac_mod
 
     known_pepper = "unit-test-pepper-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
     monkeypatch.setattr(settings, "REFRESH_TOKEN_PEPPER", known_pepper)
+    monkeypatch.setattr(settings, "REFRESH_TOKEN_PEPPER_VERSION", 1, raising=False)
 
     token = "test-refresh-token-value-abc123"
     expected_digest = hmac_mod.new(
@@ -142,13 +145,13 @@ def test_refresh_allowlist_key_uses_hmac_pepper(monkeypatch) -> None:
         token.encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
-    expected_key = f"cache:refresh:{expected_digest}"
+    expected_key = f"cache:refresh:v1:{expected_digest}"
 
     actual = refresh_allowlist_key(token)
     assert actual == expected_key, f"key mismatch: got {actual!r}, want {expected_key!r}"
 
-    # Also assert the key namespace is exactly ``cache:refresh:`` (no drift).
-    assert actual.startswith("cache:refresh:"), "wrong allowlist key namespace"
+    # Also assert the key namespace stays under ``cache:refresh:`` (no drift).
+    assert actual.startswith("cache:refresh:v"), "wrong versioned allowlist key namespace"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
