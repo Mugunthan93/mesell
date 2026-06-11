@@ -19,6 +19,8 @@ import pytest
 
 from app.ai_ops import prompt_registry
 
+pytestmark = pytest.mark.unit
+
 
 # ── resolve() ──────────────────────────────────────────────────────────────
 class TestResolveActiveVersions:

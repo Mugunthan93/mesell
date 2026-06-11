@@ -1,5 +1,7 @@
 """Meesho-data helper functions."""
 
+import pytest
+
 from app.data import (
     all_banned_words,
     get_category_config,
@@ -8,6 +10,8 @@ from app.data import (
     load_categories,
     load_shipping_slabs,
 )
+
+pytestmark = pytest.mark.unit
 
 
 def test_taxonomy_has_at_least_50_leaves():

@@ -41,6 +41,8 @@ from sqlalchemy.pool import NullPool
 from app.adapters.gemini import GeminiResponse
 from app.ai_ops.client import AIResponse
 
+pytestmark = pytest.mark.integration
+
 
 async def _create_user_via_otp_verify(iam_client) -> tuple[str, str]:
     """Drive a real OTP verify so the user_id is created via §7 iam.

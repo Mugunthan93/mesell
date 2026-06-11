@@ -18,6 +18,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 from app.modules.export.service import _build_row, _restore_aliases
 
 

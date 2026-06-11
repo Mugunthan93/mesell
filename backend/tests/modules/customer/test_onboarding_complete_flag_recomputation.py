@@ -28,7 +28,7 @@ from app.modules.customer.schemas import PatchProfileRequest
 from app.shared.models.user import User
 
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 async def _seed_user(db, phone: str) -> User:

@@ -48,10 +48,13 @@ import json as _json
 import time as _time
 from typing import Any
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
+
+pytestmark = pytest.mark.integration
 
 
 # ─────────────────────────────────────────────────────────────────────────────

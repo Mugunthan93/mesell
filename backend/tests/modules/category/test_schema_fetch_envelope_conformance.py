@@ -117,4 +117,4 @@ async def test_fetch_schema_fields_carry_documented_keys(db, use_live_valkey):
             )
 
 
-pytestmark = pytest.mark.usefixtures("db")
+pytestmark = [pytest.mark.usefixtures("db"), pytest.mark.integration]

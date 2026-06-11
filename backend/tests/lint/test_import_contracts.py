@@ -25,6 +25,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 # ── Locked path to import-linter's TOML config file (relative to backend/).
 _LINT_CONFIG_RELATIVE = Path("tests") / "lint" / "import_rules.toml"
 

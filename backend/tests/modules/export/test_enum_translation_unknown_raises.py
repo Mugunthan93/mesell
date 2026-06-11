@@ -12,6 +12,8 @@ from uuid import uuid4
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 from app.modules.export.domain import XlsxColumnSpec, XlsxRowSpec
 from app.modules.export.exceptions import ExportEnumValidationError
 from app.modules.export.service import _translate_enums

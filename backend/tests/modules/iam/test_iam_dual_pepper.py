@@ -26,6 +26,8 @@ import pytest
 import pytest_asyncio
 from fakeredis import aioredis as fake_aioredis
 
+pytestmark = pytest.mark.unit
+
 from app.core.auth import (
     REFRESH_ROTATE_LUA,
     _reset_lua_cache_for_tests,

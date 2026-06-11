@@ -32,7 +32,7 @@ from app.modules.catalog.schemas import (
 )
 
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 # ─────────────────────────────────────────────────────────────────────────────

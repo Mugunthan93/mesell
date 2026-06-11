@@ -41,7 +41,7 @@ from app.shared.models.product import Product as ProductORM
 from app.shared.models.product_draft import ProductDraft as ProductDraftORM
 
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 async def _seed_product(

@@ -15,6 +15,8 @@ from app.adapters import Msg91AdapterError
 from app.adapters import msg91 as msg91_mod
 from app.core.errors import MeesellError
 
+pytestmark = pytest.mark.unit
+
 
 # ── Fixtures ───────────────────────────────────────────────────────────────
 @pytest.fixture(autouse=True)

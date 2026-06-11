@@ -7,6 +7,10 @@ Empty input fields are dropped from the concatenation.
 
 from __future__ import annotations
 
+import pytest
+
+pytestmark = pytest.mark.unit
+
 from app.modules.export.domain import (
     CollapsedComplianceStrategy,
     XlsxColumnSpec,

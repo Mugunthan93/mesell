@@ -47,7 +47,7 @@ from starlette.datastructures import Headers
 from app.modules.image import service as image_service
 from app.modules.image import tasks as image_tasks
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 def _make_upload_file(

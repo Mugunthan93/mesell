@@ -17,6 +17,8 @@ from uuid import uuid4
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 from app.modules.customer.domain import ComplianceBlock
 from app.modules.export.domain import Export
 

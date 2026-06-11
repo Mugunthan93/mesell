@@ -16,6 +16,8 @@ from app.core.middleware.rate_limit_mw import (
 )
 from app.core.middleware.request_id import RequestIdMiddleware
 
+pytestmark = pytest.mark.integration
+
 
 def _make_app() -> FastAPI:
     app = FastAPI()
@@ -81,6 +83,7 @@ async def test_per_route_limit_triggers_429(use_live_valkey):
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_valkey_unreachable_fails_open(caplog):
     """When Valkey raises, the request MUST pass + a WARNING MUST be logged."""
     from redis.exceptions import ConnectionError as RedisConnectionError

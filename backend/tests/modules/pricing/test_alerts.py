@@ -20,6 +20,10 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import pytest
+
+pytestmark = pytest.mark.unit
+
 from app.modules.pricing.service import (
     DEFAULT_GST_PCT,
     _compute_pnl,

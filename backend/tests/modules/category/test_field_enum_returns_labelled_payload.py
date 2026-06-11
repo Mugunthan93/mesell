@@ -101,4 +101,4 @@ async def test_field_enum_single_flight_dedupes_concurrent_misses(
     )
 
 
-pytestmark = pytest.mark.usefixtures("db")
+pytestmark = [pytest.mark.usefixtures("db"), pytest.mark.integration]

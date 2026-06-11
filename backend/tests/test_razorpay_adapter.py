@@ -15,10 +15,14 @@ import hashlib
 import hmac
 import inspect
 
+import pytest
+
 from app.adapters import RazorpayAdapterError
 from app.adapters import razorpay as razorpay_mod
 from app.core.errors import MeesellError
 from app.shared.config import settings
+
+pytestmark = pytest.mark.unit
 
 
 # ── Helper to compute a real signature ─────────────────────────────────────

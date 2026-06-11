@@ -30,7 +30,7 @@ from app.shared.models.product import Product as ProductORM
 from app.shared.models.user import User
 
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 # ─────────────────────────────────────────────────────────────────────────────

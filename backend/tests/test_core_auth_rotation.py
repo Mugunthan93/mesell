@@ -25,6 +25,8 @@ from app.core.auth import (
     rotate_refresh_token,
 )
 
+pytestmark = pytest.mark.integration
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Fixtures

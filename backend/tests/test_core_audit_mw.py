@@ -26,6 +26,8 @@ from app.core.middleware.audit_mw import (
 from app.core.middleware.request_id import RequestIdMiddleware
 from app.core.middleware.tenancy_mw import TenancyContextMiddleware
 
+pytestmark = pytest.mark.integration
+
 
 # ── Helper: app builder ───────────────────────────────────────────────────
 def _make_app(user_id: uuid.UUID | None) -> FastAPI:
@@ -82,6 +84,7 @@ def _make_app(user_id: uuid.UUID | None) -> FastAPI:
 
 
 # ── PII scrubbing unit test ───────────────────────────────────────────────
+@pytest.mark.unit
 def test_pii_scrubbing_phone_hashed_and_secrets_stripped():
     payload = {
         "phone": "+919876543210",

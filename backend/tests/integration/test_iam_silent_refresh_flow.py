@@ -29,7 +29,7 @@ from app.shared.config import settings
 from tests.integration._cookie_helpers import extract_refresh_cookie
 
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 async def _seed_otp_in_valkey(phone: str, otp: str) -> None:

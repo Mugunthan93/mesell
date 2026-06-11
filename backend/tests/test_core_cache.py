@@ -13,6 +13,8 @@ from app.core.cache import etag_for, get_or_set, prewarm_top_categories
 from app.shared.config import settings
 from app.shared.valkey import get_valkey_cache
 
+pytestmark = pytest.mark.integration
+
 
 @pytest_asyncio.fixture(loop_scope="function")
 async def fresh_key(use_live_valkey):  # noqa: F811
@@ -99,6 +101,7 @@ async def test_get_or_set_single_flight_dedupes(fresh_key):
 
 
 # ── 4. ETag — quoted SHA-256 ──────────────────────────────────────────────
+@pytest.mark.unit
 def test_etag_for_quoted_sha256():
     payload = b"hello"
     expected = f'"{hashlib.sha256(payload).hexdigest()}"'
@@ -112,6 +115,7 @@ def test_etag_for_quoted_sha256():
 
 # ── 5. Pre-warm stub does not raise ───────────────────────────────────────
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_prewarm_top_categories_stub_no_raise():
     """V1 stub — logs intent + returns None without side effects."""
     result = await prewarm_top_categories()

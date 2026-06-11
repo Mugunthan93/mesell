@@ -104,4 +104,4 @@ async def test_suggest_drops_unknown_category_id_returned_by_ai(
     assert payload["fallback_offered"] is True
 
 
-pytestmark = pytest.mark.usefixtures("use_live_valkey")
+pytestmark = [pytest.mark.usefixtures("use_live_valkey"), pytest.mark.integration]
