@@ -14,7 +14,7 @@ import {
   Validators,
 } from '@angular/forms';
 import { Router } from '@angular/router';
-import { AuthLayoutComponent } from '../../../layouts/auth-layout/auth-layout.component';
+import { AuthLayoutComponent } from '@mesell/composites';
 import {
   MeeButtonComponent,
   MeeInputComponent,
