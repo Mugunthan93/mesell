@@ -5195,3 +5195,22 @@ Blockers: none. PR #61 awaiting founder review (by design). Repo-wide CI not wir
 Next: SP03 (mfe-onboarding) completes its concurrent run; when its founder gate merges the 3-entry manifest appears (2-entry proof de-risks it). SP04 dashboard next in the queue.
 Hand-offs: infra deploy memo (handoff_mf_export_deploy) — D19 second-remote GCS prefix + dorny/paths-filter matrix fan-out; record-only (D13 hosting deferred per founder ruling, extends open SP01 request). Board inter-lead row added.
 =========
+
+
+=== UPDATE: 2026-06-11 — SESSION END (SP03 mfe-onboarding EXECUTED — D22 auth GO) ===
+Phase: MF Sub-Plan 03 — mfe-onboarding extraction (F5 onboarding + F13 profile)
+Session: mesell-mfe-onboarding-frontend-session-1
+Board sweep (session-end): mfe-onboarding row IN PROGRESS→MERGED, moved to Recently merged (PR #67 squash e2035330). Infra inter-lead row added (D24 third-remote, RECORD-ONLY — D13 hosting deferred to SP04-05). Active features now EMPTY (both Wave-1 sub-plans on their integration branches awaiting founder gates #61 SP02 / #68 SP03). Inter-lead open: 4 infra rows (SP01 D13, SP02 D19, SP03 D24, SP0 C-CI-1) — all RECORD/within-SLA, none stale. No rows untouched 7+ days.
+Done:
+  - PHASE A (extraction + D21 promotion): apps/mfe-onboarding/ remote (SP01 shape, port 4202). git mv onboarding (import-rewrite only) + profile (BYTE-IDENTICAL) — zero logic. AuthLayout PROMOTED layouts/→libs/composites/ + barrel (D21 founder RULED); all 4 relative consumers (onboarding + shell login/signup/otp-verify) re-pointed to @mesell/composites; 0 dangling (R-SP3-2). federation.config exposes BOTH (D20). public-api + main.ts + index.html + tsconfig.app.json. Remote build GREEN 2.85s → remoteEntry (both exposes).
+  - PHASE B (shell): app.routes profile+onboarding → loadRemoteWithFallback (reuse SP01 D12 helper). manifest += mfe-onboarding (2 entries; SP02 export adds 3rd concurrently). angular.json += project. test/Tailwind globs already cover apps/** (SP01). Shell build GREEN 3.37s (<<90s), initial 60.80kB/18.48kB; onboarding+profile chunks LEFT the shell.
+  - PHASE C (D22 auth singleton — the migration auth GO/NO-GO): C1 PASS (@mesell/core shared+singleton, _mesell_core chunk). C2 PASS static (AuthService in exactly ONE chunk; ProfileComponent imports from '@mesell/core' externally; no dup). C5 PASS runtime (auth-singleton.smoke.spec.ts: shell setSession→remote renders currentUser().name→remote onLogout()→shell isAuthenticated() false + authGuard /login redirect; comp.auth===shellAuth). **AUTH = GO.**
+  - R-SP3-1 (P0 auth-drift) ROOT-CAUSED + FIXED: ignoreUnusedDeps/Sheriff prunes shared-mappings from the main.ts graph; main.ts referenced OnboardingComponent ALONE → profile (the only @mesell/core consumer) excluded → core dropped → AuthService INLINED into the remote (own instance = drift). FIX: main.ts routes BOTH exposes → core stays shared+singleton. ZERO AuthService change (C2). Forward rule recorded for SP04/05/06.
+  - Tests 43 files/408 (406 baseline + 2 C5), 0 fail/0 skip, moved specs discovered (R-SP3-3). Boundary 0. Headless: remoteEntry+both exposed chunks+core chunk 200, broken→404 (D12).
+  - PHASE D (lead): group PR #67 frontend→integration LEAD-GATE squash-merged (--admin, e2035330, branch deleted). Integration `git merge origin/develop` CONFLICT-FREE (SP02 remote not yet on develop) → rebuilt shell+remote on merged branch (green) → founder-gate PR #68 integration→develop OPENED + LEFT OPEN ([FOUNDER GATE — DO NOT MERGE], full §9 scorecard). Infra deploy memo + sub_plan_03_onboarding.md (the finalised D22 C1–C5 contract for SP04/05/06) written.
+§9 scorecard: group-merged PASS; remote-build PASS; shell≤90s PASS; tests==baseline+2 PASS; boundary PASS; D21 AuthLayout PASS; both-routes-resolve PASS; manifest(2; 3rd via SP02) PASS; D22 C5 PASS (auth GO); C2 no-dup PASS; contract recorded PASS; founder-flags resolved; infra memo filed; board/STATUS current. Founder approval on #68 = the only open box (founder's gate, NOT lead's).
+In progress: none (frontend slice complete; PR #68 awaits founder).
+Blockers: none. PR #68 awaiting founder review (by design). PR #53 SP01 already merged; #61 SP02 + #68 SP03 are the two open Wave-1 founder gates.
+Next: SP04 (mfe-dashboard, R3) once #68 merges + founder SP04 exec approval. Recipe + R-SP3-1 forward rule in sub_plan_03_onboarding.md.
+Hand-offs: infra D24 third-remote memo (handoff_mf_onboarding_deploy) — RECORD-ONLY, D13 hosting deferred to SP04-05. Board inter-lead row added.
+=========
