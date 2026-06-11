@@ -25,6 +25,8 @@ import pytest
 from sqlalchemy import text
 
 from app.modules.category import service as category_service
+# CI Gate-4 pass-3 (§2.3, Class C): seed-presence gate lifted into conftest.
+from tests.conftest import _SEED_SKIP_REASON, _seed_data_absent
 
 
 _ENVELOPE_KEYS = {
@@ -101,7 +103,16 @@ async def test_fetch_schema_fields_carry_documented_keys(db, use_live_valkey):
     always present.  The §5A.C derivation itself lands at the seed-
     time §5A.C step; tests for the strict 9-key set live in
     ``tests/test_per_field_shape_keys.py`` (already-shipped fixture).
+
+    CI Gate-4 pass-3 (§2.3, Class C): RUNTIME-SKIPS when the PROD reference seed
+    is absent.  ``fields[]`` is derived from the 3566-template ``schema_jsonb``
+    seed; CI's schema-only ``meesell_test`` carries empty templates, so
+    ``fetch_schema`` returns an envelope with no fields → ``len(fields) > 0``
+    fails spuriously.  (The 3 sibling tests above tolerate an empty envelope and
+    stay green, so the guard is scoped to this test only.)  Tracked: BE-SEED-1.
     """
+    if await _seed_data_absent(db):
+        pytest.skip(_SEED_SKIP_REASON)
     ids = await _pick_random_category_ids(db, 5)
     for cid in ids:
         envelope = await category_service.fetch_schema(cid, db)

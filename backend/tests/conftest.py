@@ -31,6 +31,7 @@ os.environ.setdefault("JWT_SECRET", "test-secret-do-not-use")
 os.environ.pop("CELERY_BROKER_URL", None)
 os.environ.pop("CELERY_RESULT_BACKEND", None)
 
+from sqlalchemy import text  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine  # noqa: E402
 from sqlalchemy.pool import NullPool  # noqa: E402
 
@@ -226,6 +227,46 @@ async def _provision_test_schema():
     yield
 
 
+# ── Reference-seed presence gate (BE-SEED-1) ─────────────────────────────────
+# LIFTED into conftest (CI Gate-4 pass-3, §2.3): the seed-absence helper +
+# skip reason were authored in ``tests/test_database.py`` (pass-2, for the 4
+# ``test_seeded_*`` tests).  Pass-3 extends the same skip to the 4 category-seed
+# integration tests (tests/modules/category/*) + ``test_is_advanced_flag_set_for_group_id``,
+# all of which assert against the PROD reference seed (3772 categories / 49259
+# field_enum_values / 3566 templates / 67 aliases loaded by the DATABASE-track
+# seed scripts) that CI's schema-only ``meesell_test`` never loads.  Lifting the
+# helper here lets BOTH test_database.py and the category seed tests import it
+# from a single source of truth.  Tracked: BE-SEED-1 (CI-scoped seed fixture or
+# nightly-only seeded data gate).
+_SEED_SKIP_REASON = (
+    "Reference seed data absent (CI meesell_test is schema-only, no prod data "
+    "seed). Tracked: BE-SEED-1."
+)
+
+
+async def _seed_data_absent(conn) -> bool:
+    """True when the PROD reference seed is absent → schema-only DB (CI).
+
+    SIGNAL CHOICE (CI Gate-4 pass-2 deviation, carried forward — FLAGGED): the
+    spec specified ``COUNT(categories) == 0`` as the gate.  Route-level fixtures
+    (customer_client / iam_client / category flows) COMMIT a handful of
+    ``categories`` rows into the shared ``meesell_test`` db, so by the time the
+    read-only seeded tests run ``categories`` is non-empty (typically 1) even
+    though the PROD seed is absent — which would defeat a literal
+    ``categories == 0`` gate.  ``field_enum_values`` is the pollution-robust
+    equivalent: it is populated ONLY by the 49 259-row DATABASE-track enum seed
+    and by NO test fixture (verified 0 after a full integration run).  An empty
+    ``field_enum_values`` is therefore the unambiguous "no prod seed" signal
+    that survives committing-fixture residue.  Honours the spec INTENT (skip
+    when the prod seed is absent) where the literal categories gate cannot.
+
+    Accepts either a raw asyncpg-style connection or a SQLAlchemy async
+    connection (callers pass ``dev_engine.connect()`` results).
+    """
+    result = await conn.execute(text("SELECT COUNT(*) FROM field_enum_values"))
+    return result.scalar_one() == 0
+
+
 @pytest.fixture(scope="session")
 def event_loop():
     loop = asyncio.new_event_loop()
@@ -281,9 +322,93 @@ async def db_engine():
 
 @pytest_asyncio.fixture(loop_scope="function")
 async def db_session(db_engine):
-    Session = async_sessionmaker(db_engine, expire_on_commit=False)
-    async with Session() as session:
-        yield session
+    """Per-test async session with connection-outer-transaction + ROLLBACK.
+
+    CI Gate-4 pass-3 (Class B crux): the previous body yielded a PLAIN session
+    (``async with Session() as session: yield session``) with NO per-test
+    transaction + rollback.  In NON-provisioned (laptop) mode the ``db_engine``
+    fixture's per-test ``drop_all``/``create_all`` masked the gap; but pass-1
+    made ``db_engine`` provision-aware (it SKIPS the schema reset on the shared
+    CI ``meesell_test`` db), so in provisioned (CI) mode there was ZERO per-test
+    isolation: any row a test committed accumulated session-wide with nothing
+    cleaning it → fixed-phone module fixtures (``user`` with a hard-coded
+    ``+91…`` number) collided on ``ix_users_phone`` / ``products_user_id_fkey``
+    (the 14 ``IntegrityError`` class).
+
+    The fix mirrors the (correctly-isolated) ``db`` fixture below in shape:
+    open a single connection on the (provision-aware) ``db_engine``, BEGIN an
+    outer transaction, bind a session to that connection (in SAVEPOINT mode so
+    in-test ``commit()`` calls release a savepoint instead of ending the outer
+    txn), yield it, then ROLLBACK the outer transaction on teardown so every row
+    the test wrote is discarded.  ``loop_scope="function"`` (inherited on the
+    decorator) keeps the connection + its asyncpg Futures bound to the test's own
+    loop.
+
+    CROSS-CONNECTION VISIBILITY (CI Gate-4 pass-3): several integration tests
+    (image upload→precheck, etc.) write through this session, ``commit()``, then
+    read the row back through a SEPARATE worker session built from a
+    MODULE-BOUND ``AsyncSessionLocal`` (e.g. ``app.modules.image.tasks`` binds
+    the name at import time and opens ``async with AsyncSessionLocal() as
+    session`` inside the precheck pipeline).  Under a plain outer-txn-rollback
+    the worker's OWN connection cannot see the test's uncommitted-to-outer-txn
+    writes → "image not found".  To keep those tests green WITHOUT sacrificing
+    per-test rollback isolation, we REBIND every module-bound ``AsyncSessionLocal``
+    (the 5 worker-style consumers) to a savepoint-mode sessionmaker on the SAME
+    shared connection for the test's duration — the worker therefore joins the
+    test's transaction (sees its committed-to-savepoint writes); the single
+    outer ROLLBACK at teardown discards everything the test AND the worker wrote.
+    All rebinds are save/restored so no state leaks across tests.  This mirrors
+    the route-client ``audit_mw.AsyncSessionLocal`` savepoint rebind (§2.2-ii).
+
+    KNOWN RESIDUAL (FLAGGED): ``test_pricing_persistence::test_get_last_calc``
+    asserts on distinct ``created_at`` from a fresh transaction's ``NOW()`` per
+    commit; savepoints share the outer transaction's clock, so that one test
+    cannot pass under any single-transaction isolation (it was ALREADY red —
+    IntegrityError — before pass-3, so this is red-to-red, not a regression).
+
+    GUARD (local-dev no-regression): in NON-provisioned mode this still operates
+    on the ephemeral schema ``db_engine`` built for the test and rolls it back —
+    behaviourally equivalent for local dev; the live dev DB is never mutated.
+    """
+    # The worker-style modules that bind ``AsyncSessionLocal`` at import time
+    # (so a patch of ``app.shared.database.AsyncSessionLocal`` alone would NOT
+    # reach the already-bound name).  Rebinding each module attribute makes the
+    # worker sessions join the test connection.
+    import importlib
+
+    _WORKER_SESSIONLOCAL_MODULES = (
+        "app.modules.image.tasks",
+        "app.modules.export.tasks",
+        "app.modules.iam.service",
+        "app.ai_ops.cost_tracker",
+        "app.core.middleware.audit_mw",
+    )
+
+    async with db_engine.connect() as conn:
+        await conn.begin()
+        Session = async_sessionmaker(
+            bind=conn,
+            expire_on_commit=False,
+            class_=AsyncSession,
+            join_transaction_mode="create_savepoint",
+        )
+        _saved: list[tuple] = []
+        for _modname in _WORKER_SESSIONLOCAL_MODULES:
+            try:
+                _mod = importlib.import_module(_modname)
+            except Exception:  # noqa: BLE001
+                continue
+            if hasattr(_mod, "AsyncSessionLocal"):
+                _saved.append((_mod, _mod.AsyncSessionLocal))
+                _mod.AsyncSessionLocal = Session  # type: ignore[attr-defined]
+        session = Session()
+        try:
+            yield session
+        finally:
+            await session.close()
+            for _mod, _orig in _saved:
+                _mod.AsyncSessionLocal = _orig  # type: ignore[attr-defined]
+            await conn.rollback()
 
 
 @pytest_asyncio.fixture(loop_scope="function")

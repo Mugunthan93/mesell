@@ -22,10 +22,21 @@ from sqlalchemy import text
 
 from app.modules.category import service as category_service
 from app.modules.category import repository as category_repo
+# CI Gate-4 pass-3 (§2.3, Class C): seed-presence gate lifted into conftest.
+from tests.conftest import _SEED_SKIP_REASON, _seed_data_absent
 
 
 async def _pick_first_fev(db):
-    """Pick the first row in ``field_enum_values`` for the test."""
+    """Pick the first row in ``field_enum_values`` for the test.
+
+    CI Gate-4 pass-3 (§2.3): RUNTIME-SKIPS when the PROD reference seed is absent
+    (CI's ``meesell_test`` is schema-only — the 49 259-row enum seed is a
+    DATABASE-track concern not loaded in CI).  Without the seed there is no row
+    to pick, so the test cannot meaningfully assert the labelled-payload shape.
+    Tracked: BE-SEED-1.
+    """
+    if await _seed_data_absent(db):
+        pytest.skip(_SEED_SKIP_REASON)
     result = await db.execute(
         text(
             "SELECT category_id, field_name FROM field_enum_values "
