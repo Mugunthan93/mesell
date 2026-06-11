@@ -6,6 +6,9 @@
 /out-tsc
 /bazel-out
 
+# Native Federation build artefact (auto-generated per remote build; never committed)
+**/tsconfig.federation.json
+
 # Node
 /node_modules
 npm-debug.log
