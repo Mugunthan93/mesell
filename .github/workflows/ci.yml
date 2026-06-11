@@ -769,8 +769,19 @@ jobs:
               sudo /usr/local/bin/refresh-ar-token.sh
               sudo systemctl restart k3s
               # Wait for the API server to come back before issuing kubectl commands.
-              for i in $(seq 1 20); do
-                kubectl get --raw='/readyz' >/dev/null 2>&1 && break
+              # NOTE: this loop runs on the REMOTE VM via gcloud ssh --command='...'. Every
+              # shell construct that must evaluate remotely is \$-escaped so the GitHub runner
+              # does not expand it locally. A bare \$(seq 1 20) expanded on the runner and
+              # injected newline-separated tokens into the command string, malforming the
+              # remote script (run 27364056936: 'syntax error near unexpected token 2'). We use
+              # a self-contained counter — no command substitution — to remove that failure class.
+              READYZ_TRIES=0
+              until kubectl get --raw='/readyz' >/dev/null 2>&1; do
+                READYZ_TRIES=\$((READYZ_TRIES + 1))
+                if [ \"\${READYZ_TRIES}\" -ge 20 ]; then
+                  echo 'API server did not become ready within 60s after k3s restart.'
+                  exit 1
+                fi
                 sleep 3
               done
 
