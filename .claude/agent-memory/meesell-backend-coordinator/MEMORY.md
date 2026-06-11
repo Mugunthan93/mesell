@@ -8,6 +8,10 @@ Backend coordinator for MeeSell. Orchestrates the 4 backend specialists (databas
 ### auth-otp (Feature 1 — active)
 - [auth_otp_feature.md](auth_otp_feature.md) — auth-otp: your role as backend lead, 4-specialist dispatch order, branch ownership, key contracts to enforce in PR review
 
+### ci-activation
+- [spec_ci_gate1_fix.md](spec_ci_gate1_fix.md) — CI Gate-1 pytest-collection fix (Rule 7 3-step). SPEC + OUTCOME: `pythonpath = .` in `backend/pytest.ini` (PR #73 squash `1e95b2a`); §19.D additive ruling (no founder amendment); **double-merge P0** (#73 + #74 → duplicate `pythonpath` key → config-load error → repaired in #75); Finding A debt (zero `unit`-marked tests = Gate 1 runs nothing); Finding B → infra (5 missing §5.D env vars in ci.yml). LESSON: scan for already-open duplicate PRs before authoring a fix spec.
+- [handoff_ci_gate1_envvars.md](handoff_ci_gate1_envvars.md) — backend→infra memo: Finding B (ci.yml Gate-1 env block missing `GCS_BUCKET`/`GCS_PROJECT_ID`/`LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`/`CORS_ALLOWED_ORIGINS` → config SystemExit). Inter-lead OPEN 2026-06-11.
+
 ### Prior sessions
 - [project_session_2_gap_pass.md](project_session_2_gap_pass.md) — 2026-06-05 gap remediation plan, audit of 10 routers, 5 gaps identified
 - [reference_authoritative_endpoint_inventory.md](reference_authoritative_endpoint_inventory.md) — founder ruling that §3+§7.7+§11.6 = 25 endpoints supersedes §11.1's stale "16+4=20"
