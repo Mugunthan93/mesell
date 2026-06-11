@@ -4280,3 +4280,69 @@ Hand-offs: infra notified via board inter-lead row (READY TO RE-FIRE; expected C
 WRITE-GUARD NOTE: write-tool (Edit/Write) bg-isolation guard active again this turn; all record writes (board move,
   inter-lead updates, this STATUS block) performed via Bash/python to the shared checkout (bash-writable).
 =========
+
+=== UPDATE: 2026-06-11 13:40 — catalog-form (+ai-autofill) BACKEND slice STEP 3 (MERGE GATE) ===
+Phase: V1 Feature 3 (Fast Catalog Form) + Feature 4 (AI Auto-fill) — backend slice, merge gate
+Session: mesell-catalog-form-backend-session-1 (HYBRID step 3 of 3: merge-gate review + Model C merge flow + records)
+Working on feature: catalog-form. Memo file: feature_catalog-form.md.
+
+Board sweep (session start/end): Active = microservices-export (touched 2026-06-10, not stale). catalog-form moved
+  Active→Recently-merged this gate. 3 inter-lead rows (2 infra OPEN/RESOLVED, 1 RESOLVED). No 7+day-stale rows.
+
+VERDICT: PASS (all 7 gaps). Reviewed `git diff a50eb87...HEAD` (merge-base = rebased base, no infra-commit noise).
+  G1/G2 PASS — FEATURE_CATALOG_FORM_ENABLED + FEATURE_AI_AUTOFILL_ENABLED in shared/config.py (dev True; staging env-set).
+  G3 PASS — main.py catalog_router include gated on FEATURE_CATALOG_FORM_ENABLED (conditional-include → default 404).
+  G4 PASS — /autofill in-handler 404 guard on FEATURE_AI_AUTOFILL_ENABLED, request-time settings read (smart-picker pattern).
+  G5 PASS — audit_mw._is_autosave(method,path): bare PATCH /products/{id} coalesces (PATCH-only; /draft|/autosave suffix
+    preserved; Gate-4 savepoint binding untouched). §4.G doc amendment owed → FOUNDER FYI in PR #115.
+  G6 PASS — 30 unit (test_catalog_unit + test_audit_coalescing) + 7 route (test_catalog_routes) + 5 integration
+    (test_ai_autofill_integration). NEW tests/unit/ dir w/ @pytest.mark.unit + __init__.py.
+  G7 PASS — FOUNDER RULING 2026-06-11 (ai-autofill D1) "remove auto-apply" consumed: auto-apply branch + applied_patch +
+    update_fields_jsonb write stripped; applied always False; _AUTO_APPLY_CONFIDENCE_FLOOR deleted;
+    _DEFAULT_AUTOFILL_CONFIDENCE=0.9 retained as provenance signal only; autofill writes ONLY to ai_suggestions_jsonb;
+    4 docstrings + §10-CATALOG-D4 decision flag updated.
+
+DATABASE VERIFY (folded in per STEP-1 carry, replaced a database-builder dispatch): no model files changed; no alembic
+  versions added (single head f31c75438e61, 3 version files); product.py/product_draft.py untouched. NO DRIFT.
+
+TEST/RUFF RE-RUN (master venv, system ruff 0.15.11):
+  - ruff check on 6 source + 2 test dirs: All checks passed.
+  - pytest tests/unit/ -m unit: 37/37 PASS standalone. Full-unit-suite run shows 13 failures ONLY in tests/unit/ when run
+    at the tail of ~619 tests on Python 3.11 — RuntimeError "no current event loop", a pytest-asyncio-0.24 session-loop-scope
+    ordering artifact (the new dir sorts LAST; a prior test closes the session loop). PROVEN substrate artifact: the 13 PASS
+    standalone, PASS grouped, PASS alongside an old async unit file (38p). CI runs Python 3.12 (ci.yml) where specialist
+    verified 37/37 green. NOT a code defect.
+  - pytest tests/integration/test_ai_autofill_integration.py: 5/5 COLLECT clean; run fails on redis ConnectionError only
+    (localhost:6381 Valkey absent on this substrate). Gate 4 advisory per §2.1. Specialist verified 5/5 PASS on provisioned laptop.
+
+DEVIATIONS ADJUDICATED (1-5, all ACCEPTED): (1) G3 conditional-include vs G4 in-handler raise — both valid 404 mechanisms;
+  G4 matches locked smart-picker precedent. (2) NEW tests/unit/ dir — SPEC named the files, markers correct. (3)
+  AutofillResponse.applied LEFT in schema (always all-False) — contract preserved for FE §F4 yellow-highlight; documented.
+  (4) flag-on unit test asserts 401/403 != 404 (deterministic guard-didn't-fire proof, no DB) — sound. (5) integration stubs
+  enforce_plan_limit (module-level Valkey singleton) + Gemini call-site mock — documented.
+
+MERGE FLOW (Model C, executed with a forced deviation):
+  - origin had NO feature/catalog-form integration branch; stale sub-refs feature/catalog-form/{backend@79ae93d, ai@629f6ef}.
+  - GIT D/F REFNAME CONFLICT: leaf ref feature/catalog-form cannot coexist with feature/catalog-form/<sub> refs. The literal
+    "PR backend→integration + admin squash-merge + delete backend ref" sequence was IMPOSSIBLE.
+  - RESOLUTION (identical end-state): local squash of the backend slice onto a fresh feature/catalog-form off origin/develop
+    (a9276c3); gate decision recorded in the SQUASH COMMIT BODY (equiv. to the PR comment). Squash = b0986f9.
+    Deleted /backend (consumed by squash) + /ai (content already on develop via #56 squash 5556618 → #57 e6deefa; tip 629f6ef
+    is pre-squash & far behind develop — verified the autofill_v1.py + eval/autofill files ARE on develop). Pushed integration.
+  - SHAs: integration branch feature/catalog-form @ b0986f9 (base a9276c3). FOUNDER GATE PR #115 OPEN → develop (LEFT OPEN).
+    Backend + AI remote refs DELETED.
+
+RECORDS: board header + Recently-merged row + R5 signature publish (this STATUS block + the board) committed as F2 status-only
+  to develop (this commit). assert_product_ownership(product_id: UUID, user_id: UUID, *, db: AsyncSession) -> None published
+  (as-built keyword-db form; memo's no-db form corrected against service.py:919 + unit-test call site).
+
+Done: merge-gate review (G1-G7 PASS); database verify (no drift); ruff + unit + integration-collect re-run; deviation
+  adjudication (1-5 ACCEPTED); Model C merge flow (with D/F deviation); founder-gate PR #115 OPEN; board + STATUS + R5 records.
+In progress: none — slice handed to founder gate.
+Blockers: none P0.
+Next: founder reviews/merges PR #115 → develop (founder's gate per D1). Then frontend catalog-form slice consumes the
+  published OpenAPI + R5 signature. §4.G amendment awaits founder approval (FYI in #115, not edited by lead per §7.3).
+Hand-offs: FOUNDER QUEUE — (1) merge/review PR #115; (2) approve §4.G doc amendment (G5 widened coalescing to bare PATCH);
+  (3) FYI Model C git D/F deviation (candidate for a master-plan note: integration branch must be created BEFORE sub-branches,
+  or the leaf refname is permanently blocked by any live sub-ref). No cross-LEAD memo cut (F3+F4 backend self-contained per O1).
+=========

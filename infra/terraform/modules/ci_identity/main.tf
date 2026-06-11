@@ -156,6 +156,23 @@ resource "google_project_iam_member" "github_ci_iap_tunnel" {
   member  = "serviceAccount:${google_service_account.meesell_github_ci.email}"
 }
 
+# Project-level compute.viewer (read-only) — CI activation run-5 deploy fix (2026-06-11).
+# WHY: the deploy job runs `gcloud compute ssh ... --tunnel-through-iap` to roll the
+# K3s deployment. Before opening the IAP tunnel, `gcloud compute ssh` must read project
+# metadata via the `compute.projects.get` permission. The VM-scoped
+# compute.instanceAdmin.v1 binding below is RESOURCE-LEVEL (meesell-dev only) and does
+# NOT confer the project-level `compute.projects.get` — so SSH failed at
+# "Required 'compute.projects.get' permission for 'projects/project-1f5cbf72-2820-4cdb-949'"
+# (GitHub Actions run 27358799380, step "Rolling deploy via IAP SSH").
+# roles/compute.viewer is the minimal standard role carrying compute.projects.get; it is
+# read-only (no mutation). SSH-key write to instance metadata stays covered by the
+# VM-scoped instanceAdmin below. Same Terraform-codified pattern as the run-4 act-as fix.
+resource "google_project_iam_member" "github_ci_compute_viewer" {
+  project = "project-1f5cbf72-2820-4cdb-949"
+  role    = "roles/compute.viewer"
+  member  = "serviceAccount:${google_service_account.meesell_github_ci.email}"
+}
+
 # VM-scoped compute.instanceAdmin.v1 — explicitly bound to the meesell-dev instance
 # only. The SA cannot administer any other VM in the project. This is the brief's
 # "scoped to meesell-dev VM" constraint.
