@@ -350,7 +350,7 @@ Image targets, each tagged with `:${_TAG}` (the git SHA) AND `:latest`, plus the
 | `api` | `backend/Dockerfile` | `${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/api:{SHA, latest}` |
 | `worker` | `backend/Dockerfile.worker` | `.../worker:{SHA, latest}` |
 | `frontend` (shell) | `frontend/Dockerfile` | `.../frontend:{SHA, latest}` |
-| remotes `mfe-*` | `ng build <remote>` → `dist/mfe-*/browser` | `${_REMOTES_BUCKET}/<remote>/{SHA, latest}/` (GCS + Cloud CDN) |
+| remotes `mfe-*` | `ng build <remote>` → `dist/mfe-*/browser` | `${_REMOTES_BUCKET}/${_REMOTES_ENV}/mfe-<name>/{SHA}/` (GCS + Cloud CDN; version-pinned, NO `latest` per R-SP7-6) |
 
 The **shell** (`frontend`) image build is **conditional**: a `precheck-shell` step runs `test -f /workspace/src/frontend/Dockerfile` and skips the shell build + push if the Dockerfile is absent (Wave 2B / SP may not have produced one yet). The **remotes** publish via the `publish-remotes` step (Option C, GCS) and is **INERT** until `_REMOTES_BUCKET` is set — see §9.2 / §9.5. Remotes never become AR images, so they are NOT in the `images:` verification list.
 
@@ -606,14 +606,19 @@ Per `GATE4_CONFIRMATION.md` condition **C-CI-1**, when the multi-project Angular
 | Filter | Globs | Meaning |
 |--------|-------|---------|
 | `libs` | `frontend/libs/**`, `frontend/package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `angular.json`, `tsconfig*`, `federation.config.js`, `.github/workflows/ci.yml` | Shared layers (`@mesell/*`) + workspace config — a change here **fans out** to every dependent |
-| `shell` | `frontend/src/**`, `frontend/public/**` | The host (angular.json project `frontend`) |
-| `mfe_pricing` | `frontend/apps/mfe-pricing/**` | Pilot remote (SP01) |
+| `shell` | `frontend/src/**`, `frontend/public/**`, `frontend/apps/shell/**` | The host. SP07 D43 relocates `src/**` → `apps/shell/**`; BOTH globs match so the matrix is relocation-forward-compatible |
+| `mfe_pricing` | `frontend/apps/mfe-pricing/**` | SP01 |
+| `mfe_export` | `frontend/apps/mfe-export/**` | SP02 |
+| `mfe_onboarding` | `frontend/apps/mfe-onboarding/**` | SP03 |
+| `mfe_dashboard` | `frontend/apps/mfe-dashboard/**` | SP04 (public landing) |
+| `mfe_catalog` | `frontend/apps/mfe-catalog/**` | SP05 |
+| `mfe_auth` | `frontend/apps/mfe-auth/**` | SP06 (public auth) |
 
-**(b) `frontend-build` matrix job** — one matrix `include` entry per buildable unit (`shell`, `mfe-pricing`, …). Each entry carries a computed `run` boolean: build this unit when **its own filter fired OR the `libs` fan-out fired**. The job steps are all gated on `if: matrix.run == 'true'`; an unaffected unit logs a skip-notice and succeeds. Per-unit steps: `pnpm install --frozen-lockfile` → `pnpm rebuild esbuild @parcel/watcher lmdb msgpackr-extract` → `ng test <project>` → `ng build <project> --configuration production`.
+**(b) `frontend-build` matrix job** — one matrix `include` entry per buildable unit. As of SP07 the matrix has 7 legs: `shell` + all 6 remotes. Each entry carries a computed `run` boolean: build this unit when **its own filter fired OR the `libs` fan-out fired**. The job steps are all gated on `if: matrix.run == 'true'`; an unaffected unit logs a skip-notice and succeeds. Per-unit steps: `pnpm install --frozen-lockfile` → `pnpm rebuild esbuild @parcel/watcher lmdb msgpackr-extract` → `ng test <project>` → `ng build <project> --configuration production`.
 
 **Fan-out rule (why libs are not their own matrix leg):** the shared libs are consumed via `@mesell/*` tsconfig path aliases and compile **into** each consuming unit's native-federation bundle — they are not independently published artefacts. So a libs change cannot be "built alone"; it must rebuild every dependent (shell + all remotes). The `libs` filter therefore acts as a global trigger across all matrix legs.
 
-**Adding remotes (SP02–SP06) = a one-line change in two places:** add a filter block to `frontend-changes` (`mfe_<name>: ['frontend/apps/mfe-<name>/**']`) and a matrix `include` entry to `frontend-build` (copy the `mfe-pricing` block, swap the name, `run` keys off `mfe_<name> || libs`). No structural rewrite.
+**All 6 remotes are wired as of SP07** (the cutover). Each was a one-line addition in two places: a filter block in `frontend-changes` (`mfe_<name>: ['frontend/apps/mfe-<name>/**']`) + a matrix `include` entry in `frontend-build` (keyed off `mfe_<name> || libs`). No structural rewrite. A future remote follows the same pattern.
 
 **Native-binary note (handoff from frontend-coordinator):** `pnpm` ignores native build scripts by default (`ERR_PNPM_IGNORED_BUILDS`: esbuild / @parcel/watcher / lmdb / msgpackr-extract). The `.npmrc dangerously-allow-all-builds` trick is environment-blocked; the clean alternative is an explicit `pnpm rebuild <pkgs>` before `ng build`, which the matrix runs as a dedicated step.
 
@@ -651,12 +656,16 @@ Once the image exists, the deploy script (§7.3) uncomments the frontend lines. 
 
 For the **shell**, Nginx-in-pod stays (the `frontend` Deployment). For the **federated remotes**, static hosting via **GCS + Cloud CDN** is not merely an optimization — it is the **mandated hosting model** (GATE4 condition C-RES-2 / Option C): the e2-standard-2 dev node has only ~350m CPU headroom, so 6 in-cluster remote pods do not fit. Remotes therefore ship as static bundles to `remotes.mesell.xyz` (GCS + Cloud CDN), zero in-cluster pods.
 
-The `cloudbuild.yaml` `publish-remotes` step implements the publish path (`gsutil rsync dist/mfe-*/browser → ${_REMOTES_BUCKET}`). It is **READY but INERT** (skips while `_REMOTES_BUCKET` is unset). Activation requires (all Terraform / founder-owned, NOT CI config):
-1. S5 ratifies Option C + per-env bucket layout (DRAFT MF-ENV-1).
-2. Terraform provisions `gs://meesell-remotes-dev` + Cloud CDN + the `remotes.mesell.xyz` HTTPS LB + GCP-managed cert (C-ROUTE-1) + a bucket-scoped `objectAdmin` grant to the Cloud Build compute SA.
-3. Set the `_REMOTES_BUCKET` substitution (in the GitHub Actions build job's `--substitutions`) to the bucket URL.
+The `cloudbuild.yaml` `publish-remotes` step implements the publish path. As of SP07 (D44 / C-STAGING-1) the layout is **version-pinned, per-env**: `${_REMOTES_BUCKET}/${_REMOTES_ENV}/mfe-<name>/${_TAG}/` where `${_TAG}` is the exact build hash (`github.sha`) — **NEVER `latest`** (R-SP7-6: the shell's deployed manifest pins the exact remote build it was tested against; rollback = re-point the manifest `{version}` at the prior build, atomic). The step does NOT publish a floating `latest/` alias. It is **READY but INERT** (skips while EITHER `_REMOTES_BUCKET` OR `_REMOTES_ENV` is unset). Activation requires (all Terraform / founder-owned, NOT CI config):
+1. **Founder cost sign-off** for the hosted surface (`docs/plans/infra/SP07_HOSTING_COST_SHEET.md`, ~₹1,600–1,800/mo → >₹500/mo gate).
+2. Terraform provisions `gs://meesell-frontend` + Cloud CDN + the `remotes(-staging).mesell.xyz` HTTPS LB + GCP-managed cert (C-ROUTE-1) + a bucket-scoped `objectAdmin` grant to the Cloud Build compute SA. (Module plan: `infra/terraform/modules/frontend_cdn/` — authored at provisioning, see `SP07_CSP_AND_HOSTING.md` §5.2.)
+3. Set the `_REMOTES_BUCKET` (= `gs://meesell-frontend`) and `_REMOTES_ENV` (= `staging`|`prod`) substitutions in the GitHub Actions build job's `--substitutions`.
 
-Cost note (C-CDN-1, flagged for the >₹500/mo gate at S5): a global external HTTPS LB forwarding rule carries a standing hourly charge; size the GCS + CDN + LB estimate during MF-CDN-1.
+Cost (C-CDN-1, > ₹500/mo gate): a global external HTTPS LB forwarding rule carries a standing hourly charge (~₹1,530/mo of the total). Full breakdown + cheaper interim options in `SP07_HOSTING_COST_SHEET.md` — founder signs off before provisioning.
+
+### 9.6 CSP — shell-image nginx mechanism (SP07 D42 / C-CSP-1)
+
+The shell emits the federation Content-Security-Policy via an **ADD-ONLY nginx `add_header`** in the shell image (`frontend/docker/nginx.conf.template`, rendered per-env by `frontend/docker/docker-entrypoint.sh` via `envsubst` keyed on `$APP_ENV`, values in `frontend/docker/csp-policy.env`). A CSP-only Traefik Middleware (`k8s/csp/csp-middleware.yaml`) is the documented kubectl-editable ALTERNATIVE. **The mechanism MUST NOT strip/override the API's CORS headers or the refresh-token `Set-Cookie`** — the nginx serves only the shell origin's static assets and never proxies the API, so it is structurally off the cookie/CORS path (no `location /api/ { proxy_pass }` is permitted in the shell nginx). Author + dev-smoke (3 checks: remote-load, 401→refresh→retry, CORS non-regression) BEFORE any staging/prod flip. Full detail: `docs/plans/infra/SP07_CSP_AND_HOSTING.md` §1–§4.
 
 ---
 

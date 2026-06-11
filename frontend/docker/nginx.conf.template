@@ -1,0 +1,81 @@
+# =============================================================================
+# MeeSell SHELL (host) nginx config — Native Federation static SPA + CSP
+# SP07 cutover (D42 / C-CSP-1). Author: meesell-infra-builder.
+#
+# THIS IS THE CSP MECHANISM (infra-owned). The allowlist CONTENT is frontend-owned
+# (spec_sp07_infra.md §1.1) — consumed verbatim below and injected per-env at
+# container start via `envsubst` (see docker-entrypoint.sh). This is a *.template:
+# the runtime container renders ${CSP_*} placeholders into the live nginx.conf.
+#
+# ── HARD CONSTRAINTS (spec §1.2 — the R-SP7-1 P0 of the whole cutover) ──────────
+#  1. ADD-ONLY. This config emits EXACTLY ONE security response header:
+#     `Content-Security-Policy`. It does NOT set, rewrite, strip, or reorder ANY
+#     other response header.
+#  2. It CANNOT touch the FastAPI app's CORS headers or the refresh-token
+#     `Set-Cookie`, because those are emitted by the API origin (api.mesell.xyz,
+#     a DIFFERENT pod/origin). This nginx only serves the shell's OWN static
+#     assets (index.html, JS chunks) from the shell origin (dev/staging/prod
+#     `*.mesell.xyz` shell host). The browser talks to the API directly
+#     (connect-src allows api.mesell.xyz) — nginx is NEVER a proxy in front of
+#     the API, so it is physically incapable of clobbering CORS / Set-Cookie.
+#     >>> DO NOT add a `location /api/ { proxy_pass ... }` block here. <<<
+#         A reverse-proxy to the API would put this nginx in the cookie/CORS
+#         path and re-open R-SP7-1. The API is reached cross-origin by the
+#         browser, full stop.
+# =============================================================================
+
+worker_processes auto;
+
+events {
+  worker_connections 1024;
+}
+
+http {
+  include       /etc/nginx/mime.types;
+  default_type  application/octet-stream;
+  sendfile      on;
+  keepalive_timeout 65;
+
+  # gzip the federated ESM chunks + manifest
+  gzip on;
+  gzip_types application/javascript application/json text/css image/svg+xml;
+  gzip_min_length 1024;
+
+  server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # -------------------------------------------------------------------------
+    # CSP — the ONLY security header this mechanism adds. `always` ensures it is
+    # emitted even on error responses. The value is rendered from the per-env
+    # template by envsubst at container start (${CSP_POLICY}).
+    #
+    # ADD-ONLY: this is the single add_header in the whole config. There is no
+    # `more_clear_headers`, no `proxy_hide_header`, no header rewrite anywhere.
+    # -------------------------------------------------------------------------
+    add_header Content-Security-Policy "${CSP_POLICY}" always;
+
+    # Federation manifest + remoteEntry must never be cached stale (version is
+    # pinned IN the manifest, so the manifest itself must be fresh).
+    location = /federation.manifest.json {
+      add_header Content-Security-Policy "${CSP_POLICY}" always;
+      add_header Cache-Control "no-store" always;
+      try_files $uri =404;
+    }
+
+    # Hashed build assets are immutable — long cache.
+    location ~* \.(js|css|woff2?|png|jpg|jpeg|svg|gif|ico)$ {
+      add_header Content-Security-Policy "${CSP_POLICY}" always;
+      add_header Cache-Control "public, max-age=31536000, immutable" always;
+      try_files $uri =404;
+    }
+
+    # SPA fallback — Angular client-side routing.
+    location / {
+      add_header Content-Security-Policy "${CSP_POLICY}" always;
+      try_files $uri $uri/ /index.html;
+    }
+  }
+}
