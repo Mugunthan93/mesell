@@ -1,6 +1,63 @@
 // image-uploader.model.ts
 // Pure TypeScript — NO Angular decorators. Vitest-testable without TestBed.
 
+// ── Backend contract types (additive — R-IP-B, 2026-06-11) ───────────────────
+// These types mirror the backend image/schemas.py on develop.
+// Do NOT rename or delete the existing simulation types (PrecheckResult /
+// ProductImage / PrecheckItem) — the component-builder removes them in the next
+// wave when the simulation is replaced with the live HTTP wiring.
+
+/**
+ * precheck_jsonb keys — EXACT backend names (R-IP-B authoritative).
+ * Note the one-way remap vs the legacy FE keys:
+ *   jpeg_valid        ← was jpeg_format
+ *   color_space       ← was color_space_rgb (now a bool — RGB pass/fail flag)
+ *   resolution_pass   ← was min_resolution
+ *   white_background  ← was white_bg
+ *   watermark_check   ← was no_watermark (semantics preserved: true = no watermark)
+ */
+export interface PrecheckJsonb {
+  jpeg_valid: boolean;
+  color_space: boolean;
+  resolution_pass: boolean;
+  white_background: boolean;
+  watermark_check: boolean;
+}
+
+/** Single image summary as returned by GET /api/v1/products/{id}/images */
+export interface ImageSummary {
+  image_id: string;
+  idx: number;                               // 1-based (1..4), D1-LOCKED CHECK constraint
+  status: 'pending' | 'ready' | 'failed_precheck';
+  signed_url: string;
+  precheck_jsonb: PrecheckJsonb;
+  is_front: boolean;                         // idx === 1
+  width: number | null;
+  height: number | null;
+  color_space: string | null;                // e.g. "RGB", "CMYK"
+  created_at: string;                        // ISO-8601 string
+}
+
+/**
+ * Response shape for GET /api/v1/products/{id}/images.
+ * Returns {images:[]} (200) when FEATURE_IMAGE_PRECHECK_ENABLED=false — NOT 404.
+ */
+export interface ImagesListResponse {
+  images: ImageSummary[];
+}
+
+/**
+ * Response shape for POST /api/v1/products/{id}/images (202 Accepted).
+ * The image is queued; poll listImages until status !== 'pending'.
+ */
+export interface ImageUploadResponse {
+  image_id: string;
+  gcs_path: string;
+  status: 'pending';
+  idx: number;
+  enqueued_task_id: string;
+}
+
 // ── Domain types ───────────────────────────────────────────────────────────────
 
 export interface PrecheckResult {
