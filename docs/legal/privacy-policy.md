@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**For:** **Stellaxis** `[ENTITY SUFFIX — fills in once §15.1 ruled]` operating the **MeeSell** service at `https://www.meesell.in`
+**For:** **Stellaxis (OPC) Private Limited** operating the **MeeSell** service at `https://www.meesell.in`
 **Effective date:** `[FOUNDER: publish date]`
 **Last updated:** `[FOUNDER: publish date]`
 **Version:** v1.0
@@ -20,7 +20,7 @@
 
 ## 1. Who we are
 
-**Stellaxis** `[ENTITY SUFFIX — fills in once §15.1 ruled]` (referred to in this policy as **"we"**, **"us"**, **"our"**, or by its product brand **"MeeSell"**) operates the MeeSell software-as-a-service platform (the **"Service"**) accessible at `https://meesell.in`. "Stellaxis" is our legal business name; "MeeSell" is the trade name under which we offer the Service.
+**Stellaxis (OPC) Private Limited** (referred to in this policy as **"we"**, **"us"**, **"our"**, or by its product brand **"MeeSell"**) operates the MeeSell software-as-a-service platform (the **"Service"**) accessible at `https://meesell.in`. "Stellaxis (OPC) Private Limited" is our legal business name; "MeeSell" is the trade name under which we offer the Service.
 
 MeeSell helps Indian sellers prepare product catalogs for upload to the Meesho marketplace. We are not Meesho. We are not affiliated with Meesho. We are an independent third-party service for sellers.
 

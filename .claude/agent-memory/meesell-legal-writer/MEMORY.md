@@ -15,3 +15,4 @@ Legal & marketing writer for MeeSell. Drafts Privacy/ToS/Refund/Cookie/DPA, Razo
 - [FE-D5 token model legal implications](project_fe_d5_token_model.md) — 15-min access JWT in-memory + HttpOnly refresh cookie + HMAC-pepper allowlist + Lua atomic rotation = defensible "reasonable security practice" under IT Act §43A.
 - [Founder-ratified §15 decision defaults](reference_section_15_ratified.md) — The 13 of 15 founder decisions adopted on 2026-06-05, plus the 2 still open (#1 entity, #2 incorporator).
 - [Brand vs Legal Name](reference_brand_vs_legal_name.md) — MeeSell = product/trade name; Stellaxis = legal business name. Where to use which.
+- [Session 3 — OPC ruling + entity collapse + marketing copy](session_3_opc_ruling.md) — §15.1 RATIFIED OPC 2026-06-11; [ENTITY SUFFIX] collapsed; dual-path checklists → OPC-only; docs/marketing/landing-copy.md v1 authored.
