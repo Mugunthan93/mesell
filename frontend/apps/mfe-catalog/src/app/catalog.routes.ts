@@ -14,9 +14,10 @@ export const CATALOG_ROUTES: Routes = [
       import('./catalog-list.component').then(m => m.CatalogListComponent),
   },
   {
+    // /catalogs/new -> SmartPickerComponent (renamed from CatalogNewComponent per D4)
     path: 'new',
     loadComponent: () =>
-      import('./catalog-new/catalog-new.component').then(m => m.CatalogNewComponent),
+      import('./smart-picker/smart-picker.component').then(m => m.SmartPickerComponent),
   },
   {
     path: ':id/edit',

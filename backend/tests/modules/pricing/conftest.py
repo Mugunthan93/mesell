@@ -37,7 +37,7 @@ from app.shared.models.template import Template as TemplateORM
 from app.shared.models.user import User
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def db(db_session):
     """Alias for the ephemeral test DB session — matches the §8 / §10
     fixture-naming convention so the test signatures read naturally."""
@@ -55,12 +55,12 @@ async def _seed_user(db, phone: str) -> User:
     return user
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def user(db) -> User:
     return await _seed_user(db, phone="+915550012001")
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def other_user(db) -> User:
     return await _seed_user(db, phone="+915550012002")
 
@@ -121,7 +121,7 @@ async def _seed_category(
     return category
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def priced_category(db) -> CategoryORM:
     """A category with a 15% commission — the canonical §12.J golden."""
     return await _seed_category(
@@ -133,7 +133,7 @@ async def priced_category(db) -> CategoryORM:
     )
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def uncommissioned_category(db) -> CategoryORM:
     """A category with ``commission_pct=NULL`` — §9 surfaces this to
     pricing as ``Decimal('0.00')`` per the §9.C docstring; pricing
@@ -182,12 +182,12 @@ async def _seed_product(
     return product
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def catalog_row(db, user) -> CatalogORM:
     return await _seed_catalog(db, user.id)
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def product_row(db, user, catalog_row, priced_category) -> ProductORM:
     """Canonical happy-path product: owned by ``user``, under
     ``catalog_row``, pointing at ``priced_category``."""
@@ -199,7 +199,7 @@ async def product_row(db, user, catalog_row, priced_category) -> ProductORM:
     )
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def product_uncommissioned(
     db, user, catalog_row, uncommissioned_category
 ) -> ProductORM:
@@ -218,7 +218,7 @@ async def product_uncommissioned(
     )
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def other_user_product(db, other_user, priced_category) -> ProductORM:
     """A product owned by ``other_user`` — used by the §12.J test #1
     cross-tenant ownership-gate assertion."""

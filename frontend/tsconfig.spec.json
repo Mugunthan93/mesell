@@ -9,11 +9,9 @@
     ]
   },
   "include": [
-    "src/**/*.d.ts",
-    "src/**/*.spec.ts",
-    "libs/**/*.d.ts",
-    "libs/**/*.spec.ts",
     "apps/**/*.d.ts",
-    "apps/**/*.spec.ts"
+    "apps/**/*.spec.ts",
+    "libs/**/*.d.ts",
+    "libs/**/*.spec.ts"
   ]
 }

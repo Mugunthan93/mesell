@@ -53,6 +53,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
+from tests.conftest import _DEV_DATABASE_URL, _valkey_base
 
 pytestmark = pytest.mark.integration
 
@@ -67,7 +68,7 @@ _CUSTOMER_TEST_PHONE = "+915550099901"
 # Fixture: customer_client — authenticated ASGI client + Valkey seeded
 # ─────────────────────────────────────────────────────────────────────────────
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def customer_client():
     """Authenticated ASGI client for customer route tests.
 
@@ -102,19 +103,79 @@ async def customer_client():
 
     # ── 1. Build an ephemeral NullPool engine + schema ─────────────────────
     # NullPool: no connection reuse → no asyncpg Future loop-binding issues.
-    db_url = os.environ.get(
-        "TEST_DATABASE_URL",
-        "postgresql+asyncpg://meesell:password@localhost:5432/meesell",
-    )
+    #
+    # CI Gate-4 pass-2 fix: the DB URL now flows through ``_DEV_DATABASE_URL``
+    # (TEST_DATABASE_URL > DEV_DATABASE_URL > baked K3s-dev DSN) — identical
+    # precedence to every other DB fixture in tests/conftest.py.  The previous
+    # ``localhost:5432`` literal default pointed at the wrong port (CI maps the
+    # ephemeral meesell_test db on 5433) → asyncpg connection failures.
+    db_url = _DEV_DATABASE_URL
     engine: AsyncEngine = create_async_engine(db_url, poolclass=NullPool)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
 
-    TestSession = async_sessionmaker(engine, expire_on_commit=False)
+    # Provision-aware schema setup (mirrors the db_engine fixture in
+    # tests/conftest.py): when ``TEST_DATABASE_URL`` is set (CI), the
+    # session-scoped ``_provision_test_schema`` autouse fixture has already run
+    # ``alembic upgrade head`` against meesell_test — building the pg_trgm
+    # extension + the category GIN trigram indexes that ``create_all`` cannot
+    # reproduce.  Running drop_all/create_all here would DESTROY those indexes
+    # AND contend with the per-test ``db`` transaction on the shared physical
+    # db.  So we SKIP the drop_all/create_all when provisioned and let alembic
+    # own the schema.  Off-CI (laptop, no TEST_DATABASE_URL) the prior
+    # drop_all+create_all per-fixture behaviour is preserved byte-for-byte.
+    _provisioned = bool(os.environ.get("TEST_DATABASE_URL"))
+    if not _provisioned:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
+
+    # ── 1b. SAVEPOINT per-test isolation (CI Gate-4 pass-3, §2.2-ii) ───────
+    # The route handlers really call ``await session.commit()`` (e.g. the
+    # PATCH /seller-profile flow persists a SellerProfile row).  The previous
+    # ``_db_override`` opened a fresh session per call and committed straight
+    # into the shared ``meesell_test`` db with NOTHING ever cleaning the rows up
+    # → committed rows (incl. the fixed-phone ``users`` row minted by /otp/verify)
+    # accumulated session-wide → ``ix_users_phone`` / ``products_user_id_fkey``
+    # IntegrityErrors AND cross-test contamination.
+    #
+    # THE FIX: a SINGLE test-scoped connection with an OPEN outer transaction.
+    # Every override session binds to THAT connection via an
+    # ``async_sessionmaker(join_transaction_mode="create_savepoint")`` — so a
+    # handler ``commit()`` RELEASES a SAVEPOINT instead of ending the outer txn.
+    # On teardown ``outer.rollback()`` discards EVERYTHING the test wrote, so the
+    # shared ``meesell_test`` is left byte-clean for the next test.  The audit_mw
+    # ``AsyncSessionLocal`` patch (3a below) binds to the SAME connection + the
+    # SAME savepoint sessionmaker, so audit writes are rolled back too (else they
+    # would leak past the outer rollback).
+    #
+    # LOCAL-DEV GUARD: off-CI the connection is on the ephemeral schema this
+    # fixture just built (drop_all/create_all) and is dropped on teardown — the
+    # outer-rollback leaves that ephemeral DB unchanged; the live dev DB is never
+    # mutated (this fixture only ever touches ``_DEV_DATABASE_URL`` == the test
+    # DB in CI, and an ephemeral local schema off-CI).
+    #
+    # RISK (SQLAlchemy ≥2.0 required for ``join_transaction_mode`` — stack is
+    # 2.0.x): a handler that writes via a RAW connection OUTSIDE the injected
+    # session would escape the savepoint.  Verified by grep that the customer
+    # service layer writes ONLY through the injected AsyncSession (no raw
+    # connection bypass).
+    shared_conn = await engine.connect()
+    outer_txn = await shared_conn.begin()
+    TestSession = async_sessionmaker(
+        bind=shared_conn,
+        expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
+    )
 
     # ── 2. Override FastAPI DI (get_db + get_valkey_otp) ───────────────────
-    valkey_base = os.environ.get("CORE_TEST_VALKEY_URL", "redis://localhost:6379")
+    # CI Gate-4 pass-2 fix: resolve the Valkey base via the shared
+    # ``_valkey_base()`` helper (TEST_VALKEY_URL > VALKEY_URL >
+    # CORE_TEST_VALKEY_URL > redis://localhost:6379, with the trailing
+    # ``/<db>`` suffix stripped so the ``/0`` and ``/3`` appends below never
+    # produce the ``/0/0`` double-suffix trap).  The previous hardcoded
+    # ``redis://localhost:6379`` default ignored CI's TEST_VALKEY_URL/VALKEY_URL
+    # (6381): every /otp/verify reached a refused 6379, so the OTP seed/verify
+    # path failed and the customer routes returned 429 across the suite.
+    valkey_base = _valkey_base()
 
     _otp_clients: list = []
 
@@ -124,15 +185,19 @@ async def customer_client():
         return c
 
     async def _db_override():
-        async with TestSession() as session:
-            try:
-                yield session
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
-            finally:
-                await session.close()
+        # Sessions bind to the shared connection (savepoint mode): a handler
+        # ``commit()`` releases a SAVEPOINT, never the outer transaction.  Do
+        # NOT close the shared connection here — it is owned by the fixture and
+        # rolled back wholesale at teardown.
+        session = TestSession()
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
 
     app.dependency_overrides[get_valkey_otp] = _otp_override
     app.dependency_overrides[get_db] = _db_override
@@ -204,8 +269,26 @@ async def customer_client():
     except Exception:
         pass
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    # SAVEPOINT teardown (CI Gate-4 pass-3): roll back the outer transaction so
+    # every row the test committed (released as savepoints) is discarded → the
+    # shared meesell_test is left byte-clean.  Close the shared connection before
+    # any drop_all / dispose.
+    try:
+        await outer_txn.rollback()
+    except Exception:
+        pass
+    try:
+        await shared_conn.close()
+    except Exception:
+        pass
+
+    # Provision-aware teardown: when CI-provisioned, alembic owns the schema —
+    # dropping it here would wipe the pg_trgm/GIN indexes for the rest of the
+    # session and deadlock against other open transactions.  Only drop when we
+    # created the schema ourselves (laptop / no TEST_DATABASE_URL).
+    if not _provisioned:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()
 
     app.dependency_overrides.pop(get_valkey_otp, None)

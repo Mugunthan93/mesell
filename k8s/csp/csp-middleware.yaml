@@ -1,0 +1,59 @@
+# =============================================================================
+# MeeSell CSP — Traefik Middleware (the ALTERNATIVE mechanism to nginx add_header).
+# SP07 cutover (D42 / C-CSP-1). Author: meesell-infra-builder.
+#
+# ⚠️  THIS IS THE FALLBACK / ALTERNATIVE mechanism. The CHOSEN primary mechanism is
+#     the nginx add_header in the shell image (frontend/docker/nginx.conf.template) —
+#     see docs/plans/infra/SP07_CSP_AND_HOSTING.md §2 for the rationale (the shell
+#     nginx CANNOT reach the API origin's CORS/Set-Cookie, so it is the safest place).
+#
+#     This Middleware is provided because spec §1.2 names it a viable layer and it is
+#     kubectl/Terraform-editable WITHOUT an image rebuild (useful for a hotfix to the
+#     allowlist on dev). It attaches to the SHELL Ingress ONLY (dev.mesell.xyz →
+#     mfe-shell). It MUST NOT be attached to the api.mesell.xyz Ingress.
+#
+# ── ADD-ONLY (spec §1.2 — the R-SP7-1 P0) ──────────────────────────────────────
+#  - This sets EXACTLY ONE response header: Content-Security-Policy, via
+#    `headers.customResponseHeaders`. customResponseHeaders ADDS/SETS the named
+#    header and leaves EVERY other header untouched.
+#  - It does NOT use `customRequestHeaders`, `sslRedirect`, `stsSeconds`,
+#    `frameDeny`, `contentTypeNosniff`, `browserXssFilter`, or any other
+#    `headers` field that would rewrite the broader header set. A broad
+#    "security headers" middleware is FORBIDDEN (it strips CORS / Set-Cookie).
+#  - It is attached to the SHELL host only — the shell host never proxies the API,
+#    so even at the edge it is not in the CORS / refresh-cookie path. The API
+#    (api.mesell.xyz) keeps its own Ingress with NO CSP middleware.
+#
+# DEV-SMOKE FIRST: do NOT attach this (or flip the nginx CSP) on staging/prod until
+# the dev CSP smoke (SP07_CSP_AND_HOSTING.md §3) is GREEN on all three checks.
+# =============================================================================
+---
+# DEV — localhost-served remotes (the smoke surface)
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: csp-shell
+  namespace: dev
+spec:
+  headers:
+    # The ONLY field set. customResponseHeaders ADDS this single header.
+    customResponseHeaders:
+      Content-Security-Policy: "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' http://localhost:4201 http://localhost:4202 http://localhost:4203 http://localhost:4204 http://localhost:4205 http://localhost:4206; connect-src 'self' https://api.mesell.xyz http://localhost:4201 http://localhost:4202 http://localhost:4203 http://localhost:4204 http://localhost:4205 http://localhost:4206; style-src 'self' 'unsafe-inline' http://localhost:4201 http://localhost:4202 http://localhost:4203 http://localhost:4204 http://localhost:4205 http://localhost:4206; font-src 'self' data: http://localhost:4201 http://localhost:4202 http://localhost:4203 http://localhost:4204 http://localhost:4205 http://localhost:4206; img-src 'self' data: http://localhost:4201 http://localhost:4202 http://localhost:4203 http://localhost:4204 http://localhost:4205 http://localhost:4206; base-uri 'self'; object-src 'none'"
+---
+# STAGING — remotes-staging.mesell.xyz off-cluster CDN
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: csp-shell
+  namespace: staging
+spec:
+  headers:
+    customResponseHeaders:
+      Content-Security-Policy: "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://remotes-staging.mesell.xyz; connect-src 'self' https://staging-api.mesell.xyz https://remotes-staging.mesell.xyz; style-src 'self' 'unsafe-inline' https://remotes-staging.mesell.xyz; font-src 'self' data: https://remotes-staging.mesell.xyz; img-src 'self' data: https://remotes-staging.mesell.xyz; base-uri 'self'; object-src 'none'"
+# PROD (remotes.mesell.xyz) Middleware is authored at the V1.5 prod-namespace
+# lighting, NOT now — prod namespace is deferred per master plan §3.1.
+#
+# ATTACH (only after dev smoke GREEN), via the shell Ingress annotation:
+#   traefik.ingress.kubernetes.io/router.middlewares: dev-csp-shell@kubernetescrd
+# (format is <namespace>-<middleware-name>@kubernetescrd). Apply per playbook §15
+# [MANDATORY GATE]: kubectl apply --dry-run=server MUST pass before the real apply.

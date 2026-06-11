@@ -3,6 +3,255 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-11
 
+=== UPDATE: 2026-06-11 — SP07 cutover Phase A+B COMPLETE ===
+Phase: MF Sub-Plan 07 — D43 shell relocation + D44 manifest + CSP smoke harness
+Session: mesell-mfe-cutover-frontend-session-1 (meesell-angular-component-builder)
+Agent: meesell-angular-component-builder (sonnet)
+Branch: feature/mfe-cutover/frontend @ b316e00 (Phase A) + 0c17aa0 (Phase B) — PUSHED
+
+Done:
+  PHASE A — D41 confirm + D43 relocation + A9 build checkpoint
+    D41 CONFIRMED (no churn):
+      - ZERO loadComponent.*features in app.routes.ts
+      - features/ ABSENT (already removed by SP01-06)
+      - load-remote.ts + remote-failure.component.ts RETAINED (host concerns, STAY)
+    D43 RELOCATED (21 git mv R100 byte-identical):
+      - frontend/src/**       -> frontend/apps/shell/src/**
+      - frontend/public/**    -> frontend/apps/shell/public/**
+      - frontend/federation.config.js -> frontend/apps/shell/federation.config.js
+    angular.json touchpoints (EXHAUSTIVE per spec A3/A6):
+      - frontend project: root=apps/shell, sourceRoot=apps/shell/src
+      - esbuild: browser/tsConfig/assets.input/styles[0] all re-pointed
+      - test include globs recomputed for cwd=apps/shell/src:
+        ['**/*.spec.ts','../../../libs/**/*.spec.ts','../../**/*.spec.ts']
+      - ALL 7 src/styles.css -> apps/shell/src/styles.css confirmed (grep -c = 0 remaining)
+    apps/shell/tsconfig.app.json CREATED (mirrors mfe-pricing shape, extends ../../tsconfig.json)
+    tsconfig.json references: ./tsconfig.app.json -> ./apps/shell/tsconfig.app.json
+    tsconfig.spec.json include: dropped src/** terms; apps/** covers apps/shell/** post-move
+    root tsconfig.app.json DELETED (now unreferenced)
+    styles.css @source/@import re-pointed:
+      @import "../libs/..." -> @import "../../../libs/..."
+      @source "../libs" -> @source "../../../libs"
+      @source "../apps" -> @source "../.." (correct for apps/shell/src/ cwd)
+
+  PHASE B — D44 manifest templates + CSP smoke harness
+    D44: federation.manifest.staging.json + federation.manifest.prod.json AUTHORED
+      - dev: localhost:420{1-6} UNCHANGED
+      - staging: remotes-staging.mesell.xyz/{ENV}/mfe-*/{VERSION}/remoteEntry.json
+      - prod: remotes.mesell.xyz/{ENV}/mfe-*/{VERSION}/remoteEntry.json
+      - {VERSION} is exact build hash — NEVER 'latest' (verified: git grep -i latest = ZERO)
+    CSP smoke harness: apps/shell/src/app/core/csp-smoke.spec.ts
+      - 3 describe blocks: success-path (9 tests), D12-fallback (3 tests), manifest-completeness (2 tests)
+      - HIGH-STAKES surfaces: mfe-dashboard LandingComponent (R-SP4-5) + mfe-auth LoginComponent (R-SP6-6)
+      - All 6 remotes covered; D12 fallback tested; manual smoke procedure documented (8 steps)
+
+Build (A9 checkpoint):
+  shell (frontend): GREEN 2.654s, initial 134.60 kB, styles.css 24.10 kB
+  mfe-auth: GREEN 2.763s, styles.css 24.10 kB in dist (A6 re-point confirmed)
+  mfe-pricing: GREEN 2.723s, styles.css 24.10 kB in dist (A6 re-point confirmed)
+
+Tests (A9 + Phase B):
+  Phase A gate: 44 spec files / 416 tests / 0 fail / 0 skip (exact SP06 baseline)
+  Phase B final: 45 spec files / 430 tests / 0 fail / 0 skip (+1 csp-smoke file, +14 tests)
+
+Commits:
+  b316e00 — Phase A (D41 confirm + D43 relocation + A9 build gate)
+  0c17aa0 — Phase B (D44 manifests + CSP smoke harness)
+
+Blockers: none — STOP for lead review per spec Phase C
+Next: lead runs Gate-4 discharge + §5.1 audit + opens group PR frontend->integration
+Hand-offs: meesell-frontend-coordinator (lead)
+  - Branch: feature/mfe-cutover/frontend @ 0c17aa0 (PUSHED to origin)
+  - Integration branch: feature/mfe-cutover/integration (PUSHED, off origin/develop@be2a888)
+  - Phase A evidence: 21 R100 renames, 7 styles refs updated, test glob recomputed
+  - Phase B evidence: 2 manifest templates (no 'latest'), CSP smoke 14 tests GREEN
+  - STOP conditions hit: NONE
+  - Deviations from spec: NONE
+=========
+
+=== UPDATE: 2026-06-11 14:55 — smart-picker-wiring Phase A COMPLETE ===
+Phase: smart-picker-wiring — D4 rename + SmartPickerComponent §9.E/D1 contract fix
+Session: mesell-smart-picker-port-frontend-session-1 (meesell-angular-component-builder)
+Agent: meesell-angular-component-builder (sonnet)
+Branch: feature/smart-picker-wiring/frontend (off feature/smart-picker-wiring/integration off origin/develop@e4c77de)
+Worktree: /private/tmp/mesell-wt/smart-picker-wiring
+
+Done:
+  Commit #1 (7866499): D4 git mv — catalog-new/ -> smart-picker/ (4 files, ALL R100)
+    - apps/mfe-catalog/src/app/catalog-new/ -> apps/mfe-catalog/src/app/smart-picker/
+    - catalog-new.component.ts -> smart-picker.component.ts
+    - catalog-new.component.spec.ts -> smart-picker.component.spec.ts
+    - services/smart-picker-api.service.ts -> services/category.service.ts
+    - smart-picker.model.ts stays (already correctly named)
+    - git log --follow traces to pre-rename history (SP05 commit f11d0bf visible)
+  Commit #2 (09af9db): SmartPickerComponent §9.E/D1 contract fix + specs
+    - SmartPickerComponent: class renamed, selector app-smart-picker, MeeTreeSelect+SIMULATED_TREE REMOVED
+    - Reactive form 10-500 chars, debounce(400)+distinctUntilChanged+filter+switchMap
+    - signals: loading, suggestions (CategorySuggestion[]), fallbackOffered
+    - Top-3 only (slice(0,3)). fallback+empty -> EmptyStateComponent CTA. fallback+non-empty -> secondary link
+    - CategoryCardComponent (NEW): input.required suggestion, confidence*100 display, reasons slice(0,3), NO commission_pct
+    - smart-picker.model.ts: §9.E-locked interfaces (CategorySuggestion + SuggestResponse, no commission_pct, confidence 0-1)
+    - CategoryService: renamed from SmartPickerApiService; §9.E-shaped simulated stub; selectCategory+browseRedirect stubs
+    - catalog.routes.ts: import path updated to smart-picker/smart-picker.component; all 5 routes preserved (R-SP3-1)
+    - Specs: smart-picker.component.spec.ts (29 tests) + category-card.component.spec.ts (15 tests) = 44 new tests PASS
+
+Build:
+  - mfe-catalog remote: GREEN 2.742s — chunk renamed smart-picker-component, 5 lazy chunks confirmed
+  - shell (frontend): GREEN 2.807s (<=90s D12 PASS)
+  - tsc --noEmit (app + spec tsconfigs): CLEAN (0 errors)
+
+Tests:
+  - 44 spec files total (was 43 baseline — +1 category-card.component.spec.ts)
+  - 229 tests PASS (new: 44 smart-picker tests, all passing)
+  - 36 pre-existing FAIL in src/ tree (stale @mesell/composites/@mesell/core imports from pre-MFE extraction — unchanged from develop baseline)
+  - smart-picker + category-card specs: 44/44 PASS
+  - mfe-catalog suite: 5 files / 142 tests PASS
+
+Boundary: grep primeng in apps/mfe-catalog = ZERO
+commission_pct: absent from all live code (only in spec assertions + JSDoc comments)
+MeeTreeSelect/SIMULATED_TREE: fully removed from smart-picker
+CATALOG_ROUTES: 5 lazy targets preserved (R-SP3-1 compliant)
+
+Blockers: none
+Next: service-builder Phase B — rewrite CategoryService.suggest/selectCategory/browseRedirect with real HttpClient; verify §9.E model unchanged
+Hand-offs: meesell-angular-service-builder
+  - Branch: feature/smart-picker-wiring/frontend @ 09af9db (PUSHED)
+  - Worktree: /private/tmp/mesell-wt/smart-picker-wiring
+  - CategoryService is at apps/mfe-catalog/src/app/smart-picker/services/category.service.ts
+  - Method signatures: suggest(description: string): Observable<SuggestResponse>
+    selectCategory(categoryId: string): Observable<{id: string}>; browseRedirect(): void
+  - §9.E model is at apps/mfe-catalog/src/app/smart-picker/smart-picker.model.ts (field-for-field locked)
+  - DO NOT touch smart-picker.component.ts / category-card.component.ts / spec files
+  - DO NOT touch frontend/src/app/app.config.ts (per hard constraint)
+=========
+
+
+=== UPDATE: 2026-06-11 — SP06 mfe-auth Phase A+B COMPLETE ===
+Phase: MF Sub-Plan 06 (F2 login + F3 signup + F4 otp-verify → mfe-auth remote, port 4206, SIXTH/FINAL extraction)
+Session: mesell-mfe-auth-frontend-session-1 (meesell-angular-component-builder, Phase A+B only)
+Agent: meesell-angular-component-builder (sonnet)
+
+Done:
+  - Branches: feature/mfe-auth/integration (cut from origin/develop@34d8b47) + feature/mfe-auth/frontend
+  - F3 protection applied to feature/mfe-auth/integration (force-push off, deletions off, review-count 0)
+  - Worktree: /private/tmp/mesell-wt/sp06-frontend at feature/mfe-auth/frontend@9249da8
+  - 6 git mv (ALL R100 blob-hash-identical): login.ts+spec, signup.ts+spec, otp-verify.ts+spec
+    src/app/features/auth/ → apps/mfe-auth/src/app/ (otp-verify/ subdir FLATTENED per spec)
+  - D39 NO-OP verified: ALL 3 pages already @mesell/composites (login L10, signup L10, otp L11)
+    grep "layouts/auth-layout" apps/mfe-auth/ = ZERO; all 3 show @mesell/composites — no edit needed
+  - 4 new files: federation.config.js (3 exposes + shareAll + @mesell/core), main.ts (R-SP3-1 all 3 routes),
+    index.html (<mee-login>), tsconfig.app.json (extends ../../tsconfig.json)
+  - 4 shared-file edits: app.routes.ts (3 public routes → loadRemoteWithFallback, NO guard D37),
+    federation.manifest.json (6th entry mfe-auth:4206, COMPLETE topology), angular.json (mfe-auth block
+    port 4206 × 2), package.json (start:mfe-auth script)
+  - Commit: 9249da8 on feature/mfe-auth/frontend (PUSHED to origin)
+
+Phase A+B Validation:
+  - mfe-auth remote build: GREEN 2.965s — name=mfe-auth; exposes=[LoginComponent,SignupComponent,OtpVerifyComponent]; @mesell/core in shared[161] (C2 singleton non-drift)
+  - Shell build: GREEN 3.121s (≤90s D12 PASS) — auth chunks GONE from shell dist (strangler shrink; only shell-component+bootstrap lazy chunks remain)
+  - Tests: 43 spec files / 411 passed / 0 failed / 0 skipped (Phase B gate = 43 PASS)
+  - Auth spec discovery: spec-apps-mfe-auth-src-app-otp-verify.component ✓, spec-apps-mfe-auth-src-app-signup.component ✓, spec-apps-mfe-auth-src-app-login.component ✓
+  - Boundary: grep "from 'primeng" apps/mfe-auth/ = ZERO ✓
+  - D39 grep: grep "layouts/auth-layout" apps/mfe-auth/ = ZERO ✓; all 3 @mesell/composites ✓
+  - Move integrity: git diff -M --summary shows 6× R100 rename (100% similarity, blob-hash-identical)
+  - Manifest: SIX entries (complete MASTER_PLAN §2.2 topology) ✓
+  - Wildcard: { path:'**', redirectTo:'login' } UNCHANGED ✓
+  - Port 4206 in angular.json: serve.options.port=4206 AND serve-original.options.port=4206 ✓
+  - @source "../apps" in styles.css (pre-existing L24) — RE-CONFIRMED ✓
+  - tsconfig.spec.json apps/**/*.spec.ts (pre-existing) — RE-CONFIRMED ✓
+  - D12 fallback: loadRemoteWithFallback reused (NOT re-authored); load-remote.spec.ts in test suite ✓
+  - AuthService: git diff libs/core/services/auth.service.ts = EMPTY (D22 C2 — ZERO change) ✓
+
+In progress: none (Phase A+B complete)
+Blockers: none
+Next: meesell-angular-service-builder runs Phase C (C4 WRITE-path smoke test auth-write.smoke.spec.ts)
+  on SAME branch feature/mfe-auth/frontend; Phase B gate = 43 spec files, Phase C gate = 44
+STOP conditions hit: NONE
+Deviations from spec: ZERO
+  (Note: develop tip is 34d8b47 = 90e3f0e + 1 additive test-markers commit, not a stop condition)
+Hand-offs: meesell-angular-service-builder — Phase C: C4 WRITE-path smoke test on feature/mfe-auth/frontend@9249da8
+  Worktree /private/tmp/mesell-wt/sp06-frontend; pnpm already installed; Phase B baseline 43/411
+
+=== UPDATE: 2026-06-11 — SP06 mfe-auth Phase C COMPLETE (C4 WRITE-path go/no-go: PASS) ===
+Phase: MF Sub-Plan 06 Phase C — C4 WRITE-path singleton smoke test (auth WRITE go/no-go)
+Session: mesell-mfe-auth-frontend-session-2 (meesell-angular-service-builder, Phase C only)
+Agent: meesell-angular-service-builder (sonnet)
+
+Done:
+  - Authored: frontend/apps/mfe-auth/src/app/auth-write.smoke.spec.ts (5 tests, 0 failures)
+  - Tests (5): C4-pre (guard blocks pre-write), C4-instance (single instance), C4 CRUX (WRITE proof),
+    C4-abort (no-op on <6 chars), C4-timer (setInterval cleared on destroy)
+  - Commit: 6e5ec46 on feature/mfe-auth/frontend (PUSHED to origin)
+  - git diff auth.service.ts = EMPTY (D22 C2 — ZERO AuthService changes) CONFIRMED
+
+Phase C Validation:
+  C4 WRITE-path result: PASS
+  - Unauthenticated start: shellAuth.isAuthenticated()===false, authGuard returns UrlTree to /login (BLOCKED)
+  - Instance proof: comp['auth'] === TestBed.inject(AuthService) === shellAuth (same object reference)
+  - Trigger WRITE: otpValue='123456', onSubmit(), vi.advanceTimersByTime(1500) flushes setTimeout
+  - Post-write: shellAuth.isAuthenticated()===true, currentUser().name==='Seller',
+    currentUser().id===1, getToken()==='mock-token'
+  - Guard post-write: authGuard returns true (=== true, not UrlTree) — /dashboard UNBLOCKED
+
+  Full suite (Phase C gate = 44):
+    Test Files: 44 passed (44) — GATE PASS (was 43 pre-Phase-C)
+    Tests: 416 passed (416) — 0 failed, 0 skipped
+    C4 spec discovered as: spec-apps-mfe-auth-src-app-auth-write.smoke
+
+  C2 no-duplicate-auth.service chunk:
+    remoteEntry.json: name=mfe-auth; exposes=[./LoginComponent, ./SignupComponent, ./OtpVerifyComponent]
+    @mesell/core in shared[161]: outFileName=_mesell_core.js, singleton=true, strictVersion=false
+    EXACTLY ONE _mesell_core.js chunk in dist/mfe-auth/browser/
+    AuthService class body (signal(), setSession(), providedIn:root) IN _mesell_core.js ONLY
+    OtpVerifyComponent.js: import statement + inject() call ONLY (no class body duplication)
+    C2 verdict: PASS — singleton non-drift confirmed statically
+
+  COMPLETE 6-remote topology milestone: ALL 6 remotes (mfe-pricing:4201, mfe-export:4202,
+    mfe-onboarding:4203, mfe-dashboard:4204, mfe-catalog:4205, mfe-auth:4206) extracted and
+    tested. The MASTER_PLAN §2.2 complete topology is live on feature/mfe-auth/frontend@6e5ec46.
+
+STOP conditions hit: NONE (no AuthService edit, C4 passed, @mesell/core in shared, test count ≥44)
+Deviations from spec: ZERO
+  Note: fakeAsync+tick unavailable (no Zone.js) — used vi.useFakeTimers()+vi.advanceTimersByTime()
+  per established pattern in profile.component.spec.ts. C4-timer test creates fresh component inside
+  fake-timer scope (real timers in beforeEach, fake timers scoped to the test to avoid interference).
+
+Hand-offs:
+  meesell-frontend-coordinator (lead): Phase C complete. Branch feature/mfe-auth/frontend@6e5ec46
+  ready for lead's merge gate:
+    1. Squash-merge feature/mfe-auth/frontend → feature/mfe-auth/integration
+    2. Reset --hard origin/integration THEN merge origin/develop (SP02 stale-integration gotcha)
+    3. Re-certify builds+tests on merged tip (union-merge of 4 shared files if develop moved)
+    4. Open founder-gate PR [FOUNDER GATE — DO NOT MERGE] with §4.B scorecard
+  C4 spec target: apps/mfe-auth/src/app/auth-write.smoke.spec.ts (or auth-singleton-write.smoke.spec.ts)
+  Test count after Phase C: 44 spec files (net +1)
+=========
+
+=== UPDATE: 2026-06-11 — Smart-Picker frontend MERGE-GATE (HYBRID step 3) — VERDICT: REJECT ===
+Phase: V1 Feature 2 Smart Category Picker — frontend group slice
+Session: mesell-smart-picker-frontend-session-1 (lead merge-gate review)
+Board sweep: smart-picker moved Active->Recently-merged (CLOSED-OBSOLETED). No active frontend features. 5 infra inter-lead rows OPEN (SP01/02/03/05 hosting + CI-matrix) — all within 48h SLA (opened 2026-06-10/11). No 7+ day stale rows.
+Gate items re-run BY LEAD in worktree /tmp/mesell-wt/smart-picker-frontend (did NOT trust specialist reports):
+  1. Diff review (merge-base ba94543..HEAD): EXACT 14-file in-scope diff — features/smart-picker/** (8 files), app.config.ts (+7, provideHttpClient only), app.routes.ts (4 lines, /catalogs/new import), STATUS_FRONTEND.md, flagged 2-line spec fixup. NO out-of-scope files in MY commits. PASS.
+  2. Build: `ng build --configuration=production` = 3.297s (<<90s D12). Initial total 60.80 kB / 18.48 kB transfer; smart-picker-component lazy chunk 9.57 kB raw / 2.81 kB transfer (stayed lazy). PASS. (Note: first piped run STALLED at stats-emit under CPU contention from a sibling SP04 build — re-ran isolated, clean.)
+  3. Tests: 44 files / 439 PASS / 0 fail / 0 skip = EXACT baseline. All 3 smart-picker specs discovered (component/category-card/category.service). PASS.
+  4. tsc --noEmit on tsconfig.app.json + tsconfig.spec.json = 0 errors (strict intact). PASS.
+  5. Greps: primeng/material in features/smart-picker/ = 0; localStorage/sessionStorage = 0 (only a 'never localStorage' comment); commission_pct = 0 real usages (all negative assertions). PASS.
+  6. Flagged cross-slice fixup (service-builder touched category-card.component.spec.ts): RULED ACCEPT-AS-NECESSARY — exactly 2 lines, identical `vi.fn<[string],void>()`->`vi.fn<(id:string)=>void>()` Vitest-3->4 annotation fix at lines 99+112, zero behavioral change, was blocking compilation of ALL specs. Within scope-of-necessity.
+  7. D4 rename completeness: git-mv history-preserving CONFIRMED — first commit 4196125 shows R022 catalog-new.component.ts->smart-picker.component.ts (low similarity due to legit scaffold->feature rewrite, still a true git mv) + R100 on the spec; `git log --follow` on the spec traces to pre-rename 7001b44. D4 satisfied.
+  8. Reconciliations: (1) commission_pct truly ABSENT (model has only the 7 §9.E fields, confidence 0-1 float); (2) provideHttpClient(withFetch()) added CLEANLY, NO interceptor invented (withInterceptors appears only in a deferral comment, 0 interceptor files). Both PASS.
+BLOCKING FINDING (gate verdict REJECT): BASE DIVERGENCE / SUPERSESSION. The branch was cut from ba94543 (pre-SP05) where smart-picker was a SHELL feature (frontend/src/app/features/catalog-new/). BETWEEN dispatch and gate:
+  - SP05 mfe-catalog (group PR #77 -> founder gate #82) RELOCATED smart-picker/catalog-new into the mfe-catalog Native-Federation REMOTE (frontend/apps/mfe-catalog/src/app/catalog-new/), DELETED the shell features/catalog-new/, and REPLACED the shell /catalogs/new loadComponent with `loadChildren: loadRemoteRoutesWithFallback('mfe-catalog','./CatalogRoutes')`.
+  - origin/feature/smart-picker/integration ADVANCED from ba94543 to 4ff7c65 (merged develop+#82+#57+#59 in). Only 2 of my files overlap integration's new work (app.routes.ts, STATUS_FRONTEND.md) BUT app.routes.ts conflict is FATAL: the route my slice edits no longer exists in the shell.
+  - FOUNDER MERGED founder-gate PR #55 (smart-picker integration->develop @ 4ff7c65, merge 25882a47) at 03:44 UTC — the FEATURE shipped to develop, but via the SP05/REMOTE implementation (catalog-new.component.ts in apps/mfe-catalog, D4 rename NOT applied there), NOT via my shell-based group slice.
+Consequence: pushing/merging my branch would resurrect a deleted shell dir + removed route and create a DUPLICATE smart-picker (shell + remote), breaking strangler-fig. So: branch LEFT UNPUSHED; NO group PR opened; NO merge. Specialist work is internally CLEAN — the failure is sequencing/base-divergence, not code quality; NOT a candidate for same-work re-dispatch.
+Done: full independent gate re-run (build/test/tsc/grep/diff); fixup + D4 + reconciliation rulings recorded; board Active->Recently-merged (CLOSED-OBSOLETED); #55 escalation comment posted.
+In progress: none.
+Blockers: founder reconciliation needed — are the shell-rename (D4) + provideHttpClient deltas (a) moot because the mfe-catalog remote already serves /catalogs/new, or (b) need re-application onto apps/mfe-catalog (D4 rename of catalog-new->smart-picker INSIDE the remote + provideHttpClient + CategoryService HTTP wiring there)? This is a NEW slice against a NEW base (apps/mfe-catalog), not a re-run of the rejected shell slice.
+Next: founder rules on (a)/(b) above; if (b), open a fresh feature targeting apps/mfe-catalog on a develop-based branch.
+Hand-offs: none new (escalation is founder-direct via #55 comment).
+=========
+
 === UPDATE: 2026-06-11 — SP04 mfe-dashboard MERGE-GATE (HYBRID step 3) ===
 Phase: MF Sub-Plan 04 (F1 landing PUBLIC + F6 dashboard AUTH → mfe-dashboard remote, port 4204)
 Session: mesell-mfe-dashboard-frontend-session-1 (lead merge-gate review)
@@ -19,8 +268,18 @@ Done:
   - Infra memo handoff_mf_dashboard_deploy.md (D29 4th-remote hosting; first PUBLIC-route remote, highest-stakes CSP → SP07). Board inter-lead row OPEN (48h SLA).
 In progress: none (gate closed)
 Blockers: none
-Founder gate: PR #86 [FOUNDER GATE — DO NOT MERGE] integration→develop OPENED + LEFT OPEN (full §9.A scorecard). Lead does NOT approve (D1).
-Next: founder reviews/merges #86 (+ #82 SP05, #61/#68 Wave 1, #55 smart-picker). On smart-picker step-3: heed the SP05-relocation sequencing conflict (catalog-new tree moves to apps/mfe-catalog once #82 merges).
+Founder gate: PR #86 [FOUNDER GATE — DO NOT MERGE] integration→develop OPENED + LEFT OPEN (full §9.A scorecard). Lead did NOT approve (D1).
+=========
+
+=== UPDATE: 2026-06-11 — SP04 LANDED ON DEVELOP + keep-both reconciliation ===
+Phase: MF Sub-Plan 04 closeout (post founder-merge)
+Session: mesell-mfe-dashboard-frontend-session-1
+Done:
+  - FOUNDER MERGED founder-gate PR #86 (merge 90e3f0e) — SP04 mfe-dashboard IS ON DEVELOP. Also merged #82 (SP05), #68 (SP03), #61 (SP02), #55 (smart-picker integration). No open frontend founder gates remain.
+  - KEEP-BOTH: between gate-open and merge, the founder merged SP05 (#82) → develop gained mfe-catalog (port 4205), so the SP04 integration branch (built on pre-#82 develop) would have CONFLICTED on the 4 shared frontend files. Lead independently performed the keep-both refresh (worktree sp04-refresh, commit de7a01d): manifest/package.json/angular.json keep-both (all 5 remotes coexist, dashboard 4204 + catalog 4205); app.routes.ts auto-merged cleanly (dashboard '' + /dashboard AND catalog loadChildren ./CatalogRoutes). Both remote builds GREEN (dashboard 2.816s / catalog 3.132s); shell GREEN 3.188s / 60.59 kB; tests 43 files / 411 tests, 0 fail/0 skip (SP05-inclusive baseline; SP04 adds 0 specs). All JSON valid; 0 conflict markers.
+  - The founder had ALSO resolved the same union (958a9dd "5 remotes coexist") and merged it via #86 BEFORE my refresh push landed. Lead resolution matched founder's on app.routes.ts; the 3 JSON files differ only in remote ORDER (semantically identical). Founder's 90e3f0e is authoritative on develop; my de7a01d was redundant. Deleted the merged integration branch (gh api).
+Blockers: none
+Next: smart-picker step-3 — heed SP05-relocation sequencing (#55 + #82 now BOTH on develop; catalog-new tree has moved to apps/mfe-catalog). All 5 SP remotes (pricing/export/onboarding/catalog/dashboard) live on develop; SP06 mfe-auth (apps under feature/mfe-auth/frontend worktree) is the next/last extraction.
 =========
 
 === UPDATE: 2026-06-11 09:00 — SP04 mfe-dashboard extraction ===
@@ -5394,4 +5653,112 @@ Hand-offs:
   - CategoryService.suggest(), .selectCategory(), .browseRedirect() ready for real HTTP use
   - SmartPickerComponent can subscribe to CategoryService.suggest() — no simulated delay
   - provideHttpClient(withFetch()) wired at root — ALL features can now inject HttpClient
+=========
+
+=== UPDATE: 2026-06-11 (SP07 cutover — both group PRs lead-gated to integration) ===
+Phase: MF Sub-Plan 07 CUTOVER (the CLOSER) — feature mfe-cutover
+Session: mesell-mfe-cutover-frontend-session-1
+Board sweep: Active=0 (mfe-cutover groups moved to Recently merged); 7 inter-lead rows OPEN (6 prior RECORD-ONLY hosting + 1 new SP07 consolidated). None stale (all touched 2026-06-11).
+Done:
+  - HYBRID step 1: authored spec_sp07_frontend.md + spec_sp07_infra.md (founder rulings D42/D43 baked in).
+  - HYBRID step 2 (parallel lanes): frontend specialist relocated shell src/->apps/shell/ (D43) + manifest pinning (D44) + CSP smoke harness; infra lane delivered CSP mechanism + CI matrix + hosting work-package (PR #99).
+  - HYBRID step 3 (lead merge gate, D1): corrected PR #99 base develop->integration; opened + lead-gated frontend PR #100; merged BOTH group PRs into feature/mfe-cutover/integration (frontend 6ee1127, infra 0be677c). Integration tip 0be677c.
+  - Independent skeptical-lead verification (worktree sp07-frontend, 0 discrepancies): ng build frontend 3.205s/60.64 kB; ng test 45 files/430 tests 0 fail/skip; 20×R100+1×R77 moves; 7/0 styles refs; no 'latest'; boundary 0; CSP ADD-ONLY confirmed (nginx off /api path, Middleware one-header).
+In progress:
+  - none (build-machine work done).
+Blockers:
+  - Phase C live federated CSP smoke (A remote-load / B 401->refresh->retry+Set-Cookie / C CORS) BLOCKED on a reachable dev environment + the joint backend refresh-flow check.
+  - 6-condition Gate-4 discharge BLOCKED on infra hosting surface (which is behind the FOUNDER COST GATE) + cluster reachability.
+Next:
+  1. (founder) sign off the D13 hosting cost (~₹1,600-1,800/mo) so infra can provision GCS/CDN/LB.
+  2. (lead, when dev env reachable) run Phase C live CSP smoke + collate the 6 Gate-4 evidence rows.
+  3. (lead) Phase D §5.1 repo-management compliance audit (convention-fit + agent-obedience across SP00-07) -> STATUS_FRONTEND + STATUS_MASTER.
+  4. (lead) escalate the FRONTEND_ARCHITECTURE.md §2 apps/shell topology doc-sync to founder (§7.3).
+  5. (founder) integration->develop gate (NOT the lead's) after Phase C/D -> migration COMPLETE.
+Hand-offs:
+  - handoff_mf_cutover.md -> infra (CSP mechanism resolved via #99; hosting + Gate-4 pending cost gate). Board inter-lead row OPEN.
+  - backend: lightweight verification of the 401->refresh->retry + Set-Cookie non-regression WITH CSP active (Phase C, joint).
+=== UPDATE: 2026-06-11 (smart-picker-wiring PORT MERGE-GATE — HYBRID step 3) ===
+Phase: V1 F2 Smart Category Picker — frontend HTTP wiring (/catalogs/new in mfe-catalog remote)
+Session: mesell-smart-picker-port-session-1 (gate; specialists ran mesell-smart-picker-port-frontend-session-1 Phase A + session-2 Phase B)
+Routes touched: /catalogs/new (SmartPickerComponent, lazy via CATALOG_ROUTES './new'); root wiring app.config.ts + apps/mfe-catalog/src/main.ts
+Specialists: meesell-angular-component-builder (Phase A: D4 rename + §9.E model + component/card) + meesell-angular-service-builder (Phase B: HTTP CategoryService + provideHttpClient)
+
+Board sweep (session start + end): Active features table now EMPTY (smart-picker-wiring was the only Active row → flipped to Recently merged). NO rows untouched 7+ days (all activity is 2026-06-11). Inter-lead requests open: none new. Recently-merged table carries SP01-07 + smart-picker-wiring (all <14 days).
+
+GATE VERDICT: PASS. Independently re-ran every gate in worktree /private/tmp/mesell-wt/smart-picker-wiring — 0 discrepancies vs specialist reports.
+Done:
+  - Diff scope CLEAN (14 files, all in-scope: smart-picker/** + catalog.routes.ts + main.ts + app.config.ts provideHttpClient-only + catalog-new delete side of D4 rename)
+  - Builds: mfe-catalog GREEN 2.982s / shell GREEN 2.955s (≤90s D12)
+  - Tests: CI=true ng test frontend = 45 files / 444 tests / 0 fail / 0 skip; tsc app+spec EXIT 0
+  - Greps: primeng 0 / localStorage 0 / commission_pct 0 (only doc-comment hits)
+  - §9.E model no-drift (7 fields, confidence 0.0-1.0, no commission_pct, suggestions 0..5); confidence ×100 display-only
+  - D4 rename trace: git log --follow → SP05 #77 → SP0 #40; commit 7866499 = 4× R100
+  - §6.G singleton PASS (P0): _mesell_core.js defines AuthService ONCE, 0 inline copies in smart-picker chunk, @mesell/core in remoteEntry shared[] — FIRST mfe-catalog AuthService consumer, no drift
+  - R-SP3-1: all 5 CATALOG_ROUTES lazy targets emit chunks; main.ts routes full set
+  - Bundle ruling ACCEPT: +10.49 kB shell initial (→134.94 kB) = one-time provideHttpClient infra, shared by all features
+  - PR template complete (no <> placeholders); gate decision posted as #98 comment
+  - Squash-merged #98 (c5bf304); deleted remote head ref; removed worktree
+  - Merged develop into integration (a1f8ebf, SP06 mfe-auth, conflict-free); re-certified merged tip 46 files/449 tests 0 fail
+  - Opened founder-gate PR #101 [FOUNDER GATE — DO NOT MERGE] integration→develop — LEFT OPEN (D1, not lead's gate)
+In progress: none
+Blockers: none
+Next: founder reviews/merges #101 (integration→develop). Feature-level follow-ups (NOT this slice): integration tests vs real backend §2.2, FEATURE_SMART_PICKER_ENABLED ConfigMaps (infra), GEMINI_API_KEY live evals (ai), selectCategory 422 (V1.5).
+Hand-offs:
+  - none new this gate. The §9.E contract is now consumed by a real HTTP service — if backend changes the shape, smart-picker.model.ts is the ONLY file to reconcile.
+=========
+
+=== UPDATE: 2026-06-11 ===
+Phase: MF Sub-Plan 07 CUTOVER — CLOSE-OUT (Phase D §5.1 compliance audit + 2 founder-approved doc edits + founder gate). THE FEDERATION PROGRAM IS COMPLETE.
+Session: mesell-mfe-cutover-closeout-session-1
+Board sweep (session start + end): Active features table EMPTY (no IN PROGRESS rows — SP07 is a lead-owned closeout, no specialist dispatch). NO rows untouched 7+ days (all activity 2026-06-11). Inter-lead requests open: SP07 infra row UPDATED (cost gate DISCHARGED per D13-HOSTING ruling; provisioning + live smoke carried to cutover week — stays OPEN until provisioned). Recently-merged carries SP00-07 + smart-picker-wiring (all <14 days).
+
+TWO FOUNDER RULINGS LANDED + EXECUTED (2026-06-11 evening):
+  1. §7.3 LOCKED-doc amendment APPROVED → FRONTEND_ARCHITECTURE.md §2 as-built sync DONE (additive).
+  2. SP07 CLOSE-OUT APPROVED → Phase C (live dev CSP smoke) + 6-condition Gate-4 hosting discharge formally CARRIED to cutover week (consistent w/ D42 CSP-activates-on-deploy + D13-HOSTING locked ruling). Founder gate opens NOW after the §5.1 audit.
+
+V1 ROUTES / SPECIALISTS THIS TASK TOUCHES: this is a lead-owned CLOSER (audit + docs + merge gate) — NO V1 feature routes change, NO specialist dispatch. The audit spans all 10 V1 routes (now served by the 6 remotes). Specialists: NONE (Phase D + doc edits + gate are lead-owned per SP07 §lineup).
+
+Done:
+  - Phase D §5.1 COMPLIANCE AUDIT (D46 — the founder-mandated COMPLETION CRITERION): authored docs/plans/module_federation/COMPLIANCE_AUDIT.md. Per-sub-plan verdict SP00-07 ALL PASS. (a) convention-fit HELD (Model C maps onto remote topology; F1 integration-layer uniform+founder-gated; NO repo-mgmt amendment). (b) agent-obedience HELD (worktree isolation / file allowlists / escalate-not-improvise on LOCKED doc / board D2 discipline / iteration caps). Evidence chain intact (boundary 0, singleton loop closed C2/C4/C5, 45/430 tests, build ≤90s, no 'latest'). 5-item carried register (Phase C live CSP smoke, Gate-4 hosting discharge, D13 provisioning, D33 Wave-6 promotion, R-SP6-6 public-surface CSP).
+  - §2 DOC AMENDMENT (ruling 1): FRONTEND_ARCHITECTURE.md — ADDITIVE as-built federated topology (apps/shell + apps/mfe-* 6 remotes + libs/ + port registry 4200-4206 + version-pinned staging/prod manifest) + @mesell/* alias block + revision-history table. Stamped "founder-approved §7.3 amendment 2026-06-11". NO design changes.
+  - D13-HOSTING RULING STAMP (ruling 3): SP07_CSP_AND_HOSTING.md §5 — verbatim locked ruling (design approved; provisioning deferred to cutover week; cost gate discharged; notification-only at provisioning).
+  - MASTER_PLAN §5 row 7 DONE + §10 revision row + footer "COMPLETE".
+  - Closeout commit 28239ae on integration; merged origin/develop into integration CONFLICT-FREE (d007d95; develop advance = docs/status/memory/backend-test only, ZERO frontend build-file overlap).
+  - RE-CERTIFIED on merged tip d007d95 (skeptical-lead, ran build+full-suite+boundary): shell build 4.001s ≤90s/initial 60.64 kB; mfe-pricing 2.508s + mfe-auth 3.352s GREEN w/ dist styles 18.9 kB (A6/A7 confirmed); 45 files/430 tests 0 fail/0 skip; boundary 0; no 'latest' in any manifest URL.
+  - OPENED FOUNDER GATE PR #105 [FOUNDER GATE — DO NOT MERGE] "SP07 cutover — FEDERATION PROGRAM COMPLETE" (integration→develop) with full evidence (45 files/430 tests, both group merges, audit verdict, carried-items register) — LEFT OPEN, review=REVIEW_REQUIRED, NOT lead-approved (D1).
+In progress: none
+Blockers: none (the carried items are deploy-week, NOT blockers — the §5.1 audit EXECUTION is the completion criterion per R-SP7-5/R-SP7-4).
+Next: founder reviews/merges #105 (integration→develop) → migration lands on develop. Cutover-week worklist (carried, surfaced to founder): Phase C live dev CSP smoke (A/B/C incl 401→refresh→retry+Set-Cookie + CORS, joint w/ backend+infra) + Gate-4 6-condition discharge + D13 hosting provisioning (notification-only, cost gate discharged) + R-SP6-6/R-SP4-5 public-surface CSP. Then Wave 6 real-API wiring lands per-remote in its final home.
+Hand-offs:
+  - meesell-infra-builder: SP07 inter-lead row updated — cost gate DISCHARGED (D13-HOSTING ruling); provisioning is now notification-only at cutover week. Live CSP smoke + Gate-4 discharge still need a reachable dev env (cutover week).
+  - founder (STATUS_MASTER): §5.1 audit findings (convention HELD, no amendment) + the carried-items register surfaced via this STATUS_FRONTEND update; founder reviews the audit at the #105 gate.
+=========
+
+=== UPDATE: 2026-06-11 — WAVE 6 API WIRING MASTER PLAN authored ===
+Phase: Wave 6 planning — API wiring master plan (federation program is COMPLETE on develop 5cd6e32).
+Session: mesell-wave6-planning-session-1
+
+Board sweep (session start + end): Active features table was EMPTY at start (SP07 closeout merged). NO rows untouched 7+ days (all activity 2026-06-11). Added ONE PENDING row: wave6-api-wiring (PLAN). Inter-lead requests open: 7 infra rows unchanged (SP07 + per-remote hosting, all OPEN, all <14 days, all cutover-week-carried — none stale). No new inter-lead memos opened this session (the AI-lane + backend confirm-memos are flagged in the plan for Wave-A/C/D dispatch time, not now).
+
+V1 ROUTES / SPECIALISTS THIS TASK TOUCHES: ALL 10 V1 routes across 6 remotes (the plan inventories every page × endpoint). Planning session = NO specialist dispatch. The plan maps work to all 3 specialists: meesell-angular-service-builder (interceptors + ApiClient + per-page api services + auth wiring), meesell-angular-component-builder (page state wiring + loading/error states), meesell-angular-ui-styler (error/degraded-state polish). Dispatch begins at Wave A after founder approval.
+
+Done:
+  - Authored docs/plans/wave6_api_wiring/MASTER_PLAN.md (DRAFT). Canonical v2.1, fence-aware, grounded in AS-BUILT develop 5cd6e32 (verified router decorators + Pydantic schemas, not stale docs).
+  - §1 Contract inventory: 28 backend endpoints (verified from backend/app/modules/*/router.py); FE consumes 26 (webhook backend-only). 9 pages mapped × endpoints × current wired/mock state. 1 page wired (smart-picker #101); 8 to wire. 3 known contract discrepancies surfaced (DISCREPANCY-1: smart-picker posts /catalogs but backend is /products; Decimal wire-type; POST /products body shape).
+  - §2 D33 execution: promotion analysis done. PROMOTION LIST = Product (4 remotes) + AuthUser extension (4 consumers). Everything else stays remote-private (SP05 D32 criterion: 2+ remotes).
+  - §3 Auth wiring: built-vs-mock table (jwt/refresh/error interceptors + bootstrap + real OTP login ALL MISSING; AuthService.setSession/getToken/logout + provideHttpClient(withFetch) + manual-Bearer PRESENT). Plan builds the §4-LOCKED interceptor chain once in @mesell/core.
+  - §4 Wave grouping: 4 waves/7 slices/2 lanes. Wave A foundation (serial, shared surface) → B (dashboard‖onboarding) → C (catalog-form‖export) → D (images‖pricing). mfe-catalog intra-remote ordering constraint flagged (catalog-form before images).
+  - §5 Validation: standing gates + baseline=47 spec files on develop + Gate-4 two-sided-proof reference (don't block) + contract-drift stop condition.
+  - §6 AI-lane boundary: AI features are BACKEND prompt/eval work (not FE wiring); Wave 6 owns autofill+precheck UI wiring; confirm-memos to ai-coordinator before Wave C/D.
+  - §7 4 founder decisions (analysis + recommendation, NOT self-ratified). §8 11-item risk register incl. the mock-removal-trap graceful-degradation P0 pattern.
+  - Board: added wave6-api-wiring PENDING row + header note. STATUS updated. Plan committed via chore/wave6-api-wiring-plan PR to develop (Model C, lead-gate, squash --admin).
+
+In progress: none (planning complete; awaiting founder approval to dispatch Wave A).
+Blockers: Founder approval of the DRAFT + the 4 §7 decisions before Wave A dispatch. (Not a hard blocker — planning is done; this is the natural founder gate.)
+Next: founder reviews MASTER_PLAN.md + rules on the 4 decisions → dispatch Wave A (auth-core foundation slice) via hybrid rule (coordinator SPEC → service-builder → component-builder → ui-styler → coordinator MERGE-GATE).
+Hand-offs:
+  - founder (STATUS_MASTER): Wave 6 plan ready; 4 decisions queued (pricing calc location, smart-picker /catalogs→/products fix, AuthUser additive-optional, wave count). Plan PR opened integration-style chore branch.
+  - meesell-ai-coordinator (FLAGGED, not yet sent): confirm-memo before Wave C/D — AI lane is NOT wiring autofill overlay / precheck-result display (frontend owns the UI rendering of AI-delivered endpoints). Will open at Wave C/D dispatch.
+  - meesell-backend-coordinator (FLAGGED, not yet sent): verify live Set-Cookie Path (=/api/v1/auth) + Decimal wire-type + POST /products create body before Wave A/D wiring. Will open at dispatch time.
 =========

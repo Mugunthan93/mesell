@@ -12,7 +12,8 @@
     "start:mfe-export": "ng serve mfe-export",
     "start:mfe-onboarding": "ng serve mfe-onboarding",
     "start:mfe-catalog": "ng serve mfe-catalog",
-    "start:mfe-dashboard": "ng serve mfe-dashboard"
+    "start:mfe-dashboard": "ng serve mfe-dashboard",
+    "start:mfe-auth": "ng serve mfe-auth"
   },
   "private": true,
   "packageManager": "pnpm@11.5.2",

@@ -86,9 +86,14 @@ async def _create_product(db, *, user_id, name: str = "Test Product"):
     from app.shared.models.category import Category
 
     # Pick any leaf category — the §15.B contract holds regardless of which.
+    # The ``categories`` table is leaf-only by design (BACKEND_ARCHITECTURE
+    # §9 — 3,772 Meesho leaf nodes, no parent/non-leaf rows), so EVERY row IS
+    # a leaf and there is no ``is_leaf`` discriminator on the ORM model. The
+    # prior ``.where(Category.is_leaf.is_(True))`` predicate referenced a
+    # non-existent column (BE-CAT-ISLEAF-1); dropped as redundant.
     cat_row = (
         await db.execute(
-            select(Category.id).where(Category.is_leaf.is_(True)).limit(1)
+            select(Category.id).limit(1)
         )
     ).first()
     if cat_row is None:

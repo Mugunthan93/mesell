@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../out-tsc/mfe-auth",
+    "types": []
+  },
+  "include": [
+    "src/**/*.ts",
+    "../../libs/**/*.ts"
+  ],
+  "exclude": [
+    "src/**/*.spec.ts",
+    "../../libs/**/*.spec.ts"
+  ]
+}
