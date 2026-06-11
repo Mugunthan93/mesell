@@ -112,16 +112,21 @@ export class AuthService implements OnDestroy {
         .refresh()
         .pipe(
           switchMap((refreshResp) => {
-            // Got a new access token — hydrate user from /me
+            // Got a new access token. Set it in _token BEFORE calling /me so that
+            // jwtInterceptor can attach Bearer on the /me request (which is Bearer-protected).
+            // This is the early-token-set pattern required because bootstrap() calls me()
+            // before setSession(), but jwtInterceptor reads from _token signal.
             const newToken = refreshResp.access_token;
+            this._token.set(newToken);
             return this.authApi.me().pipe(
               catchError(() => {
-                // /me failed but we have a token — use minimal user object
-                this._token.set(newToken);
+                // /me failed but we have a token — schedule refresh and stay partially hydrated
+                // (_token is already set above; user remains null until next real login)
                 this.scheduleRefresh(refreshResp.expires_in);
                 return EMPTY;
               }),
               switchMap((me) => {
+                // Full hydration: overwrite with real user from /me
                 this.setSession(newToken, meToUser(me));
                 this.scheduleRefresh(refreshResp.expires_in);
                 return EMPTY;
@@ -150,10 +155,14 @@ export class AuthService implements OnDestroy {
     this.authApi
       .refresh()
       .pipe(
-        switchMap((resp) =>
-          this.authApi.me().pipe(
+        switchMap((resp) => {
+          // Early-set: update _token immediately so jwtInterceptor attaches new Bearer on /me.
+          // The old token is still in _token up to this point (proactive refresh fires 30s before
+          // expiry so the old token SHOULD still work on /me, but using the new token is safer).
+          this._token.set(resp.access_token);
+          return this.authApi.me().pipe(
             catchError(() => {
-              this._token.set(resp.access_token);
+              // /me failed — token is already updated; just reschedule
               this.scheduleRefresh(resp.expires_in);
               return EMPTY;
             }),
@@ -162,8 +171,8 @@ export class AuthService implements OnDestroy {
               this.scheduleRefresh(resp.expires_in);
               return EMPTY;
             }),
-          ),
-        ),
+          );
+        }),
         catchError(() => {
           // Silent refresh failed — let the 401-interceptor handle the next request
           return EMPTY;
