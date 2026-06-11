@@ -1706,3 +1706,75 @@ collecting ... collected 823 items / 823 deselected / 0 selected
 **Annotation (non-blocking):** GitHub runner deprecation warning — `actions/checkout@v4` + `dorny/paths-filter@v3` on Node.js 20 (forced to Node 24 after 2026-06-16). Cosmetic for now; bump action versions in a future ci.yml housekeeping pass.
 
 **Cost:** ₹0/month. No infra spend; pipeline never reached the build/deploy (compute) stage.
+
+---
+
+## SESSION: mesell-ci-develop-triggers-infra-session-1 — 2026-06-11
+
+### Founder ruling: CI runs on `develop` (no develop→main promotion to re-fire)
+
+**Founder ruling (verbatim):** "why develop->main / let keep in develop." The CI pipeline must
+exercise on `develop` itself; a `develop → main` promotion is NOT the re-fire mechanism. (This
+retires the PR #64 / #78 promotion pattern used for the first activation runs.)
+
+**Phase / rule followed:** CI/CD pipeline definition — `docs/DEVOPS_ARCHITECTURE.md §5.2 (Triggers)`,
+my sole-writer surface. No `INFRASTRUCTURE_PLAYBOOK.md` section applies (CI definition lives in the
+DEVOPS doc + `.github/workflows/ci.yml`, both in my Owns list). Cost ₹0 — no GCP resource, no secret.
+
+**D1 — trigger amendment (PR #79, squash `33d0cc6`):**
+- `.github/workflows/ci.yml`: `on.push.branches` `[main]` → `[main, develop]`; `on.pull_request.branches`
+  `[main]` → `[main, develop]`; nightly cron unchanged; header Triggers comment + founder-ruling note added.
+- `docs/DEVOPS_ARCHITECTURE.md §5.2`: trigger block + founder-ruling paragraph updated to match.
+- **Deploy-guard audit (CRITICAL):** audited every `github.ref`-conditional job BEFORE editing. Result —
+  build + deploy were ALREADY `main`-only (`if: github.event_name == 'push' && github.ref == 'refs/heads/main'`,
+  lines 570 + 610). **No new guard added** — a develop push runs Gates 1-5 + frontend matrix but cannot
+  build an image or deploy to `dev`. Gates (`!= 'schedule'`) + frontend (`!= 'schedule'`) run on develop;
+  nightly (`== 'schedule'`) unaffected. Verified via `yaml.safe_load` (push+pr branches both `[main, develop]`)
+  + `grep` (both main-only guards intact).
+- Lead-gate self-review comment posted on #79 (single-account pattern); squash-merged via `--admin`
+  (develop protection requires 1 approval, author cannot self-approve, `enforce_admins=false` — same
+  pattern as prior develop chore PRs #76/#69 merged by Mugunthan93). Remote branch deleted via `gh api -X DELETE`.
+
+**D2 — fired & watched.** Two runs proved the new topology:
+- PR-open run `27320409503` (event=pull_request, head `chore/ci-develop-triggers`) fired immediately on PR
+  open to develop — confirming the `pull_request: [develop]` trigger is live.
+- **Merge push run `27320468096` (event=push, branch=develop)** — the squash-merge to develop fired this
+  (a push to develop fired NOTHING before this change). Per-job outcome:
+  - Frontend: detect changed units → **SUCCESS**
+  - Frontend: shell → **SUCCESS**
+  - Frontend: mfe-pricing → **SUCCESS**  (frontend matrix 3/3 GREEN — real signal on develop)
+  - CI Gate 1: unit → **FAILURE** (exit-5)
+  - CI Gate 2-5 (smoke/lint/integration/golden_roundtrip) → **SKIPPED** (sequential `needs:` cascade)
+  - Build container images → **SKIPPED**  ✓ main-only guard held — NO image built on develop
+  - Deploy to K3s (dev) → **SKIPPED**  ✓ main-only guard held — NO dev deploy on develop
+  - Nightly → **SKIPPED** ✓ (schedule-only)
+- Run conclusion: `failure` (Gate-1). **Build/deploy never ran — the deploy guard is now empirically confirmed.**
+
+**Gate-1 failure detail (backend-owned — NOT infra, NO fix attempted):**
+```
+collecting ... collected 823 items / 823 deselected / 0 selected
+=========================== 823 deselected in 1.76s ============================
+##[error]Process completed with exit code 5.
+```
+The collection barrier (ModuleNotFoundError) is CLOSED (823 items collect cleanly — PR #73/#74 `pythonpath=.`).
+The §5.D env-guard gap is CLOSED (PR #76 `0f44d72`). What surfaced next is pytest **exit-5 "no tests selected"**:
+the 7 §19.D markers are registered in `pytest.ini` but applied to ZERO test functions, so `-m "unit"` selects 0.
+SYSTEMIC — every marker-gated gate (smoke/integration/golden_roundtrip/slow/perf/ai_eval) hits the same exit-5.
+**Inter-lead to backend-coordinator is OPEN** (board → Inter-lead requests open; memo `handoff_ci_gate_markers.md`
+authored by `mesell-ci-activation-session-1`). Fix = tag the suite across all §19.D buckets (explicit
+`@pytest.mark.*` or a `pytest_collection_modifyitems` auto-marker hook). NOT founder-blocking — backend work.
+
+**Check-context names captured for branch protection (DEFERRED — founder-gated, separate step, NOT applied this session):**
+The job names that will become required status checks once a run is green through them:
+`CI Gate 1: unit`, `CI Gate 2: smoke`, `CI Gate 3: lint (10 contracts)`, `CI Gate 4: integration`,
+`CI Gate 5: golden_roundtrip`, `Frontend: detect changed workspace units`, `Frontend: shell`,
+`Frontend: mfe-pricing`. **Do NOT add `Build container images` / `Deploy to K3s (dev namespace)`** (push/main-only —
+they'd deadlock PRs) **or `Nightly` (schedule-only).** develop branch protection currently:
+`required_status_checks.contexts=[]` (none required yet), `required_approving_review_count=1`, `enforce_admins=false`.
+Adding these 8 contexts is the next founder-gated step AFTER a green run materializes them — not done now.
+
+**WIF / Cloud Build / IAP-deploy still UNPROVEN** — sequential-blocked at Gate-1 on every run to date
+(27318816408 collection, 27320321536 + 27320468096 marker exit-5). First green-through-Gate-5 on a `main`
+push will exercise them for the first time.
+
+**Cost:** ₹0/month (CI trigger config + DEVOPS doc only). **Zero cluster / TF / Secret Manager mutations.**
