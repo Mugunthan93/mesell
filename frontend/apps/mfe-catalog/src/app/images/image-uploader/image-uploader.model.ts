@@ -1,20 +1,18 @@
 // image-uploader.model.ts
 // Pure TypeScript — NO Angular decorators. Vitest-testable without TestBed.
 
-// ── Backend contract types (additive — R-IP-B, 2026-06-11) ───────────────────
+// ── Backend contract types (R-IP-B, 2026-06-11) ───────────────────────────────
 // These types mirror the backend image/schemas.py on develop.
-// Do NOT rename or delete the existing simulation types (PrecheckResult /
-// ProductImage / PrecheckItem) — the component-builder removes them in the next
-// wave when the simulation is replaced with the live HTTP wiring.
+// One-way UI remap (R-IP-B authoritative, founder-ruled):
+//   jpeg_valid        ← was jpeg_format
+//   color_space       ← was color_space_rgb (bool — RGB pass/fail)
+//   resolution_pass   ← was min_resolution
+//   white_background  ← was white_bg
+//   watermark_check   ← was no_watermark (semantics preserved: true = no watermark detected)
 
 /**
  * precheck_jsonb keys — EXACT backend names (R-IP-B authoritative).
- * Note the one-way remap vs the legacy FE keys:
- *   jpeg_valid        ← was jpeg_format
- *   color_space       ← was color_space_rgb (now a bool — RGB pass/fail flag)
- *   resolution_pass   ← was min_resolution
- *   white_background  ← was white_bg
- *   watermark_check   ← was no_watermark (semantics preserved: true = no watermark)
+ * These are the 5 Celery-worker precheck keys in image/schemas.py PrecheckJsonb.
  */
 export interface PrecheckJsonb {
   jpeg_valid: boolean;
@@ -58,48 +56,70 @@ export interface ImageUploadResponse {
   enqueued_task_id: string;
 }
 
-// ── Domain types ───────────────────────────────────────────────────────────────
+// ── UI domain type (mapped from ImageSummary) ─────────────────────────────────
 
-export interface PrecheckResult {
-  jpeg_format: boolean;
-  color_space_rgb: boolean;  // false = CMYK detected
-  min_resolution: boolean;   // >= 1500x1500 px
-  white_bg: boolean;
-  no_watermark: boolean;
-}
-
+/**
+ * ProductImage — UI-layer representation of an uploaded image slot.
+ * Derived from ImageSummary (backend) via mapImageSummaryToProductImage().
+ * slot_index is the same as idx-1 (0-based) for @for track in the template.
+ * status mirrors the backend enum exactly: 'pending' | 'ready' | 'failed_precheck'.
+ */
 export interface ProductImage {
+  /** Backend image_id UUID */
   id: string;
-  slot_index: number;          // 0-based, max 5
+  /** 0-based slot index (= ImageSummary.idx - 1) — used for @for track */
+  slot_index: number;
+  /** 1-based backend idx (1..4) */
+  idx: number;
+  /** Signed GCS URL for the thumbnail — null while still pending */
   gcs_url: string | null;
-  status: 'pending' | 'pass' | 'fail';
-  precheck: PrecheckResult | null;
+  /** Backend status enum — canonical (not the legacy pass/fail) */
+  status: 'pending' | 'ready' | 'failed_precheck';
+  /** 5-key precheck result object; null while still pending */
+  precheck: PrecheckJsonb | null;
+  /** true when idx === 1 (front image) */
+  is_front: boolean;
 }
 
 export interface PrecheckItem {
-  key: keyof PrecheckResult;
+  key: keyof PrecheckJsonb;
   label: string;
   pass: boolean;
   hint: string | null;
 }
 
-// ── Static lookup maps ────────────────────────────────────────────────────────
+// ── Static lookup maps (backend keys — R-IP-B) ────────────────────────────────
+// G3 FIX: keys are the BACKEND PrecheckJsonb names, NOT the legacy FE names.
+// Canonical hint wording from FEATURE_PLAN.md §968 / §F5.
 
-export const PRECHECK_HINTS: Record<keyof PrecheckResult, string> = {
-  jpeg_format:     'Save the image as JPEG (.jpg) before uploading',
-  color_space_rgb: 'Convert image to RGB mode before uploading (CMYK detected)',
-  min_resolution:  'Image must be at least 1500×1500 pixels',
-  white_bg:        'Use a plain white background for best results',
-  no_watermark:    'Remove watermarks or logos before uploading',
+/**
+ * Fix-hint copy per backend precheck key.
+ * These are the §968 / §F5 canonical hints (founder-ruled R-IP-B as official source).
+ */
+export const PRECHECK_HINTS: Record<keyof PrecheckJsonb, string> = {
+  jpeg_valid:       'Save the image as JPEG (.jpg) before uploading',
+  color_space:      'Convert image to RGB mode before uploading (CMYK detected)',
+  resolution_pass:  'Image must be at least 1500×1500 pixels',
+  white_background: 'Use a plain white background for best results',
+  watermark_check:  'Remove watermarks or logos before uploading',
 };
 
-export const PRECHECK_LABELS: Record<keyof PrecheckResult, string> = {
-  jpeg_format:     'JPEG format',
-  color_space_rgb: 'RGB color space',
-  min_resolution:  'Min. resolution',
-  white_bg:        'White background',
-  no_watermark:    'No watermark',
+export const PRECHECK_LABELS: Record<keyof PrecheckJsonb, string> = {
+  jpeg_valid:       'JPEG format',
+  color_space:      'RGB color space',
+  resolution_pass:  'Min. resolution',
+  white_background: 'White background',
+  watermark_check:  'No watermark',
 };
+
+// ── Ordered key list (backend order preserved from schemas.py) ─────────────────
+export const PRECHECK_KEYS: ReadonlyArray<keyof PrecheckJsonb> = [
+  'jpeg_valid',
+  'color_space',
+  'resolution_pass',
+  'white_background',
+  'watermark_check',
+];
 
 // ── Pre-check gate 1: buildPrecheckItems ──────────────────────────────────────
 // Returns the 5-item pre-check matrix for a resolved image.
@@ -107,8 +127,7 @@ export const PRECHECK_LABELS: Record<keyof PrecheckResult, string> = {
 
 export function buildPrecheckItems(image: ProductImage): PrecheckItem[] {
   if (!image.precheck) return [];
-  const keys = Object.keys(image.precheck) as Array<keyof PrecheckResult>;
-  return keys.map(key => ({
+  return PRECHECK_KEYS.map(key => ({
     key,
     label: PRECHECK_LABELS[key],
     pass:  image.precheck![key],
@@ -117,7 +136,7 @@ export function buildPrecheckItems(image: ProductImage): PrecheckItem[] {
 }
 
 // ── Pre-check gate 2: slotProgress ───────────────────────────────────────────
-// Returns 0 while pending, 100 when resolved (pass or fail).
+// Returns 0 while pending, 100 when resolved (ready or failed_precheck).
 
 export function slotProgress(image: ProductImage): number {
   if (image.status === 'pending') return 0;
@@ -125,11 +144,11 @@ export function slotProgress(image: ProductImage): number {
 }
 
 // ── Gate 3: computeCanContinue ───────────────────────────────────────────────
-// canContinue = at least one image AND all images passed.
-// Slot 1 CMYK fail blocks this gate (journey step 7).
+// canContinue = at least one image AND all images have status 'ready'.
+// Uses backend status enum: 'pending' | 'ready' | 'failed_precheck'.
 
 export function computeCanContinue(images: ProductImage[]): boolean {
-  return images.length > 0 && images.every(img => img.status === 'pass');
+  return images.length > 0 && images.every(img => img.status === 'ready');
 }
 
 // ── Gate 4: computeActiveExpandedImage ───────────────────────────────────────
@@ -153,29 +172,6 @@ export function toggleExpandedSlot(
   return current === index ? null : index;
 }
 
-// ── Gate 6: addSlots ──────────────────────────────────────────────────────────
-// Enforces max 6 images. Returns new slots to append (does NOT mutate).
-
-export function addSlots(
-  currentImages: ProductImage[],
-  fileNames: string[],  // abstracted from File[] for pure-function testability
-  maxSlots = 6,
-): ProductImage[] {
-  const remaining = maxSlots - currentImages.length;
-  if (remaining <= 0) return [];
-
-  const toAdd = fileNames.slice(0, remaining);
-  const startIndex = currentImages.length;
-
-  return toAdd.map((name, i) => ({
-    id:         `slot-${startIndex + i}-${name}`,
-    slot_index: startIndex + i,
-    gcs_url:    null,
-    status:     'pending' as const,
-    precheck:   null,
-  }));
-}
-
 // ── resetSlot ────────────────────────────────────────────────────────────────
 // Returns a new images array with the given slot reset to pending (for re-upload).
 
@@ -185,37 +181,38 @@ export function resetSlot(
 ): ProductImage[] {
   return images.map(img =>
     img.slot_index === slotIndex
-      ? { ...img, status: 'pending' as const, precheck: null }
+      ? { ...img, status: 'pending' as const, precheck: null, gcs_url: null }
       : img,
   );
 }
 
-// ── applySimulationResult ─────────────────────────────────────────────────────
-// Returns a new images array with the simulation result applied to a given slot.
+// ── mapImageSummaryToProductImage ────────────────────────────────────────────
+// Maps the backend ImageSummary to the UI ProductImage type.
+// slot_index = idx - 1 (0-based for @for track).
 
-export function applySimulationResult(
-  images: ProductImage[],
-  slotIndex: number,
-  precheck: PrecheckResult,
-): ProductImage[] {
-  const allPass = Object.values(precheck).every(Boolean);
-  return images.map(img => {
-    if (img.slot_index !== slotIndex) return img;
-    return {
-      ...img,
-      precheck,
-      status: allPass ? 'pass' as const : 'fail' as const,
-    };
-  });
+export function mapImageSummaryToProductImage(summary: ImageSummary): ProductImage {
+  return {
+    id:         summary.image_id,
+    slot_index: summary.idx - 1,
+    idx:        summary.idx,
+    gcs_url:    summary.signed_url || null,
+    status:     summary.status,
+    precheck:   summary.precheck_jsonb ?? null,
+    is_front:   summary.is_front,
+  };
 }
 
 // ── statusForMeeStatusBadge ───────────────────────────────────────────────────
-// Maps image status to the ProductStatus union expected by mee-status-badge.
+// Maps backend status enum to the ProductStatus union expected by mee-status-badge.
+// Backend: 'pending' | 'ready' | 'failed_precheck'
+// StatusBadge accepts: 'pending' | 'ready' | 'failed' (and others in the union)
 
 export type SlotDisplayStatus = 'ready' | 'failed' | 'pending';
 
-export function statusForMeeStatusBadge(imageStatus: ProductImage['status']): SlotDisplayStatus {
-  if (imageStatus === 'pass')    return 'ready';
-  if (imageStatus === 'fail')    return 'failed';
+export function statusForMeeStatusBadge(
+  imageStatus: ProductImage['status'],
+): SlotDisplayStatus {
+  if (imageStatus === 'ready')           return 'ready';
+  if (imageStatus === 'failed_precheck') return 'failed';
   return 'pending';
 }
