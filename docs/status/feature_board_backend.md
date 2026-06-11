@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-backend-coordinator`
 **Domain:** backend
-**Last updated:** 2026-06-11 (dual-pepper-rotation MERGED to develop — founder-gate PR #66 merge 50cdcef; R5 pre-V1.5-prod gate CLEARED; moved to Recently merged — mesell-dual-pepper-session-1)
+**Last updated:** 2026-06-11 (smart-picker BACKEND group MERGED to feature/smart-picker/integration — PR #72 squash ba94543; gate PASS; _GLOBAL_TABLES drift ACCEPTED as doc-vs-code + follow-up chore queued — mesell-smart-picker-backend-session-1)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -17,6 +17,7 @@
 
 | Feature | Merged to | Date | PR | Notes |
 |---|---|---|---|---|
+| smart-picker (backend group) | feature/smart-picker/integration | 2026-06-11 | [#72](https://github.com/Mugunthan93/mesell/pull/72) (squash ba94543) | **Backend group merge-gate PASS.** Smart Category Picker (V1 Feature 2) backend slice: `§9.B.1`/`§9.E`/`§9.G`/`§9.D` VERIFY (zero drift — service/schemas/repository/exceptions untouched) + `FEATURE_SMART_PICKER_ENABLED` 404-when-disabled flag guard (D2) + unit 9/9 + smoke 5/5 + ruff clean + token-free `ai_eval` CI job (run_eval 50/50 recall=100%). Benchmark `test_trigram_p95.py` infra-gated (slow/perf markers → not in blocking gate 4; runs in Nightly w/ live DB; EXPLAIN deferred to live tunnel). **RULING — `_GLOBAL_TABLES` drift:** ACCEPTED as doc-vs-code (zero runtime impact; carve-out honored by convention); follow-up database-builder chore queued to add the sentinel frozenset to `core/tenancy.py` (founder FYI, not a blocker). Merged on top of AI slice #54; rebase/order correct. Founder-gate PR (integration→develop) auto-updated, untouched per D1. |
 | dual-pepper-rotation (integration→develop) | develop | 2026-06-11 | #66 (merge 50cdcef) | **Founder-gated merge MERGED.** R5 pre-V1.5-prod gate CLEARED. `feature/dual-pepper-rotation/integration` → `develop`; group PR #65 squash a2e566c. Version-tagged Valkey DB 0 allowlist key prefix (`cache:refresh:v{N}:{hmac}`) + dual-pepper read fallback; additive config `REFRESH_TOKEN_PEPPER_PREVIOUS`/`REFRESH_TOKEN_PEPPER_VERSION`. 8 fakeredis tests; baseline 27 passed / 3 skipped / 6 errors (infra-gated) no regression. Prod pepper rotation per runbook §2 now fully executable once secrets are provisioned at deploy time (infra PR #69). |
 | auth-otp (integration→develop) | develop | 2026-06-11 | #46 (merge cad0a9a) | **Founder-gated merge MERGED.** `feature/auth-otp/integration` → `develop` = backend group #44 + infra group #45. auth-otp (V1 Feature 1, FE-D5 split-token) now fully on develop. Backend post-merge sentinels stamped: V1_FEATURE_SPEC.md Feature 1 + BACKEND_ARCHITECTURE.md §7 (this PR). |
 | auth-otp (backend group) | feature/auth-otp/integration | 2026-06-11 | #44 (squash af6a619) | Backend group merge-gate. Re-audit: iam backend 100% built/contract-correct (plan said ~95%); no construction diff — iam already on develop. 11/11 §Review checks PASS. Now subsumed into develop via #46 (cad0a9a). |

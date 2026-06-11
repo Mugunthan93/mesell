@@ -3785,3 +3785,42 @@ Blockers: none. NOT blocking V1.
 Next: only remaining R5 step is deploy-time secret provisioning per runbook §2 — operator action, not backend work. No further backend dispatch for dual-pepper.
 Hand-offs: none new. Infra hand-off already closed (#69); token shape unchanged so no frontend memo.
 =========
+
+=== UPDATE: 2026-06-11 — smart-picker BACKEND group MERGED (PR #72) — lead merge-gate close-out ===
+Phase: V1 Feature 2 (Smart Category Picker) — backend slice
+Session: mesell-smart-picker-backend-session-1 (HYBRID step 3 — lead merge-gate review)
+Board sweep: Active=1 (microservices-export, last touched 2026-06-10, NOT stale). 0 stale rows (7+ day) flagged. 0 inter-lead requests open (dual-pepper RESOLVED via #69). smart-picker row added to Recently merged.
+Done:
+  - GATE VERDICT: PASS → squash-merged feature/smart-picker/backend → feature/smart-picker/integration.
+    PR #72, squash SHA ba94543d95d0327371cfe6adeb8802a28d586157, merged 2026-06-11T02:18:24Z.
+  - Gate checklist: (1) scope PASS — 7 files all in backend slice scope, no out-of-scope diffs;
+    (2) re-ran gates myself — ruff clean (system ruff, repo config), collection clean (16+26),
+    unit 9/9, smoke 5/5, eval run_eval.py 50/50 recall=100% PASS; (3) benchmark correctly
+    infra-gated (slow/perf markers, NOT integration → excluded from blocking gate 4; runs only
+    in Nightly w/ live Postgres + PYTEST_RUN_SLOW=1); (4) PR template filled complete, no placeholders.
+  - Specialist work verified: service.py/schemas.py/repository.py/exceptions.py VERIFY-only, ZERO drift
+    (§9.B.1 all 8 steps, §9.E field-for-field, §9.D verbatim, §9.G PASS). Only adds: router flag guard,
+    config FEATURE_SMART_PICKER_ENABLED, 3 new test files, ci.yml ai_eval job.
+  - Post-merge: deleted remote head ref feature/smart-picker/backend; removed worktree
+    /tmp/mesell-wt/smart-picker-backend.
+RULINGS:
+  - _GLOBAL_TABLES drift: ACCEPTED as doc-vs-code (option a). core/tenancy.py lacks the _GLOBAL_TABLES
+    set that §9.D + repository.py:17 docstring reference. ZERO runtime impact (category repo correctly
+    never calls scope_to_user; carve-out honored by convention). database-builder correctly escalated
+    rather than patching (verify-only slice). FOLLOW-UP CHORE QUEUED (database-builder): add
+    _GLOBAL_TABLES: frozenset[str] = frozenset({"categories","templates","field_enum_values","field_aliases"})
+    to core/tenancy.py + __all__ (no migration). Code converges to doc — a future §19 import-linter
+    global-table-exemption rule will need the sentinel. Founder FYI, not a merge blocker.
+  - STATUS_BACKEND.md riding PR #72: ACCEPTED (append-only Updates Log, not a board flip). Those two
+    specialist blocks reach develop via the founder-gate integration PR; this lead close-out block is
+    the direct-to-develop F2 status commit reconciling develop's copy post-squash.
+In progress: none (backend slice done; awaits AI #54 already merged + frontend slice + founder gate).
+Blockers: none. (Postgres tunnel down in review env → EXPLAIN evidence + DB-seeded integration deferred
+  to live-tunnel run; documented, not blocking — those tests run in CI Nightly + gate-4 w/ service containers.)
+Next: frontend lead delivers the next smart-picker slice (consumes the locked §9.E SuggestResponse shape +
+  the already-shipped /browse route). database-builder follow-up chore (_GLOBAL_TABLES) at next convenient
+  dispatch. Founder approves feature/smart-picker → develop (AI lead is largest-contribution PR opener).
+Hand-offs: (1) database-builder — _GLOBAL_TABLES sentinel chore. (2) infra-builder — FEATURE_SMART_PICKER_ENABLED
+  into k8s ConfigMaps (dev=true, staging=false until 24h soak) + backend/.env.example (lead-owned).
+  (3) AI lead — smart-picker AI slice #54 already merged to integration; merge order honored.
+=========
