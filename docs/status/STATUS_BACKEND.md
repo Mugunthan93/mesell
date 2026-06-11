@@ -4038,3 +4038,57 @@ Hand-offs: PR fix/ci-gate4-integration-pass2 → develop. CI does NOT run on dev
   gate. After merge, Gate 4 re-fires on next develop→main (still blocked by residual classes a/b/c above until
   a pass-3 + BE-SEED-1 + BE-CAT-ISLEAF-1 land).
 =========
+
+=== UPDATE: 2026-06-11 12:30 — CI Gate-4 PASS 2 MERGED (PR #107) + PASS 3 dispatched (coordinator STEP-3 + STEP-1) ===
+Phase: CI Gate-4 (integration) test-harness fix — pass-2 merge-gate close-out + pass-3 spec authoring
+Session: mesell-ci-gate4-fix-session-3 (coordinator)
+Board sweep: 2 Active rows (microservices-export untouched since 2026-06-10 — under 7d, no stale flag;
+  ci-gate4 pass-3 just opened). Recently-merged refreshed (pass-2 #107 added; older rows retained <14d).
+  Inter-lead: infra Gate-4 row updated (pass-1+2 MERGED, pass-3 in flight); infra Gate-1 env-var row still OPEN;
+  dual-pepper row RESOLVED. No row 7+ days stale.
+
+Done — PART A — PR #107 merge-gate (pass 2):
+  VERDICT: APPROVED + squash-merged. Squash SHA df93208 → develop. Branch deleted (HTTP 204). Worktree pruned.
+  Independently verified (not taken on the specialist's word):
+    - Loop-scope sweep: PR-head blob shows ZERO bare @pytest_asyncio.fixture across all 4 module conftests;
+      loop_scope="function" counts catalog 6 / image 8 / pricing 9 / customer 1 = 24 (matches report). No 5th
+      defect — category/dashboard/export conftests carry 0 async fixtures (confirmed against PR-head blobs).
+    - customer_client 3 fixes confirmed in diff: DB→_DEV_DATABASE_URL, Valkey→_valkey_base(), drop_all/create_all
+      provision-aware on BOTH setup (L125-129) + teardown (L233-237), gated on bool(TEST_DATABASE_URL).
+      Both imported symbols (_DEV_DATABASE_URL L56, _valkey_base L120) verified present in merged conftest.
+    - Provision-aware safety: no TEST_* → _provisioned=False → prior per-fixture drop_all+create_all byte-for-byte.
+    - Template: filled, no <> placeholders, N/A explicit; footer Session: mesell-ci-gate4-fix-session-2.
+    - Fence: only non-tests file is STATUS_BACKEND.md (my lane), diff = pure append (no deletions). No app/ci.yml.
+  DEVIATION RULING (field_enum_values gate vs spec's categories gate): ACCEPTED. Verified the pollution claim
+    directly — the sole db-fixture FieldEnumValue writer (test_crud_field_enum_value) uses flush()+delete() and
+    db_session rolls back (tests/conftest.py L340) → never persists; category conftest "intentionally adds nothing";
+    grep confirms NO fixture commits field_enum_values (49 259-row enum seed is DATABASE-track only). So the
+    field_enum_values==0 gate is genuinely pollution-robust where the committing route fixtures defeat the literal
+    categories gate. The deviation is the CORRECT call (the literal gate would have re-surfaced the AssertionError
+    the skip exists to prevent) and honors spec intent. No fence violation beyond this accepted deviation.
+
+Done — PART B — pass-3 spec authored (spec_ci_gate4_fix_pass3.md, session mesell-ci-gate4-fix-session-3):
+  Target: TRUE exit-0 modulo 4 is_leaf reds + justified skips. Fence NOW INCLUDES tests/conftest.py (pass-1's file).
+  (A) loop_scope="function" on the 3 bare route-client fixtures (customer_client, export_client, unauth_client) +
+      port export_client's 3 unfixed env/provision defects (it is the unported twin of customer_client) → clears
+      26 BaseHTTPMiddleware cross-loop Future errors.
+  (B) THE HARDEST PIECE: rewrite db_session to connection+outer-txn+rollback (the db fixture L314-342 proves it);
+      bind the committing route-clients to a SINGLE connection with an OPEN outer transaction +
+      AsyncSession join_transaction_mode="create_savepoint" so handler commit() lands on a SAVEPOINT, and the outer
+      rollback on teardown discards ALL route-committed rows → clears the 14 IntegrityError FK-pollution. audit_mw
+      AsyncSessionLocal patched to the same savepoint-mode sessionmaker on the SAME conn (else audit rows leak).
+  (C) extend the BE-SEED-1 skip (field_enum_values==0 gate, lift helper to conftest) to 4 category-seed tests +
+      test_is_advanced_flag_set_for_group_id.
+  (D) re-affirm: 4 is_leaf reds STAY (BE-CAT-ISLEAF-1); no pytest.ini, no ci.yml, no app code.
+  Substrate: same as pass 2. BEFORE 35f/135p/8s/14e → AFTER target 4f (is_leaf) / rest pass-or-justified-skip / 0e.
+  Specialist: meesell-services-builder (THIRD round, deepest saga context). Branch fix/ci-gate4-integration-pass3.
+
+In progress: pass-3 specialist dispatch (services-builder) from the parent session that holds Agent (this turn had
+  no Agent tool — spec is STEP 1; STEP 2 dispatch happens from the master session).
+Blockers: none new. Open known-reds carried to pass 3: BE-CAT-ISLEAF-1 (4 is_leaf, separate app/category ticket),
+  BE-SEED-1 (CI has no prod seed — skip is the V1 disposition; nightly seeded gate is the V1.5 follow-up).
+Next: services-builder executes pass-3 spec → PR → coordinator STEP-3 gate. After merge, Gate 4 re-fires on the
+  next develop→main (founder's gate) and should reach the 4-is_leaf floor.
+Hand-offs: infra Gate-4 inter-lead row updated on the board (pass-3 in flight, one more pass then re-fire; NO
+  ci.yml change from any pass). Decentralized sharing: infra reads my memory/STATUS per CLAUDE.md rule 3.
+=========
