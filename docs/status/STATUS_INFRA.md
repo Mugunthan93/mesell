@@ -1778,3 +1778,53 @@ Adding these 8 contexts is the next founder-gated step AFTER a green run materia
 push will exercise them for the first time.
 
 **Cost:** ₹0/month (CI trigger config + DEVOPS doc only). **Zero cluster / TF / Secret Manager mutations.**
+
+---
+
+## UPDATE — 2026-06-11 — mesell-ci-activation-session-1 (re-fire #3): Gates 1-3 GREEN, Gate 4 RED
+
+**Phase / rule:** DEVOPS_ARCHITECTURE.md §5 (CI pipeline) + INFRASTRUCTURE_PLAYBOOK §15 deploy gate (deploy never reached). Founder-authorized develop→main re-fire to first-exercise build/deploy (which are `github.ref=='refs/heads/main'`-guarded — main push is the only path that can run them).
+**Session:** mesell-ci-activation-session-1
+
+### Done
+- Verified **PR #85 (`34d8b47`)** is on develop (develop tip) — 108 test files carry §19.D markers; the marker barrier from run 27320321536 is closed.
+- Opened **PR #89** (develop `34d8b47` → main `218aa83`, 25 commits / 164 files). Body cites PR #85 + first-build/deploy expectation. Session footer present.
+- Merged PR #89 — **MERGE COMMIT `a5cb4420b9b9e675e125cbaa96040c2456779312`** (merge_method=merge, first try, owner token; `--admin` not needed). develop preserved.
+- Watched push run **27323036548** (event=push, main `a5cb4420`) to terminal.
+
+### Per-job verdict (run 27323036548 = FAILURE)
+| Job (check context) | Result |
+|---|---|
+| CI Gate 1: unit | ✅ success |
+| CI Gate 2: smoke | ✅ success |
+| CI Gate 3: lint (10 contracts) | ✅ success |
+| CI Gate 4: integration | ❌ **failure** |
+| CI Gate 5: golden_roundtrip | ⏭ skipped (needs: integration) |
+| Build container images | ⏭ skipped (needs gates; main-only) |
+| Deploy to K3s (dev namespace) | ⏭ skipped (needs build) |
+| Frontend: detect changed workspace units | ✅ success |
+| Frontend: shell | ✅ success |
+| Frontend: mfe-pricing | ✅ success |
+| Nightly: slow + perf + ai_eval | ⏭ skipped (schedule-only) |
+| AI eval: smart-picker recall (token-free) | ⏭ skipped (schedule-only) |
+
+**Progress vs prior runs:** Gates 1-3 GREEN for the first time — PR #85 markers fixed the exit-5 deselect-to-zero barrier (runs 27320321536 / 27320468096). The barrier MOVED from Gate 1 to Gate 4.
+
+### Gate 4 diagnosis — BACKEND test-harness (NOT infra). ci.yml Gate-4 service block is provably correct.
+Verdict line: `21 failed, 23 passed, 647 deselected, 151 errors in 62.50s`. ci.yml (origin/main) provides PG `meesell:password@:5433/meesell_test` + Valkey 6381:6379 with matching `TEST_DATABASE_URL`/`DATABASE_URL`/`VALKEY_URL`/`TEST_VALKEY_URL`. The conftest (`34d8b47`) does not honor these for its live/dev fixtures:
+1. `asyncpg InvalidPasswordError` (test_database.py) — conftest L56-58 `_DEV_DATABASE_URL` = baked K3s-dev cluster password on 5433 db `meesell`, only `DEV_DATABASE_URL`-overridable (CI doesn't set), not `TEST_DATABASE_URL`.
+2. `redis.ConnectionError localhost:6379` (plan_guard / iam / category suggest, many) — live-Redis fixtures L183/398 default `CORE_TEST_VALKEY_URL=redis://localhost:6379` (CI maps Valkey to 6381, sets VALKEY_URL but not CORE_TEST_VALKEY_URL).
+3. `gin_trgm_ops does not exist` + `relation "categories" does not exist` — integration DB setup lacks `CREATE EXTENSION pg_trgm` + migrations/seed.
+4. `got Future attached to a different loop` (auth_rotation ×3), `assert 2==1` (audit coalesce), `assert 200==429` (rate-limit mw ×2) — backend async-fixture/assertion logic.
+
+NOT the `test_config.py`/`app.config` suspect (collection is green; this is integration-bucket runtime). I did NOT modify ci.yml or backend/. Memo `handoff_ci_gate4_integration.md`; inter-lead request to backend-coordinator OPEN on the board.
+
+### Blockers / hand-offs
+- **BLOCKED on backend** — Gate 4 conftest fix (inter-lead OPEN). Markers inter-lead request CLOSED (PR #85).
+- **WIF / Cloud Build / IAP deploy STILL UNPROVEN** — Gate-4 cascade skips build+deploy. First WIF exercise awaits green-through-Gate-5 on a main push.
+
+### Next
+- Backend resolves Gate 4 (conftest honors TEST_* + pg_trgm + seed + loop/assert fixes), lands on develop, then a founder-authorized re-fire to main exercises Gates 4-5 → build → deploy for the first time.
+- When green: verify `https://api.mesell.xyz/health` 200, record deployed image tag (= merge SHA), then founder adds the 8 PR-required contexts (5 gates + 3 frontend) to main protection — NEVER Build/Deploy (main-only) or Nightly/ai_eval (schedule-only).
+
+**Cost:** ₹0/month (PR + watch + board/STATUS docs only). **Zero cluster / TF / Secret Manager mutations.** GEMINI_API_KEY_CI still founder-pending (nightly-only, non-blocking).

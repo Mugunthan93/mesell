@@ -3,6 +3,29 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-11
 
+=== UPDATE: 2026-06-11 — Smart-Picker frontend MERGE-GATE (HYBRID step 3) — VERDICT: REJECT (CLOSED-OBSOLETED) ===
+Phase: V1 Feature 2 Smart Category Picker — frontend group slice
+Session: mesell-smart-picker-frontend-session-1 (lead merge-gate review)
+Board sweep: smart-picker Active->Recently-merged (CLOSED-OBSOLETED). No active frontend features. 5 infra inter-lead rows OPEN (SP01/02/03/05 hosting + CI-matrix), all within 48h SLA. No 7+ day stale rows.
+Gate items RE-RUN BY LEAD in worktree /tmp/mesell-wt/smart-picker-frontend (did NOT trust specialist reports):
+  1. Diff (merge-base ba94543..HEAD): EXACT 14-file in-scope diff (features/smart-picker/** + app.config.ts +7 provideHttpClient-only + app.routes.ts 4 lines + STATUS + 2-line spec fixup). NO out-of-scope in MY commits. PASS.
+  2. Build ng build --configuration=production = 3.297s (<<90s). Initial 60.80 kB/18.48 kB transfer; smart-picker chunk 9.57 kB raw/2.81 kB transfer (lazy). PASS. (First piped run stalled at stats-emit under sibling-build CPU contention; re-ran isolated, clean — env issue not defect.)
+  3. Tests 44 files/439 PASS/0 fail/0 skip = EXACT baseline; all 3 smart-picker specs discovered. PASS.
+  4. tsc app+spec = 0 errors (strict intact). PASS.
+  5. Greps in features/smart-picker/: primeng/material 0; localStorage/sessionStorage 0; commission_pct 0 real (negative-assertions only). PASS.
+  6. Flagged cross-slice fixup RULED ACCEPT-AS-NECESSARY: 2 lines, vi.fn<[string],void>()->vi.fn<(id:string)=>void>() (Vitest3->4), annotation-only, was blocking ALL specs' compilation.
+  7. D4 git-mv history-preserving CONFIRMED: commit 4196125 R022 component + R100 spec; git log --follow on spec traces to pre-rename 7001b44.
+  8. Reconciliations PASS: commission_pct truly absent (7 §9.E fields, confidence 0-1); provideHttpClient(withFetch()) added cleanly, NO interceptor invented (withInterceptors only in a deferral comment; 0 interceptor files).
+BLOCKING FINDING -> VERDICT REJECT: BASE DIVERGENCE / SUPERSESSION. Branch cut from ba94543 (pre-SP05, smart-picker a SHELL feature). Between dispatch and gate: SP05 mfe-catalog (#82, now on develop) relocated smart-picker into the mfe-catalog REMOTE (apps/mfe-catalog/src/app/catalog-new/), deleted shell features/catalog-new/, replaced shell /catalogs/new with loadChildren->./CatalogRoutes; integration advanced ba94543->4ff7c65; FOUNDER MERGED #55 (25882a47, 03:44 UTC) carrying the SP05/remote version. Feature shipped to develop via the federated remote (D4 NOT applied there, NO HttpClient wiring), NOT via my shell-based slice. Merging my branch would resurrect deleted shell files + removed route = DUPLICATE smart-picker, breaking strangler-fig.
+This collision was PRE-PREDICTED in the lead SP05 memory 'FORWARD COLLISION FLAG' — escalated at step-3 review exactly as planned.
+Actions: branch LEFT UNPUSHED; NO group PR; NO merge; worktree to be removed. Board Active->Recently-merged. #55 escalation comment posted (issuecomment-4677113722).
+Done: independent gate re-run; fixup/D4/reconciliation rulings recorded; board+STATUS flipped; #55 escalation.
+In progress: none.
+Blockers: FOUNDER RECONCILIATION needed — are the shell D4-rename + provideHttpClient + CategoryService-HTTP deltas (a) MOOT (mfe-catalog remote already serves /catalogs/new) or (b) RE-APPLY onto apps/mfe-catalog as a fresh develop-based slice (rename catalog-new->smart-picker INSIDE the remote + wire real /api/v1/categories/suggest HTTP — the remote currently serves SIMULATED data, the one functional gap). NOT a re-run of the rejected shell slice.
+Next: founder rules (a)/(b); if (b), open new feature targeting apps/mfe-catalog off develop.
+Hand-offs: none new (founder-direct via #55 comment).
+=========
+
 === UPDATE: 2026-06-11 — SP04 mfe-dashboard MERGE-GATE (HYBRID step 3) ===
 Phase: MF Sub-Plan 04 (F1 landing PUBLIC + F6 dashboard AUTH → mfe-dashboard remote, port 4204)
 Session: mesell-mfe-dashboard-frontend-session-1 (lead merge-gate review)
@@ -19,8 +42,18 @@ Done:
   - Infra memo handoff_mf_dashboard_deploy.md (D29 4th-remote hosting; first PUBLIC-route remote, highest-stakes CSP → SP07). Board inter-lead row OPEN (48h SLA).
 In progress: none (gate closed)
 Blockers: none
-Founder gate: PR #86 [FOUNDER GATE — DO NOT MERGE] integration→develop OPENED + LEFT OPEN (full §9.A scorecard). Lead does NOT approve (D1).
-Next: founder reviews/merges #86 (+ #82 SP05, #61/#68 Wave 1, #55 smart-picker). On smart-picker step-3: heed the SP05-relocation sequencing conflict (catalog-new tree moves to apps/mfe-catalog once #82 merges).
+Founder gate: PR #86 [FOUNDER GATE — DO NOT MERGE] integration→develop OPENED + LEFT OPEN (full §9.A scorecard). Lead did NOT approve (D1).
+=========
+
+=== UPDATE: 2026-06-11 — SP04 LANDED ON DEVELOP + keep-both reconciliation ===
+Phase: MF Sub-Plan 04 closeout (post founder-merge)
+Session: mesell-mfe-dashboard-frontend-session-1
+Done:
+  - FOUNDER MERGED founder-gate PR #86 (merge 90e3f0e) — SP04 mfe-dashboard IS ON DEVELOP. Also merged #82 (SP05), #68 (SP03), #61 (SP02), #55 (smart-picker). No open frontend founder gates remain. All 5 MF remotes coexist on develop (pricing 4201/export 4202/onboarding 4203/dashboard 4204/catalog 4205).
+  - KEEP-BOTH: between gate-open and merge, the founder merged SP05 (#82) → develop gained mfe-catalog (4205), so the SP04 integration branch (built on pre-#82 develop) would have CONFLICTED on the 4 shared frontend files. Lead independently performed the keep-both refresh (worktree sp04-refresh, de7a01d): manifest/package.json/angular.json keep-both (all 5 remotes); app.routes.ts auto-merged (dashboard '' + /dashboard AND catalog loadChildren ./CatalogRoutes coexist). Dashboard remote 2.816s/catalog remote 3.132s GREEN; shell 3.188s/60.59 kB GREEN; 43 files/411 tests 0 fail/0 skip (SP05-inclusive baseline; SP04 adds 0 specs). 0 conflict markers; all JSON valid.
+  - The founder ALSO self-resolved the same union (958a9dd "5 remotes coexist") and merged via #86 BEFORE my refresh push landed. Lead resolution matched founder's on app.routes.ts; the 3 JSON files differ only in remote ORDER (semantically identical). Founder's 90e3f0e authoritative; my de7a01d redundant. Deleted the merged integration branch (gh api).
+Blockers: none
+Next: smart-picker step-3 — #55 + #82 BOTH on develop; catalog-new tree has moved to apps/mfe-catalog (verify as-landed shape). SP06 mfe-auth (worktree feature/mfe-auth/frontend) is the LAST extraction.
 =========
 
 === UPDATE: 2026-06-11 09:00 — SP04 mfe-dashboard extraction ===
