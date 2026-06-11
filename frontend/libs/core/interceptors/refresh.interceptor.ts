@@ -99,9 +99,27 @@ function handle401(
   );
 }
 
+/**
+ * Paths whose 401s must NOT trigger a refresh attempt.
+ * These are the cookie-auth or public endpoints — a 401 here means a genuinely invalid
+ * OTP or expired refresh cookie, not a stale access token. Re-entering refresh on these
+ * would create an infinite loop (R-W6-11(e)).
+ *
+ * NOTE: /api/v1/auth/me is NOT in this list because a 401 from /me IS recoverable via
+ * a token refresh (if the access token expired between bootstrap and the /me call).
+ * In practice /me is called immediately after a successful refresh so this is rare,
+ * but correctness requires we handle it.
+ */
+const SKIP_REFRESH_PATHS = [
+  '/api/v1/auth/otp/send',
+  '/api/v1/auth/otp/verify',
+  '/api/v1/auth/refresh',
+  '/api/v1/auth/logout',
+];
+
 export const refreshInterceptor: HttpInterceptorFn = (req, next) => {
-  // Skip the auth namespace — refresh/logout/send/verify must NOT re-enter refresh
-  if (req.url.includes('/api/v1/auth/')) {
+  // Skip the four cookie-auth / public paths — a 401 here must NOT re-enter refresh
+  if (SKIP_REFRESH_PATHS.some((path) => req.url.includes(path))) {
     return next(req);
   }
 

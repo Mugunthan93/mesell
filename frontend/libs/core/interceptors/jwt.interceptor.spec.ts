@@ -1,11 +1,15 @@
 /**
- * jwt.interceptor.spec.ts — Wave 6 Wave A
+ * jwt.interceptor.spec.ts — Wave 6 Wave A (rev 2: /me fix)
  *
  * Tests jwtInterceptor using Angular HttpTestingController.
  * Verifies:
  *   - Authorization: Bearer header attached when token is present on non-/auth/* requests
  *   - No header added when token is null
- *   - /api/v1/auth/* requests are skipped (no Bearer added — they are cookie-auth or public)
+ *   - /api/v1/auth/otp/send, /otp/verify, /refresh, /logout: skip Bearer (public or cookie-auth)
+ *   - /api/v1/auth/me: DOES get Bearer (it is Bearer-protected on backend via Depends(get_current_user))
+ *
+ * Fix from RESUME session: the original broad /api/v1/auth/* skip incorrectly excluded /auth/me
+ * which is a Bearer-protected endpoint. The fix uses explicit path matching (SKIP_BEARER_PATHS).
  */
 
 import { TestBed } from '@angular/core/testing';
@@ -77,8 +81,8 @@ describe('jwtInterceptor — token null', () => {
   });
 });
 
-describe('jwtInterceptor — /api/v1/auth/* skip rule', () => {
-  it('does NOT attach Bearer on POST /api/v1/auth/otp/send even when token exists', () => {
+describe('jwtInterceptor — SKIP_BEARER_PATHS (cookie-auth + public endpoints)', () => {
+  it('does NOT attach Bearer on POST /api/v1/auth/otp/send (public endpoint)', () => {
     const { http, controller } = setup('valid-token');
 
     http.post('/api/v1/auth/otp/send', { phone: '+919876543210' }).subscribe();
@@ -88,7 +92,7 @@ describe('jwtInterceptor — /api/v1/auth/* skip rule', () => {
     req.flush({ request_id: 'req-1' });
   });
 
-  it('does NOT attach Bearer on POST /api/v1/auth/otp/verify', () => {
+  it('does NOT attach Bearer on POST /api/v1/auth/otp/verify (OTP exchange, no prior token)', () => {
     const { http, controller } = setup('valid-token');
 
     http.post('/api/v1/auth/otp/verify', { phone: '+91123', otp: '123456' }).subscribe();
@@ -98,7 +102,7 @@ describe('jwtInterceptor — /api/v1/auth/* skip rule', () => {
     req.flush({ access_token: 'tok', expires_in: 900, token_type: 'bearer' });
   });
 
-  it('does NOT attach Bearer on POST /api/v1/auth/refresh', () => {
+  it('does NOT attach Bearer on POST /api/v1/auth/refresh (cookie-auth path)', () => {
     const { http, controller } = setup('valid-token');
 
     http.post('/api/v1/auth/refresh', {}).subscribe();
@@ -108,7 +112,7 @@ describe('jwtInterceptor — /api/v1/auth/* skip rule', () => {
     req.flush({ access_token: 'new-tok', expires_in: 900, token_type: 'bearer' });
   });
 
-  it('does NOT attach Bearer on POST /api/v1/auth/logout', () => {
+  it('does NOT attach Bearer on POST /api/v1/auth/logout (cookie-auth path)', () => {
     const { http, controller } = setup('valid-token');
 
     http.post('/api/v1/auth/logout', {}).subscribe();
@@ -117,18 +121,29 @@ describe('jwtInterceptor — /api/v1/auth/* skip rule', () => {
     expect(req.request.headers.get('Authorization')).toBeNull();
     req.flush(null, { status: 204, statusText: 'No Content' });
   });
+});
 
-  it('does NOT attach Bearer on GET /api/v1/auth/me', () => {
-    // /auth/me uses Bearer (jwtInterceptor DOES skip it because it contains /api/v1/auth/).
-    // The intent: auth endpoints should not have stale tokens from the interceptor.
-    // The real /me call (from AuthApiService) would only be made AFTER a valid access_token exists,
-    // so Bearer from the interceptor on /me is safe but the skip rule is belt-and-suspenders.
+describe('jwtInterceptor — /api/v1/auth/me GETS Bearer (Bearer-protected endpoint)', () => {
+  it('DOES attach Bearer on GET /api/v1/auth/me when token exists', () => {
+    // /auth/me is Bearer-protected on the backend (Depends(get_current_user) in iam/router.py L226).
+    // It is NOT in SKIP_BEARER_PATHS — it needs a Bearer token to identify the user.
+    // RESUME fix: the original broad /api/v1/auth/* skip incorrectly excluded /me → 401 in production.
     const { http, controller } = setup('valid-token');
 
     http.get('/api/v1/auth/me').subscribe();
 
     const req = controller.expectOne('/api/v1/auth/me');
-    // jwtInterceptor skips /api/v1/auth/* — no Bearer added
+    // /me is NOT in SKIP_BEARER_PATHS → Bearer IS attached
+    expect(req.request.headers.get('Authorization')).toBe('Bearer valid-token');
+    req.flush({ user_id: 'uid', phone: '+91123', plan: 'free', created_at: '', last_login_at: null });
+  });
+
+  it('does NOT attach Bearer on GET /api/v1/auth/me when token is null', () => {
+    const { http, controller } = setup(null);
+
+    http.get('/api/v1/auth/me').subscribe();
+
+    const req = controller.expectOne('/api/v1/auth/me');
     expect(req.request.headers.get('Authorization')).toBeNull();
     req.flush({ user_id: 'uid', phone: '+91123', plan: 'free', created_at: '', last_login_at: null });
   });
