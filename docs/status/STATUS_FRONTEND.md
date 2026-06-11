@@ -3,6 +3,22 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-11
 
+=== UPDATE: 2026-06-11 23:55 ===
+Phase: wave6-auth-core (Wave 6 Wave A — real auth core) — HYBRID step-3 LEAD MERGE-GATE
+Session: mesell-wave6-auth-core-gate-session-1
+Board sweep: wave6-auth-core moved to Recently merged (#134 squash f1dfae5, founder-gate #135 OPEN); wave6-api-wiring PLAN row unchanged (not stale); 6 infra inter-lead requests OPEN (cutover-week carried, none stale >=7d) — no staleness flags.
+Done:
+  - VERDICT = PASS. Independent re-verification in fresh worktree /tmp/mesell-wt/w6a-review (skeptical-lead).
+  - Focal-1 (C4 smoke rewrite): ACCEPTED. Mock->real-HTTP variant preserves the WRITE-path crux (remoteAuth===shellAuth; post-write isAuthenticated/getToken; guard returns true) — steps 2/4/5 identical mechanism. name/id->phone/user_id assertion swap is the correct consequence of real /me hydration. Not weakened, not circular. Rewrite (not STOP) correct: the mock setTimeout path no longer exists in the real-flow component.
+  - Focal-2 (test discrepancy): RESOLVED. The 4 load-remote.spec failures are a PRE-EXISTING latent test-isolation defect (csp-smoke.spec & load-remote.spec alias the same native-federation mock via captured closures on worker co-location). builder-3 RIGHT; builder-2's "529/0 @ 0615505" was a MISREPORT (actual 529/4). Forensic proof: develop b622847 = 0/463; 0615505 = 4/529; tip 448a660 = 4/550; load-remote.spec 6/6 in isolation. No Wave A commit touches load-remote.ts/.spec.ts or any federation mocker -> NOT a regression, NOT attributable to a builder. LEAD FIX (commit 8d2d053): vi.mocked(loadRemoteModule) binding -> 550/0 deterministic.
+  - Focal-3 (full re-verification): PASS. 7 builds GREEN <=90s; suite 54/550/0-fail on merged tip fcb9ceb; boundary 0; §6.G singleton non-drift; interceptors in all 7 entries (jwt->refresh->error); SKIP_BEARER_PATHS correct; withCredentials scoped; DISCREPANCY-1->/products; AuthUser additive-optional; refresh single-flight+no-loop+logout specs green.
+  - Group PR #134 LEAD-GATE APPROVE + squash --admin (f1dfae5); frontend branch deleted via gh api; develop merged into integration conflict-free; re-certified; integration pushed fcb9ceb; founder-gate PR #135 OPENED + LEFT OPEN (D1 — lead does NOT approve).
+In progress: none.
+Blockers: none. Wave A is the foundation slice — Wave B/C/D dispatch is gated on founder merging #135 to develop (DECISION-4 serial).
+Next: await founder gate on #135; on merge -> Wave B (dashboard||onboarding) dispatch per Wave 6 MASTER PLAN.
+Hand-offs: carried (non-blockers) — backend (CORS-credentials runtime + Set-Cookie live, memo §12), infra (401->refresh->retry live smoke, R-SP7-1 cutover-week).
+=========
+
 === UPDATE: 2026-06-11 17:30 — Wave 6 Wave A BUILDER-3 COMPLETE ===
 Phase: wave6-auth-core — visual layer / error+offline UI states (meesell-angular-ui-styler)
 Session: mesell-wave6-auth-core-build-session-3
