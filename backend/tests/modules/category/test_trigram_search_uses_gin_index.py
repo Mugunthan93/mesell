@@ -27,6 +27,8 @@ import pytest
 from sqlalchemy import text
 
 from app.modules.category import repository as category_repo
+# CI Gate-4 pass-3 (§2.3, Class C): seed-presence gate lifted into conftest.
+from tests.conftest import _SEED_SKIP_REASON, _seed_data_absent
 
 
 _GIN_INDEXES = {
@@ -37,7 +39,19 @@ _GIN_INDEXES = {
 
 
 async def test_search_via_trigram_uses_gin_bitmap_index(db):
-    """EXPLAIN ANALYZE on an ILIKE %kurti% on path picks up the GIN."""
+    """EXPLAIN ANALYZE on an ILIKE %kurti% on path picks up the GIN.
+
+    CI Gate-4 pass-3 (§2.3, Class C): RUNTIME-SKIPS when the PROD reference seed
+    is absent.  The Postgres planner only chooses a GIN ``Bitmap Index Scan``
+    when ``categories`` is large enough for the index to beat a sequential scan;
+    on CI's schema-only ``meesell_test`` (categories near-empty) it picks a seq
+    scan, so the ``"Bitmap" in plan_text`` assertion fails spuriously — the GIN
+    index exists (built by ``alembic upgrade head``) but is not SELECTED on tiny
+    data.  The sibling P95 test stays green (fast on empty data).  Tracked:
+    BE-SEED-1.
+    """
+    if await _seed_data_absent(db):
+        pytest.skip(_SEED_SKIP_REASON)
     stmt = text(
         "EXPLAIN (ANALYZE, FORMAT TEXT) "
         "SELECT id, path FROM categories "

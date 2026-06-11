@@ -52,6 +52,8 @@ from app.shared.models import (
     Template,
     User,
 )
+# CI Gate-4 pass-3 (§2.3): seed-presence gate lifted into tests/conftest.py.
+from tests.conftest import _SEED_SKIP_REASON, _seed_data_absent  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
@@ -1161,38 +1163,11 @@ async def test_server_default_compliance_extensions_empty_dict(db: AsyncSession)
 # (provide a CI-scoped seed fixture or a nightly-only seeded data gate).
 # ===========================================================================
 
-_SEED_SKIP_REASON = (
-    "Reference seed data absent (CI meesell_test is schema-only, no prod data "
-    "seed). Tracked: BE-SEED-1."
-)
-
-
-async def _seed_data_absent(conn) -> bool:
-    """True when the PROD reference seed is absent → schema-only DB (CI).
-
-    The 4 ``test_seeded_*`` invariants assert against the PROD reference seed
-    (3772 categories / 49259 field_enum_values / 3566 templates / 67 aliases
-    loaded by the DATABASE-track seed scripts, NOT run in CI).
-
-    SIGNAL CHOICE (CI Gate-4 pass-2 deviation — FLAGGED): the spec specified
-    ``COUNT(categories) == 0`` as the gate.  In the integration run, route-level
-    fixtures (customer_client / iam_client / category flows) COMMIT a handful of
-    ``categories`` rows into the shared ``meesell_test`` db and do NOT roll them
-    back, so by the time these read-only seeded tests run, ``categories`` is
-    non-empty (typically 1) even though the PROD seed is absent — which would
-    defeat a literal ``categories == 0`` gate and re-surface the AssertionError
-    the skip is meant to prevent (violating the §3 acceptance gate).
-
-    ``field_enum_values`` is the pollution-robust equivalent signal: it is
-    populated ONLY by the 49 259-row DATABASE-track enum seed and by NO test
-    fixture (verified: 0 rows after a full integration run).  An empty
-    ``field_enum_values`` is therefore the unambiguous "no prod seed" signal
-    that survives the committing-fixture residue.  This honours the spec INTENT
-    (skip when the prod seed is absent) while the spec's literal categories gate
-    cannot under shared-DB pollution.
-    """
-    result = await conn.execute(text("SELECT COUNT(*) FROM field_enum_values"))
-    return result.scalar_one() == 0
+# CI Gate-4 pass-3 (§2.3): ``_seed_data_absent`` + ``_SEED_SKIP_REASON`` were
+# LIFTED into ``tests/conftest.py`` so both this file and the category seed
+# integration tests import them from one source of truth.  They are imported at
+# the top of this module (see the ``from tests.conftest import …`` line).  The
+# previous local copies (pass-2) are removed; behaviour is byte-identical.
 
 
 async def test_seeded_grocery_category_count(dev_engine) -> None:
@@ -1259,8 +1234,17 @@ async def test_is_advanced_flag_set_for_group_id(dev_engine) -> None:
     Uses JSONB array operators (jsonb_array_elements) to check the flag on
     the exact field object, rather than schema_jsonb::text LIKE which would
     give false positives by matching is_advanced=true from a different field.
+
+    CI Gate-4 pass-3 (§2.3, Class C): RUNTIME-SKIPS when the PROD reference seed
+    is absent.  This invariant asserts against the 3566-template ``schema_jsonb``
+    seed (a DATABASE-track concern, NOT loaded in CI's schema-only
+    ``meesell_test``); without the seed ``templates`` is empty → COUNT==0 → the
+    assertion fails spuriously.  Gated on the same ``_seed_data_absent`` signal
+    as the 4 ``test_seeded_*`` tests above.  Tracked: BE-SEED-1.
     """
     async with dev_engine.connect() as conn:
+        if await _seed_data_absent(conn):
+            pytest.skip(_SEED_SKIP_REASON)
         result = await conn.execute(
             text(
                 """

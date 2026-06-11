@@ -4092,3 +4092,78 @@ Next: services-builder executes pass-3 spec → PR → coordinator STEP-3 gate. 
 Hand-offs: infra Gate-4 inter-lead row updated on the board (pass-3 in flight, one more pass then re-fire; NO
   ci.yml change from any pass). Decentralized sharing: infra reads my memory/STATUS per CLAUDE.md rule 3.
 =========
+
+=== UPDATE: 2026-06-11 12:40 ===
+Phase: CI Gate-4 (integration) test-harness fix — PASS 3 (session mesell-ci-gate4-fix-session-3)
+Specialist: meesell-services-builder. Branch fix/ci-gate4-integration-pass3 off origin/develop (tip e2a0404 ≥ df93208).
+Worktree /tmp/mesell-wt/ci-gate4-pass3. Substrate: Homebrew PG16 :5433 + Valkey :6381, master .venv py3.11
+(pytest 8.3.0 / pytest-asyncio 0.24.0 / SQLAlchemy 2.0.32). CI env replicated (TEST_DATABASE_URL meesell_test,
+TEST_VALKEY_URL redis://…:6381/0). Do NOT merge — coordinator STEP-3 gate.
+
+Done (7 in-fence test files; ZERO app/ci.yml/pytest.ini/alembic changes):
+  (A) Class A — loop hygiene: loop_scope="function" on customer_client, export_client, unauth_client (3 bare
+      route-client fixtures). SWEEP now EMPTY: grep -rnE '@pytest_asyncio\.fixture$' on the 2 fence route-client
+      files returns nothing. ASGITransport sweep across tests/ found NO 4th bare client fixture (the integration/
+      iam_client + stub_category_client already carry loop_scope; the core/* ASGITransport uses are inline
+      functions, not DB-route fixtures). Ported export_client's 3 pre-pass-2 defects to match customer_client:
+      DB→_DEV_DATABASE_URL, Valkey→_valkey_base(), provision-aware drop_all/create_all gated on bool(TEST_DATABASE_URL).
+  (B) Class B — SAVEPOINT per-test isolation (the crux):
+      * db_session (tests/conftest.py) rewritten to connection-outer-transaction + ROLLBACK, with the session in
+        join_transaction_mode="create_savepoint" so in-test commit() releases a savepoint, not the outer txn.
+      * customer_client + export_client _db_override: single shared connection + open outer txn + savepoint-mode
+        async_sessionmaker; ALL override sessions bind to that one conn; handler commit() releases a SAVEPOINT;
+        teardown outer_txn.rollback() discards everything → shared meesell_test left byte-clean. audit_mw
+        AsyncSessionLocal patch binds the same savepoint sessionmaker (route-clients).
+      * CROSS-CONNECTION recovery: db_session ALSO rebinds the 5 worker-bound AsyncSessionLocal names
+        (app.modules.image.tasks / export.tasks / iam.service / ai_ops.cost_tracker / core.middleware.audit_mw)
+        to the shared savepoint sessionmaker for the test's duration (save/restored). This is required because the
+        image precheck pipeline opens `async with AsyncSessionLocal() as session` on a MODULE-BOUND name — patching
+        app.shared.database.AsyncSessionLocal alone does NOT reach it. The rebind lets the worker JOIN the test
+        connection so the post-commit read-back sees the row; the single outer rollback discards it. Recovered the
+        3 image integration tests (test_happy_path_5_keys_ready, test_get_image_urls_shape_and_ordering,
+        test_budget_exhausted_falls_back_to_skipped_budget) — 1 of which (happy_path) was a green→red regression
+        from the db_session rewrite, now green again.
+  (C) Class C — seed-skip extension: lifted _seed_data_absent + _SEED_SKIP_REASON into tests/conftest.py (single
+      source of truth; field_enum_values==0 gate carried forward from pass-2 — pollution-robust). test_database.py
+      imports them (local copies removed) + test_is_advanced_flag_set_for_group_id now skips. 3 category-seed tests
+      skip-guarded (field_enum ×2 via _pick_first_fev, schema_fetch documented-keys, trigram GIN bitmap). All cite
+      BE-SEED-1, SKIPS not xfail, assertions unchanged.
+  (D) Class D — 4 is_leaf multi_tenant tests UNTOUCHED, stay red (BE-CAT-ISLEAF-1).
+
+BEFORE/AFTER (origin/develop on the SAME substrate established the BEFORE = zero-regression proof):
+  BEFORE = 35 failed / 135 passed / 8 skipped / 14 errors  (== spec pass-2 AFTER residue, parity confirmed)
+  AFTER  =  5 failed / 174 passed / 13 skipped / 0 errors
+  Class A 26→0, Class B 14→0, all 14 ERRORS→0, Class C 5→skip, Class D 4 stay red.
+
+SAVEPOINT PROOF (forced order, addopts cleared):
+  (1) intra-test persistence: TestGetSellerProfile::test_get_profile_after_upsert_returns_200 PASSED — PATCH
+      (handler commit→savepoint release) then GET the same profile → 200 (sees its own committed-to-savepoint write).
+  (2) cross-test isolation: run AFTER the upsert test, TestGetSellerProfile::test_get_profile_when_no_row_returns_404
+      PASSED — the prior test's committed profile was discarded by outer_txn.rollback() at teardown → no leak.
+
+STOP-and-report residual (1 fail above the 4-is_leaf floor): test_pricing_persistence::test_get_last_calc_returns_most_recent.
+  It commits 3 calcs in (intended) DISTINCT transactions, relying on transaction-bound NOW() for distinct created_at,
+  then asserts get_last_calc (ORDER BY created_at DESC LIMIT 1) returns the last. Under savepoint isolation all 3
+  share the OUTER txn's NOW() → created_at identical → nondeterministic order → returns 110 not 150. This is
+  STRUCTURALLY incompatible with single-transaction rollback isolation (savepoints cannot tick the txn clock). It was
+  ALREADY RED before pass-3 (IntegrityError) → red-to-red, NOT a regression. A real fix needs editing
+  test_pricing_persistence.py (use make_worker_session per calc for real cross-tx commits, or add a created_at
+  tiebreak) — OUTSIDE the §5 pass-3 fence. FLAGGED as BE-PRICING-LASTCALC-TX-1.
+  RISK-CALLOUT verified: grep confirmed customer + export services write ONLY through the injected AsyncSession (no
+  raw-connection bypass), so the savepoint captures all route-handler writes.
+
+Local-dev no-regression (by inspection): every rollback/drop/provision branch gates on bool(TEST_DATABASE_URL);
+  with no TEST_* the route-clients build an ephemeral schema (drop_all/create_all) and the outer rollback leaves it
+  unchanged; db_session rolls back its own ephemeral connection. The live dev DB is never mutated.
+
+Ruff: tests/conftest.py + tests/test_customer_routes.py = clean. Pre-existing-only lint elsewhere (test_database.py
+  4× F401, export/test_router.py E402 cluster — all present on origin/develop; export gains 1 E402 by adding one
+  import to the file's existing pytestmark-wedged import block, consistent with its 8 pre-existing E402s).
+
+In progress: none. Blockers: none new.
+Next: coordinator STEP-3 review of PR. After merge, Gate 4 re-fires on develop→main and should reach the
+  4-is_leaf floor once BE-CAT-ISLEAF-1 + BE-PRICING-LASTCALC-TX-1 land.
+Hand-offs: coordinator gates the PR (do NOT merge). Open known-reds: BE-CAT-ISLEAF-1 (4 is_leaf, app/category ticket),
+  BE-SEED-1 (CI prod-seed — skip is the V1 disposition), BE-PRICING-LASTCALC-TX-1 (new — pricing last-calc needs
+  real cross-tx commits; test-file fix out of pass-3 fence).
+=========

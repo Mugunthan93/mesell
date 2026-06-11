@@ -68,7 +68,7 @@ _CUSTOMER_TEST_PHONE = "+915550099901"
 # Fixture: customer_client — authenticated ASGI client + Valkey seeded
 # ─────────────────────────────────────────────────────────────────────────────
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def customer_client():
     """Authenticated ASGI client for customer route tests.
 
@@ -128,7 +128,43 @@ async def customer_client():
             await conn.run_sync(Base.metadata.drop_all)
             await conn.run_sync(Base.metadata.create_all)
 
-    TestSession = async_sessionmaker(engine, expire_on_commit=False)
+    # ── 1b. SAVEPOINT per-test isolation (CI Gate-4 pass-3, §2.2-ii) ───────
+    # The route handlers really call ``await session.commit()`` (e.g. the
+    # PATCH /seller-profile flow persists a SellerProfile row).  The previous
+    # ``_db_override`` opened a fresh session per call and committed straight
+    # into the shared ``meesell_test`` db with NOTHING ever cleaning the rows up
+    # → committed rows (incl. the fixed-phone ``users`` row minted by /otp/verify)
+    # accumulated session-wide → ``ix_users_phone`` / ``products_user_id_fkey``
+    # IntegrityErrors AND cross-test contamination.
+    #
+    # THE FIX: a SINGLE test-scoped connection with an OPEN outer transaction.
+    # Every override session binds to THAT connection via an
+    # ``async_sessionmaker(join_transaction_mode="create_savepoint")`` — so a
+    # handler ``commit()`` RELEASES a SAVEPOINT instead of ending the outer txn.
+    # On teardown ``outer.rollback()`` discards EVERYTHING the test wrote, so the
+    # shared ``meesell_test`` is left byte-clean for the next test.  The audit_mw
+    # ``AsyncSessionLocal`` patch (3a below) binds to the SAME connection + the
+    # SAME savepoint sessionmaker, so audit writes are rolled back too (else they
+    # would leak past the outer rollback).
+    #
+    # LOCAL-DEV GUARD: off-CI the connection is on the ephemeral schema this
+    # fixture just built (drop_all/create_all) and is dropped on teardown — the
+    # outer-rollback leaves that ephemeral DB unchanged; the live dev DB is never
+    # mutated (this fixture only ever touches ``_DEV_DATABASE_URL`` == the test
+    # DB in CI, and an ephemeral local schema off-CI).
+    #
+    # RISK (SQLAlchemy ≥2.0 required for ``join_transaction_mode`` — stack is
+    # 2.0.x): a handler that writes via a RAW connection OUTSIDE the injected
+    # session would escape the savepoint.  Verified by grep that the customer
+    # service layer writes ONLY through the injected AsyncSession (no raw
+    # connection bypass).
+    shared_conn = await engine.connect()
+    outer_txn = await shared_conn.begin()
+    TestSession = async_sessionmaker(
+        bind=shared_conn,
+        expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
+    )
 
     # ── 2. Override FastAPI DI (get_db + get_valkey_otp) ───────────────────
     # CI Gate-4 pass-2 fix: resolve the Valkey base via the shared
@@ -149,15 +185,19 @@ async def customer_client():
         return c
 
     async def _db_override():
-        async with TestSession() as session:
-            try:
-                yield session
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
-            finally:
-                await session.close()
+        # Sessions bind to the shared connection (savepoint mode): a handler
+        # ``commit()`` releases a SAVEPOINT, never the outer transaction.  Do
+        # NOT close the shared connection here — it is owned by the fixture and
+        # rolled back wholesale at teardown.
+        session = TestSession()
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
 
     app.dependency_overrides[get_valkey_otp] = _otp_override
     app.dependency_overrides[get_db] = _db_override
@@ -226,6 +266,19 @@ async def customer_client():
         pass
     try:
         await otp_seed_client.aclose()
+    except Exception:
+        pass
+
+    # SAVEPOINT teardown (CI Gate-4 pass-3): roll back the outer transaction so
+    # every row the test committed (released as savepoints) is discarded → the
+    # shared meesell_test is left byte-clean.  Close the shared connection before
+    # any drop_all / dispose.
+    try:
+        await outer_txn.rollback()
+    except Exception:
+        pass
+    try:
+        await shared_conn.close()
     except Exception:
         pass
 

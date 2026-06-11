@@ -85,6 +85,10 @@ from sqlalchemy.pool import NullPool
 
 import app.modules.export.service as _export_service_mod
 from app.main import app
+# CI Gate-4 pass-3 (§2.1): port the pass-2 customer_client DB/Valkey precedence
+# helpers to export_client (kills the 3 pre-pass-2 defects: hardcoded
+# localhost:5432, hardcoded redis://localhost:6379, non-provision-aware drop_all).
+from tests.conftest import _DEV_DATABASE_URL, _valkey_base
 from app.modules.catalog.exceptions import ProductNotFoundError
 from app.modules.export.exceptions import ExportNotFoundError
 from app.modules.export.schemas import (
@@ -144,37 +148,57 @@ def _make_export_response(
 # ─────────────────────────────────────────────────────────────────────────────
 # Fixture: export_client — authenticated ASGI client (self-contained)
 # ─────────────────────────────────────────────────────────────────────────────
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def export_client():
     """Authenticated ASGI client for export route tests.
 
-    Self-contained: creates an ephemeral DB schema, overrides FastAPI
-    dependencies (get_db + get_valkey_otp), patches module-level singletons
-    (audit_mw.AsyncSessionLocal + shared.valkey._cache_client), seeds an OTP,
-    and obtains a Bearer token via /otp/verify.
+    Self-contained: creates an ephemeral DB schema (off-CI) / reuses the
+    alembic-provisioned schema (CI), overrides FastAPI dependencies
+    (get_db + get_valkey_otp) with SAVEPOINT-isolated sessions, patches
+    module-level singletons (audit_mw.AsyncSessionLocal + shared.valkey
+    ._cache_client), seeds an OTP, and obtains a Bearer token via /otp/verify.
 
-    NullPool on the test engine prevents asyncpg from binding connections to a
-    specific event loop (the §8 / §12 cross-loop Future attachment fix).
-
-    Valkey must be reachable at CORE_TEST_VALKEY_URL
-    (default redis://localhost:6379).
+    CI Gate-4 pass-3 (§2.1 + §2.2): a STRUCTURAL TWIN of the pass-2 customer_client.
+    Three pre-pass-2 defects fixed here:
+      * DB URL  → ``_DEV_DATABASE_URL`` (was hardcoded localhost:5432 default).
+      * Valkey  → ``_valkey_base()``    (was hardcoded redis://localhost:6379).
+      * schema  → provision-aware drop_all/create_all (was unconditional → wiped
+                  the alembic-built pg_trgm GIN indexes + deadlocked the shared
+                  meesell_test in CI).
+    Plus ``loop_scope="function"`` (clears the 7 ``BaseHTTPMiddleware … Future
+    attached to a different loop`` errors) and the SAVEPOINT per-test isolation
+    (single shared connection + open outer txn + ``join_transaction_mode=
+    "create_savepoint"`` so handler commits release savepoints; outer rollback at
+    teardown leaves meesell_test byte-clean).
     """
     import app.core.middleware.audit_mw as _audit_mw
     import app.shared.valkey as _valkey_module
     from app.shared.database import Base, get_db
     from app.shared.valkey import get_valkey_otp
 
-    db_url = os.environ.get(
-        "TEST_DATABASE_URL",
-        "postgresql+asyncpg://meesell:password@localhost:5432/meesell",
-    )
+    db_url = _DEV_DATABASE_URL
     engine: AsyncEngine = create_async_engine(db_url, poolclass=NullPool)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
 
-    TestSession = async_sessionmaker(engine, expire_on_commit=False)
-    valkey_base = os.environ.get("CORE_TEST_VALKEY_URL", "redis://localhost:6379")
+    _provisioned = bool(os.environ.get("TEST_DATABASE_URL"))
+    if not _provisioned:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
+
+    # SAVEPOINT per-test isolation (§2.2-ii) — single shared connection, open
+    # outer transaction, savepoint-mode sessionmaker (see customer_client for
+    # the full rationale).  The export route handlers mock the service layer so
+    # most tests do not persist, but the /otp/verify Bearer mint DOES commit a
+    # ``users`` row — without the outer rollback that row leaks and the fixed
+    # export phone collides on ``ix_users_phone`` across tests.
+    shared_conn = await engine.connect()
+    outer_txn = await shared_conn.begin()
+    TestSession = async_sessionmaker(
+        bind=shared_conn,
+        expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
+    )
+    valkey_base = _valkey_base()
 
     _otp_clients: list = []
 
@@ -184,15 +208,16 @@ async def export_client():
         return c
 
     async def _db_override():
-        async with TestSession() as session:
-            try:
-                yield session
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
-            finally:
-                await session.close()
+        # Bind to the shared savepoint connection; do NOT close it here.
+        session = TestSession()
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
 
     app.dependency_overrides[get_valkey_otp] = _otp_override
     app.dependency_overrides[get_db] = _db_override
@@ -231,6 +256,11 @@ async def export_client():
                 "/api/v1/auth/otp/verify",
                 json={"phone": _EXPORT_TEST_PHONE, "otp": _EXPORT_TEST_OTP},
             )
+            if resp.status_code != 200:
+                raise RuntimeError(
+                    f"export_client fixture: /otp/verify failed "
+                    f"({resp.status_code}): {resp.text}"
+                )
             body = resp.json()
             ac.headers["Authorization"] = f"Bearer {body['access_token']}"
             yield ac
@@ -246,18 +276,38 @@ async def export_client():
         except Exception:
             pass
 
+    # SAVEPOINT teardown (§2.2): roll back the outer txn (discards the committed
+    # users row + any savepoint releases) → meesell_test left byte-clean.
+    try:
+        await outer_txn.rollback()
+    except Exception:
+        pass
+    try:
+        await shared_conn.close()
+    except Exception:
+        pass
+
+    # Provision-aware schema teardown (mirrors customer_client): only drop the
+    # ephemeral schema off-CI; never wipe the alembic-owned CI schema.
+    if not _provisioned:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Fixture: unauth_client — unauthenticated ASGI client (no Bearer)
 # ─────────────────────────────────────────────────────────────────────────────
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def unauth_client():
     """Bare ASGI client with no Authorization header.
 
     Does NOT require Valkey — auth middleware rejects the request before
     any service or Valkey call is made.
+
+    CI Gate-4 pass-3 (§2.1): ``loop_scope="function"`` added so the ASGI app /
+    middleware Futures bind to the test's own loop (clears the
+    ``BaseHTTPMiddleware … Future attached to a different loop`` error).
     """
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
