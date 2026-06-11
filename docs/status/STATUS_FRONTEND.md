@@ -5144,3 +5144,20 @@ Blockers: none. PR #53 awaiting founder review (by design, not a blocker). CI no
 Next: SP02 (mfe-export) once PR #53 merges + founder approval of SP02. Recipe in sub_plan_01_pricing.md.
 Hand-offs: infra D13 hosting memo (handoff_mf_pricing_deploy) — GCS/CDN/remotes.mesell.xyz/cloudbuild.remote.yaml/per-env manifest; localhost dev-validated, prod surface pending. Board inter-lead row OPEN.
 =========
+
+
+=== UPDATE: 2026-06-11 — SESSION START (SP03 mfe-onboarding — Wave 1 parallel extraction) ===
+Phase: MF Sub-Plan 03 — mfe-onboarding extraction (F5 onboarding + F13 profile)
+Session: mesell-mfe-onboarding-frontend-session-1
+Routes touched: /onboarding (F5), /profile (F13) — both → loadRemoteWithFallback.
+Specialists: meesell-angular-component-builder (Phase A+B extraction/promotion/wiring) → meesell-angular-service-builder (Phase C D22 C1–C5 auth-singleton verification).
+Board sweep (session-start): mfe-onboarding row added IN PROGRESS. Recently-merged: mfe-pricing (PR#52/#53 — #53 MERGED bb37f5f = develop tip), mf-workspace-foundation. Inter-lead open: (1) infra D13 hosting (handoff_mf_pricing_deploy, opened 2026-06-11); (2) infra C-CI-1 (opened 2026-06-10, ~1 day — within 48h SLA, discharged via PR#50 per develop log). No rows untouched 7+ days.
+Execution gates verified: SP01 pilot MERGED to develop (PR#53, bb37f5f = develop tip) — toolchain PROVEN. Founder GO for Wave-1 parallel execution (this morning). D21 RULED APPROVED (PR#49) — AuthLayout→@mesell/composites. D13 hosting DEFERRED to SP04-05 era (locally-proven class; no new infra request). D9/D14 resolved at SP07.
+PARALLEL-WAVE DELTA (important): SP02 (mfe-export) has NOT merged yet — no mfe-export branch on origin; develop apps/ = [frontend, mfe-pricing] only; manifest = {mfe-pricing}. So SP03 produces a TWO-entry manifest (pricing + onboarding), NOT three. SP02's export entry merges concurrently via its own founder gate. My shell-shared-file edits (app.routes.ts, manifest, angular.json, tsconfig.spec, styles.css @source) are MINIMAL + ADDITIVE (onboarding-only); before founder-gate PR I will `git merge origin/develop` and keep-both any SP02 overlap.
+As-built confirmed on develop: onboarding imports AuthLayoutComponent via relative ../../../layouts/auth-layout (D21 sever target); profile imports AuthService from @mesell/core (currentUser/logout) + deep @mesell/ui-kit/* (preserve). auth-layout relative consumers = onboarding + login + signup + otp-verify (4) — all re-pointed to @mesell/composites (D21, minimal-diff). mfe-pricing project shape = the copy template (native-federation:build→esbuild @angular/build:application; index.html REQUIRED).
+Done: gates verified, board flipped IN PROGRESS, parallel-wave delta logged.
+In progress: branch setup (F1, sp03-* worktree) + component-builder dispatch.
+Blockers: none.
+Next: cut feature/mfe-onboarding/integration off develop + feature/mfe-onboarding/frontend; dispatch component-builder (Phase A extract+promote, Phase B wire shell).
+Hand-offs: infra deploy memo (handoff_mf_onboarding_deploy, D24 third-remote GCS prefix) at Phase C — though D13 hosting deferred per gate, the memo records the prefix/matrix fan-out.
+=========
