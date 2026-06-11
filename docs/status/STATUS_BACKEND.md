@@ -4397,3 +4397,78 @@ Follow-up tickets opened (NOT fixed here):
   - (Resolved inline, not ticketed) the test_config + worker_db_isolation stale-API repairs were the
     lead-authorized exceptions, done in this PR; no separate ticket needed.
 =========
+
+=== UPDATE: 2026-06-11 — image-precheck (Feature 5) backend STEP 1 (as-built audit + branch setup) ===
+Phase: V1 Feature 5 (Image Pre-check) — BACKEND_ARCHITECTURE.md §11
+Session: mesell-image-precheck-backend-session-1 (HYBRID STEP 1 of 3)
+Board sweep: 1 active row added (image-precheck IN PROGRESS); microservices-export untouched since 2026-06-10
+  (1 day, not stale-7d). No inter-lead requests opened. Recently-merged hygiene OK (catalog-form #115 still
+  the freshest founder-gate-open row).
+
+Done:
+  - AS-BUILT AUDIT: the entire image module is ALREADY BUILT on develop (13321759). Verified by git show:
+    ORM (product_image.py, 4-slot CHECK, is_front Computed GENERATED), table in BASELINE migration
+    935e55b4852c (NOT a separate migration), service.py (6 methods), repository.py (7 methods), domain.py
+    (4 dataclasses), exceptions.py (5), tasks.py (Celery shell + full 5-step pipeline body), router.py
+    (2 endpoints, mounted main.py:126), schemas.py (3), gcs.py (4 methods), i18n (5 keys, DOT form
+    image.slot.occupied/image.not.found), watermark_v1.py + registry (PR #59), tests (7 unit + 3 integration).
+  - assert_product_ownership keyword-db form (product_id, user_id, *, db) VERIFIED at 2 image call sites
+    (upload_image + list_images) — NO drift; R5 board signature confirmed AS-BUILT.
+  - Honest REAL-GAP list (G-numbered): G1 FEATURE_IMAGE_PRECHECK_ENABLED absent (config.py:184 has only
+    FEATURE_SMART_PICKER_ENABLED); G2 router.py has zero flag-gate (D2 needs POST→404/GET→empty when OFF);
+    G3 docs §F5 stale (lines 198/229 still "6 images"/"60 MB" — amend 6→4/60→40MB per plan D1).
+  - Branch setup: stale feature/image-precheck/ai (ac4dd35) VERIFIED content-identical to develop, DELETED
+    (origin+local+remote-tracking); stale local feature/image-precheck/integration (7783842) deleted;
+    D/F Model-C conflict confirmed ON ORIGIN TOO ("directory file conflict" rejecting sub-branch while leaf
+    exists) → pushed ONLY feature/image-precheck/backend @ 13321759, leaf reconstituted at group-PR time.
+    Worktree /tmp/mesell-wt/image-precheck-backend.
+  - feature_image_precheck_backend.md memo written; MEMORY.md index appended.
+
+In progress: STEP 2 (master dispatches specialist for G1+G2) → STEP 3 (lead merge-gate) — NOT this session.
+
+Blockers: none. R1 ruling FLAGGED (not blocking): config.py is lead-owned per role scope, but the smart-picker
+  /catalog-form precedent landed the flag via the feature branch specialist. Recommend api-routes-builder owns
+  BOTH the config flag (G1) AND its only consumer the router gate (G2) in ONE coherent slice (the flag + its
+  consumer travel together, mirroring catalog-form's G1+G3 pairing). database-builder SKIP/VERIFY-only.
+
+Next: master ratifies R1 lineup ruling, then dispatches the named specialist for G1+G2 on
+  feature/image-precheck/backend. Lead does G3 docs amendment in the same PR. STEP 3 merge-gate after.
+
+Hand-offs: (to AI lead, via master) precheck_smoke fixtures (plan rows 25-26, Gate 2) are AI-track-owned
+  (meesell-image-precheck-builder) and ABSENT on develop — not a backend gap; flag to AI track. No backend↔
+  frontend/data/infra memos this step (contract is as-built and stable).
+=========
+
+=== UPDATE: 2026-06-11 21:59 ===
+Phase: image-precheck Feature 5 — backend slice G1/G2 (HYBRID STEP 2)
+Agent: meesell-api-routes-builder
+Branch: feature/image-precheck/backend
+Commits: 4444dce feat(image) + de96aca test(image), pushed to origin
+
+Done:
+  G1 — FEATURE_IMAGE_PRECHECK_ENABLED: bool = True added to backend/app/shared/config.py
+       adjacent to FEATURE_SMART_PICKER_ENABLED; same dev-true/staging-false comment posture.
+  G2 — backend/app/modules/image/router.py gated at REQUEST TIME (not import time):
+       - POST /api/v1/products/{id}/images → HTTP 404 when flag OFF (before idx validation)
+       - GET  /api/v1/products/{id}/images → ImagesListResponse(images=[]) + 200 when flag OFF
+         (before service call; read-only endpoint, NOT 404 per FEATURE_PLAN.md D2)
+  Tests — backend/tests/modules/image/test_flag_gate.py: 4 new tests, all PASS
+         - test_post_images_returns_404_when_flag_disabled
+         - test_get_images_returns_empty_list_when_flag_disabled
+         - test_post_images_flag_on_does_not_return_flag_guard_404
+         - test_get_images_flag_on_does_not_return_empty_list_from_guard
+
+Tests: 4 new PASS; 11/11 PASS standalone (4 new + 7 pre-existing unit tests in tests/modules/image/)
+Ruff: clean on all 3 files
+Memory: DONE (feature_image_precheck_session_1_handoff.md + MEMORY.md "Features in flight" updated)
+
+In progress: HYBRID STEP 3 — meesell-backend-coordinator merge-gate review
+
+Blockers: none
+
+Next: Lead STEP 3 merge-gate → PR feature/image-precheck/backend → feature/image-precheck → develop.
+  Lead also owns G3 docs amendment (V1_FEATURE_SPEC.md §F5 6→4 images + 60→40MB cap) in the same PR.
+
+Hand-offs: backend G1+G2 complete; API contract unchanged (router was already mounted + schemas unchanged).
+  Frontend can proceed against the existing OpenAPI spec — no contract delta from this slice.
+=========
