@@ -1645,3 +1645,64 @@ Per-job table:
 **Topology recorded:** 1 SM secret (`refresh-token-pepper`) with versioned SM versions during the grace window; 2 k8s keys in `backend-secrets`; grace-window mechanics in runbook §2. No new SM container to create.
 
 **Cost:** ₹0/month (docs + example only).
+
+---
+
+## SESSION: mesell-ci-activation-session-1 (follow-up 3 — develop→main re-fire) — 2026-06-11
+
+### Re-fire the first pipeline (founder-authorized D1 gate exercised through infra)
+
+**Phase:** CI/CD pipeline activation (DEVOPS_ARCHITECTURE.md §-governed). Founder's `develop`→`main` D1 gate, authorized in-prompt. NO terraform / cluster / secret mutations this session.
+
+**Pre-flight:** active GCP account `vaishnaviramoorthy@gmail.com`, project `project-1f5cbf72-2820-4cdb-949`, gh login `Mugunthan93`. main tip `0ea1988` (PR #64). develop tip `2662e5b`. Confirmed both Gate-1 + env fixes ARE on develop: `pythonpath = .` in `backend/pytest.ini`; `JWT_SECRET:` x6 across ci.yml jobs (§5.D env-guard).
+
+**PR opened + merged:**
+- **PR #78** `chore: re-fire CI — develop to main (Gate-1 + env-guard fixes)` (develop→main).
+- Merged FIRST attempt via REST `PUT /pulls/78/merge -f merge_method=merge` (MERGE COMMIT, not squash — develop→main history continuity, same as PR #64).
+- **Merge SHA: `218aa83d9af2396f02a9a53da291d5a9092e4415`**. main tip = `218aa83`. develop PRESERVED at `2662e5b` (not deleted).
+
+**Push run watched: `27320321536`** (head_sha = merge SHA). Full run watched to completion via `gh run watch --exit-status`.
+
+**Per-job verdict:**
+| Job | Verdict |
+|---|---|
+| CI Gate 1: unit | **FAILURE** (exit 5) |
+| CI Gate 2: smoke | skipped (needs Gate 1) |
+| CI Gate 3: lint (10 contracts) | skipped |
+| CI Gate 4: integration | skipped |
+| CI Gate 5: golden_roundtrip | skipped |
+| Build container images | skipped (push-only, needs gates) |
+| Deploy to K3s (dev namespace) | skipped (push-only, needs build) |
+| Frontend: detect changed workspace units | success |
+| Frontend: shell | success |
+| Frontend: mfe-pricing | success |
+| Nightly: slow + perf + ai_eval | skipped (schedule-only — correct) |
+
+**Verdict: RED — but with real PROGRESS.** The Gate-1 collection fix WORKED: 823 items collected cleanly (last fire died at collection with ModuleNotFoundError). §5.D config guard PASSED (all 17 dummy env vars present in the gate env). NEW failure surfaced one layer deeper:
+```
+collecting ... collected 823 items / 823 deselected / 0 selected
+=========================== 823 deselected in 2.03s ============================
+##[error]Process completed with exit code 5.
+```
+`pytest -m "unit"` selected 0 of 823 → pytest exit code 5 (NO_TESTS_COLLECTED) → job RED.
+
+**Root cause (verified 3 ways against develop):** the 7 §19.D markers are REGISTERED in `backend/pytest.ini` (`markers =` block) but applied to ZERO tests. Code search `pytest.mark.<m>` = 0 files for all 7 (unit/smoke/integration/golden_roundtrip/ai_eval/slow/perf); no `pytest_collection_modifyitems` hook (0); direct grep of `test_core_auth.py` shows only `@pytest.mark.asyncio`. So every marker-gated gate deselects-to-zero.
+
+**Blast radius: SYSTEMIC.** Gates 2(smoke)/4(integration)/5(golden_roundtrip) + nightly(slow/perf/ai_eval) will hit the identical exit-5 once Gate 1 is unblocked. Gate 3 (lint) is not marker-gated → unaffected by this. Fixing only `unit` just moves the red to Gate 2.
+
+**Scope: BACKEND.** Test tagging / marker strategy is backend-owned; `pytest.ini` is §19.D LOCKED. The infra-owned ci.yml invocation (`pytest -m "unit"`) is CORRECT per the §19.D 6-gate contract — the gap is untagged tests, not the invocation. NO mutation to `backend/`, `pytest.ini`, or `ci.yml` this session.
+
+**Inter-lead:** Gate-1 collection request now RESOLVED on board. NEW inter-lead request opened to `meesell-backend-coordinator` (marker tagging). Handoff memo: `.claude/agent-memory/meesell-infra-builder/handoff_ci_gate_markers.md` (commit `ccd1cab`).
+
+**STILL UNPROVEN — the whole point of this run:** WIF auth (`github-actions-pool` / `meesell-github-ci` SA), Cloud Build submit, IAP-tunneled deploy. Sequential `needs:` blocked them on BOTH fires (run 27318816408 at collection; run 27320321536 at marker-selection). The build+deploy path has NEVER executed. Will only run once Gates 1-5 are all green.
+
+**What remains:**
+1. Backend tags the suite per §19.D bucket (one strategy, complete across all buckets). Confirm locally `pytest -m unit -v` (+smoke/integration/golden_roundtrip) each select >0 before the develop→main PR.
+2. Backend fix → develop → founder develop→main PR → push re-fires. Infra re-watches (3rd fire).
+3. First green-through-Gate-5 → WIF/Cloud-Build/IAP-deploy execute for the FIRST time. Infra then verifies `https://api.mesell.xyz/health` 200 + reports deployed image tag.
+4. First green materializes check-contexts → infra asks founder to add exactly the 5 gates + 3 frontend jobs to main branch protection (NOT build/deploy — push-only, deadlocks PRs; NOT nightly — schedule-only).
+5. GEMINI_API_KEY_CI still founder-pending (nightly-only, non-blocking).
+
+**Annotation (non-blocking):** GitHub runner deprecation warning — `actions/checkout@v4` + `dorny/paths-filter@v3` on Node.js 20 (forced to Node 24 after 2026-06-16). Cosmetic for now; bump action versions in a future ci.yml housekeeping pass.
+
+**Cost:** ₹0/month. No infra spend; pipeline never reached the build/deploy (compute) stage.
