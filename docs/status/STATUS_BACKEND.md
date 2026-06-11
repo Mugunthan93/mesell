@@ -4167,3 +4167,52 @@ Hand-offs: coordinator gates the PR (do NOT merge). Open known-reds: BE-CAT-ISLE
   BE-SEED-1 (CI prod-seed — skip is the V1 disposition), BE-PRICING-LASTCALC-TX-1 (new — pricing last-calc needs
   real cross-tx commits; test-file fix out of pass-3 fence).
 =========
+
+=== UPDATE: 2026-06-11 13:05 ===
+Phase: CI Gate-4 (integration) test-harness fix — PASS 4 (FINAL — the actual exit-0 target)
+Session: mesell-ci-gate4-fix-session-4 | Agent: meesell-services-builder | Branch: fix/ci-gate4-integration-pass4 (from origin/develop @ db556b9, a docs-only #109 on top of pass-3 squash 61e7d17)
+
+Done (2 TEST-STALE fixes + 1 optional hygiene edit — fence = 3 test files + this STATUS append, NOTHING else):
+  1. BE-CAT-ISLEAF-1 — backend/tests/integration/test_multi_tenant_isolation.py (_make_product helper ~L91):
+     dropped the stale `.where(Category.is_leaf.is_(True))` predicate → `select(Category.id).limit(1)`.
+     `Category.is_leaf` does not exist on the ORM (categories is a leaf-only flat table per BACKEND_ARCHITECTURE §9 —
+     every row IS a leaf, no discriminator by design). The L94-95 `if cat_row is None: pytest.skip(...)` guard kept.
+     Clears all 4 is_leaf AttributeError failures. NO is_leaf property added to the model (app is correct; test was stale).
+  2. BE-PRICING-LASTCALC-TX-1 (Gate-4 symptom) — backend/tests/integration/test_pricing_persistence.py
+     (test_get_last_calc_returns_most_recent): after the 3-calc loop + the (unchanged) len==3 and
+     seller_prices==[110,120,150] assertions, stamp the 3 persisted rows with distinct monotonic created_at
+     (110→base, 120→base+1s, 150→base+2s) + `await db_session.flush()`, BEFORE the get_last_calc assertion.
+     Makes ORDER BY created_at DESC deterministic under pass-3 savepoint isolation (all commits share the outer-txn
+     NOW()). The most-recent==150 assertion now holds deterministically. NO repository ORDER BY tiebreak (that is the
+     residual V1.5 BE-PRICING-LASTCALC-TX-1 robustness follow-up — out of this test-only fence).
+  3. OPTIONAL hygiene (recommended, PR-noted) — backend/tests/perf/test_category_schema_p95.py (L60, L98, same
+     one-liner ×2): same is_leaf predicate drop. Nightly @perf job (NOT in -m integration). Closes BE-CAT-ISLEAF-1 fully.
+
+Substrate (CI env shape reproduced; remapped to laptop ports because the prior :5433/:6381 cluster was lost on reboot):
+  Homebrew PG16 (running PID 912) on :5432 + fresh meesell_test DB provisioned via `alembic upgrade head` to
+  f31c75438e61 (schema-only, NO category seed — same as the real CI provisioning step in .github/workflows/ci.yml
+  L357-359, which has no seed step); Valkey on :6379. Full CI dummy-env (SECRET_KEY/JWT/MSG91/RAZORPAY/REFRESH_TOKEN_PEPPER/
+  AUDIT_PII_SALT/GEMINI/GCS/LANGFUSE/CORS) + TEST_DATABASE_URL/TEST_VALKEY_URL/DEV_DATABASE_URL/CORE_TEST_VALKEY_URL
+  all pointed at the local substrate. backend/.venv py3.11.
+
+Tests (pytest -m "integration", exit code captured):
+  BEFORE (origin/develop, unmodified): 5 failed / 174 passed / 13 skipped / 647 deselected / 0 errors  (exit 1)
+    — 4× `AttributeError: type object 'Category' has no attribute 'is_leaf'` + 1× pricing (got 110.00, expected 150.00,
+      all 3 rows shared one created_at — the savepoint clock-sharing confirmed).
+  AFTER (fixes applied): 175 passed / 17 skipped / 647 deselected / 0 failed / 0 errors  — **FULL_EXIT=0**. GATE MET.
+    — the pricing test now PASSES; the 4 is_leaf tests now SKIP cleanly (reach the designed
+      "no leaf category seeded" guard instead of erroring).
+  DEVIATION from spec's predicted 179p/13s: my schema-only substrate has NO category seed, so the 4 is_leaf land as
+    SKIP not PASS → 175p/17s (the +4 skips are the 4 is_leaf). This is IDENTICAL to what real CI produces (ci.yml
+    provisions schema-only, no seed step), and the load-bearing gate — exit 0, 0 failed, 0 errors — is met identically.
+    The is_leaf fix's own pytest.skip guard exists precisely for this no-seed case. The 13 BE-SEED-1 skips are unchanged.
+  Ruff on the 3 touched files: All checks passed. py_compile: OK. git diff --stat: 3 files, +26/-3, fence-confined.
+
+In progress: none. Blockers: none.
+Next: coordinator STEP-3 review of PR → develop (do NOT merge; coordinator gates). After merge: Gate-4 re-fires
+  develop→main and reaches exit 0 (modulo BE-SEED-1 skips). Notify infra "Gate-4 READY TO RE-FIRE — exit-0 reached."
+Hand-offs: coordinator gates the PR. Tickets reconciled: BE-CAT-ISLEAF-1 CLOSED (test stale, no app change; perf file
+  edited too so no Nightly residual). BE-PRICING-LASTCALC-TX-1 Gate-4 symptom CLOSED; residual V1.5 NOTE only
+  (repository ORDER BY created_at has no tiebreak — two prod calcs in the same instant would order nondeterministically;
+  V1.5 robustness follow-up, NOT a V1 blocker, NOT in this test-only pass).
+=========
