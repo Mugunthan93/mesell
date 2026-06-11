@@ -4,11 +4,14 @@ import { authGuard } from '@mesell/core';
 import { loadRemoteWithFallback } from './core/load-remote';
 
 export const routes: Routes = [
-  // Root — public landing page
+  // MF Sub-Plan 04 — mfe-dashboard remote (apps/mfe-dashboard/). The PUBLIC landing
+  // page now lives in the `mfe-dashboard` Native-Federation remote, loaded at runtime
+  // via the manifest. NO authGuard (public, pre-auth); pathMatch:'full' preserved so it
+  // matches ONLY the empty path. D12 fallback on load failure. The remoteEntry is a
+  // static public asset — fetched with no Authorization header (D27/D29).
   {
     path: '',
-    loadComponent: () =>
-      import('./features/landing/landing.component').then(m => m.LandingComponent),
+    loadComponent: loadRemoteWithFallback('mfe-dashboard', './LandingComponent'),
     pathMatch: 'full',
   },
 
@@ -37,9 +40,15 @@ export const routes: Routes = [
     canActivate: [authGuard],
     children: [
       {
+        // MF Sub-Plan 04 — mfe-dashboard remote (apps/mfe-dashboard/). The dashboard
+        // page now lives in the `mfe-dashboard` Native-Federation remote, loaded at
+        // runtime via the manifest. The parent's authGuard (canActivate on the shell
+        // empty-path parent) UNCHANGED — the guard runs in the SHELL before the remote
+        // is fetched (D27): an unauthenticated visitor is redirected to /login WITHOUT
+        // downloading the dashboard remoteEntry. The remote does NOT self-guard and does
+        // NOT inject AuthService. D12 fallback on load failure.
         path: 'dashboard',
-        loadComponent: () =>
-          import('./features/dashboard/dashboard.component').then(m => m.DashboardComponent),
+        loadComponent: loadRemoteWithFallback('mfe-dashboard', './DashboardComponent'),
       },
       {
         path: 'catalogs',
