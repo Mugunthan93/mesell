@@ -1828,3 +1828,28 @@ NOT the `test_config.py`/`app.config` suspect (collection is green; this is inte
 - When green: verify `https://api.mesell.xyz/health` 200, record deployed image tag (= merge SHA), then founder adds the 8 PR-required contexts (5 gates + 3 frontend) to main protection — NEVER Build/Deploy (main-only) or Nightly/ai_eval (schedule-only).
 
 **Cost:** ₹0/month (PR + watch + board/STATUS docs only). **Zero cluster / TF / Secret Manager mutations.** GEMINI_API_KEY_CI still founder-pending (nightly-only, non-blocking).
+
+---
+
+## SESSION: mesell-mfe-cutover-infra-session-1 — 2026-06-11
+
+### SP07 cutover infra group (FIRST two-group sub-plan; frontend lead runs the joint merge gate)
+
+**Playbook sections applied:** §8/§9 (Traefik Middleware / ingress for the CSP edge layer), §15 [MANDATORY GATE] (offline validation when cluster unreachable; server dry-run deferred to deploy time per F3 — `yaml.safe_load_all`, NOT `--dry-run=client`), §10 (secret discipline — none touched, no JSON keys, CSP is a public header not a secret). §0 live-state-is-SSOT honored.
+
+**Done:**
+- **CSP mechanism (D42) — CHOICE: nginx `add_header` in the shell image (PRIMARY).** ADD-ONLY single `Content-Security-Policy` header, per-env via envsubst (`$APP_ENV`). Files `frontend/docker/{nginx.conf.template,csp-policy.env,docker-entrypoint.sh,Dockerfile.shell}`. The shell nginx serves only shell-origin static assets + never proxies the API → structurally off the CORS/Set-Cookie path (R-SP7-1 P0 by construction). Traefik CSP-only Middleware `k8s/csp/csp-middleware.yaml` = documented ALTERNATIVE (kubectl-editable hotfix), offline-proven ADD-ONLY (single `customResponseHeaders: {Content-Security-Policy}`, no broad headers field). Allowlist CONTENT consumed verbatim from spec §1.1 (frontend-owned) — infra invented no tokens.
+- **Dev CSP smoke procedure** authored — `docs/plans/infra/SP07_CSP_AND_HOSTING.md` §3: (A) remote-load proof (public landing mfe-dashboard + public auth mfe-auth mount with zero CSP violations), (B) 401→refresh→retry non-regression incl. the refresh `Set-Cookie` attribute check (HttpOnly/Secure/SameSite=Strict/Path=/api/v1/auth), (C) CORS non-regression. All localhost-served (4201–4206) — no hosted-surface dependency.
+- **Staging/prod gating** codified (§4): no staging/prod CSP flip or remote cutover until dev smoke GREEN on A+B+C; founder cost gate clears for the hosted surface; never staging-without-dev, never prod-without-staging.
+- **D13 hosting work-package + cost sheet** PREPARED, NOT PROVISIONED — `SP07_CSP_AND_HOSTING.md` §5 + `SP07_HOSTING_COST_SHEET.md` (~₹1,600–1,800/mo, LB-dominated; >₹500/mo → HARD FOUNDER COST GATE). 3 cost options; infra recommends deferring the standing LB to V1.5 prod for V1.
+- **C-CI-1 completion** — `.github/workflows/ci.yml` matrix extended to all 6 remotes + shell + D43 `apps/shell/**` glob awareness; `cloudbuild.yaml` publish-remotes → version-pinned `{env}/mfe-<name>/{version}/` layout (no `latest`, R-SP7-6) + dual INERT guard (`_REMOTES_BUCKET`/`_REMOTES_ENV`); `docs/DEVOPS_ARCHITECTURE.md` §9 synced (new §9.6 CSP).
+
+**Validation:** ci.yml + cloudbuild.yaml parse clean (yaml.safe_load); matrix = 7 legs; build/deploy main-guard intact; csp-middleware.yaml ADD-ONLY assertion PASS; entrypoint + publish-remotes bash `-n` clean. Cluster unreachable from this machine → server-side `kubectl apply --dry-run=server` DEFERRED to deploy time (playbook §15 [MANDATORY GATE] — mandatory-but-deferrable when cluster down).
+
+**In review:** infra group PR `feature/mfe-cutover/infra` → integration (frontend lead is the domain merge gate per D1; my content sign-off in `handoff_mf_cutover.md`). NOT merged by me.
+
+**Blockers / awaiting:** (1) FOUNDER cost gate for D13 hosting (~₹1,600–1,800/mo) — NOT a merge blocker (R-SP7-4); provisioning is a separate post-sign-off session. (2) Dev CSP smoke is a JOINT run (frontend orchestrates; backend gives a lightweight verification note for check B) — discharges C-CSP-1 when GREEN. (3) `feature/mfe-cutover/integration` not yet created by the FE lead — I cut the infra branch from origin/develop (same tip); base retarget is a clean swap.
+
+**Hand-offs:** memo `handoff_mf_cutover.md` (infra → frontend lead). Board: mfe-cutover IN REVIEW + incoming inter-lead row OPEN.
+
+**Cost:** ₹0/month as authored (zero billable resource created; all provisioning founder-gated).

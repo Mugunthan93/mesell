@@ -1,0 +1,58 @@
+# =============================================================================
+# MeeSell SHELL (host) image — Native Federation static SPA on nginx + CSP.
+# SP07 cutover (D42 / C-CSP-1 / GATE4 Answer 2). Author: meesell-infra-builder.
+#
+# SCOPE BOUNDARY (spec §7): the SHELL SOURCE + its relocation to apps/shell/** (D43)
+# are the frontend component-builder's lane (spec_sp07_frontend.md). THIS Dockerfile
+# exists so the infra-owned CSP MECHANISM (nginx.conf.template + csp-policy.env +
+# docker-entrypoint.sh, all in frontend/docker/) is actually SHIPPED in the image —
+# without it the CSP header never reaches the browser and C-CSP-1 cannot discharge.
+#
+# If the component-builder authors its own frontend/Dockerfile during the relocation,
+# it MUST copy these three files and use docker-entrypoint.sh as the CMD/ENTRYPOINT,
+# or the CSP is silently dropped (R-SP7-1 regression by omission). This file is the
+# reference; the joint merge gate reconciles it with the relocation's Dockerfile.
+#
+# BUILD CONTEXT = frontend/. The `ng build` output path depends on the relocation:
+#   pre-D43:  dist/frontend/browser/
+#   post-D43: dist/shell/browser/   (apps/shell project)
+# The COPY below uses an ARG so the joint merge can set it without editing this file.
+# =============================================================================
+
+# ---- Stage 1: build the shell (Native Federation production build) ----------
+FROM node:22-alpine AS build
+WORKDIR /app
+
+# pnpm (workspace) — matches CI (ci.yml uses pnpm 11.5.2).
+RUN corepack enable && corepack prepare pnpm@11.5.2 --activate
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY . .
+RUN pnpm install --frozen-lockfile \
+ && pnpm rebuild esbuild @parcel/watcher lmdb msgpackr-extract
+
+# Shell project name differs pre/post-D43 relocation — parameterized.
+ARG SHELL_PROJECT=frontend
+ARG SHELL_DIST=dist/frontend/browser
+RUN pnpm exec ng build "${SHELL_PROJECT}" --configuration production
+
+# ---- Stage 2: nginx runtime with the infra-owned CSP mechanism --------------
+FROM nginx:alpine
+ARG SHELL_DIST=dist/frontend/browser
+
+# envsubst ships in nginx:alpine via the gettext package's busybox applet? No —
+# install gettext for a real envsubst (used by docker-entrypoint.sh).
+RUN apk add --no-cache gettext
+
+# The CSP mechanism (infra-owned). nginx.conf.template is rendered at start.
+COPY frontend/docker/nginx.conf.template /etc/nginx/nginx.conf.template
+COPY frontend/docker/csp-policy.env      /etc/nginx/csp-policy.env
+COPY frontend/docker/docker-entrypoint.sh /docker-entrypoint.d/99-render-csp.sh
+RUN chmod +x /docker-entrypoint.d/99-render-csp.sh
+
+# The built shell SPA.
+COPY --from=build "/app/${SHELL_DIST}" /usr/share/nginx/html
+
+EXPOSE 80
+# Render CSP for APP_ENV, then exec nginx (the script ends with `exec nginx`).
+ENTRYPOINT ["/docker-entrypoint.d/99-render-csp.sh"]
