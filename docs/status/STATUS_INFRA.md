@@ -1,8 +1,30 @@
 # STATUS — INFRASTRUCTURE
 
 **Owner:** `meesell-infra-builder`
-**Last update:** 2026-06-11 (ci-activation — DEPLOY-to-K3s job reached + fixed; live dev rollout GREEN; fix branch fix/ci-deploy-k3s → develop)
+**Last update:** 2026-06-11 (ci-activation — PR #120 develop→main MERGED; full pipeline ran Gates 1-5 + Frontend 8/8 + **Build GREEN (first ever)**; Deploy still RED on 2 more deploy-script bugs — #123 git-ref already fixed, #127 readyz-escape now on develop awaiting fresh founder gate)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
+
+## UPDATE — 2026-06-11 — mesell-ci-activation-infra-session-8 (land PR #120 + watch main pipeline + readyz-escape fix)
+
+=== STEP: founder-gated develop→main promotion (PR #120) + end-to-end main pipeline watch ===
+Phase: DEVOPS_ARCHITECTURE.md §7 (deploy) + repo MASTER_PLAN §2 (merge flow — develop→main is the FOUNDER gate per D1). Founder approval received in-session ("merge 120").
+Session: mesell-ci-activation-infra-session-8
+
+**Merge:** PR #120 (develop→main, K3s deploy fix) merged via `--merge --admin` (MERGE-commit, NOT squash — main retains develop's history). **Merge SHA `75f30ea8368a9a114867c4ec844823bb65a0ae3b`.** develop branch preserved (PR head was develop itself; no ref cleanup). Gate note posted as PR comment (single-account repo blocks a formal review approval).
+
+**Pipeline runs watched:**
+- Run **27363461749** (push, `75f30ea`): Gates 1-5 ✅ · Frontend 8/8 ✅ · **Build ✅ (FIRST-EVER full build+push)** · **Deploy ❌** — `git reset --hard origin/main` → `fatal: ambiguous argument 'origin/main'` (the VM's shallow clone has no remote-tracking ref; the un-promoted ci.yml still used origin/main).
+- A sibling FOUNDER promotion **PR #125** (`91ee6ad`) landed on main DURING the watch, carrying the already-merged-to-develop fix **PR #123** (`c85bc23`, reset→FETCH_HEAD). Run **27364056936** (`91ee6ad`) re-ran: Gates 1-5 ✅ · Frontend 8/8 ✅ · **Build ✅** · **Deploy ❌** — got MUCH further (FETCH_HEAD checkout OK, AR-token refresh OK, `systemctl restart k3s` OK) then died: `bash: -c: line 27: syntax error near unexpected token 2`.
+
+**Root cause (deploy bug #5):** the readyz-wait loop `for i in $(seq 1 20)` inside `gcloud compute ssh --command="..."` was NOT `\$`-escaped → `$(seq 1 20)` expanded on the GitHub runner (local), injecting newline-separated tokens into the command string → malformed remote script.
+
+**Fix:** PR **#127** (`fix/ci-deploy-readyz-escape` → develop, squash SHA `ab4da0b`). Replaced the loop with a substitution-free `until kubectl get --raw='/readyz' ... ; READYZ_TRIES=\$((+1)); [-ge 20] exit 1; sleep 3; done`, fully `\$`-escaped. Audited the entire deploy `--command` block: every `$` is now `\$`-escaped (remote) or GHA `${{ }}` (intentional). YAML parses, 11 jobs intact. Cost ₹0 (CI-workflow YAML only).
+
+**Reality check (post-runs):** `https://api.mesell.xyz/health` → **HTTP 200** `{postgres:ok, valkey:ok}`. Cluster `dev`: api 2/2 + worker 2/2 Running, image still `def60521...` (the by-hand image). **Deploy failed BEFORE `kubectl set image` both times → live cluster UNHARMED, auto-rollback never needed, new images 75f30ea/91ee6ad built but NOT rolled.**
+
+**This is NOT yet the first fully-green build-to-deploy run.** Build is green (a real first); Deploy is still red. Repair budget: 1 cycle used (PR #127). Bug #4 (git-ref) was already fixed by a sibling session (#123) — not my cycle.
+
+**Founder action required:** promote develop→main (a FRESH founder gate) to ship PR #127 — the deploy job clones origin/main, so #127 has zero effect until promoted. Then watch the next main run's Deploy job for the first successful image roll.
 
 ## UPDATE — 2026-06-11 — mesell-ci-activation-infra-session-1 (deploy-to-K3s job fix)
 
