@@ -1934,3 +1934,35 @@ GEMINI_API_KEY_CI still unset (nightly-only, non-blocking). Watching to conclusi
 
 **Session-end board sweep:** Active = ci-activation (BLOCKED, founder IAM gate, last-touched 2026-06-11), auth-otp (IN REVIEW), mfe-cutover (IN REVIEW). None untouched 7+ days. Gate-4 inter-lead request → RESOLVED. No cluster/TF mutations this session (only PR merge + read-only IAM/WIF inspection + board/STATUS/memory writes).
 =========
+
+---
+
+## UPDATE — 2026-06-11 — mesell-ci-activation-infra-session-7 — AR pull secret for K3s (run-6 deploy fix): TF done, secret BLOCKED on org policy, fix already live via registries.yaml
+
+**Playbook sections applied:** §10 (Secret Management Discipline — docker-registry secret would be created via `--dry-run=client -o yaml | kubectl apply`, key never echoed; no `-o yaml` shared), §15 [MANDATORY GATE] (server dry-run deferred — this PR applies nothing to the cluster; manifests offline yaml-validated), §12.1 (ImagePullBackOff incident-response — diagnosed, found already resolved). §0 live-state-is-SSOT decisive here.
+
+**Board:** see `feature_board_infra.md` row `ar-pull-secret` (IN REVIEW, PR #121). Do not re-describe state here.
+
+**Done:**
+- **Terraform APPLIED to dev** — `module.artifact_registry`: `google_service_account.meesell_image_puller` ("MeeSell K3s image pull (AR reader)") + `google_artifact_registry_repository_iam_member.image_puller_reader` (`roles/artifactregistry.reader` on `meesell-prod-images`, **repo-scoped, NOT project-level**). Plan gate = exactly **2 to add, 0 to change, 0 to destroy** (saved `.tflogs/ar-pull-secret.tfplan`). No key created in TF (would land in GCS state). Repo IAM verified: reader now includes `meesell-image-puller@…`; writer (compute + cloudbuild SA) untouched (additive `_iam_member`).
+- **Manifests** — `imagePullSecrets:[{name: artifact-registry}]` added to the pod spec of `k8s/api.yaml`, `k8s/worker.yaml`, **and `k8s/frontend.yaml`** (frontend also references `meesell-prod-images`). ADD-ONLY; all three parse + assert clean.
+- **PR #121** → develop (NOT merged — brief). Branch `ci/ar-pull-secret` off origin/develop.
+
+**Blocked / founder decision:**
+- **Org policy `constraints/iam.disableServiceAccountKeyCreation`** denies `gcloud iam service-accounts keys create` for ANY SA → the founder-ruled "reader-only SA key as docker-registry secret" mechanism is impossible without an org-policy exception. No key material ever generated (0-byte stub deleted). Secret NOT created in any namespace.
+- **`dev` + `staging` namespaces exist; `prod` does NOT** (correct — V1.5-deferred). Secret would have gone to dev+staging only.
+
+**NOT-NEEDED finding (the decisive diagnostic):**
+- The run-6 ImagePullBackOff is **already resolved** by the pre-existing `/etc/rancher/k3s/registries.yaml` metadata-token mechanism (Phase D, refreshed by `/usr/local/bin/refresh-ar-token.sh`; VM SA holds `artifactregistry.reader` on this repo). The **exact run-6 image** `api:def60521b66af1b9332a074fc2b5610bc4c2c9e1` now pulls cleanly (events: "Successfully pulled", 39s cold / 544ms warm). `api` 2/2 + `worker` 2/2 Running on fresh RS (rev 8); no ImagePullBackOff/Pending cluster-wide.
+- **`rollout undo` NOT run** — nothing stuck; undoing a healthy rev-8 deployment would roll it backward to an older image. Step 4 was correctly a no-op.
+- **Pull-test NOT run** — the live pods pulling the run-6 image ARE the proof; the `artifact-registry` secret the test would reference doesn't exist (org-policy blocked).
+
+**Cluster mutations performed:** NONE. No secret created (org-policy), no rollout undo (nothing stuck), no out-of-band manifest apply. Only GCP mutation = `terraform apply` (reader SA + repo IAM member).
+
+**Founder decision needed (A vs B):**
+- **A (founder-ruled):** grant an org-policy exception for `meesell-image-puller`, then create the key + `artifact-registry` secret in dev/staging. This PR's TF + manifests are ready.
+- **B (already live, key-free):** keep the `registries.yaml` metadata-token mechanism (org-policy-clean, no key). If chosen, the puller SA + imagePullSecrets are harmless-redundant (K8s ignores a missing imagePullSecret) — keep as belt-and-suspenders or drop.
+
+**Cost:** ₹0/month (reader SA + repo IAM binding are free).
+
+**Session-end sweep:** 4 Active rows (ci-activation, ar-pull-secret, auth-otp, mfe-cutover) all last-touched 2026-06-11 — none stale 7+ days. No new inter-lead requests opened (the blocker is founder-direct, not cross-lead).
