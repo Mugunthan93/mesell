@@ -10,9 +10,8 @@ import { RouterLink } from '@angular/router';
 import { Router } from '@angular/router';
 import { catchError, EMPTY, switchMap } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
-import { AuthLayoutComponent } from '@mesell/composites';
+import { AuthLayoutComponent, MeeAlertBannerComponent } from '@mesell/composites';
 import { AuthService, AuthApiService } from '@mesell/core';
-import { NetworkService } from '@mesell/core';
 import { MeeOtpInputComponent } from '@mesell/ui-kit/otp-input/otp-input.component';
 import { MeeButtonComponent } from '@mesell/ui-kit/button/button.component';
 
@@ -20,33 +19,31 @@ import { MeeButtonComponent } from '@mesell/ui-kit/button/button.component';
   selector: 'mee-otp-verify',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AuthLayoutComponent, RouterLink, MeeOtpInputComponent, MeeButtonComponent],
+  imports: [AuthLayoutComponent, RouterLink, MeeOtpInputComponent, MeeButtonComponent, MeeAlertBannerComponent],
   template: `
     <mee-auth-layout>
       <h1>Verify your number</h1>
       <p class="subtitle">We sent a 6-digit code to {{ maskedPhone() }}</p>
 
-      @if (!networkSvc.online()) {
-        <div class="offline-banner" role="alert" aria-live="polite">
-          You are offline. Please check your connection.
-        </div>
-      }
-
+      <!-- Contextual error banner — offline state handled globally by AuthLayoutComponent -->
       @if (errorMessage()) {
-        <div class="error-banner" role="alert" aria-live="polite">
-          {{ errorMessage() }}
-        </div>
+        <mee-alert-banner
+          variant="error"
+          [message]="errorMessage()!"
+          class="banner-spacing"
+        />
       }
 
       <div class="otp-section">
-        <label>Enter OTP</label>
+        <label [id]="otpLabelId">Enter OTP</label>
         <mee-otp-input
           [length]="6"
           [disabled]="loading()"
+          [attr.aria-labelledby]="otpLabelId"
           (completed)="onOtpCompleted($event)"
         />
         @if (otpValue().length > 0 && otpValue().length < 6) {
-          <span class="error-text" role="alert">Enter the 6-digit OTP</span>
+          <span class="error-text" role="alert" aria-live="polite">Enter the 6-digit OTP</span>
         }
       </div>
 
@@ -58,7 +55,7 @@ import { MeeButtonComponent } from '@mesell/ui-kit/button/button.component';
         (clicked)="onSubmit()"
       />
 
-      <div class="resend-area">
+      <div class="resend-area" aria-live="polite" aria-atomic="true">
         @if (countdown() > 0) {
           <span class="countdown-text">Resend code in {{ countdown() }}s</span>
         } @else {
@@ -110,6 +107,15 @@ import { MeeButtonComponent } from '@mesell/ui-kit/button/button.component';
       cursor: pointer;
       text-decoration: none;
     }
+    /* Ensure minimum 44px tap target on footer + resend links */
+    .footer-text a,
+    .resend-link {
+      min-height: 44px;
+    }
+    .footer-text a {
+      display: inline-block;
+      line-height: 44px;
+    }
     .otp-section + * { margin-top: 16px; }
     .resend-area {
       text-align: center;
@@ -121,27 +127,15 @@ import { MeeButtonComponent } from '@mesell/ui-kit/button/button.component';
       color: var(--mee-color-primary);
       font-weight: 500;
       cursor: pointer;
-      min-height: 44px;
       display: inline-flex;
       align-items: center;
     }
-    .offline-banner {
-      background: var(--mee-color-warning-light, rgba(234,179,8,0.1));
-      border: 1px solid var(--mee-color-warning, #ca8a04);
-      color: var(--mee-color-warning, #ca8a04);
-      border-radius: 8px;
-      padding: 10px 14px;
-      font-size: 14px;
-      margin-bottom: 16px;
-    }
-    .error-banner {
-      background: var(--mee-color-error-light, rgba(239,68,68,0.1));
-      border: 1px solid var(--mee-color-error, #dc2626);
-      color: var(--mee-color-error, #dc2626);
-      border-radius: 8px;
-      padding: 10px 14px;
-      font-size: 14px;
-      margin-bottom: 16px;
+    /* Spacing below banner before the OTP input */
+    .banner-spacing { margin-bottom: 16px; }
+
+    /* 360px — tighten heading so card fits */
+    @media (max-width: 400px) {
+      h1 { font-size: 20px; }
     }
   `],
 })
@@ -149,12 +143,14 @@ export class OtpVerifyComponent implements OnInit, OnDestroy {
   private readonly router   = inject(Router);
   private readonly auth     = inject(AuthService);
   private readonly authApi  = inject(AuthApiService);
-  readonly networkSvc       = inject(NetworkService);
 
   readonly loading      = signal(false);
   readonly countdown    = signal(30);
   readonly otpValue     = signal<string>('');
   readonly errorMessage = signal<string | null>(null);
+
+  /** Unique ID for aria-labelledby wiring on the OTP input */
+  readonly otpLabelId = `mee-otp-label-${Math.random().toString(36).slice(2)}`;
 
   /** Phone received from Router state (login/signup → navigate with state: { phone }) */
   private _phone: string = '';

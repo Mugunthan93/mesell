@@ -9,32 +9,28 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { Router, RouterLink } from '@angular/router';
 import { catchError, EMPTY } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
-import { AuthLayoutComponent } from '@mesell/composites';
+import { AuthLayoutComponent, MeeAlertBannerComponent } from '@mesell/composites';
 import { MeeInputComponent } from '@mesell/ui-kit/input/input.component';
 import { MeeButtonComponent } from '@mesell/ui-kit/button/button.component';
 import { AuthApiService } from '@mesell/core';
-import { NetworkService } from '@mesell/core';
 
 @Component({
   selector: 'mee-signup',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AuthLayoutComponent, ReactiveFormsModule, RouterLink, MeeInputComponent, MeeButtonComponent],
+  imports: [AuthLayoutComponent, ReactiveFormsModule, RouterLink, MeeInputComponent, MeeButtonComponent, MeeAlertBannerComponent],
   template: `
     <mee-auth-layout>
       <h1>Create your account</h1>
       <p class="subtitle">Start selling smarter</p>
 
-      @if (!networkSvc.online()) {
-        <div class="offline-banner" role="alert" aria-live="polite">
-          You are offline. Please check your connection.
-        </div>
-      }
-
+      <!-- Contextual error banner — offline state handled globally by AuthLayoutComponent -->
       @if (errorMessage()) {
-        <div class="error-banner" role="alert" aria-live="polite">
-          {{ errorMessage() }}
-        </div>
+        <mee-alert-banner
+          variant="error"
+          [message]="errorMessage()!"
+          class="banner-spacing"
+        />
       }
 
       <form [formGroup]="form" (ngSubmit)="onSubmit()">
@@ -94,31 +90,25 @@ import { NetworkService } from '@mesell/core';
       cursor: pointer;
       text-decoration: none;
     }
-    form > * + * { margin-top: 16px; }
-    .offline-banner {
-      background: var(--mee-color-warning-light, rgba(234,179,8,0.1));
-      border: 1px solid var(--mee-color-warning, #ca8a04);
-      color: var(--mee-color-warning, #ca8a04);
-      border-radius: 8px;
-      padding: 10px 14px;
-      font-size: 14px;
-      margin-bottom: 16px;
+    /* Ensure minimum 44px tap target on the footer link */
+    .footer-text a {
+      display: inline-block;
+      min-height: 44px;
+      line-height: 44px;
     }
-    .error-banner {
-      background: var(--mee-color-error-light, rgba(239,68,68,0.1));
-      border: 1px solid var(--mee-color-error, #dc2626);
-      color: var(--mee-color-error, #dc2626);
-      border-radius: 8px;
-      padding: 10px 14px;
-      font-size: 14px;
-      margin-bottom: 16px;
+    form > * + * { margin-top: 16px; }
+    /* Spacing below banner before the form */
+    .banner-spacing { margin-bottom: 16px; }
+
+    /* 360px — tighten heading so card fits */
+    @media (max-width: 400px) {
+      h1 { font-size: 20px; }
     }
   `],
 })
 export class SignupComponent {
   private readonly router   = inject(Router);
   private readonly authApi  = inject(AuthApiService);
-  readonly networkSvc       = inject(NetworkService);
 
   readonly loading      = signal(false);
   readonly errorMessage = signal<string | null>(null);
