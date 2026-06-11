@@ -91,10 +91,14 @@ export const routes: Routes = [
         loadComponent: loadRemoteWithFallback('mfe-pricing', './PricingComponent'),
       },
       {
+        // MF Sub-Plan 02 — second federated remote. Export now lives in the
+        // `mfe-export` Native-Federation remote (apps/mfe-export/), loaded at
+        // runtime via the manifest. The :id param flows through the shell router
+        // outlet into the remote component unchanged. The OnDestroy job-polling
+        // timer is destroyed when the host unmounts the remote on navigate-away
+        // (D18 — boundary does not alter lifecycle). D12 fallback on load failure.
         path: 'catalogs/:id/export',
-        loadComponent: () =>
-          import('./features/export/export/export.component')
-            .then(m => m.ExportComponent),
+        loadComponent: loadRemoteWithFallback('mfe-export', './ExportComponent'),
       },
     ],
   },

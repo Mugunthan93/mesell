@@ -192,6 +192,91 @@
         }
       }
     },
+    "mfe-export": {
+      "projectType": "application",
+      "schematics": {},
+      "root": "apps/mfe-export",
+      "sourceRoot": "apps/mfe-export/src",
+      "prefix": "app",
+      "architect": {
+        "build": {
+          "builder": "@angular-architects/native-federation:build",
+          "options": {},
+          "configurations": {
+            "production": {
+              "target": "mfe-export:esbuild:production"
+            },
+            "development": {
+              "target": "mfe-export:esbuild:development",
+              "dev": true
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular-architects/native-federation:build",
+          "options": {
+            "target": "mfe-export:serve-original:development",
+            "rebuildDelay": 500,
+            "dev": true,
+            "cacheExternalArtifacts": false,
+            "port": 4202
+          }
+        },
+        "esbuild": {
+          "builder": "@angular/build:application",
+          "options": {
+            "browser": "apps/mfe-export/src/main.ts",
+            "index": "apps/mfe-export/src/index.html",
+            "tsConfig": "apps/mfe-export/tsconfig.app.json",
+            "styles": [
+              "src/styles.css"
+            ],
+            "polyfills": [
+              "es-module-shims"
+            ]
+          },
+          "configurations": {
+            "production": {
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "500kB",
+                  "maximumError": "1MB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "4kB",
+                  "maximumError": "8kB"
+                }
+              ],
+              "outputHashing": "all"
+            },
+            "development": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve-original": {
+          "builder": "@angular/build:dev-server",
+          "configurations": {
+            "production": {
+              "buildTarget": "mfe-export:esbuild:production"
+            },
+            "development": {
+              "buildTarget": "mfe-export:esbuild:development"
+            }
+          },
+          "defaultConfiguration": "development",
+          "options": {
+            "port": 4202
+          }
+        }
+      }
+    },
     "mfe-onboarding": {
       "projectType": "application",
       "schematics": {},
@@ -220,7 +305,7 @@
             "rebuildDelay": 500,
             "dev": true,
             "cacheExternalArtifacts": false,
-            "port": 4202
+            "port": 4203
           }
         },
         "esbuild": {
@@ -272,7 +357,7 @@
           },
           "defaultConfiguration": "development",
           "options": {
-            "port": 4202
+            "port": 4203
           }
         }
       }

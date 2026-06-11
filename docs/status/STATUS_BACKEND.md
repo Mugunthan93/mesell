@@ -3770,3 +3770,18 @@ DEVIATIONS (lead-recorded):
   - fakeredis was NOT in the suite (brief assumed it was); conftest uses a live Redis URL. Added fakeredis as a test dep so new tests run tunnel-free per the brief's intent.
   - validate_refresh_allowlist returns (matched_key, value), not value-only as the brief sketched — required so rotate/revoke DEL the correct vN-1 key on a fallback hit (value-only would orphan the previous-pepper entry). Strengthening, surfaced + documented in PR #65/#66.
 =========
+
+=== UPDATE: 2026-06-11 — dual-pepper-rotation POST-MERGE close-out (fast mode) ===
+Phase: dual-pepper-rotation (R5 pre-V1.5-prod gate) — MERGED to develop, gate CLEARED
+Session: mesell-dual-pepper-session-1 (close-out — single-agent fast mode, docs/status only, no specialists)
+Board sweep: dual-pepper-rotation moved Active → Recently merged (founder-gate #66 merge 50cdcef). Header "Last updated" refreshed. Inter-lead infra request already RESOLVED (#69) at tip — preserved. microservices-export IN PROGRESS row untouched (last touched 2026-06-10 22:55; Step 4 extraction POST-V1, not stale). 0 MERGED rows aged >14d. ci-activation lane (separate dispatch) not touched.
+Done:
+  - Founder-gate PR #66 (feature/dual-pepper-rotation/integration → develop) MERGED by founder authorization, merge SHA 50cdcef. R5 dual-pepper feature fully on develop. Integration branch + worktrees removed (founder/infra side).
+  - R5 pre-V1.5-prod GATE CLEARED: prod refresh-token-pepper rotation per runbook §2 (dual-pepper grace window) now fully executable once secrets are provisioned at deploy time.
+  - Infra inter-lead request RESOLVED via PR #69 (squash 9e0c310): REFRESH_TOKEN_PEPPER_PREVIOUS + REFRESH_TOKEN_PEPPER_VERSION added to k8s/secrets.yaml.example; SM onboarding notes in INFRASTRUCTURE_ARCHITECTURE.md §4 (PREVIOUS = prior SM version of refresh-token-pepper; VERSION = operator integer — not new SM secrets).
+  - Board (D1) + this STATUS update (D2) ride chore/dual-pepper-closeout → develop PR. Memory (D3) recorded master-tree-direct.
+In progress: none (status-only close-out).
+Blockers: none. NOT blocking V1.
+Next: only remaining R5 step is deploy-time secret provisioning per runbook §2 — operator action, not backend work. No further backend dispatch for dual-pepper.
+Hand-offs: none new. Infra hand-off already closed (#69); token shape unchanged so no frontend memo.
+=========
