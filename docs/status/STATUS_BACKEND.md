@@ -3991,3 +3991,50 @@ Hand-offs: (1) infra-builder — Gate-4 inter-lead request OPENED on board (pass
   ETA one more round; NO ci.yml change requested — §2.3 skip-guard avoids a CI seed step). Decentralized
   sharing: infra reads my memory/STATUS per CLAUDE.md rule 3.
 =========
+
+=== UPDATE: 2026-06-11 — CI Gate-4 integration PASS 2 (services-builder, mesell-ci-gate4-fix-session-2) ===
+Phase: CI Gate-4 (integration) test-harness fix — pass 2 (out-of-fence residue from pass 1)
+Spec: spec_ci_gate4_fix_pass2.md (coordinator, Rule-7 STEP 2). Branch fix/ci-gate4-integration-pass2 off
+  origin/develop (0b70219). Worktree /tmp/mesell-wt/ci-gate4-pass2.
+Done (in-fence, §5):
+  §2.1 loop_scope="function" on EVERY async db-consuming fixture in 4 module conftests
+       (catalog 6, image 8, pricing 9, customer 1 = 24 fixtures). category/dashboard/export confirmed
+       clean (0 async fixtures). Grep-proof sweep: zero bare @pytest_asyncio.fixture across ALL
+       tests/modules/*/conftest.py.
+  §2.2 customer_client (tests/test_customer_routes.py) — 3 spec'd defects fixed: DB url → _DEV_DATABASE_URL
+       (kills 5432 default); Valkey base → _valkey_base() (kills hardcoded 6379, /0/0-safe); drop_all/create_all
+       provision-aware (skip setup+teardown when TEST_DATABASE_URL set). Singleton-patch logic UNTOUCHED.
+  §2.3 4× test_seeded_* → runtime pytest.skip() gated on absence of prod seed, cite BE-SEED-1. NO seeder,
+       NO new marker. DEVIATION (flagged): gate uses COUNT(field_enum_values)==0 not COUNT(categories)==0 —
+       committing route fixtures leave categories residue (≈1 row) that defeats the literal categories gate;
+       field_enum_values is the pollution-robust prod-seed signal (no fixture writes it). Honours spec intent.
+Tests (local repro — Homebrew PG16.11 :5433 + Valkey 9.0.3 :6381, master-tree .venv py3.11 pytest 8.3.0 /
+  asyncio 0.24.0; CI is py3.12 + Valkey 8 — same deltas as pass 1; docker daemon down):
+  BEFORE (origin/develop, same substrate) = 63 failed / 111 passed / 4 skipped / 35 errors (== pass-1 baseline).
+  AFTER  (pass-2)                          = 35 failed / 135 passed / 8 skipped / 14 errors.
+  Net: +24 passed, −28 failed, −21 errors, +4 skips. §2.1 cleared the targeted module suites entirely:
+  catalog test_service_unit 14→0, pricing 12→0, catalog test_integration 8→0.
+In progress: PR open (do NOT merge — coordinator STEP-3 gate).
+Blockers / NOT exit-0 (STOP-and-report — all OUT of the §5 pass-2 fence, all pre-existing & red in BEFORE run,
+  zero regressions introduced):
+  (a) 26 RuntimeError "BaseHTTPMiddleware ... Future attached to a different loop" (19 customer_routes + 7
+      export route-client). Pre-existing fixture loop-binding defect (the route clients build redis/engine
+      objects at fixture-setup, used in a different request loop). Confirmed red on origin/develop in isolation.
+      Fix needs route-client fixture loop hygiene beyond the 3 spec'd customer_client defects → NOT in fence.
+  (b) 14 IntegrityError (dup ix_users_phone / products_user_id_fkey) — image ×9, iam ×3, pricing_persist ×2.
+      ROOT CAUSE (diagnosed): tests/conftest.py db_session yields a plain session with NO per-test transaction
+      ROLLBACK. In non-provisioned mode isolation came from db_engine's per-test drop_all+create_all; pass-1
+      made db_engine provision-aware (skips the reset on a shared meesell_test) and customer_client pass-2
+      follows suit — so committed/flushed rows now accumulate across the session with nothing cleaning them →
+      fixed-phone fixtures collide. FK re-triage VERDICT: harness pollution, NOT an app bug. Fix belongs in
+      tests/conftest.py db_session (add txn+rollback for provisioned mode) → §6 forbids touching it (pass-1 owns).
+  (c) 4 category-seed FAILED (field_enum ×2, schema_fetch ×1, trigram-GIN ×1) + 1 test_is_advanced_flag —
+      need the 3772-cat/49259-enum prod seed (BE-SEED-1). is_advanced + the 3 category tests are OUTSIDE the
+      §5 "4 test_seeded_* only" fence so I could not extend the skip-guard to them.
+  (d) 4 is_leaf AttributeError (multi_tenant_isolation) — BE-CAT-ISLEAF-1, accepted known-red.
+Next: coordinator STEP-3 review. Recommend a pass-3 fence covering (a) route-client fixture loop hygiene +
+  (b) db_session per-test rollback in tests/conftest.py — both needed for true exit-0; both out of pass-2 fence.
+Hand-offs: PR fix/ci-gate4-integration-pass2 → develop. CI does NOT run on develop PRs — local repro is the
+  gate. After merge, Gate 4 re-fires on next develop→main (still blocked by residual classes a/b/c above until
+  a pass-3 + BE-SEED-1 + BE-CAT-ISLEAF-1 land).
+=========
