@@ -20,6 +20,8 @@ import pytest
 from app.i18n.messages_en import VALIDATION_MESSAGES
 from app.i18n.resolver import resolve
 
+pytestmark = pytest.mark.unit
+
 
 def test_en_locale_known_id_returns_english_string() -> None:
     """Tier 1 — requested locale registers the ID."""

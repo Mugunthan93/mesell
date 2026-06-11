@@ -25,7 +25,7 @@ from app.modules.pricing import service as pricing_service
 from app.modules.pricing.schemas import PriceCalcRequest
 
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 class TestOwnershipGate:

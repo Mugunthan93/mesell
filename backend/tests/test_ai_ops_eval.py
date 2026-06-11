@@ -22,6 +22,8 @@ import pytest
 from app.ai_ops import eval as eval_mod
 from app.ai_ops.eval import EvalReport, FixtureResult, run_eval
 
+pytestmark = pytest.mark.unit
+
 
 # ── Dataclass shape ────────────────────────────────────────────────────────
 class TestDataclasses:

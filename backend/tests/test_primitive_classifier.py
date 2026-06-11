@@ -27,6 +27,8 @@ from app.i18n.primitive_classifier import (
     classify_primitive,
 )
 
+pytestmark = pytest.mark.unit
+
 
 # ---------------------------------------------------------------------------
 # Smoke tests — module-level properties

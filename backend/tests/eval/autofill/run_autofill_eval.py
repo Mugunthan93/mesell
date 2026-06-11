@@ -35,9 +35,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-_HERE = Path(__file__).resolve().parent  # backend/tests/eval
+_HERE = Path(__file__).resolve().parent  # backend/tests/eval/autofill
 _FIXTURES_PATH = _HERE / "fixtures.json"
-_RESULTS_PATH = _HERE / "autofill" / "eval_results.json"
+_RESULTS_PATH = _HERE / "eval_results.json"
 
 _THRESHOLD_PCT = 100.0  # 0% invalid enum => 100% conformance required
 

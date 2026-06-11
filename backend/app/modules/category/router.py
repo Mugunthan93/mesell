@@ -50,7 +50,7 @@ import logging
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -65,6 +65,7 @@ from app.modules.category.schemas import (
     SchemaResponse,
     SuggestResponse,
 )
+from app.shared.config import settings
 from app.shared.database import get_db
 
 logger = logging.getLogger(__name__)
@@ -108,7 +109,17 @@ async def suggest_categories(
     service (step 2 of the §9.B.1 pipeline), not in this handler.
 
     Rate limit: 100 calls/h per user_id via ``@rate_limit`` decorator (§4.E).
+
+    Feature flag: returns 404 when ``FEATURE_SMART_PICKER_ENABLED=false``
+    per Master Plan §3.2 + FEATURE_PLAN.md D2.
     """
+    # ── Feature flag guard (§3.2 / D2) ───────────────────────────────────
+    if not settings.FEATURE_SMART_PICKER_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Smart Picker is disabled in this environment",
+        )
+
     payload = await category_service.suggest_categories(
         user.user_id, q, db=db
     )

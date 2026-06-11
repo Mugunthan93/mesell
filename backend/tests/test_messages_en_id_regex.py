@@ -27,6 +27,8 @@ import pytest
 
 from app.i18n.messages_en import VALIDATION_MESSAGES
 
+pytestmark = pytest.mark.unit
+
 # §5A.H locked regex.
 _VALIDATION_MESSAGE_ID_REGEX = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2}$")
 

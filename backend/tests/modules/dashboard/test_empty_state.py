@@ -16,6 +16,8 @@ from uuid import uuid4
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 from app.modules.catalog.domain import PaginatedProductsInternal
 from app.modules.customer.domain import ProfileCompleteness
 from app.modules.dashboard.schemas import DashboardQuery, DashboardResponse

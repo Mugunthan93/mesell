@@ -85,6 +85,8 @@ The one micro-contention is the prompt registry index entry (both add a workload
 
 **Cost ceiling note (carried into Risk Register):** the ai-coordinator merge gate locks per-call cost at ≤ ₹0.05 (per spec §6A.H + `meesell-ai-coordinator.md` Stop Conditions). Vision calls (watermark) are multimodal and run ~₹0.06-0.08 in practice. If the watermark per-call cost exceeds ₹0.05, the ai lead MUST escalate to founder for an exception or for a cost-ceiling amendment SPECIFIC to the vision workload (e.g., "text workloads ≤ ₹0.05, vision workloads ≤ ₹0.08"). Until then, ≤ ₹0.05 is the merge gate; an overshoot blocks the PR.
 
+**AMENDMENT 2026-06-11 — vision cost ceiling settled:** Founder approved vision-specific exception. Merge gate for watermark/vision calls: ≤ ₹0.08 (not ≤ ₹0.05). Text workloads remain ≤ ₹0.05. The ai-coordinator will verify watermark call cost ≤ ₹0.08 per call in the PR gate decision comment. R3 is RESOLVED — no longer blocking.
+
 ---
 
 ## Agent lineup

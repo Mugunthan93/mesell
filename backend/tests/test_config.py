@@ -5,16 +5,19 @@ import os
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 
 def _reload_config(env: dict[str, str]):
-    """Reload app.config with a controlled environment."""
+    """Reload app.shared.config with a controlled environment."""
     original = {k: os.environ.get(k) for k in env}
     try:
         for k, v in env.items():
             os.environ[k] = v
         import app.shared.config
-        importlib.reload(app.config)
-        return app.config.settings
+
+        importlib.reload(app.shared.config)
+        return app.shared.config.settings
     finally:
         for k, v in original.items():
             if v is None:
@@ -38,10 +41,12 @@ def test_cors_origin_list_splits_and_trims():
     s = _reload_config(
         {
             "APP_ENV": "development",
-            "CORS_ORIGINS": "https://meesell.in, https://www.meesell.in ,https://api.meesell.in",
+            "CORS_ALLOWED_ORIGINS": (
+                "https://meesell.in, https://www.meesell.in ,https://api.meesell.in"
+            ),
         }
     )
-    assert s.cors_origin_list == [
+    assert s.CORS_ALLOWED_ORIGINS == [
         "https://meesell.in",
         "https://www.meesell.in",
         "https://api.meesell.in",

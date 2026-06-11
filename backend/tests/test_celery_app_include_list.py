@@ -20,6 +20,10 @@ sneaks back in).
 
 from __future__ import annotations
 
+import pytest
+
+pytestmark = pytest.mark.smoke
+
 
 def test_include_list_is_exactly_2_v1_modules():
     """``celery_app.conf.include`` MUST equal the 2 V1 entries verbatim."""

@@ -24,6 +24,8 @@ from app.adapters import AdapterError, GeminiAdapterError
 from app.adapters import gemini as gemini_mod
 from app.core.errors import MeesellError
 
+pytestmark = pytest.mark.unit
+
 
 @dataclass
 class _FakeUsage:

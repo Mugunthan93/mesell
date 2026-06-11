@@ -25,6 +25,8 @@ from uuid import uuid4
 
 import pytest
 
+pytestmark = pytest.mark.golden_roundtrip
+
 from app.modules.export.domain import XlsxColumnSpec, XlsxRowSpec
 from app.modules.export.service import _round_trip_validate, _write_xlsx
 

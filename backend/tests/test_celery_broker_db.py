@@ -16,6 +16,10 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
+import pytest
+
+pytestmark = pytest.mark.unit
+
 
 def test_broker_url_path_is_db_1():
     """``broker_url`` path MUST equal ``/1`` regardless of input URL."""

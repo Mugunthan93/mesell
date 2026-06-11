@@ -3720,6 +3720,80 @@ Next: schedule the dual-pepper-rotation feature dispatch ahead of V1.5 prod cuto
 Hand-offs: none new (infra already authored runbook §2; backend implements the read path it describes when scheduled).
 =========
 
+=== UPDATE: 2026-06-11 — mesell-smart-picker-backend-session-1 ===
+Phase: smart-picker / Feature 2 — database-builder slice
+Session: mesell-smart-picker-backend-session-1
+Branch: feature/smart-picker/backend (worktree /tmp/mesell-wt/smart-picker-backend)
+Tables: categories (GLOBAL data, read-only at runtime — no new migration, no new tables)
+
+Done:
+  - §9.D conformance verified against repository.py:
+      search_via_trigram(db, q, super_id, limit, offset) → (rows, total_count): PASS — matches §9.D verbatim.
+      assert_category_exists_uncached(db, category_id) → bool: PASS — matches §9.D verbatim.
+  - backend/tests/modules/category/test_trigram_p95.py (NEW, 290 LOC):
+      Two tests: test_trigram_p95_explain_hits_gin_index (EXPLAIN ANALYZE GIN-index evidence)
+                 test_trigram_p95_100_iterations (100 iters, P95 < 200 ms, full histogram)
+      Infra-gated: PYTEST_RUN_SLOW=1 + skip_unless_slow_enabled() — mirrors tests/perf/conftest.py pattern.
+      pytestmark = [pytest.mark.slow, pytest.mark.perf]
+      17/17 tests in tests/modules/category/ collect cleanly. ruff: 0 issues.
+  - Commit SHA: 075f162 on feature/smart-picker/backend (NOT pushed — lead pushes at gate time).
+
+In progress: none (database-builder slice complete for this session).
+
+Blockers: DRIFT ITEM — _GLOBAL_TABLES set is absent from backend/app/core/tenancy.py.
+  BACKEND_ARCHITECTURE.md §9.D specifies: "categories, templates, field_enum_values, field_aliases
+  are listed in core/tenancy.py's _GLOBAL_TABLES set." The set does not exist.
+  repository.py module docstring references core/tenancy._GLOBAL_TABLES but the object is absent.
+  Runtime impact: NONE (repository already doesn't call scope_to_user; the absence of the set
+  doesn't break anything today). Linter impact: if §19 import-linter is extended to check the
+  global-table exemption via this set, the rule will fail.
+  ACTION REQUIRED: Lead to decide whether to dispatch database-builder to add
+  `_GLOBAL_TABLES: frozenset[str] = frozenset({"categories","templates","field_enum_values","field_aliases"})`
+  to core/tenancy.py. No migration needed; one-line code addition only.
+
+Next: EXPLAIN/benchmark execution deferred until dev tunnel (localhost:5433) is restored.
+      Lead should run `PYTEST_RUN_SLOW=1 pytest tests/modules/category/test_trigram_p95.py -v -s`
+      after tunnel restoration to get EXPLAIN evidence for the PR body.
+
+Hand-offs: schema/repository ready; api-routes-builder + services-builder can consume repository.py
+           as verified. Benchmark fixture ready for lead's merge-gate execution with live DB.
+=========
+
+=== UPDATE: 2026-06-11 (services-builder — smart-picker §9.B.1 verify + test gap-fill + ai_eval CI) ===
+Phase: V1 Feature 2 — Smart Category Picker (§9.B.1)
+Session: mesell-smart-picker-backend-session-1 (services-builder slice)
+Done:
+  - §9.B.1 conformance VERIFY of category.service.suggest_categories(user_id, q, db) — NO DRIFT.
+    service.py UNTOUCHED (VERIFY-only). Step-by-step PASS:
+      1 validate (1<=len(q.strip())<=500 → SuggestQueryInvalidError 400)  PASS
+      2 plan_guard enforce_plan_limit(user_id, free, smart_picker_hourly, requested=1)  PASS
+      3 cache get_or_set(smart_picker:{sha256(q)}, ttl=900, single_flight=False)  PASS
+      4 miss → _fetch_tree_dicts → picker.compress_tree → ai_client.call_gemini("smart_picker.v1")  PASS
+      5 BudgetExceededError caught → {suggestions:[], fallback_offered:True} (200, NOT 503)  PASS
+        + AIResponse.parsed.fallback_offered is True → same  PASS
+      6 Layer-2 final-pass re-validation per category_id via assert_category_exists_uncached  PASS
+        (ai_ops already does up-to-2 retries; service is the defensive net)
+      7 enrichment super_id/super_name/path/leaf_name from in-process tree  PASS
+      8 picker.calibrate_confidence + picker.select_top_k(5) + fallback_offered=False  PASS
+    Cache key format smart_picker:{sha256(q)} (version-prefixed by core.cache) — LOCKED, untouched.
+  - NEW backend/tests/modules/category/test_suggest_unit.py (9 tests) — branch gap-fill,
+    COMPLEMENTS existing test_suggest_graceful_fallback_on_budget.py + test_suggest_layer2_invalid_id_retry.py:
+      validation rejection (4 params) + max-len boundary + success-path enrichment/top-K
+      + 5-cap + non-dict parsed + cache-hit-determinism (call_gemini invoked exactly once).
+  - .github/workflows/ci.yml — NEW `ai_eval` job (token-free smart-picker recall gate via
+    backend/tests/eval/smart_picker/run_eval.py), schedule + workflow_dispatch, no GEMINI_API_KEY /
+    no Postgres / no Valkey. Added workflow_dispatch trigger. Live-model variant left as marked TODO
+    block (activate when GEMINI_API_KEY_CI lands). Kept the existing live `nightly` ai_eval step intact.
+Tests: 16/16 category suggest+picker unit PASS (Valkey-backed, no DB); run_eval.py 50/50 recall=100% PASS;
+       32 smart-picker tests collect clean; ruff clean on new test file; ci.yml YAML valid + structure asserted.
+i18n: PASS — validation.suggest_q.too_short_or_long + category.lookup.not_found (3-segment normalized) both present.
+In progress: none.
+Blockers: none. (Postgres dev tunnel down → DB-seeded integration tests skip cleanly, as designed.)
+Next: lead merge-gate; api-routes-builder owns the router HTTP-boundary 400/402 tests.
+Hand-offs: suggest_categories VERIFIED conformant; no service change needed. ai_eval CI job ready
+           (token-free) — infra-builder to wire GEMINI_API_KEY_CI later for the live-model variant.
+=========
+
 === UPDATE: 2026-06-11 — mesell-dual-pepper-session-1 SESSION START ===
 Phase: dual-pepper-rotation (R5 pre-V1.5-prod gate) — dispatch + merge-gate session
 Session: mesell-dual-pepper-session-1

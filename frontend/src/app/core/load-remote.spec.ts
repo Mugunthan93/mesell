@@ -8,10 +8,15 @@ vi.mock('@angular-architects/native-federation', () => ({
   loadRemoteModule: (...args: unknown[]) => loadRemoteModuleMock(...args),
 }));
 
-import { loadRemoteWithFallback } from './load-remote';
+import { loadRemoteWithFallback, loadRemoteRoutesWithFallback } from './load-remote';
 import { RemoteFailureComponent } from './remote-failure.component';
 
 class FakePricingComponent {}
+
+const FAKE_CATALOG_ROUTES = [
+  { path: '', component: class FakeCatalogListComponent {} },
+  { path: 'new', component: class FakeCatalogNewComponent {} },
+];
 
 describe('loadRemoteWithFallback (MF Sub-Plan 01 — D12 / §6.4)', () => {
   beforeEach(() => {
@@ -37,5 +42,33 @@ describe('loadRemoteWithFallback (MF Sub-Plan 01 — D12 / §6.4)', () => {
     loadRemoteModuleMock.mockRejectedValue(new Error('remoteEntry.json 404'));
     const resolved = await loadRemoteWithFallback('mfe-pricing', './PricingComponent')();
     expect(resolved).toBe(RemoteFailureComponent);
+  });
+});
+
+describe('loadRemoteRoutesWithFallback (SP05 — D31 Routes-array expose / §6.D)', () => {
+  beforeEach(() => {
+    loadRemoteModuleMock.mockReset();
+  });
+
+  it('calls loadRemoteModule with the correct remoteName + exposedModule', async () => {
+    loadRemoteModuleMock.mockResolvedValue({ CATALOG_ROUTES: FAKE_CATALOG_ROUTES });
+    await loadRemoteRoutesWithFallback('mfe-catalog', './CatalogRoutes')();
+    expect(loadRemoteModuleMock).toHaveBeenCalledWith({
+      remoteName: 'mfe-catalog',
+      exposedModule: './CatalogRoutes',
+    });
+  });
+
+  it('resolves CATALOG_ROUTES array on success (§6.D R-SP5-1)', async () => {
+    loadRemoteModuleMock.mockResolvedValue({ CATALOG_ROUTES: FAKE_CATALOG_ROUTES });
+    const resolved = await loadRemoteRoutesWithFallback('mfe-catalog', './CatalogRoutes')();
+    expect(resolved).toBe(FAKE_CATALOG_ROUTES);
+  });
+
+  it('falls back to [{path:"**",component:RemoteFailureComponent}] on remote load failure (D12)', async () => {
+    loadRemoteModuleMock.mockRejectedValue(new Error('remoteEntry.json 404'));
+    const resolved = await loadRemoteRoutesWithFallback('mfe-catalog', './CatalogRoutes')();
+    expect(Array.isArray(resolved)).toBeTruthy();
+    expect((resolved as unknown[])[0]).toMatchObject({ path: '**', component: RemoteFailureComponent });
   });
 });

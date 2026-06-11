@@ -6,6 +6,10 @@ by :attr:`XlsxColumnSpec.meesho_column_index`.
 
 from __future__ import annotations
 
+import pytest
+
+pytestmark = pytest.mark.unit
+
 from app.modules.export.domain import XlsxColumnSpec, XlsxRowSpec
 from app.modules.export.service import _reorder_columns
 

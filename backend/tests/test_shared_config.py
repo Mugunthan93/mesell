@@ -26,6 +26,8 @@ from pydantic_settings import SettingsConfigDict
 
 from app.shared.config import REQUIRED_FIELDS, Settings, settings
 
+pytestmark = pytest.mark.unit
+
 
 # ───────────────────────────────────────────────────────────────────────────
 # Test helpers

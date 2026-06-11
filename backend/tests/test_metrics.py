@@ -12,6 +12,8 @@ from prometheus_client import Counter, Gauge, Histogram, generate_latest
 
 from app.core import metrics
 
+pytestmark = pytest.mark.unit
+
 
 # ── 1. All 7 importable + correct types ─────────────────────────────────────
 @pytest.mark.parametrize(

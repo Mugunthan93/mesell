@@ -45,6 +45,8 @@ from app.modules.customer.schemas import (
     PatchProfileRequest,
 )
 
+pytestmark = pytest.mark.integration
+
 
 async def _make_session_factory():
     """Per-test NullPool engine in the current event loop."""

@@ -19,6 +19,10 @@ both to be set for worker-lost requeueing to take effect.
 
 from __future__ import annotations
 
+import pytest
+
+pytestmark = pytest.mark.smoke
+
 
 def test_task_reject_on_worker_lost_is_true():
     """§18.G session-2-G3 lock — ``task_reject_on_worker_lost=True``."""

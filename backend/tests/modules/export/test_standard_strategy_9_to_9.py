@@ -7,6 +7,10 @@ unchanged and meesho_column_header sourced from
 
 from __future__ import annotations
 
+import pytest
+
+pytestmark = pytest.mark.unit
+
 from app.modules.export.domain import (
     StandardComplianceStrategy,
     XlsxColumnSpec,

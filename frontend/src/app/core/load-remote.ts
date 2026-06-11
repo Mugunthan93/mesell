@@ -1,5 +1,6 @@
 import { loadRemoteModule } from '@angular-architects/native-federation';
 import type { Type } from '@angular/core';
+import { Routes } from '@angular/router';
 
 import { RemoteFailureComponent } from './remote-failure.component';
 
@@ -29,4 +30,18 @@ export function loadRemoteWithFallback(
         console.error(`[federation] remote "${remoteName}" failed to load:`, err);
         return RemoteFailureComponent;
       });
+}
+
+/**
+ * SP05 (D31) — Routes-array variant of loadRemoteWithFallback. Returns a `loadChildren`
+ * function that resolves a remote's exposed Routes array. On load failure the WHOLE
+ * sub-tree degrades to a single catch-all route rendering RemoteFailureComponent
+ * (MASTER_PLAN §6.4) — not a white screen. Authored ONCE here; catalog is the only
+ * flow-owning (Routes-expose) remote in V1.
+ */
+export function loadRemoteRoutesWithFallback(remoteName: string, exposedModule: string) {
+  return () =>
+    loadRemoteModule({ remoteName, exposedModule })
+      .then(m => (m['CATALOG_ROUTES'] ?? Object.values(m).find(Array.isArray)) as Routes)
+      .catch(() => [{ path: '**', component: RemoteFailureComponent }] as Routes);
 }

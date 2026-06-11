@@ -25,6 +25,8 @@ import pytest
 
 from app.ai_ops import cost_tracker
 
+pytestmark = pytest.mark.unit
+
 
 # ── Constants ──────────────────────────────────────────────────────────────
 class TestRateConstants:

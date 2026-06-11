@@ -32,6 +32,8 @@ from app.core.auth import (
 from app.shared.config import settings
 from app.shared.models.user import User
 
+pytestmark = pytest.mark.unit
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers

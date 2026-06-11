@@ -23,6 +23,8 @@ from app.core.auth import issue_access_token
 from app.core.middleware.auth_mw import AuthContextMiddleware
 from app.shared.config import settings
 
+pytestmark = pytest.mark.unit
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test-app factory

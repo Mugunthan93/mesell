@@ -108,4 +108,4 @@ async def test_suggest_returns_fallback_when_call_gemini_returns_fallback_offere
     assert payload["fallback_offered"] is True
 
 
-pytestmark = pytest.mark.usefixtures("use_live_valkey")
+pytestmark = [pytest.mark.usefixtures("use_live_valkey"), pytest.mark.integration]

@@ -33,6 +33,8 @@ from app.adapters.gemini import GeminiResponse
 from app.ai_ops import budget_cap, client
 from app.ai_ops.client import AICallContext, AIResponse
 
+pytestmark = pytest.mark.unit
+
 
 # ── Dataclass shape ────────────────────────────────────────────────────────
 class TestDataclasses:

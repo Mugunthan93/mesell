@@ -1,5 +1,7 @@
 {
   "mfe-pricing": "http://localhost:4201/remoteEntry.json",
   "mfe-export": "http://localhost:4202/remoteEntry.json",
-  "mfe-onboarding": "http://localhost:4203/remoteEntry.json"
+  "mfe-onboarding": "http://localhost:4203/remoteEntry.json",
+  "mfe-catalog": "http://localhost:4205/remoteEntry.json",
+  "mfe-dashboard": "http://localhost:4204/remoteEntry.json"
 }

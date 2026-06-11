@@ -19,6 +19,8 @@ from uuid import uuid4
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 from app.modules.catalog.domain import (
     PaginatedProductsInternal,
     Pagination,

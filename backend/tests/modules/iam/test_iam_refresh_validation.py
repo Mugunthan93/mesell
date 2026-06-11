@@ -26,7 +26,7 @@ from app.modules.iam import service as iam_service
 from app.modules.iam.exceptions import RefreshInvalidError
 
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 async def _seed_verified_user(db, valkey, phone: str = "+915550000010"):
