@@ -5734,3 +5734,31 @@ Hand-offs:
   - meesell-infra-builder: SP07 inter-lead row updated — cost gate DISCHARGED (D13-HOSTING ruling); provisioning is now notification-only at cutover week. Live CSP smoke + Gate-4 discharge still need a reachable dev env (cutover week).
   - founder (STATUS_MASTER): §5.1 audit findings (convention HELD, no amendment) + the carried-items register surfaced via this STATUS_FRONTEND update; founder reviews the audit at the #105 gate.
 =========
+
+=== UPDATE: 2026-06-11 — WAVE 6 API WIRING MASTER PLAN authored ===
+Phase: Wave 6 planning — API wiring master plan (federation program is COMPLETE on develop 5cd6e32).
+Session: mesell-wave6-planning-session-1
+
+Board sweep (session start + end): Active features table was EMPTY at start (SP07 closeout merged). NO rows untouched 7+ days (all activity 2026-06-11). Added ONE PENDING row: wave6-api-wiring (PLAN). Inter-lead requests open: 7 infra rows unchanged (SP07 + per-remote hosting, all OPEN, all <14 days, all cutover-week-carried — none stale). No new inter-lead memos opened this session (the AI-lane + backend confirm-memos are flagged in the plan for Wave-A/C/D dispatch time, not now).
+
+V1 ROUTES / SPECIALISTS THIS TASK TOUCHES: ALL 10 V1 routes across 6 remotes (the plan inventories every page × endpoint). Planning session = NO specialist dispatch. The plan maps work to all 3 specialists: meesell-angular-service-builder (interceptors + ApiClient + per-page api services + auth wiring), meesell-angular-component-builder (page state wiring + loading/error states), meesell-angular-ui-styler (error/degraded-state polish). Dispatch begins at Wave A after founder approval.
+
+Done:
+  - Authored docs/plans/wave6_api_wiring/MASTER_PLAN.md (DRAFT). Canonical v2.1, fence-aware, grounded in AS-BUILT develop 5cd6e32 (verified router decorators + Pydantic schemas, not stale docs).
+  - §1 Contract inventory: 28 backend endpoints (verified from backend/app/modules/*/router.py); FE consumes 26 (webhook backend-only). 9 pages mapped × endpoints × current wired/mock state. 1 page wired (smart-picker #101); 8 to wire. 3 known contract discrepancies surfaced (DISCREPANCY-1: smart-picker posts /catalogs but backend is /products; Decimal wire-type; POST /products body shape).
+  - §2 D33 execution: promotion analysis done. PROMOTION LIST = Product (4 remotes) + AuthUser extension (4 consumers). Everything else stays remote-private (SP05 D32 criterion: 2+ remotes).
+  - §3 Auth wiring: built-vs-mock table (jwt/refresh/error interceptors + bootstrap + real OTP login ALL MISSING; AuthService.setSession/getToken/logout + provideHttpClient(withFetch) + manual-Bearer PRESENT). Plan builds the §4-LOCKED interceptor chain once in @mesell/core.
+  - §4 Wave grouping: 4 waves/7 slices/2 lanes. Wave A foundation (serial, shared surface) → B (dashboard‖onboarding) → C (catalog-form‖export) → D (images‖pricing). mfe-catalog intra-remote ordering constraint flagged (catalog-form before images).
+  - §5 Validation: standing gates + baseline=47 spec files on develop + Gate-4 two-sided-proof reference (don't block) + contract-drift stop condition.
+  - §6 AI-lane boundary: AI features are BACKEND prompt/eval work (not FE wiring); Wave 6 owns autofill+precheck UI wiring; confirm-memos to ai-coordinator before Wave C/D.
+  - §7 4 founder decisions (analysis + recommendation, NOT self-ratified). §8 11-item risk register incl. the mock-removal-trap graceful-degradation P0 pattern.
+  - Board: added wave6-api-wiring PENDING row + header note. STATUS updated. Plan committed via chore/wave6-api-wiring-plan PR to develop (Model C, lead-gate, squash --admin).
+
+In progress: none (planning complete; awaiting founder approval to dispatch Wave A).
+Blockers: Founder approval of the DRAFT + the 4 §7 decisions before Wave A dispatch. (Not a hard blocker — planning is done; this is the natural founder gate.)
+Next: founder reviews MASTER_PLAN.md + rules on the 4 decisions → dispatch Wave A (auth-core foundation slice) via hybrid rule (coordinator SPEC → service-builder → component-builder → ui-styler → coordinator MERGE-GATE).
+Hand-offs:
+  - founder (STATUS_MASTER): Wave 6 plan ready; 4 decisions queued (pricing calc location, smart-picker /catalogs→/products fix, AuthUser additive-optional, wave count). Plan PR opened integration-style chore branch.
+  - meesell-ai-coordinator (FLAGGED, not yet sent): confirm-memo before Wave C/D — AI lane is NOT wiring autofill overlay / precheck-result display (frontend owns the UI rendering of AI-delivered endpoints). Will open at Wave C/D dispatch.
+  - meesell-backend-coordinator (FLAGGED, not yet sent): verify live Set-Cookie Path (=/api/v1/auth) + Decimal wire-type + POST /products create body before Wave A/D wiring. Will open at dispatch time.
+=========
