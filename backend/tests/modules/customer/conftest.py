@@ -23,7 +23,7 @@ from __future__ import annotations
 import pytest_asyncio
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def db(db_session):
     """Alias for the ephemeral test DB session.
 

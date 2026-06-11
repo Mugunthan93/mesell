@@ -1145,12 +1145,61 @@ async def test_server_default_compliance_extensions_empty_dict(db: AsyncSession)
 # These hit the live seeded reference data directly.
 # They use dev_engine (session-scoped) rather than the per-test `db` fixture
 # because they are pure SELECT queries — no transaction rollback needed.
+#
+# CI Gate-4 pass-2 (2026-06-11): these 4 invariants assert against the PROD
+# reference seed (≥321 Grocery categories, exactly-1 collapsed template,
+# MAX(value_count)=4481, ≥1 for_xlsx_export alias).  In CI, ``dev_engine``
+# binds to the ephemeral ``meesell_test`` db, whose schema is provisioned by
+# ``alembic upgrade head`` (tests/conftest.py ``_provision_test_schema``) but
+# carries ZERO data rows (the baseline migration creates EMPTY tables — the
+# 3772-category / 49259-enum seed is a DATABASE-track concern, NOT run in CI).
+# Re-seeding in CI would blow the integration time budget (~3 min for 49k enum
+# rows) and §19.D locks the seed tables to the DATABASE track.  So each test
+# RUNTIME-SKIPS when the reference data is absent, gated on COUNT(categories)==0.
+# This preserves the invariant assertions verbatim for dev-tunnel runs (where
+# the seed IS present) while keeping CI green.  Tracked: ticket BE-SEED-1
+# (provide a CI-scoped seed fixture or a nightly-only seeded data gate).
 # ===========================================================================
+
+_SEED_SKIP_REASON = (
+    "Reference seed data absent (CI meesell_test is schema-only, no prod data "
+    "seed). Tracked: BE-SEED-1."
+)
+
+
+async def _seed_data_absent(conn) -> bool:
+    """True when the PROD reference seed is absent → schema-only DB (CI).
+
+    The 4 ``test_seeded_*`` invariants assert against the PROD reference seed
+    (3772 categories / 49259 field_enum_values / 3566 templates / 67 aliases
+    loaded by the DATABASE-track seed scripts, NOT run in CI).
+
+    SIGNAL CHOICE (CI Gate-4 pass-2 deviation — FLAGGED): the spec specified
+    ``COUNT(categories) == 0`` as the gate.  In the integration run, route-level
+    fixtures (customer_client / iam_client / category flows) COMMIT a handful of
+    ``categories`` rows into the shared ``meesell_test`` db and do NOT roll them
+    back, so by the time these read-only seeded tests run, ``categories`` is
+    non-empty (typically 1) even though the PROD seed is absent — which would
+    defeat a literal ``categories == 0`` gate and re-surface the AssertionError
+    the skip is meant to prevent (violating the §3 acceptance gate).
+
+    ``field_enum_values`` is the pollution-robust equivalent signal: it is
+    populated ONLY by the 49 259-row DATABASE-track enum seed and by NO test
+    fixture (verified: 0 rows after a full integration run).  An empty
+    ``field_enum_values`` is therefore the unambiguous "no prod seed" signal
+    that survives the committing-fixture residue.  This honours the spec INTENT
+    (skip when the prod seed is absent) while the spec's literal categories gate
+    cannot under shared-DB pollution.
+    """
+    result = await conn.execute(text("SELECT COUNT(*) FROM field_enum_values"))
+    return result.scalar_one() == 0
 
 
 async def test_seeded_grocery_category_count(dev_engine) -> None:
     """COUNT categories WHERE super_id='26' (Grocery) → ≥321 rows."""
     async with dev_engine.connect() as conn:
+        if await _seed_data_absent(conn):
+            pytest.skip(_SEED_SKIP_REASON)
         result = await conn.execute(
             text("SELECT COUNT(*) FROM categories WHERE super_id = '26'")
         )
@@ -1161,6 +1210,8 @@ async def test_seeded_grocery_category_count(dev_engine) -> None:
 async def test_seeded_collapsed_template_invariant(dev_engine) -> None:
     """COUNT templates WHERE compliance_shape='collapsed' → exactly 1 (Eye-Serum)."""
     async with dev_engine.connect() as conn:
+        if await _seed_data_absent(conn):
+            pytest.skip(_SEED_SKIP_REASON)
         result = await conn.execute(
             text("SELECT COUNT(*) FROM templates WHERE compliance_shape = 'collapsed'")
         )
@@ -1173,6 +1224,8 @@ async def test_seeded_collapsed_template_invariant(dev_engine) -> None:
 async def test_seeded_field_enum_max_value_count(dev_engine) -> None:
     """MAX(value_count) FROM field_enum_values → 4,481 (Compatible Models invariant)."""
     async with dev_engine.connect() as conn:
+        if await _seed_data_absent(conn):
+            pytest.skip(_SEED_SKIP_REASON)
         result = await conn.execute(
             text("SELECT MAX(value_count) FROM field_enum_values")
         )
@@ -1185,6 +1238,8 @@ async def test_seeded_field_enum_max_value_count(dev_engine) -> None:
 async def test_seeded_field_aliases_xlsx_export_present(dev_engine) -> None:
     """COUNT field_aliases WHERE for_xlsx_export=TRUE → ≥1 (alias round-trip pre-condition)."""
     async with dev_engine.connect() as conn:
+        if await _seed_data_absent(conn):
+            pytest.skip(_SEED_SKIP_REASON)
         result = await conn.execute(
             text("SELECT COUNT(*) FROM field_aliases WHERE for_xlsx_export = TRUE")
         )

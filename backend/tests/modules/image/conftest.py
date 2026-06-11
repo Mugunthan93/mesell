@@ -45,7 +45,7 @@ from app.shared.models.user import User
 # ─────────────────────────────────────────────────────────────────────────────
 # DB alias
 # ─────────────────────────────────────────────────────────────────────────────
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def db(db_session):
     yield db_session
 
@@ -61,12 +61,12 @@ async def _seed_user(db, phone: str) -> User:
     return user
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def user(db) -> User:
     return await _seed_user(db, phone="+915550011001")
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def other_user(db) -> User:
     return await _seed_user(db, phone="+915550011002")
 
@@ -74,7 +74,7 @@ async def other_user(db) -> User:
 # ─────────────────────────────────────────────────────────────────────────────
 # Seller profile (Beauty-eligible — re-uses §10 conventions)
 # ─────────────────────────────────────────────────────────────────────────────
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def beauty_profile(db, user: User) -> SellerProfileORM:
     profile = SellerProfileORM(
         user_id=user.id,
@@ -104,7 +104,7 @@ async def beauty_profile(db, user: User) -> SellerProfileORM:
 # ─────────────────────────────────────────────────────────────────────────────
 # Category + template
 # ─────────────────────────────────────────────────────────────────────────────
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def beauty_template(db) -> TemplateORM:
     template = TemplateORM(
         schema_hash="image-test-template-hash-abc123",
@@ -131,7 +131,7 @@ async def beauty_template(db) -> TemplateORM:
     return template
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def beauty_category(db, beauty_template: TemplateORM) -> CategoryORM:
     category = CategoryORM(
         meesho_leaf_id="img-tst-001",
@@ -173,12 +173,12 @@ async def _seed_product(
     return product
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def product(db, user: User, beauty_category: CategoryORM) -> ProductORM:
     return await _seed_product(db, user.id, beauty_category.id)
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def other_product(db, other_user: User, beauty_category: CategoryORM) -> ProductORM:
     return await _seed_product(
         db, other_user.id, beauty_category.id, name="Other User Product"

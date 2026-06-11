@@ -33,7 +33,7 @@ from app.shared.models.template import Template as TemplateORM
 from app.shared.models.user import User
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def db(db_session):
     """Alias for the ephemeral test DB session.
 
@@ -55,12 +55,12 @@ async def _seed_user(db, phone: str) -> User:
     return user
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def user(db) -> User:
     return await _seed_user(db, phone="+915550010001")
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def other_user(db) -> User:
     return await _seed_user(db, phone="+915550010002")
 
@@ -105,7 +105,7 @@ async def _seed_beauty_eligible_profile(db, user_id: UUID) -> SellerProfileORM:
     return profile
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def beauty_profile(db, user) -> SellerProfileORM:
     return await _seed_beauty_eligible_profile(db, user.id)
 
@@ -182,7 +182,7 @@ def _build_eye_serum_schema() -> dict[str, Any]:
     }
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def beauty_template(db) -> TemplateORM:
     """Insert a template carrying the Eye-Serum schema envelope."""
     schema = _build_eye_serum_schema()
@@ -204,7 +204,7 @@ async def beauty_template(db) -> TemplateORM:
     return template
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def beauty_category(db, beauty_template) -> CategoryORM:
     """Insert a Beauty / Eye-Serum category leaf with super_id=19.
 
