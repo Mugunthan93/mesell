@@ -753,7 +753,7 @@ jobs:
               # 1. Refresh the manifest checkout on the VM so any k8s/*.yaml change ships.
               if [ -d ~/mesell/.git ]; then
                 git -C ~/mesell fetch origin main
-                git -C ~/mesell reset --hard origin/main
+                git -C ~/mesell reset --hard FETCH_HEAD
               else
                 git clone --depth=1 https://github.com/Mugunthan93/mesell.git ~/mesell
               fi
