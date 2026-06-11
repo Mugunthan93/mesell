@@ -26,7 +26,7 @@
 
 | To lead | About feature | Request | Opened | Status |
 |---|---|---|---|---|
-| meesell-infra-builder | dual-pepper-rotation | Add `REFRESH_TOKEN_PEPPER_PREVIOUS` and `REFRESH_TOKEN_PEPPER_VERSION` to `k8s/secrets.yaml.example` + GCP Secret Manager onboarding notes. Backend code is live (PR #65); infra must provision the new secret refs before the first prod rotation. | 2026-06-11 | OPEN |
+| meesell-infra-builder | dual-pepper-rotation | Add `REFRESH_TOKEN_PEPPER_PREVIOUS` and `REFRESH_TOKEN_PEPPER_VERSION` to `k8s/secrets.yaml.example` + GCP Secret Manager onboarding notes. Backend code is live (PR #65); infra must provision the new secret refs before the first prod rotation. | 2026-06-11 | RESOLVED 2026-06-11 — k8s/secrets.yaml.example + SM onboarding notes (INFRASTRUCTURE_ARCHITECTURE.md §4) landed PR #69 |
 
 ---
 
