@@ -315,23 +315,106 @@ def issue_refresh_token() -> str:
     return secrets.token_urlsafe(48)
 
 
-def refresh_allowlist_key(refresh_token: str) -> str:
-    """Derive the Valkey allowlist key for ``refresh_token`` per §4.B.
+# ─────────────────────────────────────────────────────────────────────────────
+# KEY FORMAT MIGRATION NOTE (2026-06-11, dual-pepper-rotation / R5):
+# Legacy unversioned keys (``cache:refresh:{digest}``) written before this change
+# will expire naturally within REFRESH_TOKEN_TTL_SECONDS (dev=120s, staging=300s,
+# prod=604800s). The new read path only writes and reads ``cache:refresh:v{N}:*``
+# keys. No manual migration or SCAN/DEL is required — the TTL-based natural drain
+# (auth-secret-rotation runbook §1, §2 Step 4) handles the one-time cutover.
+# Going forward the allowlist key carries the pepper VERSION that produced it so
+# a prod pepper rotation can run a dual-pepper grace window (read vN then vN-1)
+# instead of a hard cutover that invalidates every live session at once.
+# ─────────────────────────────────────────────────────────────────────────────
+def refresh_allowlist_key(
+    refresh_token: str,
+    *,
+    pepper: str | None = None,
+    version: int | None = None,
+) -> str:
+    """Derive the versioned Valkey allowlist key for ``refresh_token`` per §4.B.
 
-    Key format: ``cache:refresh:{hmac_sha256(token, REFRESH_TOKEN_PEPPER)}``.
+    Key format: ``cache:refresh:v{version}:{hmac_sha256(token, pepper)}``.
+
+    Args:
+        refresh_token: The opaque refresh-token cookie value.
+        pepper: HMAC key. When ``None`` (the default, used by every existing
+            caller), uses ``settings.REFRESH_TOKEN_PEPPER`` (the CURRENT pepper).
+            The dual-pepper read path passes ``settings.REFRESH_TOKEN_PEPPER_PREVIOUS``
+            here to derive the fallback key during a grace-window rotation.
+        version: Pepper version tag for the ``vN`` segment. When ``None`` (the
+            default), uses ``settings.REFRESH_TOKEN_PEPPER_VERSION``. The fallback
+            path passes ``N-1``.
 
     Rationale for HMAC-with-pepper (vs bare SHA-256): a Valkey-only breach
     leaks the digests but NOT the pepper.  An attacker who captures a
     refresh cookie value cannot validate it against the leaked digests
     without the backend-only pepper — defence in depth beyond the
     cookie-itself confidentiality.
+
+    Rationale for the ``v{N}`` version tag: it lets a prod pepper rotation run a
+    dual-pepper grace window — writes go under the current ``vN`` while reads
+    accept both ``vN`` and ``vN-1`` until every ``vN-1`` entry has expired (a
+    full ``REFRESH_TOKEN_TTL_SECONDS``). Without the tag, rotating the pepper
+    would orphan every live allowlist entry simultaneously (R5).
     """
+    effective_pepper = settings.REFRESH_TOKEN_PEPPER if pepper is None else pepper
+    effective_version = (
+        settings.REFRESH_TOKEN_PEPPER_VERSION if version is None else version
+    )
     digest = hmac.new(
-        settings.REFRESH_TOKEN_PEPPER.encode("utf-8"),
+        effective_pepper.encode("utf-8"),
         refresh_token.encode("utf-8"),
         hashlib.sha256,
     ).hexdigest()
-    return f"cache:refresh:{digest}"
+    return f"cache:refresh:v{effective_version}:{digest}"
+
+
+async def validate_refresh_allowlist(
+    valkey: Redis,
+    refresh_token: str,
+) -> tuple[str, str] | None:
+    """Look up ``refresh_token`` in the Valkey allowlist with dual-pepper read.
+
+    Returns a ``(matched_key, value)`` tuple if the token is present, or
+    ``None`` if absent. The ``matched_key`` is returned alongside the value so
+    callers that must act on the *specific* key found — ``rotate_refresh_token``
+    (which passes it as the Lua ``KEYS[1]`` to DEL) and ``revoke_refresh_token``
+    (which DELs it) — operate on the right key even when the entry was found
+    under the PREVIOUS pepper. A value-only return would let those callers DEL
+    the current-pepper key (which does not exist on a fallback hit), silently
+    leaving the real ``vN-1`` entry live.
+
+    During a grace-window rotation (``REFRESH_TOKEN_PEPPER_PREVIOUS`` non-empty)
+    this tries the CURRENT pepper/version first, then falls back to the PREVIOUS
+    pepper at version ``N-1``. Writes ALWAYS use the CURRENT pepper/version —
+    this is a read-only fallback path. In normal single-pepper operation
+    (``REFRESH_TOKEN_PEPPER_PREVIOUS == ""``) only the primary key is queried.
+    """
+    # Primary: CURRENT pepper / CURRENT version.
+    primary_key = refresh_allowlist_key(refresh_token)
+    value = await valkey.get(primary_key)
+    if value is not None:
+        return primary_key, _decode_valkey_value(value)
+
+    # Grace-window fallback: PREVIOUS pepper at version N-1, only if configured.
+    if settings.REFRESH_TOKEN_PEPPER_PREVIOUS:
+        prev_version = max(settings.REFRESH_TOKEN_PEPPER_VERSION - 1, 1)
+        fallback_key = refresh_allowlist_key(
+            refresh_token,
+            pepper=settings.REFRESH_TOKEN_PEPPER_PREVIOUS,
+            version=prev_version,
+        )
+        value = await valkey.get(fallback_key)
+        if value is not None:
+            return fallback_key, _decode_valkey_value(value)
+
+    return None
+
+
+def _decode_valkey_value(value: str | bytes) -> str:
+    """Normalise a Valkey GET result to ``str`` (clients may decode or not)."""
+    return value.decode("utf-8") if isinstance(value, bytes) else value
 
 
 def compare_tokens(a: str, b: str) -> bool:
@@ -445,6 +528,7 @@ __all__ = [
     "issue_access_token",
     "issue_refresh_token",
     "refresh_allowlist_key",
+    "validate_refresh_allowlist",
     "compare_tokens",
     "rotate_refresh_token",
     "REFRESH_ROTATE_LUA",

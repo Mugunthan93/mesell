@@ -111,6 +111,19 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_TTL_SECONDS: int = 604800  # prod 7d; staging 300; dev 120
     REFRESH_TOKEN_PEPPER: str = ""  # Secret Manager ref `refresh-token-pepper`
 
+    # ── Dual-pepper grace-window rotation (R5, dual-pepper-rotation feature) ──
+    # Optional — populated ONLY during the §2 (auth-secret-rotation runbook)
+    # grace window.  Empty ("") == normal single-pepper mode: the dual-read
+    # fallback in core.auth.validate_refresh_allowlist is then skipped entirely.
+    # When set (= the PREVIOUS pepper), refresh-allowlist reads try the CURRENT
+    # pepper/version first, then fall back to the PREVIOUS pepper at version N-1.
+    REFRESH_TOKEN_PEPPER_PREVIOUS: str = ""
+
+    # Integer version tag for the CURRENT pepper (increment by 1 each rotation).
+    # Used as the ``vN`` segment in ``cache:refresh:v{N}:{digest}`` allowlist
+    # keys.  Plain integer (not a secret) — deliberately NOT in REQUIRED_FIELDS.
+    REFRESH_TOKEN_PEPPER_VERSION: int = 1
+
     # NOTE: ``JWT_EXPIRY_DAYS`` was DEPRECATED per the FE-D5 + FE-D6 amendments
     # and REMOVED during the §7 (`iam`) construction dispatch (2026-06-06).
     # Use ``ACCESS_TOKEN_TTL_SECONDS`` (access JWT lifetime) +
