@@ -294,6 +294,19 @@ jobs:
       TEST_VALKEY_URL: redis://localhost:6381/0
       DATABASE_URL: postgresql+asyncpg://meesell:password@localhost:5433/meesell_test
       VALKEY_URL: redis://localhost:6381/0
+      # The live-fixture conftests (backend/tests/conftest.py) resolve TWO extra
+      # URL env vars that default to dev-tunnel/default ports, NOT the ones above:
+      #   * CORE_TEST_VALKEY_URL (default redis://localhost:6379) — the
+      #     use_live_valkey / live-redis fixtures. Unset → tests hit :6379 →
+      #     redis.exceptions.ConnectionError (the valkey container is on :6381).
+      #   * DEV_DATABASE_URL (default = the dev-tunnel URL carrying the REAL K3s
+      #     password) — the Phase-4 live-pg fixtures (use_dev_db). Unset → the
+      #     real password hits the CI container (pw=password) →
+      #     asyncpg InvalidPasswordError.
+      # Point both at the CI service containers so EVERY URL the conftest
+      # resolves — env-driven OR defaulted — lands on the CI Postgres/Valkey.
+      CORE_TEST_VALKEY_URL: redis://localhost:6381
+      DEV_DATABASE_URL: postgresql+asyncpg://meesell:password@localhost:5433/meesell_test
       SECRET_KEY: ci-dummy-secret-key
       JWT_SECRET: ci-dummy-jwt-secret
       MSG91_AUTH_KEY: ci-dummy-msg91-auth-key
@@ -402,6 +415,19 @@ jobs:
       TEST_VALKEY_URL: redis://localhost:6381/0
       DATABASE_URL: postgresql+asyncpg://meesell:password@localhost:5433/meesell_test
       VALKEY_URL: redis://localhost:6381/0
+      # The live-fixture conftests (backend/tests/conftest.py) resolve TWO extra
+      # URL env vars that default to dev-tunnel/default ports, NOT the ones above:
+      #   * CORE_TEST_VALKEY_URL (default redis://localhost:6379) — the
+      #     use_live_valkey / live-redis fixtures. Unset → tests hit :6379 →
+      #     redis.exceptions.ConnectionError (the valkey container is on :6381).
+      #   * DEV_DATABASE_URL (default = the dev-tunnel URL carrying the REAL K3s
+      #     password) — the Phase-4 live-pg fixtures (use_dev_db). Unset → the
+      #     real password hits the CI container (pw=password) →
+      #     asyncpg InvalidPasswordError.
+      # Point both at the CI service containers so EVERY URL the conftest
+      # resolves — env-driven OR defaulted — lands on the CI Postgres/Valkey.
+      CORE_TEST_VALKEY_URL: redis://localhost:6381
+      DEV_DATABASE_URL: postgresql+asyncpg://meesell:password@localhost:5433/meesell_test
       SECRET_KEY: ci-dummy-secret-key
       JWT_SECRET: ci-dummy-jwt-secret
       MSG91_AUTH_KEY: ci-dummy-msg91-auth-key
@@ -780,6 +806,19 @@ jobs:
       TEST_VALKEY_URL: redis://localhost:6381/0
       DATABASE_URL: postgresql+asyncpg://meesell:password@localhost:5433/meesell_test
       VALKEY_URL: redis://localhost:6381/0
+      # The live-fixture conftests (backend/tests/conftest.py) resolve TWO extra
+      # URL env vars that default to dev-tunnel/default ports, NOT the ones above:
+      #   * CORE_TEST_VALKEY_URL (default redis://localhost:6379) — the
+      #     use_live_valkey / live-redis fixtures. Unset → tests hit :6379 →
+      #     redis.exceptions.ConnectionError (the valkey container is on :6381).
+      #   * DEV_DATABASE_URL (default = the dev-tunnel URL carrying the REAL K3s
+      #     password) — the Phase-4 live-pg fixtures (use_dev_db). Unset → the
+      #     real password hits the CI container (pw=password) →
+      #     asyncpg InvalidPasswordError.
+      # Point both at the CI service containers so EVERY URL the conftest
+      # resolves — env-driven OR defaulted — lands on the CI Postgres/Valkey.
+      CORE_TEST_VALKEY_URL: redis://localhost:6381
+      DEV_DATABASE_URL: postgresql+asyncpg://meesell:password@localhost:5433/meesell_test
       SECRET_KEY: ci-dummy-secret-key
       JWT_SECRET: ci-dummy-jwt-secret
       MSG91_AUTH_KEY: ci-dummy-msg91-auth-key
