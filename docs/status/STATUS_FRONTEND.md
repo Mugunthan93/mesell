@@ -3,6 +3,71 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-11
 
+=== UPDATE: 2026-06-11 — SP04 mfe-dashboard MERGE-GATE (HYBRID step 3) ===
+Phase: MF Sub-Plan 04 (F1 landing PUBLIC + F6 dashboard AUTH → mfe-dashboard remote, port 4204)
+Session: mesell-mfe-dashboard-frontend-session-1 (lead merge-gate review)
+Board sweep: smart-picker IN PROGRESS (untouched, separate feature); mfe-dashboard moved IN REVIEW→Recently merged; 5 infra inter-lead rows OPEN (SP01-05 hosting, all within SLA — opened 2026-06-10/11). No 7+ day stale rows.
+Done:
+  - INDEPENDENT merge-gate re-verification of group PR #84 (did NOT trust builder report; re-ran build+tests+boundary+R-SP3-1+D26/D27 in worktree /tmp/mesell-wt/sp04-review). ZERO discrepancies vs builder claims.
+  - 6 moves R100 + blob-hash IDENTICAL (byte-identical, 0 logic edits); features/landing+features/dashboard GONE; shell federation.config.js untouched (name:'shell').
+  - Remote build GREEN 3.067s (name:mfe-dashboard, exposes ./LandingComponent + ./DashboardComponent). Shell GREEN 3.430s (≤90s D12), initial 60.80 kB (reduced; no landing/dashboard chunks in shell dist).
+  - Tests 43 files/408 tests, 0 fail/0 skip (exact baseline; relocated specs discovered spec-apps-mfe-dashboard-*). COUNT RECONCILED HONESTLY: develop carries pricing/export/onboarding only; SP05's +3 (43/411) live on PR #82 OPEN, NOT develop → 43/408 is this branch's correct baseline. No drop, no unrequested increase.
+  - Boundary grep 0 primeng in apps/mfe-dashboard+src. D12 fallback headless (remoteEntry 200, chunk 200, broken 404 → RemoteFailureComponent; load-remote.spec.ts green).
+  - D26/D27 auth boundary: public '/' NO guard + pathMatch:'full' (top-level sibling of protected parent); /dashboard child of canActivate:[authGuard] shell parent, NO self-guard (guard runs in shell pre-remoteEntry fetch). R-SP3-1 P0: main.ts routes BOTH exposes; @mesell/core legitimately absent from remoteEntry shared[] (no AuthService consumer — not drift). DashboardApiService providers:[…] preserved (line 35).
+  - Port 4204 in BOTH angular.json serve+serve-original + manifest (4 remotes coexist).
+  - Group PR #84 LEAD-GATE APPROVE comment + squash --admin (a6ad02f); group branch deleted via gh api. develop merged into integration CONFLICT-FREE (7c2800c — SP05 not on develop, no shared-file overlap); both builds + 43/408 re-certified on merged tip.
+  - Infra memo handoff_mf_dashboard_deploy.md (D29 4th-remote hosting; first PUBLIC-route remote, highest-stakes CSP → SP07). Board inter-lead row OPEN (48h SLA).
+In progress: none (gate closed)
+Blockers: none
+Founder gate: PR #86 [FOUNDER GATE — DO NOT MERGE] integration→develop OPENED + LEFT OPEN (full §9.A scorecard). Lead does NOT approve (D1).
+Next: founder reviews/merges #86 (+ #82 SP05, #61/#68 Wave 1, #55 smart-picker). On smart-picker step-3: heed the SP05-relocation sequencing conflict (catalog-new tree moves to apps/mfe-catalog once #82 merges).
+=========
+
+=== UPDATE: 2026-06-11 09:00 — SP04 mfe-dashboard extraction ===
+Phase: MF Sub-Plan 04 (F1 landing + F6 dashboard → mfe-dashboard remote)
+Done: SP04 complete — mfe-dashboard on port 4204, PR #84 IN REVIEW
+Branch: feature/mfe-dashboard/frontend → feature/mfe-dashboard/integration
+Commit: 8f3c494
+
+Files moved (6, all R100):
+  features/landing/landing.component.ts         → apps/mfe-dashboard/src/app/landing.component.ts
+  features/landing/landing.component.spec.ts    → apps/mfe-dashboard/src/app/landing.component.spec.ts
+  features/dashboard/dashboard.component.ts     → apps/mfe-dashboard/src/app/dashboard.component.ts
+  features/dashboard/dashboard.component.spec.ts → apps/mfe-dashboard/src/app/dashboard.component.spec.ts
+  features/dashboard/dashboard.model.ts         → apps/mfe-dashboard/src/app/dashboard.model.ts
+  features/dashboard/services/dashboard-api.service.ts → apps/mfe-dashboard/src/app/services/dashboard-api.service.ts
+
+Files new (5):
+  apps/mfe-dashboard/federation.config.js       -- two-expose remote (LandingComponent + DashboardComponent)
+  apps/mfe-dashboard/src/main.ts               -- R-SP3-1 P0: routes BOTH exposes
+  apps/mfe-dashboard/src/app/public-api.ts     -- federation typed boundary re-export
+  apps/mfe-dashboard/src/index.html            -- dev-serve host, <app-landing> selector
+  apps/mfe-dashboard/tsconfig.app.json         -- extends ../../tsconfig.json
+
+Shared files edited (additive):
+  frontend/src/app/app.routes.ts               -- Swap A: '' path; Swap B: dashboard child (loadRemoteWithFallback)
+  frontend/public/federation.manifest.json     -- 4th entry: mfe-dashboard:4204
+  frontend/angular.json                        -- mfe-dashboard project block (port 4204 x2)
+  frontend/package.json                        -- start:mfe-dashboard script
+
+Remote build: GREEN 2.618s — remoteEntry.json exposes ./LandingComponent + ./DashboardComponent
+Shell build: GREEN 9.798s (≤90s D12 OK) — initial bundle 60.80 kB (REDUCED: landing+dashboard left shell)
+Tests: 43 spec files / 408 tests / 0 fail / 0 skip (exact baseline; relocated specs discovered at apps/mfe-dashboard/)
+Boundary grep: ZERO new PrimeNG imports in apps/mfe-dashboard/
+DashboardApiService: providers:[DashboardApiService] preserved (line 35 dashboard.component.ts)
+Manifest: FOUR entries (pricing:4201, export:4202, onboarding:4203, dashboard:4204)
+D12 fallback: remoteEntry.json → 200; broken URL → 404 → RemoteFailureComponent; load-remote.spec.ts PASS
+Move integrity: all 6 R100 (100% similarity, zero content ± lines)
+
+PR: #84 feature/mfe-dashboard/frontend → feature/mfe-dashboard/integration (IN REVIEW — lead gate)
+F3 protection: applied to feature/mfe-dashboard/integration (required_approving_review_count:0, force-push:off)
+
+STOP conditions hit: NONE
+Deviations from spec: ZERO
+
+Next: Frontend lead reviews PR #84 + squash-merges. After that: git merge origin/develop into integration, re-run build+test, open PR #B (integration→develop) [FOUNDER GATE].
+=========
+
 === UPDATE: 2026-06-11 09:00 ===
 Phase: mfe-catalog (SP05) — MF Sub-Plan 05 catalog funnel extraction (R4)
 Session: mesell-mfe-catalog-frontend-session-3 (lead merge-gate review — HYBRID step 3 of 3)
@@ -5285,4 +5350,48 @@ Next: Lead reviews #77, dispatches meesell-angular-service-builder for Phase C (
 Hand-offs:
   - meesell-angular-service-builder (Phase C): D33 zero-promotion outcome + §6.E CatalogFormApiService route-scope + SmartPickerApiService component-scope verification + §6.G Run #2.
   - meesell-infra-builder: 5th-remote GCS prefix gs://meesell-frontend/{env}/mfe-catalog/{version}/ + matrix fan-out C-CI-1. No new @mesell/core consumers (D33 zero promotions).
+=========
+
+=== UPDATE: 2026-06-11 — mesell-smart-picker-frontend-session-1 ===
+Phase: V1 Feature 2 — Smart Category Picker (CategoryService HTTP wiring)
+Session: mesell-smart-picker-frontend-session-1
+Branch: feature/smart-picker/frontend (worktree /private/tmp/mesell-wt/smart-picker-frontend)
+Commit: e97c4f5
+
+Done:
+  REWRITE  frontend/src/app/features/smart-picker/services/category.service.ts
+           - suggest(description): Observable<SuggestResponse> — HttpClient.get('/api/v1/categories/suggest', { params: { q } })
+           - selectCategory(categoryId): Observable<{id:string}> — POST /api/v1/catalogs {category_id} + router.navigate on tap()
+           - browseRedirect(): void — router.navigate(['/categories/browse'])
+           - Bearer token attached manually from AuthService.getToken() (no global JWT interceptor yet — Wave 6 gap)
+           - Error matrix: 401→logout+EMPTY; 402→fallback shape; 400→EMPTY; 404→fallback shape; 5xx→fallback shape
+           - No MeeToastService wiring (lead ruling: root toast not wired in service layer this slice)
+           - @Injectable() feature-scoped (no providedIn) — preserved from simulated version
+  MODIFY   frontend/src/app/app.config.ts
+           - provideHttpClient(withFetch()) added — FIRST HttpClient wiring in codebase (Wave 6 delta)
+           - No interceptors added (global JWT interceptor deferred; per-request header pattern used)
+  VERIFY   frontend/src/app/features/smart-picker/smart-picker.model.ts
+           - Already field-for-field §9.E. No drift. No commission_pct. confidence 0.0-1.0. JSDoc correct.
+  NEW      frontend/src/app/features/smart-picker/services/category.service.spec.ts
+           - 20 tests: suggest happy path (4), error matrix 401/402/400/404/500/503 (6), selectCategory (4), browseRedirect (1)
+           - HttpTestingController pattern; provideHttpClientTesting() in TestBed
+  FIXUP    frontend/src/app/features/smart-picker/category-card.component.spec.ts
+           - Minimal: fixed pre-existing Vitest 4 type annotation vi.fn<[T],R>→vi.fn<(t:T)=>R> (lines 99, 112)
+           - Not a behavioral change — pure TypeScript generic syntax update to unblock ng test compilation
+
+Tests: 44 files / 439 tests / 0 failed / 0 skipped (PASS — baseline was 44/0 pre-existing TS error prevented compile)
+TypeScript strict: tsc --noEmit tsconfig.app.json: 0 errors; tsconfig.spec.json: 0 errors
+PrimeNG/Material boundary: 0 imports in service/model files (grep verified)
+localStorage/sessionStorage: 0 real accesses (1 comment only)
+
+Token-attach decision: AuthService.getToken() used (NOT token() signal — AuthService exposes getToken() method only).
+  Bearer token set via HttpHeaders per-request. NO global interceptor. Documented in service JSDoc.
+Error surface decision: fallback-shape only (no MeeToastService). Documented in service JSDoc + memory.
+
+Blockers: none
+Next: frontend lead reviews category.service.ts + spec, merges PR to feature/smart-picker/integration
+Hand-offs:
+  - CategoryService.suggest(), .selectCategory(), .browseRedirect() ready for real HTTP use
+  - SmartPickerComponent can subscribe to CategoryService.suggest() — no simulated delay
+  - provideHttpClient(withFetch()) wired at root — ALL features can now inject HttpClient
 =========
