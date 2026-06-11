@@ -1,7 +1,7 @@
 # Wave 6 — API Wiring · MASTER PLAN
 
 **Owner:** MeeSell Frontend Lead (`meesell-frontend-coordinator`)
-**Status:** DRAFT — awaiting founder approval
+**Status:** ACTIVE — all §7 decisions RULED by founder 2026-06-11 (night); Wave A executing
 **Authored:** 2026-06-11 · session `mesell-wave6-planning-session-1`
 **Base:** `origin/develop` @ `5cd6e32` (federation program COMPLETE — 7 apps + 4 libs + #101 smart-picker-wiring + #105 cutover all on develop)
 **Pattern:** canonical v2.1, fence-aware audit. Grounded in the AS-BUILT federated topology, NOT the pre-split shell.
@@ -66,7 +66,9 @@ All under `/api/v1`. JWT-protected unless noted.
 | 23 | image | `POST /products/{id}/images` | `ImageUploadResponse` (202 ACCEPTED) | JWT |
 | 24 | image | `GET /products/{id}/images` | `ImagesListResponse` (poll for precheck) | JWT | **AI-lane boundary — §6** |
 | 25 | pricing | `POST /products/{id}/price-calc` | `PriceCalcResponse{mrp, meesho_price, …, alerts[]}` | JWT | **DECISION-1 (client vs server calc)** |
-| 26 | dashboard | `GET /products?page=&limit=` | `DashboardResponse{products[], total, page}` | JWT |
+| 26 | dashboard | `GET /products?page=&limit=` | `PaginatedProductsResponse{items[], total, page, limit}` | JWT |
+
+> **CORRECTION (2026-06-11, flagged by the Wave A spec session):** row 26's response schema was originally recorded as `DashboardResponse{products[], total, page}`. The actual as-built schema is **`PaginatedProductsResponse{items[], total, page, limit}`** (`backend/app/modules/catalog/schemas.py` L230-238) — the array key is **`items`**, NOT `products`, and the envelope additionally carries `limit`. The TS interface and the `mfe-dashboard` wiring (Wave B lane 1) MUST transcribe `items`/`total`/`page`/`limit` field-for-field per the §1.1 contract chain. The §2.2 promotion analysis row "`DashboardResponse` → mfe-dashboard only → remote-private" stays correct (rename the remote-private type to `PaginatedProductsResponse`).
 | 27 | export | `POST /products/{product_id}/export-xlsx` | `ExportInitiatedResponse{export_id, status:'pending', enqueued_task_id}` | JWT |
 | 28 | export | `GET /exports/{export_id}` | `ExportResponse{export_id, status, xlsx_signed_url?, zip_signed_url?, error_*?}` | JWT |
 
@@ -182,14 +184,14 @@ The proven patterns come from #101 (manual Bearer, in-memory token, error matrix
 ### 4.2 RECOMMENDED wave composition + sequencing
 
 **WAVE A — FOUNDATION (serial, alone). Slice `wave6-auth-core`.**
-The shared-surface wave. Builds: D33 `Product` + `AuthUser` promotion (§2.3); the 3 interceptors + `ApiClient` + `ErrorService` + `NetworkService` (§3.2 items 1-4 + §4-LOCKED service layer); `AuthService.bootstrap()`/`scheduleRefresh()`; interceptor registration in shell + all 6 remote `main.ts`; **real OTP login** in mfe-auth (§3.2 item 5). Removes smart-picker's `authHeaders()` helper (migrates to global jwtInterceptor). This wave UNBLOCKS every other wave. Specialists: service-builder (interceptors + ApiClient + auth wiring) → component-builder (mfe-auth login/signup/otp-verify wiring) → ui-styler (auth error states). **Must merge to develop before Wave B/C dispatch.**
+The shared-surface wave. Builds: D33 `Product` + `AuthUser` promotion (§2.3); the 3 interceptors + `ApiClient` + `ErrorService` + `NetworkService` (§3.2 items 1-4 + §4-LOCKED service layer); `AuthService.bootstrap()`/`scheduleRefresh()`; interceptor registration in shell + all 6 remote `main.ts`; **real OTP login** in mfe-auth (§3.2 item 5). Removes smart-picker's `authHeaders()` helper (migrates to global jwtInterceptor). **RULED 2026-06-11 (DECISION-2): the DISCREPANCY-1 re-point (`POST /catalogs`→`POST /products`, #17) lands HERE in Wave A** (moved from the original-DRAFT Wave C) — it rides the same smart-picker-service edit as the `authHeaders()`→`jwtInterceptor` migration. This wave UNBLOCKS every other wave. Specialists: service-builder (interceptors + ApiClient + auth wiring + smart-picker re-point) → component-builder (mfe-auth login/signup/otp-verify wiring) → ui-styler (auth error states). **Must merge to develop before Wave B/C dispatch.**
 
 **WAVE B — lane 1: `wave6-dashboard` ‖ lane 2: `wave6-onboarding`** (parallel; both consume the now-wired auth + `Product` model).
 - Lane 1 `wave6-dashboard` (mfe-dashboard): swap `DashboardApiService` mock → `GET /products` (#26) paginated + `DELETE /products/{id}` (#21). Consume promoted `Product`. Landing (`/`) is public — no auth call.
 - Lane 2 `wave6-onboarding` (mfe-onboarding): `SellerProfileService` (NEW) → #7/#8/#9/#10/#11. Reactive Forms already exist; wire submit → PATCH; load profile on init.
 
 **WAVE C — lane 1: `wave6-catalog-form` ‖ lane 2: `wave6-export`** (parallel; disjoint remotes).
-- Lane 1 `wave6-catalog-form` (mfe-catalog): swap `CatalogFormApiService` mock → schema (#15, ETag), autosave (#18), draft-recovery (#22), field-enum (#16). RECONCILE DISCREPANCY-1 (`POST /catalogs`→`POST /products`) in the smart-picker service in this slice (same remote). **Does NOT wire autofill (#19) — AI-lane boundary, §6.**
+- Lane 1 `wave6-catalog-form` (mfe-catalog): swap `CatalogFormApiService` mock → schema (#15, ETag), autosave (#18), draft-recovery (#22), field-enum (#16). **DISCREPANCY-1 is now reconciled in Wave A (RULED DECISION-2) — no longer this slice's job.** **Does NOT wire autofill (#19) — AI-lane boundary, §6.**
 - Lane 2 `wave6-export` (mfe-export): extract `ExportApiService` from the inline `setInterval` mock → initiate (#27) + poll (#28). PRESERVE the D18 timer pattern (proven SP02) — do not RxJS-rewrite the poll loop, just point it at the real endpoint; clear on `ngOnDestroy`.
 
 **WAVE D — lane 1: `wave6-images` ‖ lane 2: `wave6-pricing`** (parallel).
@@ -241,14 +243,29 @@ If a wired call returns a runtime 4xx/shape-mismatch that the schema did not pre
 
 ---
 
-## 7. Decisions needed from the founder
+## 7. Founder rulings — RULED 2026-06-11 (night)
 
-Presented as analysis + recommendation. NOT self-ratified.
+All four decisions were RULED by the founder on 2026-06-11 (night), **each as recommended**. The rulings are quoted verbatim below; they are now binding on Wave 6 execution. (Original analysis + recommendation preserved under each ruling for traceability.)
 
-- **DECISION-1 — pricing client-calc vs server-calc.** mfe-pricing currently does P&L math client-side (local utils, self-contained, the SP01 pilot shape). The backend has `POST /products/{id}/price-calc` doing the deterministic math server-side with `alerts[]`. **Recommendation: wire to the server endpoint (#25)** — single source of truth, server owns commission/GST/shipping-slab tables (which drift), alerts are server-computed, and the client-calc would silently diverge when Meesho rates change. Risk: P95 latency of an extra round-trip on every input change (mitigate with debounce, same as smart-picker). Founder to confirm we retire the client-side math.
-- **DECISION-2 — smart-picker create-path (DISCREPANCY-1).** #101 posts to `POST /api/v1/catalogs` (non-existent); backend is `POST /api/v1/products`. **Recommendation: FE re-points to `POST /products`** (backend = source of truth; cleaner than adding a backend alias). Wave-C fixes it in the same remote. Founder to confirm (vs asking backend for a `/catalogs` alias).
-- **DECISION-3 — `AuthUser` shape extension (D33).** Enriching the shared `AuthUser` with `plan/phone/created_at` is additive to a singleton-adjacent type. **Recommendation: make the new fields optional** so no remote that constructs `AuthUser` inline breaks, then tighten later. Founder to confirm the additive-optional approach (vs a breaking required-field change with a coordinated all-remote update).
-- **DECISION-4 — wave count.** 4 waves / 7 slices / 2 lanes is the recommendation (§4.2). Founder may compress (riskier) or want Wave A split (auth-core vs interceptor-only). **Recommendation: keep Wave A monolithic** — the interceptors + bootstrap + login are interdependent (login can't be smoke-tested without the refresh path) and all touch the shared core surface, so splitting them just adds integration-branch churn.
+- **DECISION-1 — pricing client-calc vs server-calc. RULED: SERVER-calc.**
+  > Pricing is SERVER-calc. Wire mfe-pricing to `POST /products/{id}/price-calc` (#25); the client-side P&L math is retired at Wave D.
+
+  *Recommendation (accepted):* wire to the server endpoint (#25) — single source of truth, server owns commission/GST/shipping-slab tables (which drift), alerts are server-computed, and the client-calc would silently diverge when Meesho rates change. Risk: P95 latency of an extra round-trip on every input change (mitigate with debounce, same as smart-picker). **Wave D lane 2 retires the local P&L utils and wires #25; verify the `Decimal` wire-type first (R-W6-6).**
+
+- **DECISION-2 — smart-picker create-path (DISCREPANCY-1). RULED: FE re-points to `POST /products`.**
+  > DISCREPANCY-1 resolves FE-side: re-point the smart-picker create-path from `POST /catalogs` to `POST /products` (#17). Fix lands in Wave A.
+
+  *Recommendation (accepted):* FE re-points to `POST /products` (backend = source of truth; cleaner than adding a backend alias). **Sequencing change from the original DRAFT:** the founder placed the re-point in **Wave A** (not Wave C) — it rides the foundation wave's smart-picker `authHeaders()`→`jwtInterceptor` migration since both touch the same smart-picker service. §4.2 Wave A scope is amended accordingly (see §4.2 note below).
+
+- **DECISION-3 — `AuthUser` shape extension (D33). RULED: ADDITIVE-OPTIONAL.**
+  > The `AuthUser` extension (`plan`/`phone`/`created_at`) is ADDITIVE-OPTIONAL — new fields are optional so no remote that constructs `AuthUser` inline breaks.
+
+  *Recommendation (accepted):* make the new fields optional so no remote that constructs `AuthUser` inline breaks, then tighten later. **§2.3 promotion item 2 stands: enrich the existing `@mesell/core` `AuthUser` with `plan?: 'free'`, `phone?: string`, `created_at?: string` (all optional).**
+
+- **DECISION-4 — wave count. RULED: layout CONFIRMED (4 waves / 2 lanes / Wave A serial).**
+  > The wave layout is CONFIRMED: 4 waves, 7 slices, max 2 parallel lanes, Wave A runs alone (serial) before B/C/D.
+
+  *Recommendation (accepted):* keep Wave A monolithic — the interceptors + bootstrap + login are interdependent (login can't be smoke-tested without the refresh path) and all touch the shared core surface, so splitting them just adds integration-branch churn. **§4.2/§4.3 sequencing stands as authored, with the DECISION-2 re-point now folded into Wave A's scope.**
 
 ---
 
@@ -296,3 +313,4 @@ Presented as analysis + recommendation. NOT self-ratified.
 | Date | Rev | Change |
 |---|---|---|
 | 2026-06-11 | DRAFT | Initial authoring. Session `mesell-wave6-planning-session-1`. Base develop `5cd6e32`. Awaiting founder approval. |
+| 2026-06-11 | ACTIVE | Founder RULED all 4 §7 decisions (night), each as recommended: D1 pricing=SERVER-calc (#25, client P&L retired at Wave D); D2 DISCREPANCY-1=FE re-point `POST /catalogs`→`POST /products`, moved to Wave A; D3 `AuthUser` extension=ADDITIVE-OPTIONAL; D4 wave layout CONFIRMED (4 waves/2 lanes/Wave A serial). §7 flipped DRAFT→RULED (verbatim rulings); header DRAFT→ACTIVE; §4.2 Wave A scope amended for the D2 re-point; §4.2 Wave C de-scoped DISCREPANCY-1. §1.2 row 26 corrected: response is `PaginatedProductsResponse{items[],total,page,limit}` (`catalog/schemas.py` L230-238) — `items` not `products`. Chore session (frontend lead, fast-mode docs class). |
