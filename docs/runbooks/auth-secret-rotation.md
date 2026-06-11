@@ -166,8 +166,8 @@ grace window.
 > allowlist key (`cache:refresh:v{N}:{digest}`) + `REFRESH_TOKEN_PEPPER_PREVIOUS` /
 > `REFRESH_TOKEN_PEPPER_VERSION` dual-read fallback are live in
 > `backend/app/core/auth.py` (`refresh_allowlist_key` + `validate_refresh_allowlist`).
-> The operator sequence above is now executable. Backend group PR #__BACKEND_PR__ →
-> `feature/dual-pepper-rotation/integration`; founder-gate PR #__GATE_PR__ → `develop`.
+> The operator sequence above is now executable. Backend group PR #65 (squash a2e566c) →
+> `feature/dual-pepper-rotation/integration`; founder-gate PR #66 → `develop`.
 
 ---
 
