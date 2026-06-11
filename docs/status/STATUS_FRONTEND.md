@@ -3,6 +3,25 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-11
 
+=== UPDATE: 2026-06-11 — SP06 mfe-auth MERGE-GATE + INTEGRATION SYNC + FOUNDER GATE (the LAST extraction) ===
+Phase: MF Sub-Plan 06 — mfe-auth (R1, port 4206); V1 routes /login /signup /otp-verify (all PUBLIC, no guard)
+Session: mesell-mfe-auth-frontend-session-1 (lead merge-gate + integration sync + founder-gate open)
+Specialists touched (this gate, no new dispatch): meesell-angular-component-builder (Phase A+B 9249da8) + meesell-angular-service-builder (Phase C C4 smoke 6e5ec46) — both work pre-existed; this session was the lead gate + landing.
+Board sweep: mfe-auth → Recently merged (group PR #95 squash 8e90363). smart-picker-wiring stays Active/IN PROGRESS (concurrent port slice, untouched). 6 infra inter-lead rows OPEN (SP01/02/03/04/05 + NEW SP06 hosting; all RECORD-ONLY, within 48h SLA; consolidated to SP07 hosting wave). No 7+ day stale rows. **6-remote topology COMPLETE on #96 merge.**
+
+Done:
+  - ACTION 1 — Group PR #95 (frontend→integration) OPENED (none existed at session start), LEAD-GATE APPROVE comment posted, `gh pr merge 95 --squash --admin` → MERGED `8e90363`. Remote frontend branch deleted via `gh api -X DELETE` (worktree --delete-branch gotcha avoided).
+  - Lead re-certified TWICE (skeptical-lead, did NOT trust builder reports): on frontend tip 6e5ec46 AND on merged integration tip 4dd6b6d. Shell build 3.29–3.36s / remote 2.69–3.42s (both ≤90s, D12). Full suite **44 files / 416 tests PASS, 0 fail / 0 skip** (develop baseline 43 + 1 C4 smoke file; all 4 mfe-auth specs discovered). **C4 WRITE go/no-go GREEN** — federated auth loop CLOSED. C2 no-dup chunk (one _mesell_core.js, setSession DEF not inlined in OtpVerifyComponent.js). AuthService diff EMPTY across branch (D22 C2). Boundary 0 primeng; 0 localStorage; 6-remote manifest (auth 4206).
+  - ACTION 2 — Integration synced (develop-busy discipline): worktree reset --hard origin/feature/mfe-auth/integration → merge origin/develop. **CONFLICT-FREE** — develop's advance since integration base 34d8b47 was docs/CI/status ONLY (verified via `git diff --name-only` = no apps/, manifest, angular.json, package.json, app.routes.ts, app.config.ts overlap) → NO union-merge of the 4 shared files needed. Merged tip 4dd6b6d, re-certified builds+tests GREEN, pushed.
+  - ACTION 3 — Founder-gate PR #96 [FOUNDER GATE — DO NOT MERGE] integration→develop OPENED with full §9.A scorecard, LEFT OPEN. Lead did NOT approve (D1 — founder's gate). develop tip re-checked 751b588 immediately before opening (no mid-flight founder merge this run).
+  - ACTION 4 — Infra memo handoff_mf_auth_deploy.md filed (6th/final remote GCS prefix + C-CI-1 matrix unit + singleton CDN rule + the R-SP6-6/C-CSP-1 public-auth CSP escalation to SP07 per D42). Board inter-lead row added (OPEN, 48h SLA).
+  - ACTION 5 — sub_plan_06_auth.md memory written; board flip (header + Recently-merged mfe-auth row + 6th infra row); this STATUS append. Landed via clean-worktree chore PR (master-tree board copy was sibling-dirty — re-author-on-clean-worktree pattern).
+In progress: none on the frontend lead's plate (smart-picker-wiring is a concurrent sibling session, not this lead-session's work).
+Blockers: none. R-SP6-6/C-CSP-1 is a SP07 escalation (note-only), not a blocker for #96.
+Next: founder reviews/merges #96 (their gate). Then SP07 cutover (shell relocation D43 + version-pinned per-env manifests D44 + ADD-ONLY CSP go-live D42 + discharge all 6 Gate-4 C-conditions D45 + §5.1 repo-mgmt audit D46) is the ONLY remaining sub-plan — all 6 extractions DONE.
+Hand-offs: meesell-infra-builder (handoff_mf_auth_deploy.md — 6th/final hosting + public-auth CSP escalation).
+=========
+
 === UPDATE: 2026-06-11 — Smart-Picker frontend MERGE-GATE (HYBRID step 3) — VERDICT: REJECT (CLOSED-OBSOLETED) ===
 Phase: V1 Feature 2 Smart Category Picker — frontend group slice
 Session: mesell-smart-picker-frontend-session-1 (lead merge-gate review)
