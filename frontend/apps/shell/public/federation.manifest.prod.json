@@ -1,0 +1,13 @@
+// VERSION is an exact build hash per remote — NEVER 'latest'. Rollback = re-point VERSION at the prior build.
+// ENV token = 'prod'. Substituted by infra envsubst at deploy time.
+// Each remote URL pattern: https://remotes.mesell.xyz/{ENV}/mfe-*/{VERSION}/remoteEntry.json
+// {VERSION} MUST be an exact immutable build hash or semver tag — never a mutable alias.
+// D44 / R5 / R-SP7-6: version-pinned per-env manifest shape. C-STAGING-1: staging uses remotes-staging subdomain.
+{
+  "mfe-pricing":    "https://remotes.mesell.xyz/{ENV}/mfe-pricing/{VERSION}/remoteEntry.json",
+  "mfe-export":     "https://remotes.mesell.xyz/{ENV}/mfe-export/{VERSION}/remoteEntry.json",
+  "mfe-onboarding": "https://remotes.mesell.xyz/{ENV}/mfe-onboarding/{VERSION}/remoteEntry.json",
+  "mfe-dashboard":  "https://remotes.mesell.xyz/{ENV}/mfe-dashboard/{VERSION}/remoteEntry.json",
+  "mfe-catalog":    "https://remotes.mesell.xyz/{ENV}/mfe-catalog/{VERSION}/remoteEntry.json",
+  "mfe-auth":       "https://remotes.mesell.xyz/{ENV}/mfe-auth/{VERSION}/remoteEntry.json"
+}
