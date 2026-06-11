@@ -217,14 +217,16 @@ For Phase E–H: CI does NOT run any `terraform` command. The founder runs `terr
 ```yaml
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
   schedule:
     - cron: '0 1 * * *'   # 01:00 UTC = 06:30 IST (nightly)
 ```
 
-Every push and PR runs the 5 backend gates **and** the frontend matrix (`frontend-changes` → `frontend-build`, both `if: github.event_name != 'schedule'`). Nightly fires the slow + AI eval jobs (and skips the gates + the frontend matrix because they're not what nightly is for).
+Every push and PR (to `main` **or** `develop`) runs the 5 backend gates **and** the frontend matrix (`frontend-changes` → `frontend-build`, both `if: github.event_name != 'schedule'`). Nightly fires the slow + AI eval jobs (and skips the gates + the frontend matrix because they're not what nightly is for).
+
+**Founder ruling 2026-06-11 — `develop` is a first-class CI branch.** The pipeline exercises on `develop` itself; a `develop → main` promotion is **not** the re-fire mechanism. `develop` was added to both the `push` and `pull_request` trigger lists so that integration work is gated continuously, not only at the main promotion. **build and deploy remain `main`-only** — both jobs carry `if: github.event_name == 'push' && github.ref == 'refs/heads/main'`, so a `develop` push runs Gates 1–5 + the frontend matrix but **never** builds an image or deploys to the `dev` namespace. The deploy path stays exclusively `push to main`.
 
 ### 5.3 The Five Gates (sequential)
 
