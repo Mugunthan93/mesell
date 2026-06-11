@@ -115,8 +115,8 @@ def test_get_db_still_uses_pooled_engine():
     import app.shared.database as db_mod
 
     source = inspect.getsource(db_mod.get_db)
-    assert "async_session_maker" in source, (
-        "get_db (FastAPI dependency) must still use async_session_maker "
+    assert "AsyncSessionLocal" in source, (
+        "get_db (FastAPI dependency) must still use AsyncSessionLocal "
         "backed by the pooled engine"
     )
     assert "make_worker_session" not in source, (
