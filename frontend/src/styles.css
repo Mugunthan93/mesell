@@ -18,6 +18,11 @@
    @source below guarantees libs/ class candidates survive purge after relocation. */
 @source "../libs";
 
+/* MF Sub-Plan 01 (MASTER_PLAN §6.3, Risk R3 purge guard): federation remotes live
+   under frontend/apps/ (mfe-pricing pilot + later remotes). The single Tailwind build
+   is owned by the shell, so the shell's @source must cover apps/ class candidates too. */
+@source "../apps";
+
 /* Global body */
 html, body {
   height: 100%;
