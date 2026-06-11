@@ -5112,3 +5112,35 @@ Next: Sub-Plan 1 (mfe-pricing pilot) — gated on PR#41 merging to develop + inf
 Hand-offs: memo to meesell-infra-builder (handoff_mf_ci_prep) — CI matrix rewrite (C-CI-1) must be ready before Sub-Plan 1; new frontend/libs/** paths must be confirmed against build-frontend glob. 48h SLA.
 PR#38 reconciliations: (1) core=2 files not 3 (preset moved to ui/theme.ts by PR#38); (2) ui-kit=32 src not 28 (drawer/menu/providers/theme added); (3) boundary FULLY clean — FD1 allowlist moot, shell leak already fixed; (4) deep-path imports needed @mesell/ui-kit/* wildcard alias; (5) NEW test-discovery fix ../libs glob.
 =========
+
+
+=== UPDATE: 2026-06-11 — SESSION START ===
+Phase: MF Sub-Plan 01 — mfe-pricing PILOT (EXECUTION; founder GO 2026-06-11 morning)
+Session: mesell-mfe-pricing-frontend-session-1
+Routes touched: /catalogs/:id/pricing (shell route swaps loadComponent -> loadRemoteWithFallback)
+Specialists: meesell-angular-component-builder ONLY (per SP01 §Agent lineup; no service-builder — pricing injects only FormBuilder/ActivatedRoute/Router, no AuthService/no feature service)
+Board sweep: feature_board_frontend.md — mfe-pricing row added IN PROGRESS. Recently-merged: mf-workspace-foundation (PR#40/#41 5198ba7 — PR#41 now MERGED to develop). Inter-lead open: infra C-CI-1 (handoff_mf_ci_prep, opened 2026-06-10, within 48h SLA). No rows untouched 7+ days.
+Execution gates verified: PR#41 MERGED (5198ba7 = develop tip); SP0 libs/{ui-kit,composites,core,design-tokens}+Native Federation LIVE on develop; founder GO for SP01; GATE4 Option-C confirmed; D9 (shell stays src/) + D14 (no CSP in pilot) RULED APPROVED-as-recommended (PR#49). C-CI-1 in parallel — CI not yet repo-wide; pilot does NOT block on CI (noted per founder direction).
+As-built reconciliation (CRITICAL for specialist): angular.json project KEY is `frontend` (root:'', sourceRoot:'src') NOT `shell` — the federation.config.js `name` is 'shell' but the angular.json project key is 'frontend'. The new remote is added as project key `mfe-pricing` alongside `frontend`. Build builder native-federation:build (esbuild target = @angular/build:application, PRESERVED). Test builder @angular/build:unit-test, include already ['**/*.spec.ts','../libs/**/*.spec.ts'] — must ADD '../apps/**/*.spec.ts' (or apps glob) for the moved pricing spec (R-SP1-3).
+Done: gates verified, board flipped IN PROGRESS, branches next.
+In progress: branch setup (F1) + specialist dispatch.
+Blockers: none.
+Next: cut feature/mfe-pricing/integration off develop + feature/mfe-pricing/frontend; dispatch component-builder (Phase A scaffold remote, Phase B wire shell).
+Hand-offs: infra deploy memo (handoff_mf_pricing_deploy, D13 GCS/CDN) to be filed at Phase C.
+=========
+
+
+=== UPDATE: 2026-06-11 — SESSION END (SP01 mfe-pricing PILOT EXECUTED) ===
+Phase: MF Sub-Plan 01 — mfe-pricing PILOT
+Session: mesell-mfe-pricing-frontend-session-1
+Board sweep (session-end): mfe-pricing row flipped IN PROGRESS→IN REVIEW→MERGED (group PR #52 squash a82cfcf) and moved to Recently merged in the same lifecycle. mf-workspace-foundation row updated (PR #41 now MERGED 5198ba7). Inter-lead open: (1) infra D13 hosting (handoff_mf_pricing_deploy, opened today); (2) infra C-CI-1 (opened 2026-06-10, ~1 day — within 48h SLA, ci-matrix worktree in flight). No rows untouched 7+ days.
+Done:
+  - PHASE A (remote): apps/mfe-pricing project in angular.json (native-federation:build→esbuild, esbuild PRESERVED); git mv 4 pricing files (100%-similarity renames, ZERO logic — D11); public-api.ts + federation.config.js (name mfe-pricing, exposes ./PricingComponent, shareAll singletons) + main.ts + index.html (REQUIRED by @angular/build:application — gotcha) + tsconfig.app.json; test-discovery glob ../apps/**/*.spec.ts (angular.json) + apps/**/*.spec.ts (tsconfig.spec); Tailwind @source "../apps". Remote build GREEN 3.35s → remoteEntry.json + PricingComponent chunk 10KB; @mesell/ui-kit+composites+primeng+@angular+rxjs SHARED not duplicated (§9.A-3).
+  - PHASE B (shell): src/app/core/remote-failure.component.ts (D12 mee-empty-state) + load-remote.ts (loadRemoteWithFallback — reusable for SP02-06) + 2 specs; app.routes.ts pricing → loadRemoteWithFallback; manifest {}→{mfe-pricing: localhost:4201}. Shell build GREEN 3.29s (esbuild preserved, <90s). Tests 42 files/406 (SP0 40/401 preserved + 2 new shell specs; pricing spec discovered at apps/ — no drop, R-SP1-3). Boundary 0. loadRemoteModule = pricing only. served remoteEntry 200 + broken-url 404 (D12 path).
+  - PHASE C (lead): group PR #52 frontend→integration LEAD-GATE squash-merged (APPROVE comment + --admin, a82cfcf, branch deleted). FOUNDER-GATE PR #53 integration→develop OPENED + LEFT OPEN ([FOUNDER GATE — DO NOT MERGE], full §9.A scorecard in body). Infra deploy memo filed.
+§9.A scorecard: 1 PASS, 2 PASS, 3 PASS, 4 locally-proven (mocked loadRemoteModule; full browser-mount forward), 5 PASS, 6 PASS, 7 locally-proven (build clean, zero-visual-delta rename; no headless browser screenshot), 8 locally-proven/hosting→infra. 6 PASS, 3 locally-proven, 0 FAIL. Toolchain PROVEN — SP02 unblocked once #53 merges.
+In progress: none (frontend slice complete; PR #53 awaits founder).
+Blockers: none. PR #53 awaiting founder review (by design, not a blocker). CI not repo-wide yet (C-CI-1 in flight) — pilot did not block on CI per founder direction.
+Next: SP02 (mfe-export) once PR #53 merges + founder approval of SP02. Recipe in sub_plan_01_pricing.md.
+Hand-offs: infra D13 hosting memo (handoff_mf_pricing_deploy) — GCS/CDN/remotes.mesell.xyz/cloudbuild.remote.yaml/per-env manifest; localhost dev-validated, prod surface pending. Board inter-lead row OPEN.
+=========
