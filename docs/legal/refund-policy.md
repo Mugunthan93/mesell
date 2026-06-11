@@ -1,6 +1,6 @@
 # Refund Policy
 
-**For:** **Stellaxis** `[ENTITY SUFFIX — fills in once §15.1 ruled]` operating **MeeSell** at `https://meesell.in`
+**For:** **Stellaxis (OPC) Private Limited** operating **MeeSell** at `https://meesell.in`
 **Effective date:** `[FOUNDER: publish date]`
 **Last updated:** `[FOUNDER: publish date]`
 **Version:** v1.0

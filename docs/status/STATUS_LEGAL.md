@@ -59,6 +59,20 @@ Architecture LOCKED. V1 legal pack DRAFTED in full (8 artifacts + tracker). Read
 
 ## Updates Log
 
+=== UPDATE: 2026-06-11 SESSION-3 ===
+Task: Collect §15.1 entity ruling + collapse entity placeholder + author marketing copy.
+Founder ruling: §15.1 RATIFIED — OPC immediately. Entity: Stellaxis (OPC) Private Limited.
+Done:
+  - §15.1 ratified across: LACI §10.1 tick, LEGAL_ARCHITECTURE §15 table, reference_section_15_ratified.md, placeholders-tracker.md §4
+  - [ENTITY SUFFIX] collapsed to "(OPC) Private Limited" in 4 customer-facing docs (privacy, ToS, refund, cookie)
+  - razorpay-kyc-checklist.md: Sole Prop path removed, OPC-only
+  - gst-registration-checklist.md: Sole Prop path removed, OPC-only
+  - privacy-policy.md §9: FE-D5 token model security language verified / added
+  - docs/marketing/landing-copy.md: authored v1 — hero, pain points, 3 feature cards, pricing, trust signals, FAQ, footer
+Status: §15.2 incorporator still DEFERRED (non-blocking). 34 [LAWYER REVIEW] + 3 [CA VERIFY] markers remain.
+Next: Indian lawyer redline (34 markers) + CA review (3 markers) + Stellaxis incorporation + placeholder collapse on remaining incorporation-dependent items.
+=========
+
 === UPDATE: 2026-06-04 00:00 ===
 File initialised by master session. Awaiting first LEGAL sub-session.
 =========
