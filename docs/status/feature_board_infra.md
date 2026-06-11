@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-infra-builder`
 **Domain:** infra
-**Last updated:** 2026-06-11 (C-CI-1: federated matrix/paths-filter CI ready-not-active — chore/ci-matrix-c-ci-1)
+**Last updated:** 2026-06-11 (C-CI-1 MERGED to develop #50 — federated matrix/paths-filter CI, DISCHARGED-pending-activation)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -12,12 +12,12 @@
 | Feature | Group branch | Status | Current session | Last touched | Blocking | Notes |
 |---|---|---|---|---|---|---|
 | auth-otp | feature/auth-otp/infra | IN REVIEW | — | 2026-06-11 | — | FE-D5 env-var wiring (dev=30/120; staging overlay=60/300) + auth-secret-rotation runbook. Base=feature/auth-otp/integration. |
-| mf-ci-c-ci-1 | chore/ci-matrix-c-ci-1 | IN REVIEW | — | 2026-06-11 | none | C-CI-1 discharge (PR #50 → develop, founder gate): ci.yml frontend matrix (shell + mfe-pricing pilot) + paths-filter fan-out; cloudbuild shell-image + INERT GCS remote publish. Config+docs only, ready-not-active. |
 
 ## Recently merged (last 14 days)
 
 | Feature | Merged to | Date | PR | Notes |
 |---|---|---|---|---|
+| mf-ci-c-ci-1 | develop | 2026-06-11 | #50 (squash 86e67c8) | C-CI-1 DISCHARGED-pending-activation: ci.yml frontend paths-filter matrix (shell + mfe-pricing pilot, libs fan-out) REPLACING single-frontend conditional; cloudbuild shell-image + INERT GCS remote publish (`_REMOTES_BUCKET`). Config+docs only. Cost ₹0. |
 | auth-otp | feature/auth-otp/integration | 2026-06-11 | #45 (squash d2b734e) | FE-D5 env wiring (dev=30/120; staging overlay=60/300) + auth-secret-rotation runbook. Founder-flags F1 (APP_ENV), F2 (single-pepper backend follow-up), F3 (dry-run-server at deploy). Cost ₹0. |
 | gate4-confirmation | develop | 2026-06-10 | #33 (merge f30d61f) | MF §9 Gate 4 hosting confirmation — VERDICT CONFIRMED-WITH-CONDITIONS (6 conditions feed Sub-plan 7) |
 | housekeeping-v1 | feature/housekeeping-v1 | 2026-06-10 | #27 (squash 6096244) | dead GitLab CI removal + SA key disk hygiene |
@@ -26,7 +26,7 @@
 
 | To lead | About feature | Request | Opened | Status |
 |---|---|---|---|---|
-| frontend-coordinator (incoming) | mf-workspace-foundation | MF CI prep C-CI-1 (handoff_mf_ci_prep.md) — replace single-frontend CI with paths-filter matrix before SP1 | 2026-06-10 | RESOLVING (chore/ci-matrix-c-ci-1) — frontend lead marks CLOSED on its own board |
+| frontend-coordinator (incoming) | mf-workspace-foundation | MF CI prep C-CI-1 (handoff_mf_ci_prep.md) — replace single-frontend CI with paths-filter matrix before SP1 | 2026-06-10 | RESOLVED via PR #50 (merged develop) — frontend lead marks CLOSED on its own board |
 
 ---
 
