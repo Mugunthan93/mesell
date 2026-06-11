@@ -4346,3 +4346,54 @@ Hand-offs: FOUNDER QUEUE — (1) merge/review PR #115; (2) approve §4.G doc ame
   (3) FYI Model C git D/F deviation (candidate for a master-plan note: integration branch must be created BEFORE sub-branches,
   or the leaf refname is permanently blocked by any live sub-ref). No cross-LEAD memo cut (F3+F4 backend self-contained per O1).
 =========
+
+=== UPDATE: 2026-06-11 — §19.D test-marker classification MERGED (PR #85) — merge-gate STEP 3 ===
+Phase: §19.D Pytest configuration (gate-marker classification) — Rule-7 three-step, STEP 3 (merge-gate review)
+Session: mesell-test-markers-19d-backend-session-1
+Board sweep: 1 Active row (microservices-export, untouched since 2026-06-10 — <7 days, not stale).
+  Recently-merged: added test-markers-19d (#85). Inter-lead: env-var request (ci-gate1) flipped
+  RESOLVED (verified by #85 CI); NEW request CI-INT-DB-PROVISION opened to infra.
+
+Done:
+  - Full gate per spec §8. VERIFIED commit 859626f is marks-only: all 100 files under backend/tests/;
+    zero non-marker added lines; all 23 removed lines are pytestmark single→list conversions; zero
+    test-body changes; perf/ + pre-existing integration marks untouched; conftest/pytest.ini/ci.yml/docs
+    untouched. Proofs reconciled (unit 597 / smoke 26 / integration 191 / golden 18 / complement 0).
+  - Judgment calls AUDITED + UPHELD: golden_fixtures_runner→golden_roundtrip (db is local param, the
+    §14.K trap), iam_dual_pepper→unit (fakeredis), export integration tests→unit (monkeypatch-only).
+  - VERDICT: APPROVE-WITH-GATE-FIXES. 4 commits applied at gate:
+    * b2af630 Group-1 marker misclass — test_shared_database 2 real-PG tests (get_db_yields,
+      worker_session_yields_working) carried blanket `unit` → integration-only per §19.D real-vs-mock.
+    * b2af630 Group-2 PROD DEP GAP — app/modules/export/service.py imports openpyxl at runtime (§14)
+      but it was ABSENT from requirements.txt → added openpyxl==3.1.5 (lead-owned wiring). Genuine
+      production bug surfaced by the marker run, not just a test gap.
+    * b5c9a29 Group-3 lead-authorized stale-API exception — test_config app.config→app.shared.config
+      + cors_origin_list/CORS_ORIGINS→CORS_ALLOWED_ORIGINS (config API removed in modular-monolith rebuild).
+    * 8433a5e stale-symbol exception — test_worker_db_isolation async_session_maker→AsyncSessionLocal.
+  - CI run 27322416827: Gate 1 unit (594 passed) / Gate 2 smoke / Gate 3 lint ALL GREEN — exceeds the
+    spec bar (green through Gate 2 min). Squash-merged to develop (admin; branch-protection requires the
+    advisory Gate-4) → SHA 34d8b47. Remote ref deleted; worktree + local branch removed.
+
+In progress: none (PR closed/merged). Closeout docs ride this chore PR.
+
+Blockers: none for this work item.
+
+Next: monitor develop post-merge run 27322639273.
+
+Hand-offs:
+  - infra-builder — memo handoff_ci_markers_resolved.md. NEW inter-lead CI-INT-DB-PROVISION (OPEN):
+    Gate-4 Postgres service container is not schema-provisioned (audit_events missing, gin_trgm_ops
+    extension absent, role `meesell` auth fail). Selection is clean (192 selected, zero collection
+    errors); failures are pure CI DB provisioning → infra runs `alembic upgrade head` + aligns role
+    before pytest -m integration. Advisory per §2.1; NOT a merge blocker. Also FYI: export worker
+    image now needs openpyxl (covered by requirements.txt rebuild, no Dockerfile change).
+  - Director — develop tip now 34d8b47; develop→main remains the founder's gate (D1).
+  - Specialist discipline note: api-routes-builder's MEMORY.md write for this session was guard-blocked
+    (decentralized rule 4 — lead may NOT write another agent's memory). Its session learnings are
+    preserved in PR #85's body + my gate comments. Recorded here so the trail is not lost.
+
+Follow-up tickets opened (NOT fixed here):
+  - CI-INT-DB-PROVISION (infra) — Gate-4/5 CI DB provisioning (above).
+  - (Resolved inline, not ticketed) the test_config + worker_db_isolation stale-API repairs were the
+    lead-authorized exceptions, done in this PR; no separate ticket needed.
+=========
