@@ -8,3 +8,4 @@
 - [MeeSell session 3 state](project_meesell_session3_state.md) — ACTIVE session; 6-lead knowledge sync verdicts + 10-item founder decision/action queue (2026-06-10)
 - [MeeSell xlsx-export planning](project_meesell_xlsx_export_planning.md) — FEATURE_PLAN.md authored + committed (a31adf1) + PR #9 opened under serial Step 8; parallel-sessions interrupt landed retroactively; artifacts held for master consolidation
 - [MeeSell auth-otp planning](project_meesell_auth_otp_planning.md) — FEATURE_PLAN.md complete (1561 lines, c1a41e9); D1-D4 locked; backend ~95% done, frontend ~30%; lead memories pre-seeded; awaiting master consolidation
+- [Model C pilot results](project_meesell_repo_pilot_housekeeping.md) — housekeeping-v1 fully landed on develop (09262ee); 3 convention defects need MASTER_PLAN amendments (§1.2 ref conflict, admin bypass, §6.5 board friction)

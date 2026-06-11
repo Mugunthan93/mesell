@@ -3,7 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { StatusBadgeComponent } from './status-badge.component';
 import type { ProductStatus } from './status-badge.component';
-import { MeeBadgeComponent } from '../../ui';
+import { MeeBadgeComponent } from '@mesell/ui-kit';
 
 // Stub mee-badge to avoid PrimeNG in tests
 @Component({

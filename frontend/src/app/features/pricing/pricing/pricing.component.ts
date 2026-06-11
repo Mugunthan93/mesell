@@ -13,11 +13,11 @@ import {
 } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 
-import { MeeBadgeComponent }   from '../../../ui';
-import { MeeButtonComponent }  from '../../../ui';
-import { MeeCardComponent }    from '../../../ui';
-import { MeeInputComponent }   from '../../../ui';
-import { PageHeaderComponent } from '../../../shared';
+import { MeeBadgeComponent }   from '@mesell/ui-kit';
+import { MeeButtonComponent }  from '@mesell/ui-kit';
+import { MeeCardComponent }    from '@mesell/ui-kit';
+import { MeeInputComponent }   from '@mesell/ui-kit';
+import { PageHeaderComponent } from '@mesell/composites';
 
 import { computePnlBreakdown, formatRupee } from './pricing.utils';
 import type { PnlBreakdown } from './pricing.model';

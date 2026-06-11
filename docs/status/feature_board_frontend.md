@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-frontend-coordinator`
 **Domain:** `frontend`
-**Last updated:** 2026-06-10 (initial creation)
+**Last updated:** 2026-06-10 (mf-workspace-foundation in review)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -16,11 +16,13 @@
 
 | Feature | Merged to | Date | PR | Notes |
 |---|---|---|---|---|
+| mf-workspace-foundation | feature/mf-workspace-foundation/integration | 2026-06-10 | #40 (squash e51761b) | MF Sub-Plan 0. libs/ relocation (@mesell/*) + Native Federation init (zero remotes). 401/401 tests, build 3.1s, boundary 0 violations. Integration→develop PR #41 OPEN — FOUNDER GATE. |
 
 ## Inter-lead requests open
 
 | To lead | About feature | Request | Opened | Status |
 |---|---|---|---|---|
+| meesell-infra-builder | mf-workspace-foundation | CI matrix rewrite (C-CI-1) ready before Sub-Plan 1; confirm new frontend/libs/** paths resolve against build-frontend glob. See handoff_mf_ci_prep.md | 2026-06-10 | OPEN |
 
 ---
 

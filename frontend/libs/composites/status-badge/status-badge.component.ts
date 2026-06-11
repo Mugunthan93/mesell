@@ -5,8 +5,8 @@ import {
   input,
 } from '@angular/core';
 import { TitleCasePipe } from '@angular/common';
-import { MeeBadgeComponent } from '../../ui';
-import type { MeeBadgeSeverity } from '../../ui';
+import { MeeBadgeComponent } from '@mesell/ui-kit';
+import type { MeeBadgeSeverity } from '@mesell/ui-kit';
 
 export type ProductStatus =
   | 'draft'

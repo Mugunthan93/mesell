@@ -2,7 +2,7 @@ import { Component, input } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { StatCardComponent } from './stat-card.component';
-import { MeeCardComponent } from '../../ui';
+import { MeeCardComponent } from '@mesell/ui-kit';
 
 // Stub mee-card to avoid PrimeNG in tests
 @Component({ selector: 'mee-card', standalone: true, template: '<ng-content />' })

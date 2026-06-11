@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-infra-builder`
 **Domain:** infra
-**Last updated:** 2026-06-11 (auth-otp infra IN REVIEW — PR feature/auth-otp/infra → feature/auth-otp/integration)
+**Last updated:** 2026-06-11 (founder rulings landed to develop: dev APP_ENV=development [F1 resolved], dry-run deploy gate, MSG91 smoke precondition — chore/land-infra-rulings)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -17,6 +17,7 @@
 
 | Feature | Merged to | Date | PR | Notes |
 |---|---|---|---|---|
+| auth-otp | feature/auth-otp/integration | 2026-06-11 | #45 (squash d2b734e) | FE-D5 env wiring (dev=30/120; staging overlay=60/300) + auth-secret-rotation runbook. Founder-flags F1 (APP_ENV), F2 (single-pepper backend follow-up), F3 (dry-run-server at deploy). Cost ₹0. |
 | gate4-confirmation | develop | 2026-06-10 | #33 (merge f30d61f) | MF §9 Gate 4 hosting confirmation — VERDICT CONFIRMED-WITH-CONDITIONS (6 conditions feed Sub-plan 7) |
 | housekeeping-v1 | feature/housekeeping-v1 | 2026-06-10 | #27 (squash 6096244) | dead GitLab CI removal + SA key disk hygiene |
 

@@ -5,7 +5,7 @@ import { provideAnimationsAsync } from '@angular/platform-browser/animations/asy
 import { routes } from './app.routes';
 // Deep import (not the barrel) so the root bundle pulls only the PrimeNG
 // providers + theme, never the full set of mee-* wrappers.
-import { provideMeeUi } from './ui/providers';
+import { provideMeeUi } from '@mesell/ui-kit/providers';
 
 export const appConfig: ApplicationConfig = {
   providers: [

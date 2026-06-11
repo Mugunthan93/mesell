@@ -2,7 +2,7 @@ import { Component, EventEmitter, Output, Input } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { PageHeaderComponent } from './page-header.component';
-import { MeeButtonComponent } from '../../ui';
+import { MeeButtonComponent } from '@mesell/ui-kit';
 
 // Stub mee-button to avoid PrimeNG in tests
 @Component({

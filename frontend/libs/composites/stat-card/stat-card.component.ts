@@ -4,7 +4,7 @@ import {
   computed,
   input,
 } from '@angular/core';
-import { MeeCardComponent } from '../../ui';
+import { MeeCardComponent } from '@mesell/ui-kit';
 
 export type StatCardColor = 'orange' | 'blue' | 'green' | 'purple';
 

@@ -60,6 +60,8 @@ The shell swaps TWO routes: `onboarding` → `loadRemoteWithFallback('mfe-onboar
 
 **FOUNDER-FLAG.** This promotes a file out of `layouts/` (shell-owned) into `libs/composites` (shared). It touches the shell's layout ownership boundary. The founder confirms: **promote `AuthLayoutComponent` to `@mesell/composites` (recommended — it is shared chrome) OR keep it shell-owned and have the shell wrap the remote via content-projection.** Recommendation: promote (it cleanly serves both the onboarding remote AND the SP06 auth remote, and matches the §2.3 shared-composite model). NOTE: this is a `libs/composites` content change (new file) — it is NOT a FRONTEND_ARCHITECTURE.md LOCKED-doc amendment (the SP0 FD1 amendment already documented `libs/composites` as the Layer-3 home), but the layout's MOVE from `layouts/` should be recorded in the lead memory + the §11 history.
 
+> **RULED 2026-06-11 (founder, morning session): APPROVED as recommended.** `AuthLayoutComponent` promotion to `@mesell/composites` approved — executes at SP03 as planned (option 1, PROMOTE). It serves both the onboarding remote and the SP06 auth remote. No LOCKED-doc amendment required (the SP0 FD1 amendment already documented `libs/composites` as the Layer-3 home); the `layouts/` → `libs/composites` MOVE is recorded in the lead memory + this §11 history.
+
 ### D22 — AuthService singleton contract (THE §5-row-3 deliverable) — FULL SPECIFICATION
 
 This is the core of SP03. MASTER_PLAN §6.1 + §2.5 mandate `AuthService` be a federation singleton; SP03 is where that contract is first EXERCISED and therefore where it must be FINALISED. The verified post-SP0 reality:
@@ -129,7 +131,7 @@ profile:    @mesell/ui-kit/* {MeeCard, MeeBadge, MeeInput, MeeButton, type MeeBa
 
 ### Founder decisions required
 
-1. **FOUNDER-FLAG D21** — promote `AuthLayoutComponent` from `layouts/` (shell) to `@mesell/composites` (shared) — recommended, serves onboarding + SP06 auth — OR keep it shell-owned with content-projection.
+1. **FOUNDER-FLAG D21** — promote `AuthLayoutComponent` from `layouts/` (shell) to `@mesell/composites` (shared) — recommended, serves onboarding + SP06 auth — OR keep it shell-owned with content-projection. — **RULED 2026-06-11 (founder, morning session): APPROVED as recommended (PROMOTE; executes at SP03).**
 2. **Inherited:** SP01 D9 (shell stays at `src/`) + D14 (dev without CSP, deferred to Sub-plan 7) apply unchanged.
 
 D22 (the AuthService singleton contract) is a LEAD-level technical finalisation, not a founder call — it does not change the locked CLAUDE.md D10 (no NgRx) or the FE-D5 refresh-token model; it specifies HOW the existing `providedIn:'root'` AuthService resolves as a singleton under federation. No LOCKED-doc amendment.
@@ -450,7 +452,7 @@ When every box is `[x]`, `feature/mfe-onboarding/integration` is ready for the f
 - [ ] **AuthService singleton smoke test (D22 C5) PASSES** — the migration's auth go/no-go: shell `setSession` → remote `profile` sees `currentUser()` → remote `logout()` → shell `isAuthenticated()` false → guard blocks. **A FAIL halts the migration.**
 - [ ] **No duplicate `auth.service` chunk** in the remote build output (D22 C2 static proof)
 - [ ] **The finalised AuthService singleton contract (D22 C1–C5) recorded** in `sub_plan_03_onboarding.md` — the §5-row-3 deliverable consumed by SP04/SP05/SP06
-- [ ] FOUNDER-FLAGs: D21 (AuthLayout promotion) resolved; D9 + D14 inherited from SP01
+- [ ] FOUNDER-FLAGs: D21 (AuthLayout promotion) resolved; D9 + D14 inherited from SP01 — *(D21 founder RULED APPROVED-as-recommended 2026-06-11; D9/D14 resolved at SP07 via D43/D42, also RULED 2026-06-11)*
 - [ ] Infra deploy memo filed (D24); board inter-lead row added
 - [ ] `feature_board_frontend.md` row = MERGED; STATUS_FRONTEND.md appended; `sub_plan_03_onboarding.md` written
 - [ ] **Founder approval** on `feature/mfe-onboarding/integration` → `develop` (founder's gate, NOT the lead's)
@@ -474,4 +476,5 @@ When every box is `[x]`, `feature/mfe-onboarding/integration` is ready for the f
 
 | Version | Date | Author | Change |
 |---|---|---|---|
+| v1.1 | 2026-06-11 | `meesell-frontend-coordinator` (founder-ruling landing session) | Landed the founder's 2026-06-11 morning ruling on D21: **`AuthLayoutComponent` promotion to `@mesell/composites` APPROVED as recommended** — executes at SP03 as planned (PROMOTE), serving the onboarding remote + the SP06 auth remote; no LOCKED-doc amendment. Additive RULED annotation on the D21 FOUNDER-FLAG block + the Founder-decisions-required summary + the §9 FOUNDER-FLAGs acceptance line (also noting D9/D14 resolved at SP07 via the same-day D43/D42 rulings). No structural change. |
 | v1 (DRAFT) | 2026-06-10 | `mesell-module-federation-frontend-session-2` (night-run master-session dispatch) | Initial authoring of Sub-Plan 03 — `mfe-onboarding` (F5 onboarding + F13 profile). Grounded in the POST-SP0 integration-branch reality (`e51761b`): profile consumes `AuthService` from `@mesell/core` (`currentUser()` 4×, `logout()` 1×) — the FIRST cross-boundary singleton; onboarding imports `AuthLayoutComponent` via a relative `layouts/` path that CANNOT survive extraction. D20 (two-expose remote), D21 (PROMOTE AuthLayout → `@mesell/composites` — FOUNDER-FLAG, serves onboarding + SP06), **D22 (the FINALISED AuthService singleton contract C1–C5 — the §5-row-3 deliverable: `providedIn:'root'` retained, singleton enforced via import-map sharing + the C5 runtime smoke test + no-duplicate-chunk static proof; the auth go/no-go for the whole migration)**, D23 (remote-private validator/form logic), D24 (third-remote Option-C). Adds `meesell-angular-service-builder` to the lineup for the auth-singleton verification. 6 risks incl. R-SP3-1 the P0 auth-drift (HALT on C5 fail) + R-SP3-2 AuthLayout dangling import. One new FOUNDER-FLAG (D21); D9/D14 inherited. Awaits founder approval; gated on SP01+SP02 merged + the C5 smoke test designed. |

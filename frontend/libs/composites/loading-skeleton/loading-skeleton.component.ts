@@ -3,8 +3,8 @@ import {
   Component,
   input,
 } from '@angular/core';
-import { MeeSkeletonComponent } from '../../ui';
-import type { MeeSkeletonVariant } from '../../ui';
+import { MeeSkeletonComponent } from '@mesell/ui-kit';
+import type { MeeSkeletonVariant } from '@mesell/ui-kit';
 
 @Component({
   selector: 'mee-loading-skeleton',

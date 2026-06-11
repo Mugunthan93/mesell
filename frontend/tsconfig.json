@@ -13,7 +13,16 @@
     "experimentalDecorators": true,
     "importHelpers": true,
     "target": "ES2022",
-    "module": "preserve"
+    "module": "preserve",
+    "baseUrl": ".",
+    "paths": {
+      "@mesell/ui-kit": ["libs/ui-kit/index.ts"],
+      "@mesell/ui-kit/*": ["libs/ui-kit/*"],
+      "@mesell/composites": ["libs/composites/index.ts"],
+      "@mesell/composites/*": ["libs/composites/*"],
+      "@mesell/core": ["libs/core/index.ts"],
+      "@mesell/design-tokens": ["libs/design-tokens"]
+    }
   },
   "angularCompilerOptions": {
     "enableI18nLegacyMessageIdFormat": false,

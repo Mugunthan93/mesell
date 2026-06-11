@@ -12,12 +12,12 @@ import {
   Validators,
 } from '@angular/forms';
 import { Router } from '@angular/router';
-import { MeeCardComponent }   from '../../ui/card/card.component';
-import { MeeBadgeComponent }  from '../../ui/badge/badge.component';
-import { MeeInputComponent }  from '../../ui/input/input.component';
-import { MeeButtonComponent } from '../../ui/button/button.component';
-import type { MeeBadgeSeverity } from '../../ui/badge/badge.types';
-import { AuthService } from '../../core/services/auth.service';
+import { MeeCardComponent }   from '@mesell/ui-kit/card/card.component';
+import { MeeBadgeComponent }  from '@mesell/ui-kit/badge/badge.component';
+import { MeeInputComponent }  from '@mesell/ui-kit/input/input.component';
+import { MeeButtonComponent } from '@mesell/ui-kit/button/button.component';
+import type { MeeBadgeSeverity } from '@mesell/ui-kit/badge/badge.types';
+import { AuthService } from '@mesell/core';
 
 @Component({
   selector: 'app-profile',

@@ -82,3 +82,33 @@ Update this file with:
 - MSG91 IP whitelist: confirmed working | needs update for 122.164.85.51
 - `docs/runbooks/auth-secret-rotation.md`: created | blocked
 - PR # for feature/auth-otp/infra → feature/auth-otp
+
+---
+
+## SESSION COMPLETE — mesell-auth-otp-infra-session-1 (2026-06-11)
+
+Status: COMPLETE. Infra group PR #45 squash-merged to feature/auth-otp/integration (SHA d2b734e). Integration→develop PR #46 OPEN (founder gate — NOT merged by me).
+
+### Actual files modified/created
+- `k8s/config.yaml` (MODIFY) — dev ConfigMap: ACCESS_TOKEN_TTL_SECONDS 900→30, REFRESH_TOKEN_TTL_SECONDS 604800→120, CORS_ALLOWED_ORIGINS → https://dev.mesell.xyz. (TTL/CORS keys pre-existed from §20 2026-06-08; this corrected VALUES to dev.)
+- `k8s/overlays/staging/kustomization.yaml` + `k8s/overlays/staging/config.yaml` (NEW) — self-contained staging ConfigMap: ns=staging, APP_ENV=staging, ACCESS=60, REFRESH=300, CORS=https://staging.mesell.xyz.
+- `docs/runbooks/auth-secret-rotation.md` (NEW) — §1 dev/staging natural-expiry, §2 prod dual-pepper grace window (R5), §3 emergency revocation, §4 pre-flight, §5 follow-ups.
+- board + STATUS_INFRA updated.
+
+### Re-audit verdict
+Memo's "exact env vars to add" were ALREADY in config.yaml/secrets.yaml.example. Real gaps were (1) dev config held PROD values, (2) no staging surface, (3) no runbook. So this feature's infra work was a VALUE-correction + overlay-creation + doc, NOT new env-var keys.
+
+### dry-run result
+- dev base: kubectl kustomize k8s → clean (after a minimal base kustomization was tried then REMOVED — see KUSTOMIZE GOTCHA in MEMORY.md). Validated via `kubectl kustomize` + python yaml.safe_load_all.
+- staging overlay: kubectl kustomize k8s/overlays/staging → clean exit 0, correct patched values.
+- `kubectl apply --dry-run=server`: NOT POSSIBLE — cluster unreachable (34.180.58.185:6443 refused). Founder-flag F3: re-run at deploy time.
+
+### MSG91 IP whitelist
+NOT verified (cluster down, no OTP send). Carry-forward to S1.5/S3.1 dev smoke gate — verify 122.164.85.51 (or current founder IP) whitelisted before backend gate-2 green.
+
+### Secrets verified live (values never printed)
+refresh-token-pepper, razorpay-webhook-secret, msg91-auth-key, jwt-secret — each 1 ENABLED version.
+
+### PR
+feature/auth-otp/infra → feature/auth-otp/integration: PR #45 — MERGED (squash d2b734e).
+feature/auth-otp/integration → develop: PR #46 — OPEN (founder gate).
