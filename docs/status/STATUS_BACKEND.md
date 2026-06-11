@@ -3824,3 +3824,41 @@ Hand-offs: (1) database-builder — _GLOBAL_TABLES sentinel chore. (2) infra-bui
   into k8s ConfigMaps (dev=true, staging=false until 24h soak) + backend/.env.example (lead-owned).
   (3) AI lead — smart-picker AI slice #54 already merged to integration; merge order honored.
 =========
+
+=== UPDATE: 2026-06-11 — CI Gate-1 pytest-collection fix MERGED (PR #74) ===
+Phase: CI hotfix (Rule 7 three-step STEP 3 — merge-gate review)
+Session: mesell-ci-gate1-fix-session-1
+Board sweep: 1 active row (microservices-export, IN PROGRESS, last touched 2026-06-10 — within 7d,
+  not stale). New MERGED row added (ci-gate1-pytest-collection → develop). 1 NEW inter-lead request
+  OPEN (infra: 5 missing ci.yml Gate-1 dummy env vars). No rows 7+ days stale. No MERGED rows >14d.
+Done:
+  - Merge-gate review of PR #74 (fix/ci-gate1-pytest-collection → develop) — 8/8 checklist PASS:
+    (1) diff EXACTLY additive `pythonpath = .` + 6-line §19.D comment in backend/pytest.ini, no other file;
+    (2) forbidden files (backend/__init__.py, tests/__init__.py, tests/modules/__init__.py, pyproject.toml,
+        setup.py) all ABSENT on head ref; (3) conftest.py unchanged (not in diff); (4) PR template fully
+        filled, zero `<>` placeholders, N/A sections explicit; (5) test evidence BEFORE=ModuleNotFoundError
+        'app', AFTER=gone (reaches app §5.D env guard); interpreter Py 3.14.3 throwaway venv noted;
+        (6) commit footer `Session: mesell-ci-gate1-fix-session-1` present; (7) head/base correct;
+        (8) no endpoint/contract/migration change (§17 stays 28, §2.D + §16 untouched).
+  - Director correction honored: "CI Gate 1 re-runs GREEN on PR" item is N/A — CI triggers only on
+    push/PR to main; this PR targets develop. Local collect-only evidence = the acceptance gate.
+  - Squash-merge PR #74 → develop, SHA bb09aea343dfc182ac494ed3c4bdf563a72b6f36. Remote branch deleted.
+    develop tip now bb09aea.
+GATE-1 ENV-VAR AUDIT (spec item 5 — the critical scrutiny):
+  - FATAL list from app's §5.D startup guard (13 vars) cross-referenced vs ci.yml Gate-1 (unit) env block
+    (lines 78-88, job-level) + top-level env (lines 56-64, infra vars only).
+  - PROVIDED (8): REFRESH_TOKEN_PEPPER, MSG91_AUTH_KEY, MSG91_TEMPLATE_ID, RAZORPAY_KEY_ID,
+    RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET, GEMINI_API_KEY, AUDIT_PII_SALT.
+  - MISSING (5): GCS_BUCKET, GCS_PROJECT_ID, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, CORS_ALLOWED_ORIGINS.
+  - Verdict per spec item 5: DO NOT REJECT — the fix is correct and additive (import-app path resolved).
+    The missing 5 are an infra-owned ci.yml addition. Gates 2/3/4/5 + nightly env blocks share the same
+    dummy set and have the SAME gap — infra should add all 5 to every job that runs app code.
+In progress: none (CI hotfix landed).
+Blockers: none for this PR. NOTE: until infra adds the 5 missing dummies, the FULL main pipeline will
+  still abort at Gate-1's startup guard (sys.exit(1)) — PR #74 moved the failure from "import error
+  exit 4" to "config-guard exit 1". The remaining hop is infra-owned (inter-lead request OPEN).
+Next: Director's call — open a develop→main PR to re-fire the pipeline AFTER infra closes the env-var
+  gap (otherwise the pipeline will red at the config guard). I did NOT open develop→main (founder's gate).
+Hand-offs: (1) infra-builder — memo memo_ci_gate1_closed.md + inter-lead request OPEN (5 missing dummy
+  env vars in ci.yml). Decentralized-sharing: infra reads my memory per CLAUDE.md rule 3.
+=========
