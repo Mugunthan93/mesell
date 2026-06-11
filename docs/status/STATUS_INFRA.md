@@ -37,6 +37,27 @@ Phase D is owned by `meesell-backend-coordinator` + `meesell-frontend-coordinato
 5. **`.gitlab-ci.yml`** — write CI pipeline (lint → test → build → push via WIF → deploy via kubectl).
 6. **Optional Pass 3 Terraform modules** — `modules/{api,worker,frontend}/` so Deployments are in TF state.
 
+## Dev OTP smoke preconditions (auth-otp — founder ruling 2026-06-11)
+Before the FIRST dev OTP smoke test (`POST /auth/otp/send` with a real phone, FEATURE_PLAN
+auth-otp step S1.5 / Sprint 1 exit gate) the following MUST be true. Recorded here because
+the auth-secret-rotation runbook (`docs/runbooks/auth-secret-rotation.md`) is NOT yet on
+`develop` (it lives on `feature/auth-otp/integration` until that PR lands) — so its smoke
+section does not exist on this branch to carry the note.
+
+1. **MSG91 server-IP whitelist** — Founder will whitelist the dev server's egress/public IP
+   in the MSG91 dashboard (Settings → IP Security) BEFORE the first dev OTP send. Without
+   this, MSG91 rejects the send and the smoke returns non-200. Track the IP actually
+   whitelisted (founder ISP IP has rotated before: 122.164.85.200 → .51 → 87.94 — confirm
+   current before smoke). Fallback if blocked: MSG91 test-sender credentials (no IP
+   restriction) for the dev namespace while the whitelist is updated.
+2. `msg91-auth-key` + `msg91-template-id` Secret Manager values LIVE and surfaced into the
+   `dev` `backend-secrets` K8s Secret (both confirmed present per Phase D).
+3. `kubectl -n dev apply --dry-run=server` clean on any manifest touched (mandatory deploy
+   gate per playbook §15 step 3 — founder ruling 2026-06-11).
+
+When `docs/runbooks/auth-secret-rotation.md` merges to `develop`, fold precondition #1 into
+that runbook's smoke-test section and trim this note to a back-reference.
+
 ## Not blocking — anytime
 - Re-enable Namecheap 2FA (was disabled for script convenience during Phase B; safe to turn back on now)
 - Switch Playwright Namecheap helpers to `launchPersistentContext` to avoid device-verification on future DNS edits
@@ -1404,4 +1425,19 @@ Founder-flags carried into both PR bodies: F1 APP_ENV=production on dev ConfigMa
 Board: auth-otp moved IN REVIEW -> MERGED (Recently merged, #45). Active features now empty again.
 Board sweep (session-end): no rows untouched 7+ days. No inter-lead requests open. No blockers.
 Cost impact: ₹0/month.
+=========
+
+=== UPDATE: 2026-06-11 LAND-INFRA-RULINGS SESSION-1 (start+end) ===
+Session: mesell-land-infra-rulings-infra-session-1
+Task: land 3 founder rulings (2026-06-11 morning) on the infra surface via chore/land-infra-rulings -> develop.
+Playbook sections applied: §15 (Safe deployment template — dry-run gate) + §0 (live state SSOT — APP_ENV must be valid Pydantic Literal) + §10 (secret discipline — OTP smoke precondition).
+Worktree: /tmp/mesell-wt/land-infra-rulings on chore/land-infra-rulings from origin/develop (0b147e8, freshly fetched). Master tree branch NOT switched.
+
+1. APP_ENV ruling (F1 RESOLVED): k8s/config.yaml dev ConfigMap (namespace: dev) APP_ENV "production" -> "development". Founder ruled production was WRONG for dev. Did NOT touch staging overlay (k8s/overlays/staging/ does not exist on develop — lives on feature/auth-otp/integration) or any prod values. Offline-validated: Python yaml.safe_load_all -> kind=ConfigMap, ns=dev, APP_ENV=development, 20 data keys, parses clean. Cluster dry-run (--dry-run=server) DEFERRED to deploy time per F3 — cluster unreachable from authoring machine (6443 connection refused), as expected.
+2. Deploy gate ruling: docs/INFRASTRUCTURE_PLAYBOOK.md §15 step 3 elevated to [MANDATORY GATE] — `kubectl apply --dry-run=server` is now a mandatory pre-apply checklist item at EVERY deploy, hard precondition for step 4. Additive edit only (no renumber/removal). Founder ruling = the §7.3 amendment approval (delivered in-prompt).
+3. MSG91 whitelist: docs/runbooks/auth-secret-rotation.md does NOT exist on develop (only on feature/auth-otp/integration) -> "ONLY IF smoke section exists" condition FAILED. Auth-otp dev OTP smoke gate is documented only in feature-owned FEATURE_PLAN.md (S1.5/Sprint-1 exit gate) — not an infra-owned precondition surface. Per brief fallback: added "Dev OTP smoke preconditions" subsection to THIS file's next-steps (founder whitelists server IP before first dev OTP send; track current founder ISP IP; MSG91 test-sender fallback). Self-folds into the runbook when it lands on develop.
+
+Lead-gate self-review: 3-file diff, additive/corrective only, no secrets, no JSON keys, no TF, cost ₹0/month. Approved.
+Board sweep (session-start + session-end): Active features table EMPTY. Recently merged = auth-otp(#45), gate4-confirmation(#33), housekeeping-v1(#27). No rows untouched 7+ days. No inter-lead requests open. No blockers. This chore is a founder-ruling landing (not a feature-group PR) so no feature_board_infra.md Active row created (F2 status-only — board reflects feature-group state, which is unchanged). feature_board_infra.md "Last updated" line refreshed only.
+PR: see tail. Merge SHA: see tail.
 =========

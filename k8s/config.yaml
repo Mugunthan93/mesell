@@ -10,7 +10,10 @@ metadata:
   namespace: dev
 data:
   # App
-  APP_ENV: "production"
+  # Dev ConfigMap (namespace: dev) MUST be "development". Founder ruling 2026-06-11
+  # (F1 resolved): "production" here was WRONG. Valid Pydantic Settings Literal values:
+  # {development, staging, production}. Staging overlay carries its own APP_ENV=staging.
+  APP_ENV: "development"
 
   # Database pool (non-secret tuning)
   DB_POOL_SIZE: "10"

@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-infra-builder`
 **Domain:** infra
-**Last updated:** 2026-06-11 (auth-otp infra MERGED to feature/auth-otp/integration, PR #45)
+**Last updated:** 2026-06-11 (founder rulings landed to develop: dev APP_ENV=development [F1 resolved], dry-run deploy gate, MSG91 smoke precondition — chore/land-infra-rulings)
 **This file is the single domain-level status surface for the lead.**
 
 ---
