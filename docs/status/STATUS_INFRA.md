@@ -1482,3 +1482,13 @@ Cost impact: ₹0/month (config/docs only; GCS+CDN+LB cost is C-CDN-1, sized at 
 Board: added Active row mf-ci-c-ci-1 IN PROGRESS; recorded incoming inter-lead request (frontend handoff_mf_ci_prep.md) as RESOLVING. Will flip IN REVIEW on PR open, MERGED on merge.
 PR + merge SHA: see session-end tail.
 =========
+
+=== UPDATE: 2026-06-11 MF-CI-C-CI-1 SESSION-1 SESSION-END ===
+Session: mesell-mf-ci-c-ci-1-infra-session-1
+C-CI-1 DISCHARGED-pending-activation. PR #50 (chore/ci-matrix-c-ci-1 -> develop) SQUASH-MERGED, squash SHA 86e67c8 (full 86e67c822d29f7e2cfa60af0981aa43c6d274a81). Lead-gate self-review APPROVED (7-point checklist, see PR #50 comment). Rebased onto develop cad0a9a to resolve a board/STATUS conflict from PR #46 (auth-otp) — keep-both. Remote ref deleted via API; worktree removed.
+Deliverables (5 files): .github/workflows/ci.yml (+frontend-changes + frontend-build matrix; build.needs+=frontend-build), cloudbuild.yaml (precheck/build/push-shell + INERT publish-remotes), docs/DEVOPS_ARCHITECTURE.md (§5.1/5.2/6.1/6.3/9.1/9.2/9.5/13.2), board + this log.
+Matrix design: dorny/paths-filter@v3 (libs/shell/mfe_pricing) -> matrix include[shell, mfe-pricing] with per-entry run = own-filter OR libs-fanout. libs/** + workspace config fan out to all dependents (consumed via @mesell/* aliases). pnpm rebuild esbuild @parcel/watcher lmdb msgpackr-extract before ng build. SP02-06 = one-line add (filter block + matrix include; templates commented in both files).
+READY -> ACTIVE flips (3): (1) founder 7-step activation (terraform WIF/CI SA -> GCP_WIF_PROVIDER+GCP_CI_SA_EMAIL repo vars -> GEMINI_API_KEY_CI secret -> main branch protection -> merge to main); first push to main fires frontend-changes+frontend-build. (2) SP1 lands frontend/apps/mfe-pricing/** -> mfe_pricing filter starts matching, mfe-pricing leg builds. (3) S5 ratifies Option C + terraform provisions gs://meesell-remotes-dev (+CDN+remotes.mesell.xyz LB/cert+SA grant) -> set _REMOTES_BUCKET in build job substitutions -> publish-remotes goes live.
+No new secrets. Cost ₹0/month (CDN/LB = C-CDN-1, sized at S5). Inter-lead handoff_mf_ci_prep.md asks 1+2+3 all addressed -> frontend lead marks CLOSED on its own board.
+Board sweep (session-end): Active = auth-otp (IN REVIEW — its integration->develop PR #46 already merged; that stale row is auth-otp-owned state, NOT mine to flip). mf-ci-c-ci-1 moved IN REVIEW -> Recently merged (#50). No rows untouched 7+ days. Inter-lead request marked RESOLVED. No blockers.
+=========
