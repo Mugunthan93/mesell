@@ -1,0 +1,18 @@
+/* shell host — app build tsconfig. Extends the workspace base
+   (inherits strict mode + the @mesell/* path aliases).
+   Mirrors the per-remote tsconfig.app.json shape (SP07 D43 uniform topology). */
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../out-tsc/shell",
+    "types": []
+  },
+  "include": [
+    "src/**/*.ts",
+    "../../libs/**/*.ts"
+  ],
+  "exclude": [
+    "src/**/*.spec.ts",
+    "../../libs/**/*.spec.ts"
+  ]
+}

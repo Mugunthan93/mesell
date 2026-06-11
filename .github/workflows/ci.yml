@@ -513,6 +513,11 @@ jobs:
       libs: ${{ steps.filter.outputs.libs }}
       shell: ${{ steps.filter.outputs.shell }}
       mfe_pricing: ${{ steps.filter.outputs.mfe_pricing }}
+      mfe_export: ${{ steps.filter.outputs.mfe_export }}
+      mfe_onboarding: ${{ steps.filter.outputs.mfe_onboarding }}
+      mfe_dashboard: ${{ steps.filter.outputs.mfe_dashboard }}
+      mfe_catalog: ${{ steps.filter.outputs.mfe_catalog }}
+      mfe_auth: ${{ steps.filter.outputs.mfe_auth }}
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -533,13 +538,28 @@ jobs:
               - 'frontend/federation.config.js'
               - '.github/workflows/ci.yml'
             shell:
+              # D43 relocation (SP07): the shell moves src/** -> apps/shell/**. Match
+              # BOTH so the matrix is forward-compatible regardless of which side lands
+              # first. The relocation edits are the component-builder's (spec §7); infra
+              # only folds the glob (uniform `apps/<name>/**` matrix per spec §4).
               - 'frontend/src/**'
               - 'frontend/public/**'
+              - 'frontend/apps/shell/**'
+            # SP01–SP06: all six remotes (the cutover wave). Each is an independently
+            # buildable unit; a change rebuilds only that remote (a libs/** change fans
+            # out to all — see the `libs` filter above).
             mfe_pricing:
               - 'frontend/apps/mfe-pricing/**'
-            # SP02–SP06: add one block per remote, e.g.
-            # mfe_catalog:
-            #   - 'frontend/apps/mfe-catalog/**'
+            mfe_export:
+              - 'frontend/apps/mfe-export/**'
+            mfe_onboarding:
+              - 'frontend/apps/mfe-onboarding/**'
+            mfe_dashboard:
+              - 'frontend/apps/mfe-dashboard/**'
+            mfe_catalog:
+              - 'frontend/apps/mfe-catalog/**'
+            mfe_auth:
+              - 'frontend/apps/mfe-auth/**'
 
   # =============================================================================
   # FRONTEND-BUILD — paths-filtered MATRIX over the federated workspace (C-CI-1)
@@ -573,15 +593,26 @@ jobs:
             project: frontend
             # Build when src/ changed OR a shared layer / workspace config changed.
             run: ${{ needs.frontend-changes.outputs.shell == 'true' || needs.frontend-changes.outputs.libs == 'true' }}
-          # --- pilot remote (SP01) — angular.json project `mfe-pricing` ---
+          # --- the SIX cutover remotes (SP01–SP06). Each builds when its own filter
+          #     fired OR the libs fan-out fired. angular.json project name == unit name. ---
           - unit: mfe-pricing
             project: mfe-pricing
-            # Build when this remote changed OR a shared layer / workspace config changed.
             run: ${{ needs.frontend-changes.outputs.mfe_pricing == 'true' || needs.frontend-changes.outputs.libs == 'true' }}
-          # --- SP02–SP06 remotes: copy the mfe-pricing block, e.g. ---
-          # - unit: mfe-catalog
-          #   project: mfe-catalog
-          #   run: ${{ needs.frontend-changes.outputs.mfe_catalog == 'true' || needs.frontend-changes.outputs.libs == 'true' }}
+          - unit: mfe-export
+            project: mfe-export
+            run: ${{ needs.frontend-changes.outputs.mfe_export == 'true' || needs.frontend-changes.outputs.libs == 'true' }}
+          - unit: mfe-onboarding
+            project: mfe-onboarding
+            run: ${{ needs.frontend-changes.outputs.mfe_onboarding == 'true' || needs.frontend-changes.outputs.libs == 'true' }}
+          - unit: mfe-dashboard
+            project: mfe-dashboard
+            run: ${{ needs.frontend-changes.outputs.mfe_dashboard == 'true' || needs.frontend-changes.outputs.libs == 'true' }}
+          - unit: mfe-catalog
+            project: mfe-catalog
+            run: ${{ needs.frontend-changes.outputs.mfe_catalog == 'true' || needs.frontend-changes.outputs.libs == 'true' }}
+          - unit: mfe-auth
+            project: mfe-auth
+            run: ${{ needs.frontend-changes.outputs.mfe_auth == 'true' || needs.frontend-changes.outputs.libs == 'true' }}
     steps:
       - name: "Skip notice (unit not affected)"
         if: matrix.run != 'true'

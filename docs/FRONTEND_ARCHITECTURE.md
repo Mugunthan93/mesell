@@ -511,6 +511,91 @@ mesell/frontend/
 
 ---
 
+## Project Structure (as-built — federated workspace)
+
+> **Founder-approved §7.3 amendment — 2026-06-11.** ADDITIVE as-built sync only. This section
+> records the federated workspace topology delivered by the Module Federation program (SP00–SP07,
+> `docs/plans/module_federation/MASTER_PLAN.md` APPROVED 2026-06-10). **No design decision changes**:
+> the 4-layer architecture, the PrimeNG abstraction wall, SOLID rules, and the LOCKED technology
+> decisions above are unchanged. The single-app "Project Structure (full)" block above describes the
+> Wave-2B design intent; this block describes what the strangler-fig federation migration actually
+> built. Both are kept (additive). The path-alias re-mapping (`@mee/*` design intent → `@mesell/*`
+> as-built) is captured in the "Path Aliases" section below.
+
+The single Angular app was migrated to a **federated shell + 6 remotes** workspace (Native
+Federation on the preserved `@angular/build:application` esbuild builder — NOT Webpack MF). The
+shell is the host; each remote owns a co-changing slice of the user journey; the four `libs/`
+packages are the shared singletons. The `frontend/` directory is one Angular workspace with N+1
+projects (shell + 6 remotes).
+
+```
+mesell/frontend/
+├── apps/                                # all Angular projects (uniform topology — D43)
+│   ├── shell/                           # the HOST application (relocated from src/ at SP07 / D43)
+│   │   ├── src/
+│   │   │   ├── app/
+│   │   │   │   ├── core/                # HOST concerns ONLY (no feature code)
+│   │   │   │   │   ├── load-remote.ts            # loadRemoteWithFallback / loadRemoteRoutesWithFallback
+│   │   │   │   │   ├── remote-failure.component.ts  # D12 graceful-degradation fallback
+│   │   │   │   │   └── csp-smoke.spec.ts         # dev CSP smoke harness (SP07 / D42)
+│   │   │   │   ├── layouts/shell/        # shell chrome (sidebar + topbar + router-outlet)
+│   │   │   │   ├── app.config.ts         # bootstrap providers (router, http, providePrimeNG ONCE)
+│   │   │   │   ├── app.routes.ts         # top-level routes — lazy-load remotes via loadRemote*
+│   │   │   │   ├── app.ts / app.html / app.css
+│   │   │   ├── main.ts / bootstrap.ts    # initFederation() → bootstrapApplication
+│   │   │   ├── index.html / styles.css   # the SINGLE Tailwind build (@import "tailwindcss" + @source ../../../libs)
+│   │   │   └── public/
+│   │   │       ├── federation.manifest.json          # DEV — localhost:4201-4206
+│   │   │       ├── federation.manifest.staging.json  # version-pinned template (D44)
+│   │   │       └── federation.manifest.prod.json      # version-pinned template (D44)
+│   │   ├── federation.config.js          # name: 'shell' (dynamic-host)
+│   │   └── tsconfig.app.json
+│   ├── mfe-auth/                         # R1 — F2 login · F3 signup · F4 otp-verify        (port 4206)
+│   ├── mfe-onboarding/                   # R2 — F5 onboarding · F13 profile                 (port 4203)
+│   ├── mfe-dashboard/                    # R3 — F1 landing (public) · F6 dashboard          (port 4204)
+│   ├── mfe-catalog/                      # R4 — F7 smart-picker · F8 form · F9 images · F10 preview (port 4205)
+│   ├── mfe-pricing/                      # R5 — F11 pricing (PILOT)                         (port 4201)
+│   └── mfe-export/                       # R6 — F12 export                                  (port 4202)
+│       └── (each remote: src/app/<feature>/ · main.ts · federation.config.js · index.html · tsconfig.app.json)
+├── libs/                                 # shared workspace packages (the singletons)
+│   ├── ui-kit/                           # @mesell/ui-kit — the mee-* PrimeNG wrappers (Layer 2 abstraction wall)
+│   ├── composites/                       # @mesell/composites — Layer 3 composites + AuthLayout (promoted SP03/D21)
+│   ├── core/                             # @mesell/core — AuthService (+ authGuard); singleton:true in every remote
+│   └── design-tokens/                    # @mesell/design-tokens — _tokens.css (Layer 1; pure CSS, not a runtime singleton)
+├── angular.json                          # N+1 projects; every remote's styles[0] = apps/shell/src/styles.css (single Tailwind build)
+├── docker/                               # nginx.conf.template (CSP ADD-ONLY) + csp-policy.env (SP07 / D42 — infra-owned)
+├── package.json                          # start:shell (4200) + start:mfe-<name> (4201-4206)
+└── tsconfig.json                         # strict: true + @mesell/* path aliases (incl. deep @mesell/ui-kit/*)
+```
+
+### Port registry (dev serve)
+
+| Project | Port | Manifest key |
+|---|---|---|
+| `shell` (host) | **4200** | — (the host; loads the manifest) |
+| `mfe-pricing` (R5) | **4201** | `mfe-pricing` |
+| `mfe-export` (R6) | **4202** | `mfe-export` |
+| `mfe-onboarding` (R2) | **4203** | `mfe-onboarding` |
+| `mfe-dashboard` (R3) | **4204** | `mfe-dashboard` |
+| `mfe-catalog` (R4) | **4205** | `mfe-catalog` |
+| `mfe-auth` (R1) | **4206** | `mfe-auth` |
+
+Ports are pinned via the `start:*` npm scripts (script flags, NOT `angular.json`) so the dev manifest
+stays stable. The dev manifest (`apps/shell/public/federation.manifest.json`) points at
+`http://localhost:420{1-6}/remoteEntry.json`.
+
+### Version-pinned manifest (staging / prod — D44)
+
+The shell loads remotes at runtime from a per-environment manifest. Dev = localhost. Staging/prod are
+infra-templated from `federation.manifest.{staging,prod}.json`, each remote URL of the form
+`https://remotes{-staging}.mesell.xyz/{ENV}/mfe-<name>/{VERSION}/remoteEntry.json`. **`{VERSION}` is an
+exact immutable build hash/semver per remote — NEVER the literal `latest`** (R5 / R-SP7-6 contract-drift
+mitigation: the shell pins the exact remote build it was tested against; rollback = re-point `{VERSION}`).
+`{ENV}`/`{VERSION}` are infra envsubst tokens substituted at deploy time. Staging uses the
+`remotes-staging.mesell.xyz` subdomain (off-cluster, C-STAGING-1).
+
+---
+
 ## Path Aliases (tsconfig.json)
 
 ```json
@@ -525,6 +610,26 @@ mesell/frontend/
   }
 }
 ```
+
+> **As-built (founder-approved §7.3 amendment 2026-06-11):** the federation migration moved the
+> aliases from the single-app `@mee/*` design intent above to `@mesell/*` workspace packages under
+> `libs/`. The barrel contract is preserved — only the path alias moved (`from '../../ui'` →
+> `from '@mesell/ui-kit'`). As-built aliases:
+>
+> ```json
+> {
+>   "compilerOptions": {
+>     "paths": {
+>       "@mesell/ui-kit":        ["libs/ui-kit/index.ts"],
+>       "@mesell/ui-kit/*":      ["libs/ui-kit/*"],          // deep imports (lean-bundle pattern)
+>       "@mesell/composites":    ["libs/composites/index.ts"],
+>       "@mesell/composites/*":  ["libs/composites/*"],
+>       "@mesell/core":          ["libs/core/index.ts"],      // AuthService singleton
+>       "@mesell/design-tokens": ["libs/design-tokens/_tokens.css"]
+>     }
+>   }
+> }
+> ```
 
 ---
 
@@ -596,3 +701,12 @@ The clone is at `themes/` and must NOT be imported into the Angular build.
 *Architecture owner: Director (master session)*
 *Approved: 2026-06-08*
 *Next: Wave 2B scaffold — new session*
+
+---
+
+## Revision History
+
+| Date | Change | Author | Authority |
+|---|---|---|---|
+| 2026-06-08 | Initial APPROVAL — 4-layer architecture, PrimeNG abstraction wall, SOLID rules, single-app project structure, LOCKED technology decisions | Director (master session) | Founder approval (LOCKED) |
+| 2026-06-11 | **Founder-approved §7.3 amendment — ADDITIVE as-built sync.** Added "Project Structure (as-built — federated workspace)" (apps/shell + apps/mfe-* 6 remotes + libs/ + the port registry 4200–4206 + the version-pinned staging/prod manifest shape) documenting the Module Federation program (SP00–SP07) as-built topology. Added the `@mesell/*` as-built path-alias block alongside the `@mee/*` design intent. Added this revision history. **No design decisions changed** — the 4-layer architecture, abstraction wall, SOLID rules, and LOCKED technology decisions are unchanged. Pure additive sync per the repo-management master plan §7.3 LOCKED-doc amendment rule. | `meesell-frontend-coordinator` (session `mesell-mfe-cutover-closeout-session-1`) | Founder-approved §7.3 amendment 2026-06-11 |

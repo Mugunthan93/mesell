@@ -19,11 +19,16 @@ substitutions:
   _REPO: "meesell-prod-images"
   _TAG: "latest"
   # Remotes bucket for Option C (GCS + Cloud CDN). Empty by default -> remote publish is
-  # INERT (skipped). Set to e.g. `gs://meesell-remotes-dev` once S5 ratifies + Terraform
-  # provisions the bucket. No new SECRET is needed — the Cloud Build compute SA already has
-  # storage access via module.cloudbuild_permissions; a bucket-scoped objectAdmin grant is
-  # the only IAM add at activation (terraform-owned, NOT this file).
+  # INERT (skipped). SP07 (D44 / C-STAGING-1) layout: `gs://meesell-frontend` with
+  # per-env + version-pinned prefixes `{env}/mfe-<name>/{version}/` (see publish-remotes).
+  # Set to `gs://meesell-frontend` ONLY after the founder cost sign-off (SP07_HOSTING_COST_SHEET.md)
+  # + Terraform provisions the bucket. No new SECRET is needed — the Cloud Build compute SA
+  # already has storage access via module.cloudbuild_permissions; a bucket-scoped objectAdmin
+  # grant is the only IAM add at activation (terraform-owned, NOT this file).
   _REMOTES_BUCKET: ""
+  # Target env prefix for the version-pinned remote layout (staging|prod). Drives the
+  # `{env}` segment. Empty default keeps publish INERT alongside _REMOTES_BUCKET.
+  _REMOTES_ENV: ""
 
 options:
   machineType: E2_MEDIUM
@@ -179,15 +184,22 @@ steps:
   # Cloud CDN at remotes.mesell.xyz — ZERO in-cluster pods (the only resource-safe
   # model on the 2-vCPU dev node, GATE4 Answer 3). They do NOT become images.
   #
-  # READY-NOT-ACTIVE: this step is INERT until `_REMOTES_BUCKET` is set (default ""):
-  #   - S5 ratifies Option C + the per-env bucket layout (DRAFT MF-ENV-1).
-  #   - Terraform provisions `gs://meesell-remotes-dev` (+ CDN + remotes.mesell.xyz LB/cert).
+  # READY-NOT-ACTIVE: this step is INERT until BOTH `_REMOTES_BUCKET` and `_REMOTES_ENV`
+  # are set (default ""):
+  #   - The founder signs off the hosting cost (SP07_HOSTING_COST_SHEET.md, >₹500/mo gate).
+  #   - Terraform provisions `gs://meesell-frontend` (+ CDN + remotes(-staging).mesell.xyz LB/cert).
   #   - The Cloud Build compute SA gets objectAdmin on that bucket (terraform, NOT this file).
-  # When `_REMOTES_BUCKET` is empty the step echoes a skip notice and exits 0 — so today's
-  # builds (api+worker[+shell]) are completely unaffected.
+  # When either is empty the step echoes a skip notice and exits 0 — so today's builds
+  # (api+worker[+shell]) are completely unaffected.
+  #
+  # LAYOUT (SP07 D44 / C-STAGING-1): `{bucket}/{env}/mfe-<name>/{version}/` where {version}
+  # is the EXACT build hash (_TAG = github.sha) — NEVER the literal `latest` (R-SP7-6: the
+  # shell's deployed manifest pins the exact remote build it was tested against; rollback =
+  # re-point the manifest {version} at the prior build, atomic). We do NOT also rsync a
+  # `latest/` alias — that would re-introduce the floating tag the no-`latest` contract forbids.
   #
   # Each remote's production `ng build` output lives at src/frontend/dist/<mfe-*>/browser/.
-  # Adding SP02–SP06 needs NO change here — the for-loop globs every built remote.
+  # All six remotes are globbed — adding/removing a remote needs NO change here.
   # ---------------------------------------------------------------------------
   - id: publish-remotes
     name: gcr.io/cloud-builders/gsutil
@@ -195,17 +207,17 @@ steps:
     args:
       - -c
       - |
-        if [ -z "${_REMOTES_BUCKET}" ]; then
-          echo "Skipping remote publish — _REMOTES_BUCKET unset (Option C bucket not yet provisioned)."
+        if [ -z "${_REMOTES_BUCKET}" ] || [ -z "${_REMOTES_ENV}" ]; then
+          echo "Skipping remote publish — _REMOTES_BUCKET and/or _REMOTES_ENV unset (Option C surface not yet provisioned / cost not signed off)."
           exit 0
         fi
         shopt -s nullglob
         published=0
         for dist in /workspace/src/frontend/dist/mfe-*/browser; do
           remote=$(basename "$(dirname "$dist")")
-          echo "Publishing remote '$remote' -> ${_REMOTES_BUCKET}/${remote}/${_TAG}/"
-          gsutil -m rsync -d -r "$dist" "${_REMOTES_BUCKET}/${remote}/${_TAG}/"
-          gsutil -m rsync -d -r "$dist" "${_REMOTES_BUCKET}/${remote}/latest/"
+          dest="${_REMOTES_BUCKET}/${_REMOTES_ENV}/${remote}/${_TAG}/"
+          echo "Publishing remote '$remote' -> ${dest} (version-pinned, no 'latest' alias per R-SP7-6)"
+          gsutil -m rsync -d -r "$dist" "${dest}"
           published=$((published+1))
         done
         if [ "$published" -eq 0 ]; then
