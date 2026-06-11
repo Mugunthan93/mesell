@@ -4472,3 +4472,33 @@ Next: Lead STEP 3 merge-gate → PR feature/image-precheck/backend → feature/i
 Hand-offs: backend G1+G2 complete; API contract unchanged (router was already mounted + schemas unchanged).
   Frontend can proceed against the existing OpenAPI spec — no contract delta from this slice.
 =========
+
+=== UPDATE: 2026-06-11 — image-precheck BACKEND slice MERGE-GATE PASS (STEP 3) ===
+Phase: V1 Feature 5 (Image Pre-check) — backend slice (flag surfaces only)
+Session: mesell-image-precheck-backend-session-1
+Board sweep: image-precheck row moved Active→Recently merged (MERGED-to-integration + founder-gate PR #118 in Notes). microservices-export row unchanged (IN PROGRESS, last touched 2026-06-10 — 1 day, not stale). No rows untouched 7+ days. Inter-lead requests open: none added this session (handoffs are master-relayed: AI-track precheck_smoke + infra ConfigMap injection — see below).
+
+GATE VERDICT: PASS
+- G1 PASS — FEATURE_IMAGE_PRECHECK_ENABLED added to shared/config.py (dev=True / staging=False until 3 gates pass per D2). Ruff clean.
+- G2 PASS — router.py flag gates per D2 contract: POST→404 when OFF (guard BEFORE idx validation, line 109<119); GET→ImagesListResponse(images=[]) 200 when OFF (read-only, BEFORE service call); request-time settings read inside handler (smart-picker category/router.py:117 pattern). 4 flag-gate tests + ruff clean.
+- G3 DONE — V1_FEATURE_SPEC §F5 6→4 images / 60→40 MB (line 198/229), lead-direct per D1. §F5 doc-level lock ("V1 Locked") is NOT a §7.3 founder-LOCKED architecture-section lock — lead amendment authority confirmed and exercised.
+- DATABASE VERIFY PASS — no model/migration changes on the slice; single alembic head f31c75438e61 (935e55b4852c → a1b2c3d4e5f6 → f31c75438e61).
+
+TEST/RUFF RE-RUN (lead, Py3.11 master venv /Users/.../backend/.venv, isolation run):
+- tests/modules/image/ : 14 passed (4 new flag-gate + 7 service-unit + 3 integration). 0.06s flag-gate / 1.89s module.
+- ruff check --line-length 100 on router.py + config.py + test_flag_gate.py: All checks passed.
+
+MERGE FLOW (Model C):
+- Leaf feature/image-precheck cut from origin/develop @ 13321759; squash-merge of 5-commit backend slice → leaf squash 7bd2120 (gate decision in commit body).
+- D/F handled: local + origin backend sub-ref deleted (gh api DELETE) BEFORE leaf push (origin D/F constraint forces delete-before-push, reverse of literal dispatch order; slice content verified preserved in leaf 6-file diff before deletion). Stale local remote-tracking ref pruned.
+- FOUNDER GATE PR #118 OPEN (https://github.com/Mugunthan93/mesell/pull/118) feature/image-precheck → develop — LEFT OPEN (founder's gate per D1; lead does NOT merge).
+
+Done: G1/G2 review PASS, G3 authored+committed, DB-verify, squash-merge to leaf, founder-gate PR opened, board + STATUS records.
+In progress: none (slice complete pending founder merge of #118).
+Blockers: none.
+Next: founder reviews/merges #118 → develop.
+Hand-offs:
+- AI track (master-relay to meesell-ai-coordinator): precheck_smoke eval fixtures absent on develop — owned by meesell-image-precheck-builder, separate dispatch. NOT a backend blocker.
+- Infra (master-relay to meesell-infra-builder): FEATURE_IMAGE_PRECHECK_ENABLED into k8s ConfigMaps dev=true / staging=false.
+Founder queue: (1) merge #118; (2) §F5 doc-cohesion sweep — lines 379+588 still "6 images" (Feature-4 generation-timing criterion + launch-readiness checklist), outside D1's named line scope, left unamended deliberately.
+=========
