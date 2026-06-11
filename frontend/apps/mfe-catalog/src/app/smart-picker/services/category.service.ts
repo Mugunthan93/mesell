@@ -2,68 +2,77 @@ import { Injectable } from '@angular/core';
 import { Observable, of } from 'rxjs';
 import { delay } from 'rxjs/operators';
 
-export interface CategorySuggestion {
-  id: string;
-  path: string;
-  confidence: number;
-  commission_pct: number;
-}
+import type { CategorySuggestion, SuggestResponse } from '../smart-picker.model';
 
-export interface CreateProductRequest {
-  category_id: string;
-}
-
-export interface CreateProductResponse {
-  id: string;
-  category_id: string;
-  status: 'draft';
-}
-
-const SIMULATED_SUGGESTIONS: CategorySuggestion[] = [
-  {
-    id: 'cat-kurti-uuid',
-    path: 'Fashion > Women > Ethnic > Kurti',
-    confidence: 94,
-    commission_pct: 5,
-  },
-  {
-    id: 'cat-kurta-set-uuid',
-    path: 'Fashion > Women > Ethnic > Kurta Set',
-    confidence: 71,
-    commission_pct: 6,
-  },
-  {
-    id: 'cat-tunic-uuid',
-    path: 'Fashion > Women > Tops > Tunic',
-    confidence: 52,
-    commission_pct: 7,
-  },
-];
+// Simulated response using §9.E-locked shapes.
+// service-builder (Phase B) replaces the of(...) bodies with real HttpClient calls.
+const SIMULATED_RESPONSE: SuggestResponse = {
+  suggestions: [
+    {
+      category_id: 'cat-kurti-uuid',
+      super_id: 'super-fashion-uuid',
+      super_name: 'Fashion',
+      path: 'Fashion > Women > Ethnic > Kurti',
+      leaf_name: 'Kurti',
+      confidence: 0.94,
+      reasons: ['Top seller in Fashion Women', 'Mirror work matches Ethnic Kurti attributes'],
+    },
+    {
+      category_id: 'cat-kurta-set-uuid',
+      super_id: 'super-fashion-uuid',
+      super_name: 'Fashion',
+      path: 'Fashion > Women > Ethnic > Kurta Set',
+      leaf_name: 'Kurta Set',
+      confidence: 0.71,
+      reasons: ['Matching top and bottom set typically Kurta Set category'],
+    },
+    {
+      category_id: 'cat-tunic-uuid',
+      super_id: 'super-fashion-uuid',
+      super_name: 'Fashion',
+      path: 'Fashion > Women > Tops > Tunic',
+      leaf_name: 'Tunic',
+      confidence: 0.52,
+      reasons: ['Single top garment alternative'],
+    },
+  ],
+  fallback_offered: false,
+};
 
 /**
- * Feature-scoped service — no providedIn.
- * Must be listed in the route's providers[] array.
- * Wave 5: all responses are simulated; Wave 6 will wire real HTTP via ApiClient.
+ * CategoryService — feature-scoped service. No providedIn.
+ * Provided via the SmartPickerComponent providers:[CategoryService] array.
+ *
+ * Phase A (this commit): D4 rename from SmartPickerApiService. Simulated bodies preserved.
+ * Phase B (service-builder): replaces of(SIMULATED_RESPONSE) with real HttpClient.get calls.
+ *
+ * Method signatures match §9.E SuggestResponse — do NOT change signatures.
  */
 @Injectable()
-export class SmartPickerApiService {
+export class CategoryService {
   /**
    * GET /api/v1/categories/suggest?q=<description>
-   * Simulated: returns SIMULATED_SUGGESTIONS after 1200ms.
+   * Returns SuggestResponse with up to 5 CategorySuggestion items (§9.E).
+   * Simulated: returns SIMULATED_RESPONSE after 1200ms.
    */
-  suggest(_description: string): Observable<CategorySuggestion[]> {
-    return of(SIMULATED_SUGGESTIONS).pipe(delay(1200));
+  suggest(_description: string): Observable<SuggestResponse> {
+    return of(SIMULATED_RESPONSE).pipe(delay(1200));
   }
 
   /**
-   * POST /api/v1/products
-   * Simulated: returns a draft product after 500ms.
+   * POST /api/v1/catalogs — creates a catalog with the picked category, then navigates.
+   * Returns an object with the new catalog id.
+   * Simulated: returns a draft catalog after 500ms.
    */
-  createProduct(request: CreateProductRequest): Observable<CreateProductResponse> {
-    return of({
-      id: 'draft-' + Date.now(),
-      category_id: request.category_id,
-      status: 'draft' as const,
-    }).pipe(delay(500));
+  selectCategory(_categoryId: string): Observable<{ id: string }> {
+    return of({ id: 'draft-catalog-' + Date.now() }).pipe(delay(500));
+  }
+
+  /**
+   * Navigate to the manual category browse page (/categories/browse).
+   * Phase B: service-builder replaces this with Router.navigate(['/categories/browse']).
+   */
+  browseRedirect(): void {
+    // Phase B: Router.navigate(['/categories/browse'])
   }
 }

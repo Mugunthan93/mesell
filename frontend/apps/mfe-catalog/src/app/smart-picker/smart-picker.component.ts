@@ -1,122 +1,84 @@
+/**
+ * SmartPickerComponent — /catalogs/new
+ *
+ * Standalone, OnPush page component for the Smart Category Picker (V1 Feature 2).
+ *
+ * Flow:
+ *  - Seller types a product description (10-500 chars).
+ *  - On valueChanges, after 400 ms debounce + distinctUntilChanged + valid filter,
+ *    CategoryService.suggest(description) is called.
+ *  - Top-3 of the returned suggestions (max 5) are rendered via CategoryCardComponent.
+ *  - fallback_offered=true and empty suggestions -> EmptyStateComponent + "Browse all categories".
+ *  - fallback_offered=true and non-empty -> 3 cards + secondary "Browse if none match" link.
+ *  - "Use this category" on a card -> CategoryService.selectCategory(category_id).
+ *
+ * D4 rename: folder was catalog-new/, class was CatalogNewComponent. Renamed per FEATURE_PLAN §D4.
+ * Contract fix: §9.E-locked interfaces (no commission_pct; confidence 0-1 float). Port from e97c4f5.
+ * MeeTreeSelect/SIMULATED_TREE removed per D1 (browse routes to /categories/browse, not inline tree).
+ */
 import {
   ChangeDetectionStrategy,
   Component,
-  computed,
   DestroyRef,
   inject,
   signal,
   OnInit,
+  computed,
 } from '@angular/core';
 import {
   FormBuilder,
   ReactiveFormsModule,
   Validators,
 } from '@angular/forms';
-import { Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { of } from 'rxjs';
-import { delay } from 'rxjs/operators';
+import {
+  debounceTime,
+  distinctUntilChanged,
+  filter,
+  switchMap,
+} from 'rxjs/operators';
 
 import {
-  MeeButtonComponent,
-  MeeCardComponent,
-  MeeProgressBarComponent,
   MeeTextareaComponent,
-  MeeTreeSelectComponent,
+  MeeSkeletonComponent,
 } from '@mesell/ui-kit';
-import type { MeeTreeNode } from '@mesell/ui-kit';
-import { PageHeaderComponent, LoadingSkeletonComponent } from '@mesell/composites';
-
 import {
-  SmartPickerApiService,
-  CategorySuggestion,
-} from './services/smart-picker-api.service';
+  PageHeaderComponent,
+  EmptyStateComponent,
+} from '@mesell/composites';
 
-// Simulated 2-level category tree for manual fallback browse
-const SIMULATED_TREE: MeeTreeNode[] = [
-  {
-    label: 'Fashion',
-    value: null,
-    children: [
-      {
-        label: 'Women',
-        value: null,
-        children: [
-          { label: 'Kurti', value: 'cat-kurti-uuid' },
-          { label: 'Kurta Set', value: 'cat-kurta-set-uuid' },
-        ],
-      },
-      {
-        label: 'Men',
-        value: null,
-        children: [
-          { label: 'Kurta', value: 'cat-kurta-men-uuid' },
-          { label: 'Shirt', value: 'cat-shirt-uuid' },
-        ],
-      },
-    ],
-  },
-  {
-    label: 'Home & Kitchen',
-    value: null,
-    children: [
-      {
-        label: 'Bedding',
-        value: null,
-        children: [
-          { label: 'Bedsheets', value: 'cat-bedsheet-uuid' },
-          { label: 'Pillow Covers', value: 'cat-pillow-uuid' },
-        ],
-      },
-      {
-        label: 'Decor',
-        value: null,
-        children: [
-          { label: 'Wall Art', value: 'cat-wallart-uuid' },
-          { label: 'Candles', value: 'cat-candles-uuid' },
-        ],
-      },
-    ],
-  },
-  {
-    label: 'Electronics',
-    value: null,
-    children: [
-      {
-        label: 'Accessories',
-        value: null,
-        children: [
-          { label: 'Phone Cases', value: 'cat-phonecase-uuid' },
-          { label: 'Chargers', value: 'cat-charger-uuid' },
-        ],
-      },
-    ],
-  },
-];
+import { CategoryService } from './services/category.service';
+import { CategoryCardComponent } from './category-card.component';
+import type { CategorySuggestion, SuggestResponse } from './smart-picker.model';
 
 @Component({
-  selector: 'app-catalog-new',
+  selector: 'app-smart-picker',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     ReactiveFormsModule,
-    MeeButtonComponent,
-    MeeCardComponent,
-    MeeProgressBarComponent,
     MeeTextareaComponent,
-    MeeTreeSelectComponent,
+    MeeSkeletonComponent,
     PageHeaderComponent,
-    LoadingSkeletonComponent,
+    EmptyStateComponent,
+    CategoryCardComponent,
   ],
-  providers: [SmartPickerApiService],
+  providers: [CategoryService],
   template: `
     <div class="p-4 sm:p-6 max-w-4xl mx-auto">
 
       <!-- Page title -->
-      <mee-page-header [title]="'New Catalog'" />
+      <mee-page-header
+        [title]="'New Catalog'"
+        [subtitle]="'Describe your product and we will suggest the best category.'"
+      />
 
       <!-- Description form -->
-      <form [formGroup]="form" (ngSubmit)="onSuggest()" class="mt-6">
+      <form
+        [formGroup]="form"
+        class="mt-6"
+        aria-label="Product description form"
+      >
         <mee-textarea
           formControlName="description"
           [label]="'Describe your product'"
@@ -125,219 +87,149 @@ const SIMULATED_TREE: MeeTreeNode[] = [
           [required]="true"
           [error]="descError()"
         />
-
-        <div class="mt-4">
-          <mee-button
-            [label]="'Suggest categories'"
-            [loading]="suggesting()"
-            [disabled]="form.invalid || suggesting()"
-            [fullWidth]="true"
-            (clicked)="onSuggest()"
-          />
-        </div>
+        <p
+          class="mt-1 text-xs"
+          style="color: var(--mee-color-on-surface-muted);"
+        >
+          Between 10 and 500 characters.
+        </p>
       </form>
 
-      <!-- Error message -->
-      @if (errorMessage()) {
+      <!-- Loading skeletons while suggestion in flight -->
+      @if (loading()) {
         <div
-          role="alert"
-          class="mt-3 text-sm px-3 py-2 rounded"
-          style="color: var(--mee-color-error); background: color-mix(in srgb, var(--mee-color-error) 8%, transparent);"
+          class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3"
+          aria-busy="true"
+          aria-label="Loading category suggestions"
         >
-          {{ errorMessage() }}
+          <mee-skeleton variant="card" />
+          <mee-skeleton variant="card" />
+          <mee-skeleton variant="card" />
         </div>
       }
 
-      <!-- Divider + manual fallback toggle -->
-      <div class="mt-6 flex items-center gap-3">
-        <div class="flex-1 h-px" style="background: var(--mee-color-outline);"></div>
-        <span class="text-sm" style="color: var(--mee-color-on-surface-muted);">OR browse manually</span>
-        <div class="flex-1 h-px" style="background: var(--mee-color-outline);"></div>
-      </div>
-
-      <div class="mt-3">
-        @if (!showFallback()) {
-          <button
-            type="button"
-            class="text-sm underline min-h-[44px] px-2"
-            style="color: var(--mee-color-primary); cursor: pointer; background: none; border: none;"
-            (click)="onShowFallback()"
-          >
-            Browse all categories
-          </button>
-        } @else {
-          <mee-tree-select
-            [nodes]="categoryTree()"
-            [placeholder]="'Select category'"
-            [loading]="treeLoading()"
-            (value_change)="onTreePick($event)"
-          />
-        }
-      </div>
-
-      <!-- Loading state (skeleton cards while suggesting) -->
-      @if (suggesting()) {
-        <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <mee-loading-skeleton variant="card" />
-          <mee-loading-skeleton variant="card" />
-          <mee-loading-skeleton variant="card" />
-        </div>
-      }
-
-      <!-- Suggestion cards -->
-      @if (!suggesting() && suggestions().length > 0) {
-        <div class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-          @for (suggestion of suggestions(); track suggestion.id) {
-            <mee-card>
-              <div class="flex flex-col gap-3 p-1">
-                <p
-                  class="text-sm font-semibold leading-snug"
-                  style="color: var(--mee-color-on-surface);"
-                >
-                  {{ suggestion.path }}
-                </p>
-
-                <p class="text-xs" style="color: var(--mee-color-on-surface-muted);">
-                  Commission: {{ suggestion.commission_pct }}&nbsp;%
-                </p>
-
-                <mee-progress-bar
-                  [value]="suggestion.confidence"
-                  [label]="'Confidence'"
-                  [show_value]="true"
-                />
-
-                <div class="flex justify-end">
-                  <mee-button
-                    [label]="'Pick this'"
-                    variant="secondary"
-                    size="sm"
-                    [loading]="picking()"
-                    [disabled]="picking()"
-                    (clicked)="onPick(suggestion)"
-                  />
-                </div>
-              </div>
-            </mee-card>
+      <!-- Top-3 suggestion cards -->
+      @if (!loading() && suggestions().length > 0) {
+        <div
+          class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3"
+          role="list"
+          aria-label="Category suggestions"
+        >
+          @for (s of suggestions().slice(0, 3); track s.category_id) {
+            <app-category-card
+              [suggestion]="s"
+              (picked)="onPicked($event)"
+            />
           }
         </div>
+
+        <!-- Secondary fallback link (shown when fallback_offered=true and there ARE results) -->
+        @if (fallbackOffered()) {
+          <div class="mt-4 text-center">
+            <button
+              type="button"
+              class="text-sm underline min-h-[44px] px-2"
+              style="color: var(--mee-color-on-surface-muted); background: none; border: none; cursor: pointer;"
+              (click)="onBrowse()"
+              aria-label="Browse all categories if none of the suggestions match"
+            >
+              Browse if none match
+            </button>
+          </div>
+        }
       }
 
-      <!-- Empty results (after suggest returned nothing) -->
-      @if (!suggesting() && hasSearched() && suggestions().length === 0) {
-        <div
-          class="mt-6 p-4 rounded text-sm text-center"
-          style="background: color-mix(in srgb, var(--mee-color-outline) 30%, transparent); color: var(--mee-color-on-surface-muted);"
-        >
-          No matches found — try a different description or browse manually above.
+      <!-- Empty state: fallback_offered=true AND no suggestions -->
+      @if (!loading() && suggestions().length === 0 && fallbackOffered()) {
+        <div class="mt-6">
+          <mee-empty-state
+            icon="category"
+            message="No automatic suggestions found. Browse the full category list manually."
+            cta_label="Browse all categories"
+            (cta_click)="onBrowse()"
+          />
         </div>
       }
 
     </div>
   `,
 })
-export class CatalogNewComponent implements OnInit {
+export class SmartPickerComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
-  private readonly router = inject(Router);
-  private readonly api = inject(SmartPickerApiService);
+  private readonly categoryService = inject(CategoryService);
   private readonly destroyRef = inject(DestroyRef);
 
   // ── Form ──────────────────────────────────────────────────────────
   readonly form = this.fb.group({
-    description: ['', [Validators.required, Validators.minLength(10)]],
+    description: [
+      '',
+      [
+        Validators.required,
+        Validators.minLength(10),
+        Validators.maxLength(500),
+      ],
+    ],
   });
 
-  // ── Local state signals ────────────────────────────────────────────
-  readonly suggesting   = signal(false);
-  readonly suggestions  = signal<CategorySuggestion[]>([]);
-  readonly picking      = signal(false);
-  readonly showFallback = signal(false);
-  readonly errorMessage = signal<string | null>(null);
-  readonly treeLoading  = signal(true);
-  readonly categoryTree = signal<MeeTreeNode[]>([]);
-  readonly hasSearched  = signal(false);
+  // ── Signals ───────────────────────────────────────────────────────
+  readonly loading          = signal(false);
+  readonly suggestions      = signal<CategorySuggestion[]>([]);
+  readonly fallbackOffered  = signal(false);
 
-  // ── Computed ───────────────────────────────────────────────────────
+  // ── Computed error for template binding ───────────────────────────
   readonly descError = computed<string | undefined>(() => {
     const ctrl = this.form.get('description');
     if (!ctrl || !ctrl.touched || ctrl.valid) return undefined;
     if (ctrl.hasError('required')) return 'Please describe your product.';
     if (ctrl.hasError('minlength')) return 'Please enter at least 10 characters.';
+    if (ctrl.hasError('maxlength')) return 'Description must be 500 characters or fewer.';
     return undefined;
   });
 
   // ── Lifecycle ──────────────────────────────────────────────────────
   ngOnInit(): void {
-    // Pre-load tree stub after 600ms so it is ready when user opens fallback
-    of(SIMULATED_TREE)
-      .pipe(delay(600), takeUntilDestroyed(this.destroyRef))
-      .subscribe(tree => {
-        this.categoryTree.set(tree);
-        this.treeLoading.set(false);
+    const descCtrl = this.form.get('description')!;
+
+    descCtrl.valueChanges
+      .pipe(
+        debounceTime(400),
+        distinctUntilChanged(),
+        filter(() => descCtrl.valid),
+        switchMap((value) => {
+          const q = value ?? '';
+          this.loading.set(true);
+          this.suggestions.set([]);
+          this.fallbackOffered.set(false);
+          return this.categoryService.suggest(q);
+        }),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe({
+        next: (response: SuggestResponse) => {
+          this.suggestions.set(response.suggestions);
+          this.fallbackOffered.set(response.fallback_offered);
+          this.loading.set(false);
+        },
+        error: () => {
+          this.loading.set(false);
+          this.fallbackOffered.set(true);
+        },
       });
   }
 
   // ── Handlers ───────────────────────────────────────────────────────
-  onSuggest(): void {
-    if (this.form.invalid || this.suggesting()) return;
 
-    const description = this.form.get('description')?.value ?? '';
-    this.suggesting.set(true);
-    this.errorMessage.set(null);
-    this.hasSearched.set(false);
-
-    this.api.suggest(description).subscribe({
-      next: (results) => {
-        this.suggestions.set(results);
-        this.suggesting.set(false);
-        this.hasSearched.set(true);
-        if (results.length === 0) {
-          this.showFallback.set(true);
-        }
-      },
+  /** Called when a category card emits 'picked' with a category_id. */
+  onPicked(categoryId: string): void {
+    this.categoryService.selectCategory(categoryId).subscribe({
       error: () => {
-        this.suggesting.set(false);
-        this.hasSearched.set(true);
-        this.errorMessage.set('Could not fetch suggestions. Please try again.');
+        this.loading.set(false);
       },
     });
   }
 
-  onPick(suggestion: CategorySuggestion): void {
-    if (this.picking()) return;
-    this.picking.set(true);
-    this.errorMessage.set(null);
-
-    this.api.createProduct({ category_id: suggestion.id }).subscribe({
-      next: (product) => {
-        this.picking.set(false);
-        this.router.navigate(['/catalogs', product.id, 'edit']);
-      },
-      error: () => {
-        this.picking.set(false);
-        this.errorMessage.set('Could not create catalog. Please try again.');
-      },
-    });
-  }
-
-  onShowFallback(): void {
-    this.showFallback.set(true);
-  }
-
-  onTreePick(node: MeeTreeNode): void {
-    if (!node.value) return; // ignore group nodes with null value
-    this.picking.set(true);
-    this.errorMessage.set(null);
-
-    this.api.createProduct({ category_id: node.value as string }).subscribe({
-      next: (product) => {
-        this.picking.set(false);
-        this.router.navigate(['/catalogs', product.id, 'edit']);
-      },
-      error: () => {
-        this.picking.set(false);
-        this.errorMessage.set('Could not create catalog. Please try again.');
-      },
-    });
+  /** Delegate browse navigation to the service. */
+  onBrowse(): void {
+    this.categoryService.browseRedirect();
   }
 }

@@ -2,31 +2,55 @@
  * smart-picker.model.ts
  *
  * Pure TypeScript — NO Angular decorators.
- * All business logic extracted here so Vitest can test it
- * without triggering the Angular 21 + PrimeNG TestBed crash
- * (Cannot read properties of null (reading 'ngModule')).
  *
- * Wave 5 — F7 Smart Picker
+ * Interfaces are field-for-field with backend §9.E (LOCKED 2026-06-10).
+ * Do NOT add commission_pct — it is NOT in the backend contract.
+ * confidence is a 0.0-1.0 float — do NOT convert to 0-100 here.
+ *
+ * Pure helper functions are testable with Vitest without Angular TestBed.
  */
 
-// ── Types ────────────────────────────────────────────────────────────────────
+// ── Backend §9.E interfaces (LOCKED — field-for-field match) ─────────────────
 
-export interface CategorySuggestionModel {
-  id: string;
+/**
+ * A single category suggestion returned by GET /api/v1/categories/suggest.
+ * Matches backend CategorySuggestion schema exactly (§9.E).
+ * NOTE: commission_pct is NOT in this contract — omitted per lead ruling 2026-06-11.
+ */
+export interface CategorySuggestion {
+  /** UUID of the leaf category. */
+  category_id: string;
+  /** UUID of the super-category (top-level Meesho category group). */
+  super_id: string;
+  /** Human-readable name of the super-category. */
+  super_name: string;
+  /** Human-readable breadcrumb path, e.g. "Fashion > Women > Ethnic > Kurti". */
   path: string;
+  /** Human-readable name of the leaf category node. */
+  leaf_name: string;
+  /**
+   * AI confidence in this suggestion, 0.0-1.0.
+   * Scale x100 ONLY at the display layer (mee-progress-bar value attribute).
+   */
   confidence: number;
-  commission_pct: number;
+  /** Short human-readable rationale strings from the AI ranking step. */
+  reasons: string[];
 }
 
-export interface CreateProductRequestModel {
-  category_id: string;
+/**
+ * Full response from GET /api/v1/categories/suggest.
+ * Matches backend SuggestResponse schema exactly (§9.E).
+ * suggestions.length is always 0..5.
+ * fallback_offered=true means the AI budget cap was hit or BudgetExceededError occurred.
+ */
+export interface SuggestResponse {
+  /** Up to 5 category suggestions. Frontend renders top 3. */
+  suggestions: CategorySuggestion[];
+  /** When true: AI could not fully respond — surface a manual-browse CTA. */
+  fallback_offered: boolean;
 }
 
-export interface CreateProductResponseModel {
-  id: string;
-  category_id: string;
-  status: 'draft';
-}
+// ── Derived state type ─────────────────────────────────────────────────────────
 
 export type PickerState =
   | 'idle'
@@ -36,34 +60,11 @@ export type PickerState =
   | 'picking'
   | 'error';
 
-// ── Simulated data (V1 spec §3 step 5 canonical kurti example) ───────────────
-
-export const SIMULATED_SUGGESTIONS: CategorySuggestionModel[] = [
-  {
-    id: 'cat-kurti-uuid',
-    path: 'Fashion > Women > Ethnic > Kurti',
-    confidence: 94,
-    commission_pct: 5,
-  },
-  {
-    id: 'cat-kurta-set-uuid',
-    path: 'Fashion > Women > Ethnic > Kurta Set',
-    confidence: 71,
-    commission_pct: 6,
-  },
-  {
-    id: 'cat-tunic-uuid',
-    path: 'Fashion > Women > Tops > Tunic',
-    confidence: 52,
-    commission_pct: 7,
-  },
-];
-
-// ── Pure functions ───────────────────────────────────────────────────────────
+// ── Pure functions ─────────────────────────────────────────────────────────────
 
 /**
  * Validate description input for Smart Picker.
- * Returns an error string or undefined if valid.
+ * Returns an error string or undefined if valid/not-yet-touched.
  */
 export function validateDescription(
   value: string | null | undefined,
@@ -72,32 +73,20 @@ export function validateDescription(
   if (!touched) return undefined;
   if (!value || value.trim().length === 0) return 'Please describe your product.';
   if (value.trim().length < 10) return 'Please enter at least 10 characters.';
+  if (value.trim().length > 500) return 'Description must be 500 characters or fewer.';
   return undefined;
 }
 
 /**
- * Determine whether the suggest button should be disabled.
- * Mirrors the template binding: form.invalid || suggesting.
- */
-export function isSuggestDisabled(
-  descriptionValue: string | null | undefined,
-  suggesting: boolean,
-): boolean {
-  if (suggesting) return true;
-  if (!descriptionValue) return true;
-  if (descriptionValue.trim().length < 10) return true;
-  return false;
-}
-
-/**
- * Derive picker state from current signal values.
+ * Determine picker UI state from current signal snapshot.
  * Centralises the state-machine logic for testability.
  */
 export function derivePickerState(opts: {
   suggesting: boolean;
   picking: boolean;
-  hasSearched: boolean;
   suggestionsCount: number;
+  fallbackOffered: boolean;
+  hasSearched: boolean;
   errorMessage: string | null;
 }): PickerState {
   if (opts.errorMessage) return 'error';
@@ -109,32 +98,28 @@ export function derivePickerState(opts: {
 }
 
 /**
- * Sort suggestions by confidence descending.
+ * Sort suggestions by confidence descending (0.0-1.0 floats).
  * The API should return them sorted but this enforces it client-side.
+ * Does NOT mutate the input array.
  */
 export function sortByConfidence(
-  suggestions: CategorySuggestionModel[],
-): CategorySuggestionModel[] {
+  suggestions: CategorySuggestion[],
+): CategorySuggestion[] {
   return [...suggestions].sort((a, b) => b.confidence - a.confidence);
 }
 
 /**
- * Build the catalog edit route segments from a product ID.
- * Centralises navigation logic so the component just calls router.navigate(buildEditRoute(id)).
+ * Build the catalog edit route segments from a catalog ID.
+ * Used by CategoryService.selectCategory after the catalog is created.
  */
-export function buildEditRoute(productId: string): [string, string, string] {
-  return ['/catalogs', productId, 'edit'];
+export function buildEditRoute(catalogId: string): [string, string, string] {
+  return ['/catalogs', catalogId, 'edit'];
 }
 
 /**
- * Check if a category suggestion is the highest-confidence one.
- * Used to apply visual emphasis to the top card.
+ * Return only the top N suggestions (default 3) from a sorted list.
+ * Frontend renders at most 3 cards regardless of how many the API returned.
  */
-export function isTopSuggestion(
-  suggestion: CategorySuggestionModel,
-  allSuggestions: CategorySuggestionModel[],
-): boolean {
-  if (allSuggestions.length === 0) return false;
-  const top = [...allSuggestions].sort((a, b) => b.confidence - a.confidence)[0];
-  return suggestion.id === top.id;
+export function topN(suggestions: CategorySuggestion[], n = 3): CategorySuggestion[] {
+  return suggestions.slice(0, n);
 }
