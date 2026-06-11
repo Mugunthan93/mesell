@@ -7,19 +7,31 @@ import {
 } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { AuthLayoutComponent } from '@mesell/composites';
+import { catchError, EMPTY } from 'rxjs';
+import { HttpErrorResponse } from '@angular/common/http';
+import { AuthLayoutComponent, MeeAlertBannerComponent } from '@mesell/composites';
 import { MeeInputComponent } from '@mesell/ui-kit/input/input.component';
 import { MeeButtonComponent } from '@mesell/ui-kit/button/button.component';
+import { AuthApiService } from '@mesell/core';
 
 @Component({
   selector: 'mee-signup',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AuthLayoutComponent, ReactiveFormsModule, RouterLink, MeeInputComponent, MeeButtonComponent],
+  imports: [AuthLayoutComponent, ReactiveFormsModule, RouterLink, MeeInputComponent, MeeButtonComponent, MeeAlertBannerComponent],
   template: `
     <mee-auth-layout>
       <h1>Create your account</h1>
       <p class="subtitle">Start selling smarter</p>
+
+      <!-- Contextual error banner — offline state handled globally by AuthLayoutComponent -->
+      @if (errorMessage()) {
+        <mee-alert-banner
+          variant="error"
+          [message]="errorMessage()!"
+          class="banner-spacing"
+        />
+      }
 
       <form [formGroup]="form" (ngSubmit)="onSubmit()">
         <mee-input
@@ -42,7 +54,7 @@ import { MeeButtonComponent } from '@mesell/ui-kit/button/button.component';
         <mee-button
           [label]="'Create Account'"
           [loading]="loading()"
-          [disabled]="form.invalid"
+          [disabled]="form.invalid || loading()"
           [fullWidth]="true"
           (clicked)="onSubmit()"
         />
@@ -78,13 +90,28 @@ import { MeeButtonComponent } from '@mesell/ui-kit/button/button.component';
       cursor: pointer;
       text-decoration: none;
     }
+    /* Ensure minimum 44px tap target on the footer link */
+    .footer-text a {
+      display: inline-block;
+      min-height: 44px;
+      line-height: 44px;
+    }
     form > * + * { margin-top: 16px; }
+    /* Spacing below banner before the form */
+    .banner-spacing { margin-bottom: 16px; }
+
+    /* 360px — tighten heading so card fits */
+    @media (max-width: 400px) {
+      h1 { font-size: 20px; }
+    }
   `],
 })
 export class SignupComponent {
-  private readonly router = inject(Router);
+  private readonly router   = inject(Router);
+  private readonly authApi  = inject(AuthApiService);
 
-  readonly loading = signal(false);
+  readonly loading      = signal(false);
+  readonly errorMessage = signal<string | null>(null);
 
   readonly form = new FormGroup({
     name: new FormControl('', [
@@ -111,11 +138,33 @@ export class SignupComponent {
   );
 
   onSubmit(): void {
-    if (this.form.invalid) return;
+    if (this.form.invalid || this.loading()) return;
+    this.errorMessage.set(null);
     this.loading.set(true);
-    setTimeout(() => {
-      this.loading.set(false);
-      this.router.navigate(['/otp-verify']);
-    }, 1500);
+
+    // Normalise: form holds 10-digit raw value; backend requires E.164 (+91)
+    const raw   = this.form.get('phone')!.value ?? '';
+    const phone = '+91' + raw;
+
+    // V1: signup uses the same OTP send endpoint as login (no separate signup endpoint)
+    this.authApi.sendOtp(phone)
+      .pipe(
+        catchError((err: HttpErrorResponse) => {
+          this.loading.set(false);
+          if (err.status === 429) {
+            this.errorMessage.set('Too many attempts. Please try again later.');
+          } else if (err.status === 400) {
+            this.errorMessage.set('Invalid phone number. Please check and retry.');
+          } else {
+            this.errorMessage.set('Something went wrong. Please try again.');
+          }
+          return EMPTY;
+        }),
+      )
+      .subscribe(() => {
+        this.loading.set(false);
+        // Hand off phone via Router state so otp-verify can pre-fill/normalise
+        this.router.navigate(['/otp-verify'], { state: { phone } });
+      });
   }
 }

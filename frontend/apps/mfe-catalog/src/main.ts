@@ -15,10 +15,12 @@
 import { bootstrapApplication } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
-import { provideHttpClient, withFetch } from '@angular/common/http';
+import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
 
 import { CatalogListComponent } from './app/catalog-list.component';
 import { CATALOG_ROUTES } from './app/catalog.routes';
+
+import { jwtInterceptor, refreshInterceptor, errorInterceptor } from '@mesell/core';
 
 bootstrapApplication(CatalogListComponent, {
   providers: [
@@ -28,7 +30,12 @@ bootstrapApplication(CatalogListComponent, {
     // In federation the shell injector (app.config.ts) provides HttpClient;
     // this entry is the fallback for the remote's own bootstrap context.
     // withFetch() = Fetch API backend (Angular 18+).
-    // NO interceptors this slice — manual Bearer in CategoryService.authHeaders().
-    provideHttpClient(withFetch()),
+    // Wave 6 Wave A: interceptor chain matches shell (jwt → refresh → error).
+    // NOTE: in federated mode the shell injector provides HttpClient; this
+    // registration is for dev-serve standalone parity (proven #101 ruling).
+    provideHttpClient(
+      withFetch(),
+      withInterceptors([jwtInterceptor, refreshInterceptor, errorInterceptor]),
+    ),
   ],
 }).catch((err) => console.error(err));

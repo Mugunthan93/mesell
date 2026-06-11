@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpHeaders, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, EMPTY, of } from 'rxjs';
 import { catchError, tap } from 'rxjs/operators';
 import { Router } from '@angular/router';
@@ -11,14 +11,10 @@ import type { SuggestResponse } from '../smart-picker.model';
  * CategoryService — feature-scoped (no providedIn).
  * Must be listed in the SmartPickerComponent providers[] array.
  *
- * ## HTTP wiring
- * Uses HttpClient directly (no global JWT interceptor exists in V1 — Wave 6 gap).
- * Bearer token is attached manually from AuthService.getToken().
- *
- * Migration note: when the global JWT interceptor ships (frontend/src/app/core/interceptors/
- * auth.interceptor.ts — deferred to Wave 7), add withInterceptors([authInterceptor]) to
- * provideHttpClient() in app.config.ts AND apps/mfe-catalog/src/main.ts, then remove the
- * authHeaders() helper and the per-request { headers } option from this service.
+ * ## HTTP wiring (Wave 6 Wave A)
+ * Uses HttpClient directly. Bearer token is now attached globally by jwtInterceptor
+ * (registered in app.config.ts + all 6 remote main.ts). The manual authHeaders() helper
+ * has been REMOVED — it is no longer necessary.
  *
  * ## Error surface decision (lead ruling — mesell-smart-picker-port-frontend-session-2)
  * NO root MeeToastService is wired to services in this slice. MeeToastService lives in
@@ -26,11 +22,12 @@ import type { SuggestResponse } from '../smart-picker.model';
  * through the returned fallback shape only (SOLID DIP).
  *
  * ## Error matrix
- * - 401 → AuthService.logout() + return EMPTY (session invalidated)
+ * - 401 → AuthService.logout() + return EMPTY (session invalidated; refreshInterceptor
+ *         handles the silent-refresh path; this only fires when refresh also failed)
  * - 402 → return of({ suggestions: [], fallback_offered: true }) (plan-guard quota exceeded)
  * - 400 → return EMPTY (invalid q param — caller's validation responsibility)
  * - 404 → return of({ suggestions: [], fallback_offered: true }) (FEATURE_SMART_PICKER_ENABLED=false)
- * - 5xx  → return of({ suggestions: [], fallback_offered: true }) (server unavailable)
+ * - 5xx → return of({ suggestions: [], fallback_offered: true }) (server unavailable)
  */
 @Injectable()
 export class CategoryService {
@@ -39,17 +36,6 @@ export class CategoryService {
   private readonly auth   = inject(AuthService);
 
   // ── Private helpers ────────────────────────────────────────────────────────
-
-  /**
-   * Build Authorization header from the in-memory token (FE-D5: never localStorage).
-   * Returns an empty HttpHeaders if no token is present (public/unauthenticated state).
-   */
-  private authHeaders(): HttpHeaders {
-    const token = this.auth.getToken();
-    return token
-      ? new HttpHeaders({ Authorization: `Bearer ${token}` })
-      : new HttpHeaders();
-  }
 
   /**
    * Shared error handler for CategoryService.suggest().
@@ -97,7 +83,7 @@ export class CategoryService {
     return this.http
       .get<SuggestResponse>('/api/v1/categories/suggest', {
         params: { q: description },
-        headers: this.authHeaders(),
+        // Authorization header is now attached globally by jwtInterceptor — no manual headers needed.
       })
       .pipe(
         catchError((err: HttpErrorResponse) => this.handleSuggestError(err)),
@@ -105,10 +91,13 @@ export class CategoryService {
   }
 
   /**
-   * POST /api/v1/catalogs { category_id }
+   * POST /api/v1/products { category_id }
    *
-   * Creates a new catalog draft for the selected category and navigates to
-   * /catalogs/:id/edit on success.
+   * DISCREPANCY-1 fix (DECISION-2 — Wave 6 Wave A): re-pointed from /api/v1/catalogs.
+   * Creates a new product draft for the selected category.
+   *   - catalog_id: null → backend auto-creates a default-named catalog (CreateProductRequest §2.4)
+   *   - name: null → defaults to "Untitled product"
+   *   - Response id is a PRODUCT id; /catalogs/:id/edit navigation is correct (route loads by product id)
    *
    * The component mirrors the simulated contract shape — callers subscribe and
    * receive Observable<{ id: string }>. The navigation side-effect fires inside
@@ -118,12 +107,10 @@ export class CategoryService {
    */
   selectCategory(categoryId: string): Observable<{ id: string }> {
     return this.http
-      .post<{ id: string }>('/api/v1/catalogs', { category_id: categoryId }, {
-        headers: this.authHeaders(),
-      })
+      .post<{ id: string }>('/api/v1/products', { category_id: categoryId })
       .pipe(
-        tap((catalog) => {
-          void this.router.navigate(['/catalogs', catalog.id, 'edit']);
+        tap((product) => {
+          void this.router.navigate(['/catalogs', product.id, 'edit']);
         }),
         catchError((_err: HttpErrorResponse) => EMPTY),
       );

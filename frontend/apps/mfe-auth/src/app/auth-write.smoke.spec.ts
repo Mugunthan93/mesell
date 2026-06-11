@@ -6,31 +6,31 @@
  * remote ProfileComponent reads it → remote logout clears the shell's singleton.
  *
  * THIS spec proves the WRITE path: the mfe-auth REMOTE's OtpVerifyComponent calls
- * `setSession('mock-token', {...})` → the SHELL's AuthService singleton reflects the mutation
- * (isAuthenticated=true, currentUser.name='Seller', getToken='mock-token') → the authGuard
- * now passes for /dashboard.
+ * `auth.setSession(token, user)` → the SHELL's AuthService singleton reflects the mutation
+ * (isAuthenticated=true, getToken=real-access-token) → the authGuard now passes for /dashboard.
  *
- * The test models the federation boundary with a single root injector (exactly what the
- * shared import-map + `singleton: true` in federation.config.js produce). AuthService is
- * `@Injectable({ providedIn: 'root' })` (D22 C2 — ZERO changes to auth.service.ts allowed).
- * Under Native Federation the shell's import-map URL for `@mesell/core` resolves for both
- * the shell and the remote, so they share ONE provider in ONE root injector.
+ * WAVE 6 UPDATE: OtpVerifyComponent now wires real HTTP (verifyOtp + me() from AuthApiService).
+ * The onSubmit() path is:
+ *   verifyOtp(phone, otp) → me() → auth.setSession(access_token, user) → scheduleRefresh → navigate.
+ * Tests use HttpTestingController to flush the HTTP calls synchronously (no fake timers needed).
  *
- * Steps (D38 C4):
- *   1. Unauthenticated start: shellAuth.isAuthenticated()===false, authGuard BLOCKS /dashboard.
- *   2. Confirm OtpVerifyComponent's injected auth IS the shell's instance (single-instance proof).
- *   3. Trigger WRITE: set otpValue to 6 chars, call onSubmit(); advance fake timers by 1500ms
- *      to flush the setTimeout that wraps setSession (vi.useFakeTimers — no Zone.js, per
- *      established pattern in profile.component.spec.ts).
- *   4. ASSERT post-WRITE: isAuthenticated===true, currentUser.name==='Seller',
- *      currentUser.id===1, getToken==='mock-token'.
- *   5. ASSERT authGuard now PASSES: returns true (not a UrlTree) — /dashboard is reachable.
- *   6. Verify resend-timer cleanup: ngOnDestroy clears the setInterval (no orphaned timer after
- *      fixture.destroy()).
+ * The singleton crux (steps 2+4+5) is UNCHANGED: the write still crosses the boundary via
+ * `providedIn:'root'` + federation shared import-map → ONE root injector. The mechanism being
+ * tested is IDENTICAL; only the trigger path (real HTTP vs setTimeout mock) has changed.
  *
  * HARD RULE: this test MUST NOT touch auth.service.ts. If setSession mutates a duplicate
  * AuthService instance instead of the shell's, assertions 4+5 will fail with visible evidence
  * (the P0 drift, MASTER_PLAN R1). Do NOT weaken assertions to make it pass — HARD STOP instead.
+ *
+ * Steps (D38 C4 — Wave 6 real-HTTP variant):
+ *   1. Unauthenticated start: shellAuth.isAuthenticated()===false, authGuard BLOCKS /dashboard.
+ *   2. Confirm OtpVerifyComponent's injected auth IS the shell's instance (single-instance proof).
+ *   3. Trigger WRITE: set otpValue to 6 chars, call onSubmit().
+ *      - Flush POST /api/v1/auth/otp/verify → respond with {access_token, expires_in}
+ *      - Flush GET /api/v1/auth/me → respond with MeResponse
+ *   4. ASSERT post-WRITE: isAuthenticated===true, getToken===the flushed access_token.
+ *   5. ASSERT authGuard now PASSES: returns true (not a UrlTree) — /dashboard is reachable.
+ *   6. Verify resend-timer cleanup: ngOnDestroy clears the setInterval (no orphaned timer).
  */
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import {
@@ -41,10 +41,28 @@ import {
   UrlTree,
 } from '@angular/router';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
+import { provideHttpClient, withFetch } from '@angular/common/http';
+import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
 import { runInInjectionContext, EnvironmentInjector } from '@angular/core';
 
 import { AuthService, authGuard } from '@mesell/core';
 import { OtpVerifyComponent } from './otp-verify.component';
+
+/** Fake verify response matching VerifyOtpResponse shape */
+const FAKE_VERIFY_RESP = {
+  access_token: 'real-access-token-from-backend',
+  expires_in: 3600,
+  token_type: 'bearer' as const,
+};
+
+/** Fake /me response matching MeResponse shape */
+const FAKE_ME_RESP = {
+  user_id: 'user-uuid-123',
+  phone: '+919876543210',
+  plan: 'free' as const,
+  created_at: '2026-06-11T00:00:00Z',
+  last_login_at: null,
+};
 
 describe('SP06 D38 C4 — OtpVerifyComponent WRITE-path: setSession crosses the federation boundary into the shell singleton', () => {
   let fixture: ComponentFixture<OtpVerifyComponent>;
@@ -52,10 +70,9 @@ describe('SP06 D38 C4 — OtpVerifyComponent WRITE-path: setSession crosses the 
   let shellAuth: AuthService;
   let envInjector: EnvironmentInjector;
   let router: Router;
+  let httpMock: HttpTestingController;
 
   beforeEach(async () => {
-    // Use real timers as baseline; individual tests that need fake timers
-    // call vi.useFakeTimers() and restore with vi.useRealTimers().
     vi.useRealTimers();
 
     TestBed.resetTestingModule();
@@ -71,6 +88,8 @@ describe('SP06 D38 C4 — OtpVerifyComponent WRITE-path: setSession crosses the 
           { path: 'dashboard', children: [] },
         ]),
         provideAnimationsAsync('noop'),
+        provideHttpClient(withFetch()),
+        provideHttpClientTesting(),
       ],
     }).compileComponents();
 
@@ -78,22 +97,35 @@ describe('SP06 D38 C4 — OtpVerifyComponent WRITE-path: setSession crosses the 
     shellAuth   = TestBed.inject(AuthService);
     envInjector = TestBed.inject(EnvironmentInjector);
     router      = TestBed.inject(Router);
+    httpMock    = TestBed.inject(HttpTestingController);
 
     // Ensure we start unauthenticated (clean slate, independent of test order).
     shellAuth.logout();
 
-    // Create the "remote" OtpVerifyComponent — its ngOnInit starts the resend-countdown
-    // setInterval. We use fake timers in the setSession test to flush the onSubmit setTimeout
-    // (1500 ms), then restore real timers so the interval does not interfere with other tests.
+    // Navigate with state so OtpVerifyComponent picks up the phone (avoids redirect-to-login).
+    await router.navigate(['/login']);
+    await router.navigate(['/dashboard'], { state: { phone: '+919876543210' } });
+
+    // Create the "remote" OtpVerifyComponent.
     fixture = TestBed.createComponent(OtpVerifyComponent);
     comp    = fixture.componentInstance;
+
+    // Patch the navigation state so ngOnInit reads the phone correctly in tests.
+    // We spy on getCurrentNavigation to provide a state since Angular's test harness
+    // doesn't fully replay navigation state on component creation.
+    vi.spyOn(router, 'getCurrentNavigation').mockReturnValue({
+      extras: { state: { phone: '+919876543210' } },
+    } as unknown as ReturnType<Router['getCurrentNavigation']>);
+
     fixture.detectChanges();
   });
 
   afterEach(() => {
     // Destroy component to fire ngOnDestroy → clearInterval (no orphaned interval after test).
     fixture.destroy();
+    httpMock.verify();
     vi.useRealTimers();
+    vi.restoreAllMocks();
     TestBed.resetTestingModule();
   });
 
@@ -123,9 +155,7 @@ describe('SP06 D38 C4 — OtpVerifyComponent WRITE-path: setSession crosses the 
 
   // ── Steps 3-6: Trigger WRITE and assert post-write shell state ────────────────
 
-  it('C4 (THE CRUX) — remote onSubmit setSession WRITES through the boundary: shell reflects isAuthenticated, currentUser, getToken; authGuard now passes', () => {
-    vi.useFakeTimers();
-
+  it('C4 (THE CRUX) — remote onSubmit setSession WRITES through the boundary: shell reflects isAuthenticated, getToken; authGuard now passes', () => {
     // Step 1 (guard blocked, re-asserted in same test for full trace):
     expect(shellAuth.isAuthenticated()).toBe(false);
 
@@ -142,22 +172,29 @@ describe('SP06 D38 C4 — OtpVerifyComponent WRITE-path: setSession crosses the 
     expect(remoteAuth).toBe(shellAuth);
 
     // Step 3 — trigger WRITE: set a 6-char OTP value and call onSubmit.
-    // onSubmit → loading.set(true) → setTimeout(1500) → setSession('mock-token', {...}) → navigate(['/dashboard']).
     comp.onOtpCompleted('123456');
     expect(comp.otpValue()).toBe('123456');
 
     comp.onSubmit();
-    // Before the setTimeout fires: shell is still unauthenticated.
+    // Before HTTP flushes: shell is still unauthenticated.
     expect(shellAuth.isAuthenticated()).toBe(false);
 
-    // Advance fake timers by 1500 ms to flush the setTimeout.
-    vi.advanceTimersByTime(1500);
+    // Flush POST /api/v1/auth/otp/verify
+    const verifyReq = httpMock.expectOne('/api/v1/auth/otp/verify');
+    expect(verifyReq.request.method).toBe('POST');
+    expect(verifyReq.request.withCredentials).toBe(true);
+    verifyReq.flush(FAKE_VERIFY_RESP);
+
+    // Flush GET /api/v1/auth/me
+    const meReq = httpMock.expectOne('/api/v1/auth/me');
+    expect(meReq.request.method).toBe('GET');
+    meReq.flush(FAKE_ME_RESP);
 
     // Step 4 (THE CRUX) — shell's singleton now reflects the remote's setSession WRITE.
     expect(shellAuth.isAuthenticated()).toBe(true);
-    expect(shellAuth.currentUser()?.name).toBe('Seller');
-    expect(shellAuth.currentUser()?.id).toBe(1);
-    expect(shellAuth.getToken()).toBe('mock-token');
+    expect(shellAuth.getToken()).toBe(FAKE_VERIFY_RESP.access_token);
+    expect(shellAuth.currentUser()?.phone).toBe(FAKE_ME_RESP.phone);
+    expect(shellAuth.currentUser()?.user_id).toBe(FAKE_ME_RESP.user_id);
 
     // Step 5 — authGuard now PASSES (returns true, not a UrlTree).
     const postWriteGuard = runInInjectionContext(envInjector, () =>
@@ -167,32 +204,44 @@ describe('SP06 D38 C4 — OtpVerifyComponent WRITE-path: setSession crosses the 
       ),
     );
     expect(postWriteGuard).toBe(true);
-
-    vi.useRealTimers();
   });
 
   it('C4-abort: onSubmit is a no-op when otpValue is fewer than 6 chars (guard to prevent premature setSession)', () => {
-    vi.useFakeTimers();
-
     comp.onOtpCompleted('12345'); // 5 chars — below threshold
     comp.onSubmit();
-    vi.advanceTimersByTime(2000);
+
+    // No HTTP should be fired — onSubmit returns early
+    httpMock.expectNone('/api/v1/auth/otp/verify');
 
     // No setSession fired — shell remains unauthenticated.
     expect(shellAuth.isAuthenticated()).toBe(false);
     expect(shellAuth.getToken()).toBeNull();
-
-    vi.useRealTimers();
   });
 
-  it('C4-timer: ngOnDestroy clears the resend-countdown setInterval (no orphaned timer after fixture.destroy())', async () => {
-    // The component in beforeEach was created with real timers (its setInterval is real).
-    // For this timer isolation test we create a FRESH component under fake timers so the
-    // setInterval is registered in the fake-timer clock and can be advanced deterministically.
+  it('C4-error-400: onSubmit shows error message when verifyOtp returns 400 (invalid/expired OTP)', () => {
+    comp.onOtpCompleted('999999');
+    comp.onSubmit();
+
+    const verifyReq = httpMock.expectOne('/api/v1/auth/otp/verify');
+    verifyReq.flush({ detail: 'Invalid OTP', code: 'OTP_INVALID', validation_message_id: 'v1', request_id: 'r1' }, { status: 400, statusText: 'Bad Request' });
+
+    // Shell stays unauthenticated
+    expect(shellAuth.isAuthenticated()).toBe(false);
+    // Component shows error
+    expect(comp.errorMessage()).toBeTruthy();
+    expect(comp.errorMessage()).toContain('Invalid or expired');
+  });
+
+  it('C4-timer: ngOnDestroy clears the resend-countdown setInterval (no orphaned timer after fixture.destroy())', () => {
     vi.useFakeTimers();
 
     let timerFixture: ComponentFixture<OtpVerifyComponent>;
     let timerComp: OtpVerifyComponent;
+
+    // Mock getCurrentNavigation for this sub-fixture too
+    vi.spyOn(router, 'getCurrentNavigation').mockReturnValue({
+      extras: { state: { phone: '+919876543210' } },
+    } as unknown as ReturnType<Router['getCurrentNavigation']>);
 
     // Create a fresh component — ngOnInit runs with fake timers active, so the
     // resend-countdown setInterval is registered in the fake clock.
