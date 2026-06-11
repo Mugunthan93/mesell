@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-backend-coordinator`
 **Domain:** backend
-**Last updated:** 2026-06-11 (dual-pepper-rotation backlog row added — R5 pre-V1.5-prod gate)
+**Last updated:** 2026-06-11 (dual-pepper-rotation IN REVIEW — group PR #65 squash-merged a2e566c; founder-gate PR #66 open — mesell-dual-pepper-session-1)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -12,7 +12,7 @@
 | Feature | Group branch | Status | Current session | Last touched | Blocking | Notes |
 |---|---|---|---|---|---|---|
 | microservices-export | feature/microservices-export/backend | IN PROGRESS | mesell-microservices-backend-session-1 | 2026-06-10 22:55 IST | none | Sub-Plan A (SUB_PLAN_01) authored DRAFT; awaiting founder ratification of A1 (ai_ops) + A2 (middleware). Step 4 extraction execution is POST-V1. |
-| dual-pepper-rotation | — (not started) | PENDING | — | 2026-06-11 | none | **R5 follow-up — pre-V1.5-prod GATE** (founder ruling 2026-06-11 AM; must land before V1.5 goes to prod, NOT blocking V1). Today `REFRESH_TOKEN_PEPPER` is single/unversioned — rotating it invalidates ALL live sessions. Backend work: version-tag the Valkey DB 0 allowlist key prefix (`cache:refresh:{version}:{hmac}`) so dual-pepper reads work during the grace window. Mechanism doc: `docs/runbooks/auth-secret-rotation.md` §2 (lands on develop via auth-otp integration PR #46). Owner: meesell-auth-builder when scheduled. |
+| dual-pepper-rotation | feature/dual-pepper-rotation/backend | IN REVIEW | — | 2026-06-11 | none | **R5 follow-up — pre-V1.5-prod GATE** (founder ruling 2026-06-11 AM; must land before V1.5 goes to prod, NOT blocking V1). Today `REFRESH_TOKEN_PEPPER` is single/unversioned — rotating it invalidates ALL live sessions. Backend work: version-tag the Valkey DB 0 allowlist key prefix (`cache:refresh:{version}:{hmac}`) so dual-pepper reads work during the grace window. Mechanism doc: `docs/runbooks/auth-secret-rotation.md` §2 (lands on develop via auth-otp integration PR #46). Owner: meesell-auth-builder. **Group PR #65 SQUASH-MERGED a2e566c → feature/dual-pepper-rotation/integration (8 fakeredis tests pass; import-linter 27/0; 27 passed/3 skip/6 err infra-gated baseline). Founder-gate PR #66 (integration→develop) OPEN — DO NOT MERGE, founder reviews per D1.** |
 
 ## Recently merged (last 14 days)
 
@@ -26,6 +26,7 @@
 
 | To lead | About feature | Request | Opened | Status |
 |---|---|---|---|---|
+| meesell-infra-builder | dual-pepper-rotation | Add `REFRESH_TOKEN_PEPPER_PREVIOUS` and `REFRESH_TOKEN_PEPPER_VERSION` to `k8s/secrets.yaml.example` + GCP Secret Manager onboarding notes. Backend code is live (PR #65); infra must provision the new secret refs before the first prod rotation. | 2026-06-11 | OPEN |
 
 ---
 

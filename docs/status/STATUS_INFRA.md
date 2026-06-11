@@ -1492,3 +1492,38 @@ READY -> ACTIVE flips (3): (1) founder 7-step activation (terraform WIF/CI SA ->
 No new secrets. Cost ₹0/month (CDN/LB = C-CDN-1, sized at S5). Inter-lead handoff_mf_ci_prep.md asks 1+2+3 all addressed -> frontend lead marks CLOSED on its own board.
 Board sweep (session-end): Active = auth-otp (IN REVIEW — its integration->develop PR #46 already merged; that stale row is auth-otp-owned state, NOT mine to flip). mf-ci-c-ci-1 moved IN REVIEW -> Recently merged (#50). No rows untouched 7+ days. Inter-lead request marked RESOLVED. No blockers.
 =========
+
+## SESSION-START: mesell-ci-activation-session-1 (continuation) — 2026-06-11
+
+CI Activation Phase E execution (founder approved the plan at `.tflogs/ci-activation.tfplan` — 11 add / 1 change / 0 destroy). Steps 2-7: terraform apply (GitHub WIF pool + meesell-github-ci SA + IAM) → capture TF outputs → update GitHub repo vars (GCP_WIF_PROVIDER, GCP_CI_SA_EMAIL — REPLACE old out-of-band values) → GEMINI_API_KEY_CI (founder action) → branch protection (deferred until post-first-run) → fire first pipeline via develop→main PR. Pre-flight: account vaishnaviramoorthy OK, project ...949 OK, plan matches approval. Pre-snapshot: /tmp/meesell-pre-ci-activation-state.txt.
+
+## SESSION-END: mesell-ci-activation-session-1 — 2026-06-11
+
+### CI Activation (Phase E)
+
+**Terraform apply:** 11 resources added, 1 changed (billing budget filter — benign), 0 destroyed. Approved plan `.tflogs/ci-activation.tfplan`.
+- Created: `github-actions-pool` WIF pool + `github-actions-provider` (issuer token.actions.githubusercontent.com, condition assertion.repository == Mugunthan93/mesell)
+- Created: `meesell-github-ci` SA (email `meesell-github-ci@project-1f5cbf72-2820-4cdb-949.iam.gserviceaccount.com`)
+- IAM roles bound: AR writer, Cloud Build editor, Secret Manager accessor, IAP tunnel, VM-scoped instanceAdmin (meesell-dev only)
+- APIs enabled: `cloudbuild.googleapis.com` (adopted), `iap.googleapis.com` (new)
+- Verified live: SA ACTIVE/enabled, WIF pool state=ACTIVE, all resources in GCS-backed TF state.
+- Pre-snapshot: /tmp/meesell-pre-ci-activation-state.txt (protected VMs untouched).
+
+**GitHub variables updated** (replaced 2026-05-31 out-of-band values, updated_at 2026-06-11T01:52:57Z):
+- `GCP_WIF_PROVIDER` → `projects/888244156264/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider` (was `.../github-pool/providers/github-oidc`)
+- `GCP_CI_SA_EMAIL` → `meesell-github-ci@project-1f5cbf72-2820-4cdb-949.iam.gserviceaccount.com` (was `meesell-ci@...`)
+
+**GEMINI_API_KEY_CI:** NOT SET — FOUNDER ACTION REQUIRED. No repo secrets exist yet. Only the nightly cron job (`0 1 * * *`) consumes it; gates+build+deploy on the develop→main merge do NOT need it. Founder must create a low-quota/capped Gemini key at aistudio.google.com/apikey and `gh secret set GEMINI_API_KEY_CI --repo Mugunthan93/mesell` before tonight's nightly run.
+
+**First pipeline:** PENDING — awaiting founder approve+merge of PR #64.
+- PR #64: develop → main (130 commits, 246 files). mergeable=true, mergeable_state=blocked (the required 1-review founder gate, not a conflict).
+- main ci.yml is the OLD 8-job version; develop is the NEW 10-job version (adds frontend paths-filter matrix). The merge upgrades main to 10 jobs.
+- Pipeline URL after merge: https://github.com/Mugunthan93/mesell/actions
+
+**Check contexts (post-first-run):** PENDING. Branch protection on `main` = `required_approving_review_count: 1`, `required_status_checks.contexts: []` (strict=true). Step 6 (add check contexts) DEFERRED until after first green run. Expected contexts from job `name:` fields:
+- "CI Gate 1: unit", "CI Gate 2: smoke", "CI Gate 3: lint (10 contracts)", "CI Gate 4: integration", "CI Gate 5: golden_roundtrip"
+- "Frontend: detect changed workspace units", "Frontend: shell" + "Frontend: mfe-pricing" (matrix `${{ matrix.unit }}`)
+- "Build container images", "Deploy to K3s (dev namespace)"
+(Nightly "Nightly: slow + perf + ai_eval" is schedule-only — NOT a PR check context.)
+
+**Note:** Legacy out-of-band WIF resources (`github-pool` + `meesell-ci` SA, created 2026-05-31) are still present in GCP — harmless orphans now that the variables point at the new TF-managed pool/SA. Can be deleted via `gcloud iam workload-identity-pools delete github-pool` + `gcloud iam service-accounts delete meesell-ci@...` in a future cleanup session (founder approval required for any delete).
