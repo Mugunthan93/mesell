@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-frontend-coordinator`
 **Domain:** `frontend`
-**Last updated:** 2026-06-11 (mfe-pricing pilot MERGED to integration #52; founder-gate #53 OPEN)
+**Last updated:** 2026-06-11 (SP03 mfe-onboarding IN PROGRESS — Wave 1 parallel extraction, concurrent with SP02 export)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -11,6 +11,8 @@
 
 | Feature | Group branch | Status | Current session | Last touched | Blocking | Notes |
 |---|---|---|---|---|---|---|
+| mfe-onboarding | feature/mfe-onboarding/frontend | IN PROGRESS | mesell-mfe-onboarding-frontend-session-1 | 2026-06-11 | — | MF Sub-Plan 03. Extract features/account/onboarding + features/profile → apps/mfe-onboarding (TWO-expose remote). D21 PROMOTE AuthLayout→@mesell/composites (founder RULED APPROVED). D22 AuthService singleton C1–C5 = migration auth go/no-go. Concurrent with SP02 export (Wave 1). SP01 pilot MERGED to develop (#53, bb37f5f). |
+| mfe-export | feature/mfe-export/frontend | IN REVIEW | — | 2026-06-11 | none | MF Sub-Plan 02 (R6, F12 export, route /catalogs/:id/export). Group PR #60 (frontend→integration) OPEN — awaiting lead gate. Remote build 3.43s/shell 2.89s (esbuild preserved, <90s); 42 files/406 tests (== SP01 baseline, export spec discovered via apps/ glob, 0 drop); boundary 0 in apps/; two-remote manifest (pricing+export) both 200; D18 timer preserved (R100 rename). WAVE 1 parallel with SP03 (onboarding). |
 
 ## Recently merged (last 14 days)
 

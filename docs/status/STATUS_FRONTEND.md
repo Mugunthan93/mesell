@@ -5144,3 +5144,37 @@ Blockers: none. PR #53 awaiting founder review (by design, not a blocker). CI no
 Next: SP02 (mfe-export) once PR #53 merges + founder approval of SP02. Recipe in sub_plan_01_pricing.md.
 Hand-offs: infra D13 hosting memo (handoff_mf_pricing_deploy) — GCS/CDN/remotes.mesell.xyz/cloudbuild.remote.yaml/per-env manifest; localhost dev-validated, prod surface pending. Board inter-lead row OPEN.
 =========
+
+
+=== UPDATE: 2026-06-11 — SESSION START (SP03 mfe-onboarding — Wave 1 parallel extraction) ===
+Phase: MF Sub-Plan 03 — mfe-onboarding extraction (F5 onboarding + F13 profile)
+Session: mesell-mfe-onboarding-frontend-session-1
+Routes touched: /onboarding (F5), /profile (F13) — both → loadRemoteWithFallback.
+Specialists: meesell-angular-component-builder (Phase A+B extraction/promotion/wiring) → meesell-angular-service-builder (Phase C D22 C1–C5 auth-singleton verification).
+Board sweep (session-start): mfe-onboarding row added IN PROGRESS. Recently-merged: mfe-pricing (PR#52/#53 — #53 MERGED bb37f5f = develop tip), mf-workspace-foundation. Inter-lead open: (1) infra D13 hosting (handoff_mf_pricing_deploy, opened 2026-06-11); (2) infra C-CI-1 (opened 2026-06-10, ~1 day — within 48h SLA, discharged via PR#50 per develop log). No rows untouched 7+ days.
+Execution gates verified: SP01 pilot MERGED to develop (PR#53, bb37f5f = develop tip) — toolchain PROVEN. Founder GO for Wave-1 parallel execution (this morning). D21 RULED APPROVED (PR#49) — AuthLayout→@mesell/composites. D13 hosting DEFERRED to SP04-05 era (locally-proven class; no new infra request). D9/D14 resolved at SP07.
+PARALLEL-WAVE DELTA (important): SP02 (mfe-export) has NOT merged yet — no mfe-export branch on origin; develop apps/ = [frontend, mfe-pricing] only; manifest = {mfe-pricing}. So SP03 produces a TWO-entry manifest (pricing + onboarding), NOT three. SP02's export entry merges concurrently via its own founder gate. My shell-shared-file edits (app.routes.ts, manifest, angular.json, tsconfig.spec, styles.css @source) are MINIMAL + ADDITIVE (onboarding-only); before founder-gate PR I will `git merge origin/develop` and keep-both any SP02 overlap.
+As-built confirmed on develop: onboarding imports AuthLayoutComponent via relative ../../../layouts/auth-layout (D21 sever target); profile imports AuthService from @mesell/core (currentUser/logout) + deep @mesell/ui-kit/* (preserve). auth-layout relative consumers = onboarding + login + signup + otp-verify (4) — all re-pointed to @mesell/composites (D21, minimal-diff). mfe-pricing project shape = the copy template (native-federation:build→esbuild @angular/build:application; index.html REQUIRED).
+Done: gates verified, board flipped IN PROGRESS, parallel-wave delta logged.
+In progress: branch setup (F1, sp03-* worktree) + component-builder dispatch.
+Blockers: none.
+Next: cut feature/mfe-onboarding/integration off develop + feature/mfe-onboarding/frontend; dispatch component-builder (Phase A extract+promote, Phase B wire shell).
+Hand-offs: infra deploy memo (handoff_mf_onboarding_deploy, D24 third-remote GCS prefix) at Phase C — though D13 hosting deferred per gate, the memo records the prefix/matrix fan-out.
+=========
+
+
+=== UPDATE: 2026-06-11 — SESSION START (SP02 mfe-export — Wave 1 parallel extraction) ===
+Phase: MF Sub-Plan 02 — mfe-export extraction (F12 export)
+Session: mesell-mfe-export-frontend-session-1
+Routes touched: /catalogs/:id/export (1 of the 10 canonical V1 routes).
+Specialist: meesell-angular-component-builder (sole specialist per SP02 Agent lineup — Phase A scaffold remote + git mv 3 files; Phase B wire shell route + manifest). NO service-builder (export injects only Router; "service" is local export.model simulation). NO ui-styler (pure rename = zero visual delta).
+Board sweep (session-start): mfe-export row added IN PROGRESS (alongside SP03 mfe-onboarding, also IN PROGRESS — Wave 1 concurrent). Recently-merged: mfe-pricing (#52/#53 — #53 MERGED bb37f5f), mf-workspace-foundation. Inter-lead open: (1) infra D13 hosting (opened 2026-06-11); (2) infra C-CI-1 (opened 2026-06-10, within 48h SLA). No rows untouched 7+ days.
+Execution gates verified: SP01 pilot MERGED to develop (PR#53, bb37f5f) — toolchain PROVEN per §9.A. Founder GO for Wave-1 parallel execution (this morning). D13 hosting DEFERRED to SP04-05 era (locally-proven class, same as pilot) — NO new infra hosting request (one already open from SP01). D9/D14 inherited from SP01, resolved at SP07.
+As-built confirmed on develop@3f773d9: export = 3 self-contained files at features/export/export/ (component+spec+model). Selector app-export. Imports @mesell/ui-kit (MeeBadge/Button/Card/ProgressBar) + @mesell/composites (PageHeader, StatusBadge) + ./export.model + @angular/router Router. OnDestroy timer = pollingIntervalId via setInterval (10/500ms→100% in ~5s) cleared in ngOnDestroy/ready/retry (D18 — preserve EXACTLY). Test-discovery globs (../apps/**/*.spec.ts in angular.json + apps/**/*.spec.ts in tsconfig.spec) ALREADY cover apps/mfe-export/ from SP01 — RE-CONFIRM only. Tailwind @source "../apps" already added. mfe-pricing project shape = copy template (native-federation:build→esbuild @angular/build:application; index.html REQUIRED per SP01 gotcha).
+PARALLEL-WAVE DELTA: SP03 (mfe-onboarding) runs concurrently. Shared conflict surfaces = app.routes.ts + federation.manifest.json + angular.json + tsconfig.spec.json. My edits are MINIMAL + ADDITIVE (export route entry + manifest export entry + angular.json mfe-export project only). Before founder-gate PR I will `git merge origin/develop` into integration and keep-both any SP03 overlap so the gate PR is conflict-free.
+Done: gates verified, branches cut (feature/mfe-export/integration + /frontend, F3-protected integration), sp02-export worktree added, board flipped IN PROGRESS.
+In progress: component-builder dispatch (Phase A scaffold + git mv; Phase B shell wire).
+Blockers: none.
+Next: dispatch meesell-angular-component-builder; on PR-open verify IN REVIEW; lead-gate review; group→integration squash; founder-gate PR (integration→develop) LEFT OPEN.
+Hand-offs: infra deploy memo (handoff_mf_export_deploy, D19 second-remote GCS prefix + dorny/paths-filter matrix fan-out) at Phase C — recorded; D13 hosting deferred per gate (no new request).
+=========
