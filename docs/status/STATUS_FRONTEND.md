@@ -5985,3 +5985,42 @@ Hand-offs:
       inline precheck-report table retained ✅  48 spec files 521 tests 0 fail ✅
       builds GREEN (mfe-catalog 3.125s + shell 1.388s) ✅
 =========
+
+=== GATE: 2026-06-11 — image-precheck frontend slice — HYBRID STEP 3 (merge-gate review) ===
+Lead: meesell-frontend-coordinator
+Session: mesell-image-precheck-frontend-session-1 (STEP 3)
+Branch reviewed: feature/image-precheck-frontend @ e1c1cf6 (base origin/develop dd5ae0d)
+
+VERDICT: PASS → flat-lane founder-gate PR opened (lead does NOT merge — D1).
+
+Independent re-run (lead, worktree /tmp/mesell-wt/image-precheck-frontend, skeptical):
+  - Build mfe-catalog (production): GREEN 2.777s (≤90s D12). image-uploader lazy chunk 16.65 kB raw / 4.22 kB transfer.
+  - Tests `ng test frontend` CI=true: 48 files / 521 tests / 0 fail / 0 skip (baseline 47 files on develop +1 image.service.spec.ts).
+  - Route wiring intact: catalog.routes.ts :id/images → ImageUploaderComponent (lazy loadComponent).
+  - tsc strict + strictTemplates ON; OnPush + standalone:true confirmed.
+  - Boundary: 0 primeng outside ui-kit in changed files; 0 localStorage (FE-D5 in-memory token honored); 0 SIMULATION/setInterval/createObjectURL remnants; 0 live old-precheck-key code (only migration comments + spec absence-assertions).
+  - Wave-7 JSDoc interceptor migration note present in image.service.ts (R-IP-A requirement).
+  - mee-* API conformance verified against live composites/ui-kit: empty-state(icon+message), status-badge(status union ready|pending|failed all valid), file-upload(files_selected/accept/max_size_mb/multiple/label), progress-bar(value/show_value), badge(success|danger valid), button(sm valid), loading-skeleton(card).
+
+Gap closure (G1–G7):
+  G1 image.service.ts — CLOSED. @Injectable() non-root, upload/listImages/pollImages, full R-W6-1 error matrix.
+  G2 SIMULATION removed — CLOSED. setTimeout-map / setInterval-stub / createObjectURL all deleted; real upload→poll chain.
+  G3 precheck key remap — CLOSED. backend keys jpeg_valid/color_space/resolution_pass/white_background/watermark_check (R-IP-B one-way remap).
+  G4 slot remap 6→4, 1-based idx — CLOSED. idx = currentImages.length+i+1; is_front = idx===1; guard length>=4; header text "up to 4".
+  G5 status enum — CLOSED. pending|ready|failed_precheck; statusForMeeStatusBadge maps failed_precheck→failed for the badge.
+  G6 flag-OFF — CLOSED (within slice scope). upload 404→EMPTY→featureDisabled signal→mee-empty-state; list/poll flag-off→{images:[]}. No featureFlagGuard invented (correct — no feature-flags.service exists; deferred).
+  G7 graceful-degradation error matrix — CLOSED. catchError on every method; service-level DIP (no MeeToastService injected).
+
+Founder rulings consumed: R-IP-A (dispatch now, manual Bearer + Wave-7 JSDoc note), R-IP-B (backend contract authoritative, one-way UI remap), G3/AI (fix_hints = frontend static map; §968/§F5 canonical wording in PRECHECK_HINTS).
+
+Deviation adjudications:
+  1. [svc] recursive Observable+setTimeout poll (not RxJS expand/timer) — ACCEPT. Single-flight, 6-poll hard cap, backoff 1→2→4→8→16→30s, teardown clears timer + in-flight HTTP; leak-test passes. Sound + tested; expand/timer would be more idiomatic but not required.
+  2. [cmp] typed plain-function trackers in spec Section B (not vi.fn generics) — ACCEPT. Section A pure-function model tests are the real exhaustive coverage; Section B stand-ins are illustrative (test reimplemented logic, not the component). Matches the house pattern: ZERO createComponent across all mfe-catalog specs (TestBed+PrimeNG-standalone crash is documented; smart-picker precedent). NOTE recorded: Section B is not component-exercising.
+  3. [cmp] mee-empty-state icon+message — ACCEPT. Verified against live EmptyStateComponent (icon required, message required). Correct.
+  4. [cmp] onReupload() new File([], …) placeholder — ACCEPT WITH FOLLOW-UP. Slot reset + re-upload-with-correct-idx asserted; but a zero-byte File would fail backend multipart at runtime. Real file-picker re-trigger is a UI wiring item, correctly flagged for ui-styler/coordinator. NOT a merge blocker (rest of wiring correct; founder-gate PR not a prod merge). Logged as Wave-6/follow-up.
+  5. [both] screenshots NOT captured — ACCEPT WITHOUT (founder-noted). No headless-browser harness in build env (consistent with all SP01-07 precedent — in-browser mount handed forward). Noted in PR body.
+
+Wave-6 cross-ref: this lands what wave6_api_wiring/MASTER_PLAN.md calls `wave6-images` (Wave D lane 1) EARLY, per founder ruling R-IP-A (FEATURE_PLAN lane chosen over the Wave-D sequencing). The Wave-6 board MUST NOT double-dispatch wave6-images — image FE wiring is DONE on this branch.
+
+Records: board row flipped to IN REVIEW (founder-gate PR open); this STATUS block; memo gate_outcome_image_precheck.md. PR # + URL in board Notes.
+=========
