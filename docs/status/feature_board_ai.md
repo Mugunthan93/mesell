@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-ai-coordinator`
 **Domain:** ai
-**Last updated:** 2026-06-11 (AI track execution — F2/F4/F5 group PRs merged to integration)
+**Last updated:** 2026-06-11 (image-precheck AI session-2 — precheck_smoke fixture gap; branch cut)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -11,6 +11,7 @@
 
 | Feature | Group branch | Status | Current session | Last touched | Blocking | Notes |
 |---|---|---|---|---|---|---|
+| image-precheck | `feature/image-precheck-ai` (flat — D/F leaf workaround) | IN PROGRESS | mesell-image-precheck-ai-session-2 | 2026-06-11 | none | STEP 1 audit: 5-step pipeline as-built OK on develop. REAL gap = `tests/eval/precheck_smoke/` (D2 Gate 2 20-image fixture, ABSENT). SPEC authored for `meesell-image-precheck-builder`. Awaiting master STEP-2 dispatch. |
 
 ## Recently merged (last 14 days)
 

@@ -36,6 +36,23 @@ AI track execution (session `mesell-ai-track-session-1`) — V1 Features 2/4/5 A
 - founder: 3 founder-gate PRs open (#55 smart-picker, #57 catalog-form, #59 image-precheck) — leave open until sibling groups land.
 
 ## Updates Log
+=== UPDATE: 2026-06-11 SESSION-START ===
+Phase: V1 Feature 5 (image-precheck) — STEP 1 of HYBRID (as-built audit + specialist SPEC). NO feature code, NO dispatch this step.
+Session: mesell-image-precheck-ai-session-2
+Mapping: F5 image-precheck; specialist = meesell-image-precheck-builder (watermark.v1 prompt already DONE via prompt-engineer, PR #59 merged). Workload watermark, vision cost gate ≤ ₹0.08 (founder R3 exception 2026-06-11).
+Board sweep: 1 row added to Active (image-precheck IN PROGRESS); 3 rows in Recently merged (all dated 2026-06-11, none stale 7+ days); 0 inter-lead requests open.
+Audit verdict: PIPELINE AS-BUILT OK. tasks.py 5-step body (_check_jpeg / _check_color_space / _check_resolution / _check_white_background / _check_watermark + _run_precheck_pipeline + image_precheck_task) matches §11.E + V1 §F5 across all 5 steps. watermark call site uses ai_ops.client.call_gemini(prompt_id="watermark.v1") — correct. tests/eval/watermark/ present (PR #58/#59). 
+REAL gaps (G-numbered):
+  - G1 (PRIMARY): backend/tests/eval/precheck_smoke/ ABSENT on origin/develop (confirmed git ls-tree). D2 Gate 2 20-image deterministic smoke fixture (10 bad / 10 good) + runner + __init__ — owned by meesell-image-precheck-builder. This is the real deliverable.
+  - G2 (DEVIATION, needs ruling): as-built white-BG uses 5×5 patch + threshold 235; FEATURE_PLAN §966/acceptance says 16×16 patch + threshold 240. Functionally close but constants differ. NOT silently changed — flagged for founder ruling.
+  - G3 (DEVIATION, needs ruling): as-built precheck_jsonb has NO fix_hints map; FEATURE_PLAN acceptance §968 + V1 §F5 line 226 require per-check one-line fix hints. Confirmed absent on develop tasks.py (grep 0). Where fix hints live (jsonb vs schema-layer) needs ruling.
+Branch: feature/image-precheck-ai (FLAT name — leaf feature/image-precheck D/F conflict workaround, proven twice) cut off origin/develop @ dd5ae0d, pushed origin, worktree /tmp/mesell-wt/image-precheck-ai. Master tree stays on develop.
+Eval pass rate: watermark accuracy 100% (≥85%) deterministic proxy (unchanged from PR #58). precheck_smoke: N/A — fixture does not exist yet (the gap).
+Tokens per call (avg): N/A — no Gemini calls this session (audit only).
+Cost per call (est): N/A this session. Watermark vision gate ≤ ₹0.08 (live cost unknown until GEMINI_API_KEY staging runner).
+Next: master STEP 2 dispatches meesell-image-precheck-builder with the SPEC (precheck_smoke fixture + runner; PIL-generated, NO live Gemini, NO GEMINI_API_KEY); STEP 3 = AI lead merge gate.
+=========
+
 === UPDATE: 2026-06-11 SESSION-END ===
 Phase: AI track execution (V1 Features 2/4/5).
 Session: mesell-ai-track-session-1
