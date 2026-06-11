@@ -329,6 +329,34 @@ jobs:
         working-directory: backend
         run: pip install -r requirements.txt
 
+      # Provision the integration DB BEFORE pytest. The integration conftest
+      # (tests/integration/conftest.py) does NOT build the schema itself — it
+      # expects a PRE-MIGRATED database (the live Alembic chain), exactly like
+      # the dev-tunnel Postgres. The service container starts empty, so without
+      # this step every integration test ERRORs on `relation "audit_events"
+      # does not exist`. `alembic upgrade head` (run against the CI DATABASE_URL)
+      # applies the full chain: 935e55b4852c (13 tables) → a1b2c3d4e5f6
+      # (CREATE EXTENSION pg_trgm + 3 GIN trigram indexes) → f31c75438e61 (idx).
+      # The POSTGRES_USER `meesell` is the postgres:16-alpine superuser, so the
+      # `CREATE EXTENSION IF NOT EXISTS pg_trgm` in a1b2c3d4e5f6 succeeds with no
+      # separate superuser/psql pre-create step. alembic reads settings.DATABASE_URL
+      # (= the env DATABASE_URL above → the service container).
+      - name: Provision schema (alembic upgrade head)
+        working-directory: backend
+        run: alembic upgrade head
+
+      # Cheap verify so a future provisioning regression is diagnosable at a
+      # glance: assert the migration head is stamped AND audit_events exists.
+      - name: Verify DB head + schema
+        working-directory: backend
+        run: |
+          echo "--- alembic current (expect f31c75438e61 head) ---"
+          alembic current
+          echo "--- audit_events table present? ---"
+          PGPASSWORD=password psql -h localhost -p 5433 -U meesell -d meesell_test \
+            -c "\dt" -c "SELECT to_regclass('public.audit_events') AS audit_events;" \
+            -c "SELECT extname FROM pg_extension WHERE extname='pg_trgm';"
+
       - name: pytest -m "integration"
         working-directory: backend
         run: pytest -m "integration" -v
@@ -408,6 +436,23 @@ jobs:
       - name: Install backend dependencies
         working-directory: backend
         run: pip install -r requirements.txt
+
+      # Same provisioning as Gate 4 — Gate 5 also runs against an empty postgres
+      # service container and needs the full schema (incl. pg_trgm) pre-migrated.
+      # See the Gate-4 provisioning step comment for the full rationale.
+      - name: Provision schema (alembic upgrade head)
+        working-directory: backend
+        run: alembic upgrade head
+
+      - name: Verify DB head + schema
+        working-directory: backend
+        run: |
+          echo "--- alembic current (expect f31c75438e61 head) ---"
+          alembic current
+          echo "--- audit_events table present? ---"
+          PGPASSWORD=password psql -h localhost -p 5433 -U meesell -d meesell_test \
+            -c "\dt" -c "SELECT to_regclass('public.audit_events') AS audit_events;" \
+            -c "SELECT extname FROM pg_extension WHERE extname='pg_trgm';"
 
       - name: pytest -m "golden_roundtrip"
         working-directory: backend
