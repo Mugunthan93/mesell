@@ -210,7 +210,7 @@ For Phase E–H: CI does NOT run any `terraform` command. The founder runs `terr
 
 ### 5.1 Workflow File
 
-`.github/workflows/ci.yml` — single workflow with 8 jobs: 5 sequential gates + a build job + a deploy job + a nightly cron job.
+`.github/workflows/ci.yml` — single workflow with 10 jobs: 5 sequential backend gates + 2 frontend jobs (`frontend-changes` paths-filter + `frontend-build` matrix, added 2026-06-11 for C-CI-1) + a build job + a deploy job + a nightly cron job. The frontend jobs run **in parallel** with the backend gates (frontend is independent of the backend test gates); the `build` job gates on both (`needs: [..., frontend-build]`). See §9.2 for the federated matrix design.
 
 ### 5.2 Triggers
 
@@ -224,7 +224,7 @@ on:
     - cron: '0 1 * * *'   # 01:00 UTC = 06:30 IST (nightly)
 ```
 
-Every push and PR runs the 5 gates. Nightly fires the slow + AI eval jobs (and skips the 5 gates because they're not what nightly is for).
+Every push and PR runs the 5 backend gates **and** the frontend matrix (`frontend-changes` → `frontend-build`, both `if: github.event_name != 'schedule'`). Nightly fires the slow + AI eval jobs (and skips the gates + the frontend matrix because they're not what nightly is for).
 
 ### 5.3 The Five Gates (sequential)
 
@@ -314,11 +314,11 @@ First run: ~90s install. Cached runs: ~10s.
 
 ### 6.1 Trigger
 
-The `build` job in `ci.yml` runs after all 5 CI gates pass, but only on direct push to `main`:
+The `build` job in `ci.yml` runs after all 5 backend gates **and** the frontend matrix pass, but only on direct push to `main`:
 
 ```yaml
 build:
-  needs: [unit, smoke, lint, integration, golden_roundtrip]
+  needs: [unit, smoke, lint, integration, golden_roundtrip, frontend-build]
   if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 ```
 
@@ -341,15 +341,16 @@ The build step calls `gcloud builds submit` against the repo-root `cloudbuild.ya
 
 ### 6.3 What `cloudbuild.yaml` Does
 
-Three image targets, each tagged with `:${_TAG}` (the git SHA) AND `:latest`:
+Image targets, each tagged with `:${_TAG}` (the git SHA) AND `:latest`, plus the remote GCS publish:
 
-| Image | Built from | Push target |
-|-------|-----------|-------------|
+| Target | Built from | Push target |
+|--------|-----------|-------------|
 | `api` | `backend/Dockerfile` | `${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/api:{SHA, latest}` |
 | `worker` | `backend/Dockerfile.worker` | `.../worker:{SHA, latest}` |
-| `frontend` | `frontend/Dockerfile` | `.../frontend:{SHA, latest}` |
+| `frontend` (shell) | `frontend/Dockerfile` | `.../frontend:{SHA, latest}` |
+| remotes `mfe-*` | `ng build <remote>` → `dist/mfe-*/browser` | `${_REMOTES_BUCKET}/<remote>/{SHA, latest}/` (GCS + Cloud CDN) |
 
-The `frontend` build is **conditional**: a precheck step runs `test -f /workspace/src/frontend/Dockerfile` and skips the frontend build + push if the Dockerfile is absent (Wave 2B may not have produced one yet).
+The **shell** (`frontend`) image build is **conditional**: a `precheck-shell` step runs `test -f /workspace/src/frontend/Dockerfile` and skips the shell build + push if the Dockerfile is absent (Wave 2B / SP may not have produced one yet). The **remotes** publish via the `publish-remotes` step (Option C, GCS) and is **INERT** until `_REMOTES_BUCKET` is set — see §9.2 / §9.5. Remotes never become AR images, so they are NOT in the `images:` verification list.
 
 ### 6.4 Tag Strategy
 
@@ -587,47 +588,36 @@ gcloud secrets versions disable <OLD_VERSION_NUMBER> --secret=jwt-secret \
 
 | Asset | Status |
 |-------|--------|
-| `frontend/` Angular sources | EXISTS (Wave 2B in progress) |
-| `frontend/Dockerfile` | **MISSING** (Wave 2B not yet completed the Nginx wrapper) |
-| `k8s/frontend.yaml` Deployment + Service | EXISTS (Phase D) |
+| `frontend/` Angular sources | EXISTS — **federated workspace** (PR #41, 2026-06-11): `frontend/libs/{ui-kit,composites,core,design-tokens}` + shell at `frontend/src`, native-federation builder |
+| `frontend/apps/mfe-pricing/` | ARRIVING with MF Sub-Plan 1 (pilot remote) — first matrix entry |
+| `frontend/Dockerfile` (shell) | **MISSING** (Wave 2B / SP has not produced the Nginx wrapper) |
+| `k8s/frontend.yaml` Deployment + Service | EXISTS (Phase D) — the shell IS the `frontend` Deployment (Option C) |
 | Frontend image in AR | NOT YET BUILT |
 | `dev.mesell.xyz` Ingress | LIVE (cert valid until 2026-09-03) — currently returns 503 because the frontend Service has no backend pods |
 
-### 9.2 Build Pipeline
+### 9.2 Frontend CI — Federated Matrix (C-CI-1)
 
-The `cloudbuild.yaml` frontend step is **conditional** — it precheck-tests for `frontend/Dockerfile` and skips silently if absent:
+Per `GATE4_CONFIRMATION.md` condition **C-CI-1**, when the multi-project Angular workspace landed (MF Sub-Plan 1, mfe-pricing pilot) the old single-frontend conditional was **REPLACED** (not extended) with a **paths-filtered matrix**. Two pieces:
 
-```yaml
-- id: precheck-frontend
-  name: bash
-  args:
-    - -c
-    - |
-      if [ -f /workspace/src/frontend/Dockerfile ]; then
-        touch /workspace/.frontend-buildable
-        echo "Frontend Dockerfile present — will build"
-      else
-        echo "Frontend Dockerfile missing — skipping frontend build"
-      fi
-  waitFor: [clone]
+**(a) `frontend-changes` job** — runs `dorny/paths-filter@v3` to compute which workspace units changed, emitting one boolean output per filter:
 
-- id: build-frontend
-  name: gcr.io/cloud-builders/docker
-  entrypoint: bash
-  args:
-    - -c
-    - |
-      if [ ! -f /workspace/.frontend-buildable ]; then
-        echo "Skipping frontend build (no Dockerfile)."
-        exit 0
-      fi
-      cd src/frontend
-      docker build -t "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend:${_TAG}" \
-                   -t "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend:latest" .
-  waitFor: [precheck-frontend]
-```
+| Filter | Globs | Meaning |
+|--------|-------|---------|
+| `libs` | `frontend/libs/**`, `frontend/package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `angular.json`, `tsconfig*`, `federation.config.js`, `.github/workflows/ci.yml` | Shared layers (`@mesell/*`) + workspace config — a change here **fans out** to every dependent |
+| `shell` | `frontend/src/**`, `frontend/public/**` | The host (angular.json project `frontend`) |
+| `mfe_pricing` | `frontend/apps/mfe-pricing/**` | Pilot remote (SP01) |
 
-This means the pipeline does not break when frontend isn't ready — Wave 2B can land at its own pace and the next CI run after `frontend/Dockerfile` lands will start producing images.
+**(b) `frontend-build` matrix job** — one matrix `include` entry per buildable unit (`shell`, `mfe-pricing`, …). Each entry carries a computed `run` boolean: build this unit when **its own filter fired OR the `libs` fan-out fired**. The job steps are all gated on `if: matrix.run == 'true'`; an unaffected unit logs a skip-notice and succeeds. Per-unit steps: `pnpm install --frozen-lockfile` → `pnpm rebuild esbuild @parcel/watcher lmdb msgpackr-extract` → `ng test <project>` → `ng build <project> --configuration production`.
+
+**Fan-out rule (why libs are not their own matrix leg):** the shared libs are consumed via `@mesell/*` tsconfig path aliases and compile **into** each consuming unit's native-federation bundle — they are not independently published artefacts. So a libs change cannot be "built alone"; it must rebuild every dependent (shell + all remotes). The `libs` filter therefore acts as a global trigger across all matrix legs.
+
+**Adding remotes (SP02–SP06) = a one-line change in two places:** add a filter block to `frontend-changes` (`mfe_<name>: ['frontend/apps/mfe-<name>/**']`) and a matrix `include` entry to `frontend-build` (copy the `mfe-pricing` block, swap the name, `run` keys off `mfe_<name> || libs`). No structural rewrite.
+
+**Native-binary note (handoff from frontend-coordinator):** `pnpm` ignores native build scripts by default (`ERR_PNPM_IGNORED_BUILDS`: esbuild / @parcel/watcher / lmdb / msgpackr-extract). The `.npmrc dangerously-allow-all-builds` trick is environment-blocked; the clean alternative is an explicit `pnpm rebuild <pkgs>` before `ng build`, which the matrix runs as a dedicated step.
+
+**`cloudbuild.yaml` (shell image + remote GCS publish):** the prior `precheck-frontend`/`build-frontend` steps became `precheck-shell`/`build-shell`/`push-shell` (the shell still ships as the `frontend` AR image stream, Option C) plus a new `publish-remotes` step that `gsutil rsync`s each `dist/mfe-*/browser` to `${_REMOTES_BUCKET}` (GCS + Cloud CDN). `publish-remotes` is **INERT** until `_REMOTES_BUCKET` is set — empty default → it echoes a skip and exits 0, so today's api+worker[+shell] builds are unaffected. No image entry is added for remotes (they are static, never AR images).
+
+This means the pipeline does not break when the shell Dockerfile or the remotes bucket are not ready yet — each lands at its own pace and the next CI run after it appears starts producing the corresponding artefact.
 
 ### 9.3 Frontend Image Shape (recommended pattern for Wave 2B)
 
@@ -655,9 +645,16 @@ EXPOSE 80
 
 Once the image exists, the deploy script (§7.3) uncomments the frontend lines. `dev.mesell.xyz` immediately starts serving the SPA after the next push to `main`.
 
-### 9.5 CDN (Deferred to V1.5)
+### 9.5 CDN — GCS + Cloud CDN for Federated Remotes (Option C)
 
-Static hosting via GCS + Cloud CDN is faster and cheaper than Nginx-in-pod but adds a deploy step (push to GCS) and cache-invalidation complexity. Defer until V1 is in production for at least one month.
+For the **shell**, Nginx-in-pod stays (the `frontend` Deployment). For the **federated remotes**, static hosting via **GCS + Cloud CDN** is not merely an optimization — it is the **mandated hosting model** (GATE4 condition C-RES-2 / Option C): the e2-standard-2 dev node has only ~350m CPU headroom, so 6 in-cluster remote pods do not fit. Remotes therefore ship as static bundles to `remotes.mesell.xyz` (GCS + Cloud CDN), zero in-cluster pods.
+
+The `cloudbuild.yaml` `publish-remotes` step implements the publish path (`gsutil rsync dist/mfe-*/browser → ${_REMOTES_BUCKET}`). It is **READY but INERT** (skips while `_REMOTES_BUCKET` is unset). Activation requires (all Terraform / founder-owned, NOT CI config):
+1. S5 ratifies Option C + per-env bucket layout (DRAFT MF-ENV-1).
+2. Terraform provisions `gs://meesell-remotes-dev` + Cloud CDN + the `remotes.mesell.xyz` HTTPS LB + GCP-managed cert (C-ROUTE-1) + a bucket-scoped `objectAdmin` grant to the Cloud Build compute SA.
+3. Set the `_REMOTES_BUCKET` substitution (in the GitHub Actions build job's `--substitutions`) to the bucket URL.
+
+Cost note (C-CDN-1, flagged for the >₹500/mo gate at S5): a global external HTTPS LB forwarding rule carries a standing hourly charge; size the GCS + CDN + LB estimate during MF-CDN-1.
 
 ---
 
@@ -846,7 +843,7 @@ In order:
 |---|----------|--------|----------------|
 | D1 | Deploy method | ✅ RESOLVED | IAP TCP tunnel |
 | D2 | K8s manifest env strategy | ❓ OPEN | (b) envsubst for V1 → migrate to (a) Kustomize when staging populated |
-| D3 | Frontend serving | ✅ RESOLVED | Nginx pod V1; GCS+CDN V1.5 |
+| D3 | Frontend serving | ✅ RESOLVED | Shell = Nginx pod (the `frontend` Deployment); remotes = GCS + Cloud CDN (Option C, forced by dev-node CPU headroom — GATE4 C-RES-2). Supersedes the old "GCS+CDN V1.5" note: CDN is the V1 remote-hosting model, ready-not-active in cloudbuild via `_REMOTES_BUCKET`. |
 | D4 | Workflow file structure | ❓ OPEN — recommended | One `ci.yml` for V1 (the existing stub structure is single-file). Split into separate `ci.yml` / `build.yml` / `deploy.yml` only when promotion workflow lands. |
 | D5 | Nightly AI eval trigger | ✅ DOCUMENTED | `GEMINI_API_KEY_CI` as GitHub Secret (low-quota, separate from prod) |
 | D6 | GitHub Actions SA | ✅ RESOLVED | Separate `meesell-github-ci` SA (NOT shared with GitLab `meesell-prod-ci`) |
