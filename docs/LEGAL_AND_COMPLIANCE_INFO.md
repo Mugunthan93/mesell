@@ -371,7 +371,7 @@ These are explicit decisions only the founder can make. Tick the chosen option.
 
 1. **Legal entity for MeeSell V1**
    - [ ] Sole Proprietorship (cheapest, personal liability)
-   - [ ] OPC (recommended — limited liability, solo)
+   - [x] OPC (recommended — limited liability, solo)
    - [ ] LLP (limited liability, requires nominee partner)
    - [ ] Pvt Ltd (only if planning VC within 12 months)
 
