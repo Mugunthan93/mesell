@@ -13,6 +13,11 @@ spec:
       labels:
         app: frontend
     spec:
+      # K3s containerd has no GCP credential helper outside GKE — without this the
+      # pod gets 401 from asia-south1-docker.pkg.dev -> ImagePullBackOff (run-6 blocker).
+      # Secret 'artifact-registry' = reader-only meesell-image-puller SA key (repo-scoped).
+      imagePullSecrets:
+        - name: artifact-registry
       containers:
         - name: frontend
           image: asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-prod-images/frontend:latest

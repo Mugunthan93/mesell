@@ -54,3 +54,49 @@ resource "google_artifact_registry_repository" "meesell_prod_images" {
     }
   }
 }
+
+# =============================================================================
+# K3s image-pull identity  (CI activation run-6 deploy fix — 2026-06-11)
+# Spec: founder ruling 2026-06-11 (reader-only SA key as a k8s imagePullSecret).
+#
+# WHY this exists:
+#   Our K3s cluster runs OUTSIDE GKE on a plain GCE VM. containerd has no native
+#   GCP credential helper, so when a Deployment pulls an image from
+#   asia-south1-docker.pkg.dev it presents NO auth and Artifact Registry returns
+#   401 Unauthorized -> ImagePullBackOff. This was the run-6 blocker: the CI deploy
+#   retagged + applied manifests fine, but the new ReplicaSet could not pull the
+#   freshly-built image (the existing 46h pods were hand-loaded, never pulled).
+#
+# THE FIX (reader-only SA + docker-registry secret):
+#   A dedicated, low-privilege service account that holds ONLY
+#   roles/artifactregistry.reader, scoped to THIS repo (NOT project-level). A JSON
+#   key for it is created OUT-OF-BAND (NOT in Terraform — a TF-created key would
+#   land in the GCS state file in plaintext) and loaded into the cluster as a
+#   docker-registry secret named "artifact-registry", referenced by api/worker/
+#   frontend Deployments via imagePullSecrets.
+#
+# BLAST RADIUS: this SA can pull (read) images from meesell-prod-images and nothing
+#   else. It cannot push, cannot touch other repos, cannot read project-level
+#   resources. If its key leaks, the worst case is read access to our own images.
+#
+# WHY repo-scoped, not project-level: least privilege. A project-level
+#   artifactregistry.reader would also expose any future repo (incl. other teams').
+#   google_artifact_registry_repository_iam_member binds the role to ONLY this repo.
+# =============================================================================
+
+resource "google_service_account" "meesell_image_puller" {
+  account_id   = "meesell-image-puller"
+  display_name = "MeeSell K3s image pull (AR reader)"
+  description  = "Read-only AR puller for K3s (no GCP cred helper outside GKE). Repo-scoped reader on meesell-prod-images. JSON key created out-of-band, loaded as k8s secret 'artifact-registry'; never in Terraform. Run-6 fix 2026-06-11."
+}
+
+# Repo-scoped reader: roles/artifactregistry.reader on meesell-prod-images ONLY.
+# google_artifact_registry_repository_iam_member is additive (NOT _iam_binding) —
+# it does not disturb the existing VM-SA / CI-SA reader/writer grants on this repo.
+resource "google_artifact_registry_repository_iam_member" "image_puller_reader" {
+  project    = google_artifact_registry_repository.meesell_prod_images.project
+  location   = google_artifact_registry_repository.meesell_prod_images.location
+  repository = google_artifact_registry_repository.meesell_prod_images.name
+  role       = "roles/artifactregistry.reader"
+  member     = "serviceAccount:${google_service_account.meesell_image_puller.email}"
+}
