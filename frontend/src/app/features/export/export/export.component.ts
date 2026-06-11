@@ -9,12 +9,12 @@ import {
 } from '@angular/core';
 import { Router } from '@angular/router';
 
-import { MeeBadgeComponent }        from '../../../ui';
-import { MeeButtonComponent }       from '../../../ui';
-import { MeeCardComponent }         from '../../../ui';
-import { MeeProgressBarComponent }  from '../../../ui';
-import { PageHeaderComponent }      from '../../../shared';
-import { StatusBadgeComponent }     from '../../../shared';
+import { MeeBadgeComponent }        from '@mesell/ui-kit';
+import { MeeButtonComponent }       from '@mesell/ui-kit';
+import { MeeCardComponent }         from '@mesell/ui-kit';
+import { MeeProgressBarComponent }  from '@mesell/ui-kit';
+import { PageHeaderComponent }      from '@mesell/composites';
+import { StatusBadgeComponent }     from '@mesell/composites';
 
 import {
   type ExportStatus,

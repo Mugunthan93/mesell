@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { RouterTestingModule } from '@angular/router/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { OtpVerifyComponent } from './otp-verify.component';
-import { AuthService } from '../../../core/services/auth.service';
+import { AuthService } from '@mesell/core';
 
 describe('OtpVerifyComponent', () => {
   let fixture: ComponentFixture<OtpVerifyComponent>;

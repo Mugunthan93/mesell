@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { authGuard } from './core/guards/auth.guard';
+import { authGuard } from '@mesell/core';
 
 export const routes: Routes = [
   // Root — public landing page

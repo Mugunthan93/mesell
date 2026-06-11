@@ -4,7 +4,7 @@ import { provideRouter } from '@angular/router';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { Router } from '@angular/router';
 import { ProfileComponent } from './profile.component';
-import { AuthService, AuthUser } from '../../core/services/auth.service';
+import { AuthService, AuthUser } from '@mesell/core';
 
 function makeAuthUser(overrides: Partial<AuthUser> = {}): AuthUser {
   return { id: 1, name: 'Mugunthan', phone: '+919876543210', ...overrides };

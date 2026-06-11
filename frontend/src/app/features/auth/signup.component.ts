@@ -8,8 +8,8 @@ import {
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AuthLayoutComponent } from '../../layouts/auth-layout/auth-layout.component';
-import { MeeInputComponent } from '../../ui/input/input.component';
-import { MeeButtonComponent } from '../../ui/button/button.component';
+import { MeeInputComponent } from '@mesell/ui-kit/input/input.component';
+import { MeeButtonComponent } from '@mesell/ui-kit/button/button.component';
 
 @Component({
   selector: 'mee-signup',
