@@ -164,6 +164,17 @@ All 10 production secrets are populated with at least one enabled version. Local
 | `refresh-token-pepper` | HMAC pepper for refresh-token storage allowlist (Decision #14 amendment) | LIVE (v1) | `openssl rand -hex 32` (64-char hex). |
 | `langfuse-secret-key` | LangFuse Cloud secret key for AI tracing | LIVE (v1) | Populated 2026-06-09. **In V1 the app uses the stub key `pk-lf-disabled-v1`** for `LANGFUSE_PUBLIC_KEY` and reads this secret but does not yet emit traces — LangFuse integration is a V1.5 deliverable. |
 
+**Dual-pepper rotation onboarding (R5 — backend live since PR #65):** the backend now
+reads `REFRESH_TOKEN_PEPPER_PREVIOUS` and `REFRESH_TOKEN_PEPPER_VERSION` from
+`backend-secrets`. These are **NOT new Secret Manager secrets — no SM container to
+create.** `REFRESH_TOKEN_PEPPER_PREVIOUS` is the prior `refresh-token-pepper` SM version,
+which is kept `ENABLED` during the grace window per `docs/runbooks/auth-secret-rotation.md`
+§2 (empty = normal single-pepper mode). `REFRESH_TOKEN_PEPPER_VERSION` is a plain integer
+the operator sets in `backend-secrets` (default `1`, increment on each rotation; becomes the
+`vN` segment in the `cache:refresh:v{N}:{digest}` allowlist keys). Both are added to
+`k8s/secrets.yaml.example`; the only SM action during a rotation is `gcloud secrets versions
+add refresh-token-pepper`.
+
 Read pattern (from a workload pod, via VM SA metadata server):
 ```bash
 gcloud secrets versions access latest --secret=<secret-id> --project=project-1f5cbf72-2820-4cdb-949

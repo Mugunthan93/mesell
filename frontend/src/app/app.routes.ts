@@ -52,15 +52,17 @@ export const routes: Routes = [
           import('./features/catalog-new/catalog-new.component').then(m => m.CatalogNewComponent),
       },
       {
+        // MF Sub-Plan 03 — mfe-onboarding remote (apps/mfe-onboarding/). Profile +
+        // onboarding now live in one Native-Federation remote exposing TWO components
+        // (./ProfileComponent + ./OnboardingComponent). Loaded at runtime via the
+        // manifest; D12 fallback on load failure. ProfileComponent injects the shared
+        // AuthService singleton (@mesell/core) across the boundary — see D22 C1–C5.
         path: 'profile',
-        loadComponent: () =>
-          import('./features/profile/profile.component').then(m => m.ProfileComponent),
+        loadComponent: loadRemoteWithFallback('mfe-onboarding', './ProfileComponent'),
       },
       {
         path: 'onboarding',
-        loadComponent: () =>
-          import('./features/account/onboarding/onboarding.component')
-            .then(m => m.OnboardingComponent),
+        loadComponent: loadRemoteWithFallback('mfe-onboarding', './OnboardingComponent'),
       },
       {
         path: 'catalogs/:id/edit',
@@ -89,10 +91,14 @@ export const routes: Routes = [
         loadComponent: loadRemoteWithFallback('mfe-pricing', './PricingComponent'),
       },
       {
+        // MF Sub-Plan 02 — second federated remote. Export now lives in the
+        // `mfe-export` Native-Federation remote (apps/mfe-export/), loaded at
+        // runtime via the manifest. The :id param flows through the shell router
+        // outlet into the remote component unchanged. The OnDestroy job-polling
+        // timer is destroyed when the host unmounts the remote on navigate-away
+        // (D18 — boundary does not alter lifecycle). D12 fallback on load failure.
         path: 'catalogs/:id/export',
-        loadComponent: () =>
-          import('./features/export/export/export.component')
-            .then(m => m.ExportComponent),
+        loadComponent: loadRemoteWithFallback('mfe-export', './ExportComponent'),
       },
     ],
   },

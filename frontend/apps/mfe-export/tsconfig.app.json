@@ -1,0 +1,17 @@
+/* mfe-export remote — app build tsconfig. Extends the workspace base
+   (inherits strict mode + the @mesell/* path aliases). */
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../out-tsc/mfe-export",
+    "types": []
+  },
+  "include": [
+    "src/**/*.ts",
+    "../../libs/**/*.ts"
+  ],
+  "exclude": [
+    "src/**/*.spec.ts",
+    "../../libs/**/*.spec.ts"
+  ]
+}

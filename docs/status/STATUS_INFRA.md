@@ -1,10 +1,43 @@
 # STATUS — INFRASTRUCTURE
 
 **Owner:** `meesell-infra-builder`
-**Last update:** 2026-06-05
+**Last update:** 2026-06-11 (ci-activation §5.D env-gap closed — PR #76)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
 
 **Status:** Phase A + Phase B complete. All 5 application subdomains live with valid Let's Encrypt TLS. Core infra (Pass 1 + Pass 2 + Pass 2b) stable. Application image builds (Phase D) pending — nothing in `dev/api`, `dev/worker`, `dev/frontend` until then.
+
+## UPDATE — 2026-06-11 — mesell-ci-activation-session-1 (env-gap closeout)
+
+=== STEP: close §5.D env-var gap in .github/workflows/ci.yml ===
+Phase: DEVOPS_ARCHITECTURE.md §5 (CI gates) — config-only chore (Rule 7 single-agent fast mode). ci.yml is infra-owned.
+Session: mesell-ci-activation-session-1
+
+**Context:** PR #74 (backend pythonpath=. in pytest.ini, squash bb09aea) fixed Gate-1 collection (exit 4 import-error → resolved). That exposed the NEXT failure: the app's §5.D startup guard (app/shared/config.py `_require_non_empty`, runs at module import via `settings = _load_settings()`) aborts (SystemExit 1) unless every REQUIRED_FIELDS var is non-empty.
+
+**Guard SSOT correction:** the backend memo + my own inter-lead row said "13 required vars, 5 missing". The actual `REQUIRED_FIELDS` tuple in config.py has **17** vars. Reconciled against the tuple (the SSOT), not the memo.
+
+**Per-job missing set (computed + verified):**
+- `unit` / `smoke`: missing 7 → added the 5 (GCS_BUCKET, GCS_PROJECT_ID, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, CORS_ALLOWED_ORIGINS) PLUS DATABASE_URL + VALKEY_URL (no service containers; dummy DSNs — guard checks non-empty only, no connect at import).
+- `lint`: missing 16 → added the full required set. import-linter Contracts 1-7 (`root_package="app"`) build the graph via grimp, which IMPORTS app code including app.shared.config → triggers the guard. AST scanners 8-10 are static (check_message_id only imports app.i18n.messages_en which has no config dep) — but Contracts 1-7 in the same job force the full set.
+- `integration` / `golden_roundtrip` / `nightly`: missing exactly the 5 → added (DB/Valkey already present via service containers). nightly real `GEMINI_API_KEY: secrets.GEMINI_API_KEY_CI` left UNTOUCHED.
+- `frontend-changes` / `frontend-build` / `build` / `deploy`: untouched (no app-code execution).
+
+CORS_ALLOWED_ORIGINS=http://localhost:4200 — single real-shaped origin; parses to ['http://localhost:4200'], passes _parse_cors_origins + _forbid_cors_wildcard (no `*`).
+
+**Validation:**
+- `yaml.safe_load(ci.yml)` → OK. 10 jobs (shape unchanged).
+- Per-job guard coverage simulated: all 6 app-code jobs missing=[].
+- Cold guard run with the unit-job env (`_env_file=None`): GUARD PASS, CORS → ['http://localhost:4200'].
+- Negative control (added vars removed): aborts with the exact `FATAL: required env var(s) empty or unset: DATABASE_URL, VALKEY_URL, GCS_BUCKET, ...`.
+
+**PR:** #76 (fix/ci-env-dummies → develop), squash-merged 0f44d72. +70/-0, ci.yml only. Remote branch deleted. develop tip = 0f44d72.
+
+**PR #73 finding (reported, not acted on):** #73 (fix/ci-gate1-collection, merge 1e95b2a) and #74 (fix/ci-gate1-pytest-collection, squash bb09aea) are BOTH founder-authored (Mugunthan93), base=develop, SAME pythonpath intent — a duplicate/parallel-lane fix for the identical Gate-1 collection bug. #73 merged first (02:27 UTC), #74 second. Net effect idempotent.
+
+**Next:** READY for develop→main re-fire. The founder/Director opens that PR (D1 — NOT infra). First green run materializes check-contexts → infra then asks founder to add the 5 gates + 3 frontend jobs to main branch protection (NOT build/deploy/nightly). GEMINI_API_KEY_CI still founder-pending (nightly-only).
+Cost: ₹0. No K8s/TF/secret/app-code change.
+
+---
 
 ## Current Phase
 Phase B closed (5 multi-SAN-equivalent ingresses live: `studio`, `api`, `dev`, `testing`, `staging` on `mesell.xyz`). Phase A closed (7/7 Secret Manager values populated, VM SA IAM bindings done on Artifact Registry + GCS bucket, Valkey configured with `maxmemory 128mb allkeys-lru`). app_secrets Terraform state is clean (2 secrets imported: `msg91-template-id`, `audit-pii-salt`).
@@ -1527,3 +1560,88 @@ CI Activation Phase E execution (founder approved the plan at `.tflogs/ci-activa
 (Nightly "Nightly: slow + perf + ai_eval" is schedule-only — NOT a PR check context.)
 
 **Note:** Legacy out-of-band WIF resources (`github-pool` + `meesell-ci` SA, created 2026-05-31) are still present in GCP — harmless orphans now that the variables point at the new TF-managed pool/SA. Can be deleted via `gcloud iam workload-identity-pools delete github-pool` + `gcloud iam service-accounts delete meesell-ci@...` in a future cleanup session (founder approval required for any delete).
+
+---
+
+## UPDATE — mesell-ci-activation-session-1 (continuation) — 2026-06-11 — PR #64 MERGED, first pipeline RED at Gate 1
+
+**Phase:** DevOps §5 (CI gates) + §7 (deploy). Rule: I own the merge mechanics + pipeline diagnosis; I do NOT fix backend test/packaging code (out of infra scope — redirect to meesell-backend-coordinator).
+
+**PR #64 MERGED (founder authorization "merge PR #64").**
+- Merge method: **merge commit** (NOT squash — develop→main with 134 commits; squashing would orphan develop's history).
+- Merge commit SHA: `0ea1988b18c486c214e10197f9a29707304fc845`.
+- API merge succeeded first try (founder token had sufficient permission; the `--admin` bypass fallback was NOT needed despite mergeable_state=blocked from the 1-review gate).
+- `develop` branch PRESERVED (not deleted — permanent branch).
+- Final PR shape at merge: base=main, head=develop, 134 commits, 247 files.
+
+**First main pipeline — RUN ID `27318816408` — VERDICT: FAILURE (RED).**
+- Trigger: push to main (head_sha = merge commit). Event=push.
+- The 5 backend gates are sequential (`needs:`), so Gate 1 failure cascaded.
+
+Per-job table:
+| Job | Conclusion |
+|---|---|
+| CI Gate 1: unit | **failure** |
+| CI Gate 2: smoke | skipped (needs unit) |
+| CI Gate 3: lint (10 contracts) | skipped (needs smoke) |
+| CI Gate 4: integration | skipped (needs lint) |
+| CI Gate 5: golden_roundtrip | skipped (needs integration) |
+| Frontend: detect changed workspace units | success |
+| Frontend: shell | success |
+| Frontend: mfe-pricing | success |
+| Build container images | skipped (needs all 5 gates) |
+| Deploy to K3s (dev namespace) | skipped (needs build) |
+| Nightly: slow + perf + ai_eval | skipped (schedule-only — correct) |
+
+**Failure diagnosis — BACKEND scope, NOT infra. WIF/build/deploy never ran (cannot yet assert WIF health).**
+- Gate 1 failed at pytest COLLECTION (exit code 4), not test logic:
+  ```
+  ImportError while loading conftest '.../backend/tests/conftest.py'.
+  tests/conftest.py:37: from app.shared.database import Base, get_db
+  E   ModuleNotFoundError: No module named 'app'
+  ```
+- Root cause: CI step runs `pytest -m "unit"` with `working-directory: backend`, but nothing puts `backend/` on `sys.path`:
+  - `backend/pytest.ini` (LOCKED §19.D) sets `testpaths = tests`, NO `pythonpath = .`.
+  - No `pyproject.toml` / `setup.py` / `setup.cfg` exists → `app` is not an installed package; no `pip install -e .` step.
+  - `conftest.py` does `from app.shared.database import ...` but does NOT prepend `backend/` to `sys.path`.
+  - With pytest `importmode=prepend` + `rootdir=backend`, only the test file's dir (`tests/`) is inserted on `sys.path`, NOT rootdir → `import app` fails. Reproducible config gap, not a runner artifact.
+- This affects ALL gates (2-5 reuse the same conftest). The `app.shared.config` 5-test suspect from prior memory is moot — the suite never collects.
+
+**Scope ruling:** the fix is BACKEND-owned (`meesell-backend-coordinator`):
+  - Preferred: add `pythonpath = .` to `pytest.ini` (needs founder OK — §19.D LOCKED), OR add a minimal `pyproject.toml`/`setup.py` + `pip install -e .`.
+  - An infra-only workaround (`PYTHONPATH: backend` env on each gate step in `ci.yml`) is POSSIBLE since ci.yml is infra-owned, but it papers over a backend packaging gap and should be backend-coordinator's call. NOT applied this session — reported for escalation. No mutation made to `backend/`, `pytest.ini`, or `ci.yml`.
+
+**Check contexts CAPTURED (exact job `name:` strings — for branch protection, founder-gated):**
+- "CI Gate 1: unit", "CI Gate 2: smoke", "CI Gate 3: lint (10 contracts)", "CI Gate 4: integration", "CI Gate 5: golden_roundtrip"
+- "Frontend: detect changed workspace units", "Frontend: shell", "Frontend: mfe-pricing"
+- "Build container images", "Deploy to K3s (dev namespace)"
+- "Nightly: slow + perf + ai_eval" — schedule-ONLY → do NOT add as a PR-required context (would dead-block every PR).
+- **Branch-protection NOT modified.** Adding contexts is DEFERRED (founder go) until a GREEN run confirms shape. CRITICAL: only the 8 jobs that run on `pull_request` (5 gates + 3 frontend) may become required contexts — "Build container images" + "Deploy to K3s (dev namespace)" run on PUSH only, so requiring them as PR contexts would DEADLOCK every PR. Recommend requiring exactly the 5 gates + 3 frontend jobs once green.
+
+**GEMINI_API_KEY_CI:** still NOT set — founder action, nightly-only, non-blocking for the gates/build/deploy path.
+
+**Recommended next action:**
+1. Escalate Gate-1 collection failure to `meesell-backend-coordinator` (backend packaging / pytest sys.path). Infra blocked on a green run until backend lands the fix.
+2. After backend fix merges develop→main, re-run pipeline; first green run materializes the check contexts; THEN founder approves adding the 5 gates + 3 frontend jobs to main branch protection.
+3. Founder: set GEMINI_API_KEY_CI before relying on nightly.
+
+**Zero cluster/TF/secret mutations this session** — only the PR #64 merge + pipeline diagnosis + this status/board update.
+
+---
+
+## SESSION: mesell-dual-pepper-rotation-infra-session-1 — 2026-06-11
+
+### Dual-pepper secret refs (R5 inter-lead request resolved)
+
+**Context:** dual-pepper-rotation (R5, pre-V1.5-prod gate) merged to develop via founder-gate PR #66 (`50cdcef`); backend group PR #65 (`a2e566c`). Backend now reads two new env vars (`REFRESH_TOKEN_PEPPER_PREVIOUS`, `REFRESH_TOKEN_PEPPER_VERSION`). Backend coordinator opened an inter-lead request to infra on `feature_board_backend.md` to provision the refs.
+
+**Scope honored:** example-file + docs ONLY. NO live cluster / Secret Manager ops (deploy-time per `docs/runbooks/auth-secret-rotation.md` §2 header). No backend/frontend code, no other k8s manifests.
+
+**Delivered (Model C fast-mode branch `chore/dual-pepper-secret-refs` from `origin/develop` @ 50cdcef):**
+- **D1** `k8s/secrets.yaml.example`: added `REFRESH_TOKEN_PEPPER_PREVIOUS: ""` and `REFRESH_TOKEN_PEPPER_VERSION: "1"` to the backend-secrets stanza with comments matching file style — PREVIOUS only set during a §2 grace-window rotation (empty = single-pepper mode); VERSION = integer, increment on each rotation.
+- **D2** `docs/INFRASTRUCTURE_ARCHITECTURE.md` §4: additive onboarding note — these are NOT new SM secrets. PREVIOUS = prior `refresh-token-pepper` SM version kept ENABLED during the grace window (runbook §2); VERSION = operator-set integer in `backend-secrets`. Only SM action during rotation is `gcloud secrets versions add refresh-token-pepper`.
+- **D3** Boards: backend board inter-lead row flipped OPEN → RESOLVED (touched only the Status cell). Infra board Active row added (IN PROGRESS → Recently merged on PR merge). This STATUS entry.
+
+**Topology recorded:** 1 SM secret (`refresh-token-pepper`) with versioned SM versions during the grace window; 2 k8s keys in `backend-secrets`; grace-window mechanics in runbook §2. No new SM container to create.
+
+**Cost:** ₹0/month (docs + example only).
