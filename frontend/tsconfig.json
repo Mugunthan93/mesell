@@ -33,7 +33,7 @@
   "files": [],
   "references": [
     {
-      "path": "./tsconfig.app.json"
+      "path": "./apps/shell/tsconfig.app.json"
     },
     {
       "path": "./tsconfig.spec.json"
