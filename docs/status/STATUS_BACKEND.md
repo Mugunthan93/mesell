@@ -4279,4 +4279,58 @@ Hand-offs: infra notified via board inter-lead row (READY TO RE-FIRE; expected C
   (decentralized — reads this STATUS + my memory per CLAUDE.md rule 3; no separate memo cut for a V1.5-deferred item).
 WRITE-GUARD NOTE: write-tool (Edit/Write) bg-isolation guard active again this turn; all record writes (board move,
   inter-lead updates, this STATUS block) performed via Bash/python to the shared checkout (bash-writable).
+=== UPDATE: 2026-06-11 13:00 — catalog-form (+ai-autofill) BACKEND slice STEP 1 (as-built audit + SPECs) ===
+Phase: V1 Feature 3 (Fast Catalog Form) + Feature 4 (AI Auto-fill) — backend slice
+Session: mesell-catalog-form-backend-session-1 (HYBRID step 1 of 3: audit + author specialist SPECs; NO feature code, NO dispatch)
+Working on feature: catalog-form. Memo file: feature_catalog-form.md.
+
+Board sweep (session start): 2 active rows (microservices-export, ci-gate4-pass3) — neither stale (touched 2026-06-10/11).
+  Added catalog-form (+ai-autofill backend) IN PROGRESS row. 3 inter-lead requests open (2 infra OPEN, 1 RESOLVED). No 7+day-stale rows.
+  NOTE: master working tree's feature_board_backend.md carries UNRESOLVED stash-conflict markers (<<<<<<< / ======= / >>>>>>>).
+  origin/develop board is CLEAN and authoritative — this update committed on the clean copy in the backend worktree.
+
+BRANCH REALITY RECONCILIATION (vs Director premise):
+  - Director said "feature/catalog-form/integration EXISTS on origin, PR #57 OPEN against develop."
+  - ACTUAL: PR #56 (ai → integration) MERGED 2026-06-11 01:29Z; PR #57 (integration → develop) MERGED 2026-06-11 03:42Z.
+    origin has ONLY feature/catalog-form/ai (629f6ef); NO origin integration branch. Local integration branch is STALE (0 ahead / 95 behind develop).
+  - RULING: the AI slice (autofill_v1.py prompt + eval dir + autofill route/schemas/service) ALREADY landed on develop via #57.
+    Therefore feature/catalog-form/backend was cut off origin/develop (tip 5cd6e32), NOT the stale local integration branch.
+
+SCOPE RULING: this backend slice carries BOTH F3 (catalog-form) AND F4 (ai-autofill) backend gaps on ONE branch
+  (feature/catalog-form/backend). Rationale: autofill route/schemas/service already live IN the catalog module on develop;
+  splitting to a separate feature/ai-autofill/backend would fork the same files. Single branch, single board row.
+
+As-built AUDIT (catalog module ~95% BUILT — auth-otp/smart-picker pattern repeats):
+  BUILT: 7-file canonical layout (router/schemas/service/repository/domain/exceptions/__init__); 6 routes incl. POST /autofill
+    (router.py:193); 10 service methods incl. autofill_product (service.py:583) + assert_product_ownership (919) verbatim §10.C;
+    13 repository methods incl. upsert_draft/get_draft; 11 domain dataclasses; all Pydantic schemas (Create/Patch/Autofill*/Preview/Draft);
+    product.py + product_draft.py models (composite PK (user_id,product_id)); autofill_v1.py prompt; audit_mw coalesce helper;
+    plan_guard limits (product_count/ai_autofill_hourly).
+  REAL GAPS (specialist work — the honest small list):
+    G1  FEATURE_CATALOG_FORM_ENABLED MISSING from shared/config.py (D2 unwired)
+    G2  FEATURE_AI_AUTOFILL_ENABLED MISSING from shared/config.py (F4 D2 unwired)
+    G3  main.py includes catalog_router UNCONDITIONALLY — no 404-when-disabled guard (D2)
+    G4  POST /autofill route has NO flag guard — no 404 when FEATURE_AI_AUTOFILL_ENABLED=false (F4 D2)
+    G5  §10-CATALOG-D2 autosave-coalesce regex = /products/{id}/(draft|autosave) but plan autosave = PATCH /products/{id}
+        → coalescing SILENTLY never fires for the real autosave path. Needs regex widen (§4.G amendment, founder FYI).
+    G6  ALL catalog tests MISSING: test_catalog_unit.py / test_catalog_routes.py / test_audit_coalescing.py /
+        test_catalog_form_integration.py / test_ai_autofill_integration.py
+    G7  CONTRACT RECONCILIATION: F4 plan D1 says §10 auto-apply path must be REMOVED from autofill_product;
+        as-built RETAINS it (service.py:684-695). Two contracts conflict (§10 auto-apply-at-0.85 vs F4 ai-autofill-no-auto-apply).
+        Needs explicit founder/lead ruling at STEP 2 dispatch — flagged, NOT silently resolved.
+
+Conflict check (in-flight backend sessions vs my file set):
+  - microservices-export (feature/microservices-export/backend): touches export module + SUB_PLAN docs. NO overlap with catalog files.
+  - ci-gate4-integration pass3 (fix/ci-gate4-integration-pass3): touches tests/conftest.py + module conftests + audit_mw SAVEPOINT binding.
+    POTENTIAL OVERLAP: audit_mw.py (pass3 binds savepoint; my G5 widens autosave regex) AND backend/tests/conftest.py.
+    MITIGATION: G5 is an additive regex change in a different function than pass3's savepoint binding; tests are NEW files (no conftest edit needed).
+    Sequencing note for STEP 2: prefer catalog-form backend specialist to rebase on develop AFTER ci-gate4-pass3 merges to avoid audit_mw collision.
+
+Done: as-built audit (file:line evidence); scope ruling (F3+F4 one branch); branch reality reconciliation; 3 specialist SPECs authored
+  (in coordinator session output); worktree /tmp/mesell-wt/catalog-form-backend created off origin/develop; feature/catalog-form/backend cut;
+  board IN PROGRESS row added (clean origin/develop copy).
+In progress: STEP 1 close-out. STEP 2 (master dispatches specialists) + STEP 3 (lead merge gate) follow.
+Blockers: none P0. G7 (auto-apply contract conflict) needs a ruling at dispatch; G5 needs §4.G amendment (founder FYI, not a blocker for the slice).
+Next: master session dispatches services-builder + api-routes-builder per the STEP-1 SPECs; database is VERIFY-only (no migration).
+Hand-offs: none cross-lead yet (F3+F4 backend is self-contained per O1/agent-lineup — AI/auth/infra NONE). frontend slice is separate (frontend lead).
 =========
