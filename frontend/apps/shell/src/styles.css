@@ -11,17 +11,21 @@
    the entire frontend/src tree for class candidates and generates utilities
    on demand. No manual safelist or @source directive needed. */
 @import "tailwindcss";
-@import "../libs/design-tokens/_tokens.css";
+/* SP07 D43: styles.css relocated from frontend/src/ to frontend/apps/shell/src/.
+   Relative paths re-pointed: ../libs -> ../../../libs (up: src->shell->apps->frontend, then libs).
+   @source also re-pointed accordingly. */
+@import "../../../libs/design-tokens/_tokens.css";
 
 /* R4 (Sub-Plan 0 / MASTER_PLAN §6.3): the mee-* primitives + composites now live
    under frontend/libs/. Tailwind v4's default scan covers the project; the explicit
    @source below guarantees libs/ class candidates survive purge after relocation. */
-@source "../libs";
+@source "../../../libs";
 
 /* MF Sub-Plan 01 (MASTER_PLAN §6.3, Risk R3 purge guard): federation remotes live
    under frontend/apps/ (mfe-pricing pilot + later remotes). The single Tailwind build
-   is owned by the shell, so the shell's @source must cover apps/ class candidates too. */
-@source "../apps";
+   is owned by the shell, so the shell's @source must cover apps/ class candidates too.
+   SP07: from apps/shell/src/, ../../ reaches apps/, covering all mfe-* siblings. */
+@source "../..";
 
 /* Global body */
 html, body {
