@@ -813,8 +813,13 @@ env:
 Safe deployment template:
 1. Write manifest under `~/meesell-infra/dev/<name>.yaml`.
 2. `kubectl -n dev diff -f <file>` — review.
-3. `kubectl -n dev apply -f <file> --dry-run=server` — server-side validate.
-4. `kubectl -n dev apply -f <file>` — apply.
+3. **[MANDATORY GATE]** `kubectl -n dev apply -f <file> --dry-run=server` — server-side
+   validate. **Founder ruling 2026-06-11: `kubectl apply --dry-run=server` is a MANDATORY
+   pre-apply checklist item at EVERY deploy (dev, staging, future prod). It is never
+   optional and never skipped.** A clean server-side dry-run is a hard precondition for
+   step 4. If the cluster is unreachable at authoring time, the dry-run is deferred to
+   deploy time (per F3) but MUST run — and pass — before any real `apply`.
+4. `kubectl -n dev apply -f <file>` — apply (only after step 3 passes clean).
 5. `kubectl -n dev rollout status deployment/<name>` — wait.
 6. Readiness probe and resource limits required. No deployment lands without both.
 7. Commit manifest to infra repo (NOT secrets).
