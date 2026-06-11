@@ -531,6 +531,64 @@
           }
         }
       }
+    },
+    "mfe-auth": {
+      "projectType": "application",
+      "schematics": {},
+      "root": "apps/mfe-auth",
+      "sourceRoot": "apps/mfe-auth/src",
+      "prefix": "app",
+      "architect": {
+        "build": {
+          "builder": "@angular-architects/native-federation:build",
+          "options": {},
+          "configurations": {
+            "production": { "target": "mfe-auth:esbuild:production" },
+            "development": { "target": "mfe-auth:esbuild:development", "dev": true }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular-architects/native-federation:build",
+          "options": {
+            "target": "mfe-auth:serve-original:development",
+            "rebuildDelay": 500,
+            "dev": true,
+            "cacheExternalArtifacts": false,
+            "port": 4206
+          }
+        },
+        "esbuild": {
+          "builder": "@angular/build:application",
+          "options": {
+            "browser": "apps/mfe-auth/src/main.ts",
+            "index": "apps/mfe-auth/src/index.html",
+            "tsConfig": "apps/mfe-auth/tsconfig.app.json",
+            "styles": ["src/styles.css"],
+            "polyfills": ["es-module-shims"]
+          },
+          "configurations": {
+            "production": {
+              "budgets": [
+                { "type": "initial", "maximumWarning": "500kB", "maximumError": "1MB" },
+                { "type": "anyComponentStyle", "maximumWarning": "4kB", "maximumError": "8kB" }
+              ],
+              "outputHashing": "all"
+            },
+            "development": { "optimization": false, "extractLicenses": false, "sourceMap": true }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve-original": {
+          "builder": "@angular/build:dev-server",
+          "configurations": {
+            "production": { "buildTarget": "mfe-auth:esbuild:production" },
+            "development": { "buildTarget": "mfe-auth:esbuild:development" }
+          },
+          "defaultConfiguration": "development",
+          "options": { "port": 4206 }
+        }
+      }
     }
   }
 }
