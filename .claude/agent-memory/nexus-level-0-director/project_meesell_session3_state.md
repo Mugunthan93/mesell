@@ -92,3 +92,18 @@ develop tip at night close: f9a2e93 (+2 OPEN PRs #41/#46). GitHub self-approval 
   2. Branch protection is advisory under the founder's admin credential (enforce_admins=false → "Bypassed rule violations"); force-push/deletion blocks DO hold. develop's policy did block non-admin merge of #29 (--admin needed).
   3. §6.5 board MERGED transition vs PR-only protection: leads diverged (backend out-of-band record; infra direct contents-API commit 818b830). Pick one mechanic.
 - Residual: memory/STATUS appends uncommitted on develop checkout — ride next chore/memory-sync PR.
+
+## MORNING 2026-06-11 — founder returned; all 8 flags CLEARED; SP01 armed
+
+**Founder directives (morning):** (1) go for SUB_PLAN_01, (2) clear the 8 flags now, (3) PR #41/#46 review + #41 diff walkthrough happen in HIS other session.
+
+**Morning sync first:** stranded local F2 commit 2fdf511 (auth-otp infra board flip) rebased onto origin/develop → pushed as fb35f54. Night-run's unstaged master-tree board/status edits reconciled (2 conflicts resolved keep-both: STATUS_BACKEND dual UPDATE blocks, backend board dual rows) → committed 0b147e8. Stash dropped after verifying memory files matched #47 exactly.
+
+**All 8 founder flags RULED (2026-06-11 AM, all as recommended):**
+- D21 AuthLayout→composites ✅ · D33 Product/Catalog→core ✅ · D42 CSP ADD-ONLY+dev-smoke-gated ✅ · D43 shell→apps/shell at SP07 ✅ — landed via PR #49 (e2c0401, frontend lead). SP01's D9/D14 ruled "approved, defer to SP07" (D9→D43, D14→D42). **ZERO pending FOUNDER-FLAGs remain on the entire MF planning surface (SP00–07).**
+- APP_ENV dev ConfigMap → "development" ✅ · kubectl --dry-run=server now [MANDATORY GATE] playbook §15 ✅ · MSG91 whitelist = founder action before dev OTP smoke (recorded STATUS_INFRA) — landed via PR #48 (32b350f, infra lead).
+- Dual-pepper grace-window → formally scheduled backend task, pre-V1.5-prod GATE, owner meesell-auth-builder — F2 direct commit 5b70964 (backend lead).
+
+**Op learnings:** (a) `gh pr merge --delete-branch` from a worktree fails local cleanup when develop is checked out in master tree — merge still lands; delete remote ref via API. (b) auth-secret-rotation.md + staging overlay exist ONLY on feature/auth-otp/integration until #46 merges — tasks referencing them on develop will miss. (c) kubectl --dry-run=client is NOT offline (contacts cluster for discovery); yaml.safe_load_all is the true offline check.
+
+**STANDING STATE:** develop tip = e2c0401 (+memory sync after). PR #41 + #46 still OPEN on founder gate (his review session). **SP01 pricing pilot is ARMED: execution gate = #41 merged to develop. The moment founder confirms #41 merged and says "go", dispatch meesell-frontend-coordinator to execute SUB_PLAN_01_pricing_pilot.md** (worktree, feature/mfe-pricing/integration from develop, single specialist serialized phases per the plan's §Agent lineup, §9.A pilot-validation criteria = the toolchain proof for SP02–06). Infra C-CI-1 readiness per handoff_mf_ci_prep.md + GATE4_CONFIRMATION.md are the other two execution-gate items — verify both at dispatch.
