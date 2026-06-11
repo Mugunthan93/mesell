@@ -12,7 +12,7 @@
 | Feature | Group branch | Status | Current session | Last touched | Blocking | Notes |
 |---|---|---|---|---|---|---|
 | auth-otp | feature/auth-otp/infra | IN REVIEW | — | 2026-06-11 | — | FE-D5 env-var wiring (dev=30/120; staging overlay=60/300) + auth-secret-rotation runbook. Base=feature/auth-otp/integration. |
-| mf-ci-c-ci-1 | chore/ci-matrix-c-ci-1 | IN PROGRESS | mesell-mf-ci-c-ci-1-infra-session-1 | 2026-06-11 | none | C-CI-1 discharge: ci.yml frontend matrix (shell + mfe-pricing pilot) + paths-filter fan-out; cloudbuild shell-image + INERT GCS remote publish. Config+docs only, ready-not-active. |
+| mf-ci-c-ci-1 | chore/ci-matrix-c-ci-1 | IN REVIEW | — | 2026-06-11 | none | C-CI-1 discharge (PR #50 → develop, founder gate): ci.yml frontend matrix (shell + mfe-pricing pilot) + paths-filter fan-out; cloudbuild shell-image + INERT GCS remote publish. Config+docs only, ready-not-active. |
 
 ## Recently merged (last 14 days)
 
