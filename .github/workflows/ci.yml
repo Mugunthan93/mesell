@@ -794,6 +794,12 @@ jobs:
                 kubectl apply -f ~/mesell/k8s/frontend.yaml
               fi
 
+              # 2b. If the applies changed the Deployment shapes, wait for that rollout to
+              #     settle BEFORE exec'ing migrations — exec on a terminating pod = exit 137
+              #     (CI run 27365266379).
+              kubectl -n ${{ env.NAMESPACE }} rollout status deployment/api    --timeout=180s
+              kubectl -n ${{ env.NAMESPACE }} rollout status deployment/worker --timeout=180s
+
               # 3. Migrate the schema on the CURRENT api pod BEFORE rolling the new image.
               kubectl exec -n ${{ env.NAMESPACE }} deploy/api -- alembic upgrade head
 
