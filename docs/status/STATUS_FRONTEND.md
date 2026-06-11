@@ -5678,4 +5678,32 @@ Next:
 Hand-offs:
   - handoff_mf_cutover.md -> infra (CSP mechanism resolved via #99; hosting + Gate-4 pending cost gate). Board inter-lead row OPEN.
   - backend: lightweight verification of the 401->refresh->retry + Set-Cookie non-regression WITH CSP active (Phase C, joint).
+=== UPDATE: 2026-06-11 (smart-picker-wiring PORT MERGE-GATE — HYBRID step 3) ===
+Phase: V1 F2 Smart Category Picker — frontend HTTP wiring (/catalogs/new in mfe-catalog remote)
+Session: mesell-smart-picker-port-session-1 (gate; specialists ran mesell-smart-picker-port-frontend-session-1 Phase A + session-2 Phase B)
+Routes touched: /catalogs/new (SmartPickerComponent, lazy via CATALOG_ROUTES './new'); root wiring app.config.ts + apps/mfe-catalog/src/main.ts
+Specialists: meesell-angular-component-builder (Phase A: D4 rename + §9.E model + component/card) + meesell-angular-service-builder (Phase B: HTTP CategoryService + provideHttpClient)
+
+Board sweep (session start + end): Active features table now EMPTY (smart-picker-wiring was the only Active row → flipped to Recently merged). NO rows untouched 7+ days (all activity is 2026-06-11). Inter-lead requests open: none new. Recently-merged table carries SP01-07 + smart-picker-wiring (all <14 days).
+
+GATE VERDICT: PASS. Independently re-ran every gate in worktree /private/tmp/mesell-wt/smart-picker-wiring — 0 discrepancies vs specialist reports.
+Done:
+  - Diff scope CLEAN (14 files, all in-scope: smart-picker/** + catalog.routes.ts + main.ts + app.config.ts provideHttpClient-only + catalog-new delete side of D4 rename)
+  - Builds: mfe-catalog GREEN 2.982s / shell GREEN 2.955s (≤90s D12)
+  - Tests: CI=true ng test frontend = 45 files / 444 tests / 0 fail / 0 skip; tsc app+spec EXIT 0
+  - Greps: primeng 0 / localStorage 0 / commission_pct 0 (only doc-comment hits)
+  - §9.E model no-drift (7 fields, confidence 0.0-1.0, no commission_pct, suggestions 0..5); confidence ×100 display-only
+  - D4 rename trace: git log --follow → SP05 #77 → SP0 #40; commit 7866499 = 4× R100
+  - §6.G singleton PASS (P0): _mesell_core.js defines AuthService ONCE, 0 inline copies in smart-picker chunk, @mesell/core in remoteEntry shared[] — FIRST mfe-catalog AuthService consumer, no drift
+  - R-SP3-1: all 5 CATALOG_ROUTES lazy targets emit chunks; main.ts routes full set
+  - Bundle ruling ACCEPT: +10.49 kB shell initial (→134.94 kB) = one-time provideHttpClient infra, shared by all features
+  - PR template complete (no <> placeholders); gate decision posted as #98 comment
+  - Squash-merged #98 (c5bf304); deleted remote head ref; removed worktree
+  - Merged develop into integration (a1f8ebf, SP06 mfe-auth, conflict-free); re-certified merged tip 46 files/449 tests 0 fail
+  - Opened founder-gate PR #101 [FOUNDER GATE — DO NOT MERGE] integration→develop — LEFT OPEN (D1, not lead's gate)
+In progress: none
+Blockers: none
+Next: founder reviews/merges #101 (integration→develop). Feature-level follow-ups (NOT this slice): integration tests vs real backend §2.2, FEATURE_SMART_PICKER_ENABLED ConfigMaps (infra), GEMINI_API_KEY live evals (ai), selectCategory 422 (V1.5).
+Hand-offs:
+  - none new this gate. The §9.E contract is now consumed by a real HTTP service — if backend changes the shape, smart-picker.model.ts is the ONLY file to reconcile.
 =========
