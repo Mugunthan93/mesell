@@ -3719,3 +3719,23 @@ Blockers: none. NOT blocking V1.
 Next: schedule the dual-pepper-rotation feature dispatch ahead of V1.5 prod cutover. Owner is meesell-auth-builder (version-tag key prefix + dual-pepper read path); coordinate the rotation runbook §2 with infra at dispatch time.
 Hand-offs: none new (infra already authored runbook §2; backend implements the read path it describes when scheduled).
 =========
+
+=== UPDATE: 2026-06-11 — mesell-dual-pepper-session-1 SESSION START ===
+Phase: dual-pepper-rotation (R5 pre-V1.5-prod gate) — dispatch + merge-gate session
+Session: mesell-dual-pepper-session-1
+Board sweep (session start): 2 Active rows. microservices-export IN PROGRESS, last touched 2026-06-10 22:55 IST (1 day — NOT stale; Step 4 extraction is POST-V1, no action). dual-pepper-rotation PENDING → being activated this session. 0 inter-lead requests open. 0 MERGED rows aged >14d (auth-otp #46/#44 dated 2026-06-11, housekeeping-v1 #28 dated 2026-06-10 — all within window).
+
+V1-feature/specialist mapping (mandatory first-action statement):
+  - V1 feature touched: Auth (Feature 1, FE-D5 split-token) — specifically the R5 refresh-token-pepper rotation hardening. NOT a new endpoint; no contract/shape change; access+refresh token shapes UNCHANGED.
+  - Specialist: meesell-auth-builder ONLY (key-prefix versioning + dual-pepper read-fallback path). No database-builder (no schema change), no api-routes-builder (no endpoint/Pydantic change), no services-builder.
+  - As-built verified this session: core/auth.py refresh_allowlist_key(refresh_token) is single-pepper/unversioned (cache:refresh:{digest}); shared/config.py has REFRESH_TOKEN_PEPPER (no _PREVIOUS/_VERSION yet); three allowlist GET sites in iam/service.py consume refresh_allowlist_key — verify_login (write line ~355), rotate_refresh_token (read old_key line ~411–417), revoke_refresh_token (read+DEL line ~516–520). Runbook §2 spec matches dispatch brief.
+
+Done (session start):
+  - Mandatory first-action reads complete (MEMORY.md, auth_otp_feature.md, board, runbook §2, config.py, core/auth.py, iam/service.py call sites).
+  - DESIGN NUANCE surfaced for the dispatch: the brief's validate_refresh_allowlist() returns only the payload value, but rotate_refresh_token needs the MATCHED old_key (for the Lua DEL) and revoke_refresh_token needs the MATCHED key (for the DEL) when a PREVIOUS-pepper entry hits. A value-only helper would DEL/rotate the wrong (current-pepper) key on a fallback hit. Auth-builder MUST return the matched key alongside the value (or refactor both call sites to derive old_key from whichever pepper matched).
+
+In progress: branch setup (worktrees) → dispatch meesell-auth-builder.
+Blockers: none.
+Next: create feature/dual-pepper-rotation/integration + /backend worktrees; flip board PENDING→IN PROGRESS; dispatch auth-builder.
+Hand-offs: infra inter-lead request (REFRESH_TOKEN_PEPPER_PREVIOUS + _VERSION secret refs in k8s/secrets.yaml.example) to be opened at PR time.
+=========
