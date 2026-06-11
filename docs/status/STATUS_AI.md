@@ -36,6 +36,31 @@ AI track execution (session `mesell-ai-track-session-1`) — V1 Features 2/4/5 A
 - founder: 3 founder-gate PRs open (#55 smart-picker, #57 catalog-form, #59 image-precheck) — leave open until sibling groups land.
 
 ## Updates Log
+=== UPDATE: 2026-06-11 SESSION-END (STEP 3 MERGE GATE) ===
+Phase: V1 Feature 5 (image-precheck) — HYBRID STEP 3 (AI lead merge gate on image-precheck-builder's precheck_smoke deliverable).
+Session: mesell-image-precheck-ai-session-2
+Board sweep: image-precheck row flipped IN PROGRESS → MERGED, moved to Recently merged (founder-gate PR opened). 3 prior merged rows dated 2026-06-11 (none stale 7+ days). 0 inter-lead requests open.
+GATE VERDICT: **PASS.** Diff scope = `tests/eval/precheck_smoke/` ONLY (25 files: __init__, gen_fixtures.py reproducible PIL generator, fixtures.json, 20 binaries, test_pillow_checks.py, eval_results.json) + my STATUS/board/FEATURE_PLAN amend. NO backend/app/, frontend, k8s, terraform touched.
+Evidence (re-run independently in master .venv with full dummy env exported):
+  - 22/22 pytest PASS (count/split + 20 parametrized fixtures + aggregate verdict). Whole suite 0.26s.
+  - worst_case_pillow_seconds = 0.028 vs 2.0s Gate-2 budget (71× headroom).
+  - gemini_calls=0, gemini_cost_inr=0.0 — grep confirms NO call_gemini / network / _check_watermark in smoke (watermark out of scope per §999). Cost gate N/A.
+  - single-open contract honored: _check_jpeg returns (bool,img); steps 2-4 reuse img (no 2nd open).
+  - aggregation fidelity: status=ready iff jpeg AND color==RGB AND resolution AND white_bg; watermark informational — matches tasks.py §967.
+  - fixture composition matches FEATURE_PLAN §979-990 (10 bad w/ correct fail-reason coverage incl 2 multi-fail combos; 10 good white-BG ≥1500² RGB).
+  - eval_results.json shape consistent with watermark sibling idiom (run_date/total_cases/passed/verdict) + workload extensions.
+Deviation adjudications (both ACCEPTED):
+  - D1 in-module dummy-env setdefault: non-destructive (CI real env wins), conftest untouched (services-builder scope), no secret/PII leak, GEMINI_API_KEY="test-not-a-real-key" never hits network. ACCEPT.
+  - D2 gen_fixtures.py committed: reproducibility = golden-set hygiene, in-scope, deterministic PIL color constants. ACCEPT.
+G2 ruling (white-BG 5×5/235 keep-as-built): plan §965 + §976 docstring-line amended to match code, AI lead-direct per §F5 doc-status-line precedent (line's own "V1 algorithm — V1.5 may iterate" posture ≠ §7.3 founder-LOCK). NOT a founder queue item.
+G3 ruling (fix_hints = FE static map): noted in plan §968 amendment + PR body. §968/§F5 fix-hint acceptance traceability now points at FE slice (meesell-frontend-coordinator); hint copy retained in plan as canonical SOURCE. NOT an AI/backend deliverable.
+Lane: FLAT-LANE founder-gate PR `feature/image-precheck-ai` → `develop` (its own gate; avoids touching frozen open #118 backend leaf). Titled [FOUNDER GATE — DO NOT MERGE].
+Discipline note: no IN REVIEW transition (master dispatched specialist who committed direct to branch; no group PR). AI flat-lane flow = lead opens the founder-gate PR at gate time.
+Eval pass rate: precheck_smoke 20/20 (100%) deterministic Pillow gate. watermark accuracy 100% (≥85%) unchanged (PR #58/#59).
+Tokens per call (avg): N/A (0 Gemini calls). Cost per call (est): ₹0.00 (no vision in smoke).
+Next: founder reviews the flat-lane gate PR. fix_hints FE slice tracked by frontend lead.
+=========
+
 === UPDATE: 2026-06-11 SESSION-START ===
 Phase: V1 Feature 5 (image-precheck) — STEP 1 of HYBRID (as-built audit + specialist SPEC). NO feature code, NO dispatch this step.
 Session: mesell-image-precheck-ai-session-2
