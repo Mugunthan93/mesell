@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-infra-builder`
 **Domain:** infra
-**Last updated:** 2026-06-11 (ci-activation — Phase E TF apply DONE + GitHub vars updated; PR #64 develop→main open awaiting founder gate)
+**Last updated:** 2026-06-11 (ci-activation — PR #64 MERGED merge-commit 0ea1988; first main pipeline RED at Gate 1 backend-collection error; BLOCKED on backend fix)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -11,7 +11,7 @@
 
 | Feature | Group branch | Status | Current session | Last touched | Blocking | Notes |
 |---|---|---|---|---|---|---|
-| ci-activation | (no branch — TF/GitHub-settings ops) | IN PROGRESS | mesell-ci-activation-session-1 | 2026-06-11 | founder gate — PR #64 + GEMINI_API_KEY_CI | Phase E TF applied (11 add/1 chg/0 destroy): github-actions-pool WIF + meesell-github-ci SA + 5 IAM + cloudbuild/iap APIs. GitHub vars GCP_WIF_PROVIDER+GCP_CI_SA_EMAIL repointed to new TF resources. PR #64 develop→main open (founder approve+merge fires 1st pipeline). GEMINI_API_KEY_CI = founder action (nightly-only). Branch-protection check contexts DEFERRED to post-1st-run. |
+| ci-activation | (no branch — TF/GitHub-settings ops) | BLOCKED | — | 2026-06-11 | backend — Gate 1 unit collection error (ModuleNotFoundError: app) blocks pipeline; see inter-lead request to backend-coordinator | PR #64 MERGED (merge commit 0ea1988, develop→main, develop preserved). First main pipeline run 27318816408 = FAILURE: Gate 1 unit failed at pytest COLLECTION (conftest `from app.shared.database import` → ModuleNotFoundError: No module named 'app'; no PYTHONPATH/installable pkg). Gates 2-5+build+deploy SKIPPED (sequential needs). 3 frontend jobs GREEN; nightly correctly skipped. WIF/build/deploy unproven (never ran). Fix = BACKEND scope (pytest sys.path / packaging). Check contexts captured in STATUS_INFRA; branch-protection still DEFERRED until green. GEMINI_API_KEY_CI still founder-pending (nightly-only). |
 | auth-otp | feature/auth-otp/infra | IN REVIEW | — | 2026-06-11 | — | FE-D5 env-var wiring (dev=30/120; staging overlay=60/300) + auth-secret-rotation runbook. Base=feature/auth-otp/integration. |
 
 ## Recently merged (last 14 days)
@@ -28,6 +28,7 @@
 | To lead | About feature | Request | Opened | Status |
 |---|---|---|---|---|
 | frontend-coordinator (incoming) | mf-workspace-foundation | MF CI prep C-CI-1 (handoff_mf_ci_prep.md) — replace single-frontend CI with paths-filter matrix before SP1 | 2026-06-10 | RESOLVED via PR #50 (merged develop) — frontend lead marks CLOSED on its own board |
+| backend-coordinator | ci-activation | First main pipeline RED — Gate 1 `pytest -m unit` fails at COLLECTION: `from app.shared.database import` → `ModuleNotFoundError: No module named 'app'`. CI runs `pytest` in `working-directory: backend` with no PYTHONPATH and no installable pkg (`pytest.ini` §19.D LOCKED has no `pythonpath`; no pyproject/setup.py). Fix is backend-owned: add `pythonpath = .` to pytest.ini (founder OK — §19.D locked) OR add pyproject/setup.py + `pip install -e .`. See handoff_ci_gate1_collection.md. | 2026-06-11 | OPEN |
 
 ---
 
