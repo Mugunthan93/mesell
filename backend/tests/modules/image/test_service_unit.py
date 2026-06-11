@@ -30,7 +30,7 @@ from app.modules.image.exceptions import (
     InvalidImageIdxError,
 )
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 # ─────────────────────────────────────────────────────────────────────────────

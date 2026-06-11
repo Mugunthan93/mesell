@@ -5,6 +5,8 @@ import os
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 
 def _reload_config(env: dict[str, str]):
     """Reload app.config with a controlled environment."""

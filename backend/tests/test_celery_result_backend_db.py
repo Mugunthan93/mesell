@@ -11,6 +11,10 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
+import pytest
+
+pytestmark = pytest.mark.unit
+
 
 def test_result_backend_path_is_db_2():
     """``result_backend`` path MUST equal ``/2`` regardless of input URL."""

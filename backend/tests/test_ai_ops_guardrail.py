@@ -19,7 +19,11 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from app.ai_ops import guardrail
+
+pytestmark = pytest.mark.unit
 
 
 # ── Layer 1 — apply_prompt_constraint ──────────────────────────────────────

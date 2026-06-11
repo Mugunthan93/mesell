@@ -83,4 +83,4 @@ async def test_search_via_trigram_p95_under_200ms(db):
 
 # Mark all tests in this module as live-Postgres-required so a CI runner
 # without the tunnel can skip in bulk.
-pytestmark = pytest.mark.usefixtures("db")
+pytestmark = [pytest.mark.usefixtures("db"), pytest.mark.integration]

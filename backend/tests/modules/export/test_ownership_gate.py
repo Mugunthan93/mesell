@@ -14,6 +14,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 from app.modules.catalog.exceptions import ProductNotFoundError
 from app.modules.export import service as export_service
 from app.modules.export.schemas import ExportRequest

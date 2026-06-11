@@ -77,6 +77,8 @@ from uuid import uuid4
 import pytest
 import pytest_asyncio
 import redis.asyncio as _redis_lib
+
+pytestmark = pytest.mark.integration
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool

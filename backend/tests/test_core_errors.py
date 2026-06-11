@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 
 from app.core.errors import MeesellError, _resolve_message_id, register_error_handlers
 
+pytestmark = pytest.mark.unit
+
 
 # ── Subclass used across tests ────────────────────────────────────────────
 class _DummyError(MeesellError):

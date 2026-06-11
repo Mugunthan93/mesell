@@ -33,7 +33,7 @@ from app.modules.iam import service as iam_service
 from app.shared.config import settings
 
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 async def test_verify_writes_allowlist_entry_with_correct_payload_and_ttl(

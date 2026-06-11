@@ -29,6 +29,8 @@ from app.ai_ops import budget_cap
 from app.core.errors import MeesellError
 from app.shared.config import settings
 
+pytestmark = pytest.mark.unit
+
 
 # ── Exception class shape ──────────────────────────────────────────────────
 class TestBudgetExceededError:

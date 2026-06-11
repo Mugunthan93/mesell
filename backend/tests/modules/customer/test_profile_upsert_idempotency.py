@@ -23,7 +23,7 @@ from app.shared.models.seller_profile import SellerProfile as SellerProfileORM
 from app.shared.models.user import User
 
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 async def _seed_user(db, phone: str = "+915550000801") -> User:

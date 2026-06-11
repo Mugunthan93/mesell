@@ -37,7 +37,7 @@ from app.modules.pricing.exceptions import CommissionMissingError
 from app.modules.pricing.schemas import PriceCalcRequest
 
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 class TestCommissionMissing:

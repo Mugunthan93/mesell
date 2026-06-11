@@ -22,6 +22,10 @@ import json
 from dataclasses import dataclass
 from uuid import UUID
 
+import pytest
+
+pytestmark = pytest.mark.unit
+
 from app.modules.category.picker import (
     calibrate_confidence,
     compress_tree,

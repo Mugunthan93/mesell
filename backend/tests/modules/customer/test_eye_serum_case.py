@@ -16,6 +16,10 @@ XLSX-write time only.
 
 from __future__ import annotations
 
+import pytest
+
+pytestmark = pytest.mark.integration
+
 from app.modules.customer import service as customer_service
 from app.modules.customer.domain import COMPLIANCE_EXTENSION_MAP, ComplianceBlock
 from app.modules.customer.schemas import PatchProfileRequest

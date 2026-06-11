@@ -35,6 +35,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from celery.exceptions import Reject
 
+pytestmark = pytest.mark.unit
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Fixtures

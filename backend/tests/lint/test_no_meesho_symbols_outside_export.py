@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 from tests.lint import check_no_meesho_symbols_outside_export as scanner
 
 

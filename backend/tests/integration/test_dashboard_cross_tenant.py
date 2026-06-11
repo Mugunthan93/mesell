@@ -35,7 +35,7 @@ from app.shared.models.template import Template as TemplateORM
 from app.shared.models.user import User
 
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 # ─────────────────────────────────────────────────────────────────────────────

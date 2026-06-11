@@ -30,6 +30,8 @@ from app.shared.database import (
     make_worker_session,
 )
 
+pytestmark = pytest.mark.unit
+
 
 # ───────────────────────────────────────────────────────────────────────────
 # Static contract checks (no DB required)
@@ -187,6 +189,7 @@ async def test_make_worker_session_uses_nullpool() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_make_worker_session_yields_working_session() -> None:
     """Worker session can actually query Postgres (smoke test against live DB)."""
     async with make_worker_session() as session:

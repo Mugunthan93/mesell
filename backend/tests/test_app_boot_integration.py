@@ -17,6 +17,8 @@ from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from starlette.routing import Route
 
+pytestmark = pytest.mark.smoke
+
 
 # ---------------------------------------------------------------------------
 # Fixture: import the app once per session to catch ImportError at the top.

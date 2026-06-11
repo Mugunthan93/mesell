@@ -9,7 +9,11 @@ runtime chain order.
 
 from __future__ import annotations
 
+import pytest
+
 from app.main import app
+
+pytestmark = pytest.mark.smoke
 
 # Locked §4.H runtime order:
 #   CORS → request_id → auth_mw → tenancy_mw → rate_limit_mw → plan_guard_mw → audit_mw

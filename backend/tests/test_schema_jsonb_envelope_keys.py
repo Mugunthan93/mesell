@@ -32,6 +32,8 @@ from app.i18n.schema_contract import (
     ENVELOPE_KEYS,
 )
 
+pytestmark = pytest.mark.unit
+
 # ----------------------------------------------------------------------------
 # Reference fixture — verbatim from §5A.B example envelope plus one field.
 # ----------------------------------------------------------------------------

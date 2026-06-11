@@ -21,6 +21,8 @@ from app.adapters import gcs as gcs_mod
 from app.core.errors import MeesellError
 from app.shared.config import settings
 
+pytestmark = pytest.mark.unit
+
 
 @pytest.fixture(autouse=True)
 def _reset_module():

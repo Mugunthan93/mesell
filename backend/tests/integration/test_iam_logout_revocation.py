@@ -19,7 +19,7 @@ from app.adapters.msg91 import Msg91Response
 from tests.integration._cookie_helpers import extract_refresh_cookie
 
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 async def test_logout_revokes_then_refresh_returns_401(

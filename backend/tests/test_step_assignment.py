@@ -24,6 +24,8 @@ import pytest
 
 from app.i18n.step_assignment import RULESET_VERSION, STEP_ASSIGNMENT, STEP_ORDER, assign_step
 
+pytestmark = pytest.mark.unit
+
 
 # ---------------------------------------------------------------------------
 # Smoke tests — module-level properties

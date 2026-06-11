@@ -19,6 +19,8 @@ from app.adapters import LangfuseAdapterError
 from app.adapters import langfuse as langfuse_mod
 from app.core.errors import MeesellError
 
+pytestmark = pytest.mark.unit
+
 
 # ── Fixtures ───────────────────────────────────────────────────────────────
 @pytest.fixture(autouse=True)

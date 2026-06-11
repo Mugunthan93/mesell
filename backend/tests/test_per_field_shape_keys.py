@@ -35,6 +35,8 @@ from app.i18n.schema_contract import (
     PRIMITIVE_VALUES,
 )
 
+pytestmark = pytest.mark.unit
+
 # ----------------------------------------------------------------------------
 # Reference fixture — covers compulsory + optional + advanced + each
 # data_type variant the test asserts against.

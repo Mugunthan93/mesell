@@ -11,6 +11,8 @@ from sqlalchemy import select
 from app.core.tenancy import TenantViolationError, assert_owned, scope_to_user
 from app.shared.models import Product
 
+pytestmark = pytest.mark.unit
+
 
 # ── 1. assert_owned happy path ────────────────────────────────────────────
 def test_assert_owned_ok() -> None:

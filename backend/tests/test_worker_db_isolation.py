@@ -21,6 +21,10 @@ import asyncio
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
+pytestmark = pytest.mark.unit
+
 
 # ---------------------------------------------------------------------------
 # 1. make_worker_session source-level verification: NullPool is referenced

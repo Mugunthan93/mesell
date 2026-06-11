@@ -30,6 +30,8 @@ from app.shared.valkey import (
     load_lua_script,
 )
 
+pytestmark = pytest.mark.unit
+
 
 @pytest.fixture(autouse=True)
 def _reset_singletons() -> None:

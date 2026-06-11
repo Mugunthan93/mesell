@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 from tests.lint import check_message_id_regex as scanner
 
 

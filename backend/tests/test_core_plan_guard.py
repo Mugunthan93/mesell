@@ -20,6 +20,8 @@ from app.core.plan_guard import (
 )
 from app.shared.valkey import get_valkey_otp
 
+pytestmark = pytest.mark.integration
+
 
 # ── Fixture: wipe per-user plan keys before + after each test ─────────────
 @pytest_asyncio.fixture(loop_scope="function")
@@ -88,6 +90,7 @@ async def test_sliding_window_recovers_after_trim(plan_user_id):
 
 # ── 2. product_count — total cap via mocked DB ────────────────────────────
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_product_count_under_limit_passes():
     uid = uuid.uuid4()
     mock_db = MagicMock()
@@ -99,6 +102,7 @@ async def test_product_count_under_limit_passes():
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_product_count_at_limit_raises():
     uid = uuid.uuid4()
     mock_db = MagicMock()
@@ -113,6 +117,7 @@ async def test_product_count_at_limit_raises():
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_product_count_requires_db_kwarg():
     uid = uuid.uuid4()
     with pytest.raises(ValueError, match="requires db"):
@@ -120,6 +125,7 @@ async def test_product_count_requires_db_kwarg():
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_unknown_resource_raises():
     uid = uuid.uuid4()
     with pytest.raises(ValueError, match="unknown resource"):

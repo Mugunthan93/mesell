@@ -16,6 +16,8 @@ from uuid import uuid4
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 from app.modules.export import service as export_service
 from app.modules.export.exceptions import ProductNotReadyForExportError
 from app.modules.export.schemas import ExportRequest

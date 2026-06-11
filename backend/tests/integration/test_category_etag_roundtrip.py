@@ -21,6 +21,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
+pytestmark = pytest.mark.integration
+
 
 async def _create_user_via_otp_verify(iam_client) -> tuple[str, str]:
     from app.shared import valkey as _vk_mod

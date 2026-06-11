@@ -22,7 +22,7 @@ from app.core.auth import refresh_allowlist_key
 from app.modules.iam import service as iam_service
 
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 async def test_logout_first_call_revokes_then_second_call_is_noop(

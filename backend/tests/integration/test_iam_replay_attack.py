@@ -20,7 +20,7 @@ from app.adapters.msg91 import Msg91Response
 from tests.integration._cookie_helpers import extract_refresh_cookie
 
 
-pytestmark = pytest.mark.asyncio
+pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
 
 async def test_replay_of_old_refresh_cookie_after_rotation_returns_401(
