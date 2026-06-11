@@ -15,6 +15,7 @@
 import { bootstrapApplication } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
+import { provideHttpClient, withFetch } from '@angular/common/http';
 
 import { CatalogListComponent } from './app/catalog-list.component';
 import { CATALOG_ROUTES } from './app/catalog.routes';
@@ -23,5 +24,11 @@ bootstrapApplication(CatalogListComponent, {
   providers: [
     provideRouter(CATALOG_ROUTES),
     provideAnimationsAsync(),
+    // HttpClient for standalone dev-serve (pnpm start:mfe-catalog).
+    // In federation the shell injector (app.config.ts) provides HttpClient;
+    // this entry is the fallback for the remote's own bootstrap context.
+    // withFetch() = Fetch API backend (Angular 18+).
+    // NO interceptors this slice — manual Bearer in CategoryService.authHeaders().
+    provideHttpClient(withFetch()),
   ],
 }).catch((err) => console.error(err));
