@@ -166,3 +166,19 @@ resource "google_compute_instance_iam_member" "github_ci_vm_instance_admin" {
   role          = "roles/compute.instanceAdmin.v1"
   member        = "serviceAccount:${google_service_account.meesell_github_ci.email}"
 }
+
+# act-as on the Compute Engine default SA  (CI activation run-4 fix — 2026-06-11)
+# WHY: `gcloud builds submit` runs Cloud Build as the project's Compute Engine
+# default SA (888244156264-compute@developer.gserviceaccount.com — see Phase D
+# memory + module.cloudbuild_permissions). To submit a build that runs AS that SA,
+# meesell-github-ci must hold roles/iam.serviceAccountUser (act-as) ON the compute
+# SA. Without it, build submission fails with a "Permission iam.serviceAccounts.actAs
+# denied" error — this was the run-4 blocker (GitHub Actions run 27331720017).
+# The legacy GitLab CI SA (meesell-prod-ci) had this grant out-of-band; the TF-managed
+# GitHub CI SA never did — that gap is what this resource closes.
+# Compute SA hardcoded to match the sibling cloudbuild_permissions/main.tf style.
+resource "google_service_account_iam_member" "github_ci_act_as_compute" {
+  service_account_id = "projects/project-1f5cbf72-2820-4cdb-949/serviceAccounts/888244156264-compute@developer.gserviceaccount.com"
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.meesell_github_ci.email}"
+}
