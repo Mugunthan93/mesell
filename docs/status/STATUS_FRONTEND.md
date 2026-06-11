@@ -5091,3 +5091,24 @@ Changes vs prior stub:
   - landing-component lazy chunk: 7.37 kB raw / 1.93 kB transfer (well within 80 kB budget)
 Blockers: none
 =========
+
+
+=== UPDATE: 2026-06-10 18:10 ===
+Phase: MF Sub-Plan 0 — Workspace Foundation (EXECUTION, founder-authorized overnight run)
+Session: mesell-mf-workspace-foundation-frontend-session-1
+Board sweep: feature_board_frontend.md — mf-workspace-foundation flipped IN PROGRESS->IN REVIEW->MERGED (PR#40 e51761b) in this session; row moved to Recently merged. No stale rows (board was empty at start). 1 inter-lead request opened (infra, handoff_mf_ci_prep).
+Done:
+  - Step 0: deleted premature branch feature/microservices-export/backend (recreated properly by S2 at execution time per F1).
+  - Branches: feature/mf-workspace-foundation/integration (off develop c8deb52) + /frontend (off integration). Integration protected per F3 (PR-only, review-count 0, strict contexts=[], no force-push/deletions) — verified via gh api echo.
+  - Coordinator-executed BOTH specialist workstreams (Wave 2B precedent) in worktree /tmp/mesell-wt/mf-sp0.
+  - Relocations (git mv, history preserved): core (2 files)->libs/core @mesell/core; design-system/_tokens.css->libs/design-tokens; ui/ (32 src incl PR#38 drawer/menu/providers/theme)->libs/ui-kit @mesell/ui-kit; shared/ (5 composites)->libs/composites @mesell/composites. 51 import-line rewrites across ~30 files. 0 stale relatives.
+  - Native Federation 21.2.3 dynamic-host init: main.ts->initFederation->bootstrap.ts; federation.config.js (name:shell, empty manifest {}, shareAll singleton, @mesell/core auth singleton); NO remote, NO loadRemoteModule (D7). @angular/build:application esbuild preserved under federation builder.
+  - tsconfig path aliases + deep wildcards; angular.json test include ../libs/**/*.spec.ts (R6 fix).
+  - PR#40 (frontend->integration) squash-merged by lead (D1). PR#41 (integration->develop) OPENED + LEFT OPEN for founder (D1/FD2).
+  - Acceptance gate on integration tip e51761b: build 2.921s green; 40 files/401 tests green (N=0 preserved); boundary grep 0 violations; loadRemoteModule=0; stale imports 0; 16 route entries (10 V1 + extras); manifest {}; esbuild preserved.
+In progress: none.
+Blockers: none. PR#41 awaiting founder review (NOT a blocker — by design).
+Next: Sub-Plan 1 (mfe-pricing pilot) — gated on PR#41 merging to develop + infra C-CI-1 readiness.
+Hand-offs: memo to meesell-infra-builder (handoff_mf_ci_prep) — CI matrix rewrite (C-CI-1) must be ready before Sub-Plan 1; new frontend/libs/** paths must be confirmed against build-frontend glob. 48h SLA.
+PR#38 reconciliations: (1) core=2 files not 3 (preset moved to ui/theme.ts by PR#38); (2) ui-kit=32 src not 28 (drawer/menu/providers/theme added); (3) boundary FULLY clean — FD1 allowlist moot, shell leak already fixed; (4) deep-path imports needed @mesell/ui-kit/* wildcard alias; (5) NEW test-discovery fix ../libs glob.
+=========

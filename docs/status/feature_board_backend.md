@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-backend-coordinator`
 **Domain:** backend
-**Last updated:** 2026-06-10 (session-end sweep, mesell-microservices-backend-session-1)
+**Last updated:** 2026-06-11 (auth-otp backend group — verification + group PR)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -17,6 +17,7 @@
 
 | Feature | Merged to | Date | PR | Notes |
 |---|---|---|---|---|
+| auth-otp (backend group) | feature/auth-otp/integration | 2026-06-11 | #44 (squash af6a619) | Backend group merge-gate. Re-audit: iam backend 100% built/contract-correct (plan said ~95%); no construction diff — iam already on develop. 11/11 §Review checks PASS. Integration→develop PR deferred (infra group lands next). |
 | housekeeping-v1 | feature/housekeeping-v1 (integration) | 2026-06-10 | #28 | Sweep correction: PILOT_REPORT shows backend group PR squash-merged `6da5b80`; board row was stale at IN REVIEW (F2 conservative path). Moved to MERGED. |
 
 ## Inter-lead requests open
