@@ -1464,3 +1464,21 @@ Lead-gate self-review: 3-file diff, additive/corrective only, no secrets, no JSO
 Board sweep (session-start + session-end): Active features table EMPTY. Recently merged = auth-otp(#45), gate4-confirmation(#33), housekeeping-v1(#27). No rows untouched 7+ days. No inter-lead requests open. No blockers. This chore is a founder-ruling landing (not a feature-group PR) so no feature_board_infra.md Active row created (F2 status-only — board reflects feature-group state, which is unchanged). feature_board_infra.md "Last updated" line refreshed only.
 PR: see tail. Merge SHA: see tail.
 =========
+
+=== UPDATE: 2026-06-11 MF-CI-C-CI-1 SESSION-1 (start+work) ===
+Session: mesell-mf-ci-c-ci-1-infra-session-1
+Task: discharge GATE4 condition C-CI-1 — REPLACE the single-frontend CI conditional with a paths-filter/matrix design for the federated Angular workspace now on develop (PR #41 merged, frontend/libs/{ui-kit,composites,core,design-tokens} + shell; apps/mfe-pricing arrives with MF Sub-Plan 1, EXECUTING in parallel).
+Owned surface (CI/CD pipeline definition per Scope-IN): .github/workflows/ci.yml + cloudbuild.yaml + docs/DEVOPS_ARCHITECTURE.md. Config + docs ONLY — zero terraform, zero cluster, zero k8s, zero frontend source.
+Worktree: /tmp/mesell-wt/ci-matrix-prep on chore/ci-matrix-c-ci-1 from origin/develop (5198ba7). Master tree branch NOT switched.
+
+Design (matrix/paths-filter):
+- ci.yml: +2 jobs (8 -> 10). `frontend-changes` (dorny/paths-filter@v3) emits libs/shell/mfe_pricing booleans; `frontend-build` is a paths-filtered MATRIX (include: shell[project=frontend], mfe-pricing[project=mfe-pricing]) with per-entry computed `run` = own-filter OR libs-fanout. libs/** + workspace config (package.json/lockfile/angular.json/tsconfig/federation.config.js/ci.yml) FAN OUT to every dependent (libs consumed via @mesell/* aliases, not independently built). Both jobs run in parallel with backend gates; build job needs += frontend-build. Native-binary step: `pnpm rebuild esbuild @parcel/watcher lmdb msgpackr-extract` before ng build (handoff note — .npmrc trick env-blocked).
+- SP02-06 remotes = ONE-LINE add in two places (paths-filter block + matrix include). Commented templates left in both.
+- cloudbuild.yaml: precheck-frontend -> precheck-shell/build-shell/push-shell (shell still ships as `frontend` AR image, Option C). NEW publish-remotes step gsutil-rsyncs dist/mfe-*/browser -> ${_REMOTES_BUCKET} (GCS+CDN). INERT while _REMOTES_BUCKET unset (default "") -> today's api+worker[+shell] builds unaffected. Remotes never become AR images (NOT in images: list).
+
+Validation: both YAML files parse clean (python yaml.safe_load). ci.yml = 10 jobs; cloudbuild = 9 steps. actionlint unavailable (brew blocked as root) -> manual review: needs.* IS valid in strategy.matrix per GH contexts table; matrix.run string '/true' compared in step if:; non-empty matrix (no empty-matrix edge); all-skip path = job success -> build proceeds.
+READY-NOT-ACTIVE: CI fires only on push/PR to main; not active until founder 7-step terraform/WIF/GitHub-vars activation. No new secrets beyond planned (GCP_WIF_PROVIDER, GCP_CI_SA_EMAIL, GEMINI_API_KEY_CI). Remote-publish needs _REMOTES_BUCKET + S5-ratified GCS bucket (terraform, founder-owned) before going live.
+Cost impact: ₹0/month (config/docs only; GCS+CDN+LB cost is C-CDN-1, sized at S5, NOT incurred by this PR).
+Board: added Active row mf-ci-c-ci-1 IN PROGRESS; recorded incoming inter-lead request (frontend handoff_mf_ci_prep.md) as RESOLVING. Will flip IN REVIEW on PR open, MERGED on merge.
+PR + merge SHA: see session-end tail.
+=========

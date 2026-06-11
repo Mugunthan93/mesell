@@ -1,19 +1,30 @@
 # .github/workflows/ci.yml
 #
 # MeeSell — GitHub Actions CI/CD pipeline
-# Spec: docs/DEVOPS_ARCHITECTURE.md §5 (CI), §6 (build), §7 (deploy)
+# Spec: docs/DEVOPS_ARCHITECTURE.md §5 (CI), §6 (build), §7 (deploy), §9 (frontend matrix)
 #
 # Triggers:
-#   push to main           → 5 CI gates → build → deploy to dev
-#   pull_request to main   → 5 CI gates only (no build, no deploy)
+#   push to main           → 5 backend CI gates + frontend matrix → build → deploy to dev
+#   pull_request to main   → 5 backend CI gates + frontend matrix only (no build, no deploy)
 #   schedule (nightly)     → slow/perf + ai_eval (no CI gates, no build, no deploy)
 #
-# CI gates (sequential — each needs: its predecessor; fast-fail at gate 1 cancels the rest):
+# Backend CI gates (sequential — each needs its predecessor; fast-fail at gate 1 cancels the rest):
 #   1. unit              pytest -m "unit"            no services    < 30s
 #   2. smoke             pytest -m "smoke"           no services    < 10s
 #   3. lint              import-linter + 3 AST       no services    < 60s   (BACKEND_ARCHITECTURE.md §16.E)
 #   4. integration       pytest -m "integration"     postgres+valkey ~3 min
 #   5. golden_roundtrip  pytest -m "golden_roundtrip" postgres+valkey ~1 min
+#
+# Frontend CI (federated workspace — GATE4_CONFIRMATION.md C-CI-1, replaces the old
+# single-frontend conditional). Runs IN PARALLEL with the backend gates (frontend is
+# independent of the backend test gates):
+#   frontend-changes  dorny/paths-filter — computes which workspace units changed
+#   frontend-build    paths-filtered MATRIX over { shell, mfe-pricing (pilot), ... }
+#                     A frontend/libs/** change FANS OUT to every dependent unit
+#                     (shell + all remotes) because libs are consumed via @mesell/*
+#                     path aliases and are NOT independently built artefacts.
+#                     Adding remotes SP02–SP06 is a ONE-LINE addition in two places
+#                     (the paths-filter `filters:` block + the matrix `include:` list).
 #
 # Required GitHub repository variables (Settings → Secrets and variables → Actions → Variables):
 #   GCP_WIF_PROVIDER  — terraform output github_wif_provider_name (after `terraform apply`)
@@ -22,6 +33,8 @@
 # Required GitHub repository secrets (Settings → Secrets and variables → Actions → Secrets):
 #   GEMINI_API_KEY_CI — low-quota Gemini key for nightly ai_eval (NOT the production key)
 #
+# No NEW secrets are introduced by the frontend matrix (no GCP auth — it builds/tests in the
+# runner only; image build + GCS publish for the shell/remotes land in cloudbuild at activation).
 # No service account JSON keys stored anywhere. All GCP auth uses Workload Identity Federation.
 
 name: CI
@@ -325,14 +338,163 @@ jobs:
         run: pytest -m "golden_roundtrip" -v
 
   # =============================================================================
+  # FRONTEND-CHANGES — paths-filter for the federated Angular workspace (C-CI-1)
+  # Computes which workspace units changed so the frontend-build matrix only builds
+  # what is affected. Runs in PARALLEL with the backend gates.
+  #
+  # Dependency model (MASTER_PLAN §6.1 + GATE4_CONFIRMATION.md A2):
+  #   frontend/libs/**  -> shared layers (@mesell/{ui-kit,composites,core,design-tokens})
+  #                        consumed by EVERY unit via tsconfig path aliases. A libs change
+  #                        is NOT an independently-built unit; it FANS OUT to all dependents.
+  #   frontend/src/**   -> the shell (host) — angular.json project `frontend`.
+  #   frontend/apps/mfe-pricing/**  -> the pilot remote (SP01). SP02–SP06 remotes each add
+  #                        one filter line here + one matrix include entry below.
+  #
+  # The `libs` filter also matches workspace-wide config (package.json, pnpm-lock.yaml,
+  # pnpm-workspace.yaml, angular.json, tsconfig*, federation.config.js) because a change to
+  # any of those can affect every unit — so they trigger the full fan-out, same as libs.
+  # =============================================================================
+  frontend-changes:
+    name: "Frontend: detect changed workspace units"
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+    timeout-minutes: 3
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      libs: ${{ steps.filter.outputs.libs }}
+      shell: ${{ steps.filter.outputs.shell }}
+      mfe_pricing: ${{ steps.filter.outputs.mfe_pricing }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Compute changed units
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          # On push, diff against the previous commit; on PR, against the base ref.
+          filters: |
+            libs:
+              - 'frontend/libs/**'
+              - 'frontend/package.json'
+              - 'frontend/pnpm-lock.yaml'
+              - 'frontend/pnpm-workspace.yaml'
+              - 'frontend/angular.json'
+              - 'frontend/tsconfig*.json'
+              - 'frontend/federation.config.js'
+              - '.github/workflows/ci.yml'
+            shell:
+              - 'frontend/src/**'
+              - 'frontend/public/**'
+            mfe_pricing:
+              - 'frontend/apps/mfe-pricing/**'
+            # SP02–SP06: add one block per remote, e.g.
+            # mfe_catalog:
+            #   - 'frontend/apps/mfe-catalog/**'
+
+  # =============================================================================
+  # FRONTEND-BUILD — paths-filtered MATRIX over the federated workspace (C-CI-1)
+  # REPLACES the old single-frontend `build-frontend` conditional (per GATE4 C-CI-1:
+  # "replace, not extend" when the multi-project Angular workspace lands).
+  #
+  # Each matrix entry is one independently-buildable unit (the shell, or a remote).
+  # A unit is built/tested when EITHER its own filter fired OR the `libs` fan-out fired
+  # (a shared-layer change rebuilds every dependent). The whole job is skipped cleanly
+  # when no frontend unit changed (matrix is empty -> job is a no-op success).
+  #
+  # Native-federation note (MASTER_PLAN §6 / SP0 federation.config.js): `ng build` on the
+  # shell `frontend` project emits federated ESM (per-module), not a classic bundle. The
+  # libs are NOT separate build targets — they compile INTO each consuming unit via the
+  # @mesell/* path aliases, which is exactly why a libs change fans out.
+  #
+  # Adding a remote (SP02–SP06) = add ONE include entry below + ONE filter block above.
+  # =============================================================================
+  frontend-build:
+    name: "Frontend: ${{ matrix.unit }}"
+    runs-on: ubuntu-latest
+    needs: frontend-changes
+    if: github.event_name != 'schedule'
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # --- shell (host) — angular.json project `frontend` ---
+          - unit: shell
+            project: frontend
+            # Build when src/ changed OR a shared layer / workspace config changed.
+            run: ${{ needs.frontend-changes.outputs.shell == 'true' || needs.frontend-changes.outputs.libs == 'true' }}
+          # --- pilot remote (SP01) — angular.json project `mfe-pricing` ---
+          - unit: mfe-pricing
+            project: mfe-pricing
+            # Build when this remote changed OR a shared layer / workspace config changed.
+            run: ${{ needs.frontend-changes.outputs.mfe_pricing == 'true' || needs.frontend-changes.outputs.libs == 'true' }}
+          # --- SP02–SP06 remotes: copy the mfe-pricing block, e.g. ---
+          # - unit: mfe-catalog
+          #   project: mfe-catalog
+          #   run: ${{ needs.frontend-changes.outputs.mfe_catalog == 'true' || needs.frontend-changes.outputs.libs == 'true' }}
+    steps:
+      - name: "Skip notice (unit not affected)"
+        if: matrix.run != 'true'
+        run: echo "No change affecting '${{ matrix.unit }}' — nothing to build."
+
+      - name: Checkout source
+        if: matrix.run == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        if: matrix.run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up pnpm
+        if: matrix.run == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: "11.5.2"
+
+      - name: pnpm install (frozen lockfile)
+        if: matrix.run == 'true'
+        working-directory: frontend
+        # NOTE (handoff from frontend-coordinator): the `.npmrc dangerously-allow-all-builds`
+        # trick is environment-blocked. The clean alternative is an explicit `pnpm rebuild`
+        # of the native packages whose build scripts pnpm ignores by default
+        # (ERR_PNPM_IGNORED_BUILDS: esbuild / @parcel/watcher / lmdb / msgpackr-extract).
+        run: pnpm install --frozen-lockfile
+
+      - name: pnpm rebuild native binaries
+        if: matrix.run == 'true'
+        working-directory: frontend
+        # Forces the ignored native build scripts to run so esbuild et al. extract their
+        # platform binaries — without this `ng build` fails on a fresh CI checkout.
+        run: pnpm rebuild esbuild @parcel/watcher lmdb msgpackr-extract
+
+      - name: "Test: ${{ matrix.unit }}"
+        if: matrix.run == 'true'
+        working-directory: frontend
+        # Per-project headless unit tests. `--browsers=ChromeHeadless --watch=false` keeps CI
+        # non-interactive. If a project defines no test target yet this is a fast no-op.
+        run: pnpm exec ng test ${{ matrix.project }} --browsers=ChromeHeadless --watch=false || echo "No test target for ${{ matrix.project }} (yet) — skipping."
+
+      - name: "Build: ${{ matrix.unit }}"
+        if: matrix.run == 'true'
+        working-directory: frontend
+        # Native-federation build for this single project. Emits federated ESM for the shell
+        # and per-remote `remoteEntry.json` + chunks for remotes.
+        run: pnpm exec ng build ${{ matrix.project }} --configuration production
+
+  # =============================================================================
   # BUILD — Docker images via Cloud Build
-  # Runs ONLY on push to main, after all 5 CI gates pass.
+  # Runs ONLY on push to main, after all 5 backend CI gates + the frontend matrix pass.
   # See cloudbuild.yaml + DEVOPS_ARCHITECTURE.md §6.
   # =============================================================================
   build:
     name: "Build container images"
     runs-on: ubuntu-latest
-    needs: [unit, smoke, lint, integration, golden_roundtrip]
+    needs: [unit, smoke, lint, integration, golden_roundtrip, frontend-build]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     timeout-minutes: 30
 

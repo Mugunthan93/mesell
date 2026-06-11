@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-infra-builder`
 **Domain:** infra
-**Last updated:** 2026-06-11 (founder rulings landed to develop: dev APP_ENV=development [F1 resolved], dry-run deploy gate, MSG91 smoke precondition — chore/land-infra-rulings)
+**Last updated:** 2026-06-11 (C-CI-1: federated matrix/paths-filter CI ready-not-active — chore/ci-matrix-c-ci-1)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -12,6 +12,7 @@
 | Feature | Group branch | Status | Current session | Last touched | Blocking | Notes |
 |---|---|---|---|---|---|---|
 | auth-otp | feature/auth-otp/infra | IN REVIEW | — | 2026-06-11 | — | FE-D5 env-var wiring (dev=30/120; staging overlay=60/300) + auth-secret-rotation runbook. Base=feature/auth-otp/integration. |
+| mf-ci-c-ci-1 | chore/ci-matrix-c-ci-1 | IN PROGRESS | mesell-mf-ci-c-ci-1-infra-session-1 | 2026-06-11 | none | C-CI-1 discharge: ci.yml frontend matrix (shell + mfe-pricing pilot) + paths-filter fan-out; cloudbuild shell-image + INERT GCS remote publish. Config+docs only, ready-not-active. |
 
 ## Recently merged (last 14 days)
 
@@ -25,6 +26,7 @@
 
 | To lead | About feature | Request | Opened | Status |
 |---|---|---|---|---|
+| frontend-coordinator (incoming) | mf-workspace-foundation | MF CI prep C-CI-1 (handoff_mf_ci_prep.md) — replace single-frontend CI with paths-filter matrix before SP1 | 2026-06-10 | RESOLVING (chore/ci-matrix-c-ci-1) — frontend lead marks CLOSED on its own board |
 
 ---
 

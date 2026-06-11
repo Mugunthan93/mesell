@@ -1,15 +1,29 @@
 # cloudbuild.yaml — triggered from GitHub Actions via `gcloud builds submit --no-source`
-# Spec: docs/DEVOPS_ARCHITECTURE.md §6.
-# Builds and pushes api + worker + frontend images to Artifact Registry.
+# Spec: docs/DEVOPS_ARCHITECTURE.md §6 + §9; GATE4_CONFIRMATION.md (Option C, C-CI-1).
+# Builds and pushes:
+#   - api + worker images           -> Artifact Registry  (always)
+#   - shell (host) image            -> Artifact Registry  (conditional on frontend/Dockerfile)
+#   - federated remotes (mfe-*)     -> GCS + Cloud CDN     (Option C; INERT until the bucket
+#                                                           is provisioned + ratified at S5)
 # `--no-source` is used in the GitHub Actions trigger so this file's first step
 # does a fresh `git clone` on the Cloud Build worker (keeps runner uploads small).
 # Substitutions injected by the GitHub Actions build job; defaults are safe fallbacks.
+#
+# C-CI-1 (GATE4): this REPLACES the prior single-frontend conditional with a federated
+# layout — the shell ships as an image; remotes ship as GCS static bundles (Option C, the
+# only resource-safe model on the e2-standard-2 dev node, per GATE4 Answer 3).
 
 substitutions:
   _PROJECT_ID: ""
   _REGION: "asia-south1"
   _REPO: "meesell-prod-images"
   _TAG: "latest"
+  # Remotes bucket for Option C (GCS + Cloud CDN). Empty by default -> remote publish is
+  # INERT (skipped). Set to e.g. `gs://meesell-remotes-dev` once S5 ratifies + Terraform
+  # provisions the bucket. No new SECRET is needed — the Cloud Build compute SA already has
+  # storage access via module.cloudbuild_permissions; a bucket-scoped objectAdmin grant is
+  # the only IAM add at activation (terraform-owned, NOT this file).
+  _REMOTES_BUCKET: ""
 
 options:
   machineType: E2_MEDIUM
@@ -33,21 +47,22 @@ steps:
       - src
 
   # ---------------------------------------------------------------------------
-  # Step 1 — precheck: does the frontend Dockerfile exist?
-  # Wave 2B may not yet have produced frontend/Dockerfile. If absent, frontend
-  # build + push are silently skipped — pipeline does NOT fail.
-  # Marker file `.frontend-buildable` is consumed by the conditional build step.
+  # Step 1 — precheck: does the SHELL Dockerfile exist?
+  # The shell (host) ships as an Nginx image (DEVOPS §9.3). Wave 2B/SP may not yet
+  # have produced frontend/Dockerfile. If absent, the shell image build + push are
+  # silently skipped — pipeline does NOT fail. Marker `.shell-buildable` gates them.
+  # (The remotes do NOT need a Dockerfile — they publish to GCS, see remote step.)
   # ---------------------------------------------------------------------------
-  - id: precheck-frontend
+  - id: precheck-shell
     name: bash
     args:
       - -c
       - |
         if [ -f /workspace/src/frontend/Dockerfile ]; then
-          touch /workspace/.frontend-buildable
-          echo "Frontend Dockerfile present — frontend build will run"
+          touch /workspace/.shell-buildable
+          echo "Shell Dockerfile present — shell image build will run"
         else
-          echo "Frontend Dockerfile missing — frontend build will be SKIPPED"
+          echo "Shell Dockerfile missing — shell image build will be SKIPPED"
         fi
     waitFor:
       - clone
@@ -115,18 +130,21 @@ steps:
       - build-worker
 
   # ---------------------------------------------------------------------------
-  # Step 6 — build Frontend image (CONDITIONAL — skips if Dockerfile absent)
-  # See precheck-frontend step. When the marker file is absent, this step
-  # exits 0 without doing anything (`bash -c` is forgiving — no failure).
+  # Step 6 — build SHELL image (CONDITIONAL — skips if frontend/Dockerfile absent)
+  # The shell (host) is the only frontend unit that ships as an in-cluster image
+  # (Option C: shell in K3s, remotes off-cluster). Image stream name kept as
+  # `frontend` for deploy-script + k8s/frontend.yaml compatibility (the Deployment is
+  # named `frontend`; the shell IS the frontend Deployment per GATE4 Answer 2).
+  # When the marker file is absent, this step exits 0 (no failure).
   # ---------------------------------------------------------------------------
-  - id: build-frontend
+  - id: build-shell
     name: gcr.io/cloud-builders/docker
     entrypoint: bash
     args:
       - -c
       - |
-        if [ ! -f /workspace/.frontend-buildable ]; then
-          echo "Skipping frontend build (no Dockerfile)."
+        if [ ! -f /workspace/.shell-buildable ]; then
+          echo "Skipping shell build (no Dockerfile)."
           exit 0
         fi
         cd src/frontend
@@ -135,33 +153,73 @@ steps:
           -t "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend:latest" \
           .
     waitFor:
-      - precheck-frontend
+      - precheck-shell
 
   # ---------------------------------------------------------------------------
-  # Step 7 — push Frontend image (CONDITIONAL)
-  # `docker push --all-tags` on a non-existent local image is a no-op error,
-  # so we wrap in bash and skip if the marker file is missing.
+  # Step 7 — push SHELL image (CONDITIONAL)
   # ---------------------------------------------------------------------------
-  - id: push-frontend
+  - id: push-shell
     name: gcr.io/cloud-builders/docker
     entrypoint: bash
     args:
       - -c
       - |
-        if [ ! -f /workspace/.frontend-buildable ]; then
-          echo "Skipping frontend push (no Dockerfile)."
+        if [ ! -f /workspace/.shell-buildable ]; then
+          echo "Skipping shell push (no Dockerfile)."
           exit 0
         fi
         docker push --all-tags \
           "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/frontend"
     waitFor:
-      - build-frontend
+      - build-shell
+
+  # ---------------------------------------------------------------------------
+  # Step 8 — publish REMOTES to GCS + Cloud CDN (Option C — C-CI-1 / C-RES-2)
+  # The federated remotes (apps/mfe-*) are STATIC bundles served from GCS behind
+  # Cloud CDN at remotes.mesell.xyz — ZERO in-cluster pods (the only resource-safe
+  # model on the 2-vCPU dev node, GATE4 Answer 3). They do NOT become images.
+  #
+  # READY-NOT-ACTIVE: this step is INERT until `_REMOTES_BUCKET` is set (default ""):
+  #   - S5 ratifies Option C + the per-env bucket layout (DRAFT MF-ENV-1).
+  #   - Terraform provisions `gs://meesell-remotes-dev` (+ CDN + remotes.mesell.xyz LB/cert).
+  #   - The Cloud Build compute SA gets objectAdmin on that bucket (terraform, NOT this file).
+  # When `_REMOTES_BUCKET` is empty the step echoes a skip notice and exits 0 — so today's
+  # builds (api+worker[+shell]) are completely unaffected.
+  #
+  # Each remote's production `ng build` output lives at src/frontend/dist/<mfe-*>/browser/.
+  # Adding SP02–SP06 needs NO change here — the for-loop globs every built remote.
+  # ---------------------------------------------------------------------------
+  - id: publish-remotes
+    name: gcr.io/cloud-builders/gsutil
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        if [ -z "${_REMOTES_BUCKET}" ]; then
+          echo "Skipping remote publish — _REMOTES_BUCKET unset (Option C bucket not yet provisioned)."
+          exit 0
+        fi
+        shopt -s nullglob
+        published=0
+        for dist in /workspace/src/frontend/dist/mfe-*/browser; do
+          remote=$(basename "$(dirname "$dist")")
+          echo "Publishing remote '$remote' -> ${_REMOTES_BUCKET}/${remote}/${_TAG}/"
+          gsutil -m rsync -d -r "$dist" "${_REMOTES_BUCKET}/${remote}/${_TAG}/"
+          gsutil -m rsync -d -r "$dist" "${_REMOTES_BUCKET}/${remote}/latest/"
+          published=$((published+1))
+        done
+        if [ "$published" -eq 0 ]; then
+          echo "No built remotes found under dist/mfe-*/browser — nothing to publish (shell-only change)."
+        fi
+    waitFor:
+      - clone
 
 # Cloud Build verifies + records metadata for each image in this list. Every entry
 # here MUST exist in the registry when the build finishes, or the build fails.
-# Frontend is intentionally OMITTED — its push step is conditional on the Dockerfile
-# being present (Wave 2B). When the Dockerfile lands, add `frontend:${_TAG}` here
-# (and remove the conditional skip from `build-frontend` / `push-frontend`).
+# The `frontend` (shell) image is intentionally OMITTED — its push is conditional on
+# frontend/Dockerfile (Wave 2B/SP). When the Dockerfile lands, add `frontend:${_TAG}`
+# here (and drop the conditional skip from build-shell / push-shell).
+# Remotes are NOT images — they publish to GCS (Option C) and never appear here.
 images:
   - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/api:${_TAG}"
   - "${_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO}/worker:${_TAG}"
