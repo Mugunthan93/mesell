@@ -1853,3 +1853,27 @@ NOT the `test_config.py`/`app.config` suspect (collection is green; this is inte
 **Hand-offs:** memo `handoff_mf_cutover.md` (infra → frontend lead). Board: mfe-cutover IN REVIEW + incoming inter-lead row OPEN.
 
 **Cost:** ₹0/month as authored (zero billable resource created; all provisioning founder-gated).
+
+## UPDATE — mesell-ci-activation-session-1 (re-fire #4) — 2026-06-11 — SESSION-START + PR #112 MERGED
+
+**Phase:** DevOps §5 (CI gates) + §6 (build/WIF) + §7 (deploy). Rule: build+deploy jobs are
+`github.event_name=='push' && github.ref=='refs/heads/main'`-guarded (ci.yml L676/L716, verified
+on origin/develop) — a develop→main merge is the ONLY way to first-exercise WIF/Cloud Build/IAP
+deploy. Re-fired under EXPLICIT FOUNDER STANDING AUTHORIZATION (same as #2/#3). I own merge
+mechanics + per-job diagnosis; I do NOT fix backend/frontend code (redirect to coordinators).
+
+**Pre-flight:** account vaishnaviramoorthy@gmail.com ACTIVE, project project-1f5cbf72-2820-4cdb-949.
+develop tip c6f93e2 (fresh), main a5cb4420 (PR #89), develop ahead_by 37. No cluster/TF mutations.
+
+**Gate-4 saga CLOSED on develop** — 4 backend PRs: #104 (0b70219), #107 (df93208), #108 (61e7d17),
+#110 (295ed38). Backend local `pytest -m integration` → exit 0, 175 passed/17 skipped/0 failed/0 errors.
+Expected Gate-4 CI shape ~175p/17s.
+
+**PR #112 (develop c6f93e2 → main a5cb4420) MERGE-COMMIT `38587857e57d2632b2ed5d361e39e7f04636c2a1`**
+(merge_method=merge, first-try owner token, --admin NOT needed; mergeable_state=blocked was the
+1-review gate not a conflict). 37 commits / 94 files. develop PRESERVED (still @ c6f93e2).
+
+**Push run `27331720017`** (event=push, branch=main, head_sha 3858785) IN FLIGHT.
+Goal: Gates 1-4 GREEN, Gate 5 (golden_roundtrip) FIRST-EVER, then FIRST-EVER WIF build + IAP deploy.
+GEMINI_API_KEY_CI still unset (nightly-only, non-blocking). Watching to conclusion != null.
+=========
