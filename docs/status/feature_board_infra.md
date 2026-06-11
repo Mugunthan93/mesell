@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-infra-builder`
 **Domain:** infra
-**Last updated:** 2026-06-11 (ci-activation env-var gap CLOSED — PR #76 squash 0f44d72; READY for develop→main re-fire by founder)
+**Last updated:** 2026-06-11 (ci-activation RE-FIRED — PR #78 merge `218aa83` develop→main; push run 27320321536 RED: Gate-1 marker deselect-to-zero exit5; BLOCKED on backend test-tagging)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -11,7 +11,7 @@
 
 | Feature | Group branch | Status | Current session | Last touched | Blocking | Notes |
 |---|---|---|---|---|---|---|
-| ci-activation | (no branch — TF/GitHub-settings ops) | READY-to-refire | — | 2026-06-11 | — | TWO infra blockers now CLOSED. (1) Gate-1 pytest collection: fixed by backend pythonpath=. (PR #73 1e95b2a + PR #74 bb09aea, both founder-authored — duplicate/parallel-lane fixes for the same bug). (2) §5.D config-guard env gap: CLOSED by infra PR #76 (squash 0f44d72, ci.yml) — added the §5.D REQUIRED_FIELDS dummy env to all 6 app-code jobs (unit/smoke +5+DB/Valkey; lint full set since import-linter imports app; integration/golden_roundtrip/nightly +5; nightly real GEMINI_API_KEY untouched). Guard requires 17 vars (not 13 — memo undercount, reconciled). Cold guard run PASS; negative control aborts. READY for founder to open develop→main PR to re-fire the pipeline. First green run materializes check-contexts → then branch-protection on main. GEMINI_API_KEY_CI still founder-pending (nightly-only). Cost ₹0. |
+| ci-activation | (no branch — TF/GitHub-settings ops) | BLOCKED | — | 2026-06-11 | backend — §19.D gate markers applied to ZERO of 823 tests; every marker-gated gate deselects-to-zero (exit 5); see inter-lead request + handoff_ci_gate_markers.md | RE-FIRED on founder authorization: PR #78 (develop→main) MERGED merge-commit `218aa83d9af2396f02a9a53da291d5a9092e4415` (develop preserved `2662e5b`). Push run **27320321536** = FAILURE. PROGRESS: Gate-1 collection fix (pythonpath=.) + §5.D env-guard (PR #76) both WORKED — 823 items collected cleanly, config guard passed. NEW failure: `pytest -m "unit"` selects 0/823 → exit 5 (`collected 823 / 823 deselected / 0 selected`). Root cause: NO test carries `@pytest.mark.unit` (0 files for all 7 §19.D markers; no `pytest_collection_modifyitems` hook). SYSTEMIC — gates 2(smoke)/4(integration)/5(golden_roundtrip) + nightly(slow/perf/ai_eval) will hit the same exit-5. Gates 2-5+build+deploy SKIPPED (sequential needs). 3 frontend jobs GREEN; nightly skipped. WIF + Cloud Build + IAP deploy STILL UNPROVEN (sequential-blocked on BOTH fires). Branch-protection still DEFERRED until a green run. GEMINI_API_KEY_CI still founder-pending (nightly-only). Cost ₹0. |
 | auth-otp | feature/auth-otp/infra | IN REVIEW | — | 2026-06-11 | — | FE-D5 env-var wiring (dev=30/120; staging overlay=60/300) + auth-secret-rotation runbook. Base=feature/auth-otp/integration. |
 
 ## Recently merged (last 14 days)
@@ -30,6 +30,7 @@
 |---|---|---|---|---|
 | frontend-coordinator (incoming) | mf-workspace-foundation | MF CI prep C-CI-1 (handoff_mf_ci_prep.md) — replace single-frontend CI with paths-filter matrix before SP1 | 2026-06-10 | RESOLVED via PR #50 (merged develop) — frontend lead marks CLOSED on its own board |
 | backend-coordinator | ci-activation | First main pipeline RED — Gate 1 `pytest -m unit` fails at COLLECTION: `from app.shared.database import` → `ModuleNotFoundError: No module named 'app'`. CI runs `pytest` in `working-directory: backend` with no PYTHONPATH and no installable pkg (`pytest.ini` §19.D LOCKED has no `pythonpath`; no pyproject/setup.py). Fix is backend-owned: add `pythonpath = .` to pytest.ini (founder OK — §19.D locked) OR add pyproject/setup.py + `pip install -e .`. See handoff_ci_gate1_collection.md. | 2026-06-11 | RESOLVED — backend pythonpath fix (#73/#74) closed collection; infra PR #76 (0f44d72) closed the resulting §5.D env-guard gap. Both sides done. |
+| backend-coordinator | ci-activation | Re-fire run 27320321536 RED — §19.D gate markers (`unit`/`smoke`/`integration`/`golden_roundtrip`/`slow`/`perf`/`ai_eval`) are REGISTERED in pytest.ini but applied to ZERO of 823 tests (0 files match `pytest.mark.<m>` for all 7; no `pytest_collection_modifyitems` hook). `pytest -m "unit"` selects 0 → exit 5 → RED. SYSTEMIC across all marker-gated gates + nightly. Fix backend-owned: tag the suite per §19.D bucket (explicit `@pytest.mark` OR conftest auto-marking hook), complete across all buckets so each gate selects >0. See handoff_ci_gate_markers.md. | 2026-06-11 | OPEN |
 
 ---
 
