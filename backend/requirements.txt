@@ -15,6 +15,10 @@ rembg==2.0.59
 pillow==10.4.0
 onnxruntime==1.19.0
 google-cloud-storage==2.18.0
+# §14 XLSX export builder — app/modules/export/service.py imports openpyxl at
+# runtime (Workbook write + load_workbook round-trip). Genuine production
+# dependency surfaced by the §19.D marker run (ModuleNotFoundError in CI).
+openpyxl==3.1.5
 httpx==0.27.0
 pytest==8.3.0
 pytest-asyncio==0.24.0

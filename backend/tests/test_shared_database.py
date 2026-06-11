@@ -30,7 +30,11 @@ from app.shared.database import (
     make_worker_session,
 )
 
-pytestmark = pytest.mark.unit
+# Mixed-concern file (§19.D): the static/mock tests are `unit`; the two tests
+# that execute SELECT against a live Postgres (test_get_db_yields_async_session,
+# test_make_worker_session_yields_working_session) are `integration` per the
+# §19.D real-vs-mock policy (db is ALWAYS real). No blanket module mark — a
+# blanket `unit` would (incorrectly) select the two real-DB tests into Gate 1.
 
 
 # ───────────────────────────────────────────────────────────────────────────
@@ -38,11 +42,13 @@ pytestmark = pytest.mark.unit
 # ───────────────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.unit
 def test_base_is_declarative_base_subclass() -> None:
     """``Base`` is a subclass of SQLAlchemy ``DeclarativeBase`` (§5.B)."""
     assert issubclass(Base, DeclarativeBase), "Base must inherit DeclarativeBase"
 
 
+@pytest.mark.unit
 def test_engine_pool_configuration() -> None:
     """Engine is configured per §5.B locked verbatim signature."""
     pool = engine.pool
@@ -53,6 +59,7 @@ def test_engine_pool_configuration() -> None:
     assert engine.url is not None
 
 
+@pytest.mark.unit
 def test_session_factory_expire_on_commit_false() -> None:
     """AsyncSessionLocal uses expire_on_commit=False (§5.B locked verbatim)."""
     assert isinstance(AsyncSessionLocal, async_sessionmaker)
@@ -69,6 +76,7 @@ def test_session_factory_expire_on_commit_false() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
 async def test_get_db_yields_async_session() -> None:
     """get_db yields an AsyncSession via FastAPI-style dependency."""
     gen = get_db()
@@ -85,6 +93,7 @@ async def test_get_db_yields_async_session() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_get_db_commits_on_success() -> None:
     """get_db calls commit when the dependency body returns without raising.
 
@@ -122,6 +131,7 @@ async def test_get_db_commits_on_success() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_get_db_rolls_back_on_exception() -> None:
     """get_db calls rollback when the dependency body raises."""
     commit_calls: list[int] = []
@@ -161,6 +171,7 @@ async def test_get_db_rolls_back_on_exception() -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.unit
 async def test_make_worker_session_uses_nullpool() -> None:
     """Each call to make_worker_session creates a NullPool engine.
 
