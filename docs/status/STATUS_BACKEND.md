@@ -3688,3 +3688,20 @@ Blockers: none.
 Next: infra group (next night session) lands feature/auth-otp/infra → integration. AFTER infra merges, the founder-gated feature/auth-otp/integration → develop PR is opened. Post-merge-to-develop: backend lead stamps V1_FEATURE_SPEC.md §F1 + BACKEND_ARCHITECTURE.md §7 sentinel (deliverables #4, #5).
 Hand-offs: none new. (auth contracts for downstream features already in auth_otp_feature.md / MEMORY.md knowledge-sync.)
 =========
+
+=== UPDATE: 2026-06-11 — founder ruling: dual-pepper grace-window scheduled (pre-V1.5-prod gate) ===
+Phase: backlog scheduling (F2 status-only, direct commit to develop)
+Session: n/a (status-only task, no specialist dispatch, no worktree/PR)
+Board sweep: 1 PENDING backlog row added (dual-pepper-rotation); microservices-export unchanged (IN PROGRESS, not stale); 0 inter-lead requests open; 0 MERGED rows aged >14d.
+
+Done:
+  - Founder ruling (2026-06-11 AM) FORMALLY SCHEDULED: the dual-pepper grace-window refresh-token rotation support (R5 follow-up flagged in auth-otp PR #45/#46) is now a backend task with a pre-V1.5-production GATE — must land before V1.5 goes to prod; NOT blocking V1.
+  - Context: REFRESH_TOKEN_PEPPER is currently single/unversioned. Rotating it invalidates ALL live sessions simultaneously (every HMAC key in the Valkey DB 0 allowlist `cache:refresh:{hmac}` becomes unreadable). The backend implementation version-tags the key prefix (`cache:refresh:{version}:{hmac}`) so the rotation runbook's §2 grace window supports dual-pepper reads during a window = REFRESH_TOKEN_TTL_SECONDS.
+  - Mechanism doc: `docs/runbooks/auth-secret-rotation.md` §2 "prod dual-pepper grace window (R5)" — authored by infra group, lands on develop when auth-otp integration PR #46 merges. Risk source: FEATURE_PLAN.md §risk-register R5.
+  - Board: PENDING row added to Active features; STATUS=PENDING, no branch, owner=meesell-auth-builder when scheduled.
+
+In progress: none (status-only).
+Blockers: none. NOT blocking V1.
+Next: schedule the dual-pepper-rotation feature dispatch ahead of V1.5 prod cutover. Owner is meesell-auth-builder (version-tag key prefix + dual-pepper read path); coordinate the rotation runbook §2 with infra at dispatch time.
+Hand-offs: none new (infra already authored runbook §2; backend implements the read path it describes when scheduled).
+=========

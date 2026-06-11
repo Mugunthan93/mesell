@@ -79,6 +79,24 @@ Post-merge-to-develop: stamp V1_FEATURE_SPEC.md §F1 + BACKEND_ARCHITECTURE.md �
 
 ---
 
+## Founder ruling 2026-06-11 (AM) — dual-pepper grace-window SCHEDULED (pre-V1.5-prod GATE)
+
+The R5 follow-up is now a FORMALLY SCHEDULED backend task with a pre-V1.5-production gate:
+- **Gate semantics:** must land BEFORE V1.5 goes to prod. NOT blocking V1.
+- **Problem:** `REFRESH_TOKEN_PEPPER` is single/unversioned today. Rotating it invalidates ALL
+  live sessions at once — every HMAC key in the Valkey DB 0 allowlist (`cache:refresh:{hmac}`)
+  becomes unreadable, forcing every active user to re-login.
+- **Backend work:** version-tag the allowlist key prefix → `cache:refresh:{version}:{hmac}` so
+  the rotation runbook's §2 grace window supports DUAL-PEPPER READS during a window
+  = `REFRESH_TOKEN_TTL_SECONDS` (old pepper version accepted alongside new during rotation).
+- **Mechanism doc:** `docs/runbooks/auth-secret-rotation.md` §2 "prod dual-pepper grace window (R5)" —
+  authored by infra group (auth-otp infra PR #45/#46). It lands on develop when integration PR #46
+  merges. Risk source: FEATURE_PLAN.md §risk-register R5.
+- **Owner when scheduled:** `meesell-auth-builder` (key-prefix versioning + dual-pepper read path).
+  Coordinate the runbook §2 with infra at dispatch time.
+- **Board:** PENDING row `dual-pepper-rotation` added to feature_board_backend.md Active features 2026-06-11.
+- **Recorded:** F2 status-only task — board + STATUS_BACKEND.md + this memory committed directly on develop.
+
 ## Original dispatch plan (superseded by the COMPLETE outcome above — kept for reference)
 
 Update this file with:
