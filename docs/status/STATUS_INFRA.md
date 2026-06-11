@@ -1593,3 +1593,22 @@ Per-job table:
 3. Founder: set GEMINI_API_KEY_CI before relying on nightly.
 
 **Zero cluster/TF/secret mutations this session** — only the PR #64 merge + pipeline diagnosis + this status/board update.
+
+---
+
+## SESSION: mesell-dual-pepper-rotation-infra-session-1 — 2026-06-11
+
+### Dual-pepper secret refs (R5 inter-lead request resolved)
+
+**Context:** dual-pepper-rotation (R5, pre-V1.5-prod gate) merged to develop via founder-gate PR #66 (`50cdcef`); backend group PR #65 (`a2e566c`). Backend now reads two new env vars (`REFRESH_TOKEN_PEPPER_PREVIOUS`, `REFRESH_TOKEN_PEPPER_VERSION`). Backend coordinator opened an inter-lead request to infra on `feature_board_backend.md` to provision the refs.
+
+**Scope honored:** example-file + docs ONLY. NO live cluster / Secret Manager ops (deploy-time per `docs/runbooks/auth-secret-rotation.md` §2 header). No backend/frontend code, no other k8s manifests.
+
+**Delivered (Model C fast-mode branch `chore/dual-pepper-secret-refs` from `origin/develop` @ 50cdcef):**
+- **D1** `k8s/secrets.yaml.example`: added `REFRESH_TOKEN_PEPPER_PREVIOUS: ""` and `REFRESH_TOKEN_PEPPER_VERSION: "1"` to the backend-secrets stanza with comments matching file style — PREVIOUS only set during a §2 grace-window rotation (empty = single-pepper mode); VERSION = integer, increment on each rotation.
+- **D2** `docs/INFRASTRUCTURE_ARCHITECTURE.md` §4: additive onboarding note — these are NOT new SM secrets. PREVIOUS = prior `refresh-token-pepper` SM version kept ENABLED during the grace window (runbook §2); VERSION = operator-set integer in `backend-secrets`. Only SM action during rotation is `gcloud secrets versions add refresh-token-pepper`.
+- **D3** Boards: backend board inter-lead row flipped OPEN → RESOLVED (touched only the Status cell). Infra board Active row added (IN PROGRESS → Recently merged on PR merge). This STATUS entry.
+
+**Topology recorded:** 1 SM secret (`refresh-token-pepper`) with versioned SM versions during the grace window; 2 k8s keys in `backend-secrets`; grace-window mechanics in runbook §2. No new SM container to create.
+
+**Cost:** ₹0/month (docs + example only).
