@@ -4,9 +4,17 @@
 # Spec: docs/DEVOPS_ARCHITECTURE.md §5 (CI), §6 (build), §7 (deploy), §9 (frontend matrix)
 #
 # Triggers:
-#   push to main           → 5 backend CI gates + frontend matrix → build → deploy to dev
-#   pull_request to main   → 5 backend CI gates + frontend matrix only (no build, no deploy)
-#   schedule (nightly)     → slow/perf + ai_eval (no CI gates, no build, no deploy)
+#   push to main              → 5 backend CI gates + frontend matrix → build → deploy to dev
+#   push to develop           → 5 backend CI gates + frontend matrix only (NO build, NO deploy —
+#                               build/deploy jobs are ref-guarded to refs/heads/main)
+#   pull_request to main       → 5 backend CI gates + frontend matrix only (no build, no deploy)
+#   pull_request to develop    → 5 backend CI gates + frontend matrix only (no build, no deploy)
+#   schedule (nightly)         → slow/perf + ai_eval (no CI gates, no build, no deploy)
+#
+# Founder ruling 2026-06-11 ("why develop->main / let keep in develop"): the pipeline must
+# exercise on `develop` itself. A develop->main promotion is NOT the re-fire mechanism — every
+# push/PR to develop runs Gates 1-5 + the frontend matrix directly. build + deploy stay
+# main-only via their `github.ref == 'refs/heads/main'` guards, so a develop push NEVER deploys.
 #
 # Backend CI gates (sequential — each needs its predecessor; fast-fail at gate 1 cancels the rest):
 #   1. unit              pytest -m "unit"            no services    < 30s
@@ -43,9 +51,11 @@ on:
   push:
     branches:
       - main
+      - develop
   pull_request:
     branches:
       - main
+      - develop
   schedule:
     # 01:00 UTC = 06:30 IST. Runs the nightly suite once per day.
     - cron: '0 1 * * *'
