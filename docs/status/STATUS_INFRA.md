@@ -1877,3 +1877,38 @@ Expected Gate-4 CI shape ~175p/17s.
 Goal: Gates 1-4 GREEN, Gate 5 (golden_roundtrip) FIRST-EVER, then FIRST-EVER WIF build + IAP deploy.
 GEMINI_API_KEY_CI still unset (nightly-only, non-blocking). Watching to conclusion != null.
 =========
+
+## UPDATE — mesell-ci-activation-session-1 (re-fire #4) — 2026-06-11 — SESSION-END — GATES 1-5 GREEN + FIRST WIF AUTH; Build RED on actAs
+
+**Phase:** DevOps §5/§6/§7. Rule: I own merge mechanics + per-job diagnosis; IAM mutations I REPORT before applying (brief).
+
+**PR #112 → main MERGE-COMMIT `38587857e57d2632b2ed5d361e39e7f04636c2a1`** (merge_method=merge, first-try, develop preserved @ c6f93e2). 37 commits / 94 files.
+
+**Run `27331720017` (push, main 3858785) — VERDICT: FAILURE, but biggest progress yet.**
+
+| Job | Result |
+|---|---|
+| CI Gate 1: unit | GREEN |
+| CI Gate 2: smoke | GREEN |
+| CI Gate 3: lint (10 contracts) | GREEN |
+| CI Gate 4: integration | GREEN  (saga CLOSED via backend #104/#107/#108/#110) |
+| CI Gate 5: golden_roundtrip | GREEN  FIRST-EVER (18 passed / 821 deselected; real golden-fixture round-trip + enum-translation) |
+| Build container images | RED  (Submit Cloud Build job) |
+| Deploy to K3s (dev namespace) | SKIPPED (needs: build) |
+| Frontend (detect + shell + 6 mfe remotes) | 8/8 GREEN |
+| Nightly + AI eval | SKIPPED (schedule-only) |
+
+**FIRST-EVER WIF EXECUTION — AUTH GREEN.** Build steps "Authenticate to Google Cloud (WIF)" + "Set up gcloud CLI" succeeded — token-exchange PROVEN, authenticated as `meesell-github-ci@...`. `vars.GCP_WIF_PROVIDER` == live provider resource name EXACTLY; `vars.GCP_CI_SA_EMAIL` == github-ci. NO variable correction needed. Phase E WIF pool/provider/SA verified end-to-end.
+
+**Build RED root cause (diagnosed, NOT auto-fixed):**
+`ERROR: (gcloud.builds.submit) PERMISSION_DENIED: caller does not have permission to act as service account 117348555876726277669` = `888244156264-compute@developer.gserviceaccount.com` (Compute Engine default SA = this project's Cloud Build RUNNER). `meesell-github-ci` holds `cloudbuild.builds.editor` (submit) but lacks `roles/iam.serviceAccountUser` ON the compute SA (act-as). Verified: github-ci project roles = {artifactregistry.writer, cloudbuild.builds.editor, iap.tunnelResourceAccessor, secretmanager.secretAccessor, + VM-scoped instanceAdmin}; compute SA's serviceAccountUser is granted to the OLD `meesell-ci@...` SA, NOT to the new github-ci SA. The `ci_identity` module is missing this one binding.
+
+**FOUNDER IAM-GRANT GATE (single additive binding — REPORTED, not applied):**
+- Codified: add `google_service_account_iam_member` (role `roles/iam.serviceAccountUser`, member `serviceAccount:meesell-github-ci@...`, service_account_id = compute SA `888244156264-compute@...`) to `infra/terraform/modules/ci_identity/main.tf`, then apply.
+- Or imperative quick-unblock then codify: `gcloud iam service-accounts add-iam-policy-binding 888244156264-compute@developer.gserviceaccount.com --member="serviceAccount:meesell-github-ci@project-1f5cbf72-2820-4cdb-949.iam.gserviceaccount.com" --role="roles/iam.serviceAccountUser" --project=project-1f5cbf72-2820-4cdb-949`.
+- This is the LAST thing before the first green build. Cloud Build EXECUTION + IAP DEPLOY still unproven (build failed at submit; deploy skipped).
+
+**Branch protection STILL DEFERRED** (not green-through-deploy). When green, required-PR contexts = the 5 gate names + the NAMED frontend contexts. NOTE the frontend matrix GREW to 8 jobs (detect + shell + mfe-auth/catalog/dashboard/export/onboarding/pricing) — re-confirm exact live context strings at protection time, do not reuse re-fire #3's 3-context list. NEVER add Build/Deploy (main-only → deadlock) or Nightly/ai_eval (schedule-only).
+
+**Session-end board sweep:** Active = ci-activation (BLOCKED, founder IAM gate, last-touched 2026-06-11), auth-otp (IN REVIEW), mfe-cutover (IN REVIEW). None untouched 7+ days. Gate-4 inter-lead request → RESOLVED. No cluster/TF mutations this session (only PR merge + read-only IAM/WIF inspection + board/STATUS/memory writes).
+=========
