@@ -4,9 +4,17 @@
 # Spec: docs/DEVOPS_ARCHITECTURE.md §5 (CI), §6 (build), §7 (deploy), §9 (frontend matrix)
 #
 # Triggers:
-#   push to main           → 5 backend CI gates + frontend matrix → build → deploy to dev
-#   pull_request to main   → 5 backend CI gates + frontend matrix only (no build, no deploy)
-#   schedule (nightly)     → slow/perf + ai_eval (no CI gates, no build, no deploy)
+#   push to main              → 5 backend CI gates + frontend matrix → build → deploy to dev
+#   push to develop           → 5 backend CI gates + frontend matrix only (NO build, NO deploy —
+#                               build/deploy jobs are ref-guarded to refs/heads/main)
+#   pull_request to main       → 5 backend CI gates + frontend matrix only (no build, no deploy)
+#   pull_request to develop    → 5 backend CI gates + frontend matrix only (no build, no deploy)
+#   schedule (nightly)         → slow/perf + ai_eval (no CI gates, no build, no deploy)
+#
+# Founder ruling 2026-06-11 ("why develop->main / let keep in develop"): the pipeline must
+# exercise on `develop` itself. A develop->main promotion is NOT the re-fire mechanism — every
+# push/PR to develop runs Gates 1-5 + the frontend matrix directly. build + deploy stay
+# main-only via their `github.ref == 'refs/heads/main'` guards, so a develop push NEVER deploys.
 #
 # Backend CI gates (sequential — each needs its predecessor; fast-fail at gate 1 cancels the rest):
 #   1. unit              pytest -m "unit"            no services    < 30s
@@ -43,9 +51,11 @@ on:
   push:
     branches:
       - main
+      - develop
   pull_request:
     branches:
       - main
+      - develop
   schedule:
     # 01:00 UTC = 06:30 IST. Runs the nightly suite once per day.
     - cron: '0 1 * * *'
@@ -85,6 +95,17 @@ jobs:
       REFRESH_TOKEN_PEPPER: ci-dummy-refresh-pepper
       AUDIT_PII_SALT: ci-dummy-audit-pii-salt
       GEMINI_API_KEY: ci-dummy-gemini-key
+      # §5.D startup-guard required vars (app.shared.config REQUIRED_FIELDS).
+      # unit/smoke run no service containers, so DATABASE_URL/VALKEY_URL are
+      # dummy DSNs — the guard only checks non-empty (it does NOT connect at
+      # import time); unit/smoke tests are no-service by marker.
+      DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci_dummy
+      VALKEY_URL: redis://localhost:6379/0
+      GCS_BUCKET: ci-dummy-bucket
+      GCS_PROJECT_ID: ci-dummy-gcs-project
+      LANGFUSE_PUBLIC_KEY: pk-lf-ci-dummy
+      LANGFUSE_SECRET_KEY: sk-lf-ci-dummy
+      CORS_ALLOWED_ORIGINS: http://localhost:4200
       APP_ENV: development
     steps:
       - name: Checkout source
@@ -128,6 +149,17 @@ jobs:
       REFRESH_TOKEN_PEPPER: ci-dummy-refresh-pepper
       AUDIT_PII_SALT: ci-dummy-audit-pii-salt
       GEMINI_API_KEY: ci-dummy-gemini-key
+      # §5.D startup-guard required vars (app.shared.config REQUIRED_FIELDS).
+      # smoke boots FastAPI with no service containers, so DATABASE_URL/VALKEY_URL
+      # are dummy DSNs — the guard only checks non-empty (does NOT connect at
+      # import time).
+      DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci_dummy
+      VALKEY_URL: redis://localhost:6379/0
+      GCS_BUCKET: ci-dummy-bucket
+      GCS_PROJECT_ID: ci-dummy-gcs-project
+      LANGFUSE_PUBLIC_KEY: pk-lf-ci-dummy
+      LANGFUSE_SECRET_KEY: sk-lf-ci-dummy
+      CORS_ALLOWED_ORIGINS: http://localhost:4200
       APP_ENV: development
     steps:
       - name: Checkout source
@@ -161,6 +193,30 @@ jobs:
     timeout-minutes: 5
     env:
       SECRET_KEY: ci-dummy-secret-key
+      # §5.D startup-guard required vars. import-linter (Contracts 1-7,
+      # root_package="app") builds its graph via grimp, which IMPORTS every
+      # module under app — including app.shared.config, whose module-level
+      # `settings = _load_settings()` runs the §5.D guard at import time. So the
+      # lint gate needs the FULL required set, not just SECRET_KEY/APP_ENV.
+      # (The 3 AST scanners — Contracts 8-10 — parse statically and don't need
+      # them, but Contracts 1-7 in the same job do.) No service containers here,
+      # so DATABASE_URL/VALKEY_URL are dummy DSNs (guard checks non-empty only).
+      JWT_SECRET: ci-dummy-jwt-secret
+      MSG91_AUTH_KEY: ci-dummy-msg91-auth-key
+      MSG91_TEMPLATE_ID: ci-dummy-template-id
+      RAZORPAY_KEY_ID: ci-dummy-razorpay-key-id
+      RAZORPAY_KEY_SECRET: ci-dummy-razorpay-key-secret
+      RAZORPAY_WEBHOOK_SECRET: ci-dummy-razorpay-webhook
+      REFRESH_TOKEN_PEPPER: ci-dummy-refresh-pepper
+      AUDIT_PII_SALT: ci-dummy-audit-pii-salt
+      GEMINI_API_KEY: ci-dummy-gemini-key
+      DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci_dummy
+      VALKEY_URL: redis://localhost:6379/0
+      GCS_BUCKET: ci-dummy-bucket
+      GCS_PROJECT_ID: ci-dummy-gcs-project
+      LANGFUSE_PUBLIC_KEY: pk-lf-ci-dummy
+      LANGFUSE_SECRET_KEY: sk-lf-ci-dummy
+      CORS_ALLOWED_ORIGINS: http://localhost:4200
       APP_ENV: development
     steps:
       - name: Checkout source
@@ -244,6 +300,14 @@ jobs:
       REFRESH_TOKEN_PEPPER: ci-dummy-refresh-pepper
       AUDIT_PII_SALT: ci-dummy-audit-pii-salt
       GEMINI_API_KEY: ci-dummy-gemini-key
+      # §5.D startup-guard required vars not already provided above. DATABASE_URL
+      # and VALKEY_URL come from the service-container block above; these 5 close
+      # the remaining gap so the config guard passes.
+      GCS_BUCKET: ci-dummy-bucket
+      GCS_PROJECT_ID: ci-dummy-gcs-project
+      LANGFUSE_PUBLIC_KEY: pk-lf-ci-dummy
+      LANGFUSE_SECRET_KEY: sk-lf-ci-dummy
+      CORS_ALLOWED_ORIGINS: http://localhost:4200
       APP_ENV: development
 
     steps:
@@ -316,6 +380,14 @@ jobs:
       REFRESH_TOKEN_PEPPER: ci-dummy-refresh-pepper
       AUDIT_PII_SALT: ci-dummy-audit-pii-salt
       GEMINI_API_KEY: ci-dummy-gemini-key
+      # §5.D startup-guard required vars not already provided above. DATABASE_URL
+      # and VALKEY_URL come from the service-container block above; these 5 close
+      # the remaining gap so the config guard passes.
+      GCS_BUCKET: ci-dummy-bucket
+      GCS_PROJECT_ID: ci-dummy-gcs-project
+      LANGFUSE_PUBLIC_KEY: pk-lf-ci-dummy
+      LANGFUSE_SECRET_KEY: sk-lf-ci-dummy
+      CORS_ALLOWED_ORIGINS: http://localhost:4200
       APP_ENV: development
 
     steps:
@@ -668,6 +740,14 @@ jobs:
       RAZORPAY_WEBHOOK_SECRET: ci-dummy-razorpay-webhook
       REFRESH_TOKEN_PEPPER: ci-dummy-refresh-pepper
       AUDIT_PII_SALT: ci-dummy-audit-pii-salt
+      # §5.D startup-guard required vars not already provided above. DATABASE_URL
+      # and VALKEY_URL come from the service-container block above; these 5 close
+      # the remaining gap so the config guard passes.
+      GCS_BUCKET: ci-dummy-bucket
+      GCS_PROJECT_ID: ci-dummy-gcs-project
+      LANGFUSE_PUBLIC_KEY: pk-lf-ci-dummy
+      LANGFUSE_SECRET_KEY: sk-lf-ci-dummy
+      CORS_ALLOWED_ORIGINS: http://localhost:4200
       APP_ENV: development
       # Real low-quota Gemini key for the ai_eval suite ONLY. CI-only — distinct
       # from the production key in GCP Secret Manager (see DEVOPS §8.1).

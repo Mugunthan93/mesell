@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-frontend-coordinator`
 **Domain:** `frontend`
-**Last updated:** 2026-06-11 (Wave 1 BOTH MERGED to integration: SP02 mfe-export #60/gate #61 OPEN; SP03 mfe-onboarding #67/gate #68 OPEN — D22 auth singleton GO)
+**Last updated:** 2026-06-11 (smart-picker frontend IN PROGRESS — HYBRID spec-authoring session-1; branch cut off integration ba94543; Wave 1 gates #61/#68 still OPEN)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -11,6 +11,7 @@
 
 | Feature | Group branch | Status | Current session | Last touched | Blocking | Notes |
 |---|---|---|---|---|---|---|
+| smart-picker | feature/smart-picker/frontend | IN PROGRESS | mesell-smart-picker-frontend-session-1 (SPEC-only) | 2026-06-11 | none | V1 Feature 2 — LAST slice (AI #54 + backend #72 MERGED on feature/smart-picker/integration @ ba94543; founder gate PR #55 OPEN). HYBRID step 1: lead authored 2 specialist specs (component-builder + service-builder); branch cut from integration ba94543. D4 rename catalog-new->smart-picker (first commit, component-builder). Route /catalogs/new UNCHANGED. RECONCILIATIONS (lead-ruled, see specs): (1) backend §9.E CategorySuggestion has NO commission_pct -- card OMITS commission for V1 (was a simulated-data invention); (2) NO HttpClient/interceptor/ApiClient exist yet on integration -- service-builder INTRODUCES provideHttpClient at this slice (feature-scoped); confidence is 0-1 float not 0-100. Conflict vs SP03 onboarding: DISJOINT (already merged; routes present on integration; line-disjoint in app.routes.ts). Specialists dispatched by master (step 2); lead gates at step 3. |
 
 ## Recently merged (last 14 days)
 
