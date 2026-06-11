@@ -176,6 +176,13 @@ class Settings(BaseSettings):
     # ── App (§5.D table 14) ────────────────────────────────────────────────
     APP_ENV: Literal["development", "staging", "production"] = "development"
 
+    # ── Feature flags (§3.2 — removed when feature ships to main) ─────────
+    # FEATURE_SMART_PICKER_ENABLED: dev default True; staging default False
+    # until 24h soak confirms top-5 recall ≥ 80% + per-call cost ≤ ₹0.05
+    # (Decision D2 in docs/plans/features/smart-picker/FEATURE_PLAN.md).
+    # Route returns 404 when False per Master Plan §3.2 backend protocol.
+    FEATURE_SMART_PICKER_ENABLED: bool = True
+
     # ── Validators ─────────────────────────────────────────────────────────
     @field_validator("CORS_ALLOWED_ORIGINS", mode="before")
     @classmethod

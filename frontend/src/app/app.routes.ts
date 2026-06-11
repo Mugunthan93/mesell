@@ -1,7 +1,7 @@
 import { Routes } from '@angular/router';
 import { authGuard } from '@mesell/core';
 
-import { loadRemoteWithFallback } from './core/load-remote';
+import { loadRemoteWithFallback, loadRemoteRoutesWithFallback } from './core/load-remote';
 
 export const routes: Routes = [
   // MF Sub-Plan 04 — mfe-dashboard remote (apps/mfe-dashboard/). The PUBLIC landing
@@ -51,14 +51,16 @@ export const routes: Routes = [
         loadComponent: loadRemoteWithFallback('mfe-dashboard', './DashboardComponent'),
       },
       {
+        // MF Sub-Plan 05 — mfe-catalog remote (apps/mfe-catalog/). The 5-page catalog
+        // funnel (list, new/smart-picker, :id/edit, :id/images, :id/preview) now lives in
+        // one Native-Federation remote exposing a Routes ARRAY (./CatalogRoutes) — the
+        // FIRST routes-expose (D31). The shell collapses its 5 separate catalogs* children
+        // into this ONE loadChildren (the strangler-fig win). The :id param flows through
+        // the shell outlet into the remote routes unchanged. CatalogFormApiService stays
+        // route-scoped inside the remote's catalog.routes.ts (D32). D12 fallback degrades
+        // the whole sub-tree to RemoteFailureComponent on remote-load failure.
         path: 'catalogs',
-        loadComponent: () =>
-          import('./features/catalogs/catalog-list.component').then(m => m.CatalogListComponent),
-      },
-      {
-        path: 'catalogs/new',
-        loadComponent: () =>
-          import('./features/catalog-new/catalog-new.component').then(m => m.CatalogNewComponent),
+        loadChildren: loadRemoteRoutesWithFallback('mfe-catalog', './CatalogRoutes'),
       },
       {
         // MF Sub-Plan 03 — mfe-onboarding remote (apps/mfe-onboarding/). Profile +
@@ -72,24 +74,6 @@ export const routes: Routes = [
       {
         path: 'onboarding',
         loadComponent: loadRemoteWithFallback('mfe-onboarding', './OnboardingComponent'),
-      },
-      {
-        path: 'catalogs/:id/edit',
-        loadChildren: () =>
-          import('./features/catalog-form/catalog-form.routes')
-            .then(m => m.CATALOG_FORM_ROUTES),
-      },
-      {
-        path: 'catalogs/:id/images',
-        loadComponent: () =>
-          import('./features/images/image-uploader/image-uploader.component')
-            .then(m => m.ImageUploaderComponent),
-      },
-      {
-        path: 'catalogs/:id/preview',
-        loadComponent: () =>
-          import('./features/preview/preview/preview.component')
-            .then(m => m.PreviewComponent),
       },
       {
         // MF Sub-Plan 01 — first federated remote. Pricing now lives in the

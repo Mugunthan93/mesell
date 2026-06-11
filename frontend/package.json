@@ -11,6 +11,7 @@
     "test": "ng test",
     "start:mfe-export": "ng serve mfe-export",
     "start:mfe-onboarding": "ng serve mfe-onboarding",
+    "start:mfe-catalog": "ng serve mfe-catalog",
     "start:mfe-dashboard": "ng serve mfe-dashboard"
   },
   "private": true,

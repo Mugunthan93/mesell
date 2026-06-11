@@ -45,4 +45,11 @@ For each candidate:
 Rank suggestions by confidence DESCENDING.  Return EXACTLY 5 suggestions.
 If fewer than 5 categories are remotely plausible, fill the remainder with
 your next-best guesses at lower confidence (do NOT pad with synthetic IDs).
+
+Return your answer as valid JSON conforming EXACTLY to this schema:
+{"suggestions": [{"category_id": "<string>", "confidence": <float 0.0-1.0>, "reasons": ["<string>", ...]}]}
+The "suggestions" array MUST contain EXACTLY 5 entries, ranked by
+"confidence" descending.  Each "confidence" is a float between 0.0 and 1.0.
+Each "reasons" is a list of up to 3 short strings.  Emit ONLY this JSON
+object — no markdown, no prose, and no keys other than those shown above.
 """
