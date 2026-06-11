@@ -37,6 +37,7 @@ from app.core.auth import (
     issue_refresh_token,
     refresh_allowlist_key,
     rotate_refresh_token as rotate_refresh_token_in_valkey,
+    validate_refresh_allowlist,
 )
 from app.core.metrics import AUTH_TOKEN_REFRESH_FAILED
 from app.modules.iam import repository as iam_repo
@@ -408,13 +409,20 @@ async def rotate_refresh_token(
         )
         raise RefreshInvalidError()
 
-    old_key = refresh_allowlist_key(old_refresh_token)
     # Read the entry BEFORE rotation so we know the user_id for both the new
     # JWT (plan claim re-read) and the audit row.  This GET is not part of
     # the atomic rotation — the Lua script re-reads + DELs atomically.  The
     # window between this GET and EVAL is bounded by single-event-loop
     # serialisation (no other task in this request handles the same cookie).
-    existing_raw = await valkey.get(old_key)
+    #
+    # Dual-pepper (R5): validate_refresh_allowlist tries the CURRENT pepper/
+    # version first, then falls back to PREVIOUS during a grace window. It
+    # returns the MATCHED key so the Lua DEL below (KEYS[1]=old_key) targets
+    # the exact key found — a cookie issued under vN-1 is rotated by DELeting
+    # its vN-1 key and SETting the fresh vN key. The new key is ALWAYS current.
+    matched = await validate_refresh_allowlist(valkey, old_refresh_token)
+    old_key = matched[0] if matched is not None else refresh_allowlist_key(old_refresh_token)
+    existing_raw = matched[1] if matched is not None else None
     existing_entry = _deserialize_allowlist_entry(existing_raw)
 
     new_refresh_token = issue_refresh_token()
@@ -513,8 +521,17 @@ async def revoke_refresh_token(
     if not refresh_token:
         return RevokeResult(cookie_was_present=False, user_id=None)
 
-    key = refresh_allowlist_key(refresh_token)
-    raw = await valkey.get(key)
+    # Dual-pepper (R5): validate_refresh_allowlist returns the MATCHED key so
+    # logout DELs the exact key that holds the session — including a vN-1 key
+    # for a cookie issued under the PREVIOUS pepper during a grace window. A
+    # current-pepper-only DEL would leave that vN-1 entry live until TTL.
+    matched = await validate_refresh_allowlist(valkey, refresh_token)
+    if matched is not None:
+        key, raw = matched
+    else:
+        # Not present under either pepper — DEL the current-pepper key anyway
+        # so logout stays idempotent (no-op if it was never there).
+        key, raw = refresh_allowlist_key(refresh_token), None
     entry = _deserialize_allowlist_entry(raw)
     # DEL is idempotent — succeeds whether or not the key existed.
     await valkey.delete(key)

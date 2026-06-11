@@ -1,31 +1,68 @@
 # STATUS — AI INTEGRATION
 
-**Owner:** AI sub-session
-**Last update:** 2026-06-09
+**Owner:** AI lead (`meesell-ai-coordinator`)
+**Last update:** 2026-06-11
 
-**Status:** §22 CRITICAL-1 RESOLVED — all 3 AI golden eval sets populated + passing.
+**Status:** AI track executed — all 3 AI group PRs (F2/F4/F5) gate-merged to their integration branches; 3 FOUNDER GATE PRs open against develop.
 
 ## Current Phase
-§22 acceptance remediation — V1 Features 2/4/5 golden eval sets populated + passing.
+AI track execution (session `mesell-ai-track-session-1`) — V1 Features 2/4/5 AI slices delivered to integration branches.
 
 ## Done
-- Smart Picker (F2) eval: 50 fixtures, 50/50 top-5 recall (100%, threshold 80%) → PASS
-- Autofill (F4) eval: 30 fixtures, 0 invalid enum emissions + guardrail-drop controls 2/2 (threshold 100%) → PASS
-- Watermark (F5) eval: 30 fixtures (14 watermarked / 16 clean), 30/30 (100%, threshold 85%) → PASS
+- **F2 smart-picker/ai** — added JSON-schema closing instruction to `smart_picker_v1.py` TEMPLATE (aligned to guardrail Layer 2). Group PR #54 gate-merged → `feature/smart-picker/integration`. Founder gate PR #55 open. Eval: 50/50 top-5 recall = 100% (≥80%) → PASS.
+- **F4 catalog-form/ai** — moved autofill fixtures+runner `tests/eval/` → `tests/eval/autofill/` (fixes `ai_ops.eval._fixtures_path` lookup), fixed runner `_RESULTS_PATH` double-nest, added JSON closing instruction to `autofill_v1.py`. Group PR #56 gate-merged → `feature/catalog-form/integration`. Founder gate PR #57 open. Eval: 30/30, invalid-enum rate = 0% (=0%) + drop controls 2/2 → PASS.
+- **F5 image-precheck/ai** — fixed `watermark_v1.py` docstring (50/50 → 14/16), appended R3 cost-ceiling AMENDMENT to image-precheck FEATURE_PLAN (founder-approved vision ≤ ₹0.08). Confirmed 5-step precheck pipeline wired in `image/tasks.py` — no blocker. Group PR #58 gate-merged → `feature/image-precheck/integration`. Founder gate PR #59 open. Eval: 30/30 accuracy = 100% (≥85%) → PASS.
+
+## Prompt registry index (V1 — VERSION constant + prompt_registry.resolve IS the registry; no registry.py per Director §1.2)
+
+| Workload | VERSION | WORKLOAD const | RENDERED_BY | Prompt file | Eval path | Call site | Cost gate |
+|---|---|---|---|---|---|---|---|
+| smart_picker | v1 | `smart_picker` | text | `backend/app/ai_ops/prompts/smart_picker_v1.py` | `backend/tests/eval/smart_picker/` | `category/service.py:262` | ≤ ₹0.05 |
+| autofill | v1 | `autofill` | text | `backend/app/ai_ops/prompts/autofill_v1.py` | `backend/tests/eval/autofill/` | `catalog/service.py:636` | ≤ ₹0.05 |
+| watermark | v1 | `watermark` | vision | `backend/app/ai_ops/prompts/watermark_v1.py` | `backend/tests/eval/watermark/` | `image/tasks.py:206` | ≤ ₹0.08 (vision exception, founder 2026-06-11) |
 
 ## In Progress
-- (none)
+- (none — all 3 AI slices delivered to integration)
 
 ## Blockers
 - none
 
 ## Next
-- Wire ai_ops.eval.run_eval per-fixture dispatch to these fixtures for LIVE-model accuracy once GEMINI_API_KEY lands in a staging runner.
+- 3 FOUNDER GATE PRs (#55/#57/#59) await sibling-group slices + integration tests + founder merge — NOT the AI lead's gate (D1).
+- LIVE-model accuracy still UNKNOWN: all evals are deterministic token-free proxies. Wire `ai_ops.eval.run_eval` to these fixtures once GEMINI_API_KEY lands in a staging runner; measure actual per-call cost (vision gate ≤ ₹0.08, text ≤ ₹0.05) and capture LangFuse traces then.
 
 ## Hand-offs
-- §22 auditor: CRITICAL-1 resolved — all 3 verdicts PASS against §22.C thresholds.
+- backend lead: smart-picker/catalog-form/image-precheck integration branches now carry the AI slice; backend group slices rebase on these integration tips. Call-site contracts unchanged (3 call sites already wired to the locked `call_gemini` signature).
+- founder: 3 founder-gate PRs open (#55 smart-picker, #57 catalog-form, #59 image-precheck) — leave open until sibling groups land.
 
 ## Updates Log
+=== UPDATE: 2026-06-11 SESSION-END ===
+Phase: AI track execution (V1 Features 2/4/5).
+Session: mesell-ai-track-session-1
+Board sweep: 0 stale rows (board was empty at start). 3 rows added to Recently merged; 0 inter-lead requests open; no rows untouched 7+ days.
+Done:
+  - F2 smart-picker/ai: smart_picker_v1.py JSON closing schema added. PR #54 merged → integration. Founder gate #55 open.
+  - F4 catalog-form/ai: autofill fixtures+runner moved to tests/eval/autofill/ (path fix + _RESULTS_PATH de-nest), autofill_v1.py JSON closing added. PR #56 merged → integration. Founder gate #57 open.
+  - F5 image-precheck/ai: watermark_v1.py docstring 50/50→14/16, FEATURE_PLAN R3 vision-cost AMENDMENT. Pipeline wiring confirmed. PR #58 merged → integration. Founder gate #59 open.
+In progress: none.
+Blockers: none.
+Eval pass rate: smart_picker top-5 recall 100% (≥80%) / autofill invalid-enum 0% (=0%) / watermark accuracy 100% (≥85%). All deterministic token-free proxies.
+Tokens per call (avg): N/A — deterministic evals, 0 Gemini calls. Live token/cost via ai_ops.cost_tracker at call sites once GEMINI_API_KEY lands in staging.
+Cost per call (est): text ≤ ₹0.05 (smart_picker, autofill) / vision ≤ ₹0.08 (watermark, founder exception 2026-06-11). ₹0 for the eval runs.
+Next: founder merges the 3 gate PRs after sibling groups land; staging live-model accuracy + LangFuse traces.
+Hand-offs: backend lead (integration tips carry AI slice); founder (3 gate PRs open).
+Deviation noted (honest reporting): the Task/sub-agent dispatch tool was NOT available in this execution context, so the 3 AI specialists (prompt-engineer / category-picker-builder / image-precheck-builder) could NOT be dispatched. The brief pre-specified the EXACT mechanical edits per feature; as lead I executed those contained validation/integration edits directly at the merge seam. No specialist-scope authoring beyond the brief's explicit instructions. Recorded in MEMORY.md for the founder's awareness — future sessions should dispatch specialists when the tool is available.
+=========
+
+=== UPDATE: 2026-06-11 SESSION-START ===
+Phase: AI track execution — V1 Features 2 (smart-picker) / 4 (catalog-form autofill) / 5 (image-precheck watermark).
+Session: mesell-ai-track-session-1
+Board sweep: board empty (no Active rows) — nothing stale, no inter-lead requests open.
+Mapping: F2 smart-picker/ai (prompt-engineer + category-picker-builder, smart_picker, ≤₹0.05); F4 catalog-form/ai (prompt-engineer, autofill, ≤₹0.05); F5 image-precheck/ai (prompt-engineer + image-precheck-builder, watermark, ≤₹0.08 vision exception).
+Verified live: 3 prompt modules constants OK; prompt_registry.resolve is V1 registry (no registry.py per §1.2); 3 call sites wired (category/service.py:262, catalog/service.py:636, image/tasks.py:206); 3 eval runners PASS (smart_picker 100% / autofill 0 invalid / watermark 100%); guardrail Layer 2 shapes authoritative.
+Gaps to fix: smart_picker JSON closing instruction; autofill fixture path move; watermark docstring 50/50→14/16.
+=========
+
 === UPDATE: 2026-06-04 00:00 ===
 File initialised by master session. Awaiting first AI sub-session.
 =========

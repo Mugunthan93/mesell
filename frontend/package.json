@@ -4,9 +4,14 @@
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
+    "start:shell": "ng serve frontend --port 4200",
+    "start:mfe-pricing": "ng serve mfe-pricing",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "start:mfe-export": "ng serve mfe-export",
+    "start:mfe-onboarding": "ng serve mfe-onboarding",
+    "start:mfe-catalog": "ng serve mfe-catalog"
   },
   "private": true,
   "packageManager": "pnpm@11.5.2",

@@ -7304,6 +7304,25 @@ addopts = [
 
 **Real-vs-mock policy (locked):** `db` + `valkey` are ALWAYS real in V1 (no SQLite, no fakeredis) — the cost of running against real infra is justified by the schema-fidelity bugs SQLite would mask. Adapter layer is ALWAYS mocked (per-test) except in the dedicated golden-fixture + AI-eval suites.
 
+> **AS-BUILT NOTE (additive, 2026-06-11 — ci-activation, PR #73 squash `1e95b2a`):** the
+> shipped `backend/pytest.ini` carries one additive key not in the consolidated illustrative
+> block above: **`pythonpath = .`**. CI runs `pytest` bare (not `python -m pytest`) from
+> `working-directory: backend`; bare pytest under `importmode=prepend` does NOT put the
+> rootdir (`backend/`) on `sys.path` (the test tree has no `tests/__init__.py`, so prepend
+> stops at the test package root, never `backend/`), so `from app... import` raised
+> `ModuleNotFoundError: No module named 'app'` at collection (run `27318816408`).
+> `pythonpath = .` (pytest ≥ 7.0; pinned 8.3.0) prepends the rootdir so `import app` resolves
+> in a clean CI checkout, matching local `python -m pytest` behaviour. This is **additive and
+> semantics-preserving** — it does NOT alter the §19.D-locked markers, `asyncio_mode`,
+> `asyncio_default_fixture_loop_scope`, `testpaths`, `filterwarnings`, or `addopts`, so it
+> does not require a §7.3 founder amendment (founder pre-OK'd via infra inter-lead, same run).
+> The illustrative `[tool.pytest.ini_options]` block above already diverges from the as-built
+> `[pytest]` ini-format file (it is illustrative of the test contract — markers, asyncio,
+> strict flags — not a byte-for-byte mandate). **The key MUST appear exactly once** — a
+> parallel-PR double-merge (#73 + #74) briefly produced a duplicate `pythonpath` line that
+> made pytest reject the config (`duplicate name 'pythonpath'`); repaired to a single key in
+> the same closeout PR. Treat the live `backend/pytest.ini` as the as-built source of truth.
+
 ---
 
 ### 19.E Performance budgets — consolidated from per-module specs

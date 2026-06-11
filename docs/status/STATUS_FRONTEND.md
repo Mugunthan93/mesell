@@ -1,7 +1,51 @@
 # STATUS — FRONTEND
 
 **Owner:** meesell-frontend-coordinator (master session)
-**Last update:** 2026-06-10
+**Last update:** 2026-06-11
+
+=== UPDATE: 2026-06-11 09:00 ===
+Phase: mfe-catalog (SP05) — MF Sub-Plan 05 catalog funnel extraction (R4)
+Session: mesell-mfe-catalog-frontend-session-3 (lead merge-gate review — HYBRID step 3 of 3)
+Board sweep: smart-picker IN PROGRESS (untouched, separate feature); mfe-catalog moved to Recently merged; 4 infra inter-lead rows OPEN (>7d? — SP01/SP04-05 hosting rows opened 2026-06-10/11, within SLA). No 7+ day stale rows.
+Done:
+  - INDEPENDENT merge-gate re-verification of group PR #77 (did NOT trust builder report; re-ran build+tests+boundary+§6.G in worktree /tmp/mesell-wt/sp05-review). Zero discrepancies vs builder claims.
+  - 16 renames R100 (blob hashes IDENTICAL — byte-identical relocation, 0 logic edits). 6 new files + catalog-form.routes.ts removed (D34).
+  - Remote build GREEN (name:mfe-catalog, exposes ./CatalogRoutes). Shell build GREEN 3.278s (≤90s, D12). Zero catalog chunks in shell (strangler shrink).
+  - Tests: 43 files / 411 passed, 0 fail, 0 skip (baseline 43/408 +3 loadRemoteRoutesWithFallback tests). 4 moved specs discovered spec-apps-mfe-catalog-*. R-SP5-3 PASS (no drop).
+  - Boundary: 0 primeng in apps/mfe-catalog.
+  - §6.G singleton (P0): @mesell/ui-kit + @mesell/composites own shared chunks; @mesell/core legitimately ABSENT (no page imports it — only a main.ts comment); AuthService NOT inlined. No drift. main.ts boots full CATALOG_ROUTES (R-SP3-1 fix verified).
+  - D33: ZERO promotions — libs/ diff EMPTY; 9 candidate types 0 cross-remote importers — matches Founder Ruling 2026-06-11. Deferral note recorded.
+  - D32: CatalogFormApiService route-scoped on :id/edit; SmartPickerApiService component-scoped; neither promoted to root.
+  - VERDICT PASS → APPROVE comment on #77 (self-approval blocked) → squash --admin merge (f11d0bf) → remote branch deleted via gh api.
+  - develop merged into integration (e1384c7) conflict-free (no SP04 dashboard on develop yet; new develop commits = CI-activation + infra docs, no shared-frontend-file overlap). Both builds re-certified GREEN on merged tip.
+  - Founder-gate PR #82 (integration→develop) OPENED with full §6 scorecard, LEFT OPEN. Lead does NOT approve (D1 — founder's gate).
+In progress: smart-picker frontend (separate feature, IN PROGRESS, not this session).
+Blockers: none.
+Next: founder reviews/merges PR #82 (+ #61/#68 Wave-1 gates + #55 smart-picker). SP04 dashboard + SP06 auth remain.
+Hand-offs: meesell-infra-builder — handoff_mf_catalog_deploy.md (5th-remote GCS prefix gs://meesell-frontend/{env}/mfe-catalog/{version}/ + C-CI-1 matrix unit apps/mfe-catalog/**; D33 zero promotions → no new @mesell/core consumer → no shared/**-rebuilds-all this slice). Inter-lead row to be added.
+=========
+
+=== UPDATE: 2026-06-11 — Gate 5 visual review BLOCKED — P0 shell bootstrap failure ===
+Session: mesell-ui-review-session-1 (founder-driven Safari review)
+Verdict: ❌ FAIL — 0 of 14 routes reviewed; shell renders BLANK at all routes
+Finding: F-001 (P0) in docs/ui-review/GATE5_FINDINGS.md — federation import map
+  lacks subpath entries for '@mesell/ui-kit/providers' (app.config.ts:8) and
+  '@primeuix/themes/aura' (libs/ui-kit/theme.ts). Native Federation externalizes
+  shared packages; runtime es-module-shims cannot resolve the subpaths → bootstrap
+  throws → blank screen. Introduced in SP0 (e51761b, PR #40). Build gates pass
+  (esbuild resolves tsconfig wildcard at compile time) — failure is runtime/browser-only.
+Setup verified before block: all 4 services healthy (shell :4200, mfe-pricing :4201,
+  mfe-export :4202, mfe-onboarding :4203 — remoteEntry.json 200 on all three remotes).
+Founder ruling: pause Gate 5; master session dispatches the fix
+  (suggested: frontend-coordinator SPEC → angular-service-builder → merge-gate review;
+  conflict surfaces with Wave 2 SP04/SP05: federation.config.js, app.config.ts, libs/ui-kit).
+Process gap flagged: SP0–SP3 gates were build/test/boundary only — no browser-boot
+  smoke gate. Recommend headless-chromium boot check before SP04/SP05 merge.
+Fix batches: none (review blocked before any styling finding).
+Gate 5 re-run: schedule mesell-ui-review-session-2 after F-001 merges.
+Blockers: F-001 (P0) — blocks Gate 5 AND any real-browser verification of SP01–SP03.
+Hand-offs: see docs/ui-review/GATE5_FINDINGS.md §Handoff to Master Session (4 items).
+=========
 
 === UPDATE: 2026-06-10 — F12 Export + F11 pricing route fix ===
 Build: ok | Tests: 40 passed | Boundary: clean
@@ -5177,4 +5221,68 @@ In progress: component-builder dispatch (Phase A scaffold + git mv; Phase B shel
 Blockers: none.
 Next: dispatch meesell-angular-component-builder; on PR-open verify IN REVIEW; lead-gate review; group→integration squash; founder-gate PR (integration→develop) LEFT OPEN.
 Hand-offs: infra deploy memo (handoff_mf_export_deploy, D19 second-remote GCS prefix + dorny/paths-filter matrix fan-out) at Phase C — recorded; D13 hosting deferred per gate (no new request).
+=========
+
+
+=== UPDATE: 2026-06-11 — SESSION END (SP02 mfe-export EXECUTED — Wave 1 parallel) ===
+Phase: MF Sub-Plan 02 — mfe-export extraction (F12 export) — COMPLETE through founder gate
+Session: mesell-mfe-export-frontend-session-1
+Board sweep (session-end): mfe-export moved Active→Recently merged (MERGED to integration #60). Active = mfe-onboarding (SP03, IN PROGRESS, concurrent). Inter-lead open: 3 — infra D13 hosting (SP01, 2026-06-11), infra C-CI-1 (2026-06-10), infra D19 second-remote prefix (NEW this session, record-only). No rows untouched 7+ days.
+Done:
+  - Branches: feature/mfe-export/integration (F3-protected: PR-only, review-0, no force-push/deletions) + feature/mfe-export/frontend, both off develop@bb37f5f. sp02-export worktree (frontend) + sp02-integration worktree (founder-gate merge). Master tree NEVER branch-switched.
+  - PHASE A (component-builder slice, lead-executed): apps/mfe-export/ scaffolded by COPYING apps/mfe-pricing/ (D15). git mv 3 files R100 pure renames (export.component/model/spec) — ZERO logic edits, D18 timer (setInterval/ngOnDestroy) preserved byte-identical. NEW federation.config.js (name mfe-export, exposes ./ExportComponent), main.ts, public-api.ts, tsconfig.app.json, index.html (the @angular/build:application index gotcha). angular.json + projects.mfe-export (port 4202). Remote build GREEN 3.43s → remoteEntry.json (name mfe-export, 1 expose, @mesell/core correctly omitted via ignoreUnusedDeps).
+  - PHASE B (shell wire): app.routes.ts catalogs/:id/export → loadRemoteWithFallback('mfe-export','./ExportComponent') (SP01 helper REUSED, not re-authored — D15). manifest {mfe-pricing:4201, mfe-export:4202} — TWO entries. Shell build GREEN 2.89s (<90s, esbuild preserved). Tests 42 files/406 (== SP01 baseline; export spec discovered at apps/ via existing glob — 0 drop, R-SP2-3 PASS). Boundary 0 leaks in apps/. Two-remote manifest (R-SP2-4): both remoteEntry → 200 simultaneously, export chunk → 200, broken-url → 404 (D12 fallback). D18 timer: structural R100 preservation + nextProgress/isProgressComplete/retryState pure-fn coverage; full browser navigate-away handed forward (SP01 precedent).
+  - PHASE C (lead): group PR #60 frontend→integration LEAD-GATE squash-merged (APPROVE comment + --admin, 565d754, branch deleted, worktree removed). Integration merged with origin/develop (CONFLICT-FREE — onboarding remote not yet on develop). FOUNDER-GATE PR #61 integration→develop OPENED + LEFT OPEN ([FOUNDER GATE — DO NOT MERGE], full §9.A scorecard). Did NOT approve #61 (founder's gate, D1). Memory + infra memo written.
+§9.A scorecard: 1 PASS / 2 PASS / 3 PASS / 4 locally-proven / 5 PASS / 6 PASS / 7 locally-proven / 8 locally-proven-deferred + NEW two-remote-manifest PASS + NEW D18-timer PASS. = 5 PASS + 3 locally-proven + 2 new-surface PASS / 0 FAIL. Recipe proven reusable across 2 remotes — SP03-06 copy with confidence.
+In progress: none (frontend slice complete; PR #61 awaits founder).
+Blockers: none. PR #61 awaiting founder review (by design). Repo-wide CI not wired (C-CI-1 in flight) — wave does not block on CI per founder direction.
+Next: SP03 (mfe-onboarding) completes its concurrent run; when its founder gate merges the 3-entry manifest appears (2-entry proof de-risks it). SP04 dashboard next in the queue.
+Hand-offs: infra deploy memo (handoff_mf_export_deploy) — D19 second-remote GCS prefix + dorny/paths-filter matrix fan-out; record-only (D13 hosting deferred per founder ruling, extends open SP01 request). Board inter-lead row added.
+=========
+
+
+=== UPDATE: 2026-06-11 — SESSION END (SP03 mfe-onboarding EXECUTED — D22 auth GO) ===
+Phase: MF Sub-Plan 03 — mfe-onboarding extraction (F5 onboarding + F13 profile)
+Session: mesell-mfe-onboarding-frontend-session-1
+Board sweep (session-end): mfe-onboarding row IN PROGRESS→MERGED, moved to Recently merged (PR #67 squash e2035330). Infra inter-lead row added (D24 third-remote, RECORD-ONLY — D13 hosting deferred to SP04-05). Active features now EMPTY (both Wave-1 sub-plans on their integration branches awaiting founder gates #61 SP02 / #68 SP03). Inter-lead open: 4 infra rows (SP01 D13, SP02 D19, SP03 D24, SP0 C-CI-1) — all RECORD/within-SLA, none stale. No rows untouched 7+ days.
+Done:
+  - PHASE A (extraction + D21 promotion): apps/mfe-onboarding/ remote (SP01 shape, port 4202). git mv onboarding (import-rewrite only) + profile (BYTE-IDENTICAL) — zero logic. AuthLayout PROMOTED layouts/→libs/composites/ + barrel (D21 founder RULED); all 4 relative consumers (onboarding + shell login/signup/otp-verify) re-pointed to @mesell/composites; 0 dangling (R-SP3-2). federation.config exposes BOTH (D20). public-api + main.ts + index.html + tsconfig.app.json. Remote build GREEN 2.85s → remoteEntry (both exposes).
+  - PHASE B (shell): app.routes profile+onboarding → loadRemoteWithFallback (reuse SP01 D12 helper). manifest += mfe-onboarding (2 entries; SP02 export adds 3rd concurrently). angular.json += project. test/Tailwind globs already cover apps/** (SP01). Shell build GREEN 3.37s (<<90s), initial 60.80kB/18.48kB; onboarding+profile chunks LEFT the shell.
+  - PHASE C (D22 auth singleton — the migration auth GO/NO-GO): C1 PASS (@mesell/core shared+singleton, _mesell_core chunk). C2 PASS static (AuthService in exactly ONE chunk; ProfileComponent imports from '@mesell/core' externally; no dup). C5 PASS runtime (auth-singleton.smoke.spec.ts: shell setSession→remote renders currentUser().name→remote onLogout()→shell isAuthenticated() false + authGuard /login redirect; comp.auth===shellAuth). **AUTH = GO.**
+  - R-SP3-1 (P0 auth-drift) ROOT-CAUSED + FIXED: ignoreUnusedDeps/Sheriff prunes shared-mappings from the main.ts graph; main.ts referenced OnboardingComponent ALONE → profile (the only @mesell/core consumer) excluded → core dropped → AuthService INLINED into the remote (own instance = drift). FIX: main.ts routes BOTH exposes → core stays shared+singleton. ZERO AuthService change (C2). Forward rule recorded for SP04/05/06.
+  - Tests 43 files/408 (406 baseline + 2 C5), 0 fail/0 skip, moved specs discovered (R-SP3-3). Boundary 0. Headless: remoteEntry+both exposed chunks+core chunk 200, broken→404 (D12).
+  - PHASE D (lead): group PR #67 frontend→integration LEAD-GATE squash-merged (--admin, e2035330, branch deleted). Integration `git merge origin/develop` CONFLICT-FREE (SP02 remote not yet on develop) → rebuilt shell+remote on merged branch (green) → founder-gate PR #68 integration→develop OPENED + LEFT OPEN ([FOUNDER GATE — DO NOT MERGE], full §9 scorecard). Infra deploy memo + sub_plan_03_onboarding.md (the finalised D22 C1–C5 contract for SP04/05/06) written.
+§9 scorecard: group-merged PASS; remote-build PASS; shell≤90s PASS; tests==baseline+2 PASS; boundary PASS; D21 AuthLayout PASS; both-routes-resolve PASS; manifest(2; 3rd via SP02) PASS; D22 C5 PASS (auth GO); C2 no-dup PASS; contract recorded PASS; founder-flags resolved; infra memo filed; board/STATUS current. Founder approval on #68 = the only open box (founder's gate, NOT lead's).
+In progress: none (frontend slice complete; PR #68 awaits founder).
+Blockers: none. PR #68 awaiting founder review (by design). PR #53 SP01 already merged; #61 SP02 + #68 SP03 are the two open Wave-1 founder gates.
+Next: SP04 (mfe-dashboard, R3) once #68 merges + founder SP04 exec approval. Recipe + R-SP3-1 forward rule in sub_plan_03_onboarding.md.
+Hand-offs: infra D24 third-remote memo (handoff_mf_onboarding_deploy) — RECORD-ONLY, D13 hosting deferred to SP04-05. Board inter-lead row added.
+=========
+
+
+=== UPDATE: 2026-06-11 (meesell-angular-component-builder) ===
+Phase: MF Sub-Plan 05 — mfe-catalog extraction (5-page catalog funnel)
+Session: mesell-mfe-catalog-frontend-session-1
+Route: /catalogs, /catalogs/new, /catalogs/:id/edit, /catalogs/:id/images, /catalogs/:id/preview
+Done:
+  - Branches: feature/mfe-catalog/integration (F3-protected) + feature/mfe-catalog/frontend, both off develop@bab3a4d. Worktree /tmp/mesell-wt/sp05-catalog. Master tree NEVER branch-switched.
+  - 16 rename-only git mv moves (all R100 — 100% similarity, history preserved, ZERO logic edits):
+      catalog-new/ (3) + services/ (1) → apps/mfe-catalog/src/app/catalog-new/
+      catalog-form/catalog-form/ (2) + catalog-form.model.ts (1) + models/ (1) + services/ (1) → apps/mfe-catalog/src/app/catalog-form/
+      images/image-uploader/ (3) → apps/mfe-catalog/src/app/images/image-uploader/
+      preview/preview/ (3) → apps/mfe-catalog/src/app/preview/preview/
+      catalogs/catalog-list.component.ts (1) → apps/mfe-catalog/src/app/
+  - 5 new files: catalog.routes.ts (CATALOG_ROUTES expose D31/D32/R-SP5-2, 5 routes, 'new' before ':id/edit'), public-api.ts, federation.config.js (name mfe-catalog, exposes ./CatalogRoutes), main.ts (R-SP3-1: provideRouter(CATALOG_ROUTES) — full 5-route set), index.html (mee-catalog-list selector — gotcha verified), tsconfig.app.json
+  - Shared-file diffs: load-remote.ts adds loadRemoteRoutesWithFallback (D31 Routes-array D12 fallback); load-remote.spec.ts +3 tests; app.routes.ts collapses 5 funnel → 1 loadChildren + pricing/export siblings untouched; manifest adds mfe-catalog:4205; angular.json adds mfe-catalog project block; package.json adds start:mfe-catalog script
+  - git rm catalog-form.routes.ts (D34 — subsumed into catalog.routes.ts providers:[CatalogFormApiService])
+  - D33 decision tree: 17 candidate types enumerated, ALL verified LOCAL-ONLY (zero cross-remote importers). ZERO promotions. @mesell/core barrel unchanged. Deferral note recorded. Dashboard-convergence forward note: when SP04 mfe-dashboard extracted, its types MAY re-point to any future @mesell/core canonical types — SEPARATE post-SP05 PR.
+Tests: 43 files / 411 passed (0 failed, 0 skipped) — baseline 43/408 + 3 new; 4 moved specs discovered under spec-apps-mfe-catalog-* IDs. ZERO drop.
+Build: mfe-catalog GREEN 3.878s; shell GREEN 3.191s (<90s, esbuild preserved)
+§6.G singleton non-drift Run #1: @mesell/ui-kit+composites shared chunks present; @mesell/core ABSENT (no catalog page imports it — expected); AuthService NOT inlined in any page chunk.
+PR: group PR #77 frontend→integration OPENED (Lead review gate — DO NOT merge until lead reviews).
+Blockers: none (service-builder Phase C dispatched by Lead after #77 review).
+Next: Lead reviews #77, dispatches meesell-angular-service-builder for Phase C (D33 re-confirm + §6.G Run #2 + §6.E service verification). Then lead: founder-gate PR integration→develop.
+Hand-offs:
+  - meesell-angular-service-builder (Phase C): D33 zero-promotion outcome + §6.E CatalogFormApiService route-scope + SmartPickerApiService component-scope verification + §6.G Run #2.
+  - meesell-infra-builder: 5th-remote GCS prefix gs://meesell-frontend/{env}/mfe-catalog/{version}/ + matrix fan-out C-CI-1. No new @mesell/core consumers (D33 zero promotions).
 =========

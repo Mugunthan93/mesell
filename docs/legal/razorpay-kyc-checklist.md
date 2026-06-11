@@ -1,19 +1,21 @@
 # Razorpay KYC Onboarding Checklist
 
-**Operator:** **Stellaxis** `[ENTITY SUFFIX]` operating the **MeeSell** service
-**Purpose:** Single checklist for Razorpay merchant onboarding — document set + name-match invariant + verification timeline + TEST → LIVE key rotation. **Forks by entity path.** Both Sole Prop and OPC variants are shown side-by-side so founder picks at incorporation.
+> **Entity ruling 2026-06-11: OPC immediately. Sole Prop path removed.**
+
+**Operator:** **Stellaxis (OPC) Private Limited** operating the **MeeSell** service
+**Purpose:** Single checklist for Razorpay merchant onboarding — document set + name-match invariant + verification timeline + TEST → LIVE key rotation. **OPC path only** (§15.1 ruled OPC, founder ruling 2026-06-11).
 **Status:** DRAFT — founder runbook; lawyer review not required (operational doc)
-**Drafted by:** `meesell-legal-writer` 2026-06-05
+**Drafted by:** `meesell-legal-writer` 2026-06-05; single-pathed to OPC 2026-06-11
 **Source:** `docs/LEGAL_ARCHITECTURE.md` §12.1 + §12.2; `docs/LEGAL_AND_COMPLIANCE_INFO.md` §5; `docs/INFRASTRUCTURE_ARCHITECTURE.md` §4 (secret rotation)
 
 > **When to use this checklist:**
-> Stellaxis has completed incorporation (Sole Prop / OPC / Pvt Ltd / LLP) and is ready to activate **live** Razorpay payments. The 4 public-facing legal docs (Privacy, ToS, Refund, Cookie) must be live on `meesell.in` BEFORE starting Razorpay KYC — Razorpay verifies these as part of onboarding.
+> Stellaxis (OPC) Private Limited has completed incorporation as a One Person Company and is ready to activate **live** Razorpay payments. The 4 public-facing legal docs (Privacy, ToS, Refund, Cookie) must be live on `meesell.in` BEFORE starting Razorpay KYC — Razorpay verifies these as part of onboarding.
 
 ---
 
 ## 0. Prerequisites — must be true before starting
 
-- [ ] Stellaxis is **legally incorporated** (PAN in entity name issued)
+- [ ] Stellaxis (OPC) Private Limited is **legally incorporated** as an OPC (company PAN issued)
 - [ ] **GST registration complete** (GSTIN issued, ~7-10 working days after application) — see `gst-registration-checklist.md`
 - [ ] **Current Account** opened in Stellaxis's exact legal name
 - [ ] **Privacy Policy, Terms of Service, Refund Policy, Cookie Policy** live at `https://www.meesell.in/legal/...` URLs with HTTPS
@@ -42,27 +44,31 @@ If any of the above mismatches: STOP. Resolve the mismatch (typically: re-issue 
 
 ---
 
-## 2. Document set — PATH A: Sole Proprietorship
+## 2. Document set — One Person Company (OPC)
 
-If `[ENTITY SUFFIX]` is **empty** (Sole Prop). Stellaxis trades as the legal name "Stellaxis" with the founder as the proprietor.
+Stellaxis (OPC) Private Limited is a One Person Company. Gather the OPC document set below.
 
-### 2.1 Documents to gather (PDF, < 5 MB each, clearly legible)
+### 2.1 Documents to gather
 
 | # | Document | Source | Notes |
 |---|---|---|---|
-| 1 | **Founder's PAN card** | Income Tax Department | Serves as business PAN under Sole Prop |
-| 2 | **Founder's Aadhaar** OR **Passport** OR **Voter ID** | Issuer | Government ID for identity verification |
-| 3 | **GST certificate (GSTIN allotment letter)** | gst.gov.in | Strongly recommended even if optional for Sole Prop; massively smooths onboarding |
-| 4 | **Cancelled cheque** in business name "Stellaxis" | Bank | Must show printed name = PAN name = GSTIN name |
-| 5 | **Business address proof** | Various — see options below | One of: rent agreement + electricity bill, OR property document, OR Shop & Establishment certificate |
-| 6 | **Founder's photograph** (passport size) | — | JPEG / PNG, recent (within 6 months) |
-| 7 | **Founder's signature** on white paper, scanned | — | Used to match against PAN and bank signature |
+| 1 | **Company PAN** | Income Tax Department | Issued at incorporation in the company name |
+| 2 | **Certificate of Incorporation** | Ministry of Corporate Affairs (MCA) | Issued by Registrar of Companies |
+| 3 | **MOA (Memorandum of Association)** | MCA | Authorised business activities + Stellaxis (OPC) Private Limited name |
+| 4 | **AOA (Articles of Association)** | MCA | Internal governance — required for OPC |
+| 5 | **Director's PAN + Aadhaar** | Income Tax + UIDAI | Founder, as the sole director |
+| 6 | **GST certificate** | gst.gov.in | Mandatory once registered |
+| 7 | **Cancelled cheque in company name** | Bank | Must show printed company name = PAN name = GSTIN name |
+| 8 | **Registered office address proof** | Various — see below | |
+| 9 | **Director's photograph** | — | JPEG / PNG |
+| 10 | **Board Resolution** | Stellaxis internal | Authorising the director to onboard with Razorpay (sample template available from Razorpay docs) |
+| 11 | **Nominee details** | MCA filing | Required for OPC — nominee PAN + Aadhaar + consent letter |
 
-### 2.2 Business address proof — pick one
+### 2.2 Registered office address proof — pick one
 
-- [ ] **Rent agreement** (current, registered if > 11 months) + recent **electricity bill** (last 3 months)
-- [ ] **Property tax receipt** OR **sale deed**
-- [ ] **Shop & Establishment certificate** issued in Stellaxis's name
+- [ ] **Rent agreement** + recent **electricity bill** (last 3 months) — if leased
+- [ ] **Property tax receipt** + **NOC from owner** — if owned by founder
+- [ ] **Property document** — if owned by Stellaxis (OPC) Private Limited
 
 ### 2.3 Website requirements (already live before KYC)
 
@@ -70,40 +76,9 @@ If `[ENTITY SUFFIX]` is **empty** (Sole Prop). Stellaxis trades as the legal nam
 - [ ] `https://www.meesell.in/legal/terms-of-service` — same
 - [ ] `https://www.meesell.in/legal/refund-policy` — same
 - [ ] `https://www.meesell.in/legal/cookie-policy` — same
-- [ ] `https://www.meesell.in/contact` — Contact Us with `support@meesell.in` + `grievance@meesell.in` + Stellaxis's registered address
+- [ ] `https://www.meesell.in/contact` — Contact Us with `support@meesell.in` + `grievance@meesell.in` + Stellaxis (OPC) Private Limited's registered address
 
----
-
-## 3. Document set — PATH B: One Person Company (OPC) / Private Limited / LLP
-
-If `[ENTITY SUFFIX]` is `(OPC) Private Limited`, `Private Limited`, or `LLP`.
-
-### 3.1 Documents to gather
-
-| # | Document | Source | Notes |
-|---|---|---|---|
-| 1 | **Company PAN** | Income Tax Department | Issued at incorporation |
-| 2 | **Certificate of Incorporation** | Ministry of Corporate Affairs (MCA) | Issued by Registrar of Companies |
-| 3 | **MOA (Memorandum of Association)** | MCA | Authorised business activities + Stellaxis name |
-| 4 | **AOA (Articles of Association)** | MCA | Internal governance — required for OPC and Pvt Ltd; LLP files an LLP Agreement instead |
-| 5 | **LLP Agreement** | MCA | Required ONLY for LLPs; replaces MOA + AOA |
-| 6 | **Director's PAN + Aadhaar** | Income Tax + UIDAI | Founder, as the sole / first director |
-| 7 | **GST certificate** | gst.gov.in | Mandatory once registered |
-| 8 | **Cancelled cheque in company name** | Bank | Must show printed company name = PAN name = GSTIN name |
-| 9 | **Registered office address proof** | Various — see below | |
-| 10 | **Director's photograph** | — | JPEG / PNG |
-| 11 | **Board Resolution** (Pvt Ltd / OPC) | Stellaxis internal | Authorising the director to onboard with Razorpay (sample template available from Razorpay docs) |
-| 12 | **Nominee details** | MCA filing | Required for OPC only — nominee PAN + Aadhaar + consent letter |
-
-### 3.2 Registered office address proof — pick one
-
-- [ ] **Rent agreement** + recent **electricity bill** (last 3 months) — if leased
-- [ ] **Property tax receipt** + **NOC from owner** — if owned by founder
-- [ ] **Property document** — if owned by Stellaxis
-
-### 3.3 Website requirements (same as PATH A §2.3)
-
-Same 5 URLs as Sole Prop. The legal documents themselves carry `Stellaxis [ENTITY SUFFIX]` matching the actual entity form.
+The legal documents themselves carry `Stellaxis (OPC) Private Limited` matching the registered entity.
 
 ---
 
@@ -113,8 +88,8 @@ When filling the Razorpay sign-up form at `https://dashboard.razorpay.com/signup
 
 | Field | Value to enter | Source |
 |---|---|---|
-| **Business name (legal)** | `Stellaxis [ENTITY SUFFIX]` — exact match with PAN / GST / bank | §1 above |
-| **Business type** | "Proprietorship" (Path A) / "Private Limited" / "OPC" / "LLP" (Path B) | §15.1 ruling |
+| **Business name (legal)** | `Stellaxis (OPC) Private Limited` — exact match with PAN / GST / bank | §1 above |
+| **Business type** | "OPC" (One Person Company) | §15.1 ruling — OPC |
 | **Display name (customer-facing)** | "MeeSell" | Product brand — `reference_brand_vs_legal_name.md` |
 | **Industry** | "Software / SaaS" | Service category |
 | **Website URL** | `https://www.meesell.in` | IA §7 |
@@ -125,7 +100,7 @@ When filling the Razorpay sign-up form at `https://dashboard.razorpay.com/signup
 | **GSTIN** | Stellaxis's GSTIN | From GST registration |
 | **PAN** | Stellaxis's PAN | From PAN card |
 | **Authorised signatory** | `[FOUNDER: Name on PAN]` (= founder) | |
-| **Director / Proprietor DIN** | DIN if Pvt Ltd / OPC; N/A for Sole Prop / LLP | |
+| **Director DIN** | Founder's DIN (mandatory for OPC) | |
 
 ---
 
@@ -205,7 +180,7 @@ Per LACI §5 implicit + Razorpay community forums:
 | Pricing page lists non-INR currency | All pricing is in ₹ — confirmed in PRICING_LOCKED §5 and ToS §5.1 |
 | Refund policy is "no refunds, all sales final" | We adopted Variant B (7-day money-back on LTD) — Razorpay accepts this comfortably |
 | Bank account is Savings (not Current) | Must be Current Account |
-| GSTIN not provided | Strongly recommended even for Sole Prop; obtain first |
+| GSTIN not provided | Mandatory for OPC; obtain GSTIN first |
 
 ---
 
@@ -214,9 +189,9 @@ Per LACI §5 implicit + Razorpay community forums:
 | Field | Value |
 |---|---|
 | Document | Razorpay KYC Onboarding Checklist v1.0 |
-| Operator | Stellaxis `[ENTITY SUFFIX]` |
-| Status | DRAFT — operational runbook (no lawyer review required) |
-| Drafted by | `meesell-legal-writer` 2026-06-05 |
-| Source citations | `docs/LEGAL_ARCHITECTURE.md` §12.1 + §12.2; `docs/LEGAL_AND_COMPLIANCE_INFO.md` §5; `docs/INFRASTRUCTURE_ARCHITECTURE.md` §4 + §7 |
-| Founder placeholders | `[ENTITY SUFFIX]`, `[FOUNDER: Name on PAN]` |
+| Operator | Stellaxis (OPC) Private Limited |
+| Status | DRAFT — operational runbook (no lawyer review required); OPC-only as of 2026-06-11 |
+| Drafted by | `meesell-legal-writer` 2026-06-05; single-pathed to OPC 2026-06-11 |
+| Source citations | `docs/LEGAL_ARCHITECTURE.md` §12.1 + §12.2 + §15.1; `docs/LEGAL_AND_COMPLIANCE_INFO.md` §5; `docs/INFRASTRUCTURE_ARCHITECTURE.md` §4 + §7 |
+| Founder placeholders | `[FOUNDER: Name on PAN]` |
 | Paired docs | `gst-registration-checklist.md` (prerequisite), `invoice-template.md` (consumed after onboarding) |

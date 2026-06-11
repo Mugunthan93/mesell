@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-ai-coordinator`
 **Domain:** ai
-**Last updated:** 2026-06-10 (initial creation)
+**Last updated:** 2026-06-11 (AI track execution — F2/F4/F5 group PRs merged to integration)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -16,6 +16,9 @@
 
 | Feature | Merged to | Date | PR | Notes |
 |---|---|---|---|---|
+| smart-picker | `feature/smart-picker/integration` | 2026-06-11 | [#54](https://github.com/Mugunthan93/mesell/pull/54) | F2. `smart_picker_v1` JSON closing schema. Eval 50/50 top-5 recall=100% (≥80%). Founder gate PR [#55](https://github.com/Mugunthan93/mesell/pull/55) open. |
+| catalog-form | `feature/catalog-form/integration` | 2026-06-11 | [#56](https://github.com/Mugunthan93/mesell/pull/56) | F4. Autofill fixture-path fix + JSON closing. Eval invalid-enum=0% (=0%), drop controls 2/2. Founder gate PR [#57](https://github.com/Mugunthan93/mesell/pull/57) open. |
+| image-precheck | `feature/image-precheck/integration` | 2026-06-11 | [#58](https://github.com/Mugunthan93/mesell/pull/58) | F5. `watermark_v1` docstring fix + R3 vision-cost AMENDMENT (≤₹0.08). Eval accuracy=100% (≥85%). Founder gate PR [#59](https://github.com/Mugunthan93/mesell/pull/59) open. |
 
 ## Inter-lead requests open
 

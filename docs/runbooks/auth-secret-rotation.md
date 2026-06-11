@@ -40,14 +40,15 @@ The pepper is the HMAC key. It follows that:
 
 This is FEATURE_PLAN Risk **R5**.
 
-> **Current implementation note (read before prod):** the live key derivation is
-> **single-pepper and unversioned** — `cache:refresh:{digest}`, one pepper read from
-> `settings.REFRESH_TOKEN_PEPPER`. The dual-pepper / version-tagged grace-window scheme
-> in §2 below is **NOT yet implemented in the backend**. For dev/staging the natural-expiry
-> path in §1 is sufficient and safe (TTL is seconds/minutes). **Before V1.5 prod**, the
-> backend must add the version-tagged keyspace + dual-pepper read path described in §2;
-> until then, prod pepper rotation is a hard cutover and is treated as an incident, not a
-> routine. This is tracked as a backend follow-up (see §5).
+> **Current implementation note (read before prod):** as of 2026-06-11 the live key
+> derivation is **version-tagged** — `cache:refresh:v{N}:{digest}` (see
+> `backend/app/core/auth.py::refresh_allowlist_key`), and the dual-pepper read fallback
+> (`validate_refresh_allowlist`) is implemented. The §2 grace-window scheme below is
+> therefore **executable** (dual-pepper-rotation feature). For dev/staging the
+> natural-expiry path in §1 remains the simplest routine (TTL is seconds/minutes); the §2
+> grace window is what makes a **prod** rotation zero-downtime instead of a 7-day hard
+> cutover. Legacy unversioned `cache:refresh:{digest}` keys (if any predate the change)
+> expire naturally within `REFRESH_TOKEN_TTL_SECONDS` — no manual migration required.
 
 ---
 
@@ -161,9 +162,12 @@ No user is logged out at any point: every live cookie is validatable under eithe
 (issued after rotation) or `vN-1` (issued before, still within its TTL) for the whole
 grace window.
 
-> **Status:** the version-tagged key + `REFRESH_TOKEN_PEPPER_PREVIOUS` read path do not
-> exist in the current backend (see §0 note). This section is the spec the backend must
-> implement before V1.5 prod; the infra steps above are ready to use once it lands.
+> **Status:** implemented 2026-06-11 (dual-pepper-rotation feature). The version-tagged
+> allowlist key (`cache:refresh:v{N}:{digest}`) + `REFRESH_TOKEN_PEPPER_PREVIOUS` /
+> `REFRESH_TOKEN_PEPPER_VERSION` dual-read fallback are live in
+> `backend/app/core/auth.py` (`refresh_allowlist_key` + `validate_refresh_allowlist`).
+> The operator sequence above is now executable. Backend group PR #65 (squash a2e566c) →
+> `feature/dual-pepper-rotation/integration`; founder-gate PR #66 → `develop`.
 
 ---
 
@@ -226,10 +230,15 @@ same window.
 
 ## 5. Follow-ups / cross-lead
 
-- **Backend (R5 / V1.5):** implement the version-tagged allowlist key
+- **Backend (R5 / V1.5):** ~~implement the version-tagged allowlist key
   (`cache:refresh:v{N}:{digest}`) + `REFRESH_TOKEN_PEPPER_PREVIOUS` dual-read path so §2
-  becomes executable. Until then prod rotation is a hard cutover (incident-only). Owner:
-  `meesell-backend-coordinator` / `meesell-auth-builder`.
+  becomes executable~~ **DONE 2026-06-11 (dual-pepper-rotation feature)** —
+  `backend/app/core/auth.py` `refresh_allowlist_key` (versioned) +
+  `validate_refresh_allowlist` (dual-read fallback). §2 is now executable; prod rotation
+  is zero-downtime, no longer incident-only. Owner: `meesell-auth-builder`.
+- **Infra (dual-pepper-rotation):** provision `REFRESH_TOKEN_PEPPER_PREVIOUS` +
+  `REFRESH_TOKEN_PEPPER_VERSION` secret refs in `k8s/secrets.yaml.example` + SM onboarding
+  notes before the first prod rotation (inter-lead request opened on the backend board).
 - **Infra (V1.5):** `external-secrets-operator` would let SM `latest` propagate to
   `backend-secrets` without the manual §1-Step-2 patch. Deferred per
   `secrets.yaml.example` note.

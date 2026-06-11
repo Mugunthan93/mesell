@@ -640,7 +640,7 @@ The 8 original LACI §10 decisions PLUS 7 new decisions surfaced by this archite
 
 | # | Decision | Status | Adopted value / blocker |
 |---|---|---|---|
-| 1 | Legal entity (Sole Prop / OPC / LLP / Pvt Ltd) | **DEFERRED — Stellaxis not yet registered (founder ruling 2026-06-05)** | Resolves on incorporation. Until then, `[ENTITY SUFFIX]` placeholder remains in every draft. Razorpay KYC + GST checklists wait. Recommendation per LACI §11: Sole Prop V1, OPC at Month 3. |
+| 1 | Legal entity (Sole Prop / OPC / LLP / Pvt Ltd) | **RATIFIED — OPC** | Founder ruling 2026-06-11. Entity: **Stellaxis (OPC) Private Limited**. All drafts: replace `[ENTITY SUFFIX]` with "(OPC) Private Limited". Razorpay KYC + GST checklists: use OPC/Pvt Ltd path only. |
 | 2 | Incorporator (Vakilsearch / IndiaFilings / local CA) | **DEFERRED — bundled with #1** | Resolves alongside #1. Off V1 critical path. |
 | 3 | GST timing (Week 1 / first customer / ₹20L) | **RATIFIED — Week 1** | Per LACI §11 founder-skip-ahead recommendation: register immediately for Razorpay credibility + clean invoicing. CA fee ₹2.5K-5K (LACI §2.3). |
 | 4 | Privacy Policy source | **RATIFIED — Custom India-DPDP-native draft + lawyer review** | Authored by `meesell-legal-writer` from scratch per LACI §3.4 step 1+2; ₹5K-10K lawyer review before publishing (LACI §3.4 step 3). NOT TermsFeed (US-centric per LACI §12). |
@@ -661,7 +661,7 @@ The 8 original LACI §10 decisions PLUS 7 new decisions surfaced by this archite
 | 14 | Manual erasure workflow SLA | **RATIFIED — 30 days max, 7-day target** | Privacy Policy §"Your rights" sets this expectation. Lawyer review on final language. |
 | 15 | Personal data export (right-to-access) SLA | **RATIFIED — Manual via Grievance Officer, 7 days** | Self-serve endpoint deferred to V1.5. Privacy Policy §"Your rights" sets this expectation. |
 
-**Status summary:** **13 ratified, 2 explicitly DEFERRED** as of 2026-06-05. Founder ruled 2026-06-05 that Stellaxis is not yet legally registered; #1 and #2 collapse on incorporation. Until incorporation, every draft carries the 5 placeholder tags inventoried in `docs/legal/placeholders-tracker.md`. The placeholders block **publishing**, not drafting — the full V1 legal pack can be authored, lawyer-reviewed, and pre-staged before Stellaxis is registered, then go live in a single placeholder-collapse-and-publish pass once incorporation completes.
+**Status summary:** **14 ratified, 1 explicitly DEFERRED (§15.2 incorporator — founder decides when filing)** as of 2026-06-11. Founder ruled 2026-06-05 that Stellaxis is not yet legally registered; #1 and #2 collapse on incorporation. Until incorporation, every draft carries the 5 placeholder tags inventoried in `docs/legal/placeholders-tracker.md`. The placeholders block **publishing**, not drafting — the full V1 legal pack can be authored, lawyer-reviewed, and pre-staged before Stellaxis is registered, then go live in a single placeholder-collapse-and-publish pass once incorporation completes.
 
 ---
 
