@@ -49,4 +49,10 @@ field name to your best value.  Constraints:
   - If you cannot confidently determine a field's value, OMIT it entirely
     (do not emit null or empty string).  The seller will fill manually.
   - DO NOT include fields that are not present in the schema above.
+
+Return your answer as valid JSON conforming EXACTLY to this schema:
+{"fields": {"<canonical_field_name>": "<value>", ...}}
+Emit ONLY this JSON object — no markdown, no prose, and no keys other
+than "fields".  Every enum-constrained value MUST be a verbatim member
+of that field's allowed-enum list.
 """
