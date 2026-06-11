@@ -5813,3 +5813,80 @@ Hand-offs:
   - meesell-ai-coordinator (FLAGGED per Wave6 R-W6-10, not yet sent): confirm AI lane is NOT wiring the precheck-result DISPLAY (frontend owns the UI rendering of the backend precheck_jsonb; AI owns only the backend pipeline). Open at STEP-2 dispatch time if founder picks the Wave-D lane.
   - meesell-backend-coordinator (FLAGGED): PR #118 flag-gate must merge to develop before the flag-OFF 404/empty path can be integration-tested against the real backend (merge-order dependency, not a STEP-1 blocker).
 =========
+
+=== UPDATE: 2026-06-11 — image-precheck FRONTEND — HYBRID STEP 2 (service-builder) COMPLETE ===
+Phase: image-precheck (V1 Feature 5) — ImageService HTTP wiring + contract types
+Session: mesell-image-precheck-frontend-session-1 (meesell-angular-service-builder)
+Agent: meesell-angular-service-builder (sonnet)
+Branch: feature/image-precheck-frontend @ 4571a89 (PUSHED)
+Worktree: /tmp/mesell-wt/image-precheck-frontend
+
+Done:
+  NEW: frontend/apps/mfe-catalog/src/app/images/image-uploader/image.service.ts
+    - @Injectable() (no providedIn — feature-scoped; component lists in providers[])
+    - inject(HttpClient, Router, AuthService from '@mesell/core')
+    - authHeaders(): HttpHeaders from AuthService.getToken() (FE-D5 in-memory, never localStorage)
+    - upload(productId, file, idx): Observable<ImageUploadResponse>
+        POST /api/v1/products/{productId}/images; FormData ('file', 'idx');
+        NO Content-Type header (browser sets multipart boundary)
+    - listImages(productId): Observable<ImagesListResponse>
+        GET /api/v1/products/{productId}/images
+    - pollImages(productId): Observable<ImagesListResponse>
+        Backoff poll — delays: 1000→2000→4000→8000→16000→30000ms (cap), max 6 polls
+        recursive Observable constructor + setTimeout; teardown clears timer + httpSub
+        stops when hasPending()=false (all resolved) OR hard cap reached
+    - Wave-7 interceptor-migration JSDoc note (verbatim style from CategoryService)
+    - NO MeeToastService (DIP). NO localStorage.
+
+  MODIFIED (additive): frontend/apps/mfe-catalog/src/app/images/image-uploader/image-uploader.model.ts
+    - ADDED: PrecheckJsonb, ImageSummary, ImagesListResponse, ImageUploadResponse
+    - PrecheckJsonb keys EXACT (R-IP-B authoritative): jpeg_valid, color_space,
+      resolution_pass, white_background, watermark_check
+    - Existing simulation types (PrecheckResult/ProductImage/PrecheckItem) PRESERVED
+      (component-builder removes in rewire pass)
+
+  NEW: frontend/apps/mfe-catalog/src/app/images/image-uploader/image.service.spec.ts
+    - HttpTestingController. 15 tests across 4 describe blocks.
+    - upload(): happy path (FormData, URL, Bearer), 401/402/404/400/500 error matrix
+    - listImages(): happy path, Bearer, empty list, 401/404/500 error matrix
+    - pollImages(): stops on resolved, continues while pending, 5xx graceful,
+      no leaked timer on unsubscribe (vi.useFakeTimers pattern)
+    - Vitest 4 vi.fn<(arg: T) => R>() syntax throughout
+
+Error matrix (per R-W6-1 P0):
+  upload:      401→logout()+navigate('/login')+EMPTY; 402→EMPTY; 404→EMPTY (flag OFF);
+               400→EMPTY; 5xx→EMPTY
+  listImages:  401→logout()+navigate('/login')+EMPTY; 404→of({images:[]}); 400/5xx→of({images:[]})
+  pollImages:  same as listImages per poll; hard cap 6 polls before auto-complete
+
+Build: mfe-catalog development 2.992s — GREEN ≤90s (D12 PASS)
+Tests: 47→48 spec files, 430→482 tests, 0 fail, 0 skip
+Grep checks: 0 primeng imports, 0 localStorage in code (only in comment), all 5 PrecheckJsonb keys exact
+
+Commits:
+  9f30dc8 — feat(frontend): ImageService HTTP wiring + contract types — image-precheck FE slice G1
+  4571a89 — test(frontend): image.service.spec.ts — 15 tests, 47→48 spec files, 0 fail
+
+In progress: none (STEP 2 COMPLETE)
+Blockers: none
+
+Next: master dispatches meesell-angular-component-builder (HYBRID STEP 2 dispatch 2 of 2) to rewire
+  image-uploader.component.ts off SIMULATION onto ImageService + G3 key-remap + G4 slot-count + G5 status-enum.
+  Then meesell-frontend-coordinator runs HYBRID STEP 3 merge-gate review.
+
+Hand-offs:
+  - meesell-angular-component-builder: ImageService is at
+    frontend/apps/mfe-catalog/src/app/images/image-uploader/image.service.ts
+    Methods: upload(productId: string, file: File, idx: number): Observable<ImageUploadResponse>
+             listImages(productId: string): Observable<ImagesListResponse>
+             pollImages(productId: string): Observable<ImagesListResponse>
+    Contract types: PrecheckJsonb / ImageSummary / ImagesListResponse / ImageUploadResponse
+    in image-uploader.model.ts (additive — new exports at top of file).
+    Component must add ImageService to its providers[] (feature-scoped, NOT root).
+    Rewire: replace SIMULATION map + setInterval + URL.createObjectURL with
+    upload() → pollImages() chain. Remap precheck_jsonb keys (G3). Fix slot count 6→4 (G4).
+    Fix status enum pending|pass|fail → pending|ready|failed_precheck (G5).
+    Do NOT add featureFlagGuard (G6 out-of-scope; 404 treated as disabled at service layer).
+  - meesell-frontend-coordinator: service slice COMPLETE; STEP 3 merge gate ready
+    after component-builder delivers rewired component.
+=========
