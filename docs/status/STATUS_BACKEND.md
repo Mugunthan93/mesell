@@ -3739,3 +3739,34 @@ Blockers: none.
 Next: create feature/dual-pepper-rotation/integration + /backend worktrees; flip board PENDING→IN PROGRESS; dispatch auth-builder.
 Hand-offs: infra inter-lead request (REFRESH_TOKEN_PEPPER_PREVIOUS + _VERSION secret refs in k8s/secrets.yaml.example) to be opened at PR time.
 =========
+
+=== UPDATE: 2026-06-11 — mesell-dual-pepper-session-1 SESSION END ===
+Phase: dual-pepper-rotation (R5 pre-V1.5-prod gate) — IN REVIEW
+Session: mesell-dual-pepper-session-1
+Board sweep (session end): 2 Active rows. dual-pepper-rotation IN REVIEW (group PR #65 squash-merged a2e566c → integration; founder-gate PR #66 open). microservices-export IN PROGRESS, last touched 2026-06-10 22:55 (1 day, NOT stale). 1 inter-lead request OPEN (infra: PEPPER_PREVIOUS + PEPPER_VERSION secret refs). 0 MERGED rows aged >14d.
+
+Done:
+  - 8 deliverables implemented (coordinator-direct: no Agent/Task tool in this session; surgical R5 hardening per the documented D4 fallback — additive config + one key-derivation fn + one new helper + 2 call-site refactors + 8 tests + 3 doc flips):
+    D1 config.py — REFRESH_TOKEN_PEPPER_PREVIOUS (optional "") + REFRESH_TOKEN_PEPPER_VERSION (int=1), additive, NOT in REQUIRED_FIELDS.
+    D2 core/auth.py refresh_allowlist_key — now cache:refresh:v{N}:{hmac}; keyword-only pepper/version params default to settings.
+    D3 core/auth.py validate_refresh_allowlist — dual-read fallback; returns (matched_key, value) so DEL/rotate target the right vN-1 key.
+    D4 Lua REFRESH_ROTATE_LUA + rotate_refresh_token unchanged; iam/service.py rotate (old_key) + revoke (DEL) refactored onto the helper.
+    D5 .env.example — both new vars added.
+    D6 tests/modules/iam/test_iam_dual_pepper.py — 8 tunnel-free tests, all PASS. requirements.txt: fakeredis>=2.21,<3 added (repo had none).
+    D7 KEY FORMAT MIGRATION NOTE comment in auth.py (legacy unversioned keys drain via TTL).
+    D8 runbook §0/§2/§5 flipped NOT-YET-IMPLEMENTED -> as-built (#65 a2e566c, gate #66).
+  - Merge gate: group PR #65 reviewed (7/7 checklist), lead-gate comment posted, SQUASH-MERGED --admin to integration (a2e566c). Backend remote ref deleted.
+  - Founder-gate PR #66 (integration → develop) opened, DO-NOT-MERGE — founder's gate per D1 (I did NOT approve it).
+  - Existing test fixed (not a forbidden file): test_core_auth.py key-format test updated to v{N} contract (the format legitimately changed). test_core_auth_rotation.py untouched per brief.
+
+Test evidence: 8 new dual-pepper tests PASS (0.04s, fakeredis). Full auth subset (test_core_auth*.py + modules/iam/) = 27 passed / 3 skipped / 6 errors (skips+errors infra-gated: no Postgres 5433 / Valkey 6381 tunnel; pre-existing). import-linter 27 kept / 0 broken.
+
+In progress: founder review of PR #66 (not my gate).
+Blockers: none. NOT blocking V1.
+Next: founder merges #66 → develop. AFTER merge: infra resolves the inter-lead request (secret refs) before first prod rotation. Post-merge sentinel stamps if FEATURE_PLAN prescribes any.
+Hand-offs: infra inter-lead request OPEN on board (PEPPER_PREVIOUS + PEPPER_VERSION in k8s/secrets.yaml.example + SM onboarding). NO frontend memo — token shape unchanged, zero contract drift.
+
+DEVIATIONS (lead-recorded):
+  - fakeredis was NOT in the suite (brief assumed it was); conftest uses a live Redis URL. Added fakeredis as a test dep so new tests run tunnel-free per the brief's intent.
+  - validate_refresh_allowlist returns (matched_key, value), not value-only as the brief sketched — required so rotate/revoke DEL the correct vN-1 key on a fallback hit (value-only would orphan the previous-pepper entry). Strengthening, surfaced + documented in PR #65/#66.
+=========
