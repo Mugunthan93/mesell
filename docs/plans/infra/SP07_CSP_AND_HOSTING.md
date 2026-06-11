@@ -107,7 +107,22 @@ The frontend cleanup (shell-strip + relocation + manifest shape) can land on `de
 
 ## 5. D13 HOSTING WORK-PACKAGE — FOUNDER COST GATE (NOT PROVISIONED)
 
-> **HARD FOUNDER COST GATE.** Everything in this section is a PREPARED work-package + cost estimate. Infra creates ZERO billable cloud resources until the founder signs off the monthly cost (>₹500/mo rule). Provisioning is targeted at cutover week, AFTER the dev smoke is GREEN and the cost is approved.
+> **D13-HOSTING — LOCKED FOUNDER RULING (2026-06-11), verbatim:** *Design approved; provisioning
+> deferred to cutover week; cost gate discharged; notification-only at provisioning.*
+>
+> **What this ruling means for this work-package (stamped at SP07 closeout, session
+> `mesell-mfe-cutover-closeout-session-1`):**
+> - **Design approved** — the §5 bucket layout / CDN+LB / cert plan / cost sheet below is the
+>   approved design; no further design review is required.
+> - **Provisioning deferred to cutover week** — infra creates the billable GCS/CDN/LB resources at
+>   cutover week (the staging/prod cutover, per §4), NOT before.
+> - **Cost gate discharged** — the ~₹1,600–1,800/mo cost (§5.3) is DISCHARGED by this ruling; infra
+>   does NOT re-seek a separate cost sign-off before provisioning at cutover week.
+> - **Notification-only at provisioning** — when infra provisions at cutover week, it NOTIFIES the
+>   founder (it does not block on a fresh approval). The locked ruling supersedes the pre-ruling
+>   "HARD FOUNDER COST GATE" framing below for the act of provisioning.
+
+> **HARD FOUNDER COST GATE (superseded by the D13-HOSTING ruling above for the provisioning step).** Everything in this section is a PREPARED work-package + cost estimate. Infra creates ZERO billable cloud resources until cutover week; the cost gate is now DISCHARGED per the locked ruling (provisioning is notification-only at cutover week).
 
 ### 5.1 What gets provisioned (the 6-remote consolidated wave — Option C, GATE4 C-RES-2)
 
