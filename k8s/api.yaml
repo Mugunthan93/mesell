@@ -11,8 +11,16 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+      # Single-node dev VM (e2-standard-2, 2 vCPU) runs at ~92% CPU requests at
+      # steady state, so there is no spare CPU to schedule a SURGE pod. The prior
+      # maxSurge:1/maxUnavailable:0 (surge-before-kill) deadlocked the rollout:
+      # the new replica stayed Pending ("Insufficient cpu") because both old
+      # replicas still held their requests, and maxUnavailable:0 forbids killing
+      # an old pod until the new one is Ready. Flip to kill-before-surge:
+      # free one old pod's CPU first, then schedule the replacement into the gap.
+      # (CI deploy run 27360475090 deadlocked here.)
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: api

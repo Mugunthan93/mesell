@@ -758,6 +758,22 @@ jobs:
                 git clone --depth=1 https://github.com/Mugunthan93/mesell.git ~/mesell
               fi
 
+              # 1b. Refresh the Artifact Registry pull token and make containerd reload it.
+              #     K3s reads /etc/rancher/k3s/registries.yaml ONLY at startup — it does not
+              #     hot-reload the file. The metadata-server access token in it expires after
+              #     ~60 min, so a deploy that lands on a stale token gets a 401 ImagePullBackOff
+              #     on the new image (this deadlocked CI deploy run 27360475090). A 45-min cron
+              #     keeps the file fresh, but we re-run the refresh here for determinism and
+              #     restart k3s so containerd loads the current token before any pull. The
+              #     restart is ~10s; already-running pods recover from cached image layers.
+              sudo /usr/local/bin/refresh-ar-token.sh
+              sudo systemctl restart k3s
+              # Wait for the API server to come back before issuing kubectl commands.
+              for i in $(seq 1 20); do
+                kubectl get --raw='/readyz' >/dev/null 2>&1 && break
+                sleep 3
+              done
+
               # 2. Apply ConfigMap + Deployment shapes (idempotent).
               kubectl apply -f ~/mesell/k8s/config.yaml
               kubectl apply -f ~/mesell/k8s/api.yaml
