@@ -22,12 +22,21 @@ data:
   DB_ECHO: "false"
 
   # JWT / Auth (non-secret tuning)
+  # TTLs are per-environment (BACKEND_ARCHITECTURE.md §5.D). This base ConfigMap is the
+  # `dev` namespace surface, so it carries DEV values. The staging overlay
+  # (k8s/overlays/staging/) patches these to staging values (60 / 300). Prod values
+  # (900 / 604800) land with the V1.5 prod namespace.
+  #   dev:     ACCESS=30   REFRESH=120
+  #   staging: ACCESS=60   REFRESH=300   (overlay patch)
+  #   prod:    ACCESS=900  REFRESH=604800 (V1.5)
   JWT_ALGORITHM: "HS256"
-  ACCESS_TOKEN_TTL_SECONDS: "900"
-  REFRESH_TOKEN_TTL_SECONDS: "604800"
+  ACCESS_TOKEN_TTL_SECONDS: "30"
+  REFRESH_TOKEN_TTL_SECONDS: "120"
 
-  # CORS (per §4.G — NEVER use "*")
-  CORS_ALLOWED_ORIGINS: "https://api.mesell.xyz,https://dev.mesell.xyz,https://testing.mesell.xyz,https://staging.mesell.xyz,https://www.mesell.xyz"
+  # CORS (per §4.G — NEVER use "*"). FE-D5: refresh cookie is sent only from the
+  # frontend origin, so dev CORS is scoped to the dev frontend origin. The staging
+  # overlay swaps this to the staging origin.
+  CORS_ALLOWED_ORIGINS: "https://dev.mesell.xyz"
   CORS_ALLOW_CREDENTIALS: "true"
 
   # Gemini

@@ -1,0 +1,61 @@
+# k8s/overlays/staging/config.yaml
+# Staging-namespace ConfigMap for the meesell-config surface.
+#
+# Per INFRASTRUCTURE_PLAYBOOK.md (namespace conventions): the `staging` namespace
+# is "populated ... with mirror of `dev` via Kustomize overlays." This is the
+# auth-otp (FE-D5) staging surface — a self-contained mirror of k8s/config.yaml
+# with the per-environment auth values set to STAGING settings.
+#
+# Diff vs the base (dev) ConfigMap at k8s/config.yaml:
+#   namespace:                dev          -> staging
+#   APP_ENV:                  (see base note) -> staging
+#   ACCESS_TOKEN_TTL_SECONDS: 30           -> 60      (BACKEND_ARCHITECTURE.md §5.D)
+#   REFRESH_TOKEN_TTL_SECONDS:120          -> 300     (BACKEND_ARCHITECTURE.md §5.D)
+#   CORS_ALLOWED_ORIGINS:     dev origin   -> staging origin
+# Everything else is identical to the dev base. Secret refs are unchanged and sourced
+# from the same GCP Secret Manager secrets; secret VALUES never live here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: meesell-config
+  namespace: staging
+data:
+  # App
+  APP_ENV: "staging"
+
+  # Database pool (non-secret tuning) — same as dev base
+  DB_POOL_SIZE: "10"
+  DB_MAX_OVERFLOW: "5"
+  DB_POOL_RECYCLE: "1800"
+  DB_ECHO: "false"
+
+  # JWT / Auth (non-secret tuning) — STAGING values per §5.D
+  JWT_ALGORITHM: "HS256"
+  ACCESS_TOKEN_TTL_SECONDS: "60"
+  REFRESH_TOKEN_TTL_SECONDS: "300"
+
+  # CORS (per §4.G — NEVER use "*") — staging frontend origin
+  CORS_ALLOWED_ORIGINS: "https://staging.mesell.xyz"
+  CORS_ALLOW_CREDENTIALS: "true"
+
+  # Gemini
+  GEMINI_MODEL: "gemini-2.5-flash"
+
+  # GCS (non-secret: bucket name + project). Single-bucket model per Phase A SSOT.
+  GCS_BUCKET: "meesell-prod-assets"
+  GCS_PROJECT_ID: "project-1f5cbf72-2820-4cdb-949"
+  GCS_SIGNED_URL_TTL_SECONDS: "3600"
+
+  # LangFuse (public key is non-secret per §5.D; secret key is in backend-secrets)
+  LANGFUSE_PUBLIC_KEY: "pk-lf-disabled-v1"
+  LANGFUSE_HOST: "https://cloud.langfuse.com"
+
+  # AI Ops budget
+  AI_DAILY_BUDGET_INR: "500"
+  AI_BUDGET_ALARM_THRESHOLD: "0.80"
+
+  # Cache version (bumped on quarterly Meesho refresh)
+  CACHE_VERSION: "v1"
+
+  # Rate limits
+  RL_PER_IP_PER_MINUTE: "120"
