@@ -11,7 +11,7 @@ The prompt body is image-text-only.  No template variables in V1.
 Output contract: enforced by :mod:`ai_ops.guardrail` Layer 1 +
 Layer 2 — ``{"has_watermark": bool, "confidence": float}``.
 
-Golden eval set (§19): 30 images (50/50 watermarked/clean); target
+Golden eval set (§19): 30 images (14 watermarked / 16 clean); target
 accuracy ≥ 85% per ``MVP_ARCH §8.5``.
 
 Owned by: :mod:`meesell-prompt-engineer`.  V1 baseline drafted by
