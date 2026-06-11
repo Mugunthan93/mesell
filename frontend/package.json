@@ -8,7 +8,9 @@
     "start:mfe-pricing": "ng serve mfe-pricing",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "start:mfe-export": "ng serve mfe-export",
+    "start:mfe-onboarding": "ng serve mfe-onboarding"
   },
   "private": true,
   "packageManager": "pnpm@11.5.2",

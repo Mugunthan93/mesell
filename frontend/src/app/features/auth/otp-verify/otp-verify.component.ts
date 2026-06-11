@@ -8,7 +8,7 @@ import {
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Router } from '@angular/router';
-import { AuthLayoutComponent } from '../../../layouts/auth-layout/auth-layout.component';
+import { AuthLayoutComponent } from '@mesell/composites';
 import { AuthService } from '@mesell/core';
 import { MeeOtpInputComponent } from '@mesell/ui-kit/otp-input/otp-input.component';
 import { MeeButtonComponent } from '@mesell/ui-kit/button/button.component';

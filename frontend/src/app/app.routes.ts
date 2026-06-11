@@ -52,15 +52,17 @@ export const routes: Routes = [
           import('./features/catalog-new/catalog-new.component').then(m => m.CatalogNewComponent),
       },
       {
+        // MF Sub-Plan 03 — mfe-onboarding remote (apps/mfe-onboarding/). Profile +
+        // onboarding now live in one Native-Federation remote exposing TWO components
+        // (./ProfileComponent + ./OnboardingComponent). Loaded at runtime via the
+        // manifest; D12 fallback on load failure. ProfileComponent injects the shared
+        // AuthService singleton (@mesell/core) across the boundary — see D22 C1–C5.
         path: 'profile',
-        loadComponent: () =>
-          import('./features/profile/profile.component').then(m => m.ProfileComponent),
+        loadComponent: loadRemoteWithFallback('mfe-onboarding', './ProfileComponent'),
       },
       {
         path: 'onboarding',
-        loadComponent: () =>
-          import('./features/account/onboarding/onboarding.component')
-            .then(m => m.OnboardingComponent),
+        loadComponent: loadRemoteWithFallback('mfe-onboarding', './OnboardingComponent'),
       },
       {
         path: 'catalogs/:id/edit',
