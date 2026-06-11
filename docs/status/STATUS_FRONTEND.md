@@ -42,8 +42,18 @@ Done:
   - Infra memo handoff_mf_dashboard_deploy.md (D29 4th-remote hosting; first PUBLIC-route remote, highest-stakes CSP → SP07). Board inter-lead row OPEN (48h SLA).
 In progress: none (gate closed)
 Blockers: none
-Founder gate: PR #86 [FOUNDER GATE — DO NOT MERGE] integration→develop OPENED + LEFT OPEN (full §9.A scorecard). Lead does NOT approve (D1).
-Next: founder reviews/merges #86 (+ #82 SP05, #61/#68 Wave 1, #55 smart-picker). On smart-picker step-3: heed the SP05-relocation sequencing conflict (catalog-new tree moves to apps/mfe-catalog once #82 merges).
+Founder gate: PR #86 [FOUNDER GATE — DO NOT MERGE] integration→develop OPENED + LEFT OPEN (full §9.A scorecard). Lead did NOT approve (D1).
+=========
+
+=== UPDATE: 2026-06-11 — SP04 LANDED ON DEVELOP + keep-both reconciliation ===
+Phase: MF Sub-Plan 04 closeout (post founder-merge)
+Session: mesell-mfe-dashboard-frontend-session-1
+Done:
+  - FOUNDER MERGED founder-gate PR #86 (merge 90e3f0e) — SP04 mfe-dashboard IS ON DEVELOP. Also merged #82 (SP05), #68 (SP03), #61 (SP02), #55 (smart-picker). No open frontend founder gates remain. All 5 MF remotes coexist on develop (pricing 4201/export 4202/onboarding 4203/dashboard 4204/catalog 4205).
+  - KEEP-BOTH: between gate-open and merge, the founder merged SP05 (#82) → develop gained mfe-catalog (4205), so the SP04 integration branch (built on pre-#82 develop) would have CONFLICTED on the 4 shared frontend files. Lead independently performed the keep-both refresh (worktree sp04-refresh, de7a01d): manifest/package.json/angular.json keep-both (all 5 remotes); app.routes.ts auto-merged (dashboard '' + /dashboard AND catalog loadChildren ./CatalogRoutes coexist). Dashboard remote 2.816s/catalog remote 3.132s GREEN; shell 3.188s/60.59 kB GREEN; 43 files/411 tests 0 fail/0 skip (SP05-inclusive baseline; SP04 adds 0 specs). 0 conflict markers; all JSON valid.
+  - The founder ALSO self-resolved the same union (958a9dd "5 remotes coexist") and merged via #86 BEFORE my refresh push landed. Lead resolution matched founder's on app.routes.ts; the 3 JSON files differ only in remote ORDER (semantically identical). Founder's 90e3f0e authoritative; my de7a01d redundant. Deleted the merged integration branch (gh api).
+Blockers: none
+Next: smart-picker step-3 — #55 + #82 BOTH on develop; catalog-new tree has moved to apps/mfe-catalog (verify as-landed shape). SP06 mfe-auth (worktree feature/mfe-auth/frontend) is the LAST extraction.
 =========
 
 === UPDATE: 2026-06-11 09:00 — SP04 mfe-dashboard extraction ===
