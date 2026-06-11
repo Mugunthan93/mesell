@@ -52,6 +52,8 @@ D-numbers are append-only and monotonic, continuing from SUB_PLAN_00 (which ende
 
 **FOUNDER-FLAG.** This is a deviation from MASTER_PLAN §2.1's literal `apps/shell/` topology. It does not change architecture (the shell is still the single host; libs are still shared; the remote is still independently built) — it only defers a cosmetic directory move. The founder should confirm: **accept shell-at-`src/` for the pilot and defer the `apps/shell/` relocation to Sub-plan 7, OR mandate the shell move now.** Recommendation: defer (the relocation is orthogonal to federation correctness and adds risk to the pilot).
 
+> **RULED 2026-06-11 (founder, morning session): APPROVED as recommended.** Defer accepted — the shell stays at `frontend/src/` for the pilot; the `apps/shell/` relocation is deferred to SP07, where it is resolved by **D43 (also RULED APPROVED-as-recommended 2026-06-11: RELOCATE at cutover)**. D9 is thereby CLOSED at SP07.
+
 ### D10 — The remote exposes a single component (`./PricingComponent`), NOT a sub-route tree
 
 **Decision.** `mfe-pricing`'s `federation.config.js` `exposes` block exports exactly one entry: `'./PricingComponent': './apps/mfe-pricing/src/app/pricing.component.ts'`. The shell's route `catalogs/:id/pricing` swaps from `loadComponent` to `loadRemoteModule({ remoteName: 'mfe-pricing', exposedModule: './PricingComponent' })`.
@@ -99,10 +101,12 @@ D-numbers are append-only and monotonic, continuing from SUB_PLAN_00 (which ende
 
 **FOUNDER-FLAG.** Confirm the sequencing: **the pilot is permitted to wire the first remote on `dev` (no CSP) for toolchain validation, with CSP authoring formally deferred to Sub-plan 7 BEFORE any staging/prod remote ships.** If the founder requires CSP-first, the pilot blocks on a C-CSP-1 mini-deliverable from infra. Recommendation: permit dev-pilot without CSP (the GATE4 C-CSP-1 "before the first remote is wired" clause is satisfiable as "before the first remote is wired IN STAGING/PROD", since dev has no CSP to violate).
 
+> **RULED 2026-06-11 (founder, morning session): APPROVED as recommended.** Dev-pilot without CSP permitted — the first remote wires on `dev` (no CSP) for toolchain validation; CSP authoring is deferred to SP07 BEFORE any staging/prod remote ships, where it is resolved by **D42 (also RULED APPROVED-as-recommended 2026-06-11: ADD-ONLY CSP, dev smoke first, staging/prod cutover gated on a GREEN CSP smoke)**. D14 is thereby CLOSED at SP07.
+
 ### Founder decisions required (summary)
 
-1. **FOUNDER-FLAG D9** — accept shell-at-`src/` for the pilot, defer `apps/shell/` relocation to Sub-plan 7 (recommended) OR mandate the move now.
-2. **FOUNDER-FLAG D14** — permit dev-pilot remote wiring without CSP (recommended), with CSP authoring deferred to Sub-plan 7 before staging/prod.
+1. **FOUNDER-FLAG D9** — accept shell-at-`src/` for the pilot, defer `apps/shell/` relocation to Sub-plan 7 (recommended) OR mandate the move now. — **RULED 2026-06-11 (founder, morning session): APPROVED as recommended (defer to SP07; resolved there by D43, also RULED — RELOCATE).**
+2. **FOUNDER-FLAG D14** — permit dev-pilot remote wiring without CSP (recommended), with CSP authoring deferred to Sub-plan 7 before staging/prod. — **RULED 2026-06-11 (founder, morning session): APPROVED as recommended (dev-pilot without CSP; resolved at SP07 by D42, also RULED — ADD-ONLY CSP).**
 
 Both are sequencing/scope calls, not architecture changes. No LOCKED-doc amendment is required by this sub-plan (SP0's FD1 already amended FRONTEND_ARCHITECTURE §2 for the `libs/` boundary).
 
@@ -380,7 +384,7 @@ When every box is `[x]`, `feature/mfe-pricing/integration` is ready for the foun
 - [ ] **Remote loads in shell:** with the shell served + the remote served (localhost), navigating to the pricing route fetches `remoteEntry.json` and mounts the remote component — proven, not assumed
 - [ ] **Fallback proven (D12):** a deliberately-broken manifest URL degrades to `RemoteFailureComponent` (`<mee-empty-state>`), NOT a white screen (MASTER_PLAN §6.4 failure-mode 1)
 - [ ] `grep -rn loadRemoteModule frontend/src` shows EXACTLY the pricing wiring (the codebase's first `loadRemoteModule`)
-- [ ] FOUNDER-FLAG D9 (shell stays at `src/`) + D14 (dev-pilot without CSP) resolved by founder
+- [ ] FOUNDER-FLAG D9 (shell stays at `src/`) + D14 (dev-pilot without CSP) resolved by founder — *(both founder RULED APPROVED-as-recommended 2026-06-11; D9 closed at SP07 via D43, D14 closed at SP07 via D42)*
 - [ ] Infra deploy memo filed (D13 — GCS/CDN/`remotes.mesell.xyz`/`cloudbuild.remote.yaml`); board inter-lead row added
 - [ ] `feature_board_frontend.md` row = MERGED; STATUS_FRONTEND.md Updates Log appended; `sub_plan_01_pricing.md` recipe memo written
 - [ ] **§9.A Pilot validation criteria ALL green** (below) — the toolchain is PROVEN before Sub-plan 2 starts
@@ -420,4 +424,5 @@ If ANY of 1–7 fails, the pilot does NOT merge and the toolchain choice (Native
 
 | Version | Date | Author | Change |
 |---|---|---|---|
+| v1.1 | 2026-06-11 | `meesell-frontend-coordinator` (founder-ruling landing session) | Landed the founder's 2026-06-11 morning rulings as they touch SP01's two originating FOUNDER-FLAGs: **D9 (shell stays at `src/` for the pilot; defer `apps/shell/` to SP07) APPROVED as recommended** — resolved at SP07 by D43 (RELOCATE, also RULED same day); **D14 (dev-pilot without CSP; CSP deferred to SP07) APPROVED as recommended** — resolved at SP07 by D42 (ADD-ONLY CSP, also RULED same day). Additive RULED annotations on the D9/D14 FOUNDER-FLAG blocks + the Founder-decisions-required summary + the §9 acceptance line. No structural change. |
 | v1 (DRAFT) | 2026-06-10 | `mesell-module-federation-frontend-session-2` (night-run master-session dispatch) | Initial authoring of Sub-Plan 01 — `mfe-pricing` pilot. Grounded in the POST-SP0 integration-branch reality (`e51761b`): pricing is 4 self-contained files (component+spec+utils+model) consuming only `@mesell/ui-kit`+`@mesell/composites`, NO AuthService. D8–D14 (remote project shape; shell-stays-at-src FOUNDER-FLAG D9; single-component expose D10; remote-private utils D11; reusable fallback D12; Option-C GCS deploy D13; CSP-deferred FOUNDER-FLAG D14). §9.A pilot-validation criteria (8 items) = the toolchain-proof gate SP02–06 depend on. 6 risks incl. spec-discovery regression (R-SP1-3, the recurring SP0 gotcha) + the too-simple-pilot singleton-blindness (R-SP1-6, handed to SP03). Two FOUNDER-FLAGs (D9, D14). Awaits founder approval to EXECUTE; gated on SP0 PR#41 merge + infra C-CI-1. |
