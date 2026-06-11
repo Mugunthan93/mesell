@@ -53,6 +53,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
+from tests.conftest import _DEV_DATABASE_URL, _valkey_base
 
 pytestmark = pytest.mark.integration
 
@@ -102,19 +103,43 @@ async def customer_client():
 
     # ── 1. Build an ephemeral NullPool engine + schema ─────────────────────
     # NullPool: no connection reuse → no asyncpg Future loop-binding issues.
-    db_url = os.environ.get(
-        "TEST_DATABASE_URL",
-        "postgresql+asyncpg://meesell:password@localhost:5432/meesell",
-    )
+    #
+    # CI Gate-4 pass-2 fix: the DB URL now flows through ``_DEV_DATABASE_URL``
+    # (TEST_DATABASE_URL > DEV_DATABASE_URL > baked K3s-dev DSN) — identical
+    # precedence to every other DB fixture in tests/conftest.py.  The previous
+    # ``localhost:5432`` literal default pointed at the wrong port (CI maps the
+    # ephemeral meesell_test db on 5433) → asyncpg connection failures.
+    db_url = _DEV_DATABASE_URL
     engine: AsyncEngine = create_async_engine(db_url, poolclass=NullPool)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
+
+    # Provision-aware schema setup (mirrors the db_engine fixture in
+    # tests/conftest.py): when ``TEST_DATABASE_URL`` is set (CI), the
+    # session-scoped ``_provision_test_schema`` autouse fixture has already run
+    # ``alembic upgrade head`` against meesell_test — building the pg_trgm
+    # extension + the category GIN trigram indexes that ``create_all`` cannot
+    # reproduce.  Running drop_all/create_all here would DESTROY those indexes
+    # AND contend with the per-test ``db`` transaction on the shared physical
+    # db.  So we SKIP the drop_all/create_all when provisioned and let alembic
+    # own the schema.  Off-CI (laptop, no TEST_DATABASE_URL) the prior
+    # drop_all+create_all per-fixture behaviour is preserved byte-for-byte.
+    _provisioned = bool(os.environ.get("TEST_DATABASE_URL"))
+    if not _provisioned:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
 
     TestSession = async_sessionmaker(engine, expire_on_commit=False)
 
     # ── 2. Override FastAPI DI (get_db + get_valkey_otp) ───────────────────
-    valkey_base = os.environ.get("CORE_TEST_VALKEY_URL", "redis://localhost:6379")
+    # CI Gate-4 pass-2 fix: resolve the Valkey base via the shared
+    # ``_valkey_base()`` helper (TEST_VALKEY_URL > VALKEY_URL >
+    # CORE_TEST_VALKEY_URL > redis://localhost:6379, with the trailing
+    # ``/<db>`` suffix stripped so the ``/0`` and ``/3`` appends below never
+    # produce the ``/0/0`` double-suffix trap).  The previous hardcoded
+    # ``redis://localhost:6379`` default ignored CI's TEST_VALKEY_URL/VALKEY_URL
+    # (6381): every /otp/verify reached a refused 6379, so the OTP seed/verify
+    # path failed and the customer routes returned 429 across the suite.
+    valkey_base = _valkey_base()
 
     _otp_clients: list = []
 
@@ -204,8 +229,13 @@ async def customer_client():
     except Exception:
         pass
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    # Provision-aware teardown: when CI-provisioned, alembic owns the schema —
+    # dropping it here would wipe the pg_trgm/GIN indexes for the rest of the
+    # session and deadlock against other open transactions.  Only drop when we
+    # created the schema ourselves (laptop / no TEST_DATABASE_URL).
+    if not _provisioned:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()
 
     app.dependency_overrides.pop(get_valkey_otp, None)
