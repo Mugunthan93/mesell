@@ -49,6 +49,10 @@ on:
   schedule:
     # 01:00 UTC = 06:30 IST. Runs the nightly suite once per day.
     - cron: '0 1 * * *'
+  # workflow_dispatch lets a maintainer fire the token-free ai_eval job
+  # (smart-picker recall gate) on demand without waiting for the nightly
+  # cron. Only the `ai_eval` job below is wired to this trigger.
+  workflow_dispatch:
 
 # Shared env across every CI gate. Dummy / test-safe values only — production secrets
 # are NEVER injected into GitHub Actions (see DEVOPS_ARCHITECTURE.md §8.2).
@@ -697,3 +701,54 @@ jobs:
       - name: pytest -m "ai_eval"
         working-directory: backend
         run: pytest -m "ai_eval" -v
+
+  # =============================================================================
+  # AI_EVAL — token-free smart-picker recall gate (Feature 2, §9.B.1 / §22.C)
+  #
+  # Director ruling (mesell-smart-picker-backend-session-1): GEMINI_API_KEY is
+  # NOT available in any CI runner yet. This job runs the DETERMINISTIC,
+  # TOKEN-FREE eval runner — `backend/tests/eval/smart_picker/run_eval.py` —
+  # which exercises the SAME trigram-overlap ranking signal Gemini sees
+  # (app.modules.category.picker.compress_tree) against the 50 hand-labelled
+  # golden fixtures. Contract: top-5 recall >= 80% (V1_FEATURE_SPEC Feature 2).
+  #
+  # No GEMINI_API_KEY, no Postgres, no Valkey: run_eval.py loads picker.py in
+  # isolation via importlib (picker is pure stdlib) so it needs no app config.
+  #
+  # Triggers: schedule (nightly) + workflow_dispatch (manual). It is intentionally
+  # SEPARATE from the `nightly` job above so the recall gate can run without the
+  # CI Gemini key (the `nightly` job's `pytest -m "ai_eval"` step needs
+  # GEMINI_API_KEY_CI; this one never touches a live model).
+  #
+  # ── TODO (live-model variant — activate once GEMINI_API_KEY lands in CI) ──
+  #   When a low-quota Gemini key is provisioned (GitHub secret GEMINI_API_KEY_CI,
+  #   tracked in infra Secret Manager), add a SECOND step here that runs the
+  #   live-model eval, e.g.:
+  #       - name: pytest -m "ai_eval" (live Gemini)
+  #         working-directory: backend
+  #         env:
+  #           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY_CI }}
+  #         run: pytest -m "ai_eval" -v
+  #   Keep the token-free run_eval.py step below as the always-on baseline gate
+  #   (it must stay green even if the live-model step is later quota-throttled).
+  # ==========================================================================
+  ai_eval:
+    name: "AI eval: smart-picker recall (token-free)"
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 10
+    env:
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Smart-picker recall eval (no Gemini key required)
+        working-directory: backend
+        # run_eval.py exits non-zero when recall < 80%, failing the job.
+        run: python tests/eval/smart_picker/run_eval.py
