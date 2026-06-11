@@ -156,6 +156,23 @@ resource "google_project_iam_member" "github_ci_iap_tunnel" {
   member  = "serviceAccount:${google_service_account.meesell_github_ci.email}"
 }
 
+# Project-level compute.viewer (read-only) — CI activation run-5 deploy fix (2026-06-11).
+# WHY: the deploy job runs `gcloud compute ssh ... --tunnel-through-iap` to roll the
+# K3s deployment. Before opening the IAP tunnel, `gcloud compute ssh` must read project
+# metadata via the `compute.projects.get` permission. The VM-scoped
+# compute.instanceAdmin.v1 binding below is RESOURCE-LEVEL (meesell-dev only) and does
+# NOT confer the project-level `compute.projects.get` — so SSH failed at
+# "Required 'compute.projects.get' permission for 'projects/project-1f5cbf72-2820-4cdb-949'"
+# (GitHub Actions run 27358799380, step "Rolling deploy via IAP SSH").
+# roles/compute.viewer is the minimal standard role carrying compute.projects.get; it is
+# read-only (no mutation). SSH-key write to instance metadata stays covered by the
+# VM-scoped instanceAdmin below. Same Terraform-codified pattern as the run-4 act-as fix.
+resource "google_project_iam_member" "github_ci_compute_viewer" {
+  project = "project-1f5cbf72-2820-4cdb-949"
+  role    = "roles/compute.viewer"
+  member  = "serviceAccount:${google_service_account.meesell_github_ci.email}"
+}
+
 # VM-scoped compute.instanceAdmin.v1 — explicitly bound to the meesell-dev instance
 # only. The SA cannot administer any other VM in the project. This is the brief's
 # "scoped to meesell-dev VM" constraint.
@@ -165,4 +182,20 @@ resource "google_compute_instance_iam_member" "github_ci_vm_instance_admin" {
   instance_name = var.vm_name_for_iap
   role          = "roles/compute.instanceAdmin.v1"
   member        = "serviceAccount:${google_service_account.meesell_github_ci.email}"
+}
+
+# act-as on the Compute Engine default SA  (CI activation run-4 fix — 2026-06-11)
+# WHY: `gcloud builds submit` runs Cloud Build as the project's Compute Engine
+# default SA (888244156264-compute@developer.gserviceaccount.com — see Phase D
+# memory + module.cloudbuild_permissions). To submit a build that runs AS that SA,
+# meesell-github-ci must hold roles/iam.serviceAccountUser (act-as) ON the compute
+# SA. Without it, build submission fails with a "Permission iam.serviceAccounts.actAs
+# denied" error — this was the run-4 blocker (GitHub Actions run 27331720017).
+# The legacy GitLab CI SA (meesell-prod-ci) had this grant out-of-band; the TF-managed
+# GitHub CI SA never did — that gap is what this resource closes.
+# Compute SA hardcoded to match the sibling cloudbuild_permissions/main.tf style.
+resource "google_service_account_iam_member" "github_ci_act_as_compute" {
+  service_account_id = "projects/project-1f5cbf72-2820-4cdb-949/serviceAccounts/888244156264-compute@developer.gserviceaccount.com"
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.meesell_github_ci.email}"
 }

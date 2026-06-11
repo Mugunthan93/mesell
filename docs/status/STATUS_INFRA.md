@@ -1,8 +1,52 @@
 # STATUS — INFRASTRUCTURE
 
 **Owner:** `meesell-infra-builder`
-**Last update:** 2026-06-11 (ci-activation §5.D env-gap closed — PR #76)
+**Last update:** 2026-06-11 (ci-activation — PR #120 develop→main MERGED; full pipeline ran Gates 1-5 + Frontend 8/8 + **Build GREEN (first ever)**; Deploy still RED on 2 more deploy-script bugs — #123 git-ref already fixed, #127 readyz-escape now on develop awaiting fresh founder gate)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
+
+## UPDATE — 2026-06-11 — mesell-ci-activation-infra-session-8 (land PR #120 + watch main pipeline + readyz-escape fix)
+
+=== STEP: founder-gated develop→main promotion (PR #120) + end-to-end main pipeline watch ===
+Phase: DEVOPS_ARCHITECTURE.md §7 (deploy) + repo MASTER_PLAN §2 (merge flow — develop→main is the FOUNDER gate per D1). Founder approval received in-session ("merge 120").
+Session: mesell-ci-activation-infra-session-8
+
+**Merge:** PR #120 (develop→main, K3s deploy fix) merged via `--merge --admin` (MERGE-commit, NOT squash — main retains develop's history). **Merge SHA `75f30ea8368a9a114867c4ec844823bb65a0ae3b`.** develop branch preserved (PR head was develop itself; no ref cleanup). Gate note posted as PR comment (single-account repo blocks a formal review approval).
+
+**Pipeline runs watched:**
+- Run **27363461749** (push, `75f30ea`): Gates 1-5 ✅ · Frontend 8/8 ✅ · **Build ✅ (FIRST-EVER full build+push)** · **Deploy ❌** — `git reset --hard origin/main` → `fatal: ambiguous argument 'origin/main'` (the VM's shallow clone has no remote-tracking ref; the un-promoted ci.yml still used origin/main).
+- A sibling FOUNDER promotion **PR #125** (`91ee6ad`) landed on main DURING the watch, carrying the already-merged-to-develop fix **PR #123** (`c85bc23`, reset→FETCH_HEAD). Run **27364056936** (`91ee6ad`) re-ran: Gates 1-5 ✅ · Frontend 8/8 ✅ · **Build ✅** · **Deploy ❌** — got MUCH further (FETCH_HEAD checkout OK, AR-token refresh OK, `systemctl restart k3s` OK) then died: `bash: -c: line 27: syntax error near unexpected token 2`.
+
+**Root cause (deploy bug #5):** the readyz-wait loop `for i in $(seq 1 20)` inside `gcloud compute ssh --command="..."` was NOT `\$`-escaped → `$(seq 1 20)` expanded on the GitHub runner (local), injecting newline-separated tokens into the command string → malformed remote script.
+
+**Fix:** PR **#127** (`fix/ci-deploy-readyz-escape` → develop, squash SHA `ab4da0b`). Replaced the loop with a substitution-free `until kubectl get --raw='/readyz' ... ; READYZ_TRIES=\$((+1)); [-ge 20] exit 1; sleep 3; done`, fully `\$`-escaped. Audited the entire deploy `--command` block: every `$` is now `\$`-escaped (remote) or GHA `${{ }}` (intentional). YAML parses, 11 jobs intact. Cost ₹0 (CI-workflow YAML only).
+
+**Reality check (post-runs):** `https://api.mesell.xyz/health` → **HTTP 200** `{postgres:ok, valkey:ok}`. Cluster `dev`: api 2/2 + worker 2/2 Running, image still `def60521...` (the by-hand image). **Deploy failed BEFORE `kubectl set image` both times → live cluster UNHARMED, auto-rollback never needed, new images 75f30ea/91ee6ad built but NOT rolled.**
+
+**This is NOT yet the first fully-green build-to-deploy run.** Build is green (a real first); Deploy is still red. Repair budget: 1 cycle used (PR #127). Bug #4 (git-ref) was already fixed by a sibling session (#123) — not my cycle.
+
+**Founder action required:** promote develop→main (a FRESH founder gate) to ship PR #127 — the deploy job clones origin/main, so #127 has zero effect until promoted. Then watch the next main run's Deploy job for the first successful image roll.
+
+## UPDATE — 2026-06-11 — mesell-ci-activation-infra-session-1 (deploy-to-K3s job fix)
+
+=== STEP: fix the "Deploy to K3s (dev namespace)" job — last red on the main pipeline ===
+Phase: DEVOPS_ARCHITECTURE.md §7 (deploy) + INFRASTRUCTURE_PLAYBOOK §6/§12.8 (K3s AR node auth runbook). ci.yml + k8s/ are infra-owned (Rule 7 standalone — direct execute).
+Session: mesell-ci-activation-infra-session-1
+
+**Run history this push:** main run 27358799380 (PR #114, sha 88c585bd) FAILED at deploy on `compute.projects.get`. Founder granted compute.viewer live (16:02 UTC) + merged PR #116 (TF codified) → fired main run 27360475090 (sha def60521): all 5 gates GREEN, all 8 frontend GREEN, **Build GREEN**, deploy got PAST the auth error but FAILED at `rollout status ... timed out`.
+
+**Three root causes peeled (first time pipeline ever reached deploy):**
+1. `compute.projects.get` 401 (run ...380) — CI SA had instance-scoped instanceAdmin but no PROJECT-level read. FIXED out-of-band by founder + codified in PR #116 (`module.ci_identity` `github_ci_compute_viewer` = roles/compute.viewer, read-only, ₹0). Already on develop+main. NOT my new change — confirmed present.
+2. `ImagePullBackOff 401` on the new image (run ...475090) — K3s `/etc/rancher/k3s/registries.yaml` AR pull token was **46h stale** (last written 2026-06-09 17:31). The 45-min refresh CRON was NEVER installed on the live VM (script `/usr/local/bin/refresh-ar-token.sh` existed; no `/etc/cron.d` entry). Token expired → 401. FIXED: installed `/etc/cron.d/refresh-ar-token` (correct cron.d format WITH `root` user field, `*/45`), seeded `/var/log/refresh-ar-token.log`, refreshed token. K3s reads registries.yaml ONLY at startup (no hot-reload) → restarted k3s to load the fresh token. Token validated directly against AR endpoint = HTTP 200.
+3. `worker Pending / Insufficient cpu` + rollout deadlock — `maxSurge:1/maxUnavailable:0` (surge-before-kill) can't fit a surge pod on the CPU-saturated single node (e2-standard-2, 92% CPU requests at steady state). FIXED: flipped `k8s/api.yaml` + `k8s/worker.yaml` to `maxSurge:0/maxUnavailable:1` (kill-before-surge) so an old pod's CPU frees before the replacement schedules.
+
+**ci.yml hardening:** added a deploy-time `refresh-ar-token.sh` + `systemctl restart k3s` + readyz wait BEFORE the kubectl apply, so the deploy is self-sufficient on token freshness (does not rely on cron timing).
+
+**Live dev state AFTER fix (applied by hand to verify):** api 2/2 + worker 2/2 Running on `api:def60521...`; `https://api.mesell.xyz/health` → HTTP 200 `{"status":"healthy","checks":{"postgres":"ok","valkey":"ok"}}`. This is exactly the state the CI deploy job targets.
+
+**What ships where:** TF compute.viewer fix = already on main (PR #116). Live VM cron + token + k3s restart = applied directly (no repo file). Manifest strategy flip + ci.yml token-refresh = on branch `fix/ci-deploy-k3s` → PR to develop. The deploy job clones `origin/main`, so these two repo changes only take effect after FOUNDER merges develop→main.
+
+**Cost:** ₹0 (compute.viewer is read-only; cron/token/strategy are config; no new billable resource).
+
 
 **Status:** Phase A + Phase B complete. All 5 application subdomains live with valid Let's Encrypt TLS. Core infra (Pass 1 + Pass 2 + Pass 2b) stable. Application image builds (Phase D) pending — nothing in `dev/api`, `dev/worker`, `dev/frontend` until then.
 
@@ -1853,3 +1897,62 @@ NOT the `test_config.py`/`app.config` suspect (collection is green; this is inte
 **Hand-offs:** memo `handoff_mf_cutover.md` (infra → frontend lead). Board: mfe-cutover IN REVIEW + incoming inter-lead row OPEN.
 
 **Cost:** ₹0/month as authored (zero billable resource created; all provisioning founder-gated).
+
+## UPDATE — mesell-ci-activation-session-1 (re-fire #4) — 2026-06-11 — SESSION-START + PR #112 MERGED
+
+**Phase:** DevOps §5 (CI gates) + §6 (build/WIF) + §7 (deploy). Rule: build+deploy jobs are
+`github.event_name=='push' && github.ref=='refs/heads/main'`-guarded (ci.yml L676/L716, verified
+on origin/develop) — a develop→main merge is the ONLY way to first-exercise WIF/Cloud Build/IAP
+deploy. Re-fired under EXPLICIT FOUNDER STANDING AUTHORIZATION (same as #2/#3). I own merge
+mechanics + per-job diagnosis; I do NOT fix backend/frontend code (redirect to coordinators).
+
+**Pre-flight:** account vaishnaviramoorthy@gmail.com ACTIVE, project project-1f5cbf72-2820-4cdb-949.
+develop tip c6f93e2 (fresh), main a5cb4420 (PR #89), develop ahead_by 37. No cluster/TF mutations.
+
+**Gate-4 saga CLOSED on develop** — 4 backend PRs: #104 (0b70219), #107 (df93208), #108 (61e7d17),
+#110 (295ed38). Backend local `pytest -m integration` → exit 0, 175 passed/17 skipped/0 failed/0 errors.
+Expected Gate-4 CI shape ~175p/17s.
+
+**PR #112 (develop c6f93e2 → main a5cb4420) MERGE-COMMIT `38587857e57d2632b2ed5d361e39e7f04636c2a1`**
+(merge_method=merge, first-try owner token, --admin NOT needed; mergeable_state=blocked was the
+1-review gate not a conflict). 37 commits / 94 files. develop PRESERVED (still @ c6f93e2).
+
+**Push run `27331720017`** (event=push, branch=main, head_sha 3858785) IN FLIGHT.
+Goal: Gates 1-4 GREEN, Gate 5 (golden_roundtrip) FIRST-EVER, then FIRST-EVER WIF build + IAP deploy.
+GEMINI_API_KEY_CI still unset (nightly-only, non-blocking). Watching to conclusion != null.
+=========
+
+## UPDATE — mesell-ci-activation-session-1 (re-fire #4) — 2026-06-11 — SESSION-END — GATES 1-5 GREEN + FIRST WIF AUTH; Build RED on actAs
+
+**Phase:** DevOps §5/§6/§7. Rule: I own merge mechanics + per-job diagnosis; IAM mutations I REPORT before applying (brief).
+
+**PR #112 → main MERGE-COMMIT `38587857e57d2632b2ed5d361e39e7f04636c2a1`** (merge_method=merge, first-try, develop preserved @ c6f93e2). 37 commits / 94 files.
+
+**Run `27331720017` (push, main 3858785) — VERDICT: FAILURE, but biggest progress yet.**
+
+| Job | Result |
+|---|---|
+| CI Gate 1: unit | GREEN |
+| CI Gate 2: smoke | GREEN |
+| CI Gate 3: lint (10 contracts) | GREEN |
+| CI Gate 4: integration | GREEN  (saga CLOSED via backend #104/#107/#108/#110) |
+| CI Gate 5: golden_roundtrip | GREEN  FIRST-EVER (18 passed / 821 deselected; real golden-fixture round-trip + enum-translation) |
+| Build container images | RED  (Submit Cloud Build job) |
+| Deploy to K3s (dev namespace) | SKIPPED (needs: build) |
+| Frontend (detect + shell + 6 mfe remotes) | 8/8 GREEN |
+| Nightly + AI eval | SKIPPED (schedule-only) |
+
+**FIRST-EVER WIF EXECUTION — AUTH GREEN.** Build steps "Authenticate to Google Cloud (WIF)" + "Set up gcloud CLI" succeeded — token-exchange PROVEN, authenticated as `meesell-github-ci@...`. `vars.GCP_WIF_PROVIDER` == live provider resource name EXACTLY; `vars.GCP_CI_SA_EMAIL` == github-ci. NO variable correction needed. Phase E WIF pool/provider/SA verified end-to-end.
+
+**Build RED root cause (diagnosed, NOT auto-fixed):**
+`ERROR: (gcloud.builds.submit) PERMISSION_DENIED: caller does not have permission to act as service account 117348555876726277669` = `888244156264-compute@developer.gserviceaccount.com` (Compute Engine default SA = this project's Cloud Build RUNNER). `meesell-github-ci` holds `cloudbuild.builds.editor` (submit) but lacks `roles/iam.serviceAccountUser` ON the compute SA (act-as). Verified: github-ci project roles = {artifactregistry.writer, cloudbuild.builds.editor, iap.tunnelResourceAccessor, secretmanager.secretAccessor, + VM-scoped instanceAdmin}; compute SA's serviceAccountUser is granted to the OLD `meesell-ci@...` SA, NOT to the new github-ci SA. The `ci_identity` module is missing this one binding.
+
+**FOUNDER IAM-GRANT GATE (single additive binding — REPORTED, not applied):**
+- Codified: add `google_service_account_iam_member` (role `roles/iam.serviceAccountUser`, member `serviceAccount:meesell-github-ci@...`, service_account_id = compute SA `888244156264-compute@...`) to `infra/terraform/modules/ci_identity/main.tf`, then apply.
+- Or imperative quick-unblock then codify: `gcloud iam service-accounts add-iam-policy-binding 888244156264-compute@developer.gserviceaccount.com --member="serviceAccount:meesell-github-ci@project-1f5cbf72-2820-4cdb-949.iam.gserviceaccount.com" --role="roles/iam.serviceAccountUser" --project=project-1f5cbf72-2820-4cdb-949`.
+- This is the LAST thing before the first green build. Cloud Build EXECUTION + IAP DEPLOY still unproven (build failed at submit; deploy skipped).
+
+**Branch protection STILL DEFERRED** (not green-through-deploy). When green, required-PR contexts = the 5 gate names + the NAMED frontend contexts. NOTE the frontend matrix GREW to 8 jobs (detect + shell + mfe-auth/catalog/dashboard/export/onboarding/pricing) — re-confirm exact live context strings at protection time, do not reuse re-fire #3's 3-context list. NEVER add Build/Deploy (main-only → deadlock) or Nightly/ai_eval (schedule-only).
+
+**Session-end board sweep:** Active = ci-activation (BLOCKED, founder IAM gate, last-touched 2026-06-11), auth-otp (IN REVIEW), mfe-cutover (IN REVIEW). None untouched 7+ days. Gate-4 inter-lead request → RESOLVED. No cluster/TF mutations this session (only PR merge + read-only IAM/WIF inspection + board/STATUS/memory writes).
+=========

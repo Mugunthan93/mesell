@@ -57,7 +57,7 @@ async def test_p95_category_schema_cache_hit(db, valkey) -> None:
     # Pick any leaf category from the seeded set.
     row = (
         await db.execute(
-            select(Category.id).where(Category.is_leaf.is_(True)).limit(1)
+            select(Category.id).limit(1)  # leaf-only table (§9); is_leaf dropped (BE-CAT-ISLEAF-1)
         )
     ).first()
     if row is None:
@@ -95,7 +95,7 @@ async def test_p95_category_schema_cache_miss(db, valkey) -> None:
 
     row = (
         await db.execute(
-            select(Category.id).where(Category.is_leaf.is_(True)).limit(1)
+            select(Category.id).limit(1)  # leaf-only table (§9); is_leaf dropped (BE-CAT-ISLEAF-1)
         )
     ).first()
     if row is None:

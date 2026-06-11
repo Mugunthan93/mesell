@@ -250,6 +250,24 @@ class TestPricingCalcsPersistence:
             Decimal("150.00"),  # 100 × (1 + 50/100)
         ]
 
+        # Savepoint isolation (per-test SAVEPOINT inside ONE outer transaction)
+        # shares the outer txn's NOW() across all 3 commits, so created_at is
+        # identical → ORDER BY created_at DESC is nondeterministic. Force
+        # distinct, monotonically-increasing created_at values keyed by
+        # seller_price so the "most-recent-wins" intent (50% calc = newest) is
+        # deterministic under the harness (BE-PRICING-LASTCALC-TX-1).
+        from datetime import datetime, timedelta, timezone
+
+        base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        ts_by_price = {
+            Decimal("110.00"): base,                          # oldest
+            Decimal("120.00"): base + timedelta(seconds=1),
+            Decimal("150.00"): base + timedelta(seconds=2),   # newest
+        }
+        for r in rows:
+            r.created_at = ts_by_price[r.seller_price]
+        await db_session.flush()
+
         # get_last_calc returns the most recent.
         latest = await pricing_service.get_last_calc(
             user_id=user.id,
