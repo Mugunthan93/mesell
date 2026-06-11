@@ -15,21 +15,25 @@ export const routes: Routes = [
     pathMatch: 'full',
   },
 
-  // Auth pages — top-level routes (each page wraps itself in AuthLayoutComponent)
+  // MF Sub-Plan 06 — mfe-auth remote (apps/mfe-auth/). The THREE auth pages (login,
+  // signup, otp-verify) now live in one Native-Federation remote exposing THREE
+  // components, loaded at runtime via the manifest. ALL THREE are PUBLIC top-level
+  // routes — NO authGuard (reached pre-authentication, D37). otp-verify is the only
+  // flow that WRITES the shell's auth state: its setSession() mutates the shared
+  // @mesell/core AuthService singleton across the boundary (the C4 WRITE path, D38).
+  // D12 fallback on remote-load failure. The '**' -> 'login' wildcard below now
+  // resolves to this remote LoginComponent.
   {
     path: 'login',
-    loadComponent: () =>
-      import('./features/auth/login.component').then(m => m.LoginComponent),
+    loadComponent: loadRemoteWithFallback('mfe-auth', './LoginComponent'),
   },
   {
     path: 'signup',
-    loadComponent: () =>
-      import('./features/auth/signup.component').then(m => m.SignupComponent),
+    loadComponent: loadRemoteWithFallback('mfe-auth', './SignupComponent'),
   },
   {
     path: 'otp-verify',
-    loadComponent: () =>
-      import('./features/auth/otp-verify/otp-verify.component').then(m => m.OtpVerifyComponent),
+    loadComponent: loadRemoteWithFallback('mfe-auth', './OtpVerifyComponent'),
   },
 
   // Protected area — Shell layout (single empty-path parent, no ambiguity)
