@@ -49,14 +49,181 @@ except Exception as _exc:  # noqa: BLE001
     app = None  # type: ignore[assignment]
     _APP_IMPORT_ERROR = _exc
 
-# ── Dev Postgres URL ──────────────────────────────────────────────────────────
-# Used by Phase 4 smoke tests.  Overridable via DEV_DATABASE_URL env var so
-# that CI can point at a different host if needed.  On the founder's laptop the
-# port-forward exposes the K3s dev Postgres as localhost:5433.
-_DEV_DATABASE_URL = os.environ.get(
-    "DEV_DATABASE_URL",
-    "postgresql+asyncpg://meesell:j3w%2F6o%2F7k%2FJwjPu1J4OqDpFStho7IsK%2F0lRYnwmbN6Q%3D@localhost:5433/meesell",
+# ── Dev / test Postgres URL (the ``dev_engine`` + ``db`` fixtures) ────────────
+# Precedence (LOCKED — CI Gate-4 harness fix 2026-06-11):
+#   TEST_DATABASE_URL  >  DEV_DATABASE_URL  >  baked K3s-dev local default
+# Rationale: CI (Gate 4) sets ``TEST_DATABASE_URL`` (meesell_test on 5433) but
+# does NOT set ``DEV_DATABASE_URL``.  Previously these fixtures honoured ONLY
+# ``DEV_DATABASE_URL`` → they fell through to the baked K3s-dev DSN (wrong db
+# ``meesell`` + wrong password) → asyncpg InvalidPassword / InvalidCatalogName
+# failures across test_database.py and every integration flow.  The top-of-file
+# ``DATABASE_URL`` (L14-17) ALREADY honours ``TEST_DATABASE_URL``; this aligns
+# the ``_DEV_DATABASE_URL`` fixtures with that same precedence so the WHOLE
+# harness points at one DB in CI.
+# LOCAL-DEV GATE: with NO ``TEST_DATABASE_URL`` set, resolution falls through to
+# ``DEV_DATABASE_URL`` then the baked dev DSN — byte-for-byte the prior laptop
+# behaviour (the founder's port-forward exposes K3s dev Postgres on 5433).
+_DEV_DATABASE_URL = (
+    os.environ.get("TEST_DATABASE_URL")
+    or os.environ.get("DEV_DATABASE_URL")
+    or "postgresql+asyncpg://meesell:j3w%2F6o%2F7k%2FJwjPu1J4OqDpFStho7IsK%2F0lRYnwmbN6Q%3D@localhost:5433/meesell"
 )
+
+
+# ── Live-Valkey base-URL resolution (CI Gate-4 harness fix 2026-06-11) ────────
+# The two live-Redis fixtures (``use_live_valkey``, ``valkey``) build per-DB
+# client URLs by APPENDING ``/{db_index}`` to a base URL.  The base must NOT
+# already carry a trailing ``/<db>`` path component, or concatenation produces
+# an invalid double-suffix (e.g. ``redis://host:6381/0`` + ``/0`` →
+# ``redis://host:6381/0/0`` — the redis-py URL parser rejects this).
+#
+# CI sets ``TEST_VALKEY_URL = redis://localhost:6381/0`` (already ends in /0),
+# so the naive ``f"{base}/0"`` produced the /0/0 trap.  ``_valkey_base()``
+# resolves the canonical base with precedence and strips any trailing
+# ``/<digit>`` so the per-DB index can be appended cleanly.
+#
+# Precedence (LOCKED): TEST_VALKEY_URL > VALKEY_URL > CORE_TEST_VALKEY_URL
+#                      > redis://localhost:6379 (bare default).
+# LOCAL-DEV GATE: with none of TEST_VALKEY_URL / VALKEY_URL set, resolution
+# falls through to CORE_TEST_VALKEY_URL (the prior laptop override) then the
+# bare 6379 default — byte-for-byte the prior behaviour.
+
+
+def _strip_valkey_db_suffix(url: str) -> str:
+    """Strip a trailing ``/<db-index>`` path segment from a redis URL base.
+
+    ``redis://h:6381/0`` → ``redis://h:6381``;  ``redis://h:6379`` unchanged.
+    Only a final all-digit segment is removed (a real DB index); any other
+    path is left intact.  Trailing slashes are also normalised away so the
+    caller can always re-append exactly one ``/{db_index}``.
+    """
+    base = url.rstrip("/")
+    scheme_sep = "://"
+    idx = base.find(scheme_sep)
+    if idx == -1:
+        return base
+    authority = base[idx + len(scheme_sep):]
+    slash = authority.find("/")
+    if slash == -1:
+        # No path component at all — e.g. redis://host:6379
+        return base
+    head = base[: idx + len(scheme_sep) + slash]  # scheme://host:port
+    tail = authority[slash + 1:]  # everything after the first '/'
+    last = tail.rsplit("/", 1)[-1]
+    if last.isdigit():
+        # Drop the trailing DB-index segment; keep any prefix path.
+        prefix = tail.rsplit("/", 1)[0] if "/" in tail else ""
+        return f"{head}/{prefix}".rstrip("/") if prefix else head
+    return base
+
+
+def _valkey_base() -> str:
+    """Resolve the canonical Valkey base URL (no trailing DB index) per precedence."""
+    raw = (
+        os.environ.get("TEST_VALKEY_URL")
+        or os.environ.get("VALKEY_URL")
+        or os.environ.get("CORE_TEST_VALKEY_URL")
+        or "redis://localhost:6379"
+    )
+    return _strip_valkey_db_suffix(raw)
+
+
+# ── CI schema provisioning (Class 3 — CI Gate-4 harness fix 2026-06-11) ───────
+# In CI (Gate 4) the ``meesell_test`` database is created EMPTY by the
+# postgres:16 service container.  Gate 4 runs ``pytest -m integration`` directly
+# with NO ``alembic upgrade head`` step, so the schema + the ``pg_trgm``
+# extension + the category GIN trigram indexes (migration a1b2c3d4e5f6) are all
+# absent → "relation categories does not exist" / "gin_trgm_ops does not exist".
+#
+# ``create_all`` cannot substitute: it builds ORM tables but NOT the pg_trgm
+# extension nor the trigram GIN indexes (those live only in the Alembic
+# migration body).  So we run the REAL Alembic chain
+# (935e55b4852c → a1b2c3d4e5f6 → f31c75438e61) against ``TEST_DATABASE_URL``.
+#
+# GATING (critical): this fixture runs ONLY when ``TEST_DATABASE_URL`` is set.
+#   * CI sets it → provisioning runs against the ephemeral meesell_test db.
+#   * A laptop dev-tunnel run does NOT set it → the fixture is a NO-OP and the
+#     live K3s dev DB (already migrated via the real chain) is NEVER mutated.
+#
+# Execution model: ``alembic/env.py`` calls ``asyncio.run()`` internally, which
+# cannot be nested inside pytest-asyncio's running loop.  We therefore invoke
+# ``alembic upgrade head`` in a SUBPROCESS (clean interpreter, its own loop)
+# with ``DATABASE_URL`` pointed at the test DB (env.py reads
+# ``settings.DATABASE_URL``).  The ``CREATE EXTENSION`` is issued first over a
+# short-lived asyncpg connection for defensive ordering.
+
+
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def _provision_test_schema():
+    """Session-scoped, autouse: provision the CI ``meesell_test`` schema.
+
+    No-op unless ``TEST_DATABASE_URL`` is present (CI sets it; laptop runs do
+    not).  Creates the ``pg_trgm`` extension then runs ``alembic upgrade head``
+    against ``TEST_DATABASE_URL`` so the full V1 schema + GIN trigram indexes
+    exist before any integration test touches the DB.
+    """
+    import logging as _logging
+
+    _log = _logging.getLogger(__name__)
+
+    test_db_url = os.environ.get("TEST_DATABASE_URL")
+    if not test_db_url:
+        # LOCAL-DEV GATE: never migrate the live dev DB from a laptop run.
+        yield
+        return
+
+    # 1. Clean slate + extension.  We DROP the public schema and recreate it so
+    #    ``alembic upgrade head`` always starts from a truly empty database.
+    #    This is required because the top-level ``db_engine`` fixture does
+    #    ``Base.metadata.create_all`` against the SAME db (DATABASE_URL ==
+    #    TEST_DATABASE_URL in CI); a create_all that committed (its drop_all
+    #    teardown may not have run if a prior process was interrupted) would
+    #    leave ORM tables behind WITHOUT an ``alembic_version`` row, making the
+    #    baseline migration fail with DuplicateTable.  DROP SCHEMA guarantees
+    #    the migration owns the schema.  Safe: gated on TEST_DATABASE_URL, which
+    #    only the ephemeral CI ``meesell_test`` db ever sets (never the live
+    #    dev DB).  CREATE EXTENSION is issued before the migration that defines
+    #    the pg_trgm GIN indexes (defensive ordering).
+    import asyncpg  # local import — only needed on the CI/test path
+
+    # asyncpg needs a libpq DSN (no SQLAlchemy ``+asyncpg`` driver suffix).
+    pg_dsn = test_db_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+    conn = await asyncpg.connect(pg_dsn)
+    try:
+        await conn.execute("DROP SCHEMA IF EXISTS public CASCADE;")
+        await conn.execute("CREATE SCHEMA public;")
+        await conn.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm;")
+    finally:
+        await conn.close()
+
+    # 2. alembic upgrade head in a subprocess (env.py uses asyncio.run; running
+    #    it in-process would nest event loops).  DATABASE_URL drives env.py.
+    import asyncio as _asyncio
+    import sys as _sys
+
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sub_env = dict(os.environ)
+    sub_env["DATABASE_URL"] = test_db_url
+
+    proc = await _asyncio.create_subprocess_exec(
+        _sys.executable,
+        "-m",
+        "alembic",
+        "upgrade",
+        "head",
+        cwd=backend_dir,
+        env=sub_env,
+        stdout=_asyncio.subprocess.PIPE,
+        stderr=_asyncio.subprocess.STDOUT,
+    )
+    out, _ = await proc.communicate()
+    if proc.returncode != 0:
+        raise RuntimeError(
+            "alembic upgrade head failed during test schema provisioning:\n"
+            + out.decode("utf-8", errors="replace")
+        )
+    _log.info("CI test schema provisioned (pg_trgm + alembic upgrade head).")
+    yield
 
 
 @pytest.fixture(scope="session")
@@ -66,26 +233,60 @@ def event_loop():
     loop.close()
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def db_engine():
-    engine = create_async_engine(os.environ["DATABASE_URL"], pool_pre_ping=True)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
+    """Engine for the ``client`` / ``db_session`` fixtures.
+
+    Two modes, selected by ``TEST_DATABASE_URL`` presence:
+
+    * CI / provisioned mode (``TEST_DATABASE_URL`` set):
+      the schema is OWNED by the session-scoped ``_provision_test_schema``
+      fixture (``alembic upgrade head`` — incl. the pg_trgm GIN indexes that
+      ``create_all`` cannot build).  This fixture therefore does NOT
+      drop_all / create_all.  Doing so would (a) destroy the GIN indexes the
+      integration tests rely on, and (b) DEADLOCK with the function-scoped
+      ``db`` fixture: ``db`` holds an open ``BEGIN`` transaction on the SAME
+      meesell_test DB while this fixture's teardown ``DROP TABLE`` blocks on
+      ``db``'s relation locks (both fixtures now resolve to the same DB once
+      ``_DEV_DATABASE_URL`` honours ``TEST_DATABASE_URL``).  Per-test isolation
+      in this mode is provided by the ``db`` fixture's ROLLBACK and by the
+      integration suites' own DELETE-by-prefix / self-seeding cleanup.
+
+    * Local-dev mode (no ``TEST_DATABASE_URL``):
+      byte-for-byte the prior behaviour — drop_all + create_all an ephemeral
+      schema on ``DATABASE_URL`` (the bare dev Postgres) and drop_all on
+      teardown.  ``db`` resolves to a DIFFERENT physical DB (the K3s dev DSN)
+      in this mode, so there is no cross-fixture lock contention.
+    """
+    provisioned = bool(os.environ.get("TEST_DATABASE_URL"))
+    # NullPool: do NOT reuse connections across awaits.  asyncpg Protocols (and
+    # their Futures) attach to whatever event loop is running when a connection
+    # is first established; a pooled connection built in one loop and reused
+    # from a function-scoped loop raises "Task got Future attached to a
+    # different loop".  NullPool + loop_scope="function" keeps every connection
+    # born and closed in the test's own loop (mirrors the ``db`` fixture).
+    engine = create_async_engine(
+        os.environ["DATABASE_URL"], poolclass=NullPool, pool_pre_ping=True
+    )
+    if not provisioned:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
     yield engine
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    if not provisioned:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
     await engine.dispose()
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def db_session(db_engine):
     Session = async_sessionmaker(db_engine, expire_on_commit=False)
     async with Session() as session:
         yield session
 
 
-@pytest_asyncio.fixture
+@pytest_asyncio.fixture(loop_scope="function")
 async def client(db_engine):
     if app is None:
         pytest.skip(
@@ -180,7 +381,10 @@ async def use_live_valkey(monkeypatch):
     import redis.asyncio as _redis_lib  # local import — keeps top of conftest light
     import app.shared.valkey as _valkey_mod
 
-    base = os.environ.get("CORE_TEST_VALKEY_URL", "redis://localhost:6379")
+    # Resolve base with TEST_VALKEY_URL > VALKEY_URL > CORE_TEST_VALKEY_URL >
+    # default, stripping any trailing ``/<db>`` so the per-DB append below
+    # never produces the ``/0/0`` double-suffix (see _valkey_base docstring).
+    base = _valkey_base()
     created: list = []
 
     async def _otp():
@@ -395,7 +599,8 @@ async def valkey(use_live_valkey):
     """
     import redis.asyncio as _redis_lib
 
-    base = os.environ.get("CORE_TEST_VALKEY_URL", "redis://localhost:6379")
+    # Same precedence + /0/0-guard as ``use_live_valkey`` (see _valkey_base).
+    base = _valkey_base()
     clients: dict[str, "_redis_lib.Redis"] = {}
     for name, db_index in (("otp", 0), ("broker", 1), ("results", 2), ("cache", 3)):
         clients[name] = _redis_lib.from_url(
