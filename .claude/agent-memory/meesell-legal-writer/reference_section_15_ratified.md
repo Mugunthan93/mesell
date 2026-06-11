@@ -13,6 +13,7 @@ Source: `docs/LEGAL_ARCHITECTURE.md` §15. Updated when founder rules on any OPE
 
 | # | Topic | Use this value |
 |---|---|---|
+| 1 | Legal entity | **Stellaxis (OPC) Private Limited** |
 | 3 | GST registration timing | Register in Week 1 (immediately) |
 | 5 | Refund policy variant | Variant B — 7-day money-back on Lifetime Deal only; no refunds on monthly. (Founder ruling 2026-06-05.) |
 | 8 | Legal business name | **Stellaxis** is the legal business name. **MeeSell** is the product / trade name. The entity suffix (e.g., "Private Limited", "(OPC) Private Limited", or blank for Sole Prop) collapses once §15.1 is ruled. Use `Stellaxis [ENTITY SUFFIX]` in every draft until then. (Founder ruling 2026-06-05.) |
@@ -27,14 +28,13 @@ Source: `docs/LEGAL_ARCHITECTURE.md` §15. Updated when founder rules on any OPE
 | 14 | Manual erasure SLA | 30 days max, 7-day target. State both in Privacy §10.3. |
 | 15 | Personal-data export SLA | 7 days, manual via Grievance Officer. Self-serve endpoint V1.5. |
 
-## Deferred — Stellaxis not yet legally registered (founder ruling 2026-06-05)
+## Deferred (1 remaining): §15.2 incorporator only
 
-Pre-incorporation: use placeholders in drafts. Both items collapse on incorporation.
+Pre-incorporation: use placeholder in drafts. Item collapses when founder files.
 
 | # | Topic | Resolution path |
 |---|---|---|
-| 1 | Legal entity (Sole Prop / OPC / LLP / Pvt Ltd) | Founder picks at incorporation. Draft KYC + GST checklists with both Sole Prop and OPC variants side-by-side. Recommendation per LACI §11: Sole Prop V1, OPC at Month 3. |
-| 2 | Incorporator (Vakilsearch / IndiaFilings / local CA) | Founder picks alongside #1. |
+| 2 | Incorporator (Vakilsearch / IndiaFilings / local CA) | Founder picks when ready to file. §15.1 entity already ruled = OPC (Stellaxis (OPC) Private Limited), founder ruling 2026-06-11. |
 
 ## How to use this reference
 On every drafting turn:

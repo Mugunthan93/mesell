@@ -39,6 +39,8 @@ Reference: `docs/VALIDATED_PAIN_POINTS.md` (themes T1–T6, new pains S3.x)
 ## Section 2: P0 Feature Specs
 
 ### Feature 1: Auth (Phone OTP + JWT)
+**AS-BUILT — implemented 2026-06-11 PR#46:** merged to develop via PR #46 (`feature/auth-otp/integration` → `develop`, merge SHA `cad0a9a`); composed of backend group PR #44 (FE-D5 split-token verification, 11/11 review checks) + infra group PR #45 (dev OTP TTL fix, staging overlay, `docs/runbooks/auth-secret-rotation.md`). FE-D5 acceptance criteria (split-token, env-driven lifetimes, Valkey allowlist revocation) verified as-built — see `BACKEND_VERIFICATION.md` and `BACKEND_ARCHITECTURE.md` §7.
+
 **Pain solved:** Indian-seller onboarding friction; no password reset surface.
 
 **User journey:**

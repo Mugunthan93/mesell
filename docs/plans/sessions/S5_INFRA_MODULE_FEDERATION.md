@@ -1,0 +1,135 @@
+# Session Dispatch: Infra — Module Federation
+**Session name:** `mesell-infra-module-federation-infra-session-1`
+**Project:** `/Users/mugunthansrinivasan/Project/mesell`
+**Status:** COMPLETE 2026-06-10 — executed via master-session dispatch; plan APPROVED, Gate 4 discharged (see GATE4_CONFIRMATION.md).
+
+---
+
+## Prerequisite
+Session 1 (repo-management) is COMPLETE. Model C is ACTIVE (2026-06-10).
+Session 3 (module federation) Sub-Plan 0 should be in progress or complete —
+this session prepares the hosting infrastructure for when the first remote
+(mfe-pricing) is ready to deploy.
+
+---
+
+## Mission
+Review and ratify the Infra Module Federation Plan (`docs/plans/infra/module_federation_infra_plan.md`)
+— **this ratification is genuinely still pending and IS this session's gate.**
+Lock the hosting model and CDN strategy. Set up the GCS infrastructure and CDN
+configuration so that when Sub-Plan 1 (mfe-pricing pilot) lands, deployment is
+ready to go.
+
+**This session ALSO discharges MF MASTER_PLAN §9 Gate 4** — the infra
+confirmation that S3's Sub-Plan 0 EXECUTION is blocked on. Gate 4 = confirm K3s
++ Traefik can host the shell + 6 remotes and that the CSP header is editable.
+Treat Gate 4 as an explicit acceptance item (see acceptance gate below).
+
+**Priority: HIGH.** The founder's FEDERATION-FIRST ruling makes S5 (this session)
+and S3 the active pair — S3's federation execution waits on Gate 4 from here.
+
+---
+
+## Read first (in this order)
+1. `docs/plans/infra/module_federation_infra_plan.md` — the plan to ratify
+2. `docs/plans/repo_management/PILOT_REPORT.md` — Model C pilot findings (F1–F3)
+3. `docs/plans/repo_management/MASTER_PLAN.md` §1.2/§6.5/§9.5 as amended v1.1 (F1–F3)
+4. `docs/plans/module_federation/MASTER_PLAN.md` §4.3 + §9 (Gate 4) — build pipeline
+   changes that depend on infra (remote-entry URLs, CSP, GCS layout) + the gate
+   this session discharges
+5. `docs/INFRASTRUCTURE_ARCHITECTURE.md` — current state
+6. `docs/DEVOPS_ARCHITECTURE.md` — current CI/CD
+7. `.claude/agent-memory/meesell-infra-builder/MEMORY.md`
+
+---
+
+## Open decisions — get founder answer in this session
+
+1. **MF-HOST-1: Frontend hosting model**
+   - Option A: All components (shell + all remotes) served from K3s nginx pods
+   - Option B: All components served from GCS + Cloud CDN
+   - **Option C (recommended): Hybrid — shell in K3s nginx + remotes in GCS + CDN**
+     Shell needs cookie-based auth routing; remotes are pure static assets
+     with content-hashed filenames. CDN for remotes = free cache invalidation
+     via hash, fast global delivery, no pod pressure.
+   - Confirm Option C or choose alternate
+
+2. **MF-ENV-1: Remote GCS bucket layout**
+   - Option A: Separate bucket per env
+     (`gs://mesell-remotes-dev`, `gs://mesell-remotes-staging`)
+   - Option B: Single bucket with env prefix
+     (`gs://mesell-remotes/dev/`, `gs://mesell-remotes/staging/`)
+   - Recommendation: Option A — separate IAM policies, no accidental
+     cross-env serving
+
+3. **CDN invalidation strategy**
+   - Option A: Content-hash filenames only — no explicit invalidation needed
+     (remoteEntry.js is the only non-hashed file — invalidate it on every deploy)
+   - Option B: Version manifest pinned per env — shell's manifest.json points
+     at exact remote-entry URLs per environment
+   - Recommendation: Both — content-hash for chunks + manifest pins for
+     remoteEntry.js. Invalidate only `remoteEntry.js` on deploy (cheap, targeted).
+
+---
+
+## What to produce
+
+### Step 1 — Ratify the plan
+- Change STATUS in `docs/plans/infra/module_federation_infra_plan.md` → APPROVED
+- Record the 3 decisions
+
+### Step 2 — Create the feature branch
+- Create `feature/module-federation-infra-prep/infra` from `develop`
+- **F1 (pilot ruling):** the integration branch for this feature is
+  `feature/module-federation-infra-prep/integration` — open the group PR against
+  the integration branch, NOT a bare `feature/module-federation-infra-prep`.
+
+### Step 3 — Execute MF-HOST-1: GCS buckets + CDN
+Dispatch `meesell-infra-builder` to:
+- Create `gs://mesell-remotes-dev` and `gs://mesell-remotes-staging` buckets
+  via Terraform (GCS module extension)
+- Configure uniform-bucket-level-access, CORS for `dev.mesell.xyz`
+- Set up Cloud CDN backend bucket for remotes
+- IAM: CI SA (`meesell-github-ci`) gets `storage.objectAdmin` on both buckets
+
+### Step 4 — Execute MF-K8S-1: Shell deployment update
+Dispatch `meesell-infra-builder` to:
+- Add `REMOTES_MANIFEST_URL` env var to shell K8s Deployment
+  pointing at the GCS-hosted `remotes.manifest.json`
+- Add ConfigMap `remotes-manifest` (initially empty — populated when first
+  remote is deployed)
+- Document the manifest update procedure in INFRASTRUCTURE_ARCHITECTURE.md
+
+### Step 5 — Execute MF-CDN-1: CSP header
+Dispatch `meesell-infra-builder` to:
+- Add `Content-Security-Policy` header to the shell's Traefik middleware
+  whitelisting `https://remotes-dev.mesell.xyz` (dev) /
+  `https://remotes-staging.mesell.xyz` (staging)
+- Test: shell loads from K3s, can fetch a static asset from GCS origin
+
+### Step 6 — Commit + PR
+Commit on `feature/module-federation-infra-prep/infra`
+Open PR to `feature/module-federation-infra-prep/integration` (F1)
+Update `docs/status/feature_board_infra.md`
+Update `docs/INFRASTRUCTURE_ARCHITECTURE.md` with all changes
+
+---
+
+## Acceptance gate — session is DONE when
+- [ ] `module_federation_infra_plan.md` status = APPROVED (this session's ratification gate)
+- [ ] **MF §9 Gate 4 discharged:** confirmed K3s + Traefik can host shell + 6
+      remotes AND CSP header is editable (unblocks S3 Sub-Plan 0 execution)
+- [ ] `gs://mesell-remotes-dev` and `gs://mesell-remotes-staging` buckets exist
+- [ ] Cloud CDN backend bucket configured
+- [ ] Shell deployment has `REMOTES_MANIFEST_URL` env var
+- [ ] CSP header allows remote origins
+- [ ] INFRASTRUCTURE_ARCHITECTURE.md updated
+- [ ] PR open against `feature/module-federation-infra-prep/integration` (F1)
+
+---
+
+## Constraints
+- Do NOT deploy any actual remotes — infra scaffolding only
+- Do NOT touch `frontend/` application code
+- All GCS and CDN changes must be Terraform-managed
+- INFRASTRUCTURE_ARCHITECTURE.md must be updated in the same commit as any live change

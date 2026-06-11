@@ -10,6 +10,10 @@ MeeSell uses a **dedicated agent fleet** of 18 `meesell-*` agents. These rules g
 4. **No agent writes to another agent's memory.** Memory directories are owned. If you need info that's not yet recorded in another agent's memory, escalate via the STATUS file blocker mechanism.
 5. **Coordinator → specialist hierarchy.** The 5 coordinators (`meesell-backend-coordinator`, `meesell-frontend-coordinator`, `meesell-ai-coordinator`, `meesell-legal-writer`, `meesell-data-engineer`) plus `meesell-infra-builder` dispatch the specialists. The master Claude session dispatches the coordinators.
 6. **Out-of-scope work is refused with a redirect.** Every agent has a Scope (IN) and Scope (OUT) section. Out-of-scope asks are refused with a polite "defer to meesell-<other-role>" message.
+7. **HYBRID dispatch rule (founder-ruled 2026-06-11).** Dispatched coordinator agents have no Agent tool — they cannot reach their specialists, so the session window must run the hierarchy FOR them:
+   - **Code-heavy construction** (feature code, extractions, AI pipeline code, auth/backend changes): THREE-step dispatch — (1) dispatch the coordinator to produce a task SPEC, (2) the session dispatches the named SPECIALIST agent (the sonnet builders) with that spec, (3) dispatch the coordinator again to run the MERGE-GATE REVIEW on the specialist's PR. The review is a real gate — it can reject back to the specialist.
+   - **Docs, status flips, rulings landings, chores**: single-agent fast mode — the coordinator/lead executes directly. No ceremony.
+   - Standalone agents (`meesell-infra-builder`, `meesell-legal-writer`) have no specialists — they always execute directly.
 
 ### The 18-agent roster
 

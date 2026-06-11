@@ -1,70 +1,49 @@
 # GST Registration Checklist
 
-**Operator:** **Stellaxis** `[ENTITY SUFFIX]` operating the **MeeSell** service
-**Purpose:** Single checklist for registering Stellaxis under the Indian Goods and Services Tax regime. **Forks by entity path** — both Sole Prop and OPC/Pvt Ltd variants below.
-**Status:** DRAFT — founder runbook; CA review recommended on the SAC code line item
-**Drafted by:** `meesell-legal-writer` 2026-06-05
-**Source:** `docs/LEGAL_ARCHITECTURE.md` §3 row 4 + §12.3; `docs/LEGAL_AND_COMPLIANCE_INFO.md` §2 + §7; `docs/PRICING_LOCKED.md` §5
+> **Entity ruling 2026-06-11: OPC immediately. Sole Prop path removed.**
 
-> **When to register (founder-ratified per §15 decision #3):** Week 1, immediately upon Stellaxis incorporation — registering before crossing the ₹20 lakh threshold (LACI §2.1) is a credibility multiplier for Razorpay KYC and lets MeeSell issue GST-compliant invoices from day one for B2B input-credit recovery.
+**Operator:** **Stellaxis (OPC) Private Limited** operating the **MeeSell** service
+**Purpose:** Single checklist for registering Stellaxis (OPC) Private Limited under the Indian Goods and Services Tax regime. **OPC path only** (§15.1 ruled OPC, founder ruling 2026-06-11).
+**Status:** DRAFT — founder runbook; CA review recommended on the SAC code line item
+**Drafted by:** `meesell-legal-writer` 2026-06-05; single-pathed to OPC 2026-06-11
+**Source:** `docs/LEGAL_ARCHITECTURE.md` §3 row 4 + §12.3 + §15.1; `docs/LEGAL_AND_COMPLIANCE_INFO.md` §2 + §7; `docs/PRICING_LOCKED.md` §5
+
+> **When to register (founder-ratified per §15 decision #3):** Week 1, immediately upon Stellaxis (OPC) Private Limited incorporation — registering before crossing the ₹20 lakh threshold (LACI §2.1) is a credibility multiplier for Razorpay KYC and lets MeeSell issue GST-compliant invoices from day one for B2B input-credit recovery.
 
 ---
 
 ## 0. Prerequisites
 
-- [ ] Stellaxis is **legally incorporated** with PAN in entity name issued
+- [ ] Stellaxis (OPC) Private Limited is **legally incorporated** as an OPC with company PAN issued
 - [ ] **Business address** is firm (rent agreement signed if leased, or property document in hand if owned)
 - [ ] **Founder's Aadhaar** is current and linked to mobile (for OTP-based portal verification)
 - [ ] **Business email** `support@meesell.in` is operational (used as the GST account email)
 
 ---
 
-## 1. Choose your path
+## 1. Documents — One Person Company (OPC)
 
-| Path | Stellaxis form | Documents below | When to use |
-|---|---|---|---|
-| **A — Sole Proprietorship** | `[ENTITY SUFFIX]` is empty | §2 | Founder ruling per LACI §11 — recommended for V1; upgrade at Month 3 |
-| **B — OPC / Private Limited / LLP** | `[ENTITY SUFFIX]` is `(OPC) Private Limited`, `Private Limited`, or `LLP` | §3 | When Stellaxis is incorporated as a registered company / LLP |
+Stellaxis (OPC) Private Limited is a One Person Company. Gather the OPC document set below.
 
----
-
-## 2. Documents — PATH A: Sole Proprietorship
-
-### 2.1 Required documents (PDF, < 5 MB each, clearly legible)
-
-| # | Document | Source | Notes |
-|---|---|---|---|
-| 1 | **Founder's PAN card** | Income Tax Department | Serves as business PAN |
-| 2 | **Founder's Aadhaar** (both sides) | UIDAI | Required for portal OTP verification |
-| 3 | **Business address proof** | See §2.2 below | Picks ONE |
-| 4 | **Bank details** — cancelled cheque OR first page of passbook OR bank statement | Bank | Must show Stellaxis legal name |
-| 5 | **Founder's photograph** | — | Passport size, JPEG / PNG |
-| 6 | **Founder's signature** on white paper (scanned) | — | Used for digital signature step |
-| 7 | **Shop & Establishment certificate** | State labour department | State-dependent — Tamil Nadu, Maharashtra, Delhi require; some states optional |
-
-### 2.2 Business address proof — pick one
-
-- [ ] **Rent agreement** (current, registered if > 11 months) + **electricity bill** (last 3 months) — leased premises
-- [ ] **Property tax receipt** OR **municipal tax bill** — owned by founder
-- [ ] **Sale deed** OR **property document** — owned by founder
-
----
-
-## 3. Documents — PATH B: OPC / Private Limited / LLP
-
-### 3.1 Required documents
+### 1.1 Required documents (PDF, < 5 MB each, clearly legible)
 
 | # | Document | Source |
 |---|---|---|
 | 1 | **Company PAN** | Income Tax Department, issued at incorporation |
 | 2 | **Certificate of Incorporation** | Ministry of Corporate Affairs |
-| 3 | **MOA + AOA** (Pvt Ltd / OPC) OR **LLP Agreement** (LLP) | MCA |
+| 3 | **MOA + AOA** | MCA |
 | 4 | **Director's PAN + Aadhaar** | Income Tax + UIDAI |
 | 5 | **Director's photograph** | — |
 | 6 | **Director's signature** scan | — |
-| 7 | **Registered office address proof** | Same options as §2.2 |
-| 8 | **Bank details** in Stellaxis legal name | Bank |
+| 7 | **Registered office address proof** | See §1.2 below |
+| 8 | **Bank details** in Stellaxis (OPC) Private Limited's legal name | Bank |
 | 9 | **Board Resolution** authorising the director to file GST application | Stellaxis internal |
+
+### 1.2 Registered office address proof — pick one
+
+- [ ] **Rent agreement** (current, registered if > 11 months) + **electricity bill** (last 3 months) — leased premises
+- [ ] **Property tax receipt** OR **municipal tax bill** — owned by founder
+- [ ] **Sale deed** OR **property document** — owned by Stellaxis (OPC) Private Limited
 
 ---
 
@@ -105,17 +84,17 @@ When self-filing at `https://gst.gov.in` → "Register Now" → "New Registratio
 | Part A — initial | I am a | Taxpayer |
 | | State | `[FOUNDER: State of Stellaxis registered office]` |
 | | District | `[FOUNDER: District]` |
-| | Legal name of business | `Stellaxis [ENTITY SUFFIX]` — **MUST match PAN exactly** |
+| | Legal name of business | `Stellaxis (OPC) Private Limited` — **MUST match PAN exactly** |
 | | Trade name | "MeeSell" |
 | | PAN | Stellaxis's PAN |
 | | Email | `support@meesell.in` |
 | | Mobile | Founder's mobile (Aadhaar-linked) |
 | Part B — verification | Choose Aadhaar authentication | Yes (recommended — faster) |
-| | Business constitution | "Proprietorship" (Path A) / "Private Limited Company" / "One Person Company" / "Limited Liability Partnership" (Path B) |
+| | Business constitution | "One Person Company" |
 | | Business activities | "Service Provider" — and on the next screen select "Other services not elsewhere classified" → SAC 998314 |
 | | Principal place of business | `[FOUNDER: Stellaxis registered business address]` |
 | | Bank account | Stellaxis Current Account number + IFSC |
-| | Authorised signatory | Founder details + DSC (if Pvt Ltd / OPC) OR EVC via Aadhaar OTP (Sole Prop) |
+| | Authorised signatory | Founder (sole director) details + DSC (Digital Signature Certificate, mandatory for OPC) |
 
 ---
 
@@ -181,10 +160,10 @@ The invoice template (`invoice-template.md`) splits the gross figure into base +
 | Field | Value |
 |---|---|
 | Document | GST Registration Checklist v1.0 |
-| Operator | Stellaxis `[ENTITY SUFFIX]` |
-| Status | DRAFT — operational runbook (CA verifies SAC; no lawyer review required) |
-| Drafted by | `meesell-legal-writer` 2026-06-05 |
-| Source citations | `docs/LEGAL_ARCHITECTURE.md` §12.3; `docs/LEGAL_AND_COMPLIANCE_INFO.md` §2 + §7 + §9; `docs/PRICING_LOCKED.md` §5 |
+| Operator | Stellaxis (OPC) Private Limited |
+| Status | DRAFT — operational runbook (CA verifies SAC; no lawyer review required); OPC-only as of 2026-06-11 |
+| Drafted by | `meesell-legal-writer` 2026-06-05; single-pathed to OPC 2026-06-11 |
+| Source citations | `docs/LEGAL_ARCHITECTURE.md` §12.3 + §15.1; `docs/LEGAL_AND_COMPLIANCE_INFO.md` §2 + §7 + §9; `docs/PRICING_LOCKED.md` §5 |
 | CA review markers | 1 — search for `[CA VERIFY]` (SAC code confirmation) |
-| Founder placeholders | `[ENTITY SUFFIX]`, `[FOUNDER: State / District / address]` |
+| Founder placeholders | `[FOUNDER: State / District / address]` |
 | Paired docs | `razorpay-kyc-checklist.md` (consumes GSTIN), `invoice-template.md` (consumes GSTIN + SAC) |

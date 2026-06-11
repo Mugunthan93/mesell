@@ -1,5 +1,7 @@
 import { Routes } from '@angular/router';
-import { authGuard } from './core/guards/auth.guard';
+import { authGuard } from '@mesell/core';
+
+import { loadRemoteWithFallback } from './core/load-remote';
 
 export const routes: Routes = [
   // Root — public landing page
@@ -79,10 +81,12 @@ export const routes: Routes = [
             .then(m => m.PreviewComponent),
       },
       {
+        // MF Sub-Plan 01 — first federated remote. Pricing now lives in the
+        // `mfe-pricing` Native-Federation remote (apps/mfe-pricing/), loaded at
+        // runtime via the manifest. The :id param flows through the shell router
+        // outlet into the remote component unchanged. D12 fallback on load failure.
         path: 'catalogs/:id/pricing',
-        loadComponent: () =>
-          import('./features/pricing/pricing/pricing.component')
-            .then(m => m.PricingComponent),
+        loadComponent: loadRemoteWithFallback('mfe-pricing', './PricingComponent'),
       },
       {
         path: 'catalogs/:id/export',

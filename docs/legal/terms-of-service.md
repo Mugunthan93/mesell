@@ -1,6 +1,6 @@
 # Terms of Service
 
-**For:** **Stellaxis** `[ENTITY SUFFIX — fills in once §15.1 ruled]` operating the **MeeSell** service at `https://www.meesell.in`
+**For:** **Stellaxis (OPC) Private Limited** operating the **MeeSell** service at `https://www.meesell.in`
 **Effective date:** `[FOUNDER: publish date]`
 **Last updated:** `[FOUNDER: publish date]`
 **Version:** v1.0
@@ -8,11 +8,10 @@
 **Drafted by:** `meesell-legal-writer` per `docs/LEGAL_ARCHITECTURE.md` §14 + §15
 
 > **Founder action required before publishing:**
-> 1. Resolve `[ENTITY SUFFIX]` placeholder (§15.1 ruling on Sole Prop / OPC / Pvt Ltd)
-> 2. Confirm Stellaxis registered business address and city
-> 3. ₹5,000-15,000 Indian lawyer review pass (this document carries the most liability surface — recommend a thorough review)
-> 4. Live HTTPS URL on the website footer
-> 5. Linked from the signup consent checkbox + footer of every page
+> 1. Confirm Stellaxis (OPC) Private Limited registered business address and city
+> 2. ₹5,000-15,000 Indian lawyer review pass (this document carries the most liability surface — recommend a thorough review)
+> 3. Live HTTPS URL on the website footer
+> 4. Linked from the signup consent checkbox + footer of every page
 >
 > **[LAWYER REVIEW]** markers in this document flag clauses where Indian counsel should confirm wording before publication. ToS has **17 such markers** — it is the highest-priority document for lawyer scrutiny.
 
@@ -20,7 +19,7 @@
 
 ## 1. Who we are and what these terms cover
 
-**Stellaxis** `[ENTITY SUFFIX]` (referred to in these terms as **"Stellaxis"**, **"we"**, **"us"**, or **"our"**, and trading under the product brand **"MeeSell"**) operates the MeeSell software-as-a-service platform (the **"Service"**) at `https://www.meesell.in`.
+**Stellaxis (OPC) Private Limited** (referred to in these terms as **"Stellaxis"**, **"we"**, **"us"**, or **"our"**, and trading under the product brand **"MeeSell"**) operates the MeeSell software-as-a-service platform (the **"Service"**) at `https://www.meesell.in`.
 
 These Terms of Service (these **"Terms"**) form a legally binding contract between you (the **"User"**, **"you"**, or **"your"**) and Stellaxis. By creating an account, using the Service, or paying for any tier of the Service, you agree to these Terms and to our [Privacy Policy](./privacy-policy.md) and [Refund Policy](./refund-policy.md).
 
@@ -349,7 +348,7 @@ If you continue to use the Service after the amendment takes effect, you accept 
 
 Notices to **Stellaxis** must be sent to `grievance@meesell.in` and, where the matter is contractual, also to:
 
-> **Stellaxis** `[ENTITY SUFFIX]`
+> **Stellaxis (OPC) Private Limited**
 > Attn: Grievance Officer
 > `[FOUNDER: Stellaxis registered business address]`
 
@@ -425,10 +424,10 @@ For general questions: `support@meesell.in`
 | Field | Value |
 |---|---|
 | Document | MeeSell Terms of Service v1.0 |
-| Operator | Stellaxis `[ENTITY SUFFIX]` |
+| Operator | Stellaxis (OPC) Private Limited |
 | Status | DRAFT — founder + lawyer review required |
 | Drafted by | `meesell-legal-writer` 2026-06-05 |
 | Source citations | `docs/LEGAL_ARCHITECTURE.md` §3, §6, §11, §12, §14; `docs/LEGAL_AND_COMPLIANCE_INFO.md` §3, §4, §6, §7; `docs/PRICING_LOCKED.md` §5 |
 | Lawyer review markers | 17 — search this document for `[LAWYER REVIEW]` |
-| Founder placeholders | search this document for `[FOUNDER:` or `[ENTITY SUFFIX]` |
+| Founder placeholders | search this document for `[FOUNDER:` |
 | Pairs with | `privacy-policy.md`, `refund-policy.md`, `cookie-policy.md`, `dpa-template.md` (when authored) |

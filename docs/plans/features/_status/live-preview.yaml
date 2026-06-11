@@ -1,0 +1,50 @@
+feature: "live-preview"
+session: "mesell-live-preview-amendment-session-1"
+worktree: "/tmp/mesell-wt/live-preview"
+branch: "feature/live-preview/planning"
+status: "LOCKED"
+last_updated: "2026-06-10T12:55:02Z"
+feature_plan_path: "docs/plans/features/live-preview/FEATURE_PLAN.md"
+feature_plan_line_count: 1338
+pr_number: 16
+pr_url: "https://github.com/Mugunthan93/mesell/pull/16"
+outstanding_founder_decisions:
+  - "D1 — locked (scope confirmed against V1_FEATURE_SPEC §F6)"
+  - "D2 — locked (backend pre-shapes structured PreviewResponse with server-side truncation)"
+  - "D3 — locked (FEATURE_LIVE_PREVIEW_ENABLED gated rollout)"
+  - "D4 — locked (ships after catalog-form + image-precheck, parallel with price-calculator)"
+  - "D5 — locked (3 leads + 6 specialists, infra in scope)"
+  - "D6 — locked (3 default iteration cap; 4 for ui-styler visual-diff)"
+notes: |
+  Amended to canonical pattern v2 — 11 sections in locked order.
+
+  Section reordering applied (6 moves):
+  - Code surfaces: pos 4 → pos 3
+  - Documentation deliverables: pos 5 → pos 4
+  - Branch setup: pos 3 → pos 5
+  - Memory protocol: pos 8 → pos 6 (also renamed from "Memory management")
+  - Dispatch templates: pos 6 → pos 7
+  - Review + iteration protocol: pos 7 → pos 8
+
+  Risk register expanded from 11 lines (single compact table) to 72 lines:
+  - Quick-scan index table at top
+  - Per-risk ### subsections with Likelihood/Impact/Mitigation labels
+  - New: Risk monitoring + escalation triggers subsection
+  - New: Mitigation ownership and tracking subsection
+  - New: Audit cadence subsection
+  - All original content preserved verbatim
+
+  Revision history: v0.2 row appended.
+
+  FEATURE_PLAN.md: 1278 → 1338 lines (+60 net; +234 insertions, -130 deletions).
+
+  PR #10 (original planning) is already merged to develop (mergedAt 2026-06-10T10:57:28Z).
+  Amendment PR #16 opened against develop with the canonical-pattern v2 reorder.
+
+  NOTE: mandatory read _CANONICAL_PATTERN.md does NOT exist on this worktree. Founder
+  approved best-effort conformance using the amendment dispatch text (Step 5 enumeration
+  + Step 4 templates) as the source-of-truth.
+
+  Status: IN_REVIEW — awaiting founder review on PR #16.
+
+  Founder merged amendment PR #16 to develop 2026-06-10 — plan LOCKED.

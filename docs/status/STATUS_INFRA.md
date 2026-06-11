@@ -37,6 +37,27 @@ Phase D is owned by `meesell-backend-coordinator` + `meesell-frontend-coordinato
 5. **`.gitlab-ci.yml`** — write CI pipeline (lint → test → build → push via WIF → deploy via kubectl).
 6. **Optional Pass 3 Terraform modules** — `modules/{api,worker,frontend}/` so Deployments are in TF state.
 
+## Dev OTP smoke preconditions (auth-otp — founder ruling 2026-06-11)
+Before the FIRST dev OTP smoke test (`POST /auth/otp/send` with a real phone, FEATURE_PLAN
+auth-otp step S1.5 / Sprint 1 exit gate) the following MUST be true. Recorded here because
+the auth-secret-rotation runbook (`docs/runbooks/auth-secret-rotation.md`) is NOT yet on
+`develop` (it lives on `feature/auth-otp/integration` until that PR lands) — so its smoke
+section does not exist on this branch to carry the note.
+
+1. **MSG91 server-IP whitelist** — Founder will whitelist the dev server's egress/public IP
+   in the MSG91 dashboard (Settings → IP Security) BEFORE the first dev OTP send. Without
+   this, MSG91 rejects the send and the smoke returns non-200. Track the IP actually
+   whitelisted (founder ISP IP has rotated before: 122.164.85.200 → .51 → 87.94 — confirm
+   current before smoke). Fallback if blocked: MSG91 test-sender credentials (no IP
+   restriction) for the dev namespace while the whitelist is updated.
+2. `msg91-auth-key` + `msg91-template-id` Secret Manager values LIVE and surfaced into the
+   `dev` `backend-secrets` K8s Secret (both confirmed present per Phase D).
+3. `kubectl -n dev apply --dry-run=server` clean on any manifest touched (mandatory deploy
+   gate per playbook §15 step 3 — founder ruling 2026-06-11).
+
+When `docs/runbooks/auth-secret-rotation.md` merges to `develop`, fold precondition #1 into
+that runbook's smoke-test section and trim this note to a back-reference.
+
 ## Not blocking — anytime
 - Re-enable Namecheap 2FA (was disabled for script convenience during Phase B; safe to turn back on now)
 - Switch Playwright Namecheap helpers to `launchPersistentContext` to avoid device-verification on future DNS edits
@@ -1370,3 +1391,139 @@ Mission: per `docs/sub_session_prompts/cicd_implementation/01-cicd-dev-pipeline-
 
 Status: BRIEF COMPLETE. Phase E + F outputs ready for founder review.
 =========
+
+=== UPDATE: 2026-06-10 GATE4-MF-CONFIRMATION SESSION-START ===
+Session: mesell-gate4-confirmation-infra-session-1
+Task: MF MASTER_PLAN §9 Gate 4 — technical confirmation that (a) K3s+Traefik can host N+1 frontend apps (shell + 6 remotes) and (b) CSP is editable so the shell can load remote JS. Produce GATE4_CONFIRMATION.md. NOT ratification (founder S5 window owns that).
+Playbook section applied: §0 (live state is SSOT) + §9 (Ingress) + §3.2/§8.1 (Traefik). Rule: read-only verification, ZERO cluster/TF/manifest mutations.
+Cluster: REACHABLE (read-only). kubectl get nodes -> meesell-dev-master Ready v1.35.5+k3s1.
+LIVE EVIDENCE captured: node allocatable 2000m CPU / ~7.94Gi mem; requests 1650m (82%) CPU / 3528Mi (44%) mem; actual usage 190m / 3130Mi. Frontend Deployment NOT deployed (2 replicas planned). No frontend/Dockerfile, no nginx.conf, no Traefik Middleware, no CSP header anywhere (only node_modules matches).
+Board sweep (session-start): Active features table empty; Recently merged = housekeeping-v1 (#27). No rows untouched 7+ days. No inter-lead requests open.
+Next: author docs/plans/infra/GATE4_CONFIRMATION.md, then commit on chore/gate4-confirmation -> PR -> develop -> merge.
+=========
+
+=== UPDATE: 2026-06-10 GATE4-MF-CONFIRMATION SESSION-END ===
+Session: mesell-gate4-confirmation-infra-session-1
+Deliverable: docs/plans/infra/GATE4_CONFIRMATION.md (~140 lines) — MERGED to develop via PR #33 (merge commit f30d61f).
+VERDICT: CONFIRMED-WITH-CONDITIONS.
+  A1 Routing: CONFIRMED — Traefik host-based, per-host LE certs; shell swaps on live dev.mesell.xyz Ingress (no cert churn); remotes go to new remotes.mesell.xyz outside K3s (GCP-managed cert).
+  A2 Deployability: CONFIRMED — single AR repo holds multiple image streams (mfe-shell = free add); 6 remotes are GCS/CDN static (0 in-cluster pods); CI = paths-filter matrix + 2 cloudbuild files.
+  A3 Resources: CONFIRMED for Option C ONLY. Live dev node 2000m alloc / 1650m (82%) requested / ~350m CPU headroom. Option A (in-cluster remotes ~500m) does NOT fit current 2-vCPU VM; Option C (remotes off-cluster) fits.
+  A4 CSP: CONFIRMED, greenfield — no CSP/Dockerfile/nginx.conf/Middleware exists today; authored via shell nginx.conf OR CSP-only Traefik Middleware (must not touch CORS or refresh-cookie); needs script-src/connect-src for remotes.mesell.xyz.
+Conditions (6, feed Sub-plan 7): C-RES-1 (Option A infeasible), C-RES-2 (ship Option C), C-ROUTE-1 (new host A record + GCP-managed cert), C-CI-1 (replace single-frontend cloudbuild), C-CSP-1 (author CSP before first remote), C-STAGING-1 (staging remotes off-cluster too).
+Ratification deferred to founder S5 window (NOT this session).
+Mutations: ZERO cluster / ZERO terraform / ZERO manifest edits. Only new file GATE4_CONFIRMATION.md + board/STATUS updates.
+Board sweep (session-end): gate4-confirmation moved IN PROGRESS -> Recently merged (#33). Active features empty. No rows untouched 7+ days. No inter-lead requests open.
+=========
+
+=== UPDATE: 2026-06-11 AUTH-OTP INFRA SESSION-1 (work done) ===
+Session: mesell-auth-otp-infra-session-1
+Branch: feature/auth-otp/infra (worktree /tmp/mesell-wt/auth-otp-infra). Base: feature/auth-otp/integration (backend PR #44 MERGED into it).
+Playbook section applied: §0 (live state is SSOT) + namespace-conventions/safe-deploy block (L799-820: staging via Kustomize overlays, dry-run-before-apply). Rule: manifests + docs ONLY; zero cluster/kubectl/terraform mutations — apply happens at normal deploy time.
+
+RE-AUDIT GAP LIST (vs FEATURE_PLAN Template G acceptance):
+  - ALREADY DONE (by §20 session 2026-06-08): config.yaml carries ACCESS/REFRESH TTL + CORS_ALLOWED_ORIGINS + CORS_ALLOW_CREDENTIALS; secrets.yaml.example carries REFRESH_TOKEN_PEPPER + RAZORPAY_WEBHOOK_SECRET refs. So "add env vars" was mostly a no-op.
+  - GAP 1 (fixed): k8s/config.yaml (namespace=dev) held PROD values 900/604800 + all-origin CORS. Corrected to dev values ACCESS=30 / REFRESH=120 / CORS=https://dev.mesell.xyz.
+  - GAP 2 (fixed): no staging surface existed (flat k8s/, all namespace:dev). Authored Kustomize staging overlay k8s/overlays/staging/ (self-contained ConfigMap: ns=staging, APP_ENV=staging, ACCESS=60 / REFRESH=300 / CORS=https://staging.mesell.xyz). Per playbook L801 (staging via Kustomize overlays).
+  - GAP 3 (fixed): docs/runbooks/auth-secret-rotation.md created — §1 dev/staging natural-expiry rotation, §2 prod (V1.5) dual-pepper version-tagged grace window (R5), §3 emergency mass-revocation (targeted DEL cache:refresh:* preferred over FLUSHDB; blast radius documented), §4 pre-flight checklist, §5 follow-ups.
+
+FOUNDER-FLAGS (in PR body):
+  - F1: APP_ENV="production" remains in k8s/config.yaml (namespace=dev). Pre-existing inconsistency, NOT in Template G acceptance list, and touches backend cookie Secure/Domain semantics — left as-is, flagged for founder/backend decision rather than silently changed.
+  - F2: Backend refresh-key derivation is SINGLE-PEPPER + UNVERSIONED (cache:refresh:{digest}, auth.py::refresh_allowlist_key). The R5 dual-pepper/version-tagged grace path in runbook §2 is NOT yet implemented — backend follow-up required before V1.5 prod. Until then prod pepper rotation is a hard cutover (incident-only). dev/staging unaffected (short TTL).
+  - F3: Cluster UNREACHABLE this session (34.180.58.185:6443 connection refused). True `kubectl apply --dry-run=server` impossible offline. Validation used: kustomize build (renders clean, exit 0) + python yaml.safe_load_all structural check (all 3 files valid; ConfigMap name/ns correct). Server-side dry-run is a deploy-time precondition — re-run before apply.
+
+Validation: dev base `kubectl kustomize k8s/overlays/staging` and python yaml checks PASS. Secrets re-verified LIVE via `gcloud secrets versions list` (refresh-token-pepper, razorpay-webhook-secret, msg91-auth-key, jwt-secret — all 1 ENABLED, values never printed).
+Cost impact: ₹0/month (env-var + ConfigMap overlay + doc only).
+MSG91 IP whitelist: NOT verified this session (cluster unreachable; no OTP send possible). Carry-forward to the dev smoke gate (S1.5) — verify 122.164.85.51 (or current founder IP) is whitelisted before backend marks gate-2 green.
+Board: auth-otp row = IN REVIEW (PR-open transition per D2; Current session cleared).
+Next: open infra->integration PR (squash, self-review checklist), then OPEN (do NOT merge) integration->develop PR with founder gate line.
+=========
+
+=== UPDATE: 2026-06-11 AUTH-OTP INFRA SESSION-END ===
+Session: mesell-auth-otp-infra-session-1
+Infra group PR #45 (feature/auth-otp/infra -> feature/auth-otp/integration) SQUASH-MERGED — merge SHA d2b734e. Self-review: all 6 FEATURE_PLAN infra checks pass (check 1 dry-run-server deferred to deploy time per F3, cluster unreachable; offline kustomize+yaml validation clean).
+Files merged: k8s/config.yaml (dev TTL/CORS corrected), k8s/overlays/staging/{kustomization,config}.yaml (NEW staging surface), docs/runbooks/auth-secret-rotation.md (NEW).
+Then OPENED (NOT merged) integration->develop PR — founder gate. See PR # in this entry's tail.
+Founder-flags carried into both PR bodies: F1 APP_ENV=production on dev ConfigMap (pre-existing; backend cookie semantics — founder decision); F2 backend refresh key single-pepper/unversioned, R5 dual-pepper grace path is a backend follow-up before V1.5 prod; F3 server-side dry-run must be re-run at deploy time.
+Board: auth-otp moved IN REVIEW -> MERGED (Recently merged, #45). Active features now empty again.
+Board sweep (session-end): no rows untouched 7+ days. No inter-lead requests open. No blockers.
+Cost impact: ₹0/month.
+=========
+
+=== UPDATE: 2026-06-11 LAND-INFRA-RULINGS SESSION-1 (start+end) ===
+Session: mesell-land-infra-rulings-infra-session-1
+Task: land 3 founder rulings (2026-06-11 morning) on the infra surface via chore/land-infra-rulings -> develop.
+Playbook sections applied: §15 (Safe deployment template — dry-run gate) + §0 (live state SSOT — APP_ENV must be valid Pydantic Literal) + §10 (secret discipline — OTP smoke precondition).
+Worktree: /tmp/mesell-wt/land-infra-rulings on chore/land-infra-rulings from origin/develop (0b147e8, freshly fetched). Master tree branch NOT switched.
+
+1. APP_ENV ruling (F1 RESOLVED): k8s/config.yaml dev ConfigMap (namespace: dev) APP_ENV "production" -> "development". Founder ruled production was WRONG for dev. Did NOT touch staging overlay (k8s/overlays/staging/ does not exist on develop — lives on feature/auth-otp/integration) or any prod values. Offline-validated: Python yaml.safe_load_all -> kind=ConfigMap, ns=dev, APP_ENV=development, 20 data keys, parses clean. Cluster dry-run (--dry-run=server) DEFERRED to deploy time per F3 — cluster unreachable from authoring machine (6443 connection refused), as expected.
+2. Deploy gate ruling: docs/INFRASTRUCTURE_PLAYBOOK.md §15 step 3 elevated to [MANDATORY GATE] — `kubectl apply --dry-run=server` is now a mandatory pre-apply checklist item at EVERY deploy, hard precondition for step 4. Additive edit only (no renumber/removal). Founder ruling = the §7.3 amendment approval (delivered in-prompt).
+3. MSG91 whitelist: docs/runbooks/auth-secret-rotation.md does NOT exist on develop (only on feature/auth-otp/integration) -> "ONLY IF smoke section exists" condition FAILED. Auth-otp dev OTP smoke gate is documented only in feature-owned FEATURE_PLAN.md (S1.5/Sprint-1 exit gate) — not an infra-owned precondition surface. Per brief fallback: added "Dev OTP smoke preconditions" subsection to THIS file's next-steps (founder whitelists server IP before first dev OTP send; track current founder ISP IP; MSG91 test-sender fallback). Self-folds into the runbook when it lands on develop.
+
+Lead-gate self-review: 3-file diff, additive/corrective only, no secrets, no JSON keys, no TF, cost ₹0/month. Approved.
+Board sweep (session-start + session-end): Active features table EMPTY. Recently merged = auth-otp(#45), gate4-confirmation(#33), housekeeping-v1(#27). No rows untouched 7+ days. No inter-lead requests open. No blockers. This chore is a founder-ruling landing (not a feature-group PR) so no feature_board_infra.md Active row created (F2 status-only — board reflects feature-group state, which is unchanged). feature_board_infra.md "Last updated" line refreshed only.
+PR: see tail. Merge SHA: see tail.
+=========
+
+=== UPDATE: 2026-06-11 MF-CI-C-CI-1 SESSION-1 (start+work) ===
+Session: mesell-mf-ci-c-ci-1-infra-session-1
+Task: discharge GATE4 condition C-CI-1 — REPLACE the single-frontend CI conditional with a paths-filter/matrix design for the federated Angular workspace now on develop (PR #41 merged, frontend/libs/{ui-kit,composites,core,design-tokens} + shell; apps/mfe-pricing arrives with MF Sub-Plan 1, EXECUTING in parallel).
+Owned surface (CI/CD pipeline definition per Scope-IN): .github/workflows/ci.yml + cloudbuild.yaml + docs/DEVOPS_ARCHITECTURE.md. Config + docs ONLY — zero terraform, zero cluster, zero k8s, zero frontend source.
+Worktree: /tmp/mesell-wt/ci-matrix-prep on chore/ci-matrix-c-ci-1 from origin/develop (5198ba7). Master tree branch NOT switched.
+
+Design (matrix/paths-filter):
+- ci.yml: +2 jobs (8 -> 10). `frontend-changes` (dorny/paths-filter@v3) emits libs/shell/mfe_pricing booleans; `frontend-build` is a paths-filtered MATRIX (include: shell[project=frontend], mfe-pricing[project=mfe-pricing]) with per-entry computed `run` = own-filter OR libs-fanout. libs/** + workspace config (package.json/lockfile/angular.json/tsconfig/federation.config.js/ci.yml) FAN OUT to every dependent (libs consumed via @mesell/* aliases, not independently built). Both jobs run in parallel with backend gates; build job needs += frontend-build. Native-binary step: `pnpm rebuild esbuild @parcel/watcher lmdb msgpackr-extract` before ng build (handoff note — .npmrc trick env-blocked).
+- SP02-06 remotes = ONE-LINE add in two places (paths-filter block + matrix include). Commented templates left in both.
+- cloudbuild.yaml: precheck-frontend -> precheck-shell/build-shell/push-shell (shell still ships as `frontend` AR image, Option C). NEW publish-remotes step gsutil-rsyncs dist/mfe-*/browser -> ${_REMOTES_BUCKET} (GCS+CDN). INERT while _REMOTES_BUCKET unset (default "") -> today's api+worker[+shell] builds unaffected. Remotes never become AR images (NOT in images: list).
+
+Validation: both YAML files parse clean (python yaml.safe_load). ci.yml = 10 jobs; cloudbuild = 9 steps. actionlint unavailable (brew blocked as root) -> manual review: needs.* IS valid in strategy.matrix per GH contexts table; matrix.run string '/true' compared in step if:; non-empty matrix (no empty-matrix edge); all-skip path = job success -> build proceeds.
+READY-NOT-ACTIVE: CI fires only on push/PR to main; not active until founder 7-step terraform/WIF/GitHub-vars activation. No new secrets beyond planned (GCP_WIF_PROVIDER, GCP_CI_SA_EMAIL, GEMINI_API_KEY_CI). Remote-publish needs _REMOTES_BUCKET + S5-ratified GCS bucket (terraform, founder-owned) before going live.
+Cost impact: ₹0/month (config/docs only; GCS+CDN+LB cost is C-CDN-1, sized at S5, NOT incurred by this PR).
+Board: added Active row mf-ci-c-ci-1 IN PROGRESS; recorded incoming inter-lead request (frontend handoff_mf_ci_prep.md) as RESOLVING. Will flip IN REVIEW on PR open, MERGED on merge.
+PR + merge SHA: see session-end tail.
+=========
+
+=== UPDATE: 2026-06-11 MF-CI-C-CI-1 SESSION-1 SESSION-END ===
+Session: mesell-mf-ci-c-ci-1-infra-session-1
+C-CI-1 DISCHARGED-pending-activation. PR #50 (chore/ci-matrix-c-ci-1 -> develop) SQUASH-MERGED, squash SHA 86e67c8 (full 86e67c822d29f7e2cfa60af0981aa43c6d274a81). Lead-gate self-review APPROVED (7-point checklist, see PR #50 comment). Rebased onto develop cad0a9a to resolve a board/STATUS conflict from PR #46 (auth-otp) — keep-both. Remote ref deleted via API; worktree removed.
+Deliverables (5 files): .github/workflows/ci.yml (+frontend-changes + frontend-build matrix; build.needs+=frontend-build), cloudbuild.yaml (precheck/build/push-shell + INERT publish-remotes), docs/DEVOPS_ARCHITECTURE.md (§5.1/5.2/6.1/6.3/9.1/9.2/9.5/13.2), board + this log.
+Matrix design: dorny/paths-filter@v3 (libs/shell/mfe_pricing) -> matrix include[shell, mfe-pricing] with per-entry run = own-filter OR libs-fanout. libs/** + workspace config fan out to all dependents (consumed via @mesell/* aliases). pnpm rebuild esbuild @parcel/watcher lmdb msgpackr-extract before ng build. SP02-06 = one-line add (filter block + matrix include; templates commented in both files).
+READY -> ACTIVE flips (3): (1) founder 7-step activation (terraform WIF/CI SA -> GCP_WIF_PROVIDER+GCP_CI_SA_EMAIL repo vars -> GEMINI_API_KEY_CI secret -> main branch protection -> merge to main); first push to main fires frontend-changes+frontend-build. (2) SP1 lands frontend/apps/mfe-pricing/** -> mfe_pricing filter starts matching, mfe-pricing leg builds. (3) S5 ratifies Option C + terraform provisions gs://meesell-remotes-dev (+CDN+remotes.mesell.xyz LB/cert+SA grant) -> set _REMOTES_BUCKET in build job substitutions -> publish-remotes goes live.
+No new secrets. Cost ₹0/month (CDN/LB = C-CDN-1, sized at S5). Inter-lead handoff_mf_ci_prep.md asks 1+2+3 all addressed -> frontend lead marks CLOSED on its own board.
+Board sweep (session-end): Active = auth-otp (IN REVIEW — its integration->develop PR #46 already merged; that stale row is auth-otp-owned state, NOT mine to flip). mf-ci-c-ci-1 moved IN REVIEW -> Recently merged (#50). No rows untouched 7+ days. Inter-lead request marked RESOLVED. No blockers.
+=========
+
+## SESSION-START: mesell-ci-activation-session-1 (continuation) — 2026-06-11
+
+CI Activation Phase E execution (founder approved the plan at `.tflogs/ci-activation.tfplan` — 11 add / 1 change / 0 destroy). Steps 2-7: terraform apply (GitHub WIF pool + meesell-github-ci SA + IAM) → capture TF outputs → update GitHub repo vars (GCP_WIF_PROVIDER, GCP_CI_SA_EMAIL — REPLACE old out-of-band values) → GEMINI_API_KEY_CI (founder action) → branch protection (deferred until post-first-run) → fire first pipeline via develop→main PR. Pre-flight: account vaishnaviramoorthy OK, project ...949 OK, plan matches approval. Pre-snapshot: /tmp/meesell-pre-ci-activation-state.txt.
+
+## SESSION-END: mesell-ci-activation-session-1 — 2026-06-11
+
+### CI Activation (Phase E)
+
+**Terraform apply:** 11 resources added, 1 changed (billing budget filter — benign), 0 destroyed. Approved plan `.tflogs/ci-activation.tfplan`.
+- Created: `github-actions-pool` WIF pool + `github-actions-provider` (issuer token.actions.githubusercontent.com, condition assertion.repository == Mugunthan93/mesell)
+- Created: `meesell-github-ci` SA (email `meesell-github-ci@project-1f5cbf72-2820-4cdb-949.iam.gserviceaccount.com`)
+- IAM roles bound: AR writer, Cloud Build editor, Secret Manager accessor, IAP tunnel, VM-scoped instanceAdmin (meesell-dev only)
+- APIs enabled: `cloudbuild.googleapis.com` (adopted), `iap.googleapis.com` (new)
+- Verified live: SA ACTIVE/enabled, WIF pool state=ACTIVE, all resources in GCS-backed TF state.
+- Pre-snapshot: /tmp/meesell-pre-ci-activation-state.txt (protected VMs untouched).
+
+**GitHub variables updated** (replaced 2026-05-31 out-of-band values, updated_at 2026-06-11T01:52:57Z):
+- `GCP_WIF_PROVIDER` → `projects/888244156264/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider` (was `.../github-pool/providers/github-oidc`)
+- `GCP_CI_SA_EMAIL` → `meesell-github-ci@project-1f5cbf72-2820-4cdb-949.iam.gserviceaccount.com` (was `meesell-ci@...`)
+
+**GEMINI_API_KEY_CI:** NOT SET — FOUNDER ACTION REQUIRED. No repo secrets exist yet. Only the nightly cron job (`0 1 * * *`) consumes it; gates+build+deploy on the develop→main merge do NOT need it. Founder must create a low-quota/capped Gemini key at aistudio.google.com/apikey and `gh secret set GEMINI_API_KEY_CI --repo Mugunthan93/mesell` before tonight's nightly run.
+
+**First pipeline:** PENDING — awaiting founder approve+merge of PR #64.
+- PR #64: develop → main (130 commits, 246 files). mergeable=true, mergeable_state=blocked (the required 1-review founder gate, not a conflict).
+- main ci.yml is the OLD 8-job version; develop is the NEW 10-job version (adds frontend paths-filter matrix). The merge upgrades main to 10 jobs.
+- Pipeline URL after merge: https://github.com/Mugunthan93/mesell/actions
+
+**Check contexts (post-first-run):** PENDING. Branch protection on `main` = `required_approving_review_count: 1`, `required_status_checks.contexts: []` (strict=true). Step 6 (add check contexts) DEFERRED until after first green run. Expected contexts from job `name:` fields:
+- "CI Gate 1: unit", "CI Gate 2: smoke", "CI Gate 3: lint (10 contracts)", "CI Gate 4: integration", "CI Gate 5: golden_roundtrip"
+- "Frontend: detect changed workspace units", "Frontend: shell" + "Frontend: mfe-pricing" (matrix `${{ matrix.unit }}`)
+- "Build container images", "Deploy to K3s (dev namespace)"
+(Nightly "Nightly: slow + perf + ai_eval" is schedule-only — NOT a PR check context.)
+
+**Note:** Legacy out-of-band WIF resources (`github-pool` + `meesell-ci` SA, created 2026-05-31) are still present in GCP — harmless orphans now that the variables point at the new TF-managed pool/SA. Can be deleted via `gcloud iam workload-identity-pools delete github-pool` + `gcloud iam service-accounts delete meesell-ci@...` in a future cleanup session (founder approval required for any delete).

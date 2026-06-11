@@ -1,6 +1,6 @@
 # Cookie Policy
 
-**For:** **Stellaxis** `[ENTITY SUFFIX — fills in once §15.1 ruled]` operating the **MeeSell** service at `https://www.meesell.in`
+**For:** **Stellaxis (OPC) Private Limited** operating the **MeeSell** service at `https://www.meesell.in`
 **Effective date:** `[FOUNDER: publish date]`
 **Last updated:** `[FOUNDER: publish date]`
 **Version:** v1.0
@@ -8,10 +8,9 @@
 **Drafted by:** `meesell-legal-writer` per `docs/LEGAL_ARCHITECTURE.md` §13, §14
 
 > **Founder action required before publishing:**
-> 1. Resolve `[ENTITY SUFFIX]` per §15.1
-> 2. Confirm publish date
-> 3. Indian lawyer review pass (short doc — typically <30 minutes)
-> 4. Linked from the footer of every page
+> 1. Confirm publish date
+> 2. Indian lawyer review pass (short doc — typically <30 minutes)
+> 3. Linked from the footer of every page
 
 ---
 
@@ -39,7 +38,7 @@ The complete list:
 
 | Item | Type | Purpose | Storage | Lifetime | Set by |
 |---|---|---|---|---|---|
-| `refresh_token` | Strictly-necessary functional cookie | Authentication. Lets us refresh your session token so you do not have to log in repeatedly during a working session. Marked **HttpOnly** (JavaScript cannot read it), **Secure** (sent over HTTPS only), **SameSite=Strict** (not sent on cross-site navigation, eliminates CSRF on the refresh endpoint), scoped to `/api/v1/auth` on `meesell.in`. | Browser cookie | Up to **7 days**; deleted immediately on logout or session revocation | Stellaxis server (MeeSell backend) |
+| `refresh_token` | Strictly-necessary functional cookie | Authentication. Lets us refresh your session token so you do not have to log in repeatedly during a working session. Marked **HttpOnly** (JavaScript cannot read it), **Secure** (sent over HTTPS only), **SameSite=Strict** (not sent on cross-site navigation, eliminates CSRF on the refresh endpoint), scoped to `/api/v1/auth` on `meesell.in`. | Browser cookie | Up to **7 days**; deleted immediately on logout or session revocation | Stellaxis (OPC) Private Limited server (MeeSell backend) |
 | Service-worker cache | Strictly-necessary functional storage | Offline-friendly delivery of the application shell (HTML, CSS, JavaScript). Does not store your personal data — only the static application files. | Browser cache (service worker) | Cleared when you clear your browser cache, or when a new application version replaces it | MeeSell client (PWA service worker) |
 
 That is the complete list. We **do not use**:
@@ -104,10 +103,10 @@ For general questions: `support@meesell.in`
 | Field | Value |
 |---|---|
 | Document | MeeSell Cookie Policy v1.0 |
-| Operator | Stellaxis `[ENTITY SUFFIX]` |
+| Operator | Stellaxis (OPC) Private Limited |
 | Status | DRAFT — founder + lawyer review required |
 | Drafted by | `meesell-legal-writer` 2026-06-05 |
 | Source citations | `docs/LEGAL_ARCHITECTURE.md` §13, §14; `docs/FRONTEND_ARCHITECTURE.md` §1.F (token storage model); `docs/BACKEND_ARCHITECTURE.md` §4.B (refresh cookie scope); `docs/LEGAL_AND_COMPLIANCE_INFO.md` §6 |
 | Lawyer review markers | 1 — search for `[LAWYER REVIEW]` (§4 strictly-necessary classification) |
-| Founder placeholders | search for `[FOUNDER:` or `[ENTITY SUFFIX]` |
+| Founder placeholders | search for `[FOUNDER:` |
 | Pairs with | `privacy-policy.md` §13 (headline), `terms-of-service.md` §9 (data protection) |

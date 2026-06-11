@@ -1,0 +1,50 @@
+# Feature Board — Infra Lead
+
+**Lead agent:** `meesell-infra-builder`
+**Domain:** infra
+**Last updated:** 2026-06-11 (ci-activation — Phase E TF apply DONE + GitHub vars updated; PR #64 develop→main open awaiting founder gate)
+**This file is the single domain-level status surface for the lead.**
+
+---
+
+## Active features
+
+| Feature | Group branch | Status | Current session | Last touched | Blocking | Notes |
+|---|---|---|---|---|---|---|
+| ci-activation | (no branch — TF/GitHub-settings ops) | IN PROGRESS | mesell-ci-activation-session-1 | 2026-06-11 | founder gate — PR #64 + GEMINI_API_KEY_CI | Phase E TF applied (11 add/1 chg/0 destroy): github-actions-pool WIF + meesell-github-ci SA + 5 IAM + cloudbuild/iap APIs. GitHub vars GCP_WIF_PROVIDER+GCP_CI_SA_EMAIL repointed to new TF resources. PR #64 develop→main open (founder approve+merge fires 1st pipeline). GEMINI_API_KEY_CI = founder action (nightly-only). Branch-protection check contexts DEFERRED to post-1st-run. |
+| auth-otp | feature/auth-otp/infra | IN REVIEW | — | 2026-06-11 | — | FE-D5 env-var wiring (dev=30/120; staging overlay=60/300) + auth-secret-rotation runbook. Base=feature/auth-otp/integration. |
+
+## Recently merged (last 14 days)
+
+| Feature | Merged to | Date | PR | Notes |
+|---|---|---|---|---|
+| mf-ci-c-ci-1 | develop | 2026-06-11 | #50 (squash 86e67c8) | C-CI-1 DISCHARGED-pending-activation: ci.yml frontend paths-filter matrix (shell + mfe-pricing pilot, libs fan-out) REPLACING single-frontend conditional; cloudbuild shell-image + INERT GCS remote publish (`_REMOTES_BUCKET`). Config+docs only. Cost ₹0. |
+| auth-otp | feature/auth-otp/integration | 2026-06-11 | #45 (squash d2b734e) | FE-D5 env wiring (dev=30/120; staging overlay=60/300) + auth-secret-rotation runbook. Founder-flags F1 (APP_ENV), F2 (single-pepper backend follow-up), F3 (dry-run-server at deploy). Cost ₹0. |
+| gate4-confirmation | develop | 2026-06-10 | #33 (merge f30d61f) | MF §9 Gate 4 hosting confirmation — VERDICT CONFIRMED-WITH-CONDITIONS (6 conditions feed Sub-plan 7) |
+| housekeeping-v1 | feature/housekeeping-v1 | 2026-06-10 | #27 (squash 6096244) | dead GitLab CI removal + SA key disk hygiene |
+
+## Inter-lead requests open
+
+| To lead | About feature | Request | Opened | Status |
+|---|---|---|---|---|
+| frontend-coordinator (incoming) | mf-workspace-foundation | MF CI prep C-CI-1 (handoff_mf_ci_prep.md) — replace single-frontend CI with paths-filter matrix before SP1 | 2026-06-10 | RESOLVED via PR #50 (merged develop) — frontend lead marks CLOSED on its own board |
+
+---
+
+## Status vocabulary
+
+| Status | Meaning |
+|---|---|
+| `PENDING` | Feature is on the lead's backlog; no branch exists yet. |
+| `IN PROGRESS` | A `feature/{name}/infra` branch exists; lead is actively committing. |
+| `IN REVIEW` | A PR is open against `feature/{name}`; awaiting lead self-review approval. |
+| `MERGED` | The infra group's PR has merged to `feature/{name}` — the group is done for this feature. |
+| `BLOCKED` | Work stopped pending an inter-lead request, infra change, or founder decision. |
+
+A feature row stays on the Active features table until the infra group's PR merges to `feature/{name}`; then it moves to "Recently merged" for 14 days before being removed.
+
+---
+
+## Acceptance gate
+
+Group-PR approval criteria live in the infra PR template at `.github/PULL_REQUEST_TEMPLATE/infra.md`. The lead approves a `feature/{name}/infra` → `feature/{name}` PR only when the template is filled completely — including the `terraform plan` output (`Plan: X to add, Y to change, Z to destroy`), `kubectl apply --dry-run=server` clean output, secret refs documented with no JSON keys, Workload Identity Federation paths confirmed, smoke deploy to `dev` succeeded (`kubectl get pods -n dev` Ready), cost impact estimate recorded (with explicit founder sign-off for any change > ₹500/month) — plus CI gate-3 (lint — manifest validation) green and the rollback procedure for the resource type documented per `docs/INFRASTRUCTURE_PLAYBOOK.md`.

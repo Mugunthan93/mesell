@@ -1,12 +1,11 @@
 import {
-  ChangeDetectionStrategy, Component, inject, signal, ViewChild
+  ChangeDetectionStrategy, Component, inject, signal, viewChild
 } from '@angular/core';
 
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { Drawer } from 'primeng/drawer';
-import { Menu } from 'primeng/menu';
-import { MenuItem } from 'primeng/api';
-import { AuthService } from '../../core/services/auth.service';
+import { AuthService } from '@mesell/core';
+import { MeeDrawerComponent, MeeMenuComponent } from '@mesell/ui-kit';
+import type { MeeMenuItem } from '@mesell/ui-kit';
 
 @Component({
   selector: 'mee-shell',
@@ -14,13 +13,13 @@ import { AuthService } from '../../core/services/auth.service';
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     RouterOutlet, RouterLink, RouterLinkActive,
-    Drawer, Menu,
+    MeeDrawerComponent, MeeMenuComponent,
   ],
   templateUrl: './shell.component.html',
   styleUrls:   ['./shell.component.css'],
 })
 export class ShellComponent {
-  @ViewChild('userMenu') userMenu!: Menu;
+  private readonly userMenu = viewChild.required<MeeMenuComponent>('userMenu');
 
   readonly auth = inject(AuthService);
   protected mobileSidebarVisible = signal(false);
@@ -32,11 +31,15 @@ export class ShellComponent {
     { label: 'Profile',     route: '/profile',      icon: 'pi pi-user' },
   ] as const;
 
-  protected readonly userMenuItems: MenuItem[] = [
+  protected readonly userMenuItems: MeeMenuItem[] = [
     { label: 'My Profile', icon: 'pi pi-user',     routerLink: '/profile' },
     { separator: true },
     { label: 'Log out',    icon: 'pi pi-sign-out', command: () => this.auth.logout() },
   ];
+
+  protected toggleUserMenu(event: Event): void {
+    this.userMenu().toggle(event);
+  }
 
   protected get userInitials(): string {
     const name = this.auth.currentUser()?.name ?? 'U';

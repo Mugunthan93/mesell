@@ -23,9 +23,9 @@ import {
   MeeProgressBarComponent,
   MeeTextareaComponent,
   MeeTreeSelectComponent,
-} from '../../ui';
-import type { MeeTreeNode } from '../../ui';
-import { PageHeaderComponent, LoadingSkeletonComponent } from '../../shared';
+} from '@mesell/ui-kit';
+import type { MeeTreeNode } from '@mesell/ui-kit';
+import { PageHeaderComponent, LoadingSkeletonComponent } from '@mesell/composites';
 
 import {
   SmartPickerApiService,

@@ -4,7 +4,7 @@ import {
   signal,
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { MeeButtonComponent } from '../../ui';
+import { MeeButtonComponent } from '@mesell/ui-kit';
 
 @Component({
   selector: 'app-landing',

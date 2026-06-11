@@ -9,9 +9,9 @@ import {
 import { RouterLink } from '@angular/router';
 import { Router } from '@angular/router';
 import { AuthLayoutComponent } from '../../../layouts/auth-layout/auth-layout.component';
-import { AuthService } from '../../../core/services/auth.service';
-import { MeeOtpInputComponent } from '../../../ui/otp-input/otp-input.component';
-import { MeeButtonComponent } from '../../../ui/button/button.component';
+import { AuthService } from '@mesell/core';
+import { MeeOtpInputComponent } from '@mesell/ui-kit/otp-input/otp-input.component';
+import { MeeButtonComponent } from '@mesell/ui-kit/button/button.component';
 
 @Component({
   selector: 'mee-otp-verify',

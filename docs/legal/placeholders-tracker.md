@@ -171,10 +171,10 @@ Cross-reference: `docs/LEGAL_ARCHITECTURE.md` §15.
 
 | # | Decision | Status | Blocks |
 |---|---|---|---|
-| 15.1 | Entity (Sole Prop / OPC / LLP / Pvt Ltd) | **DEFERRED** — Stellaxis not yet registered | `[ENTITY SUFFIX]` resolution; Razorpay KYC checklist (Sole-Prop variant vs OPC/Pvt-Ltd variant); GST checklist |
+| 15.1 | Entity (Sole Prop / OPC / LLP / Pvt Ltd) | **RATIFIED** — OPC immediately (founder ruling 2026-06-11) | Blocks: `[ENTITY SUFFIX]` resolution — NOW RESOLVED as "(OPC) Private Limited". Razorpay KYC + GST checklists single-pathed to OPC. |
 | 15.2 | Incorporator (Vakilsearch / IndiaFilings / local CA) | **DEFERRED** | Incorporation paperwork only |
 
-All other §15 decisions (13 of 15) are **RATIFIED** as of 2026-06-05.
+All other §15 decisions (14 of 15) are **RATIFIED** as of 2026-06-11. Only §15.2 (incorporator) remains DEFERRED.
 
 ---
 

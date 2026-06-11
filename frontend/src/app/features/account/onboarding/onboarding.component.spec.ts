@@ -13,9 +13,9 @@ import {
   MeeButtonComponent,
   MeeInputComponent,
   MeeStepsComponent,
-} from '../../../ui';
-import type { MeeStep } from '../../../ui';
-import type { MeeButtonVariant } from '../../../ui';
+} from '@mesell/ui-kit';
+import type { MeeStep } from '@mesell/ui-kit';
+import type { MeeButtonVariant } from '@mesell/ui-kit';
 
 // Stubs for mee-* children to avoid PrimeNG rendering in jsdom
 
