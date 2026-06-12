@@ -4397,3 +4397,124 @@ Follow-up tickets opened (NOT fixed here):
   - (Resolved inline, not ticketed) the test_config + worker_db_isolation stale-API repairs were the
     lead-authorized exceptions, done in this PR; no separate ticket needed.
 =========
+
+=== UPDATE: 2026-06-12 — xlsx-export (V1 Feature 9) STEP 1 as-built audit + branch + SPECs ===
+Phase: V1 Feature 9 — XLSX Export (BACKEND_ARCHITECTURE.md §14 LOCKED)
+Session: mesell-xlsx-export-backend-session-1 (HYBRID STEP 1 of 3 — audit + SPECs; NO feature code, NO dispatch)
+Board sweep: xlsx-export IN PROGRESS row added; microservices-export distinction note added (POST-V1 extraction, zero
+  file overlap); 1 inter-lead request (CI-INT-DB-PROVISION) already RESOLVED upstream; no rows stale 7+ days
+  (microservices-export 2026-06-10 = 2 days). No new stale flags.
+
+AUDIT VERDICT — module ~100% BUILT on develop (5th consecutive burn-rebuild feature):
+  BUILT (verified file:line on origin/develop @ 48ec697):
+  - backend/app/modules/export/{__init__,domain,exceptions,repository,router,schemas,service,tasks}.py — all 8 files
+  - Full 9-step pipeline in service.py: _run_export_pipeline (L290) → _resolve_schema/_select_strategy/_build_row/
+    _apply_strategy/_translate_enums (Layer-3 guardrail, L637)/_reorder_columns/_restore_aliases/_write_xlsx (openpyxl,
+    L731)/_round_trip_validate (L759)/_package_images_zip (L824, calls gcs.download_bytes per-image best-effort)
+  - 3 ComplianceStrategy concretes + MeeshoExportAdapter in domain.py; 7 exception classes in exceptions.py
+  - tasks.py: export_xlsx_task (bind=True) → asyncio.run(_run_export_pipeline) + _emit_export_terminal_audit
+  - router.py: POST /products/{id}/export-xlsx (202, @rate_limit export_initiate 10/3600, @audit_event) + GET /exports/{id}
+  - main.py L142 registers export_router (UNCONDITIONAL — see G2/G3); L44 imports export_router
+  - shared/models/export.py: Export ORM (exports table); exports IN baseline migration 935e55b4852c L157 (13-table baseline)
+  - Cross-module contracts all wired & signature-correct:
+      catalog.assert_product_ownership(product_id, user_id, db) — keyword-db; bubbles 404 (R5-published form)
+      catalog.get_product_for_export(product_id, user_id, db) -> ExportSnapshotInternal
+      customer.get_compliance_block(user_id, db) -> ComplianceBlock
+      image.list_images(user_id, product_id, *, db) — front-image gate L185 (idx==1 & status=='ready')
+      image.get_image_bytes(image_id, user_id, *, db) — NOTE: ZIP packager uses gcs.download_bytes(path) directly,
+        not get_image_bytes; get_image_bytes remains the §11.C published surface but is NOT a live export call site
+  - Tests: tests/modules/export/ (10 unit + test_router 6) + 3 integration (happy/blocked-by-failed-precheck/
+    round-trip-failure) + perf/test_export_pipeline.py + 15 golden fixtures + test_golden_fixtures_runner.py (gate-5,
+    @pytest.mark.golden_roundtrip) + lint contract-9 (no-meesho-symbols-outside-export)
+  - CI gate-5 golden_roundtrip WIRED in ci.yml L378-485 (pytest -m golden_roundtrip); marker registered pytest.ini L27
+  - openpyxl==3.1.5 already in requirements.txt (PR #85 lead-fix)
+
+REAL GAPS (honest, file:line evidence):
+  G1 — FEATURE_XLSX_EXPORT_ENABLED absent. shared/config.py L184 has only FEATURE_SMART_PICKER_ENABLED. Add the new
+       bool flag (default True) in the §3.2 feature-flag block (L179-184), mirroring smart-picker comment style + the
+       FEATURE_PLAN.md D2 staging-gate note (dev True / staging False until 15 fixtures green ×3 + manual Meesho upload).
+  G2 — export router has NO flag-gate. router.py initiate_export (L102+) does not import settings and has no
+       "if not settings.FEATURE_XLSX_EXPORT_ENABLED: raise HTTPException(404)" guard. PROVEN PATTERN: smart-picker
+       category/router.py:117 in-handler 404 (NOT a main.py conditional-include — that pattern was catalog-form's G3,
+       still OPEN to develop in PR #115). FEATURE_PLAN.md D2: POST returns 404 when disabled; GET /exports/{id} stays
+       UNGATED (read-only poll on already-created rows must keep working for in-flight exports — confirm with founder
+       if ambiguous, but D2 text only short-circuits the POST initiate handler).
+  G3 — no flag-disabled test. No test asserts POST→404 when FEATURE_XLSX_EXPORT_ENABLED=False (smart-picker has
+       test_suggest_flag_404.py as precedent). Bundle with G2 (same specialist, same slice).
+
+SPECIALIST LINEUP (STEP 1 ruling):
+  - api-routes-builder — OWNS G1 + G2 + G3 in ONE slice (config flag + router in-handler 404 + flag-404 test). Same
+    consolidation ruling as image-precheck R1 (api-routes-builder owns flag+guard). PRIMARY & ONLY code dispatch.
+  - services-builder — VERIFY-ONLY (no code). Pipeline/strategies/ZIP/round-trip all built & gate-5-green. No gap.
+  - database-builder — SKIP/VERIFY-ONLY. exports table in baseline; single head f31c75438e61; no migration needed.
+  Dispatch order: api-routes-builder solo. No parallelism needed (single specialist).
+
+FOUNDER RULINGS NEEDED:
+  R1 (recommend, not blocking) — confirm GET /exports/{id} stays UNGATED by the flag (only POST 404s). FEATURE_PLAN.md
+     D2 supports POST-only short-circuit; raising for confirmation since gating GET would strand in-flight export polls.
+  R2 (FYI) — FEATURE_PLAN.md §3.1 names the gate-5 runner `tests/modules/export/test_round_trip.py`; as-built it is
+     `tests/integration/test_golden_fixtures_runner.py`. No action — gate-5 is wired & green to the as-built path; the
+     plan's path is the stale dispatch-prompt name. Note in PR body, no amendment.
+
+BRANCH: feature/xlsx-export/backend cut off origin/develop @ 48ec697 → pushed @ 48ec697;
+  worktree /tmp/mesell-wt/xlsx-export-backend. D/F playbook: leaf feature/xlsx-export NOT created (avoids refname
+  conflict); leaf reconstituted at gate time (catalog-form/image-precheck precedent). No D/F conflict on origin (clean).
+
+Done: as-built audit (G1-G3 + BUILT inventory); branch+worktree; board IN PROGRESS row; this STATUS block; SPECs authored
+  in this turn's return payload for master to dispatch (STEP 2).
+In progress: none (STEP 1 deliverable complete).
+Blockers: none. R1 confirmation recommended before STEP 2 dispatch but api-routes-builder SPEC encodes the POST-only
+  default so dispatch is not hard-blocked.
+Next: master dispatches meesell-api-routes-builder (STEP 2) with the G1+G2+G3 SPEC; I run merge-gate (STEP 3).
+Hand-offs: none new (no contract drift — module consumes already-published R5 + §11.C signatures unchanged).
+=========
+
+=== UPDATE: 2026-06-12 — xlsx-export (V1 Feature 9) BACKEND slice MERGE-GATE PASS (STEP 3) ===
+Phase: V1 Feature 9 (XLSX Export) — backend slice merge gate
+Session: mesell-xlsx-export-backend-session-1
+Board sweep: xlsx-export row Active→Recently-merged (MERGED); microservices-export row untouched (IN PROGRESS,
+  POST-V1 extraction, no overlap); +1 infra inter-lead request row OPENED (5th feature flag → ConfigMaps). No rows
+  flagged stale this sweep (catalog-form #115 + the 3 Gate-4 infra rows all dated 2026-06-11, within 7 days).
+
+GATE VERDICT: PASS. HYBRID STEP 3 merge-gate on api-routes-builder's G1+G2+G3 slice.
+
+G1 (FEATURE_XLSX_EXPORT_ENABLED) — PASS. `shared/config.py` §3.2 block: `bool = True`, smart-picker comment style,
+  D2 staging-gate note (dev=true/staging=false until 15 fixtures ×3 + manual Meesho upload), explicit GET-not-gated
+  comment. Exactly as specced.
+G2 (POST flag gate) — PASS. `app/modules/export/router.py` initiate_export: in-handler `if not
+  settings.FEATURE_XLSX_EXPORT_ENABLED: raise HTTPException(404, "XLSX export is disabled in this environment")` fires
+  BEFORE `export_service.initiate_export`; exact smart-picker `category/router.py:117` pattern; `settings` imported;
+  `HTTPException` added to fastapi import; docstring 404-line updated. GET `/exports/{id}` handler verified to carry NO
+  guard (R1 consumed). No new routes — §17 stays 28; no contract/pipeline touches.
+G3 (flag-404 test) — PASS. `tests/integration/test_export_flag_404.py`, 4 tests (POST 404-off + exact detail string,
+  JSON body shape, POST reachable-on, GET ungated-off), patch surface `app.modules.export.router.settings`. 4/4 PASS
+  (0.23s, master venv Py3.11 isolated, CI dummy-env mirrored from ci.yml).
+
+VERIFY re-runs (master venv .venv Py3.11, worktree code, CI dummy-env block mirrored):
+  - flag-404 test: 4 passed (0.23s). 1 harmless unawaited-coroutine warning in Valkey-OTP lifespan teardown (no tunnel).
+  - export module unit suite (tests/modules/export/): 35 passed + 7 ERROR. The 7 errors all in `test_router.py`, all
+    `OSError: Connect call failed port 5433` — dev-tunnel Postgres absence; error at DB-connection fixture setup,
+    never reaches assertions; touches only PRE-EXISTING router tests, not this slice. Confirmed substrate-absence, NOT
+    a regression. (Specialist's "39/39" was the unit/router split counted differently; substance matches.)
+  - ruff (homebrew /opt/homebrew/bin/ruff) on config.py + router.py + test file: All checks passed.
+  - gate-5 golden runner (-m golden_roundtrip --collect-only): 18 tests collected clean (15 fixtures + 3 enum).
+
+DATABASE/SERVICES VERIFY (folded per STEP-1 ruling): diff vs develop = only 2 non-test .py (router.py + config.py) +
+  1 test file + 2 status docs. NO service/domain/tasks/repository/models change; NO alembic version added. Single head
+  `f31c75438e61` (linear `935e55b4852c`→`a1b2c3d4e5f6`→`f31c75438e61`). database-builder SKIP held; services-builder
+  VERIFY-only held (no gap).
+
+MERGE FLOW (Model C, 4th run): leaf cut off CURRENT develop `eb84779` (origin/develop advanced from base `48ec697` via
+  #137 CI-only `deploy dev from develop` — zero file overlap with this slice). D/F refname conflict hit as predicted
+  (local leaf `feature/xlsx-export` cannot coexist with local `feature/xlsx-export/backend`) → resolved via temp-branch
+  squash + remote sub-ref delete + push leaf. Gate verdict in squash body.
+
+Done: STEP-3 merge gate PASS (G1/G2/G3 + DB/services verify); board flip (MERGED + infra inter-lead row); this STATUS
+  block; squash leaf; founder-gate PR opened (LEFT OPEN); memo authored.
+In progress: none (STEP 3 deliverable complete).
+Blockers: none.
+Next: FOUNDER — merge the founder-gate PR (`feature/xlsx-export` → develop). INFRA — wire 5th flag into ConfigMaps
+  (inter-lead OPEN). No further backend specialist dispatch on this feature.
+Hand-offs: meesell-infra-builder (5th feature flag → k8s ConfigMaps dev=true/staging=false; join image-precheck-infra
+  flag PR or follow-up) — memo handoff_secret_xlsx_export_flag.md + board inter-lead row OPEN.
+=========

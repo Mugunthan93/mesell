@@ -183,6 +183,15 @@ class Settings(BaseSettings):
     # Route returns 404 when False per Master Plan §3.2 backend protocol.
     FEATURE_SMART_PICKER_ENABLED: bool = True
 
+    # FEATURE_XLSX_EXPORT_ENABLED: dev default True; staging default False
+    # until 15 golden fixtures pass ×3 consecutive develop-HEAD runs AND a
+    # manual Meesho supplier-panel upload is accepted (D2 staging gate per
+    # docs/plans/features/xlsx-export/FEATURE_PLAN.md D2).
+    # POST /products/{id}/export-xlsx returns 404 when False.
+    # GET /exports/{id} is NOT gated — in-flight export polls must keep working.
+    # Route returns 404 on POST when False per Master Plan §3.2 backend protocol.
+    FEATURE_XLSX_EXPORT_ENABLED: bool = True
+
     # ── Validators ─────────────────────────────────────────────────────────
     @field_validator("CORS_ALLOWED_ORIGINS", mode="before")
     @classmethod
