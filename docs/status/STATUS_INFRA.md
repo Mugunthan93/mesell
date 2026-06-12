@@ -1,8 +1,39 @@
 # STATUS — INFRASTRUCTURE
 
 **Owner:** `meesell-infra-builder`
-**Last update:** 2026-06-12 (dead-gemini-key-cleanup — backend audit ALL-CLEAR on the live path (cluster holds the VALID `gemini-api-key`, hash `ef9bbd1ca21f`); F1 deleted stale `scripts/secrets-from-gcp.sh`; F2 annotated the audit doc; **GCP Secret Manager still holds the dead `meesell-gemini-api-key` (and likely other `meesell-*`-prefixed duplicates) — recommend verify + delete next session, SM mutation NOT done in this chore**. Prior: DEV DEPLOY-FROM-DEVELOP @ tip 067d664 — api+worker hand-built+pushed + rolled out 2/2 to dev; 5/5 verifications GREEN.)
+**Last update:** 2026-06-12 (**Gate-4 (integration) RED on develop logged as a formal inter-lead request → backend-coordinator** (first seen PR #158 run 27392278294 ~03:24Z). Prior: GEMINI_API_KEY_CI SET + founder-verified — the last pending CI-activation item is now DONE; new flag: SM `meesell-gemini-api-key` is DEAD/invalid; dead-gemini-key-cleanup F1/F2. ₹0/mo.)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
+
+## UPDATE — 2026-06-12 — Gate-4 (integration) RED on develop — formal inter-lead request → backend-coordinator
+
+=== STEP: log the new Gate-4 integration RED as an inter-lead request (per the #145 Gate-1-red precedent) ===
+Phase: DEVOPS_ARCHITECTURE.md §5 (CI gates) + repo-management §7.5 (decentralized memo / inter-lead protocol) — docs-only, no cluster/TF/ci.yml. The ci.yml Gate-4 service+env block is CORRECT (the prior Gate-4 saga #104/#107/#108/#110 made it green); this RED is a fresh backend test-harness regression, NOT an infra defect.
+Session: infra docs close-out (CI-activation tail)
+
+**Gate-4 (integration) RED on develop as of 2026-06-12 ~03:24Z (first seen PR #158 run 27392278294):** multiple integration failures — customer eligibility ×2, customer onboarding, iam replay-attack, catalog lifecycle, shared-database `get_db`, export router setup-errors ×4+, customer seller-profile setup-errors. Suspected fallout of tonight's merges touching shared conftest/modules (#150 and feature slices). This is the same class as the earlier Gate-4 saga (conftest/shared-fixture coupling), surfaced anew by the night's merges.
+
+**ASSIGNED: meesell-backend-coordinator.** Logged as an inter-lead request row on `feature_board_infra.md` (Inter-lead requests open, `gate4-integration`, OPEN, 2026-06-12). NOTE per CHORE-C: backend triage must FIRST sweep open + recently-merged (~24h) PRs for an existing fix before dispatching new work — a sibling fix may already be in flight.
+
+**Infra-side position:** ci.yml Gate-4 unchanged + correct; no infra fix is owed. Consequence: with branch protection live, every PR to develop is `mergeable_state: blocked` on the Gate-4 red until backend lands the fix; `--admin` remains the founder/master meanwhile-merge path. Cost ₹0.
+
+---
+
+## UPDATE — 2026-06-12 — GEMINI_API_KEY_CI SET + founder-verified (last CI-activation item DONE)
+
+=== STEP: confirm GEMINI_API_KEY_CI live + flag the dead meesell-gemini-api-key SM container ===
+Phase: INFRASTRUCTURE_PLAYBOOK §9 (Secret Management — discipline; names + masked form only, no values) — docs-only chore (CLAUDE.md Rule 7 single-agent fast mode). No terraform, no cluster.
+Session: docs chore (no feature session — CI-activation tail close-out)
+
+**GEMINI_API_KEY_CI GitHub Actions secret — SET 2026-06-12T01:55Z.** This was the last pending CI-activation item (all prior close-outs listed it as "founder-pending, nightly-only, non-blocking"). Now confirmed live: `gh api repos/Mugunthan93/mesell/actions/secrets` shows `GEMINI_API_KEY_CI` updated_at `2026-06-12T01:55:12Z`. Value NOT printed (masked `AIzaSyB...IytY` form only). Sourced from GCP Secret Manager `gemini-api-key` — the proven-valid key (HTTP 200 against the Gemini API; founder visually verified it in AI Studio and confirmed). Consumer: the nightly cron job (`0 1 * * *`) `pytest -m "ai_eval"` only — gates+build+deploy do NOT use it, so this was never blocking.
+
+**CAVEAT recorded:** `GEMINI_API_KEY_CI` is the SAME key as prod/local (sourced from SM `gemini-api-key`) — there is NO separate quota cap. A capped-key swap (a distinct low-quota CI-only key per the original DEVOPS_ARCHITECTURE.md plan) remains OPTIONAL future hardening, not required for V1.
+
+**NEW FLAG (needs a one-time backend/AI-lane check) — SM `meesell-gemini-api-key` is INVALID.** GCP Secret Manager container `meesell-gemini-api-key` returns HTTP 400 (placeholder/revoked). It is NOT the same as the valid `gemini-api-key` (no `meesell-` prefix), which is the one all live workloads + CI source. If any k8s secret, manifest, or backend config sources THAT dead name (`meesell-gemini-api-key`) instead of `gemini-api-key`, runtime Gemini calls would fail. ACTION: backend/AI lane does a one-time grep of secret refs to confirm nothing reads `meesell-gemini-api-key`. (Infra-side: the live `backend-secrets` K8s secret + dev/staging templates all reference `gemini-api-key` per prior sessions — but the dead container's existence is a footgun worth flagging.) NOTE: the `dead-gemini-key-cleanup` chore (logged in the block below) defused the repo-side stale references to this name; the dead SM container itself is logged as a follow-up backlog item.
+
+**Validation:** `gh api .../actions/secrets` → `GEMINI_API_KEY_CI` present, updated_at 2026-06-12T01:55:12Z. No value read or printed. No cluster/TF/SM mutation. Cost ₹0.
+**Board:** ci-activation row (Recently merged) + header GEMINI_API_KEY_CI mention flipped founder-pending → DONE 2026-06-12.
+
+---
 
 ## UPDATE — 2026-06-12 — dead-gemini-key-cleanup (single-agent fast mode, founder-approved)
 
@@ -180,7 +211,7 @@ Session: mesell-image-precheck-infra-session-1
 
 Board sweep (start+end): Active rows ci-activation/auth-otp/mfe-cutover all last-touched 2026-06-11; none stale 7+ days as of 2026-06-12. Added image-precheck row (IN REVIEW on PR open) + inter-lead request to backend.
 
-**Last update:** 2026-06-12 (ci-activation CLOSE-OUT — **CI/CD PIPELINE ACTIVE**: run 9 / PR #132 / merge `62713935` = first fully-green end-to-end pipeline; 6-rung deploy-bug ladder codified (#113/#116/#119/#123/#127/#131); branch protection develop-only (13 contexts); GEMINI_API_KEY_CI founder-pending. Prior same-day: deploy-from-develop FOUNDER RULING #137 — dev deploys fire from develop, NOT main. See the two latest UPDATE blocks.)
+**Last update:** 2026-06-12 (ci-activation CLOSE-OUT — **CI/CD PIPELINE ACTIVE**: run 9 / PR #132 / merge `62713935` = first fully-green end-to-end pipeline; 6-rung deploy-bug ladder codified (#113/#116/#119/#123/#127/#131); branch protection develop-only (13 contexts); GEMINI_API_KEY_CI was founder-pending — **now SET + founder-verified 2026-06-12, see the GEMINI_API_KEY_CI UPDATE block at top.** Prior same-day: deploy-from-develop FOUNDER RULING #137 — dev deploys fire from develop, NOT main. See the two latest UPDATE blocks.)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
 
 ## UPDATE — 2026-06-12 — mesell-deploy-from-develop-infra-session-1 (FOUNDER RULING: deploy dev from develop)
