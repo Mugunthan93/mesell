@@ -40,6 +40,8 @@ import {
 } from '@angular/router';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { runInInjectionContext, EnvironmentInjector } from '@angular/core';
+import { provideHttpClient, withFetch } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 
 import { AuthService, AuthUser, authGuard } from '@mesell/core';
 import { ProfileComponent } from './profile.component';
@@ -67,6 +69,11 @@ describe('SP03 D22 C5 — AuthService singleton across the federation boundary',
           { path: 'dashboard', children: [] },
         ]),
         provideAnimationsAsync('noop'),
+        // ProfileComponent now has SellerProfileService in providers[], which uses ApiClient
+        // (inject(HttpClient)). Provide HttpClient so DI resolves at component creation.
+        // HttpTestingController keeps all requests pending — no flush needed for the C5 auth test.
+        provideHttpClient(withFetch()),
+        provideHttpClientTesting(),
       ],
     }).compileComponents();
 

@@ -1,51 +1,61 @@
 import {
+  AfterViewInit,
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
+  OnInit,
+  ViewChild,
   computed,
   inject,
   signal,
 } from '@angular/core';
 import {
-  AbstractControl,
   FormBuilder,
   ReactiveFormsModule,
-  ValidationErrors,
-  ValidatorFn,
   Validators,
 } from '@angular/forms';
 import { Router } from '@angular/router';
-import { AuthLayoutComponent } from '@mesell/composites';
+import {
+  AuthLayoutComponent,
+  MeeAlertBannerComponent,
+  MeeOfflineBannerComponent,
+  EmptyStateComponent,
+} from '@mesell/composites';
 import {
   MeeButtonComponent,
   MeeInputComponent,
   MeeStepsComponent,
+  MeeSkeletonComponent,
 } from '@mesell/ui-kit';
 import type { MeeStep } from '@mesell/ui-kit';
+import { NetworkService } from '@mesell/core';
+import { SellerProfileService, ProfileValidationError } from './services/seller-profile.service';
 
-/** GST pattern: 15-char GSTIN format */
-const GST_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
-
-/** Validator that only applies GST pattern when the field has a non-empty value. */
-export function optionalGstValidator(): ValidatorFn {
-  return (control: AbstractControl): ValidationErrors | null => {
-    const value = (control.value as string | null | undefined) ?? '';
-    if (!value.trim()) return null;
-    return GST_PATTERN.test(value) ? null : { gstPattern: true };
-  };
+/** Validator for 6-digit Indian PIN code (backend pattern ^\d{6}$). */
+function pincodeValidator(control: { value: string | null | undefined }): { pincodeInvalid: true } | null {
+  const value = control.value ?? '';
+  if (!value) return null; // optional field — empty is allowed
+  return /^\d{6}$/.test(value) ? null : { pincodeInvalid: true };
 }
 
 @Component({
   selector: 'mee-onboarding',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  providers: [SellerProfileService],
   imports: [
     ReactiveFormsModule,
     AuthLayoutComponent,
     MeeStepsComponent,
     MeeInputComponent,
     MeeButtonComponent,
+    MeeSkeletonComponent,
+    MeeAlertBannerComponent,
+    MeeOfflineBannerComponent,
+    EmptyStateComponent,
   ],
   template: `
+    <mee-offline-banner />
     <mee-auth-layout>
       <!-- Decorative progress indicator -->
       <mee-steps
@@ -64,55 +74,186 @@ export function optionalGstValidator(): ValidatorFn {
           class="text-center mt-1"
           style="font-size: 14px; color: var(--mee-color-on-surface-muted);"
         >
-          Tell us about your shop
+          Legal Metrology details for Meesho compliance
         </p>
       </div>
 
-      <form [formGroup]="form" (ngSubmit)="onSubmit()" novalidate class="flex flex-col gap-4">
+      <!-- Initial-load skeleton: while getProfile() is in flight (spec §3.4 item 1) -->
+      @if (initialLoading()) {
+        <div aria-live="polite" aria-label="Loading your profile" role="status" class="space-y-3 py-4">
+          <mee-skeleton variant="text" [lines]="4" />
+          <mee-skeleton variant="text" [lines]="3" />
+        </div>
+      } @else {
 
-        <mee-input
-          [label]="'Business / Shop Name'"
-          [required]="true"
-          [error]="businessNameError()"
-          formControlName="businessName"
-        />
+        <!-- Error banner — gets focus on appearance (a11y) -->
+        @if (errorMessage()) {
+          <div
+            #errorBannerRef
+            tabindex="-1"
+            class="mb-4 focus:outline-none"
+            aria-live="assertive"
+          >
+            <mee-alert-banner
+              variant="error"
+              [message]="errorMessage()!"
+            />
+          </div>
+        }
 
-        <mee-input
-          [label]="'City'"
-          [required]="true"
-          [error]="cityError()"
-          formControlName="city"
-        />
+        <!-- First-time seller empty-state hint (all fields blank after load) -->
+        @if (isFirstTimeSeller() && !submitted()) {
+          <div class="mb-4">
+            <mee-empty-state
+              icon="assignment"
+              message="Fill in your manufacturer and packer details to complete Meesho onboarding."
+            />
+          </div>
+        }
 
-        <mee-input
-          [label]="'GST Number (optional)'"
-          [error]="gstError()"
-          formControlName="gstNumber"
-        />
+        <!--
+          7-field base-profile form — 360px layout:
+          flex-column + gap: --mee-space-3 (12px) so all fields stack cleanly.
+          Section headings use margin-top: --mee-space-2 (8px) for visual grouping.
+        -->
+        <form
+          [formGroup]="form"
+          (ngSubmit)="onSubmit()"
+          novalidate
+          aria-label="Business setup form"
+        >
+          <div class="flex flex-col" style="gap: var(--mee-space-3);">
 
-        <mee-button
-          [label]="'Save & Continue'"
-          [loading]="loading()"
-          [disabled]="form.invalid || loading()"
-          [fullWidth]="true"
-          [variant]="'primary'"
-          (clicked)="onSubmit()"
-        />
+            <!-- Manufacturer section -->
+            <p
+              class="text-sm font-semibold"
+              style="color: var(--mee-color-on-surface); margin-top: var(--mee-space-2);"
+              id="section-manufacturer"
+            >
+              Manufacturer Details
+            </p>
 
-      </form>
+            <mee-input
+              [label]="'Manufacturer Name'"
+              [required]="true"
+              [error]="fieldError('manufacturer_name') || manufacturerNameError()"
+              formControlName="manufacturer_name"
+              aria-describedby="section-manufacturer"
+            />
 
-      <p
-        class="text-center mt-4"
-        style="font-size: 12px; color: var(--mee-color-on-surface-muted);"
-      >
-        You can update this later.
-      </p>
+            <mee-input
+              [label]="'Manufacturer Address'"
+              [required]="true"
+              [error]="fieldError('manufacturer_address') || manufacturerAddressError()"
+              formControlName="manufacturer_address"
+            />
+
+            <mee-input
+              [label]="'Manufacturer Pincode'"
+              [required]="true"
+              inputmode="numeric"
+              maxlength="6"
+              [error]="fieldError('manufacturer_pincode') || manufacturerPincodeError()"
+              formControlName="manufacturer_pincode"
+            />
+
+            <!-- Packer section -->
+            <p
+              class="text-sm font-semibold"
+              style="color: var(--mee-color-on-surface); margin-top: var(--mee-space-2);"
+              id="section-packer"
+            >
+              Packer Details
+            </p>
+
+            <mee-input
+              [label]="'Packer Name'"
+              [required]="true"
+              [error]="fieldError('packer_name') || packerNameError()"
+              formControlName="packer_name"
+              aria-describedby="section-packer"
+            />
+
+            <mee-input
+              [label]="'Packer Address'"
+              [required]="true"
+              [error]="fieldError('packer_address') || packerAddressError()"
+              formControlName="packer_address"
+            />
+
+            <mee-input
+              [label]="'Packer Pincode'"
+              [required]="true"
+              inputmode="numeric"
+              maxlength="6"
+              [error]="fieldError('packer_pincode') || packerPincodeError()"
+              formControlName="packer_pincode"
+            />
+
+            <!-- Country of Origin -->
+            <mee-input
+              [label]="'Country of Origin'"
+              [required]="true"
+              [error]="fieldError('country_of_origin') || countryError()"
+              formControlName="country_of_origin"
+            />
+
+            <!--
+              Submit button — min 44px height guaranteed by mee-button variant="primary".
+              margin-top: --mee-space-2 provides visual separation from last field.
+            -->
+            <mee-button
+              [label]="'Save & Continue'"
+              [loading]="loading()"
+              [disabled]="form.invalid || loading()"
+              [fullWidth]="true"
+              [variant]="'primary'"
+              (clicked)="onSubmit()"
+              style="margin-top: var(--mee-space-2);"
+            />
+
+          </div>
+        </form>
+
+        <p
+          class="text-center mt-4"
+          style="font-size: 12px; color: var(--mee-color-on-surface-muted);"
+        >
+          You can update this later from your profile.
+        </p>
+
+      }<!-- end @else -->
     </mee-auth-layout>
   `,
+  styles: [`
+    :host { display: block; }
+
+    /*
+     * Suppress focus ring on programmatic focus targets (error banner wrapper).
+     * The wrapper is focusable for AT but not interactive — no visible outline needed.
+     */
+    [tabindex="-1"]:focus {
+      outline: none;
+    }
+
+    /*
+     * 360px — form field label text must not overflow.
+     * mee-input is assumed to set width:100%; ensure form also fills width.
+     */
+    @media (max-width: 400px) {
+      form {
+        width: 100%;
+      }
+    }
+  `],
 })
-export class OnboardingComponent {
+export class OnboardingComponent implements OnInit, AfterViewInit {
   private readonly fb = inject(FormBuilder);
   private readonly router = inject(Router);
+  private readonly profileService = inject(SellerProfileService);
+  protected readonly network = inject(NetworkService);
+
+  @ViewChild('errorBannerRef') errorBannerRef?: ElementRef<HTMLDivElement>;
 
   readonly steps: MeeStep[] = [
     { label: 'Account' },
@@ -120,49 +261,171 @@ export class OnboardingComponent {
     { label: 'Done' },
   ];
 
+  /** True while the initial getProfile() call is in flight. */
+  readonly initialLoading = signal<boolean>(true);
   readonly loading = signal<boolean>(false);
   readonly submitted = signal<boolean>(false);
+  readonly errorMessage = signal<string | null>(null);
+  /** Per-field errors from 422 validation_message_id / errors[]. */
+  readonly fieldErrors = signal<Record<string, string>>({});
+  /** True when all base-profile fields are blank (first-time seller). */
+  readonly isFirstTimeSeller = signal<boolean>(false);
 
   readonly form = this.fb.group({
-    businessName: ['', [Validators.required, Validators.minLength(2), Validators.maxLength(100)]],
-    city: ['Tirupur', [Validators.required, Validators.maxLength(60)]],
-    gstNumber: ['', [optionalGstValidator()]],
+    manufacturer_name:    ['', [Validators.required, Validators.maxLength(200)]],
+    manufacturer_address: ['', [Validators.required, Validators.maxLength(500)]],
+    manufacturer_pincode: ['', [Validators.required, pincodeValidator]],
+    packer_name:          ['', [Validators.required, Validators.maxLength(200)]],
+    packer_address:       ['', [Validators.required, Validators.maxLength(500)]],
+    packer_pincode:       ['', [Validators.required, pincodeValidator]],
+    country_of_origin:    ['India', [Validators.required, Validators.maxLength(100)]],
   });
 
-  readonly businessNameError = computed<string | undefined>(() => {
+  // ── Computed field-level errors (form validators) ──────────────────────────
+
+  readonly manufacturerNameError = computed<string | undefined>(() => {
     if (!this.submitted()) return undefined;
-    const ctrl = this.form.get('businessName');
+    const ctrl = this.form.get('manufacturer_name');
     if (!ctrl?.errors) return undefined;
-    if (ctrl.errors['required']) return 'Business name is required.';
-    if (ctrl.errors['minlength']) return 'Business name must be at least 2 characters.';
-    if (ctrl.errors['maxlength']) return 'Business name must be 100 characters or fewer.';
+    if (ctrl.errors['required']) return 'Manufacturer name is required.';
+    if (ctrl.errors['maxlength']) return 'Too long (max 200 characters).';
     return undefined;
   });
 
-  readonly cityError = computed<string | undefined>(() => {
+  readonly manufacturerAddressError = computed<string | undefined>(() => {
     if (!this.submitted()) return undefined;
-    const ctrl = this.form.get('city');
+    const ctrl = this.form.get('manufacturer_address');
     if (!ctrl?.errors) return undefined;
-    if (ctrl.errors['required']) return 'City is required.';
-    if (ctrl.errors['maxlength']) return 'City must be 60 characters or fewer.';
+    if (ctrl.errors['required']) return 'Manufacturer address is required.';
+    if (ctrl.errors['maxlength']) return 'Too long (max 500 characters).';
     return undefined;
   });
 
-  readonly gstError = computed<string | undefined>(() => {
+  readonly manufacturerPincodeError = computed<string | undefined>(() => {
     if (!this.submitted()) return undefined;
-    const ctrl = this.form.get('gstNumber');
+    const ctrl = this.form.get('manufacturer_pincode');
     if (!ctrl?.errors) return undefined;
-    if (ctrl.errors['gstPattern']) return 'Enter a valid 15-character GSTIN (e.g. 29ABCDE1234F1Z5).';
+    if (ctrl.errors['required']) return 'Manufacturer pincode is required.';
+    if (ctrl.errors['pincodeInvalid']) return 'Enter a valid 6-digit pincode.';
     return undefined;
   });
+
+  readonly packerNameError = computed<string | undefined>(() => {
+    if (!this.submitted()) return undefined;
+    const ctrl = this.form.get('packer_name');
+    if (!ctrl?.errors) return undefined;
+    if (ctrl.errors['required']) return 'Packer name is required.';
+    if (ctrl.errors['maxlength']) return 'Too long (max 200 characters).';
+    return undefined;
+  });
+
+  readonly packerAddressError = computed<string | undefined>(() => {
+    if (!this.submitted()) return undefined;
+    const ctrl = this.form.get('packer_address');
+    if (!ctrl?.errors) return undefined;
+    if (ctrl.errors['required']) return 'Packer address is required.';
+    if (ctrl.errors['maxlength']) return 'Too long (max 500 characters).';
+    return undefined;
+  });
+
+  readonly packerPincodeError = computed<string | undefined>(() => {
+    if (!this.submitted()) return undefined;
+    const ctrl = this.form.get('packer_pincode');
+    if (!ctrl?.errors) return undefined;
+    if (ctrl.errors['required']) return 'Packer pincode is required.';
+    if (ctrl.errors['pincodeInvalid']) return 'Enter a valid 6-digit pincode.';
+    return undefined;
+  });
+
+  readonly countryError = computed<string | undefined>(() => {
+    if (!this.submitted()) return undefined;
+    const ctrl = this.form.get('country_of_origin');
+    if (!ctrl?.errors) return undefined;
+    if (ctrl.errors['required']) return 'Country of origin is required.';
+    return undefined;
+  });
+
+  ngOnInit(): void {
+    // country_of_origin defaults to 'India' via the form initialiser above.
+    // Load any existing partial profile so a returning user sees pre-filled values.
+    this.profileService.getProfile().subscribe({
+      next: (profile) => {
+        this.form.patchValue({
+          manufacturer_name:    profile.manufacturer_name ?? '',
+          manufacturer_address: profile.manufacturer_address ?? '',
+          manufacturer_pincode: profile.manufacturer_pincode ?? '',
+          packer_name:          profile.packer_name ?? '',
+          packer_address:       profile.packer_address ?? '',
+          packer_pincode:       profile.packer_pincode ?? '',
+          country_of_origin:    profile.country_of_origin || 'India',
+        });
+        // First-time seller detection: no manufacturer/packer data yet
+        const hasAnyData = !!(profile.manufacturer_name || profile.packer_name);
+        this.isFirstTimeSeller.set(!hasAnyData);
+        this.initialLoading.set(false);
+      },
+      error: () => {
+        // Non-critical — 404 → FRESH_SELLER_PROFILE (service maps it).
+        // Any other error: form still renders with defaults. initialLoading clears.
+        this.initialLoading.set(false);
+        this.isFirstTimeSeller.set(true); // treat load error as first-time for UX
+      },
+    });
+  }
+
+  ngAfterViewInit(): void {
+    // No-op — focus is managed dynamically when errorMessage signal changes.
+  }
+
+  /** Return a per-field 422 error string if the backend returned one. */
+  fieldError(field: string): string | undefined {
+    return this.fieldErrors()[field] ?? undefined;
+  }
 
   onSubmit(): void {
     this.submitted.set(true);
     if (this.form.invalid || this.loading()) return;
+
     this.loading.set(true);
-    setTimeout(() => {
-      this.loading.set(false);
-      void this.router.navigate(['/dashboard']);
-    }, 1500);
+    this.errorMessage.set(null);
+    this.fieldErrors.set({});
+
+    const val = this.form.value;
+    this.profileService.patchProfile({
+      manufacturer_name:    val.manufacturer_name    || null,
+      manufacturer_address: val.manufacturer_address || null,
+      manufacturer_pincode: val.manufacturer_pincode || null,
+      packer_name:          val.packer_name          || null,
+      packer_address:       val.packer_address       || null,
+      packer_pincode:       val.packer_pincode       || null,
+      country_of_origin:    val.country_of_origin    || 'India',
+    }).subscribe({
+      next: () => {
+        this.loading.set(false);
+        void this.router.navigate(['/dashboard']);
+      },
+      error: (err: unknown) => {
+        this.loading.set(false);
+        if (err instanceof ProfileValidationError) {
+          // Map 422 envelope to per-field errors + banner.
+          const errors: Record<string, string> = {};
+          const rawErrors = (err.envelope.errors ?? []) as Array<{ field?: string; msg?: string }>;
+          for (const fe of rawErrors) {
+            if (fe.field) {
+              errors[fe.field] = fe.msg ?? err.envelope.validation_message_id ?? 'Invalid value.';
+            }
+          }
+          this.fieldErrors.set(errors);
+          this.errorMessage.set(
+            err.envelope.validation_message_id ??
+            'Please correct the highlighted fields and try again.',
+          );
+        } else {
+          this.errorMessage.set('Something went wrong. Please try again.');
+        }
+        // Focus the error banner for keyboard/AT users
+        Promise.resolve().then(() => this.errorBannerRef?.nativeElement.focus());
+      },
+    });
   }
 }
