@@ -67,6 +67,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import CurrentUser, get_current_user
+from app.core.errors import MeesellError
 from app.core.middleware.audit_mw import audit_event
 from app.core.middleware.rate_limit_mw import rate_limit
 from app.modules.catalog import service as catalog_service
@@ -281,7 +282,20 @@ async def get_product_preview(
     No audit event (read-only per `MVP_ARCH §11.3`).
 
     Status codes: 200, 401, 404.
+    Feature flag: returns 404 with code ``feature.live_preview.disabled``
+    when ``FEATURE_LIVE_PREVIEW_ENABLED=false`` (default False — gated rollout
+    per Master Plan §3.2 + FEATURE_PLAN.md D3).
     """
+    # ── Feature flag guard (§3.2 / D3 gated rollout) ─────────────────────
+    # NOTE: FEATURE_LIVE_PREVIEW_ENABLED defaults to False (the ONLY V1 flag
+    # that ships default-False; all others default True). Raise via MeesellError
+    # to carry the machine-readable `code` field per §4.F envelope contract.
+    if not settings.FEATURE_LIVE_PREVIEW_ENABLED:
+        raise MeesellError(
+            code="feature.live_preview.disabled",
+            status_code=404,
+            detail="Preview unavailable",
+        )
     preview = await catalog_service.get_preview(user.user_id, id, db=db)
     return ProductPreviewResponse(
         id=preview.id,

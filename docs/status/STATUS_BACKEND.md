@@ -4846,3 +4846,35 @@ Blockers: none.
 Next: founder merges #143 → develop; THEN infra opens 1-line follow-up to uncomment -Q image-tasks.
 Hand-offs: meesell-infra-builder (image-tasks worker -Q switch, post-#143-merge).
 =========
+
+=== UPDATE: 2026-06-12 16:00 ===
+Phase: flag-parity sweep (chore/flag-parity) — G1 price-calc, G2 dashboard, G3 live-preview
+Done:
+  G1 — FEATURE_PRICE_CALCULATOR_ENABLED: bool = True added to config.py §3.2 (after L216).
+       Guard in pricing/router.py price_calc handler (POST /api/v1/products/{id}/price-calc):
+       `if not settings.FEATURE_PRICE_CALCULATOR_ENABLED: raise HTTPException(404, "Price Calculator is disabled in this environment")`
+  G2 — FEATURE_TRACKING_DASHBOARD_ENABLED: bool = True added to config.py §3.2.
+       Guard in dashboard/router.py list_products handler (GET /api/v1/products):
+       `if not settings.FEATURE_TRACKING_DASHBOARD_ENABLED: raise HTTPException(404, "Tracking Dashboard is disabled in this environment")`
+       R1 RULING HONORED: GET/read route — 404-on-read is intentional (the read IS the feature).
+  G3 — FEATURE_LIVE_PREVIEW_ENABLED: bool = False added to config.py §3.2.
+       DEFAULT FALSE — the ONLY V1 flag that ships default-False (gated rollout per D3).
+       Guard in catalog/router.py get_product_preview handler (GET /api/v1/products/{id}/preview):
+       `raise MeesellError(code="feature.live_preview.disabled", status_code=404, detail="Preview unavailable")`
+       Uses MeesellError (not HTTPException) to emit the machine-readable `code` field per §4.F envelope.
+       R3 RULING HONORED: no new core/feature_flags.py; in-handler raise; MeesellError is the codebase's
+       coded-error pattern (not a new envelope).
+  3 new test files:
+    - backend/tests/modules/pricing/test_feature_flag.py (3 tests, @unit marker)
+    - backend/tests/modules/dashboard/test_feature_flag.py (3 tests, @unit marker)
+    - backend/tests/integration/test_live_preview_flag_404.py (3 tests)
+Tests: 9 passed / 0 failed (3 isolation runs, Py3.11 venv)
+  G1 pricing:   3/3 PASS
+  G2 dashboard: 3/3 PASS
+  G3 preview:   3/3 PASS
+Ruff: all clean (E,F,W --line-length 100) on all 6 changed/new files
+In progress: none — all 3 gaps closed.
+Blockers: none.
+Next: coordinator STEP 3 merge-gate; squash chore/flag-parity → develop.
+Hand-offs: meesell-backend-coordinator — G1/G2/G3 evidence + 9/9 test PASS + ruff clean; PR not opened (coordinator gate owns that).
+=========
