@@ -63,6 +63,24 @@ Sequential: iam → customer → category → catalog DONE. Parallel-eligible fr
 
 ## Updates Log
 
+=== UPDATE: 2026-06-12 11:00 — flag-parity sweep STEP 1 (audit + SPEC) ===
+Phase: V1 backend feature-flag parity — comprehensive close-out sweep
+Session: mesell-flag-parity-sweep-session-1 (HYBRID STEP 1; no feature code, no dispatch)
+Board sweep: 1 IN PROGRESS row added (flag-parity); 0 stale rows (microservices-export touched 2026-06-10 = 2d; backend-chores 2026-06-12 GATE-PASS awaiting founder PR #143). 3 inter-lead requests on board all RESOLVED/READY. No 7d+ stale.
+Done:
+- Enumerated ALL remaining V1 modules vs the 5 done flag features. Flag inventory: 5 present in shared/config.py (smart-picker L184, xlsx-export L193, image-precheck L202, catalog-form L209, ai-autofill L216).
+- Per-module verdict (file:line evidence) in memo audit_flag_parity_sweep.md.
+- 3 REAL gaps (FLAG-MANDATED-AND-MISSING): G1 price-calculator (FEATURE_PRICE_CALCULATOR_ENABLED; pricing/router.py:76 POST no guard); G2 tracking-dashboard (FEATURE_TRACKING_DASHBOARD_ENABLED; dashboard/router.py:86 GET, D3 kill-switch 404-on-read); G3 live-preview (FEATURE_LIVE_PREVIEW_ENABLED default False; catalog/router.py:268 GET preview route exists no guard, D3 code feature.live_preview.disabled).
+- NO-FLAG-BY-DESIGN verified (no gap): auth-otp (D2 explicit "skip flag, prerequisite zero", FEATURE_PLAN.md:40-42); customer/seller-profile (foundational onboarding, no plan mandate); category browse/tree/schema/field-enum (only /suggest flagged; flagging foundational catalog surface would break every feature); iam refresh/logout/me/webhook.
+- ONE api-routes-builder SPEC authored (config field + in-handler 404 + flag-404 test ×3). NO database-builder/services-builder (request-time settings read, no schema, no business logic).
+- Branch chore/flag-parity cut off origin/develop 2b5ec60, worktree /tmp/mesell-wt/flag-parity, pushed.
+In progress: none (STEP 1 deliverables complete; STEP 2 dispatch awaits master + R1-R4 rulings).
+Blockers: none. (4 founder rulings FLAGGED, not blocking the audit: R1 honor-plans 404-on-read for the 2 GET-route gaps; R2 flag-404 message-id wording per-plan; R3 in-handler raise NOT new core/feature_flags.py dependency-factory; R4 live-preview default-False.)
+Drift FYI (do not churn): D-1 guard-mechanism cosmetic drift across 5 done flags (catalog-form main.py conditional-include vs in-handler raise everywhere else — both valid, accepted at each gate); D-2 Gate-1 unit RED on develop (infra PR #145, tip 2b5ec60, NOT this scope — new tests must not worsen).
+Next: master dispatches ONE meesell-api-routes-builder with the SPEC (STEP 2); lead merge-gates (STEP 3, squash chore/flag-parity → develop directly, D1 N/A for chore branch per ci-gate-fix precedent).
+Hand-offs: INFRA inter-lead candidate at merge time — 3 new flags (FEATURE_PRICE_CALCULATOR_ENABLED=true dev/false staging, FEATURE_TRACKING_DASHBOARD_ENABLED=true, FEATURE_LIVE_PREVIEW_ENABLED=false) → k8s dev/staging ConfigMaps. Open at STEP 3, not now.
+=========
+
 === UPDATE: 2026-06-11 — CI Gate-1 pytest-collection fix (Rule 7 STEP 2) ===
 Phase: CI infrastructure fix — pytest.ini pythonpath key
 Session: mesell-ci-gate1-fix-session-1
@@ -4827,4 +4845,70 @@ In progress: none (batch gated; awaiting founder merge of #143).
 Blockers: none.
 Next: founder merges #143 → develop; THEN infra opens 1-line follow-up to uncomment -Q image-tasks.
 Hand-offs: meesell-infra-builder (image-tasks worker -Q switch, post-#143-merge).
+=========
+
+=== UPDATE: 2026-06-12 16:00 ===
+Phase: flag-parity sweep (chore/flag-parity) — G1 price-calc, G2 dashboard, G3 live-preview
+Done:
+  G1 — FEATURE_PRICE_CALCULATOR_ENABLED: bool = True added to config.py §3.2 (after L216).
+       Guard in pricing/router.py price_calc handler (POST /api/v1/products/{id}/price-calc):
+       `if not settings.FEATURE_PRICE_CALCULATOR_ENABLED: raise HTTPException(404, "Price Calculator is disabled in this environment")`
+  G2 — FEATURE_TRACKING_DASHBOARD_ENABLED: bool = True added to config.py §3.2.
+       Guard in dashboard/router.py list_products handler (GET /api/v1/products):
+       `if not settings.FEATURE_TRACKING_DASHBOARD_ENABLED: raise HTTPException(404, "Tracking Dashboard is disabled in this environment")`
+       R1 RULING HONORED: GET/read route — 404-on-read is intentional (the read IS the feature).
+  G3 — FEATURE_LIVE_PREVIEW_ENABLED: bool = False added to config.py §3.2.
+       DEFAULT FALSE — the ONLY V1 flag that ships default-False (gated rollout per D3).
+       Guard in catalog/router.py get_product_preview handler (GET /api/v1/products/{id}/preview):
+       `raise MeesellError(code="feature.live_preview.disabled", status_code=404, detail="Preview unavailable")`
+       Uses MeesellError (not HTTPException) to emit the machine-readable `code` field per §4.F envelope.
+       R3 RULING HONORED: no new core/feature_flags.py; in-handler raise; MeesellError is the codebase's
+       coded-error pattern (not a new envelope).
+  3 new test files:
+    - backend/tests/modules/pricing/test_feature_flag.py (3 tests, @unit marker)
+    - backend/tests/modules/dashboard/test_feature_flag.py (3 tests, @unit marker)
+    - backend/tests/integration/test_live_preview_flag_404.py (3 tests)
+Tests: 9 passed / 0 failed (3 isolation runs, Py3.11 venv)
+  G1 pricing:   3/3 PASS
+  G2 dashboard: 3/3 PASS
+  G3 preview:   3/3 PASS
+Ruff: all clean (E,F,W --line-length 100) on all 6 changed/new files
+In progress: none — all 3 gaps closed.
+Blockers: none.
+Next: coordinator STEP 3 merge-gate; squash chore/flag-parity → develop.
+Hand-offs: meesell-backend-coordinator — G1/G2/G3 evidence + 9/9 test PASS + ruff clean; PR not opened (coordinator gate owns that).
+=========
+
+=== UPDATE: 2026-06-12 — flag-parity sweep STEP 3 MERGE-GATE PASS ===
+Phase: V1 backend feature-flag story — flag-parity sweep (G1 price-calc / G2 dashboard / G3 live-preview)
+Session: mesell-flag-parity-sweep-session-1 (HYBRID STEP 3 — lead merge-gate review)
+Board sweep: flag-parity row IN PROGRESS → GATE PASS (FOUNDER PR OPEN→develop); 1 NEW infra inter-lead row added (3 flags → ConfigMaps); no rows stale 7+d (microservices-export 2026-06-10 = 2d). MERGED rows: none >14d to evict.
+
+GATE VERDICT: **PASS** — all 3 gaps + 9 tests + ruff + scope verified by lead.
+
+Diff reviewed vs origin/develop (note: develop moved 2b5ec60 → 81338c5 via infra #147 = k8s/worker.yaml + 2 infra docs, ZERO file overlap with this branch — confirmed via git diff --stat).
+  Scope: 9 files — shared/config.py + pricing/router.py + dashboard/router.py + catalog/router.py + 3 NEW test files + STATUS + board. NO service/model/main.py/migration changes (verified). §17 stays 28 (verified live mount: 28 /api/* APIRoute objects). §2.D unchanged (pure config reads, no new service edges).
+
+G1 price-calculator: PASS. FEATURE_PRICE_CALCULATOR_ENABLED=True in config §3.2; in-handler 404 POST (smart-picker pattern, BEFORE service); HTTPException(404, "Price Calculator is disabled in this environment").
+G2 tracking-dashboard: PASS. FEATURE_TRACKING_DASHBOARD_ENABLED=True; in-handler 404 GET — 404-on-read intentional (R1, D3 kill-switch, the read IS the feature); D3 comment inline.
+G3 live-preview: PASS. FEATURE_LIVE_PREVIEW_ENABLED=False (ONLY default-False V1 flag, SHIPS DARK); MeesellError(code="feature.live_preview.disabled", 404, "Preview unavailable") guard GET.
+
+ADJUDICATIONS (lead-verified this gate):
+  - MeesellError judgment call (G3): CORRECT and REQUIRED. Verified core/errors.py: _meesell_error_handler reads exc.code into envelope (L149); _http_exception_handler hardcodes code="http.404" (L210). Only MeesellError surfaces the D3-mandated code=feature.live_preview.disabled. No new envelope (R3 honored). Minor non-blocking FYI: G3 omits validation_message_id → envelope carries class-default server.internal_error as side-field; plan-mandated {detail,code} contract satisfied exactly, test asserts only those two.
+  - Defensive catalog-form patch (G3 reachable test): HARMLESS/inert, non-blocking FYI. main.py:126 include is import-time; catalog-form defaults True → router already mounted; patch targets app.modules.catalog.router.settings not app.main.settings → no-op no-harm.
+  - G1 wording FYI: plan §1.B mandated validation_message_id=feature.disabled, but that 2-segment key VIOLATES the locked §5A.H 3-segment regex (^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$) AND its messages_en.py registration is a services-builder dispatch (out of this api-routes-builder slice). Plain HTTPException is scope-correct. FYI to founder/future price-calc feature dispatch.
+
+R1-R4 CONSUMED (master-confirmed): R1 honor-plans 404-on-read for G2/G3; R2 plan-verbatim wording (with G1 nuance above); R3 in-handler not new core/feature_flags.py (no FeatureDisabledError subclass, no factory); R4 live-preview default-False.
+
+Test/ruff re-run (lead, master venv backend/.venv Py3.11, isolation per session-loop gotcha):
+  pricing 3/3 PASS · dashboard 3/3 PASS · live-preview 3/3 PASS → 9/9 PASS.
+  ruff check on 7 files (config + 3 routers + 3 tests) → All checks passed!
+
+LIVE-PREVIEW SHIPS DARK: FEATURE_LIVE_PREVIEW_ENABLED defaults False everywhere; preview returns 404 until founder flips the dev ConfigMap to true when the preview FE wires (D3 gated rollout).
+
+Done: STEP 3 gate PASS; FOUNDER GATE PR opened OPEN→develop (lead leaves OPEN, founder merges per D1); board + STATUS + infra inter-lead row + memo records committed on branch (ride the PR).
+In progress: none.
+Blockers: none.
+Next: founder merges the flag-parity PR → develop; infra injects 3 flags into ConfigMaps (inter-lead OPEN).
+Hand-offs: meesell-infra-builder — 3 flags → k8s ConfigMaps (dev: price-calc=true/dashboard=true/live-preview=false; staging: all false). Memo handoff_secret_flag_parity_flags.md.
 =========
