@@ -4675,4 +4675,156 @@ Next: FOUNDER — merge the founder-gate PR (`feature/xlsx-export` → develop).
   (inter-lead OPEN). No further backend specialist dispatch on this feature.
 Hand-offs: meesell-infra-builder (5th feature flag → k8s ConfigMaps dev=true/staging=false; join image-precheck-infra
   flag PR or follow-up) — memo handoff_secret_xlsx_export_flag.md + board inter-lead row OPEN.
+
+=== UPDATE: 2026-06-12 — backend chores batch (2 items) STEP 1: micro-audit + SPECs ===
+Phase: backend chores follow-ups (post-V1-feature housekeeping)
+Session: mesell-backend-chores-session-1
+Board sweep: 1 row added (backend-chores IN PROGRESS) + 1 incoming inter-lead row (infra image-tasks
+  queue, IN PROGRESS — backend servicing). Stale scan: microservices-export last touched 2026-06-10
+  (2 days, NOT stale — <7d; it is a POST-V1 extraction track awaiting founder A1/A2 ratification, not
+  abandoned). No 7+-day-stale rows. No MERGED rows older than 14 days to evict.
+
+ITEM 1 — Celery task routing (infra inter-lead unblock)
+  AUDIT: infra memo (handoff_image_tasks_queue.md) cites task name "image.precheck". VERIFIED REAL
+  task name = "image.precheck" — explicit `@shared_task(name="image.precheck", ...)` at
+  backend/app/modules/image/tasks.py:416 (NOT a dotted-module-path default). Infra's cited mapping is
+  CORRECT verbatim.
+  AS-BUILT: workers/celery_app.py has NO task_routes / task_queues. image.precheck publishes to the
+  default `celery` queue; worker runs --concurrency=4 with NO -Q, so it consumes default. Pipeline
+  FUNCTIONAL today. The second V1 task is export.xlsx (name=, also default queue) per the include list
+  (celery_app.py:103-105) + _TASKS_REQUIRING_USER_REVALIDATION frozenset (L125-128).
+  FIX SHAPE: add `task_routes = {"image.precheck": {"queue": "image-tasks"}}` to the existing
+  celery_app.conf.update(...) block (or as celery_app.conf.task_routes). MAPS ONLY image.precheck →
+  export.xlsx + any future task stay on default `celery` queue (default-queue invariant PRESERVED —
+  required because the worker that runs export consumes default with no -Q). Owner: services-builder.
+
+ITEM 2 — _GLOBAL_TABLES drift (queued from smart-picker gate PR #72)
+  AUDIT: docs assert a `core/tenancy._GLOBAL_TABLES` frozenset exists. As-built core/tenancy.py
+  (128 lines) exports ONLY {TenantViolationError, assert_owned, scope_to_user} — NO _GLOBAL_TABLES.
+  The symbol is referenced in THREE doc/docstring locations: BACKEND_ARCHITECTURE.md §9.D (L3245),
+  §9.J (~L3461), and category/repository.py:17 docstring. CRITICAL FINDING: the as-built §19 linter
+  `tests/lint/check_scope_to_user.py` enforces the global-table carve-out by MODULE-NAME ALLOWLIST
+  (`ALLOWLISTED_MODULES = frozenset({"category","dashboard","iam"})`, L61) — it does NOT read
+  _GLOBAL_TABLES at all. So _GLOBAL_TABLES has ZERO runtime/linter consumer; it is a pure
+  documentation-vs-code drift (docstring promises a symbol the code never grew).
+  §4.C LOCKED text (L938) names the 4 global tables in PROSE but does NOT itself reference the
+  _GLOBAL_TABLES symbol — so adding the frozenset does NOT touch a LOCKED contract's required shape.
+  FIX SHAPE (minimal, NO behaviour change): add a documentation-sentinel
+  `_GLOBAL_TABLES: frozenset[str] = frozenset({"categories","templates","field_enum_values",
+  "field_aliases"})` to core/tenancy.py with a docstring tying it to §4.C/§9.D + a note that the
+  linter currently keys on module-name (so the sentinel is documentation/future-proofing, NOT yet a
+  linter input). Owner: database-builder (as queued; tenancy-foundation symbol). database-builder may
+  OPTIONALLY (R2 below) re-point check_scope_to_user.py to consume the frozenset — FLAGGED as a
+  founder decision, NOT bundled by default.
+
+OVERLAP / BRANCH:
+  Branch chore/backend-followups cut off origin/develop @ eb84779 (worktree /tmp/mesell-wt/backend-chores),
+  pushed. Verified ZERO file overlap with the 6 OPEN founder-gate PRs (#115/#118/#122/#133/#138/#139):
+  none touch core/tenancy.py or workers/celery_app.py/workers/. chore/ namespace → no D/F refname concern.
+
+SPECIALIST RULING: NOT folded — 2 separate specialists (services-builder owns celery_app.py per §3.I /
+  §18; database-builder owns core/tenancy.py per §4.C). Different files, different owners, different
+  domains → 2 SPECs, can land in ONE PR or two (lead's call at gate; recommend ONE PR
+  chore/backend-followups → develop since both are sub-10-line additive diffs with zero test risk).
+
+FOUNDER RULINGS NEEDED (FLAG, not picked):
+  R1 — Item 2 scope: documentation-sentinel ONLY (docstring↔code agree) vs ALSO re-point the linter
+       to consume _GLOBAL_TABLES (replacing the module-name allowlist for category). DEFAULT = sentinel
+       only (lower risk, the allowlist works). Re-point is a §19 linter behaviour change.
+  R2 — does this 2-item batch land as ONE PR to develop or two? (lead recommends ONE.)
+
+Done: micro-audit (both items, file:line evidence + real task name); branch+worktree+push; board row +
+  incoming inter-lead row; this STATUS block; SPECs authored (returned to master for dispatch).
+In progress: awaiting master to dispatch services-builder (Item 1) + database-builder (Item 2); lead
+  gates both after.
+Blockers: none (R1/R2 are FLAGS, not blockers — defaults stated).
+Next: master dispatches the 2 specialists with the paste-ready SPECs; lead runs merge-gate review.
+Hand-offs: infra (image-tasks queue) being serviced — after develop merge, infra uncomments -Q image-tasks.
+=========
+
+=== UPDATE: 2026-06-12 (chore batch STEP 2, item 1/2 — services-builder) ===
+Phase: image-precheck (Feature 5) — Celery queue isolation chore
+Done: Added `task_routes={"image.precheck": {"queue": "image-tasks"}}` to the existing
+  celery_app.conf.update(...) call in backend/app/workers/celery_app.py (+10 lines, additive only).
+  Inline comment cites §18 + the infra handoff path + "Default queue preserved for export.xlsx".
+  NO touch to image/tasks.py body (§11.E LOCKED), NO change to worker_prefetch_multiplier /
+  task_acks_late / task_reject_on_worker_lost / the task_prerun handler.
+Evidence:
+  task_routes = {'image.precheck': {'queue': 'image-tasks'}}
+  export.xlsx in routes? False  (proves export.xlsx stays on default `celery` queue)
+  ruff check celery_app.py → All checks passed!
+Tests: import-evidence command runs clean under CI dummy-env; no new test file (one-line additive
+  config route — guarded behaviourally by the evidence assertion above).
+Commit: 26261ce on chore/backend-followups (pushed origin). NO PR opened (lead gates per Model C).
+In progress: database-builder runs serially next in same worktree (item 2/2 — core/tenancy.py).
+Blockers: none.
+Next: lead STEP 3 merge-gate review.
+Hand-offs: infra (meesell-infra-builder) — after develop merge, uncomment `-Q image-tasks` in
+  k8s/worker.yaml per handoff_image_tasks_queue.md. image.precheck now publishes to `image-tasks`;
+  export.xlsx stays on default `celery` queue (worker with no -Q consumes both today).
+=========
+
+=== UPDATE: 2026-06-12 (chore batch STEP 2, item 2/2 — database-builder) ===
+Phase: core/tenancy — §9.D _GLOBAL_TABLES drift reconcile
+Done: Added `_GLOBAL_TABLES: frozenset[str]` documentation-sentinel to
+  backend/app/core/tenancy.py. Symbol names the 4 global tables (categories,
+  templates, field_enum_values, field_aliases) per BACKEND_ARCHITECTURE.md §4.C
+  prose. Added to __all__. Module docstring updated to cross-reference the symbol.
+  R1 ruling honoured: check_scope_to_user.py NOT modified — linter continues to
+  use ALLOWLISTED_MODULES (L61) module-name allowlist, not this frozenset.
+Evidence:
+  python -c "from app.core.tenancy import _GLOBAL_TABLES; print(sorted(_GLOBAL_TABLES))"
+  → ['categories', 'field_aliases', 'field_enum_values', 'templates']
+  ruff check backend/app/core/tenancy.py → All checks passed!
+  scope_to_user / assert_owned behaviour: UNCHANGED (additive symbol only).
+In progress: none — task complete.
+Blockers: none.
+Next: lead STEP 3 merge-gate review of chore/backend-followups (both items 1/2 + 2/2).
+Hand-offs: meesell-backend-coordinator — both chore items COMPLETE, branch pushed.
+  Schema ready: `from app.core.tenancy import _GLOBAL_TABLES` is now importable.
+  R1 re-ruling (future): when founder lifts sentinel-only gate, database-builder
+  wires _GLOBAL_TABLES into check_scope_to_user.py ALLOWLISTED_MODULES replacement.
+=========
+
+=== UPDATE: 2026-06-12 — backend chores batch STEP 3: MERGE-GATE VERDICT (PASS) + PR #143 ===
+Phase: backend chores follow-ups (2 items) — lead merge-gate
+Session: mesell-backend-chores-session-1
+Board sweep (session-end): backend-chores row flipped IN PROGRESS → "GATE PASS — FOUNDER PR #143
+  OPEN→develop". Incoming infra image-tasks row stays IN PROGRESS (resolves on develop merge). No
+  7+-day-stale rows. microservices-export last touched 2026-06-10 (<7d, not stale). No MERGED rows
+  older than 14 days to evict.
+
+MERGE-GATE VERDICT: PASS (both items). Branch chore/backend-followups, 4 files / +153 -0, tip d262c95.
+  Item 1 (services-builder, 26261ce): celery_app.py task_routes.
+    GATE EVIDENCE (lead-run, main-checkout venv interpreter + worktree PYTHONPATH + CI dummy env):
+      task_routes = {'image.precheck': {'queue': 'image-tasks'}}
+      image.precheck -> {'queue': 'image-tasks'}   ✓
+      export.xlsx routed? False                     ✓ (DEFAULT-QUEUE INVARIANT PRESERVED — load-bearing)
+    §11.E LOCKED image/tasks.py body + worker_prefetch_multiplier/task_acks_late/
+    task_reject_on_worker_lost/task_prerun ALL untouched ✓. ruff clean ✓.
+  Item 2 (database-builder, d262c95): core/tenancy.py _GLOBAL_TABLES sentinel.
+    GATE EVIDENCE:
+      _GLOBAL_TABLES = ['categories','field_aliases','field_enum_values','templates']  ✓ ; in __all__ ✓
+      §19 `python -m tests.lint.check_scope_to_user` → Contract 8 PASS ✓ (module-name allowlist intact —
+        the new sentinel did NOT alter or break enforcement; R1 sentinel-only default honored)
+    BACKEND_ARCHITECTURE.md untouched (no LOCKED-shape edit; §4.C prose already named the 4 tables) ✓.
+    ruff clean ✓.
+  Cross-cutting: 0 new route decorators → §17 stays 28; 0 alembic → no head divergence; §2.D matrix
+    unchanged. STATUS fold by database-builder verified (both specialist entries present, L4467 + L4490).
+
+FOUNDER RULINGS (FLAGGED, defaults applied in PR #143):
+  R1 — sentinel-only vs re-point linter. APPLIED: sentinel only (lower risk; allowlist works). Re-point
+       is a §19 linter behaviour change for a future ruling.
+  R2 — one PR vs two. APPLIED: ONE PR (#143). Both sub-10-line additive diffs, zero test risk.
+
+PR #143 (chore/backend-followups → develop) is the FOUNDER'S GATE per D1 — lead authored + gated, leaves
+  OPEN. NOT a feature/{name}/backend→feature/{name} PR, so the full backend PR-template is N/A (no
+  Alembic, no contract change, no module additions — all additive config/doc).
+
+Done: STEP 3 merge-gate (both items PASS), PR #143 opened with verdict, board flip, this STATUS block,
+  session-end sweep, memory append.
+In progress: none (batch gated; awaiting founder merge of #143).
+Blockers: none.
+Next: founder merges #143 → develop; THEN infra opens 1-line follow-up to uncomment -Q image-tasks.
+Hand-offs: meesell-infra-builder (image-tasks worker -Q switch, post-#143-merge).
 =========
