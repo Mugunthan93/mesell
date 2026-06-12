@@ -1,8 +1,29 @@
 # STATUS — INFRASTRUCTURE
 
 **Owner:** `meesell-infra-builder`
-**Last update:** 2026-06-11 (ci-activation — PR #120 develop→main MERGED; full pipeline ran Gates 1-5 + Frontend 8/8 + **Build GREEN (first ever)**; Deploy still RED on 2 more deploy-script bugs — #123 git-ref already fixed, #127 readyz-escape now on develop awaiting fresh founder gate)
+**Last update:** 2026-06-12 (deploy-from-develop — FOUNDER RULING: dev deploys fire from develop, NOT main; build+deploy ref-guards flipped main→develop + VM checkout points at origin/develop; readyz fix #127 intact; main reserved for staging/prod promotion — see latest UPDATE)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
+
+## UPDATE — 2026-06-12 — mesell-deploy-from-develop-infra-session-1 (FOUNDER RULING: deploy dev from develop)
+
+=== STEP: flip build+deploy trigger from main → develop ===
+Phase: DEVOPS_ARCHITECTURE.md §7 (deploy) + §6 (build). ci.yml is infra-owned (Rule 7 standalone — direct execute). FOUNDER RULING 2026-06-12 = the authority for this change.
+
+**Founder ruling (2026-06-12):** "Deploy dev from develop." Rationale: develop is the integration branch where CI already runs; the dev-namespace deploy is a test-server deploy, not a customer ship. main stays reserved for future staging/prod deploys (still founder-gated promotion). This UNBLOCKS the ci-activation row that was BLOCKED on the develop→main founder gate.
+
+**Changes to `.github/workflows/ci.yml` (3 functional + comment/doc):**
+1. `build` job ref-guard: `github.ref == 'refs/heads/main'` → `'refs/heads/develop'`. Still `push`-only (no PRs). Still `needs: [5 gates + frontend-build]`.
+2. `deploy` job ref-guard: same flip. Still `push`-only, `needs: build`.
+3. VM-side checkout points at develop: `git -C ~/mesell fetch origin develop` + `reset --hard FETCH_HEAD`; cold-clone fallback now `git clone --depth=1 --branch develop`. The image tag (`github.sha`) was already the triggering-commit SHA → no change needed; on a develop push it's the develop SHA, so cluster code == repo code.
+4. Header comment block + build/deploy job header comments rewritten to the new ruling, with the explicit `# FOUNDER RULING 2026-06-12: dev deploys fire from develop; main is reserved for staging/prod promotion (founder-gated).` marker.
+
+**Future push to main — deliberate choice:** build + deploy simply DO NOT fire on main (no staging/prod target exists yet). main pushes still run the 5 gates + frontend matrix (main never goes un-tested), but produce no image and no deploy. When staging/prod land in V1.5 they get their OWN ref-guards behind a founder-gated promotion.
+
+**Preserved intact:** the readyz-escape fix (#127, `\$`-escaped `until kubectl get --raw='/readyz'` counter loop); the FETCH_HEAD checkout (#123); the rollout-settle-before-migrate step (sibling run 27365266379); all 5 gates + frontend matrix run on BOTH develop and main; nightly cron untouched; the `ai_eval` workflow_dispatch job (sibling) untouched.
+
+**Validation:** YAML parses (11 jobs intact). `$`-escaping audit of the deploy `--command` block CLEAN (every `$` is `\$`-escaped or GHA `${{ }}`). No new bare `$` introduced. Cost ₹0 (CI-workflow YAML + 2 status docs only).
+
+**Verify bar (post-merge):** the squash-merge to develop itself fires the first develop-based run with Build+Deploy active — first fully-green end-to-end run (gates → frontend → Build → Deploy → new CI-built image live on the cluster), `https://api.mesell.xyz/health` 200, api/worker pods running this run's image tag (no longer the by-hand `def60521`). [Run outcome appended below on completion.]
 
 ## UPDATE — 2026-06-11 — mesell-ci-activation-infra-session-8 (land PR #120 + watch main pipeline + readyz-escape fix)
 
