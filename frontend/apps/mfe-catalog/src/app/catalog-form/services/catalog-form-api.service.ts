@@ -1,155 +1,238 @@
-import { Injectable } from '@angular/core';
+/**
+ * CatalogFormApiService — Wave 6 Wave C
+ *
+ * Real HTTP wiring for the catalog-form funnel page.
+ * Replaces the Wave 5 all-mock service.
+ *
+ * Endpoints:
+ *   #15  GET  /api/v1/categories/{id}/schema          → SchemaResponseDTO (ETag deferred V1)
+ *   #16  GET  /api/v1/categories/{id}/field-enum/{n}  → FieldEnumResponseDTO (lazy, on dropdown-open)
+ *   #18  PATCH /api/v1/products/{id}                  → ProductResponse (X-Autosave header)
+ *   #19  POST  /api/v1/products/{id}/autofill          → AutofillResponse (FEATURE_AI_AUTOFILL_ENABLED)
+ *   #22  GET   /api/v1/products/{id}/draft             → ProductDraftResponse | null (204 → null)
+ *
+ * Auth: jwtInterceptor (Wave A, frozen) attaches `Authorization: Bearer` automatically.
+ * NO manual Authorization header. NO raw HttpClient — ApiClient only (mirror DashboardApiService).
+ *
+ * Feature-scoped — NOT providedIn: 'root'.
+ * Provided via catalog.routes.ts :id/edit providers:[CatalogFormApiService] (already wired).
+ *
+ * ETag: V1 does NOT send If-None-Match. Backend returns 200+body on every call.
+ * 304 is unreachable in V1 — documented here; no client-side ETag logic.
+ *
+ * GAP-1 (spec §4): No GET /products/{id} exists. category_id must be passed via
+ * navigation state from smart-picker. On hard-reload where nav-state is absent the
+ * form shows an explicit error state (see catalog-form.component.ts).
+ *
+ * GAP-2 (spec §4): FEATURE_CATALOG_FORM_ENABLED=false → #18/#19/#22 return 404.
+ *   FEATURE_AI_AUTOFILL_ENABLED=false → #19 returns 404.
+ * All 404s are handled gracefully per the error matrix below.
+ *
+ * Error matrix (R-W6-1 — merge gate REJECTS if absent):
+ *
+ *   getSchema:
+ *     401 → rethrow (component renders error state)
+ *     404 → of([]) — schema/category not found OR flag OFF → graceful empty schema
+ *     5xx → of([]) — component shows retry affordance
+ *     other → of([])
+ *
+ *   getDraft:
+ *     204/404 → of(null) — never autosaved / feature flag OFF → graceful
+ *     401 → rethrow (component handles)
+ *     5xx → of(null) — non-fatal for draft recovery
+ *
+ *   autosave:
+ *     401 → rethrow (component sets saveStatus='error')
+ *     422 → rethrow (component surfaces field-level errors; user input preserved)
+ *     400 → rethrow (caller's validation is responsible)
+ *     5xx → rethrow (component shows autosave failure, preserves user input)
+ *
+ *   autofill:
+ *     401 → rethrow (component handles)
+ *     402 → rethrow status=402 (component shows "AI fill quota reached" toast)
+ *     404 → rethrow status=404 (flag OFF → component disables AI button)
+ *     5xx → rethrow (component shows retry toast)
+ *
+ *   getFieldEnum:
+ *     any error → of([]) — graceful; dropdown shows empty
+ */
+
+import { Injectable, inject } from '@angular/core';
+import { HttpErrorResponse, HttpHeaders } from '@angular/common/http';
 import { Observable, of } from 'rxjs';
-import { delay } from 'rxjs/operators';
-import type { FieldGroup } from '../models/field-schema.model';
+import { map, catchError } from 'rxjs/operators';
 
-// Simulated 32-field Kurti schema (Wave 5 — no real HTTP until Wave 6)
-const KURTI_SCHEMA: FieldGroup[] = [
-  {
-    group: 'compulsory',
-    fields: [
-      { canonical_name: 'product_title', display_name: 'Product Title', primitive: 'text_short', required: true, help_text: 'Enter the full product name' },
-      { canonical_name: 'brand', display_name: 'Brand', primitive: 'text_short', required: true },
-      {
-        canonical_name: 'color', display_name: 'Color', primitive: 'enum', required: true,
-        enum_options: [
-          { label: 'Blue', value: 'Blue' }, { label: 'Red', value: 'Red' },
-          { label: 'Yellow', value: 'Yellow' }, { label: 'Green', value: 'Green' },
-          { label: 'Pink', value: 'Pink' }, { label: 'White', value: 'White' },
-        ],
-      },
-      {
-        canonical_name: 'material', display_name: 'Material', primitive: 'enum', required: true,
-        enum_options: [
-          { label: 'Cotton', value: 'Cotton' }, { label: 'Polyester', value: 'Polyester' },
-          { label: 'Silk', value: 'Silk' }, { label: 'Linen', value: 'Linen' },
-        ],
-      },
-      {
-        canonical_name: 'pattern', display_name: 'Pattern', primitive: 'enum', required: true,
-        enum_options: [
-          { label: 'Mirror Work', value: 'Mirror Work' }, { label: 'Embroidered', value: 'Embroidered' },
-          { label: 'Printed', value: 'Printed' }, { label: 'Solid', value: 'Solid' },
-        ],
-      },
-      {
-        canonical_name: 'occasion', display_name: 'Occasion', primitive: 'enum', required: true,
-        enum_options: [
-          { label: 'Casual', value: 'Casual' }, { label: 'Festive', value: 'Festive' },
-          { label: 'Party', value: 'Party' }, { label: 'Wedding', value: 'Wedding' },
-        ],
-      },
-      { canonical_name: 'fabric_care', display_name: 'Fabric Care', primitive: 'text_short', required: true, help_text: 'e.g. Hand wash cold' },
-      { canonical_name: 'description', display_name: 'Description', primitive: 'text_long', required: true, help_text: 'Describe the product in detail' },
-      {
-        canonical_name: 'size_type', display_name: 'Size Type', primitive: 'enum', required: true,
-        enum_options: [
-          { label: 'Free Size', value: 'Free Size' }, { label: 'S', value: 'S' },
-          { label: 'M', value: 'M' }, { label: 'L', value: 'L' },
-          { label: 'XL', value: 'XL' }, { label: 'XXL', value: 'XXL' },
-        ],
-      },
-      { canonical_name: 'pack_of', display_name: 'Pack Of', primitive: 'number', required: true },
-      {
-        canonical_name: 'country_of_origin', display_name: 'Country of Origin', primitive: 'enum', required: true,
-        enum_options: [{ label: 'India', value: 'India' }],
-      },
-      { canonical_name: 'model_name', display_name: 'Model Name', primitive: 'text_short', required: true },
-    ],
-  },
-  {
-    group: 'recommended',
-    fields: [
-      {
-        canonical_name: 'sleeve_length', display_name: 'Sleeve Length', primitive: 'enum', required: false,
-        enum_options: [
-          { label: 'Full Sleeve', value: 'Full Sleeve' }, { label: 'Half Sleeve', value: 'Half Sleeve' },
-          { label: 'Sleeveless', value: 'Sleeveless' }, { label: '3/4 Sleeve', value: '3/4 Sleeve' },
-        ],
-      },
-      {
-        canonical_name: 'neck_type', display_name: 'Neck Type', primitive: 'enum', required: false,
-        enum_options: [
-          { label: 'Round Neck', value: 'Round Neck' }, { label: 'V-Neck', value: 'V-Neck' },
-          { label: 'Boat Neck', value: 'Boat Neck' },
-        ],
-      },
-      {
-        canonical_name: 'fit_type', display_name: 'Fit Type', primitive: 'enum', required: false,
-        enum_options: [
-          { label: 'Regular', value: 'Regular' }, { label: 'Slim', value: 'Slim' }, { label: 'Relaxed', value: 'Relaxed' },
-        ],
-      },
-      {
-        canonical_name: 'print_type', display_name: 'Print Type', primitive: 'enum', required: false,
-        enum_options: [
-          { label: 'Floral', value: 'Floral' }, { label: 'Geometric', value: 'Geometric' }, { label: 'Abstract', value: 'Abstract' },
-        ],
-      },
-      {
-        canonical_name: 'closure_type', display_name: 'Closure Type', primitive: 'enum', required: false,
-        enum_options: [
-          { label: 'Button', value: 'Button' }, { label: 'Zip', value: 'Zip' }, { label: 'Pullover', value: 'Pullover' },
-        ],
-      },
-      { canonical_name: 'wash_care', display_name: 'Wash Care Instructions', primitive: 'text_long', required: false },
-      { canonical_name: 'weight_grams', display_name: 'Weight (grams)', primitive: 'number', required: false },
-      {
-        canonical_name: 'inner_lining', display_name: 'Inner Lining', primitive: 'enum', required: false,
-        enum_options: [{ label: 'Yes', value: 'Yes' }, { label: 'No', value: 'No' }],
-      },
-      { canonical_name: 'item_height', display_name: 'Item Height (cm)', primitive: 'number', required: false },
-      { canonical_name: 'item_width', display_name: 'Item Width (cm)', primitive: 'number', required: false },
-    ],
-  },
-  {
-    group: 'optional',
-    fields: [
-      {
-        canonical_name: 'fragrance', display_name: 'Fragrance', primitive: 'enum', required: false,
-        enum_options: [{ label: 'Yes', value: 'Yes' }, { label: 'No', value: 'No' }],
-      },
-      {
-        canonical_name: 'sustainable_material', display_name: 'Sustainable Material', primitive: 'enum', required: false,
-        enum_options: [{ label: 'Yes', value: 'Yes' }, { label: 'No', value: 'No' }],
-      },
-      { canonical_name: 'frill_detail', display_name: 'Frill Detail', primitive: 'text_short', required: false },
-      { canonical_name: 'embroidery_detail', display_name: 'Embroidery Detail', primitive: 'text_short', required: false },
-      {
-        canonical_name: 'dupatta_included', display_name: 'Dupatta Included', primitive: 'enum', required: false,
-        enum_options: [{ label: 'Yes', value: 'Yes' }, { label: 'No', value: 'No' }],
-      },
-      { canonical_name: 'waist_band', display_name: 'Waist Band', primitive: 'text_short', required: false },
-      { canonical_name: 'hem_detail', display_name: 'Hem Detail', primitive: 'text_short', required: false },
-      { canonical_name: 'sleeve_detail', display_name: 'Sleeve Detail', primitive: 'text_short', required: false },
-      { canonical_name: 'back_detail', display_name: 'Back Detail', primitive: 'text_short', required: false },
-      { canonical_name: 'additional_material', display_name: 'Additional Material', primitive: 'text_short', required: false },
-    ],
-  },
-];
+import { ApiClient } from '@mesell/core';
 
-const AUTOFILL_RESPONSE: Record<string, unknown> = {
-  product_title: 'Blue Cotton Kurti — Mirror Work',
-  brand: 'Generic',
-  color: 'Blue',
-  material: 'Cotton',
-  pattern: 'Mirror Work',
-  occasion: 'Casual',
-  fabric_care: 'Hand wash cold',
-  description: 'Beautiful blue cotton kurti with intricate mirror work, perfect for casual and festive occasions.',
-};
+import {
+  SchemaResponseDTO,
+  FieldEnumResponseDTO,
+  EnumEntryDTO,
+  ProductResponse,
+  ProductDraftResponse,
+  AutofillResponse,
+  FieldGroup,
+  adaptSchemaResponse,
+} from '../models/field-schema.model';
 
+// ── Endpoint path constants (single source of truth, R-W6-1) ──────────────────
+const CATEGORIES_PATH = '/api/v1/categories';
+const PRODUCTS_PATH   = '/api/v1/products';
+
+/**
+ * CatalogFormApiService — feature-scoped, route-provided.
+ * Inject ApiClient from @mesell/core barrel only (no raw HttpClient).
+ */
 @Injectable()
 export class CatalogFormApiService {
-  getSchema(_categoryId: string): Observable<FieldGroup[]> {
-    return of(KURTI_SCHEMA).pipe(delay(800));
+  private readonly api = inject(ApiClient);
+
+  // ── #15 — GET /categories/{id}/schema ─────────────────────────────────────
+
+  /**
+   * getSchema — fetches the category field schema and adapts flat list → FieldGroup[].
+   *
+   * @param categoryId - UUID of the category (from navigation state — GAP-1 interim)
+   * @returns Observable<FieldGroup[]> — 3-section view-model; [] on non-401 error
+   *
+   * ETag: deferred V1 — no If-None-Match sent → always 200+body.
+   * retryOn503: DEFERRED — ApiClient retry fires on all errors (not just 503),
+   * so using it would incorrectly retry 401/404 responses. Deferred until
+   * ApiClient retry is filtered by status code.
+   */
+  getSchema(categoryId: string): Observable<FieldGroup[]> {
+    return this.api
+      .get<SchemaResponseDTO>(`${CATEGORIES_PATH}/${categoryId}/schema`)
+      .pipe(
+        map(dto => adaptSchemaResponse(dto)),
+        catchError((err: HttpErrorResponse) => {
+          if (err.status === 401) throw err;
+          // 404: schema not found OR FEATURE_CATALOG_FORM_ENABLED=false → graceful empty
+          // 5xx: server unavailable → graceful empty + component shows retry affordance
+          return of([] as FieldGroup[]);
+        }),
+      );
   }
 
-  autosave(_productId: string, _fields: Record<string, unknown>): Observable<null> {
-    return of(null).pipe(delay(300));
+  // ── #22 — GET /products/{id}/draft ────────────────────────────────────────
+
+  /**
+   * getDraft — fetches autosaved field values for resume-on-reload.
+   *
+   * @param productId - UUID of the product
+   * @returns Observable<ProductDraftResponse | null>
+   *   null → 204 (never autosaved), 404 (flag OFF or not found), or 5xx (graceful)
+   *
+   * Note: HttpClient maps a 204 response (no body) to null body — not an error.
+   * The catchError handles network errors and flag-OFF 404s uniformly as null.
+   */
+  getDraft(productId: string): Observable<ProductDraftResponse | null> {
+    return this.api
+      .get<ProductDraftResponse | null>(`${PRODUCTS_PATH}/${productId}/draft`)
+      .pipe(
+        catchError((err: HttpErrorResponse) => {
+          if (err.status === 401) throw err;
+          // 404: feature flag OFF or product not found → graceful null
+          // 5xx / 0 (network): non-fatal for draft recovery → graceful null
+          return of(null);
+        }),
+      );
   }
 
-  autofill(_productId: string): Observable<Record<string, unknown>> {
-    return of(AUTOFILL_RESPONSE).pipe(delay(2000));
+  // ── #18 — PATCH /products/{id} (autosave) ─────────────────────────────────
+
+  /**
+   * autosave — sends a PATCH with the current field values.
+   *
+   * X-Autosave: true header signals the backend this is an incremental autosave.
+   * PatchProductRequest requires ≥1 of fields/status — sending {fields} satisfies it.
+   *
+   * @param productId - UUID of the product
+   * @param fields    - current form values (Record<string, unknown>)
+   * @returns Observable<ProductResponse>
+   *
+   * Errors are re-thrown so the component can:
+   *   - 401: set saveStatus='error', show toast (refreshInterceptor already retried)
+   *   - 422: surface field-level validation errors from the error envelope
+   *   - 400: log (should not occur if FE validates)
+   *   - 5xx: show autosave failure banner; user input is NEVER lost
+   */
+  autosave(productId: string, fields: Record<string, unknown>): Observable<ProductResponse> {
+    return this.api
+      .patch<ProductResponse>(
+        `${PRODUCTS_PATH}/${productId}`,
+        { fields },
+        { headers: new HttpHeaders({ 'X-Autosave': 'true' }) },
+      )
+      .pipe(
+        catchError((err: HttpErrorResponse) => {
+          throw err;
+        }),
+      );
+  }
+
+  // ── #19 — POST /products/{id}/autofill ────────────────────────────────────
+
+  /**
+   * autofill — calls the AI autofill endpoint.
+   *
+   * @param productId   - UUID of the product
+   * @param description - product description (1..2000 chars, REQUIRED by backend schema)
+   * @returns Observable<AutofillResponse>
+   *
+   * Errors are re-thrown so the component can:
+   *   - 402: show "AI fill quota reached" toast (plan guard)
+   *   - 404: disable the AI fill button (FEATURE_AI_AUTOFILL_ENABLED=false — GAP-2)
+   *   - 5xx: show retry toast
+   */
+  autofill(productId: string, description: string): Observable<AutofillResponse> {
+    return this.api
+      .post<AutofillResponse>(
+        `${PRODUCTS_PATH}/${productId}/autofill`,
+        { description },
+      )
+      .pipe(
+        catchError((err: HttpErrorResponse) => {
+          throw err;
+        }),
+      );
+  }
+
+  // ── #16 — GET /categories/{id}/field-enum/{name} ──────────────────────────
+
+  /**
+   * getFieldEnum — lazy-loads options for `dropdown_api_search` fields.
+   * Called on dropdown-open event, not on page-load.
+   *
+   * @param categoryId - UUID of the category
+   * @param fieldName  - canonical_name of the field (e.g. 'brand')
+   * @returns Observable<EnumEntryDTO[]> — [] on any error (graceful)
+   *
+   * All errors → of([]) — dropdown shows empty, user can type in a free-text field.
+   */
+  getFieldEnum(categoryId: string, fieldName: string): Observable<EnumEntryDTO[]> {
+    return this.api
+      .get<FieldEnumResponseDTO>(
+        `${CATEGORIES_PATH}/${categoryId}/field-enum/${fieldName}`,
+      )
+      .pipe(
+        map(resp => resp.enum_entries),
+        catchError(() => of([] as EnumEntryDTO[])),
+      );
   }
 }
+
+// Re-export DTOs and adapters for consumers that import from this service path.
+export type {
+  SchemaResponseDTO,
+  SchemaFieldDTO,
+  FieldEnumResponseDTO,
+  EnumEntryDTO,
+  ProductResponse,
+  ProductDraftResponse,
+  AutofillResponse,
+  AutofillSuggestion,
+  FieldGroup,
+  FieldSchema,
+} from '../models/field-schema.model';
+export { adaptSchemaResponse, adaptSchemaField, mapPrimitiveToWidget } from '../models/field-schema.model';
