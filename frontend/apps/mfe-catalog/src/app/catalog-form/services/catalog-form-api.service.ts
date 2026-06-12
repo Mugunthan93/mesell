@@ -99,6 +99,9 @@ export class CatalogFormApiService {
    * retryOn503: DEFERRED — ApiClient retry fires on all errors (not just 503),
    * so using it would incorrectly retry 401/404 responses. Deferred until
    * ApiClient retry is filtered by status code.
+   * V1.5 CLEANUP: ApiClient retryOn503 is now status-filtered (503/504/network
+   * only — frozen-surface amendment 2026-06-12); this idempotent getSchema GET
+   * may safely opt into `{ retryOn503: true }`. Left as-is for V1 (works today).
    */
   getSchema(categoryId: string): Observable<FieldGroup[]> {
     return this.api

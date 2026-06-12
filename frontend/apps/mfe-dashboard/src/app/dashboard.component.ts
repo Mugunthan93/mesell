@@ -228,17 +228,11 @@ import { ProfileCompletenessSummary, formatRelativeTime, filterProductsByName } 
      * column, component-scoped token wiring).
      * --------------------------------------------------------------- */
 
-    /* --mee-color-surface-variant is NOT yet in Layer 1 (_tokens.css).
-     * Defined locally here so the 3 usages below (table head-row bg,
-     * table row hover bg, pagination button bg) resolve correctly.
-     * TOKEN GAP — escalation required via frozen-surface amendment path:
-     *   value #f2f6fa = Spike --mat-sys-surface-bright (Wave 1 source).
-     *   Proper fix: lead queues a Wave-A-surface amendment to add this
-     *   token to libs/design-tokens/_tokens.css through the Layer-1
-     *   frozen-surface escalation channel. */
-    :host {
-      --mee-color-surface-variant: #f2f6fa;
-    }
+    /* --mee-color-surface-variant (#f2f6fa) is now a Layer-1 token in
+     * libs/design-tokens/_tokens.css (frozen-surface amendment 2026-06-12).
+     * The local :host stopgap that previously defined it here has been
+     * removed; the 3 usages below (table head-row bg, table row hover bg,
+     * pagination button bg) now resolve from Layer 1. */
 
     /* --- Stat card grid ---
        2-column at all breakpoints (V1: Draft + Ready only — A2).

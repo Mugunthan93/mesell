@@ -12,6 +12,7 @@ export { MeeSelectComponent }          from './select/select.component';
 export { MeeTreeSelectComponent }      from './tree-select/tree-select.component';
 export { MeeSkeletonComponent }        from './skeleton/skeleton.component';
 export { MeeProgressBarComponent }     from './progress-bar/progress-bar.component';
+export { MeeSpinnerComponent }         from './spinner/spinner.component';
 export { MeeToastComponent }           from './toast/toast.component';
 export { MeeToastService }             from './toast/toast.service';
 export { MeeConfirmDialogComponent }   from './confirm-dialog/confirm-dialog.component';

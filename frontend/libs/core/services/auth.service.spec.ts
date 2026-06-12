@@ -167,6 +167,102 @@ describe('AuthService.scheduleRefresh()', () => {
   });
 });
 
+// ── setSession auto-pair (frozen-surface amendment 2026-06-12) ──────────────────
+
+describe('AuthService.setSession() auto-pair with scheduleRefresh', () => {
+  it('AUTO-schedules a refresh when expiresIn is provided', () => {
+    vi.useFakeTimers();
+
+    TestBed.configureTestingModule({
+      providers: [
+        AuthService,
+        AuthApiService,
+        provideHttpClient(withFetch()),
+        provideHttpClientTesting(),
+      ],
+    });
+
+    const service    = TestBed.inject(AuthService);
+    const controller = TestBed.inject(HttpTestingController);
+
+    // 3-arg form: NO explicit scheduleRefresh() call by the caller.
+    service.setSession('tok', { phone: '+91x' }, 60); // fire at 60-30 = 30s
+
+    vi.advanceTimersByTime(29_000);
+    controller.expectNone('/api/v1/auth/refresh'); // not yet
+
+    vi.advanceTimersByTime(1_001); // 30s — auto-scheduled refresh fires
+    const refreshReq = controller.match('/api/v1/auth/refresh');
+    expect(refreshReq.length).toBeGreaterThanOrEqual(1);
+    refreshReq[0].flush({ access_token: 'new-tok', expires_in: 60, token_type: 'bearer' });
+
+    const meReq = controller.match('/api/v1/auth/me');
+    meReq.forEach((r) =>
+      r.flush({ user_id: 'u', phone: '+91x', plan: 'free', created_at: '', last_login_at: null }),
+    );
+
+    controller.verify();
+    vi.useRealTimers();
+  });
+
+  it('does NOT schedule a refresh when expiresIn is omitted (existing 2-arg callers unchanged)', () => {
+    vi.useFakeTimers();
+
+    TestBed.configureTestingModule({
+      providers: [
+        AuthService,
+        AuthApiService,
+        provideHttpClient(withFetch()),
+        provideHttpClientTesting(),
+      ],
+    });
+
+    const service    = TestBed.inject(AuthService);
+    const controller = TestBed.inject(HttpTestingController);
+
+    // 2-arg form (otp-verify mock / SP06 C4 smoke / bootstrap pre-hydration).
+    service.setSession('tok', { phone: '+91x' });
+    expect(service.getToken()).toBe('tok');
+    expect(service.isAuthenticated()).toBe(true);
+
+    vi.advanceTimersByTime(120_000); // no timer should ever fire
+    controller.expectNone('/api/v1/auth/refresh');
+
+    controller.verify();
+    vi.useRealTimers();
+  });
+
+  it('explicit scheduleRefresh() remains independently callable', () => {
+    vi.useFakeTimers();
+
+    TestBed.configureTestingModule({
+      providers: [
+        AuthService,
+        AuthApiService,
+        provideHttpClient(withFetch()),
+        provideHttpClientTesting(),
+      ],
+    });
+
+    const service    = TestBed.inject(AuthService);
+    const controller = TestBed.inject(HttpTestingController);
+
+    service.setSession('tok', { phone: '+91x' }); // no auto-schedule
+    service.scheduleRefresh(60);                   // explicit, still works
+
+    vi.advanceTimersByTime(30_001);
+    const refreshReq = controller.match('/api/v1/auth/refresh');
+    expect(refreshReq.length).toBeGreaterThanOrEqual(1);
+    refreshReq[0].flush({ access_token: 'n', expires_in: 60, token_type: 'bearer' });
+    controller.match('/api/v1/auth/me').forEach((r) =>
+      r.flush({ user_id: 'u', phone: '+91x', plan: 'free', created_at: '', last_login_at: null }),
+    );
+
+    controller.verify();
+    vi.useRealTimers();
+  });
+});
+
 // ── bootstrap() ───────────────────────────────────────────────────────────────
 
 describe('AuthService.bootstrap()', () => {
