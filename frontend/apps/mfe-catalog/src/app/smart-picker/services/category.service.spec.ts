@@ -1,30 +1,33 @@
 /**
- * category.service.spec.ts — Session mesell-smart-picker-port-frontend-session-2
+ * category.service.spec.ts — Updated Wave 6 Wave A (wave6-auth-core)
  *
  * Tests CategoryService with Angular HttpTestingController.
- * Uses TestBed (service-only — no component, no PrimeNG dependency, no TestBed crash risk).
+ * Uses TestBed (service-only — no component, no PrimeNG dependency).
+ *
+ * Wave 6 Wave A changes from the previous version:
+ *   1. authHeaders() REMOVED — jwtInterceptor handles Bearer globally.
+ *      Tests now assert NO manual Authorization header from the service itself.
+ *      (The interceptor is NOT registered in the test's provideHttpClient — that is
+ *       intentional: we test the SERVICE contract, not the interceptor. A separate
+ *       jwt.interceptor.spec.ts tests the header-attachment behaviour.)
+ *   2. selectCategory() URL re-pointed: /api/v1/catalogs → /api/v1/products (DISCREPANCY-1 fix).
  *
  * Error matrix coverage:
  *  - happy path: 200 with SuggestResponse → emits the response
- *  - attaches Bearer token from AuthService.getToken()
- *  - no Authorization header when token is null
+ *  - no manual Authorization header (global interceptor handles it — service must not add one)
  *  - 402: plan-guard quota → emits { suggestions: [], fallback_offered: true }
  *  - 404: feature flag disabled → emits { suggestions: [], fallback_offered: true }
  *  - 401: auth expired → AuthService.logout() called + EMPTY (no emission)
  *  - 400: invalid q → EMPTY (no emission)
  *  - 500: server error → { suggestions: [], fallback_offered: true }
  *  - 503: server unavailable → { suggestions: [], fallback_offered: true }
- *  - selectCategory: POST /api/v1/catalogs + navigate on success
+ *  - selectCategory: POST /api/v1/products (DISCREPANCY-1) with { category_id }
  *  - selectCategory: emits { id } on success
- *  - selectCategory: navigates to /catalogs/:id/edit
+ *  - selectCategory: navigates to /catalogs/:id/edit on success
  *  - selectCategory: EMPTY on error (no re-throw)
  *  - browseRedirect: router.navigate(['/categories/browse'])
  *
  * tsconfig.spec.json has "types": ["vitest/globals"] — no explicit describe/it/expect imports needed.
- * The vi import is needed for vi.fn() / vi.spyOn() calls.
- *
- * Ported from e97c4f5:frontend/src/app/features/smart-picker/services/category.service.spec.ts
- * Adapted import paths to mfe-catalog remote structure (@mesell/core alias).
  */
 
 import { TestBed } from '@angular/core/testing';
@@ -132,22 +135,18 @@ describe('CategoryService.suggest() — happy path', () => {
     expect(emitted[0].suggestions[0].category_id).toBe('cat-kurti-uuid');
   });
 
-  it('attaches Authorization: Bearer <token> header', () => {
-    const { service, controller } = setup('my-test-token');
+  it('does NOT manually set Authorization header — jwtInterceptor handles Bearer globally', () => {
+    // Wave 6 Wave A: authHeaders() removed; this test confirms the service
+    // does not attach any Authorization header manually. The global jwtInterceptor
+    // (registered in app.config + all remote main.ts) attaches Bearer at the
+    // interceptor level, not inside service methods. The interceptor is intentionally
+    // NOT in this TestBed — we're testing the service contract, not the interceptor.
+    const { service, controller } = setup('some-token');
 
     service.suggest('kurti').subscribe();
 
     const req = controller.expectOne((r) => r.url === '/api/v1/categories/suggest');
-    expect(req.request.headers.get('Authorization')).toBe('Bearer my-test-token');
-    req.flush(MOCK_SUGGEST_RESPONSE);
-  });
-
-  it('sends no Authorization header when token is null', () => {
-    const { service, controller } = setup(null);
-
-    service.suggest('kurti').subscribe();
-
-    const req = controller.expectOne((r) => r.url === '/api/v1/categories/suggest');
+    // Service itself sets no Authorization header (interceptor's responsibility)
     expect(req.request.headers.get('Authorization')).toBeNull();
     req.flush(MOCK_SUGGEST_RESPONSE);
   });
@@ -265,24 +264,25 @@ describe('CategoryService.suggest() — error matrix', () => {
   });
 });
 
-// ── CategoryService.selectCategory() ─────────────────────────────────────────
+// ── CategoryService.selectCategory() — DISCREPANCY-1 re-point ────────────────
 
-describe('CategoryService.selectCategory()', () => {
+describe('CategoryService.selectCategory() — DISCREPANCY-1: POST /api/v1/products', () => {
   afterEach(() => {
     TestBed.inject(HttpTestingController).verify();
   });
 
-  it('POSTs to /api/v1/catalogs with { category_id }', () => {
+  it('POSTs to /api/v1/products with { category_id } (DISCREPANCY-1 fix)', () => {
     const { service, controller, router } = setup();
     vi.spyOn(router, 'navigate').mockResolvedValue(true);
     const categoryId = 'cat-kurti-uuid';
 
     service.selectCategory(categoryId).subscribe();
 
-    const req = controller.expectOne('/api/v1/catalogs');
+    // Must hit /api/v1/products (NOT /api/v1/catalogs — the old bug)
+    const req = controller.expectOne('/api/v1/products');
     expect(req.request.method).toBe('POST');
     expect(req.request.body).toEqual({ category_id: categoryId });
-    req.flush({ id: 'catalog-123' });
+    req.flush({ id: 'product-123' });
   });
 
   it('emits { id } on success', () => {
@@ -292,23 +292,23 @@ describe('CategoryService.selectCategory()', () => {
 
     service.selectCategory('cat-uuid').subscribe((r) => emitted.push(r));
 
-    const req = controller.expectOne('/api/v1/catalogs');
-    req.flush({ id: 'new-catalog-id' });
+    const req = controller.expectOne('/api/v1/products');
+    req.flush({ id: 'new-product-id' });
 
     expect(emitted).toHaveLength(1);
-    expect(emitted[0].id).toBe('new-catalog-id');
+    expect(emitted[0].id).toBe('new-product-id');
   });
 
-  it('navigates to /catalogs/:id/edit on success', () => {
+  it('navigates to /catalogs/:id/edit on success (id is product id)', () => {
     const { service, controller, router } = setup();
     const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
 
     service.selectCategory('cat-kurti').subscribe();
 
-    const req = controller.expectOne('/api/v1/catalogs');
-    req.flush({ id: 'catalog-xyz' });
+    const req = controller.expectOne('/api/v1/products');
+    req.flush({ id: 'product-xyz' });
 
-    expect(navigateSpy).toHaveBeenCalledWith(['/catalogs', 'catalog-xyz', 'edit']);
+    expect(navigateSpy).toHaveBeenCalledWith(['/catalogs', 'product-xyz', 'edit']);
   });
 
   it('returns EMPTY on 4xx/5xx error (no re-throw)', () => {
@@ -321,7 +321,7 @@ describe('CategoryService.selectCategory()', () => {
       complete: () => { completed = true; },
     });
 
-    const req = controller.expectOne('/api/v1/catalogs');
+    const req = controller.expectOne('/api/v1/products');
     req.flush({ detail: 'Not Found' }, { status: 404, statusText: 'Not Found' });
 
     expect(emitted).toHaveLength(0);
