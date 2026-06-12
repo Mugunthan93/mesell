@@ -4507,3 +4507,46 @@ Hand-offs: meesell-backend-coordinator — both chore items COMPLETE, branch pus
   R1 re-ruling (future): when founder lifts sentinel-only gate, database-builder
   wires _GLOBAL_TABLES into check_scope_to_user.py ALLOWLISTED_MODULES replacement.
 =========
+
+=== UPDATE: 2026-06-12 — backend chores batch STEP 3: MERGE-GATE VERDICT (PASS) + PR #143 ===
+Phase: backend chores follow-ups (2 items) — lead merge-gate
+Session: mesell-backend-chores-session-1
+Board sweep (session-end): backend-chores row flipped IN PROGRESS → "GATE PASS — FOUNDER PR #143
+  OPEN→develop". Incoming infra image-tasks row stays IN PROGRESS (resolves on develop merge). No
+  7+-day-stale rows. microservices-export last touched 2026-06-10 (<7d, not stale). No MERGED rows
+  older than 14 days to evict.
+
+MERGE-GATE VERDICT: PASS (both items). Branch chore/backend-followups, 4 files / +153 -0, tip d262c95.
+  Item 1 (services-builder, 26261ce): celery_app.py task_routes.
+    GATE EVIDENCE (lead-run, main-checkout venv interpreter + worktree PYTHONPATH + CI dummy env):
+      task_routes = {'image.precheck': {'queue': 'image-tasks'}}
+      image.precheck -> {'queue': 'image-tasks'}   ✓
+      export.xlsx routed? False                     ✓ (DEFAULT-QUEUE INVARIANT PRESERVED — load-bearing)
+    §11.E LOCKED image/tasks.py body + worker_prefetch_multiplier/task_acks_late/
+    task_reject_on_worker_lost/task_prerun ALL untouched ✓. ruff clean ✓.
+  Item 2 (database-builder, d262c95): core/tenancy.py _GLOBAL_TABLES sentinel.
+    GATE EVIDENCE:
+      _GLOBAL_TABLES = ['categories','field_aliases','field_enum_values','templates']  ✓ ; in __all__ ✓
+      §19 `python -m tests.lint.check_scope_to_user` → Contract 8 PASS ✓ (module-name allowlist intact —
+        the new sentinel did NOT alter or break enforcement; R1 sentinel-only default honored)
+    BACKEND_ARCHITECTURE.md untouched (no LOCKED-shape edit; §4.C prose already named the 4 tables) ✓.
+    ruff clean ✓.
+  Cross-cutting: 0 new route decorators → §17 stays 28; 0 alembic → no head divergence; §2.D matrix
+    unchanged. STATUS fold by database-builder verified (both specialist entries present, L4467 + L4490).
+
+FOUNDER RULINGS (FLAGGED, defaults applied in PR #143):
+  R1 — sentinel-only vs re-point linter. APPLIED: sentinel only (lower risk; allowlist works). Re-point
+       is a §19 linter behaviour change for a future ruling.
+  R2 — one PR vs two. APPLIED: ONE PR (#143). Both sub-10-line additive diffs, zero test risk.
+
+PR #143 (chore/backend-followups → develop) is the FOUNDER'S GATE per D1 — lead authored + gated, leaves
+  OPEN. NOT a feature/{name}/backend→feature/{name} PR, so the full backend PR-template is N/A (no
+  Alembic, no contract change, no module additions — all additive config/doc).
+
+Done: STEP 3 merge-gate (both items PASS), PR #143 opened with verdict, board flip, this STATUS block,
+  session-end sweep, memory append.
+In progress: none (batch gated; awaiting founder merge of #143).
+Blockers: none.
+Next: founder merges #143 → develop; THEN infra opens 1-line follow-up to uncomment -Q image-tasks.
+Hand-offs: meesell-infra-builder (image-tasks worker -Q switch, post-#143-merge).
+=========
