@@ -3,6 +3,24 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-12
 
+=== UPDATE: 2026-06-12 — WAVE 6C LANE 2 EXPORT — LEAD MERGE-GATE PASS ===
+Phase: wave6-export (Wave 6 Wave C lane 2 — /catalogs/:id/export real wiring)
+Session: mesell-wave6-export-gate-session-1
+Board sweep: wave6-export row added to Recently merged (MERGED to integration); no Active-features rows untouched 7+ days; no new inter-lead requests opened this session.
+Done:
+  - HYBRID step-3 merge-gate of feature/wave6-export/frontend@c28434b (chain d2d0cad service-builder → 21da63b component-builder → c28434b ui-styler). TRUE tip verified first (Wave B lesson).
+  - Independent re-verification in fresh worktree /tmp/mesell-wt/w6c-exp-review — 0 discrepancies vs builder reports on all 6 focal points.
+  - VERDICT: PASS. Group PR #165 lead-gate APPROVE + squash --admin (a0954f6); frontend branch deleted via gh api.
+  - develop→integration sync conflict-free (frontend tree byte-identical across merge; catalog-form lane #166 touched 0 frontend files — no union); re-cert merged tip d9ef8f7: 59 files/770 tests 0 fail/0 skip, mfe-export 3.168s.
+  - Founder-gate PR #167 [FOUNDER GATE — DO NOT MERGE] integration→develop OPENED + LEFT OPEN — lead does NOT approve (D1).
+Focal findings (all PASS): D18 setInterval preserved (clear on terminal+ngOnDestroy+maxPolls; fake-timer proofs re-run); retry layering (POST never retried, poll bypasses ApiClient all-errors-retry defect + layers 503-only max 2; defect verified real in frozen libs/core api-client.service.ts; confirmed BOTH lanes); no progress_pct (status-based UI, 422 product_not_ready via notReadyMessage); lane discipline (only apps/mfe-export/** + sanctioned STATUS, 0 libs/ edits, barrel-only, styler hex-removal in-lane); §6.G singleton ONE _mesell_core chunk no inline (mfe-export now first @mesell/core consumer in remote); boundary/localStorage/deep-import 0; contract URLs exact; tsc strict+strictTemplates EXIT 0.
+In progress: none (gate complete).
+Blockers: none.
+Next: founder reviews #167 (and lane-1 #164). Wave D (images‖pricing) per master plan §4.2 — images unblocks on #164 to develop (R-W6-9); pricing independent.
+Hand-offs: 3-item frozen-surface amendment proposal queued for a post-Wave-D fast-mode chore (§7.3 founder approval): (a) ApiClient.retryOn503 status-filter fix [confirmed BOTH lanes], (b) ui-kit MeeSpinnerComponent indeterminate gap, (c) Wave B token gap. Screenshots deferred → founder Gate-5 UI-review (SP01-07 precedent). No backend/AI memo (export has no AI surface; 422 contract honored as-is).
+=========
+
+
 === UPDATE: 2026-06-12 UI-STYLER WAVE-C-EXP ===
 Phase: wave6-export (Wave 6 Wave C lane 2 — §visual polish builder-3 FINAL)
 Session: mesell-wave6-export-build-session-3
@@ -6525,4 +6543,25 @@ Hand-offs to builder-3:
     — builder-3 can read this in the shell chrome for a global error toast surface
   NetworkService.online signal: available at libs/core/services/network.service.ts
     — builder-3 can use this for a global offline banner in the shell chrome (de-dup from per-page banners)
+=========
+
+=== UPDATE: 2026-06-12 — Wave 6C lane 1 catalog-form — MERGE-GATE RE-GATE: VERDICT PASS ===
+Phase: Wave 6 Wave C lane 1 — catalog-form real API wiring (apps/mfe-catalog, /catalogs/:id/edit)
+Session: mesell-wave6-catalog-form-regate-session-1
+Board sweep: catalog-form row added to Recently merged; wave6-auth-core/onboarding/dashboard rows flipped to founder-MERGED; no Active-features row stale 7+ days (only plan-PENDING + image-precheck founder-gate, both 2026-06-11). Inter-lead requests open: 3 infra RECORD-ONLY (mfe-dashboard/export/onboarding hosting prefixes) unchanged.
+Done:
+  - RE-GATE of the prior REJECT (tip 06d7b76, P0 fabricated 11-value primitive enum). TRUE origin tip verified 5863cd2 (fix on chain 82d77bb→5cfc6e8→f90f882→06d7b76→5863cd2).
+  - P0 FIX VERIFIED FROM SOURCE (trusted no report): `SchemaFieldDTO.primitive` union + `mapPrimitiveToWidget` switch now match the REAL PRIMITIVE_VALUES re-derived from backend/app/i18n/schema_contract.py:175-187. 4 fabrications (toggle/date/multiselect/rating) GONE; dropdown_medium/large→'select' (were falling to default→free-text = core-form breakage), number_with_unit→'number', address_group→'skip' (seller-profile composite, primitive_classifier.py docstring confirms never a catalog primitive), image_upload→'skip'. Template @switch(field.primitive) compile-safe against the adapted FieldSchema widget union.
+  - REWOUND builder-2 STATUS-docs commit f90f882 (lead sole-writer surface) out of the branch via force-with-lease (lease verified prior origin tip == 5863cd2 — nothing else rode on it). Group PR carries CODE ONLY (7 files, all under apps/mfe-catalog/src/app/catalog-form/).
+  - Group PR #163 frontend→integration: LEAD-GATE APPROVE comment + squash --admin (1b948cd); frontend branch deleted via gh api.
+  - Merged origin/develop (b348dac) into integration: conflict-free, touched ZERO frontend/ files (backend Gate-1/Gate-4 + infra/terraform/docs only). No export-lane wiring on develop → nothing to union.
+  - Re-certified merged tip 77e16e5: mfe-catalog build GREEN 2.815s + shell GREEN 2.726s (≤90s D12, shell initial 62.33 kB unchanged); full suite 59 files / 782 tests / 0 fail (monotonic ≥782); 3 catalog-form spec chunks discovered (model/service/component); boundary 0; deep-import 0 (barrel-only); localStorage 0 (FE-D5); manual-Authorization 0; mock-removed-in-service 0; singleton §6.G intact (no ApiClient/AuthService inlined into mfe-catalog; shell hosts _mesell_core); disjointness 7 files all in-lane.
+  - Opened FOUNDER-GATE PR #164 [FOUNDER GATE — DO NOT MERGE] integration→develop — LEFT OPEN, lead does NOT approve (D1). Body carries reject→fix history + deferred-items register + R-W6-9 images-unblock note.
+  - Board flips landed for the founder-merged Wave 6A/6B gates: #135 (auth-core), #153 (onboarding), #161 (dashboard) all MERGED to develop.
+In progress: none (lane gated to founder).
+Blockers: none.
+Next: founder reviews PR #164. On its merge to develop, the Wave D images lane (apps/mfe-catalog, R-W6-9 intra-remote serialization) unblocks for branching. Wave C lane 2 (export) gates separately.
+Hand-offs:
+  - Wave D images lane (same mfe-catalog remote) is GATED on PR #164's merge to develop — communicated; do NOT branch images until catalog-form lands.
+  - Deferred register (carried, non-blockers): GAP-1 product category_id recovery on hard-reload (nav-state interim; backend memo pending an authoritative GET /products/{id}-style path); ETag #15 conditional-GET (no If-None-Match sent in V1); 360/1280 screenshots (native-fed headless hang → by-construction responsive argument + founder UI-review flag, Wave B precedent); validation_message_ids warnings + autofill confidence display → V1.5.
 =========
