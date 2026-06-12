@@ -1,8 +1,46 @@
 # STATUS — INFRASTRUCTURE
 
 **Owner:** `meesell-infra-builder`
-**Last update:** 2026-06-12 (8-FLAG SET COMPLETE — price-calc/dashboard/live-preview flags injected into dev ConfigMap (live, 26→29 keys) + staging overlay (manifest-only); api+worker rolling-restarted + env-verified; live-preview SHIPS DARK — see latest UPDATE)
+**Last update:** 2026-06-12 (DEV DEPLOY-FROM-DEVELOP @ tip 067d664 — api+worker hand-built+pushed (Cloud Build, SHA tag) + rolled out 2/2 to dev; 5/5 verifications GREEN; CI auto-deploy lane gated RED at Gate-1 backend bug so direct deploy used per founder "Deploy now" — see latest UPDATE)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
+
+## UPDATE — 2026-06-12 — mesell-deploy-develop-infra-session-2 (DEV DEPLOY-FROM-DEVELOP @ develop tip 067d664)
+
+=== STEP: hands-free dev deploy of develop tip — direct lane (CI auto-deploy gated RED) ===
+Phase: DEVOPS_ARCHITECTURE.md §6 (build) + §7 (deploy) — deploy-from-develop lane (founder ruling 2026-06-12 "Deploy dev from develop" + "Deploy now"). Playbook §15 deploy gate honored (alembic-before-image, rollout-status). dev namespace ONLY (staging DEFERRED, founder).
+Session: mesell-deploy-develop-infra-session-2
+
+**Why DIRECT, not CI auto-deploy:** the recorded deploy-from-develop CI lane (push to develop → 5 gates → build → deploy) is currently **gated RED at Gate-1 (unit)** by the catalog-form/ai-autofill event-loop bug (13 fails: `test_catalog_routes.py` + `test_catalog_unit.py`, `RuntimeError: There is no current event loop`). On every develop push the build+deploy jobs are `skipped`. This is a BACKEND test-harness bug (inter-lead OPEN → backend; fix in flight PR #150 `fix/gate1-eventloop`), NOT a runtime/infra defect — it does NOT affect the running app. Founder ruling was "Deploy now", so I ran the SAME deploy procedure by hand against develop tip. The dev pods were on OLDER `api:138f6982...`; now on `api:067d664...`.
+
+**develop tip deployed:** `067d664be7d4f327389d463869fa26f1d224cdab` (#153 Wave 6B onboarding — Option A). Carries the 11 freshly-merged squashes (catalog-form, image-precheck ×4, xlsx-export, backend chores, -Q worker split, flag-parity, ConfigMap flags, onboarding).
+
+**Build (Cloud Build, lane tool):** `gcloud builds submit --no-source --config=<develop-pinned cloudbuild.yaml> --substitutions=_TAG=067d664...` — build `2f480e16-212e-4f64-8030-e82546c73516` SUCCESS 6m11s. Ephemeral config = cloudbuild.yaml with clone branch flipped `main→develop` (cloudbuild's Step-0 hardcodes `--branch=main`; pinned to develop so cluster code == develop tip). Pushed:
+- `api:067d664...` (+`latest`) sha256:bd148050...
+- `worker:067d664...` (+`latest`) sha256:954363e1...
+Shell/frontend image SKIPPED (no `frontend/Dockerfile`; shell ships via `frontend/docker/Dockerfile.shell` + remotes to GCS, INERT — bucket not provisioned). **No frontend Deployment exists in dev → no frontend rollout** (consistent with lane's `if frontend exists` guard).
+
+**AR-token action (standing lesson 2, PROACTIVE):** ran `sudo /usr/local/bin/refresh-ar-token.sh` on `meesell-dev` via IAP SSH BEFORE rollout (registries.yaml rewritten 02:59:39Z). Did NOT need `systemctl restart k3s` — the new-tag pull succeeded with the refreshed token; ZERO 401 ErrImagePull.
+
+**Rollout (lane sequence, kubectl direct — laptop kubectl WORKS this session, IP 122.164.87.167 in firewall, cluster 35.234.223.66):**
+1. pre-migrate rollout-settle api+worker (current image) → clean.
+2. `alembic upgrade head` in api pod → `f31c75438e61 (head)` (no new migration in the 11 squashes).
+3. `set image deployment/api api=api:067d664...` + `set image deployment/worker worker=api:067d664...` (worker runs the api image + `command:["celery"]`, per lane lines 831-832).
+4. `rollout status api` + `worker` → both "successfully rolled out" (180s timeout, no ErrImagePull).
+
+**5/5 VERIFICATIONS — ALL GREEN:**
+- (a) pods on NEW tag: api 2/2 + worker 2/2 Running on `api:067d664...`. ✅
+- (b) `https://api.mesell.xyz/health` → 200 `{"status":"healthy","checks":{"postgres":"ok","valkey":"ok"}}`. ✅
+- (c) worker binds BOTH queues: each worker pod `inspect active_queues` lists `{name:'celery'}` + `{name:'image-tasks'}`. ✅
+- (d) all 8 FEATURE_* env in FRESH api pod: smart_picker/catalog_form/ai_autofill/image_precheck/xlsx_export/price_calculator/tracking_dashboard = true; **live_preview = false (ships dark, founder)**. ✅
+- (e) new surface spot-check: `GET /api/v1/products/{id}/images` → **HTTP 401** clean auth shape (`auth.token_missing` + request_id), NOT 500. OpenAPI (25 paths) confirms new routes mounted: images, export-xlsx, exports, autofill, price-calc. ✅
+
+**Race-check (standing lesson 3, post-verify):** snapshot 03:02:53Z — CLEAN, no clobber. api+worker still `api:067d664...`, 2/2, worker still `-Q celery,image-tasks`, ConfigMap 29 keys, pods are this rollout's RS (03:00-03:01Z). Snapshots: `/tmp/meesell-{pre,post}-deploy-develop-s2-state.txt`.
+
+**Records:** this UPDATE (deploy block) + board note (deploy-develop-s2 Active row) — docs-only PR to develop (F2 status-only convention; no manifest changed). The CI auto-deploy lane needs NO change — it already deploys-from-develop; it's just gated red upstream by the backend Gate-1 bug. When backend's Gate-1 fix (PR #150) merges, the next develop push will auto-redeploy the same way (idempotent — same tag if same tip).
+
+**Cost:** ₹0/month (Cloud Build minutes within free tier; image push to existing AR; no new billable resource, no TF, no Secret Manager mutation). dev namespace only.
+
+---
 
 ## UPDATE — 2026-06-12 — mesell-infra-flags-2-session-1 (final 3 feature flags → ConfigMaps; 8-flag set complete)
 
