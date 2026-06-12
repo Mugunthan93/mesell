@@ -10,7 +10,7 @@
 
 ---
 
-## 0. GROUND TRUTH (re-verify at Phase-2 start — these are 2026-06-12 / develop `6d6ee51`)
+## 0. GROUND TRUTH (re-verify at Phase-2 start — authored 2026-06-12 / develop `6d6ee51`, re-grounded at origin/develop `aa7513e` — modules/iam + core/auth.py byte-identical across the rebase, so every citation below holds verbatim)
 
 - **iam module = 7 files** (NO tasks.py — no Celery). `backend/app/modules/iam/{__init__,domain,exceptions,repository,router,schemas,service}.py`.
 - **6 MOUNTED routes** in `main.py:114` (`app.include_router(iam_router)`) → router.py decorators: `/auth/otp/send`(:105), `/auth/otp/verify`(:124), `/auth/refresh`(:152), `/auth/logout`(:194), `/auth/me`(:220), `/webhooks/razorpay`(:247). Count APIRoute objects, not schemas (row-26 lesson).

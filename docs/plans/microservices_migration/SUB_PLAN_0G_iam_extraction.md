@@ -18,16 +18,24 @@ re-keyed to **Wave MS-4** by the MS-PAR-1 federation pattern (pilot → parallel
 > - **Execution opens when:** Wave MS-3 complete — BOTH the `D pricing` AND
 >   `E customer` founder-gate PRs merged to `develop` (MS-PAR-1 wave table).
 > - **Parallel partner:** **MS-F (category)** runs concurrently. Shared-file
->   discipline (common rule 4): `backend/app/main.py` router removal is
->   additive-minimal (one `include_router` line at cutover only); gateway/Traefik
->   + `k8s/` shared files are additive (new manifests, not edits to category's);
->   the iam integration branch merges `origin/develop` BEFORE its founder-gate PR
->   opens; union-merge conflicts keep-both.
+>   discipline (common rule 4) — this names the **SAME three shared surfaces** as
+>   `SUB_PLAN_0F_category_extraction.md` (0F §"MS-4 parallel note" + 0F R6, which
+>   lists `main.py` additive-minimal, Traefik/gateway + `k8s/` as new manifests, and
+>   shared `JWT_SECRET`): `backend/app/main.py` router removal is additive-minimal
+>   (delete the single `main.py:114` iam `include_router` + its import at cutover
+>   ONLY — touch nothing else); gateway/Traefik + `k8s/` shared files are additive
+>   (new svc-iam manifests, NOT edits to category's); the iam integration branch
+>   merges `origin/develop` BEFORE its founder-gate PR opens; union-merge conflicts
+>   keep-both. **D7 parallel-safety:** iam and category never couple on the request
+>   path — both validate JWTs LOCALLY via vendored `core/auth.py` + the shared
+>   Secret-Manager `JWT_SECRET` (0F F2 / R6), so neither needs the other up to serve.
 > - **Dev cluster only.** No staging/prod. Strangler-fig: the monolith keeps
 >   serving `/api/v1/auth/*` until the founder-gated cutover flip.
 
-> Authoritative inputs read for this sub-plan (2026-06-12, against develop tip `6d6ee51`):
-> - `docs/plans/microservices_migration/MASTER_PLAN.md` (v1.3 — §2.D schema-isolation table, §2.D cross-schema-FK drop policy, §3.B dependency-order rationale [iam second-to-last], §5.A A2/D7 lock, §5.D secrets mapping, §6 Risk #2 [iam breaks every authenticated route])
+> Authoritative inputs read for this sub-plan (authored 2026-06-12 against develop
+> `6d6ee51`; **re-grounded 2026-06-12 at origin/develop `aa7513e`** — see §0.1 + v1.1
+> revision row):
+> - `docs/plans/microservices_migration/MASTER_PLAN.md` (v1.3, §3.A.1-aware — §2.D schema-isolation table, §2.D cross-schema-FK drop policy, §3.B dependency-order rationale [iam second-to-last], §5.A A2/D7 lock, §5.D secrets mapping, §6 Risk #2 [iam breaks every authenticated route])
 > - `docs/plans/microservices_migration/SUB_PLAN_01_export_extraction.md` (the SHAPE TEMPLATE — canonical section structure)
 > - `docs/sub_session_prompts/microservices_execution/00-ms-parallel-program-dispatch.md` (MS-PAR-1 common rules — Wave-6 lessons are LAW)
 > - AS-BUILT SOURCE: `backend/app/modules/iam/{router,service,repository,domain,schemas,exceptions,__init__}.py`, `backend/app/core/auth.py`, `backend/app/core/middleware/*`, `backend/app/main.py`, `backend/app/shared/models/*.py`, `backend/alembic/versions/935e55b4852c_v1_baseline_13_tables.py`
@@ -38,16 +46,45 @@ re-keyed to **Wave MS-4** by the MS-PAR-1 federation pattern (pilot → parallel
 ## 0. GROUND TRUTH — verified against source 2026-06-12 (NOT plan prose)
 
 Per Wave-6 law (common rule 3): every contract below is cited `file:line` from the
-as-built tree at develop `6d6ee51`. Where MASTER_PLAN prose disagrees with source,
-the source wins and the contradiction is flagged (§0.7).
+as-built tree. Contracts were authored against develop `6d6ee51` and **re-verified
+against origin/develop `aa7513e`** (§0.1); the `modules/iam/` tree + `core/auth.py`
+were byte-identical across that rebase, so all `file:line` citations hold unchanged.
+Where MASTER_PLAN prose disagrees with source, the source wins and the contradiction
+is flagged (§0.7).
 
 ### 0.1 Branch / tree state
 
-This is a docs-only Phase-1 session committed on `docs/msG-subplan-0G` (off develop
-`6d6ee51`). The Phase-2 coding session cuts from `origin/develop` tip at execution
-time (after MS-3 merges move develop forward). Per the MS-A op-learning (spec_msA §0.1),
-ALWAYS re-verify `git ls-remote origin develop` at coding-session start and cut from
-the live origin tip — never a stale local `develop`.
+This is a docs-only Phase-1 session committed on `docs/msG-subplan-0G`. It was
+**authored against local develop `6d6ee51`**, then **re-grounded at origin/develop
+`aa7513e`** (the true origin tip — local develop was behind origin at authoring time;
+the branch was rebased onto `aa7513e`).
+
+**Rebase reconciliation (`6d6ee51` → `aa7513e`).** `git diff 6d6ee51 aa7513e --stat --
+backend/app/modules/iam/ backend/app/core/auth.py` = **EMPTY** — the iam module and the
+vendored-everywhere `core/auth.py` are **byte-identical** across the rebase, so every
+`file:line` citation in §0.2–§0.7 holds verbatim (incl. `main.py:114` iam mount, §0.6
+FE-D5 cookie/allowlist lines, §0.7 6-FK set). Three core files changed between the two
+bases and were inspected — **all inert for iam**:
+> - `core/middleware/audit_mw.py` — `_is_autosave(method, path)` widened to coalesce
+>   bare `PATCH /api/v1/products/{id}` (catalog-form autosave). Matches **only**
+>   `/api/v1/products/{id}` — iam's routes are `/api/v1/auth/*` + `/api/v1/webhooks/razorpay`,
+>   never matched. iam-svc ships this vendored `audit_mw` carrying the widening, which is
+>   **catalog-path-only and inert for every iam route**. No statement in §0.6 (vendored
+>   6-mw chain) is contradicted.
+> - `core/tenancy.py` — added `_GLOBAL_TABLES` frozenset
+>   `{categories, templates, field_enum_values, field_aliases}` + `__all__` export. A
+>   **documentation sentinel** (not yet a §19 linter input). None of the four tables is an
+>   iam table (`users`, `audit_events`); the carve-out is irrelevant to iam's scoping.
+>   No §0.6 statement contradicted.
+> - `main.py` — catalog router mount wrapped in `if settings.FEATURE_CATALOG_FORM_ENABLED:`
+>   at `main.py:123+`, **below** the unchanged iam mount at `main.py:114`. iam mount and
+>   ordering unaffected.
+
+The Phase-2 coding session cuts from `origin/develop` tip at execution time (after the
+MS-3 + MS-4-sibling merges move develop forward). Per the MS-A op-learning (spec_msA §0.1)
+— reinforced by this very rebase (local develop trailed origin) — ALWAYS re-verify
+`git ls-remote origin develop` at coding-session start and cut from the **live origin
+tip**, never a stale local `develop`.
 
 ### 0.2 iam module = 7 files — CONFIRMED
 
@@ -212,6 +249,28 @@ yet extracted. So at iam-extraction time:
   cross-schema-but-same-public-target, or already dropped by those waves' migrations).
 - FKs #1 (audit/public), #3/#4/#6 (catalog, NOT yet extracted at MS-4) still reference
   `public.users` at iam-extraction time.
+
+**SIBLING-OWNERSHIP ANNOTATION (post-rebase reconciliation vs the 4 visible Phase-1
+sub-plans).** Two of the six FKs are dropped by a *sibling* extraction at its OWN cutover,
+on the referencing-table side, BEFORE iam reaches MS-4 — so by iam-extraction time they may
+already be gone from `pg_constraint`:
+- **FK #2 `seller_profile.user_id → users.id` (CASCADE) — DROPPED BY CUSTOMER, NOT iam.**
+  `SUB_PLAN_0E_customer_extraction.md §0.6 / §"Cross-schema FK drop (Risk #5)"` (0E:144,
+  0E:372) locks that customer drops its own `seller_profile.user_id → users.id` FK +
+  severs the `relationship("User", …)` back-ref at **customer's MS-3 cutover** (before
+  iam's MS-4). iam's migration must therefore expect FK #2 to be **already absent** and
+  drop it only if the live `pg_constraint` scan still shows it.
+- **FK #5 `exports.user_id → users.id` (RESTRICT)** — export extracted at MS-1
+  (`SUB_PLAN_01`); whether its `users.id` FK was dropped then or survives as a
+  cross-schema-to-`public.users` FK is resolved by the live scan below.
+- FKs #3/#4/#6 belong to **catalog** (`SUB_PLAN_0H`, MS-5, extracts LAST) — catalog is
+  in-`public` at MS-4, so these three still reference `public.users` and ARE dropped by the
+  iam migration. (Cross-checked against `0C`/`0D`: neither `product_images` (0C:121 — no
+  `user_id` column) nor `pricing_calcs` (0D:234 — its cross-schema FK is to `products.id`,
+  NOT `users.id`) introduces a NEW `users.id` FK; the set stays at exactly these 6.)
+This is precisely why the live `pg_constraint` cross-check below is mandatory rather than
+advisory — the database-builder drops the **residual** cross-schema `users` FKs the scan
+actually returns, neither asserting the full 6 nor assuming a sibling already cleared one.
 
 **The iam extraction migration drops ALL 6 by name/column**, regardless of which schema the
 referencing table currently sits in, because `users` is leaving `public` for schema `iam`.
@@ -544,6 +603,7 @@ Rollback allowed any time BEFORE Sub-Plan G is declared complete (7-day green wi
 | Version | Date | Author | Change |
 |---|---|---|---|
 | v1 | 2026-06-12 | mesell-ms-iam-session-1 (meesell-backend-coordinator) | Initial PHASE-1 sub-plan. MS-PAR-1 Wave MS-4, parallel with MS-F. All contracts cited file:line from as-built develop `6d6ee51`. 6 mounted iam routes verified in main.py:114 + router.py. iam all-✗ → NO `/internal/*` shim. 6 cross-schema FKs to `users.id` identified for DROP (§0.7). A2/D7 (local JWT) + FE-D5 (cookie Path=/api/v1/auth, dual-pepper allowlist) encoded as reject-class invariants. Execution GATED on Wave MS-3 complete. |
+| v1.1 | 2026-06-12 | mesell-ms-iam-session-1 (meesell-backend-coordinator) | **Re-grounding + sibling reconciliation (post-rebase).** Branch rebased from local develop `6d6ee51` onto origin/develop `aa7513e` (true tip). `git diff 6d6ee51 aa7513e -- modules/iam/ core/auth.py` = EMPTY → all file:line citations hold verbatim. 3 changed core files inspected, ALL inert for iam: `audit_mw._is_autosave` (catalog-path-only), `tenancy._GLOBAL_TABLES` (doc-sentinel, no iam table), `main.py` catalog-flag guard at :123+ (below iam mount :114, unchanged). §0.1 + §0 preamble re-grounded; MASTER_PLAN cited as v1.3 §3.A.1-aware. §0.7 annotated with sibling FK-ownership: FK #2 `seller_profile.user_id` dropped by **customer at MS-3** (SUB_PLAN_0E §0.6), FKs #3/#4/#6 still iam's (catalog MS-5); 0C/0D add NO new `users.id` FK (set stays 6). Shared-file discipline aligned with SUB_PLAN_0F (main.py / Traefik / k8s + D7 parallel-safety). No contract collision found → no escalation. No semantic change to deliverables, FK count, or invariants. |
 
 ---
 
