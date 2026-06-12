@@ -4463,3 +4463,47 @@ Blockers: none (R1/R2 are FLAGS, not blockers — defaults stated).
 Next: master dispatches the 2 specialists with the paste-ready SPECs; lead runs merge-gate review.
 Hand-offs: infra (image-tasks queue) being serviced — after develop merge, infra uncomments -Q image-tasks.
 =========
+
+=== UPDATE: 2026-06-12 (chore batch STEP 2, item 1/2 — services-builder) ===
+Phase: image-precheck (Feature 5) — Celery queue isolation chore
+Done: Added `task_routes={"image.precheck": {"queue": "image-tasks"}}` to the existing
+  celery_app.conf.update(...) call in backend/app/workers/celery_app.py (+10 lines, additive only).
+  Inline comment cites §18 + the infra handoff path + "Default queue preserved for export.xlsx".
+  NO touch to image/tasks.py body (§11.E LOCKED), NO change to worker_prefetch_multiplier /
+  task_acks_late / task_reject_on_worker_lost / the task_prerun handler.
+Evidence:
+  task_routes = {'image.precheck': {'queue': 'image-tasks'}}
+  export.xlsx in routes? False  (proves export.xlsx stays on default `celery` queue)
+  ruff check celery_app.py → All checks passed!
+Tests: import-evidence command runs clean under CI dummy-env; no new test file (one-line additive
+  config route — guarded behaviourally by the evidence assertion above).
+Commit: 26261ce on chore/backend-followups (pushed origin). NO PR opened (lead gates per Model C).
+In progress: database-builder runs serially next in same worktree (item 2/2 — core/tenancy.py).
+Blockers: none.
+Next: lead STEP 3 merge-gate review.
+Hand-offs: infra (meesell-infra-builder) — after develop merge, uncomment `-Q image-tasks` in
+  k8s/worker.yaml per handoff_image_tasks_queue.md. image.precheck now publishes to `image-tasks`;
+  export.xlsx stays on default `celery` queue (worker with no -Q consumes both today).
+=========
+
+=== UPDATE: 2026-06-12 (chore batch STEP 2, item 2/2 — database-builder) ===
+Phase: core/tenancy — §9.D _GLOBAL_TABLES drift reconcile
+Done: Added `_GLOBAL_TABLES: frozenset[str]` documentation-sentinel to
+  backend/app/core/tenancy.py. Symbol names the 4 global tables (categories,
+  templates, field_enum_values, field_aliases) per BACKEND_ARCHITECTURE.md §4.C
+  prose. Added to __all__. Module docstring updated to cross-reference the symbol.
+  R1 ruling honoured: check_scope_to_user.py NOT modified — linter continues to
+  use ALLOWLISTED_MODULES (L61) module-name allowlist, not this frozenset.
+Evidence:
+  python -c "from app.core.tenancy import _GLOBAL_TABLES; print(sorted(_GLOBAL_TABLES))"
+  → ['categories', 'field_aliases', 'field_enum_values', 'templates']
+  ruff check backend/app/core/tenancy.py → All checks passed!
+  scope_to_user / assert_owned behaviour: UNCHANGED (additive symbol only).
+In progress: none — task complete.
+Blockers: none.
+Next: lead STEP 3 merge-gate review of chore/backend-followups (both items 1/2 + 2/2).
+Hand-offs: meesell-backend-coordinator — both chore items COMPLETE, branch pushed.
+  Schema ready: `from app.core.tenancy import _GLOBAL_TABLES` is now importable.
+  R1 re-ruling (future): when founder lifts sentinel-only gate, database-builder
+  wires _GLOBAL_TABLES into check_scope_to_user.py ALLOWLISTED_MODULES replacement.
+=========
