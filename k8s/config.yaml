@@ -46,6 +46,20 @@ data:
   GCS_BUCKET: "meesell-prod-assets"
   GCS_PROJECT_ID: "project-1f5cbf72-2820-4cdb-949"
   GCS_SIGNED_URL_TTL_SECONDS: "3600"
+  # Product-image bucket (image-precheck Feature 5). Separate from GCS_BUCKET above —
+  # a dedicated bucket with a 1-year DELETE lifecycle (infra/terraform/modules/gcs_images).
+  # Live in GCP since 2026-06-12. Backend reads via GCS_BUCKET_IMAGES.
+  GCS_BUCKET_IMAGES: "meesell-images"
+
+  # Feature flags (repo MASTER §3.2). Dev defaults = true so the dev namespace
+  # exercises each feature end-to-end. The staging overlay sets these to false until
+  # each feature's soak gates pass (per each feature plan's D2). When a feature ships
+  # to main its flag is removed (cleanup-flag-* follow-up branch).
+  FEATURE_SMART_PICKER_ENABLED: "true"
+  FEATURE_CATALOG_FORM_ENABLED: "true"
+  FEATURE_AI_AUTOFILL_ENABLED: "true"
+  FEATURE_IMAGE_PRECHECK_ENABLED: "true"
+  FEATURE_XLSX_EXPORT_ENABLED: "true"
 
   # LangFuse (public key is non-secret per §5.D; secret key is in backend-secrets)
   LANGFUSE_PUBLIC_KEY: "pk-lf-disabled-v1"

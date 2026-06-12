@@ -120,7 +120,11 @@ app.include_router(customer_router)
 app.include_router(category_router)
 
 # §10 catalog — owns /api/v1/products/* (6 endpoints per §10.B LOCKED 2026-06-05).
-app.include_router(catalog_router)
+# Feature-flag guarded (§3.2 / catalog-form FEATURE_PLAN.md D2): when
+# FEATURE_CATALOG_FORM_ENABLED is False the router is NOT mounted, so every
+# /api/v1/products/* path falls through to FastAPI's default 404.
+if settings.FEATURE_CATALOG_FORM_ENABLED:
+    app.include_router(catalog_router)
 
 # §11 image — owns /api/v1/products/{id}/images (2 endpoints per §11.B LOCKED 2026-06-05).
 app.include_router(image_router)
