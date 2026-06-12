@@ -5,38 +5,68 @@
  * tested directly in Vitest without requiring TestBed or @angular/compiler.
  *
  * Pattern from: image-uploader.model.ts
+ *
+ * === Wave 6 Wave B (2026-06-12) — wire to backend contract ===
+ * ProductListItem reconciled to dashboard/schemas.py ProductListItem:
+ *   - product_id (not id) — renamed at the dashboard boundary (A7)
+ *   - category_id (UUID) — no display name on the wire; Category column dropped (A4)
+ *   - status 2-value 'draft'|'ready' (not 5-value — §13.A.1 narrows; A2)
+ *   - created_at added
+ * DashboardResponse: adds limit + onboarding_completeness vs old ProductListResponse (A5)
+ * StatusCounts narrowed to {draft, ready} — V1 wire is 2-value (A2)
+ * LoadProductsParams narrowed: server params are page+limit ONLY (A3)
+ *   search kept as LOCAL-only client-side filter helper; never sent to server
  */
 
 // ---------------------------------------------------------------------------
-// Types
+// Types (transcribed verbatim from dashboard/schemas.py — §1.1 contract chain)
 // ---------------------------------------------------------------------------
 
+/** Transcribed from dashboard/schemas.py class ProductListItem. */
 export interface ProductListItem {
-  id: string;
-  name: string;
-  category_name: string;
-  status: 'draft' | 'ready' | 'exported' | 'live' | 'deleted';
-  updated_at: string; // ISO timestamp
+  product_id: string;         // UUID as string — note: "product_id" NOT "id"
+  name: string | null;        // nullable until seller fills it
+  category_id: string;        // UUID as string — no display name on the wire (A4)
+  status: 'draft' | 'ready'; // 2-value V1 wire (§13.A.1 narrows; A2)
+  created_at: string;         // ISO-8601 TZ
+  updated_at: string;         // ISO-8601 TZ
 }
 
-export interface ProductListResponse {
+/** Transcribed from dashboard/schemas.py class ProfileCompletenessSummary. */
+export interface ProfileCompletenessSummary {
+  base_complete_count: number;
+  base_total_count: number;        // always 10 per §8.F
+  extension_complete_count: number;
+  extension_total_count: number;
+  onboarding_complete: boolean;
+}
+
+/** Transcribed from dashboard/schemas.py class DashboardResponse. Array key = "products" (confirmed §2.1/A1). */
+export interface DashboardResponse {
   products: ProductListItem[];
   total: number;
   page: number;
+  limit: number;
+  /** Decoded but NOT rendered in V1 dashboard (A5). Type it; leave it unrendered. */
+  onboarding_completeness: ProfileCompletenessSummary;
 }
 
+/**
+ * V1 2-value status counts — narrowed from the legacy 4-key shape.
+ * exported/live do NOT exist on the V1 wire (A2).
+ */
 export interface StatusCounts {
   draft: number;
   ready: number;
-  exported: number;
-  live: number;
 }
 
+/**
+ * Server-bound params for GET /api/v1/products: page + limit ONLY.
+ * (DashboardQuery extra="forbid" — §2.4 / A3).
+ */
 export interface LoadProductsParams {
   page: number;
   limit?: number;
-  status_filter?: string;
-  search?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -45,45 +75,31 @@ export interface LoadProductsParams {
 
 /**
  * Derives status counts from a product list array.
- * Used by DashboardApiService.deriveStatusCounts() and DashboardComponent.
+ * V1 counts only draft + ready (the 2 values the wire returns — A2).
  */
 export function deriveStatusCounts(products: ProductListItem[]): StatusCounts {
   return products.reduce(
     (acc, p) => {
-      if (p.status === 'draft')    { acc.draft++; }
-      if (p.status === 'ready')    { acc.ready++; }
-      if (p.status === 'exported') { acc.exported++; }
-      if (p.status === 'live')     { acc.live++; }
+      if (p.status === 'draft') { acc.draft++; }
+      if (p.status === 'ready') { acc.ready++; }
       return acc;
     },
-    { draft: 0, ready: 0, exported: 0, live: 0 } as StatusCounts
+    { draft: 0, ready: 0 } as StatusCounts,
   );
 }
 
 /**
- * Applies status_filter and search params to a product list.
- * Used by DashboardApiService.loadProducts().
+ * Client-side name search over the current page's rows (A3).
+ * NEVER sent to the server. Applied AFTER the server response arrives.
+ * Searches `name` field only (category_id is a UUID — not searchable as text).
  */
-export function filterProducts(
+export function filterProductsByName(
   products: ProductListItem[],
-  params: Pick<LoadProductsParams, 'status_filter' | 'search'>
+  search: string,
 ): ProductListItem[] {
-  let filtered = [...products];
-
-  if (params.status_filter) {
-    filtered = filtered.filter(p => p.status === params.status_filter);
-  }
-
-  if (params.search?.trim()) {
-    const q = params.search.trim().toLowerCase();
-    filtered = filtered.filter(
-      p =>
-        p.name.toLowerCase().includes(q) ||
-        p.category_name.toLowerCase().includes(q)
-    );
-  }
-
-  return filtered;
+  if (!search.trim()) return products;
+  const q = search.trim().toLowerCase();
+  return products.filter(p => (p.name ?? '').toLowerCase().includes(q));
 }
 
 /**
