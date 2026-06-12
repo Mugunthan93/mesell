@@ -37,11 +37,12 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
-  DestroyRef,
   inject,
   OnDestroy,
   OnInit,
   signal,
+  viewChild,
+  ElementRef,
 } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { Subscription } from 'rxjs';
@@ -317,6 +318,21 @@ import { ImageService } from './image.service';
           />
         </div>
 
+        <!--
+          Hidden shared re-upload file picker (D-IMG-2).
+          Programmatically triggered by onReupload(slotIndex).
+          accept="image/jpeg,image/jpg" matches upload constraints (JPEG ≤10 MB per §1).
+          aria-hidden: not a visible control; triggered only via .click() from mee-button.
+        -->
+        <input
+          #reuploadFileInput
+          type="file"
+          accept="image/jpeg,image/jpg"
+          aria-hidden="true"
+          style="display:none; position:absolute; width:1px; height:1px; overflow:hidden;"
+          (change)="onReuploadFileSelected($event)"
+        />
+
       } <!-- end @else featureDisabled -->
     </div>
   `,
@@ -333,6 +349,21 @@ export class ImageUploaderComponent implements OnInit, OnDestroy {
   readonly expandedSlot    = signal<number | null>(null);
   /** True when the backend returns 404 on upload (FEATURE_IMAGE_PRECHECK_ENABLED=false) */
   readonly featureDisabled = signal<boolean>(false);
+  /**
+   * Slot index of the slot whose re-upload picker is active.
+   * Set in onReupload() before triggering the hidden input click;
+   * cleared after onReuploadFileSelected() consumes it.
+   */
+  readonly reuploadTargetSlotIndex = signal<number | null>(null);
+
+  // ── ViewChild: shared hidden file input for per-slot re-upload ───────────────
+  /**
+   * Single hidden <input type="file"> shared across all re-upload triggers.
+   * Optional query (not .required) because the input is conditionally rendered
+   * inside the @else block — when featureDisabled() is true, the input is not
+   * in the DOM and the query returns undefined. onReupload() guards the null case.
+   */
+  readonly reuploadInput = viewChild<ElementRef<HTMLInputElement>>('reuploadFileInput');
 
   // ── Computed (delegates to model pure functions) ──────────────────────────────
   readonly canContinue = computed(() => computeCanContinue(this.images()));
@@ -434,13 +465,54 @@ export class ImageUploaderComponent implements OnInit, OnDestroy {
     }
   }
 
+  /**
+   * D-IMG-2 — Real file-picker re-trigger for a failed_precheck slot.
+   *
+   * Records which slot is being re-uploaded (reuploadTargetSlotIndex), resets the
+   * slot to pending, then programmatically opens the hidden <input type="file"> via
+   * .click(). The seller picks a fresh file from disk; the change event fires
+   * onReuploadFileSelected(), which routes the real File to ImageService.upload().
+   *
+   * CRITICAL: do NOT pass a zero-byte placeholder (new File([], ...)) — that would
+   * fail multipart validation on the backend. Only a real seller-selected File from
+   * the picker event reaches imageService.upload().
+   */
   onReupload(slotIndex: number): void {
     const img = this.images().find(i => i.slot_index === slotIndex);
     if (!img) return;
 
+    // Reset slot to pending before picker opens (optimistic)
     this.images.update(prev => resetSlot(prev, slotIndex));
 
-    this.imageService.upload(this.productId, new File([], `reupload-${img.idx}`), img.idx).subscribe({
+    // Record target slot so onReuploadFileSelected() knows which slot to upload to
+    this.reuploadTargetSlotIndex.set(slotIndex);
+
+    // Reset the input value so (change) fires even if the same file is re-selected
+    const inputRef = this.reuploadInput();
+    if (!inputRef) return;  // guard: featureDisabled branch hides the input (should not occur here)
+    const inputEl = inputRef.nativeElement;
+    inputEl.value = '';
+    inputEl.click();
+  }
+
+  /**
+   * Called when the seller selects a file in the hidden re-upload <input type="file">.
+   * Routes the REAL File (non-empty, seller-selected) to ImageService.upload().
+   */
+  onReuploadFileSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file  = input.files?.[0];
+    const slotIndex = this.reuploadTargetSlotIndex();
+
+    // Clear the recorded slot index — no double-fire
+    this.reuploadTargetSlotIndex.set(null);
+
+    if (!file || slotIndex === null) return;
+
+    const img = this.images().find(i => i.slot_index === slotIndex);
+    if (!img) return;
+
+    this.imageService.upload(this.productId, file, img.idx).subscribe({
       next: (resp) => {
         const placeholder: ProductImage = {
           id:         resp.image_id,
