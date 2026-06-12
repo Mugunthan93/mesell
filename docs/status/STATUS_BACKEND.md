@@ -63,6 +63,24 @@ Sequential: iam → customer → category → catalog DONE. Parallel-eligible fr
 
 ## Updates Log
 
+=== UPDATE: 2026-06-12 11:00 — flag-parity sweep STEP 1 (audit + SPEC) ===
+Phase: V1 backend feature-flag parity — comprehensive close-out sweep
+Session: mesell-flag-parity-sweep-session-1 (HYBRID STEP 1; no feature code, no dispatch)
+Board sweep: 1 IN PROGRESS row added (flag-parity); 0 stale rows (microservices-export touched 2026-06-10 = 2d; backend-chores 2026-06-12 GATE-PASS awaiting founder PR #143). 3 inter-lead requests on board all RESOLVED/READY. No 7d+ stale.
+Done:
+- Enumerated ALL remaining V1 modules vs the 5 done flag features. Flag inventory: 5 present in shared/config.py (smart-picker L184, xlsx-export L193, image-precheck L202, catalog-form L209, ai-autofill L216).
+- Per-module verdict (file:line evidence) in memo audit_flag_parity_sweep.md.
+- 3 REAL gaps (FLAG-MANDATED-AND-MISSING): G1 price-calculator (FEATURE_PRICE_CALCULATOR_ENABLED; pricing/router.py:76 POST no guard); G2 tracking-dashboard (FEATURE_TRACKING_DASHBOARD_ENABLED; dashboard/router.py:86 GET, D3 kill-switch 404-on-read); G3 live-preview (FEATURE_LIVE_PREVIEW_ENABLED default False; catalog/router.py:268 GET preview route exists no guard, D3 code feature.live_preview.disabled).
+- NO-FLAG-BY-DESIGN verified (no gap): auth-otp (D2 explicit "skip flag, prerequisite zero", FEATURE_PLAN.md:40-42); customer/seller-profile (foundational onboarding, no plan mandate); category browse/tree/schema/field-enum (only /suggest flagged; flagging foundational catalog surface would break every feature); iam refresh/logout/me/webhook.
+- ONE api-routes-builder SPEC authored (config field + in-handler 404 + flag-404 test ×3). NO database-builder/services-builder (request-time settings read, no schema, no business logic).
+- Branch chore/flag-parity cut off origin/develop 2b5ec60, worktree /tmp/mesell-wt/flag-parity, pushed.
+In progress: none (STEP 1 deliverables complete; STEP 2 dispatch awaits master + R1-R4 rulings).
+Blockers: none. (4 founder rulings FLAGGED, not blocking the audit: R1 honor-plans 404-on-read for the 2 GET-route gaps; R2 flag-404 message-id wording per-plan; R3 in-handler raise NOT new core/feature_flags.py dependency-factory; R4 live-preview default-False.)
+Drift FYI (do not churn): D-1 guard-mechanism cosmetic drift across 5 done flags (catalog-form main.py conditional-include vs in-handler raise everywhere else — both valid, accepted at each gate); D-2 Gate-1 unit RED on develop (infra PR #145, tip 2b5ec60, NOT this scope — new tests must not worsen).
+Next: master dispatches ONE meesell-api-routes-builder with the SPEC (STEP 2); lead merge-gates (STEP 3, squash chore/flag-parity → develop directly, D1 N/A for chore branch per ci-gate-fix precedent).
+Hand-offs: INFRA inter-lead candidate at merge time — 3 new flags (FEATURE_PRICE_CALCULATOR_ENABLED=true dev/false staging, FEATURE_TRACKING_DASHBOARD_ENABLED=true, FEATURE_LIVE_PREVIEW_ENABLED=false) → k8s dev/staging ConfigMaps. Open at STEP 3, not now.
+=========
+
 === UPDATE: 2026-06-11 — CI Gate-1 pytest-collection fix (Rule 7 STEP 2) ===
 Phase: CI infrastructure fix — pytest.ini pythonpath key
 Session: mesell-ci-gate1-fix-session-1
