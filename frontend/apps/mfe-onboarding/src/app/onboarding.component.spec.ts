@@ -16,6 +16,7 @@ import {
   MeeButtonComponent,
   MeeInputComponent,
   MeeStepsComponent,
+  MeeSkeletonComponent,
 } from '@mesell/ui-kit';
 import type { MeeStep } from '@mesell/ui-kit';
 import type { MeeButtonVariant } from '@mesell/ui-kit';
@@ -23,6 +24,7 @@ import {
   AuthLayoutComponent,
   MeeAlertBannerComponent,
   MeeOfflineBannerComponent,
+  EmptyStateComponent,
 } from '@mesell/composites';
 import type { SellerProfile } from './seller-profile.model';
 import { FRESH_SELLER_PROFILE } from './seller-profile.model';
@@ -90,6 +92,22 @@ class MeeAlertBannerStub {
 @Component({ selector: 'mee-auth-layout', standalone: true, template: '<ng-content />' })
 class MeeAuthLayoutStub {}
 
+/** Minimal stub for mee-skeleton (spec §3.4 — replaces PrimeNG skeleton in jsdom). */
+@Component({ selector: 'mee-skeleton', standalone: true, template: '<div class="mee-skeleton-stub"></div>' })
+class MeeSkeletonStub {
+  @Input() variant = 'text';
+  @Input() lines = 1;
+}
+
+/** Minimal stub for mee-empty-state (first-time-seller prompt). */
+@Component({ selector: 'mee-empty-state', standalone: true, template: '<div class="mee-empty-state-stub"></div>' })
+class MeeEmptyStateStub {
+  @Input() icon = '';
+  @Input() message = '';
+  @Input() cta_label: string | undefined = undefined;
+}
+
+
 // ── Helper builders ───────────────────────────────────────────────────────────
 
 function makeProfile(overrides: Partial<SellerProfile> = {}): SellerProfile {
@@ -134,6 +152,8 @@ describe('OnboardingComponent', () => {
             MeeOfflineBannerComponent,
             MeeAlertBannerComponent,
             AuthLayoutComponent,
+            MeeSkeletonComponent,
+            EmptyStateComponent,
           ],
         },
         add: {
@@ -144,6 +164,8 @@ describe('OnboardingComponent', () => {
             MeeOfflineBannerStub,
             MeeAlertBannerStub,
             MeeAuthLayoutStub,
+            MeeSkeletonStub,
+            MeeEmptyStateStub,
           ],
         },
       })

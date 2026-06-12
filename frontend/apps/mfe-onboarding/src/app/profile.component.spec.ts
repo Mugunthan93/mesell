@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ReactiveFormsModule } from '@angular/forms';
+import { Component, Input, forwardRef } from '@angular/core';
+import { ReactiveFormsModule, ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
 import { provideRouter } from '@angular/router';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { Router } from '@angular/router';
@@ -7,8 +8,87 @@ import { provideHttpClient, withFetch } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
 import { ProfileComponent } from './profile.component';
 import { AuthService, AuthUser } from '@mesell/core';
+import {
+  MeeCardComponent,
+  MeeBadgeComponent,
+  MeeInputComponent,
+  MeeButtonComponent,
+  MeeSkeletonComponent,
+} from '@mesell/ui-kit';
+import type { MeeBadgeSeverity } from '@mesell/ui-kit';
+import {
+  MeeAlertBannerComponent,
+  MeeOfflineBannerComponent,
+  EmptyStateComponent,
+} from '@mesell/composites';
 import type { SellerProfile } from './seller-profile.model';
 import { FRESH_SELLER_PROFILE } from './seller-profile.model';
+
+// ── Stubs for UI-Kit / Composites to avoid PrimeNG rendering in jsdom ──────────
+
+/** CVA stub for mee-input so formControlName bindings work. */
+@Component({
+  selector: 'mee-input',
+  standalone: true,
+  template: '<input class="mee-input-stub" />',
+  providers: [{
+    provide: NG_VALUE_ACCESSOR,
+    useExisting: forwardRef(() => ProfileMeeInputStub),
+    multi: true,
+  }],
+})
+class ProfileMeeInputStub implements ControlValueAccessor {
+  @Input() label: string | undefined = undefined;
+  @Input() error: string | undefined = undefined;
+  @Input() disabled = false;
+  @Input() placeholder = '';
+  @Input() inputmode: string | undefined = undefined;
+  @Input() maxlength: string | undefined = undefined;
+  writeValue(_v: unknown): void {}
+  registerOnChange(_fn: (_: unknown) => void): void {}
+  registerOnTouched(_fn: () => void): void {}
+  setDisabledState?(_isDisabled: boolean): void {}
+}
+
+@Component({ selector: 'mee-button', standalone: true, template: '<button>{{ label }}</button>' })
+class ProfileMeeButtonStub {
+  @Input() label = '';
+  @Input() loading = false;
+  @Input() disabled = false;
+  @Input() fullWidth = false;
+  @Input() variant = 'primary';
+}
+
+@Component({ selector: 'mee-card', standalone: true, template: '<ng-content />' })
+class ProfileMeeCardStub {}
+
+@Component({ selector: 'mee-badge', standalone: true, template: '<span>{{ value }}</span>' })
+class ProfileMeeBadgeStub {
+  @Input() value = '';
+  @Input() severity: MeeBadgeSeverity = 'neutral';
+}
+
+@Component({ selector: 'mee-skeleton', standalone: true, template: '<div class="mee-skeleton-stub"></div>' })
+class ProfileMeeSkeletonStub {
+  @Input() variant = 'text';
+  @Input() lines = 1;
+}
+
+@Component({ selector: 'mee-offline-banner', standalone: true, template: '' })
+class ProfileMeeOfflineBannerStub {}
+
+@Component({ selector: 'mee-alert-banner', standalone: true, template: '<div class="mee-alert-stub">{{ message }}</div>' })
+class ProfileMeeAlertBannerStub {
+  @Input() variant = 'error';
+  @Input() message = '';
+}
+
+@Component({ selector: 'mee-empty-state', standalone: true, template: '<div class="mee-empty-state-stub">{{ message }}</div>' })
+class ProfileMeeEmptyStateStub {
+  @Input() icon = '';
+  @Input() message = '';
+  @Input() cta_label: string | undefined = undefined;
+}
 
 function makeAuthUser(overrides: Partial<AuthUser> = {}): AuthUser {
   return { id: 1, name: 'Mugunthan', phone: '+919876543210', ...overrides };
@@ -48,7 +128,34 @@ describe('ProfileComponent', () => {
         provideHttpClient(withFetch()),
         provideHttpClientTesting(),
       ],
-    }).compileComponents();
+    })
+      .overrideComponent(ProfileComponent, {
+        remove: {
+          imports: [
+            MeeCardComponent,
+            MeeBadgeComponent,
+            MeeInputComponent,
+            MeeButtonComponent,
+            MeeSkeletonComponent,
+            MeeOfflineBannerComponent,
+            MeeAlertBannerComponent,
+            EmptyStateComponent,
+          ],
+        },
+        add: {
+          imports: [
+            ProfileMeeCardStub,
+            ProfileMeeBadgeStub,
+            ProfileMeeInputStub,
+            ProfileMeeButtonStub,
+            ProfileMeeSkeletonStub,
+            ProfileMeeOfflineBannerStub,
+            ProfileMeeAlertBannerStub,
+            ProfileMeeEmptyStateStub,
+          ],
+        },
+      })
+      .compileComponents();
 
     authService = TestBed.inject(AuthService);
     router = TestBed.inject(Router);
@@ -108,7 +215,12 @@ describe('ProfileComponent', () => {
         provideHttpClient(withFetch()),
         provideHttpClientTesting(),
       ],
-    }).compileComponents();
+    })
+      .overrideComponent(ProfileComponent, {
+        remove: { imports: [MeeCardComponent, MeeBadgeComponent, MeeInputComponent, MeeButtonComponent, MeeSkeletonComponent, MeeOfflineBannerComponent, MeeAlertBannerComponent, EmptyStateComponent] },
+        add: { imports: [ProfileMeeCardStub, ProfileMeeBadgeStub, ProfileMeeInputStub, ProfileMeeButtonStub, ProfileMeeSkeletonStub, ProfileMeeOfflineBannerStub, ProfileMeeAlertBannerStub, ProfileMeeEmptyStateStub] },
+      })
+      .compileComponents();
 
     authService = TestBed.inject(AuthService);
     httpMock = TestBed.inject(HttpTestingController);
@@ -238,7 +350,12 @@ describe('ProfileComponent', () => {
         provideHttpClient(withFetch()),
         provideHttpClientTesting(),
       ],
-    }).compileComponents();
+    })
+      .overrideComponent(ProfileComponent, {
+        remove: { imports: [MeeCardComponent, MeeBadgeComponent, MeeInputComponent, MeeButtonComponent, MeeSkeletonComponent, MeeOfflineBannerComponent, MeeAlertBannerComponent, EmptyStateComponent] },
+        add: { imports: [ProfileMeeCardStub, ProfileMeeBadgeStub, ProfileMeeInputStub, ProfileMeeButtonStub, ProfileMeeSkeletonStub, ProfileMeeOfflineBannerStub, ProfileMeeAlertBannerStub, ProfileMeeEmptyStateStub] },
+      })
+      .compileComponents();
 
     authService = TestBed.inject(AuthService);
     httpMock = TestBed.inject(HttpTestingController);

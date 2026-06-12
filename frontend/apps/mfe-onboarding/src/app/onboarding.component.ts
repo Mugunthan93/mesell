@@ -1,7 +1,10 @@
 import {
+  AfterViewInit,
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
   OnInit,
+  ViewChild,
   computed,
   inject,
   signal,
@@ -12,11 +15,17 @@ import {
   Validators,
 } from '@angular/forms';
 import { Router } from '@angular/router';
-import { AuthLayoutComponent, MeeAlertBannerComponent, MeeOfflineBannerComponent } from '@mesell/composites';
+import {
+  AuthLayoutComponent,
+  MeeAlertBannerComponent,
+  MeeOfflineBannerComponent,
+  EmptyStateComponent,
+} from '@mesell/composites';
 import {
   MeeButtonComponent,
   MeeInputComponent,
   MeeStepsComponent,
+  MeeSkeletonComponent,
 } from '@mesell/ui-kit';
 import type { MeeStep } from '@mesell/ui-kit';
 import { NetworkService } from '@mesell/core';
@@ -40,8 +49,10 @@ function pincodeValidator(control: { value: string | null | undefined }): { pinc
     MeeStepsComponent,
     MeeInputComponent,
     MeeButtonComponent,
+    MeeSkeletonComponent,
     MeeAlertBannerComponent,
     MeeOfflineBannerComponent,
+    EmptyStateComponent,
   ],
   template: `
     <mee-offline-banner />
@@ -67,101 +78,182 @@ function pincodeValidator(control: { value: string | null | undefined }): { pinc
         </p>
       </div>
 
-      <!-- Error banner -->
-      @if (errorMessage()) {
-        <mee-alert-banner
-          variant="error"
-          [message]="errorMessage()!"
-        />
-      }
+      <!-- Initial-load skeleton: while getProfile() is in flight (spec §3.4 item 1) -->
+      @if (initialLoading()) {
+        <div aria-live="polite" aria-label="Loading your profile" role="status" class="space-y-3 py-4">
+          <mee-skeleton variant="text" [lines]="4" />
+          <mee-skeleton variant="text" [lines]="3" />
+        </div>
+      } @else {
 
-      <form [formGroup]="form" (ngSubmit)="onSubmit()" novalidate class="flex flex-col gap-4">
+        <!-- Error banner — gets focus on appearance (a11y) -->
+        @if (errorMessage()) {
+          <div
+            #errorBannerRef
+            tabindex="-1"
+            class="mb-4 focus:outline-none"
+            aria-live="assertive"
+          >
+            <mee-alert-banner
+              variant="error"
+              [message]="errorMessage()!"
+            />
+          </div>
+        }
 
-        <!-- Manufacturer section -->
-        <p class="text-sm font-semibold mt-2" style="color: var(--mee-color-on-surface);">
-          Manufacturer Details
+        <!-- First-time seller empty-state hint (all fields blank after load) -->
+        @if (isFirstTimeSeller() && !submitted()) {
+          <div class="mb-4">
+            <mee-empty-state
+              icon="assignment"
+              message="Fill in your manufacturer and packer details to complete Meesho onboarding."
+            />
+          </div>
+        }
+
+        <!--
+          7-field base-profile form — 360px layout:
+          flex-column + gap: --mee-space-3 (12px) so all fields stack cleanly.
+          Section headings use margin-top: --mee-space-2 (8px) for visual grouping.
+        -->
+        <form
+          [formGroup]="form"
+          (ngSubmit)="onSubmit()"
+          novalidate
+          aria-label="Business setup form"
+        >
+          <div class="flex flex-col" style="gap: var(--mee-space-3);">
+
+            <!-- Manufacturer section -->
+            <p
+              class="text-sm font-semibold"
+              style="color: var(--mee-color-on-surface); margin-top: var(--mee-space-2);"
+              id="section-manufacturer"
+            >
+              Manufacturer Details
+            </p>
+
+            <mee-input
+              [label]="'Manufacturer Name'"
+              [required]="true"
+              [error]="fieldError('manufacturer_name') || manufacturerNameError()"
+              formControlName="manufacturer_name"
+              aria-describedby="section-manufacturer"
+            />
+
+            <mee-input
+              [label]="'Manufacturer Address'"
+              [required]="true"
+              [error]="fieldError('manufacturer_address') || manufacturerAddressError()"
+              formControlName="manufacturer_address"
+            />
+
+            <mee-input
+              [label]="'Manufacturer Pincode'"
+              [required]="true"
+              inputmode="numeric"
+              maxlength="6"
+              [error]="fieldError('manufacturer_pincode') || manufacturerPincodeError()"
+              formControlName="manufacturer_pincode"
+            />
+
+            <!-- Packer section -->
+            <p
+              class="text-sm font-semibold"
+              style="color: var(--mee-color-on-surface); margin-top: var(--mee-space-2);"
+              id="section-packer"
+            >
+              Packer Details
+            </p>
+
+            <mee-input
+              [label]="'Packer Name'"
+              [required]="true"
+              [error]="fieldError('packer_name') || packerNameError()"
+              formControlName="packer_name"
+              aria-describedby="section-packer"
+            />
+
+            <mee-input
+              [label]="'Packer Address'"
+              [required]="true"
+              [error]="fieldError('packer_address') || packerAddressError()"
+              formControlName="packer_address"
+            />
+
+            <mee-input
+              [label]="'Packer Pincode'"
+              [required]="true"
+              inputmode="numeric"
+              maxlength="6"
+              [error]="fieldError('packer_pincode') || packerPincodeError()"
+              formControlName="packer_pincode"
+            />
+
+            <!-- Country of Origin -->
+            <mee-input
+              [label]="'Country of Origin'"
+              [required]="true"
+              [error]="fieldError('country_of_origin') || countryError()"
+              formControlName="country_of_origin"
+            />
+
+            <!--
+              Submit button — min 44px height guaranteed by mee-button variant="primary".
+              margin-top: --mee-space-2 provides visual separation from last field.
+            -->
+            <mee-button
+              [label]="'Save & Continue'"
+              [loading]="loading()"
+              [disabled]="form.invalid || loading()"
+              [fullWidth]="true"
+              [variant]="'primary'"
+              (clicked)="onSubmit()"
+              style="margin-top: var(--mee-space-2);"
+            />
+
+          </div>
+        </form>
+
+        <p
+          class="text-center mt-4"
+          style="font-size: 12px; color: var(--mee-color-on-surface-muted);"
+        >
+          You can update this later from your profile.
         </p>
 
-        <mee-input
-          [label]="'Manufacturer Name'"
-          [required]="true"
-          [error]="fieldError('manufacturer_name') || manufacturerNameError()"
-          formControlName="manufacturer_name"
-        />
-
-        <mee-input
-          [label]="'Manufacturer Address'"
-          [required]="true"
-          [error]="fieldError('manufacturer_address') || manufacturerAddressError()"
-          formControlName="manufacturer_address"
-        />
-
-        <mee-input
-          [label]="'Manufacturer Pincode'"
-          [required]="true"
-          [error]="fieldError('manufacturer_pincode') || manufacturerPincodeError()"
-          formControlName="manufacturer_pincode"
-        />
-
-        <!-- Packer section -->
-        <p class="text-sm font-semibold mt-2" style="color: var(--mee-color-on-surface);">
-          Packer Details
-        </p>
-
-        <mee-input
-          [label]="'Packer Name'"
-          [required]="true"
-          [error]="fieldError('packer_name') || packerNameError()"
-          formControlName="packer_name"
-        />
-
-        <mee-input
-          [label]="'Packer Address'"
-          [required]="true"
-          [error]="fieldError('packer_address') || packerAddressError()"
-          formControlName="packer_address"
-        />
-
-        <mee-input
-          [label]="'Packer Pincode'"
-          [required]="true"
-          [error]="fieldError('packer_pincode') || packerPincodeError()"
-          formControlName="packer_pincode"
-        />
-
-        <!-- Country of Origin -->
-        <mee-input
-          [label]="'Country of Origin'"
-          [required]="true"
-          [error]="fieldError('country_of_origin') || countryError()"
-          formControlName="country_of_origin"
-        />
-
-        <mee-button
-          [label]="'Save & Continue'"
-          [loading]="loading()"
-          [disabled]="form.invalid || loading()"
-          [fullWidth]="true"
-          [variant]="'primary'"
-          (clicked)="onSubmit()"
-        />
-
-      </form>
-
-      <p
-        class="text-center mt-4"
-        style="font-size: 12px; color: var(--mee-color-on-surface-muted);"
-      >
-        You can update this later from your profile.
-      </p>
+      }<!-- end @else -->
     </mee-auth-layout>
   `,
+  styles: [`
+    :host { display: block; }
+
+    /*
+     * Suppress focus ring on programmatic focus targets (error banner wrapper).
+     * The wrapper is focusable for AT but not interactive — no visible outline needed.
+     */
+    [tabindex="-1"]:focus {
+      outline: none;
+    }
+
+    /*
+     * 360px — form field label text must not overflow.
+     * mee-input is assumed to set width:100%; ensure form also fills width.
+     */
+    @media (max-width: 400px) {
+      form {
+        width: 100%;
+      }
+    }
+  `],
 })
-export class OnboardingComponent implements OnInit {
+export class OnboardingComponent implements OnInit, AfterViewInit {
   private readonly fb = inject(FormBuilder);
   private readonly router = inject(Router);
   private readonly profileService = inject(SellerProfileService);
   protected readonly network = inject(NetworkService);
+
+  @ViewChild('errorBannerRef') errorBannerRef?: ElementRef<HTMLDivElement>;
 
   readonly steps: MeeStep[] = [
     { label: 'Account' },
@@ -169,11 +261,15 @@ export class OnboardingComponent implements OnInit {
     { label: 'Done' },
   ];
 
+  /** True while the initial getProfile() call is in flight. */
+  readonly initialLoading = signal<boolean>(true);
   readonly loading = signal<boolean>(false);
   readonly submitted = signal<boolean>(false);
   readonly errorMessage = signal<string | null>(null);
   /** Per-field errors from 422 validation_message_id / errors[]. */
   readonly fieldErrors = signal<Record<string, string>>({});
+  /** True when all base-profile fields are blank (first-time seller). */
+  readonly isFirstTimeSeller = signal<boolean>(false);
 
   readonly form = this.fb.group({
     manufacturer_name:    ['', [Validators.required, Validators.maxLength(200)]],
@@ -251,7 +347,7 @@ export class OnboardingComponent implements OnInit {
 
   ngOnInit(): void {
     // country_of_origin defaults to 'India' via the form initialiser above.
-    // Optionally load existing partial profile so a returning user sees pre-filled values.
+    // Load any existing partial profile so a returning user sees pre-filled values.
     this.profileService.getProfile().subscribe({
       next: (profile) => {
         this.form.patchValue({
@@ -263,11 +359,22 @@ export class OnboardingComponent implements OnInit {
           packer_pincode:       profile.packer_pincode ?? '',
           country_of_origin:    profile.country_of_origin || 'India',
         });
+        // First-time seller detection: no manufacturer/packer data yet
+        const hasAnyData = !!(profile.manufacturer_name || profile.packer_name);
+        this.isFirstTimeSeller.set(!hasAnyData);
+        this.initialLoading.set(false);
       },
       error: () => {
-        // Non-critical — form still renders with defaults; getProfile catchError handles the banner
+        // Non-critical — 404 → FRESH_SELLER_PROFILE (service maps it).
+        // Any other error: form still renders with defaults. initialLoading clears.
+        this.initialLoading.set(false);
+        this.isFirstTimeSeller.set(true); // treat load error as first-time for UX
       },
     });
+  }
+
+  ngAfterViewInit(): void {
+    // No-op — focus is managed dynamically when errorMessage signal changes.
   }
 
   /** Return a per-field 422 error string if the backend returned one. */
@@ -301,7 +408,6 @@ export class OnboardingComponent implements OnInit {
         this.loading.set(false);
         if (err instanceof ProfileValidationError) {
           // Map 422 envelope to per-field errors + banner.
-          // Backend errors[] shape: { field: string, constraint: string, msg: string }
           const errors: Record<string, string> = {};
           const rawErrors = (err.envelope.errors ?? []) as Array<{ field?: string; msg?: string }>;
           for (const fe of rawErrors) {
@@ -317,6 +423,8 @@ export class OnboardingComponent implements OnInit {
         } else {
           this.errorMessage.set('Something went wrong. Please try again.');
         }
+        // Focus the error banner for keyboard/AT users
+        Promise.resolve().then(() => this.errorBannerRef?.nativeElement.focus());
       },
     });
   }
