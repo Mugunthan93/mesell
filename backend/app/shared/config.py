@@ -183,6 +183,15 @@ class Settings(BaseSettings):
     # Route returns 404 when False per Master Plan §3.2 backend protocol.
     FEATURE_SMART_PICKER_ENABLED: bool = True
 
+    # FEATURE_IMAGE_PRECHECK_ENABLED: dev default True; staging default False
+    # until 3 gates pass (watermark ≥ 85%, deterministic Pillow smoke,
+    # GCS tenant-isolation verified) per Decision D2 in
+    # docs/plans/features/image-precheck/FEATURE_PLAN.md.
+    # POST /products/{id}/images returns 404 when False (Master Plan §3.2).
+    # GET  /products/{id}/images returns empty list when False (read-only
+    # endpoint; sellers may have legacy images — do NOT 404).
+    FEATURE_IMAGE_PRECHECK_ENABLED: bool = True
+
     # FEATURE_CATALOG_FORM_ENABLED: dev default True; staging default False
     # (set via env) until the 5-condition soak passes
     # (Decision D2 in docs/plans/features/catalog-form/FEATURE_PLAN.md).
