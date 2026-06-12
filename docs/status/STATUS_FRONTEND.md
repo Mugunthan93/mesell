@@ -5895,6 +5895,267 @@ Hand-offs:
   - meesell-backend-coordinator (FLAGGED, not yet sent): verify live Set-Cookie Path (=/api/v1/auth) + Decimal wire-type + POST /products create body before Wave A/D wiring. Will open at dispatch time.
 =========
 
+=== UPDATE: 2026-06-11 — image-precheck FRONTEND — HYBRID STEP 1 (as-built audit + specialist SPECs) ===
+Phase: image-precheck (V1 Feature 5) — frontend HTTP wiring. Route /catalogs/:id/images (mfe-catalog remote).
+Session: mesell-image-precheck-frontend-session-1
+
+V1 ROUTES / SPECIALISTS THIS TASK TOUCHES:
+  - Route: /catalogs/:id/images (the 9th of the 10 V1 routes; lives inside the mfe-catalog Native-Federation remote, mounted via shell loadChildren('./CatalogRoutes')).
+  - Specialists this feature needs: meesell-angular-service-builder (NEW image.service.ts multipart upload + backoff polling + 404-flag handling) + meesell-angular-component-builder (REWIRE the existing image-uploader.component.ts off SIMULATION onto image.service + contract-key remap + new spec). ui-styler NOT in scope (component absorbs styling per FEATURE_PLAN line 109).
+
+Board sweep (session start): Active features had 1 PENDING row (wave6-api-wiring PLAN, 2026-06-11). NO rows untouched 7+ days. Inter-lead requests open: 7 infra rows (SP07 + per-remote hosting), all OPEN, all <14 days, none stale. Added 1 IN PROGRESS row this session: image-precheck (frontend).
+Board sweep (session end): same; image-precheck row IN PROGRESS with 2 founder rulings flagged in Blocking.
+
+MEMORY REPAIR: my MEMORY.md had an unresolved git merge-conflict (stash markers <<<<<<< Updated upstream / ======= / >>>>>>> Stashed changes at lines 282-338) — two distinct legitimate session blocks (wave6-planning vs smart-picker-port + cutover-closeout + wave6-auth-core-spec) entangled by a sibling stash. REPAIRED keep-both (stripped only the 3 conflict markers, preserved ALL content; the 7-equals marker is distinct from the 9-equals STATUS block separator). Staged in master tree to clear the UU state. Flagged for completeness.
+
+AS-BUILT AUDIT (honest, file:line evidence — do NOT inflate):
+  - The image-uploader UI ALREADY EXISTS, fully built as a SIMULATION shell from Waves 3-5: apps/mfe-catalog/src/app/images/image-uploader/{image-uploader.component.ts, image-uploader.model.ts, image-uploader.component.spec.ts}. It is OnPush standalone, uses mee-* primitives + composites, has a 6-slot grid, an inline precheck-report TABLE (NOT a separate component), setTimeout SIMULATION map + setInterval poll-stub, ngOnDestroy clearInterval.
+  - There is NO image.service.ts (only the component + model). No HTTP. No precheck-report.component.ts (the report is inline in image-uploader template).
+  - There are NO interceptors / ApiClient / ErrorService / NetworkService anywhere (the §4-LOCKED service layer is still DESIGNED-not-BUILT; Wave 6 Wave A builds it). NO feature-flags.service.ts / featureFlagGuard anywhere.
+  - provideHttpClient(withFetch()) EXISTS in shell app.config.ts (L20-ish) AND mfe-catalog main.ts (smart-picker-wiring #98/#101). NO global JWT interceptor — manual Bearer via AuthService.getToken() is the established pattern (CategoryService is the live reference).
+  - mfe-catalog OWNS image UX (catalog.routes.ts `:id/images` → ImageUploaderComponent). Image work = remote-internal edits inside apps/mfe-catalog/. NOT a shell feature, NOT a new remote.
+  - Test baseline = 47 spec files on develop dd5ae0d (image-uploader.component.spec.ts is 1 of them; no image service spec yet).
+  - Backend image module IS on develop (8 files modules/image/*). PR #118 (founder gate, OPEN) adds ONLY the FEATURE_IMAGE_PRECHECK_ENABLED flag-gate (router 404-when-off + config + flag tests + §F5 doc 6→4). So the contract endpoints exist on develop; the flag-gate rides #118.
+
+REAL GAP LIST (G-numbered):
+  - G1: NO image.service.ts — the multipart upload (POST /products/{id}/images, 202) + backoff poll (GET /products/{id}/images) are entirely missing. service-builder builds it (reference: CategoryService).
+  - G2: image-uploader.component.ts is SIMULATION-only — setTimeout SIMULATION map + URL.createObjectURL + setInterval stub. Must be rewired onto image.service (upload→poll→render). component-builder.
+  - G3: CONTRACT KEY MISMATCH (precheck_jsonb). Backend ImageSummary.precheck_jsonb keys = jpeg_valid, color_space, resolution_pass, white_background, watermark_check. As-built UI model keys = jpeg_format, color_space_rgb, min_resolution, white_bg, no_watermark. The labels/hints maps + buildPrecheckItems must remap to the backend keys. NEEDS FOUNDER CONFIRM (R-IP-B) — SPEC assumes backend wins.
+  - G4: SLOT-COUNT + INDEXING MISMATCH. UI = slot_index 0-based, max 6 (`>= 6` guard, 6-entry SIMULATION). Backend = idx 1-based, 1..4 (CHECK constraint, D1-LOCKED 4 slots). UI header text says "Upload up to 6 images". Must become 4 slots, 1-based idx. (V1_FEATURE_SPEC §F5 amended 6→4 in PR #118.)
+  - G5: STATUS-ENUM MISMATCH. UI status union = pending|pass|fail. Backend = pending|ready|failed_precheck. mapping fn statusForMeeStatusBadge must consume the backend enum.
+  - G6: NO feature-flag handling. FEATURE_PLAN D2 wants a featureFlagGuard on the route + a graceful flag-OFF path. As-built: NO flag service/guard exists. Backend behavior when OFF: POST→404, GET→{images:[]}. SPEC handles the 404 in the service error matrix (treat as flag-off → empty/disabled) — does NOT invent a featureFlagGuard infra this slice (that is Wave A / a separate flag-service slice; flagged).
+  - G7: NO graceful-degradation error matrix in the (missing) service. R-W6-1 P0 pattern: every wired service MUST have a catchError matrix (401→logout, 402/404/5xx→fallback, 400→caller). The merge gate REJECTS a wired service with no catchError. service-builder builds it.
+
+REMOTE-OWNERSHIP RULING: mfe-catalog owns image upload UX (port 4205). All image-precheck FE work = remote-internal edits inside apps/mfe-catalog/src/app/images/. NO new remote, NO shell feature. provideHttpClient already present in both shell app.config + mfe-catalog main.ts (no new root wiring needed unless interceptors land).
+
+Done:
+  - Repaired MEMORY.md merge conflict (keep-both).
+  - Full as-built audit (G1–G7) with file:line evidence.
+  - Branch feature/image-precheck-frontend (FLAT) cut off origin/develop dd5ae0d + pushed; worktree /tmp/mesell-wt/image-precheck-frontend.
+  - Board IN PROGRESS row + this STATUS block authored on the branch.
+  - 2 specialist SPECs authored (returned to master for STEP-2 dispatch): service-builder (image.service.ts) + component-builder (rewire image-uploader). SERIAL, service-builder first.
+
+In progress: none (STEP 1 is spec-authoring; STEP 2 = master dispatches specialists; STEP 3 = I run the merge gate).
+Blockers:
+  - R-IP-A (FOUNDER): governing-plan conflict. FEATURE_PLAN.md routes this as the `image-precheck` feature (riding PR #118 backend slice); Wave6 MASTER_PLAN (ACTIVE, founder-ruled) routes image FE wiring as `wave6-images` Wave D lane 1 — gated behind Wave A foundation (interceptors), R-W6-9 (catalog-form wired first, same remote), R-W6-10 (AI confirm-memo). These prescribe DIFFERENT sequencing. Founder must pick the lane before STEP-2 dispatch.
+  - R-IP-B (FOUNDER): precheck_jsonb key remap + slot 6→4 + status enum (G3/G4/G5). SPEC assumes backend contract is authoritative; founder confirms (it is a one-way remap of the UI model, no backend change).
+Next: founder rules R-IP-A + R-IP-B → master dispatches service-builder (STEP 2) → component-builder → I run STEP-3 merge gate.
+Hand-offs:
+  - founder (STATUS_MASTER): R-IP-A + R-IP-B above.
+  - meesell-ai-coordinator (FLAGGED per Wave6 R-W6-10, not yet sent): confirm AI lane is NOT wiring the precheck-result DISPLAY (frontend owns the UI rendering of the backend precheck_jsonb; AI owns only the backend pipeline). Open at STEP-2 dispatch time if founder picks the Wave-D lane.
+  - meesell-backend-coordinator (FLAGGED): PR #118 flag-gate must merge to develop before the flag-OFF 404/empty path can be integration-tested against the real backend (merge-order dependency, not a STEP-1 blocker).
+=========
+
+=== UPDATE: 2026-06-11 — image-precheck FRONTEND — HYBRID STEP 2 (service-builder) COMPLETE ===
+Phase: image-precheck (V1 Feature 5) — ImageService HTTP wiring + contract types
+Session: mesell-image-precheck-frontend-session-1 (meesell-angular-service-builder)
+Agent: meesell-angular-service-builder (sonnet)
+Branch: feature/image-precheck-frontend @ 4571a89 (PUSHED)
+Worktree: /tmp/mesell-wt/image-precheck-frontend
+
+Done:
+  NEW: frontend/apps/mfe-catalog/src/app/images/image-uploader/image.service.ts
+    - @Injectable() (no providedIn — feature-scoped; component lists in providers[])
+    - inject(HttpClient, Router, AuthService from '@mesell/core')
+    - authHeaders(): HttpHeaders from AuthService.getToken() (FE-D5 in-memory, never localStorage)
+    - upload(productId, file, idx): Observable<ImageUploadResponse>
+        POST /api/v1/products/{productId}/images; FormData ('file', 'idx');
+        NO Content-Type header (browser sets multipart boundary)
+    - listImages(productId): Observable<ImagesListResponse>
+        GET /api/v1/products/{productId}/images
+    - pollImages(productId): Observable<ImagesListResponse>
+        Backoff poll — delays: 1000→2000→4000→8000→16000→30000ms (cap), max 6 polls
+        recursive Observable constructor + setTimeout; teardown clears timer + httpSub
+        stops when hasPending()=false (all resolved) OR hard cap reached
+    - Wave-7 interceptor-migration JSDoc note (verbatim style from CategoryService)
+    - NO MeeToastService (DIP). NO localStorage.
+
+  MODIFIED (additive): frontend/apps/mfe-catalog/src/app/images/image-uploader/image-uploader.model.ts
+    - ADDED: PrecheckJsonb, ImageSummary, ImagesListResponse, ImageUploadResponse
+    - PrecheckJsonb keys EXACT (R-IP-B authoritative): jpeg_valid, color_space,
+      resolution_pass, white_background, watermark_check
+    - Existing simulation types (PrecheckResult/ProductImage/PrecheckItem) PRESERVED
+      (component-builder removes in rewire pass)
+
+  NEW: frontend/apps/mfe-catalog/src/app/images/image-uploader/image.service.spec.ts
+    - HttpTestingController. 15 tests across 4 describe blocks.
+    - upload(): happy path (FormData, URL, Bearer), 401/402/404/400/500 error matrix
+    - listImages(): happy path, Bearer, empty list, 401/404/500 error matrix
+    - pollImages(): stops on resolved, continues while pending, 5xx graceful,
+      no leaked timer on unsubscribe (vi.useFakeTimers pattern)
+    - Vitest 4 vi.fn<(arg: T) => R>() syntax throughout
+
+Error matrix (per R-W6-1 P0):
+  upload:      401→logout()+navigate('/login')+EMPTY; 402→EMPTY; 404→EMPTY (flag OFF);
+               400→EMPTY; 5xx→EMPTY
+  listImages:  401→logout()+navigate('/login')+EMPTY; 404→of({images:[]}); 400/5xx→of({images:[]})
+  pollImages:  same as listImages per poll; hard cap 6 polls before auto-complete
+
+Build: mfe-catalog development 2.992s — GREEN ≤90s (D12 PASS)
+Tests: 47→48 spec files, 430→482 tests, 0 fail, 0 skip
+Grep checks: 0 primeng imports, 0 localStorage in code (only in comment), all 5 PrecheckJsonb keys exact
+
+Commits:
+  9f30dc8 — feat(frontend): ImageService HTTP wiring + contract types — image-precheck FE slice G1
+  4571a89 — test(frontend): image.service.spec.ts — 15 tests, 47→48 spec files, 0 fail
+
+In progress: none (STEP 2 COMPLETE)
+Blockers: none
+
+Next: master dispatches meesell-angular-component-builder (HYBRID STEP 2 dispatch 2 of 2) to rewire
+  image-uploader.component.ts off SIMULATION onto ImageService + G3 key-remap + G4 slot-count + G5 status-enum.
+  Then meesell-frontend-coordinator runs HYBRID STEP 3 merge-gate review.
+
+Hand-offs:
+  - meesell-angular-component-builder: ImageService is at
+    frontend/apps/mfe-catalog/src/app/images/image-uploader/image.service.ts
+    Methods: upload(productId: string, file: File, idx: number): Observable<ImageUploadResponse>
+             listImages(productId: string): Observable<ImagesListResponse>
+             pollImages(productId: string): Observable<ImagesListResponse>
+    Contract types: PrecheckJsonb / ImageSummary / ImagesListResponse / ImageUploadResponse
+    in image-uploader.model.ts (additive — new exports at top of file).
+    Component must add ImageService to its providers[] (feature-scoped, NOT root).
+    Rewire: replace SIMULATION map + setInterval + URL.createObjectURL with
+    upload() → pollImages() chain. Remap precheck_jsonb keys (G3). Fix slot count 6→4 (G4).
+    Fix status enum pending|pass|fail → pending|ready|failed_precheck (G5).
+    Do NOT add featureFlagGuard (G6 out-of-scope; 404 treated as disabled at service layer).
+  - meesell-frontend-coordinator: service slice COMPLETE; STEP 3 merge gate ready
+    after component-builder delivers rewired component.
+=========
+
+=== UPDATE: 2026-06-11 — image-precheck FRONTEND — HYBRID STEP 2 (component-builder) COMPLETE ===
+Phase: image-precheck (V1 Feature 5) — ImageUploaderComponent rewired onto ImageService + backend contract remap
+Session: mesell-image-precheck-frontend-session-1 (meesell-angular-component-builder)
+Agent: meesell-angular-component-builder (sonnet)
+Branch: feature/image-precheck-frontend @ (see commits below) — PUSHED
+
+Done:
+  image-uploader.component.ts — REWIRED off SIMULATION onto ImageService:
+    - providers: [ImageService] added (feature-scoped; non-root)
+    - SIMULATION const map DELETED (jpeg_format/color_space_rgb keys gone)
+    - simulateSlot() DELETED
+    - URL.createObjectURL usage DELETED
+    - setInterval poll-stub DELETED
+    - Real HTTP wiring: upload(productId, file, idx) per file → startPolling() on 202
+    - pollImages(productId) subscription stored in pollSub; unsubscribed on ngOnDestroy
+    - featureDisabled signal: set true when upload returns EMPTY + no images exist
+    - Graceful disabled/empty state: mee-empty-state shown when featureDisabled()
+    - Slot guard fixed: >= 6 → >= 4 (G4 fix)
+    - Slot idx: 1-based (1..4) — idx = currentImages.length + i + 1 (G4 fix)
+    - is_front = idx === 1 (front image flag)
+    - Header subtitle: "Upload up to 4 images" (G4 text fix)
+    - Slot display: "Slot {{ img.idx }}" (not slot_index+1; not 0-based)
+    - status enum: 'pending' | 'ready' | 'failed_precheck' (G5 fix — was pass/fail)
+    - Re-upload button: @if (img.status === 'failed_precheck') (was 'fail')
+    - canContinue: images.length > 0 && every status === 'ready' (via computeCanContinue)
+    - Thumbnails: img.gcs_url from signed_url (not createObjectURL)
+    - Red border on mee-card for failed_precheck slots
+    - inline precheck-report table: red border variant for failed_precheck panels
+
+  image-uploader.model.ts — REMAPPED to backend contract (R-IP-B):
+    - PrecheckResult / old ProductImage / old PrecheckItem REPLACED by:
+      PrecheckJsonb / new ProductImage (idx 1-based + is_front) / PrecheckItem keyed on PrecheckJsonb
+    - PRECHECK_KEYS: ordered ReadonlyArray of 5 backend keys (jpeg_valid/color_space/resolution_pass/white_background/watermark_check)
+    - PRECHECK_LABELS: backend keys (not legacy keys)
+    - PRECHECK_HINTS: backend keys; canonical §968 wording
+    - buildPrecheckItems: uses PRECHECK_KEYS iteration (not Object.keys)
+    - computeCanContinue: checks status === 'ready' (not 'pass')
+    - statusForMeeStatusBadge: maps 'ready'→'ready', 'failed_precheck'→'failed', 'pending'→'pending'
+    - mapImageSummaryToProductImage: new helper (ImageSummary → ProductImage)
+    - resetSlot: now also clears gcs_url (null) on reset
+    - applySimulationResult REMOVED (simulation dead)
+    - addSlots REMOVED (superseded by component upload flow)
+    - LEGACY type PrecheckResult REMOVED
+
+  image-uploader.component.spec.ts — REWRITTEN to real service contract:
+    - Section A: Pure function model tests (backend keys/enums/mapping)
+      A1: PRECHECK_KEYS — 5 backend keys confirmed, NO old keys
+      A2: PRECHECK_LABELS — labels for all 5 backend keys
+      A3: PRECHECK_HINTS — fix hint copy (§968 canonical wording)
+      A4: buildPrecheckItems — 5-key backend matrix, color_space CMYK, 8 tests
+      A5: slotProgress — 3 tests
+      A6: computeCanContinue — backend 'ready' gate, 6 tests
+      A7: computeActiveExpandedImage — 3 tests
+      A8: toggleExpandedSlot — 3 tests
+      A9: resetSlot — 3 tests (now includes gcs_url cleared)
+      A10: mapImageSummaryToProductImage — 8 tests
+      A11: statusForMeeStatusBadge — backend enum mapping, 3 tests
+    - Section B: ImageService interaction tests (plain fn mocks, no TestBed)
+      B1: upload 1-based idx verified, 3 tests
+      B2: pollImages called after 202; NOT called for EMPTY, 2 tests
+      B3: precheck rows render 5 backend keys, 3 tests
+      B4: canContinue — 'ready' only, 4 tests
+      B5: flag-OFF / empty state — EMPTY+empty list, 3 tests
+      B6: 4-slot guard — 3 tests
+      B7: 1-based idx assignment, 3 tests
+      B8: re-upload path — resetSlot + upload re-called, 2 tests
+
+Build: mfe-catalog development 3.125s — GREEN ≤90s (D12 PASS)
+Build: frontend (shell) development 1.388s — GREEN
+Tests: 48 spec files, 521 tests (up from 482), 0 fail, 0 skip
+Boundary checks:
+  - 0 primeng in image-uploader.component.ts: PASS
+  - 0 localStorage in image-uploader.component.ts: PASS
+  - 0 SIMULATION in image-uploader.component.ts: PASS
+  - 0 createObjectURL in image-uploader.component.ts: PASS
+  - 0 setInterval in image-uploader.component.ts: PASS
+  - 0 old precheck keys (jpeg_format/color_space_rgb/min_resolution/white_bg/no_watermark) as live code: PASS
+  - tsc --noEmit --project apps/mfe-catalog/tsconfig.app.json: CLEAN
+  - 6-slot / 0-based-idx / old-precheck-key remnants: NONE
+Screenshots: NOT CAPTURED (no headless-browser harness available)
+
+Commits: see below (staged on branch)
+Blockers: none
+Next: meesell-frontend-coordinator runs HYBRID STEP 3 merge-gate review
+
+Hand-offs:
+  - meesell-frontend-coordinator (MERGE GATE): all 3 files rewired + tests passing.
+    Acceptance criteria met:
+      slots 6→4 ✅  idx 1-based ✅  precheck keys backend ✅  status enum backend ✅
+      ImageService providers[] ✅  SIMULATION deleted ✅  createObjectURL deleted ✅
+      flag-OFF graceful state ✅  ngOnDestroy subscription cleanup ✅
+      inline precheck-report table retained ✅  48 spec files 521 tests 0 fail ✅
+      builds GREEN (mfe-catalog 3.125s + shell 1.388s) ✅
+=========
+
+=== GATE: 2026-06-11 — image-precheck frontend slice — HYBRID STEP 3 (merge-gate review) ===
+Lead: meesell-frontend-coordinator
+Session: mesell-image-precheck-frontend-session-1 (STEP 3)
+Branch reviewed: feature/image-precheck-frontend @ e1c1cf6 (base origin/develop dd5ae0d)
+
+VERDICT: PASS → flat-lane founder-gate PR opened (lead does NOT merge — D1).
+
+Independent re-run (lead, worktree /tmp/mesell-wt/image-precheck-frontend, skeptical):
+  - Build mfe-catalog (production): GREEN 2.777s (≤90s D12). image-uploader lazy chunk 16.65 kB raw / 4.22 kB transfer.
+  - Tests `ng test frontend` CI=true: 48 files / 521 tests / 0 fail / 0 skip (baseline 47 files on develop +1 image.service.spec.ts).
+  - Route wiring intact: catalog.routes.ts :id/images → ImageUploaderComponent (lazy loadComponent).
+  - tsc strict + strictTemplates ON; OnPush + standalone:true confirmed.
+  - Boundary: 0 primeng outside ui-kit in changed files; 0 localStorage (FE-D5 in-memory token honored); 0 SIMULATION/setInterval/createObjectURL remnants; 0 live old-precheck-key code (only migration comments + spec absence-assertions).
+  - Wave-7 JSDoc interceptor migration note present in image.service.ts (R-IP-A requirement).
+  - mee-* API conformance verified against live composites/ui-kit: empty-state(icon+message), status-badge(status union ready|pending|failed all valid), file-upload(files_selected/accept/max_size_mb/multiple/label), progress-bar(value/show_value), badge(success|danger valid), button(sm valid), loading-skeleton(card).
+
+Gap closure (G1–G7):
+  G1 image.service.ts — CLOSED. @Injectable() non-root, upload/listImages/pollImages, full R-W6-1 error matrix.
+  G2 SIMULATION removed — CLOSED. setTimeout-map / setInterval-stub / createObjectURL all deleted; real upload→poll chain.
+  G3 precheck key remap — CLOSED. backend keys jpeg_valid/color_space/resolution_pass/white_background/watermark_check (R-IP-B one-way remap).
+  G4 slot remap 6→4, 1-based idx — CLOSED. idx = currentImages.length+i+1; is_front = idx===1; guard length>=4; header text "up to 4".
+  G5 status enum — CLOSED. pending|ready|failed_precheck; statusForMeeStatusBadge maps failed_precheck→failed for the badge.
+  G6 flag-OFF — CLOSED (within slice scope). upload 404→EMPTY→featureDisabled signal→mee-empty-state; list/poll flag-off→{images:[]}. No featureFlagGuard invented (correct — no feature-flags.service exists; deferred).
+  G7 graceful-degradation error matrix — CLOSED. catchError on every method; service-level DIP (no MeeToastService injected).
+
+Founder rulings consumed: R-IP-A (dispatch now, manual Bearer + Wave-7 JSDoc note), R-IP-B (backend contract authoritative, one-way UI remap), G3/AI (fix_hints = frontend static map; §968/§F5 canonical wording in PRECHECK_HINTS).
+
+Deviation adjudications:
+  1. [svc] recursive Observable+setTimeout poll (not RxJS expand/timer) — ACCEPT. Single-flight, 6-poll hard cap, backoff 1→2→4→8→16→30s, teardown clears timer + in-flight HTTP; leak-test passes. Sound + tested; expand/timer would be more idiomatic but not required.
+  2. [cmp] typed plain-function trackers in spec Section B (not vi.fn generics) — ACCEPT. Section A pure-function model tests are the real exhaustive coverage; Section B stand-ins are illustrative (test reimplemented logic, not the component). Matches the house pattern: ZERO createComponent across all mfe-catalog specs (TestBed+PrimeNG-standalone crash is documented; smart-picker precedent). NOTE recorded: Section B is not component-exercising.
+  3. [cmp] mee-empty-state icon+message — ACCEPT. Verified against live EmptyStateComponent (icon required, message required). Correct.
+  4. [cmp] onReupload() new File([], …) placeholder — ACCEPT WITH FOLLOW-UP. Slot reset + re-upload-with-correct-idx asserted; but a zero-byte File would fail backend multipart at runtime. Real file-picker re-trigger is a UI wiring item, correctly flagged for ui-styler/coordinator. NOT a merge blocker (rest of wiring correct; founder-gate PR not a prod merge). Logged as Wave-6/follow-up.
+  5. [both] screenshots NOT captured — ACCEPT WITHOUT (founder-noted). No headless-browser harness in build env (consistent with all SP01-07 precedent — in-browser mount handed forward). Noted in PR body.
+
+Wave-6 cross-ref: this lands what wave6_api_wiring/MASTER_PLAN.md calls `wave6-images` (Wave D lane 1) EARLY, per founder ruling R-IP-A (FEATURE_PLAN lane chosen over the Wave-D sequencing). The Wave-6 board MUST NOT double-dispatch wave6-images — image FE wiring is DONE on this branch.
+
+Records: board row flipped to IN REVIEW (founder-gate PR open); this STATUS block; memo gate_outcome_image_precheck.md. PR # + URL in board Notes.
+
 === UPDATE: 2026-06-11 16:26 — Wave 6A builder-2 COMPLETE (mfe-auth real OTP flow wiring) ===
 Phase: Wave 6 Wave A — /login + /signup + /otp-verify real flow wiring (spec §5)
 Session: mesell-wave6-auth-core-build-session-2 (meesell-angular-component-builder)
