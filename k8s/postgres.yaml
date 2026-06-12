@@ -17,8 +17,10 @@
 #                This is the Day-1 bootstrap pattern (playbook §5.1) preserved
 #                by Terraform. The application reaches Postgres using
 #                POSTGRES_PASSWORD from backend-secrets (must match this value).
-#   resources:   requests cpu=200m mem=500Mi ; limits cpu=1 mem=1Gi
-#                (fits e2-standard-4 headroom — left at live values, NOT bumped)
+#   resources:   requests cpu=200m mem=500Mi ; limits cpu=1 mem=1.5Gi
+#                (mem limit raised 1Gi -> 1.5Gi by MS-0 / D5 step 1 to cover
+#                 max_connections=200 — see args below; request unchanged)
+#   args:        ["-c", "max_connections=200"]  (MS-0 / D5 step 1, MS-DB-3)
 #   storage:     20Gi PVC (volumeClaimTemplate `data`, K3s local-path)
 #   PGDATA:      /var/lib/postgresql/data/pgdata
 #
@@ -61,6 +63,8 @@ spec:
       containers:
         - name: postgres
           image: postgres:16
+          # MS-0 / D5 step 1 (MS-DB-3): max_connections 100 -> 200 via container arg.
+          args: ["-c", "max_connections=200"]
           ports:
             - containerPort: 5432
           env:
@@ -87,7 +91,7 @@ spec:
               memory: "500Mi"
             limits:
               cpu: "1"
-              memory: "1Gi"
+              memory: "1536Mi"   # MS-0 / D5 step 1: 1Gi -> 1.5Gi for max_connections=200
           readinessProbe:
             exec:
               command: ["pg_isready", "-U", "meesell", "-d", "meesell"]
