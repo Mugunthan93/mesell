@@ -77,7 +77,14 @@ class TestFullProductLifecycle:
         )
         assert autofill_result.fallback_offered is False
         assert "product_name" in autofill_result.suggestions
-        assert autofill_result.applied.get("product_name") is True
+        # BE-CATALOG-G7-AUTOAPPLY-1: FOUNDER RULING 2026-06-11 (ai-autofill D1)
+        # removed the §10 auto-apply-at-0.85-confidence-floor behaviour for autofill.
+        # autofill_product writes ONLY to ai_suggestions_jsonb; applied[field] is
+        # ALWAYS False — the seller explicitly accepts each suggestion in the UI.
+        # This assertion was previously `is True`; updated to match the ruled
+        # behaviour (always False). See docs/plans/features/ai-autofill/FEATURE_PLAN.md
+        # §D1 and feature_board_backend.md G7 entry.
+        assert autofill_result.applied.get("product_name") is False
 
         # ── 3. PATCH autosave ───────────────────────────────────────────
         autosave_req = PatchProductRequest(

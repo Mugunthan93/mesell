@@ -217,6 +217,21 @@ async def customer_client():
     _test_cache_client = _redis_lib.from_url(f"{valkey_base}/3", decode_responses=True)
     _valkey_module._cache_client = _test_cache_client  # type: ignore[assignment]
 
+    # 3c. D2 fix (Gate-4 repair-1): rate_limit_mw calls get_valkey_otp() as a
+    #     plain function call — NOT through FastAPI DI — so the DI override
+    #     above does not protect it.  When this test's function loop closes, the
+    #     old _otp_client's StreamWriter transport is bound to that closed loop;
+    #     the NEXT test's fixture setup triggers a pipeline call via rate_limit_mw
+    #     which does loop.call_soon() on the closed loop →
+    #     RuntimeError: Event loop is closed (13 teardown errors).
+    #     Patching the module-level singleton to a fresh function-loop-bound
+    #     client (same pattern as _cache_client above) prevents this.
+    _original_otp_client = _valkey_module._otp_client
+    _test_otp_client_singleton = _redis_lib.from_url(
+        f"{valkey_base}/0", decode_responses=True
+    )
+    _valkey_module._otp_client = _test_otp_client_singleton  # type: ignore[assignment]
+
     # ── 4. Seed OTP in test Valkey DB 0 ───────────────────────────────────
     otp_seed_client = _redis_lib.from_url(f"{valkey_base}/0", decode_responses=True)
     try:
@@ -277,6 +292,7 @@ async def customer_client():
     # Restore module-level singletons.
     _audit_mw.AsyncSessionLocal = _original_audit_session_local  # type: ignore[attr-defined]
     _valkey_module._cache_client = _original_cache_client  # type: ignore[assignment]
+    _valkey_module._otp_client = _original_otp_client  # type: ignore[assignment]
 
     for c in _otp_clients:
         try:
@@ -285,6 +301,10 @@ async def customer_client():
             pass
     try:
         await _test_cache_client.aclose()
+    except Exception:
+        pass
+    try:
+        await _test_otp_client_singleton.aclose()
     except Exception:
         pass
     try:

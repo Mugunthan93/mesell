@@ -23,8 +23,8 @@ are non-routable test numbers that no real Indian SIM would ever carry,
 making it safe to DELETE-by-prefix at teardown without risk of stomping
 real data.
 
-Gate-4 cross-loop fix
----------------------
+Gate-4 cross-loop fix (repair 1)
+---------------------------------
 Root cause (post-PR-#150 regression): the original ``iam_client`` did NOT
 override ``Depends(get_db)``.  Routes therefore resolved the dep against the
 app-global ``AsyncSessionLocal`` / engine — a module-import-time singleton
@@ -39,11 +39,29 @@ pass-3 canon): per-test NullPool engine + ``get_db`` override so every DB
 connection is born in and dies in the test's own function-scoped loop.
 ``audit_mw.AsyncSessionLocal`` (which bypasses FastAPI DI) is patched to the
 same NullPool session-maker so audit writes also stay in the function loop.
-Lifespan-state ``app.state.db_engine`` and ``app.state.valkey`` are
-explicitly disposed AFTER the lifespan context exits (still inside the
-function loop) to drain any pending asyncpg pool callbacks before the
-function loop is torn down — this clears the 13 ``Event loop is closed``
-teardown errors.
+
+D1 fix (Gate-4 repair-1): NO SAVEPOINT on ``iam_client``.
+The split-engine integration tests (``test_customer_cross_module_eligibility``,
+``test_customer_full_onboarding_flow``) create a user via ``iam_client`` and then
+read that user back via a SEPARATE engine on ``os.environ["DATABASE_URL"]``.
+A SAVEPOINT outer-transaction would keep the user row uncommitted, making it
+invisible to the second engine → ``ForeignKeyViolationError``.  The function-loop
+NullPool engine alone is sufficient to kill the cross-loop error.  Real row
+commits are acceptable because ``_cleanup_users_by_phone_prefix`` removes all
+test data at teardown by phone prefix.
+
+D2 fix (Gate-4 repair-1): patch ``_valkey_module._otp_client`` at the module
+level.  ``rate_limit_mw._check_window`` calls ``await get_valkey_otp()`` as a
+plain function call — NOT through FastAPI DI.  So the FastAPI
+``dependency_overrides[get_valkey_otp]`` override has no effect on it.  When
+test N's function loop closes, the ``_otp_client`` singleton retains a
+``StreamWriter`` whose transport's ``_loop`` is the now-closed loop N.  When
+test N+1 boots a new lifespan and the middleware makes a Valkey pipeline call,
+that writer tries ``self._loop.call_soon(...)`` → ``RuntimeError: Event loop is
+closed`` (13 teardown errors).  Patching ``_otp_client`` to a fresh
+function-loop-bound client (exactly as we already patch ``_cache_client``)
+prevents this — the singleton is always the current-loop client for the duration
+of the test.
 """
 
 from __future__ import annotations
@@ -109,17 +127,25 @@ async def iam_client():
 
     * Boots the FastAPI lifespan once per fixture call.
     * Overrides ``Depends(get_db)`` with a function-loop NullPool engine +
-      SAVEPOINT-isolated session-maker so every DB operation in this test
-      is born in and dies in the function-scoped event loop.  This kills
-      the ``got Future attached to a different loop`` cross-loop error that
-      fires when routes resolve ``get_db`` against the app-global
-      ``AsyncSessionLocal`` (session-loop-bound engine).
-    * Patches ``audit_mw.AsyncSessionLocal`` to the same NullPool
-      session-maker so middleware audit writes also stay in the function loop.
+      session-maker so every DB operation in this test is born in and dies in
+      the function-scoped event loop.  This kills the ``got Future attached to
+      a different loop`` cross-loop error that fires when routes resolve
+      ``get_db`` against the app-global ``AsyncSessionLocal``
+      (session-loop-bound engine).
+    * NO SAVEPOINT isolation (D1 fix): rows are committed for real so that
+      split-engine tests (``test_customer_cross_module_eligibility``) can read
+      them back via an independent ``os.environ["DATABASE_URL"]`` connection.
+      ``_cleanup_users_by_phone_prefix`` removes all test rows at teardown.
+    * Patches ``audit_mw.AsyncSessionLocal`` to the same NullPool session-maker
+      so middleware audit writes also stay in the function loop.
+    * Patches ``_valkey_module._otp_client`` (D2 fix): ``rate_limit_mw`` calls
+      ``get_valkey_otp()`` as a plain function — NOT through FastAPI DI — so
+      the DI override alone does not protect it.  We replace the module-level
+      singleton with a fresh function-loop-bound client, preventing
+      ``RuntimeError: Event loop is closed`` on the next test's fixture setup.
     * Explicitly disposes ``app.state.db_engine`` + closes ``app.state.valkey``
       after the lifespan exits to drain pending asyncpg pool callbacks before
-      the function loop tears down (fixes the ``Event loop is closed`` teardown
-      errors).
+      the function loop tears down.
     * Cleans up users by phone prefix in teardown.
     """
     import redis.asyncio as _redis_lib
@@ -138,17 +164,14 @@ async def iam_client():
             await conn.run_sync(Base.metadata.drop_all)
             await conn.run_sync(Base.metadata.create_all)
 
-    # ── 2. SAVEPOINT per-test isolation ────────────────────────────────────
-    # Single shared connection, open outer transaction.  Handler commit()
-    # calls release a savepoint; outer rollback at teardown discards all
-    # test writes → shared meesell_test stays byte-clean.
-    shared_conn = await engine.connect()
-    outer_txn = await shared_conn.begin()
-    TestSession = async_sessionmaker(
-        bind=shared_conn,
-        expire_on_commit=False,
-        join_transaction_mode="create_savepoint",
-    )
+    # ── 2. Plain commit-for-real session-maker (no SAVEPOINT) ─────────────
+    # D1 fix: the split-engine eligibility + onboarding tests read inserted
+    # rows back via a SEPARATE engine on os.environ["DATABASE_URL"].  Under
+    # SAVEPOINT isolation those rows are never visible to the second engine
+    # (uncommitted outer txn) → ForeignKeyViolationError.  The function-loop
+    # NullPool engine alone is sufficient to fix the cross-loop error; the
+    # SAVEPOINT layer is unnecessary and actively harmful here.
+    TestSession = async_sessionmaker(engine, expire_on_commit=False)
 
     # ── 3. Override FastAPI DI ─────────────────────────────────────────────
     _otp_clients: list = []
@@ -182,6 +205,16 @@ async def iam_client():
     _test_cache_client = _redis_lib.from_url(f"{valkey_base}/3", decode_responses=True)
     _valkey_module._cache_client = _test_cache_client  # type: ignore[assignment]
 
+    # 4c. D2 fix: shared.valkey OTP singleton (used by rate_limit_mw directly,
+    #     NOT through FastAPI DI).  Without this patch, after test N's function
+    #     loop closes the old _otp_client's StreamWriter transport is bound to
+    #     that closed loop; test N+1's rate_limit_mw pipeline call triggers
+    #     `loop.call_soon()` on the closed loop → RuntimeError: Event loop is
+    #     closed (13 teardown errors).  Replace with a fresh function-loop client.
+    _original_otp_client = _valkey_module._otp_client
+    _test_otp_client = _redis_lib.from_url(f"{valkey_base}/0", decode_responses=True)
+    _valkey_module._otp_client = _test_otp_client  # type: ignore[assignment]
+
     # ── 5. Pre-test user cleanup ───────────────────────────────────────────
     # Run before boot to ensure prior run residue is removed.
     await _cleanup_users_by_phone_prefix(db_url)
@@ -201,7 +234,7 @@ async def iam_client():
             # ── Lifespan has exited (lifespan teardown ran dispose/aclose).
             # Explicitly dispose again INSIDE the function-loop async context
             # to drain any pending asyncpg pool callbacks before the loop
-            # is torn down — prevents ``Event loop is closed`` teardown errors.
+            # is torn down.
             if lifespan_db_engine is not None:
                 try:
                     await lifespan_db_engine.dispose()
@@ -218,8 +251,9 @@ async def iam_client():
         # Restore module-level singletons.
         _audit_mw.AsyncSessionLocal = _original_audit_session_local  # type: ignore[attr-defined]
         _valkey_module._cache_client = _original_cache_client  # type: ignore[assignment]
+        _valkey_module._otp_client = _original_otp_client  # type: ignore[assignment]
 
-        # Close OTP + cache Valkey clients created during the test.
+        # Close OTP + cache + explicit OTP client created during the test.
         for c in _otp_clients:
             try:
                 await c.aclose()
@@ -229,14 +263,8 @@ async def iam_client():
             await _test_cache_client.aclose()
         except Exception:
             pass
-
-        # SAVEPOINT teardown: roll back outer txn → discard all test writes.
         try:
-            await outer_txn.rollback()
-        except Exception:
-            pass
-        try:
-            await shared_conn.close()
+            await _test_otp_client.aclose()
         except Exception:
             pass
 
