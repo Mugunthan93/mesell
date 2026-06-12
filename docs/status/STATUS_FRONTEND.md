@@ -6592,3 +6592,26 @@ Hand-offs:
   - Wave D images lane (same mfe-catalog remote) is GATED on PR #164's merge to develop — communicated; do NOT branch images until catalog-form lands.
   - Deferred register (carried, non-blockers): GAP-1 product category_id recovery on hard-reload (nav-state interim; backend memo pending an authoritative GET /products/{id}-style path); ETag #15 conditional-GET (no If-None-Match sent in V1); 360/1280 screenshots (native-fed headless hang → by-construction responsive argument + founder UI-review flag, Wave B precedent); validation_message_ids warnings + autofill confidence display → V1.5.
 =========
+
+=== UPDATE: 2026-06-12 — Wave 6D lane 2 pricing — DELTA RE-GATE: VERDICT PASS ===
+Phase: Wave 6 Wave D lane 2 — pricing server-calc wiring (apps/mfe-pricing, /catalogs/:id/pricing)
+Session: mesell-wave6-pricing-regate-session-1
+Board sweep: wave6-pricing BLOCKED row flipped → moved to Recently merged (MERGED to integration, founder-gate #172 OPEN); header updated. No Active-features row stale 7+ days (plan-PENDING + image-precheck founder-gate, both 2026-06-11). Inter-lead requests open: 7 infra RECORD-ONLY rows unchanged.
+Done:
+  - DELTA RE-GATE of the prior REJECT (rejected tip 4cd111f: 5xx/network silent-empty-state). TRUE origin tip verified FIRST = 42ecdc9 (chain 49a6af8 service → 77c1d9c component → 4cd111f styler → 42ecdc9 gate-fix off base develop b348dac).
+  - BLOCKER FIX VERIFIED FROM SOURCE (read full files, not just diff): service `_handleError` now returns `of({kind:'server_error'})` on 5xx AND non-HTTP/network (was bare EMPTY); 401 → EMPTY preserved EXACTLY (refreshInterceptor/logout owns it). Component `_handleErrorShape` adds `case 'server_error' → errorState.set('server_error')`; template `@if(errorState()==='server_error')` renders `<mee-alert-banner variant=error message="Couldn't calculate price — please try again.">`. Real reachable flow confirmed end-to-end: subscribe next → `'kind' in result` → _handleErrorShape → errorState → banner.
+  - TAUTOLOGICAL TEST (`defensivePathReached=true`) GONE (grep 0). Replacement service-spec tests flush a REAL 500/503/network(`ProgressEvent`) through the real PricingApiService via HttpTestingController + firstValueFrom and assert toMatchObject({kind:'server_error'}). Skeptical revert check: reverting to bare EMPTY makes firstValueFrom(EMPTY) reject → tests FAIL. Genuinely real (the load-bearing guarantee).
+  - DISCIPLINE NOTE (non-blocking, recorded for component-builder): the 2 new COMPONENT-spec tests re-implement the switch/template predicate inline rather than driving the real PricingComponent — an improvement over the tautology but still not exercising the real component. ACCEPTED because the service spec carries the real guarantee + the real component flow was lead-verified directly from source.
+  - DELTA RE-CERT PASS (skeptical, retained worktree /tmp/mesell-wt/w6d-pri-review @ 42ecdc9): full suite 58 files / 816 tests / 0 fail / 0 skip (monotonic rise from reject 814; both mfe-pricing specs discovered spec-apps-mfe-pricing-{component,service}); builds mfe-pricing 2.961s + shell 3.117s ≤90s D12; retired-math grep (computePnlBreakdown/COMMISSION_PCT/GST_PCT/mrp*0.5) = 0 functional (doc-comment + absence-negation only); retryOn503/inject(HttpClient)/primeng-outside-ui-kit/deep-import/localStorage/sessionStorage/withCredentials all 0; wire body input_cost+target_margin_pct (no stray mrp/target_margin); URL /api/v1/products/{id}/price-calc exact; §6.G one _mesell_core-UFWKTCGO.js chunk + @mesell/core in remoteEntry shared[] NOT inlined (NEW core consumer for this remote); disjointness 6 files ALL under apps/mfe-pricing/.
+  - Group PR #171 frontend→integration: LEAD-GATE APPROVE comment + squash --admin (f157133); frontend branch deleted via gh api.
+  - Merged origin/develop (390a80d) into integration: CONFLICT-FREE (pricing disjoint from concurrent Wave 6 catalog-form + export lanes; pricing files untouched by the merge); merged tip c067765.
+  - Re-certified merged tip c067765: full suite 62 files / 1014 tests / 0 fail / 0 skip (union of pricing 816 + develop-side catalog-form/export specs); builds mfe-pricing 2.696s + shell 17.770s (first-run federation-artefact prep; cached run 3.117s) ≤90s D12.
+  - Opened FOUNDER-GATE PR #172 [FOUNDER GATE — DO NOT MERGE] integration→develop — LEFT OPEN, lead does NOT approve (D1). Body carries reject→fix history + carried-items register.
+In progress: none (lane gated to founder).
+Blockers: none.
+Next: founder reviews PR #172. mfe-pricing is a solo remote (no R-W6-9 intra-remote dependency); other Wave D lane (images = wave6-images / image-precheck) is independent.
+Hand-offs:
+  - Backend memo (informational, low-priority): confirm the Decimal serialised wire-type (string vs number) for price-calc against a Gate-4 fixture; baked assumption = string (no json_encoders). Only escalate if a surprise.
+  - i18n: PriceCalcAlert.message_id rendered via a static FE map (transloco dropped Wave-2B); transloco-enable chore separate (post-Wave-D).
+  - Screenshots (360/1280): native-fed headless caveat → founder Gate-5 UI-review (states: input form / calculating / result-table-with-alerts / 404-unavailable / 422-no-commission / 5xx-retry-banner).
+=========
