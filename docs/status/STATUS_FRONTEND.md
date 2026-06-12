@@ -3,6 +3,74 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-11
 
+=== UPDATE: 2026-06-12 11:10 ===
+Phase: wave6-export (Wave 6 Wave C lane 2 — ExportComponent §4.3 render/UX + §6 degradation matrix)
+Session: mesell-wave6-export-build-session-2
+Agent: meesell-angular-component-builder (sonnet) — HYBRID step-2 builder-2
+
+Done:
+  EDIT export.component.ts:
+    - Removed MeeProgressBarComponent import + [value]="0" placeholder
+    - Added indeterminate CSS spinner (.mee-export-spinner @keyframes) as local workaround
+      (FLAG for ui-styler builder-3: MeeProgressBarComponent.value is required — no indeterminate
+       mode in @mesell/ui-kit; replace with MeeSpinnerComponent once added to ui-kit)
+    - Added MeeAlertBannerComponent + MeeOfflineBannerComponent to imports[]
+    - Wired notReadyMessage() → <mee-alert-banner variant="warning"> (422 GAP-1 real gate)
+    - Added general error banner: <mee-alert-banner variant="error"> for errorMessage() when status=idle
+    - Added <mee-offline-banner /> as FIRST element in template (§6 degradation matrix)
+    - Processing card: role="status" aria-label + aria-live="polite" on wrapper div
+    - Component trimmed to 323 lines (≤400 hard limit)
+  EDIT export.component.spec.ts:
+    - Added §6 degradation matrix render-path tests: 7 describe blocks × multiple it()
+      - notReadyMessage render path (422 gate): 4 tests
+      - errorMessage general error path (5xx/network): 4 tests
+      - processing state (indeterminate spinner, no fake progress): 3 tests
+      - ready state (real signed-URL download): 4 tests
+      - failed state (retry affordance): 4 tests
+      - MeeOfflineBannerComponent placement: 2 tests
+      - MeeAlertBannerComponent wiring (variant=error vs warning): 3 tests
+    - Total +24 tests (746 - 722 baseline)
+
+Tests: 59 spec files / 746 tests / 0 fail (monotonic +24 from baseline 722)
+Build: 7/7 GREEN:
+  mfe-export: 2.624s | frontend: 2.786s | mfe-auth: 2.732s | mfe-catalog: 2.925s
+  mfe-dashboard: 2.905s | mfe-pricing: 2.650s | mfe-onboarding: 2.659s (all ≤90s D12)
+
+Validation greps (all ZERO except expected):
+  Boundary (primeng from mfe-export/src/app) = 0 CLEAN
+  Deep-import (@mesell/*/path in mfe-export/src/app) = 0 CLEAN
+  MOCK_DOWNLOAD_URL / fake-progress in component.ts = 0 CLEAN
+  localStorage in mfe-export/src/app = 0 CLEAN
+  [value]="0" (mee-progress-bar placeholder) = 0 REMOVED
+  mee-alert-banner (notReadyMessage wiring) = 1 PRESENT
+  mee-offline-banner = 1 PRESENT
+  mee-export-spinner (indeterminate) = 4 PRESENT
+  git status (my changes only): 2 files, both apps/mfe-export/ DISJOINT
+
+Blockers: none
+STOP conditions hit: NONE
+Deviations from spec (all documented):
+  1. No MeeSpinnerComponent exists in @mesell/ui-kit. Used inline CSS @keyframes animation
+     (.mee-export-spinner) as a LOCAL workaround. FLAG raised in both the component comment
+     and this STATUS for ui-styler builder-3. Do NOT edit ui-kit progress-bar (frozen).
+  2. Template render-path specs are pure-function (no TestBed). TestBed for export component
+     has a documented PrimeNG JIT issue (Wave 5 F12 export pattern). Pure-function analysis
+     of signal-state conditions is equivalent to template-branch testing per project convention.
+
+In progress: none (builder-2 scope COMPLETE)
+Next: meesell-angular-ui-styler (builder-3) — status-based state polish, 360/1280 screenshots,
+      a11y (aria-live on status region — already added), MeeSpinnerComponent if possible
+Hand-offs:
+  ExportComponent fully wired:
+    - indeterminate spinner during 'processing' (replace .mee-export-spinner with MeeSpinnerComponent)
+    - notReadyMessage → mee-alert-banner[variant=warning]
+    - errorMessage (5xx/network) → mee-alert-banner[variant=error] (only when status=idle)
+    - mee-offline-banner at template root
+    - Ready card: real xlsx_signed_url + zip_signed_url buttons
+    - Failed card: errorMessage text + Retry button (fresh initiate, new export_id)
+    - Processing card: role=status aria-live=polite (a11y baseline done)
+=========
+
 === UPDATE: 2026-06-12 10:30 ===
 Phase: wave6-export (Wave 6 Wave C lane 2 — ExportApiService real wire)
 Session: mesell-wave6-export-build-session-1
