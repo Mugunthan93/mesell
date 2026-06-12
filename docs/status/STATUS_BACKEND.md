@@ -4911,4 +4911,55 @@ In progress: none.
 Blockers: none.
 Next: founder merges the flag-parity PR → develop; infra injects 3 flags into ConfigMaps (inter-lead OPEN).
 Hand-offs: meesell-infra-builder — 3 flags → k8s ConfigMaps (dev: price-calc=true/dashboard=true/live-preview=false; staging: all false). Memo handoff_secret_flag_parity_flags.md.
+
+=== UPDATE: 2026-06-12 ===
+Phase: CI Gate-1 event-loop fix (HYBRID STEP 2 — api-routes-builder specialist)
+Session block: mesell-ci-gate1-event-loop-backend-session-1
+Branch: fix/ci-gate1-event-loop off origin/develop
+Consumes: infra inter-lead request PR #145 (Gate-1 unit RED)
+
+Root cause — BRANCH 2 (Polluter A primary + Polluter B contributing):
+
+Polluter A: `backend/tests/conftest.py` lines 270-274 — session-scoped
+`event_loop` fixture was redefined but never called `asyncio.set_event_loop()`.
+pytest-asyncio 0.24 removed the user-redefinable fixture. The fixture closed its
+loop at session teardown, leaving no current loop for subsequent function-scoped
+async tests. Affects ALL 13 failing tests.
+
+Polluter B (actual, differs from spec prediction): `backend/tests/test_config.py`
+calls `importlib.reload(app.shared.config)` which replaces `app.shared.config.settings`
+with a NEW instance. `test_catalog_routes.py`'s `monkeypatch.setattr(_config_module.settings, ...)`
+was patching the new (post-reload) settings object, while `catalog/router.py` reads the
+OLD settings reference captured at import time via `from app.shared.config import settings`.
+This caused 3 tests to route through to the service layer instead of firing the flag guard.
+
+Spec predicted Polluter B = asyncio.run() in test_worker_db_isolation.py — empirically NOT the case
+(worker tests are isolated and pass cleanly before/after). The actual Polluter B is test_config.py's
+importlib.reload. This is a deviation from the spec's prediction; the fix is ADDITIVE to spec scope.
+
+Fixes applied:
+1. Deleted `event_loop` fixture (conftest.py lines 270-274 + unused asyncio import line 5)
+2. Changed monkeypatch target in test_catalog_routes.py from `_config_module.settings`
+   (app.shared.config module) to `_catalog_router_module.settings`
+   (app.modules.catalog.router module) — the reference the router actually reads.
+
+Test evidence:
+1. Full -m unit GREEN: 638 passed, 282 deselected in 6.42s (previously 13 failed)
+2. pytest -m unit tests/unit/ -v: 37 passed in isolation
+3. pytest test_worker_db_isolation.py test_shared_database.py: 12 passed
+4. No event_loop deprecation warning; 1 pre-existing ResourceWarning (asyncpg Connection._cancel)
+5. ruff check tests/conftest.py tests/unit/test_catalog_routes.py: All checks passed!
+6. Collected count: 638/920 (282 deselected) — identical before/after fix
+
+Files touched:
+- backend/tests/conftest.py (deleted event_loop fixture + asyncio import)
+- backend/tests/unit/test_catalog_routes.py (monkeypatch target → catalog router's settings)
+- .claude/agent-memory/meesell-api-routes-builder/MEMORY.md (learnings appended)
+
+Done: fix implemented, all 6 verification items PASS, PR open for coordinator STEP 3 review.
+In progress: none.
+Blockers: none.
+Next: coordinator merge-gate review (HYBRID STEP 3).
+Hand-offs: meesell-backend-coordinator — PR fix/ci-gate1-event-loop → develop for STEP 3 merge-gate.
+=========
 =========

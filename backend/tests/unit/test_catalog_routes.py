@@ -47,7 +47,7 @@ import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-import app.shared.config as _config_module
+import app.modules.catalog.router as _catalog_router_module
 from app.main import app as _production_app
 
 pytestmark = pytest.mark.unit
@@ -108,7 +108,7 @@ class TestAutofillFlagGuard:
         _production_app.dependency_overrides[get_current_user] = _fake_auth
 
         # Disable the feature flag on the live settings object.
-        monkeypatch.setattr(_config_module.settings, "FEATURE_AI_AUTOFILL_ENABLED", False)
+        monkeypatch.setattr(_catalog_router_module.settings, "FEATURE_AI_AUTOFILL_ENABLED", False)
 
         try:
             response = await unauth_client.post(
@@ -145,7 +145,7 @@ class TestAutofillFlagGuard:
             return fake_user
 
         _production_app.dependency_overrides[get_current_user] = _fake_auth
-        monkeypatch.setattr(_config_module.settings, "FEATURE_AI_AUTOFILL_ENABLED", False)
+        monkeypatch.setattr(_catalog_router_module.settings, "FEATURE_AI_AUTOFILL_ENABLED", False)
 
         try:
             response = await unauth_client.post(
@@ -171,7 +171,7 @@ class TestAutofillFlagGuard:
         response is NOT 404 (which would indicate the guard wrongly fired).
         """
         # Ensure the flag is True (default, but explicit for test clarity).
-        monkeypatch.setattr(_config_module.settings, "FEATURE_AI_AUTOFILL_ENABLED", True)
+        monkeypatch.setattr(_catalog_router_module.settings, "FEATURE_AI_AUTOFILL_ENABLED", True)
 
         response = await unauth_client.post(
             _AUTOFILL_URL,
@@ -240,7 +240,7 @@ class TestAutofillFlagGuard:
 
         try:
             # First request: flag off → 404 from the flag guard.
-            monkeypatch.setattr(_config_module.settings, "FEATURE_AI_AUTOFILL_ENABLED", False)
+            monkeypatch.setattr(_catalog_router_module.settings, "FEATURE_AI_AUTOFILL_ENABLED", False)
             r1 = await unauth_client.post(
                 _AUTOFILL_URL,
                 json={"description": "a kurti"},
@@ -248,7 +248,7 @@ class TestAutofillFlagGuard:
 
             # Second request: flag on → guard does NOT fire → service entered →
             # ownership stub raises 403.
-            monkeypatch.setattr(_config_module.settings, "FEATURE_AI_AUTOFILL_ENABLED", True)
+            monkeypatch.setattr(_catalog_router_module.settings, "FEATURE_AI_AUTOFILL_ENABLED", True)
             r2 = await unauth_client.post(
                 _AUTOFILL_URL,
                 json={"description": "a kurti"},
