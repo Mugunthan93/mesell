@@ -1,7 +1,7 @@
 # STATUS — INFRASTRUCTURE
 
 **Owner:** `meesell-infra-builder`
-**Last update:** 2026-06-12 (deploy-from-develop — FOUNDER RULING: dev deploys fire from develop, NOT main; build+deploy ref-guards flipped main→develop + VM checkout points at origin/develop; readyz fix #127 intact; main reserved for staging/prod promotion — see latest UPDATE)
+**Last update:** 2026-06-12 (ci-activation CLOSE-OUT — **CI/CD PIPELINE ACTIVE**: run 9 / PR #132 / merge `62713935` = first fully-green end-to-end pipeline; 6-rung deploy-bug ladder codified (#113/#116/#119/#123/#127/#131); branch protection develop-only (13 contexts); GEMINI_API_KEY_CI founder-pending. Prior same-day: deploy-from-develop FOUNDER RULING #137 — dev deploys fire from develop, NOT main. See the two latest UPDATE blocks.)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
 
 ## UPDATE — 2026-06-12 — mesell-deploy-from-develop-infra-session-1 (FOUNDER RULING: deploy dev from develop)
@@ -1980,4 +1980,59 @@ GEMINI_API_KEY_CI still unset (nightly-only, non-blocking). Watching to conclusi
 **Branch protection STILL DEFERRED** (not green-through-deploy). When green, required-PR contexts = the 5 gate names + the NAMED frontend contexts. NOTE the frontend matrix GREW to 8 jobs (detect + shell + mfe-auth/catalog/dashboard/export/onboarding/pricing) — re-confirm exact live context strings at protection time, do not reuse re-fire #3's 3-context list. NEVER add Build/Deploy (main-only → deadlock) or Nightly/ai_eval (schedule-only).
 
 **Session-end board sweep:** Active = ci-activation (BLOCKED, founder IAM gate, last-touched 2026-06-11), auth-otp (IN REVIEW), mfe-cutover (IN REVIEW). None untouched 7+ days. Gate-4 inter-lead request → RESOLVED. No cluster/TF mutations this session (only PR merge + read-only IAM/WIF inspection + board/STATUS/memory writes).
+=========
+
+## UPDATE — 2026-06-12 — mesell-ci-activation-session-1 — CLOSE-OUT: CI ACTIVE (run-9 green)
+
+=== STEP: CI/CD activation close-out — first fully-green end-to-end pipeline ===
+Phase: DEVOPS_ARCHITECTURE.md §5/§6/§7 (gates + build + deploy) — docs-only close-out (Rule 7 single-agent fast mode). No ci.yml/TF/cluster/secret mutations.
+Session: mesell-ci-activation-session-1
+
+**MILESTONE — CI/CD PIPELINE IS ACTIVE.** Run 9 (`27366269839`, merge SHA `62713935`, PR #132) =
+**the FIRST FULLY GREEN end-to-end pipeline in project history**: 5 backend gates (unit · smoke ·
+lint · integration · golden_roundtrip) + 8 frontend legs (detect + shell + 6 mfe remotes) +
+Cloud Build (WIF auth → build+push api/worker to AR) + IAP deploy (token refresh → k3s restart →
+readyz → kubectl applies → settle wait → alembic migrate → image roll → rollout status →
+in-pipeline health check) + external `https://api.mesell.xyz/health` → 200. Every job that was ever
+red is now green; the deploy job rolled the new images onto the dev cluster for the first time.
+
+**The 6-rung deploy-bug ladder — all diagnosed, fixed, and codified (PR by PR):**
+1. **act-as on the compute SA** — `meesell-github-ci` lacked `roles/iam.serviceAccountUser` on
+   `888244156264-compute@…` (the Cloud Build runner SA) → Build "Submit Cloud Build job"
+   PERMISSION_DENIED. Codified `google_service_account_iam_member` in `module.ci_identity`. **PR #113.**
+2. **compute.viewer** — instance-scoped `instanceAdmin.v1` does NOT grant project-level
+   `compute.projects.get`/`zones.get` that `gcloud compute ssh --tunnel-through-iap` needs to resolve
+   the target → 401. Added project-wide read-only `roles/compute.viewer`. **PR #116.**
+3. **AR pull auth** — K3s `/etc/rancher/k3s/registries.yaml` metadata-server token mechanism
+   (45-min refresh cron + `systemctl restart k3s` to reload containerd). SA-key alternative (#121)
+   CLOSED — blocked by org policy `iam.disableServiceAccountKeyCreation`; the puller SA + repo IAM
+   member built for it were TF-destroyed. **PR #119.**
+4. **shallow-clone FETCH_HEAD** — VM checkout is a shallow/single-branch clone with no
+   remote-tracking `origin/main`; `git reset --hard origin/main` → `fatal: ambiguous argument`.
+   Switched to `git fetch origin main` + reset to FETCH_HEAD. **PR #123** (sibling).
+5. **unescaped `$(seq)`** — readyz-wait `for i in $(seq 1 20)` inside `gcloud compute ssh
+   --command="…"` expanded on the GitHub runner → malformed remote script → syntax error right
+   after `systemctl restart k3s`. Replaced with a substitution-free `until`+counter loop, fully
+   `\$`-escaped. **PR #127.**
+6. **exec-on-terminating-pod settle wait** — `kubectl apply` triggered a kill-before-surge rollout;
+   the following `kubectl exec deploy/api -- alembic upgrade head` raced the terminating old pod →
+   SIGKILL (exit 137). Inserted `rollout status deployment/{api,worker}` BETWEEN the applies and the
+   migrate exec so exec always targets a Running pod. **PR #131.**
+
+**Branch protection — APPLIED 2026-06-12, FOUNDER-RULED develop ONLY.** 13 required status contexts
+(5 gates + frontend `detect` + 7 frontend units) + strict (up-to-date) + 1 review. **`main` is
+intentionally left WITHOUT required checks** (founder ruling) — do not "fix" this; it is deliberate.
+Build/Deploy (main-/push-only) and Nightly/ai_eval (schedule-only) are correctly NOT in the
+required-context set (adding them would deadlock PRs).
+
+**Still pending (FOUNDER, non-blocking):** `GEMINI_API_KEY_CI` GitHub secret — a quota-capped key
+from aistudio.google.com/apikey, consumed ONLY by the nightly `ai_eval` job. Its absence does not
+affect the activated push/PR pipeline.
+
+**V1.5 follow-ups (recorded, no urgency):** migration-runs-in-OLD-image smell (proper fix = a
+short-lived Job that runs `alembic upgrade head` on the NEW image before `set image`); backend seed
+(BE-SEED-1); legacy `github-pool` / `meesell-ci` WIF+SA orphan cleanup.
+
+**Board:** ci-activation flipped DONE (CI ACTIVE) and moved Active → Recently merged in the same edit.
+**Cost:** ₹0/month — close-out is docs + memory only; zero cluster/TF/Secret Manager/ci.yml mutations.
 =========
