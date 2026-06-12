@@ -1,8 +1,41 @@
 # STATUS — INFRASTRUCTURE
 
 **Owner:** `meesell-infra-builder`
-**Last update:** 2026-06-12 (**Gate-4 (integration) RED on develop logged as a formal inter-lead request → backend-coordinator** (first seen PR #158 run 27392278294 ~03:24Z). Prior: GEMINI_API_KEY_CI SET + founder-verified — the last pending CI-activation item is now DONE; new flag: SM `meesell-gemini-api-key` is DEAD/invalid; dead-gemini-key-cleanup F1/F2. ₹0/mo.)
+**Last update:** 2026-06-12 (**FINAL DEV REDEPLOY @ develop tip `80cda29` (#177) — VERIFIED via hands-free CI lane. DEV-COMPLETE: yes for the deployable V1 dev surface (api+worker).** Prior: Gate-4 RED inter-lead → backend (since RESOLVED — develop runs GREEN through Gate-4 by ~11:50Z); GEMINI_API_KEY_CI SET + founder-verified DONE. ₹0/mo.)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
+
+## UPDATE — 2026-06-12 — mesell-dev-final-redeploy-session-1 — FINAL DEV REDEPLOY @ `80cda29` (VERIFY, not redeploy)
+
+=== STEP: verify the hands-free CI deploy of develop tip `80cda29` to the dev namespace ===
+Phase: DEVOPS_ARCHITECTURE.md §7 (deploy job) + INFRASTRUCTURE_PLAYBOOK.md §15 ([MANDATORY GATE] dry-run; deferred-to-deploy-time branch when cluster unreachable at authoring). Canonical deploy lane = hands-free CI deploy-from-develop (founder ruling #137/#141; recorded #155 `067d664`).
+Session: mesell-dev-final-redeploy-session-1
+
+**Target:** develop tip `80cda2922617a25b54196a5ca9b57b3fb0040e38` (#177, "frozen-surface amendments" — the last code of V1 dev). DEV ONLY — no staging, no prod, no D13/hosting/CSP-activation (PARKED production-move package, not touched).
+
+**Method — VERIFY (per brief), not redeploy.** CI auto-fired on the `80cda29` develop push: run **27415579375**. I let it complete and verified rather than running a parallel manual deploy. (My MEMORY.md was stale — ended 2026-06-11 with "build/deploy STILL UNPROVEN / main-only guard"; the live board + ci.yml are the SSOT and show the deploy-from-develop lane became canonical 2026-06-12 via PRs #132/#137. ci.yml at `80cda29`: build+deploy jobs `if github.ref == 'refs/heads/develop'`, image tag = `${github.sha}`.)
+
+**Run 27415579375 job breakdown (all non-skipped = success):** Frontend detect + shell + 6 mfe = 7/7 ✅ · Gate 1 unit ✅ · Gate 2 smoke ✅ · Gate 3 lint ✅ · Gate 4 integration ✅ · Gate 5 golden_roundtrip ✅ · Build container images ✅ · **Deploy to K3s (dev namespace) ✅** · Nightly + ai_eval skipped (schedule-only). 
+
+**Deploy-job log (proof):** `set image deployment/api api=...meesell-prod-images/api:80cda2922617a25b54196a5ca9b57b3fb0040e38` → "deployment.apps/api image updated"; same for worker; `alembic upgrade head` ran (head `f31c75438e61`, no new migration); api+worker both "successfully rolled out"; smoke `HTTP_CODE=200`; "Deploy complete: 80cda2922617a25b54196a5ca9b57b3fb0040e38". No auto-rollback. AR confirms `api:80cda29...` pushed 18:15:58.
+
+**§15 [MANDATORY GATE] handling:** laptop cannot reach the cluster (`34.180.58.185:6443` connection refused — K3s API /32-firewalled to founder IP per memory IP-rotation pattern), so a laptop `kubectl --dry-run=server` is impossible. The gate's "deferred-to-deploy-time" branch governs: the CI deploy-job runs `kubectl apply` ON THE VM (cluster-reachable via IAP) and gates the real roll behind clean `rollout status` + a health smoke with auto-rollback. That is the deploy-time server-side validation + safety net. No manual apply was performed by me.
+
+**Verification set (independent, from laptop):**
+- (1) api `/health` → HTTP 200 `{"status":"healthy","checks":{"postgres":"ok","valkey":"ok"}}` — 3× stable. ✅
+- (2) api `/openapi.json` → 200, "MeeSell API" 0.1.0, **25 paths** (auth/otp, refresh, logout, me, webhooks/razorpay, seller-profile, images, export-xlsx, exports, autofill, price-calc) = develop-tip surface. ✅
+- (3) TLS: api.mesell.xyz + dev.mesell.xyz certs valid notAfter Sep-3-2026 — cert-manager auto-renew healthy. ✅
+- (4) api 2/2 + worker 2/2 on `api:80cda29...` — confirmed via deploy-job rollout-status ("successfully rolled out" ×2). ✅
+- (5) worker `{celery,image-tasks}` queue bindings + 8 FEATURE_* flags (live_preview=false dark) — **carried forward from #155 `067d664`** (last pod-introspected 5/5): `git diff 067d664..80cda29 -- backend/app` = 0 files and `k8s/config.yaml` delta = 0 → runtime app + flags + queues are byte-identical; only `backend/tests/**` (not in runtime image execution) + `frontend/**` (not deployed in dev) changed. ✅ (carry-forward)
+
+**Federated remotes / shell — `dev.mesell.xyz` → 404 (Traefik default backend), EXPECTED + CORRECT.** No `frontend/Dockerfile` exists at `80cda29` (only `frontend/docker/Dockerfile.shell`) → cloudbuild shell-image build gated-skipped (`.shell-buildable` marker) AND deploy-job `kubectl apply k8s/frontend.yaml` gated-skipped (`[ -f frontend/Dockerfile ]`) → no shell/frontend pod in dev. Shell + 6 federated remotes hosting is the PARKED D13 production-move package (founder cost gate ~₹1,600-1,800/mo). The brief's "RemoteFailureComponent graceful fallback in deployed dev" therefore CANNOT render today — the shell itself is not hosted (parked), so there is no page on which a remote-load-failure fallback would appear. This is N/A-by-park, not a deploy failure. Per brief: "remotes hosting is a parked production item" — confirmed, not touched.
+
+**DEV-COMPLETE: YES** for the deployable V1 dev surface (api + worker @ `80cda29`, the last code of V1 dev). The single brief expectation not met — a shell pod serving the apps/shell build with a RemoteFailureComponent fallback — is gated behind the PARKED D13 hosting package the brief explicitly told me NOT to touch; it is out of scope for DEV V1.
+
+**Mid-verify note:** a docs-only push `afea672` (#178, MS-plan re-key, `git diff 80cda29..afea672` = 0 code/manifest files) became the develop tip during verification. Its deploy produces a byte-identical-app image (new SHA tag only). The running V1 dev application code is `80cda29`.
+
+Cost: ₹0/mo. dev ns only. No TF, no new resources, no secrets printed, no manifest applied by me.
+
+---
 
 ## UPDATE — 2026-06-12 — Gate-4 (integration) RED on develop — formal inter-lead request → backend-coordinator
 
