@@ -60,6 +60,11 @@ data:
   FEATURE_CATALOG_FORM_ENABLED: "false"
   FEATURE_AI_AUTOFILL_ENABLED: "false"
   FEATURE_IMAGE_PRECHECK_ENABLED: "false"
+  # xlsx-export (Feature) — stays false until its D2 staging gate clears:
+  # 15 golden fixtures x 3 consecutive develop-HEAD runs GREEN + one manual
+  # Meesho supplier-panel upload accepted. Flipped to true via a one-line
+  # micro-feature branch once those gates are recorded green.
+  FEATURE_XLSX_EXPORT_ENABLED: "false"
 
   # LangFuse (public key is non-secret per §5.D; secret key is in backend-secrets)
   LANGFUSE_PUBLIC_KEY: "pk-lf-disabled-v1"

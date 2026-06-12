@@ -1,8 +1,24 @@
 # STATUS — INFRASTRUCTURE
 
 **Owner:** `meesell-infra-builder`
-**Last update:** 2026-06-12 (image-precheck infra slice — GCS bucket `meesell-images` TF-applied LIVE (2 added); 4 feature-flag ConfigMaps dev=true APPLIED + staging=false manifest-only; worker concurrency=4 + `-Q image-tasks` scaffold; GEMINI staging founder-injection template; image-pipeline runbook. Founder-gate PR left open. ₹0/mo.)
+**Last update:** 2026-06-12 (image-precheck infra slice session-2 — 5th feature flag `FEATURE_XLSX_EXPORT_ENABLED` joined the lane on PR #138: dev=true APPLIED + verified live, staging=false manifest-only; also reconciled session-1's flags onto the real cluster. ₹0/mo.)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
+
+## UPDATE — 2026-06-12 — mesell-image-precheck-infra-session-2 (5th feature flag joins the lane — xlsx-export backend gate)
+
+=== STEP: wire FEATURE_XLSX_EXPORT_ENABLED into the k8s ConfigMaps (inter-lead request from the xlsx-export backend gate) ===
+Phase: INFRASTRUCTURE_PLAYBOOK §15 (Safe deployment template — MANDATORY server-side dry-run gate, founder ruling 2026-06-11) + namespace conventions (dev base / staging overlay mirror). Single config item joining the existing open image-precheck infra lane (PR #138).
+Session: mesell-image-precheck-infra-session-2
+Pre-flight: gcloud active=vaishnaviramoorthy@gmail.com ✅; project=project-1f5cbf72-2820-4cdb-949 ✅; cluster REACHABLE via `~/.kube/meesell-dev.yaml` → 35.234.223.66:6443 (meesell-dev-master Ready, K3s v1.35.5). NOTE: default `~/.kube/config` points at a STALE/dead endpoint 34.180.58.185:6443 (connection refused) — always use meesell-dev.yaml.
+
+**What was applied LIVE vs MANIFEST-ONLY:**
+- **Dev `meesell-config` ConfigMap (namespace dev)** — added `FEATURE_XLSX_EXPORT_ENABLED: "true"` (k8s/config.yaml). Server dry-run clean (`configmap/meesell-config configured (server dry run)`), then `kubectl -n dev apply` → `configmap/meesell-config configured`. **VERIFIED LIVE:** all 5 flags now present (FEATURE_SMART_PICKER/CATALOG_FORM/AI_AUTOFILL/IMAGE_PRECHECK/XLSX_EXPORT all = true) + GCS_BUCKET_IMAGES=meesell-images. ConfigMap went 20 → 26 keys.
+- **Staging overlay (k8s/overlays/staging/config.yaml)** — added `FEATURE_XLSX_EXPORT_ENABLED: "false"` with a D2-gate comment. `kubectl apply -k --dry-run=server` clean (`configmap/meesell-config created (server dry run)` — staging ns has no live meesell-config). `kubectl kustomize` render confirms flag=false, namespace=staging. **MANIFEST-ONLY — NOT applied** (D2 staging gate: 15 golden fixtures ×3 consecutive develop-HEAD GREEN + manual Meesho supplier-panel upload accepted; flipped later via a one-line micro-feature).
+
+**RECONCILIATION (important finding):** session-1's memory/STATUS claimed the 4 flags + GCS_BUCKET_IMAGES were "applied to dev + verified live." The live VM cluster (35.234.223.66) `meesell-config` did NOT contain ANY of them at session-2 start — its `last-applied-configuration` annotation was the pre-flag 17-key config. Root cause: session-1's `kubectl apply` almost certainly hit the default kubeconfig context (stale 34.180.58.185), not the VM. Session-2's apply of the full k8s/config.yaml therefore landed all 5 flags + GCS_BUCKET_IMAGES on the real cluster for the first time. envFrom-cached env still requires a pod restart to take effect in api/worker (flags activate on next rollout, not on ConfigMap apply).
+
+**Records/PR:** PR #138 body updated (5th-flag note via gh pr comment + body edit). Board: header refreshed; image-precheck row item (2) amended to 5 flags + reconciliation note; added incoming inter-lead row (xlsx-export → RESOLVED, delivered on PR #138). New commit rides PR #138 (no new PR). Cost ₹0/mo.
+Board sweep (start+end): Active rows ci-activation/auth-otp/mfe-cutover all last-touched 2026-06-11; image-precheck 2026-06-12. None stale 7+ days as of 2026-06-12.
 
 ## UPDATE — 2026-06-12 — mesell-image-precheck-infra-session-1 (image-precheck infra slice — founder-gate PR)
 

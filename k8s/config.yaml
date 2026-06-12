@@ -59,6 +59,7 @@ data:
   FEATURE_CATALOG_FORM_ENABLED: "true"
   FEATURE_AI_AUTOFILL_ENABLED: "true"
   FEATURE_IMAGE_PRECHECK_ENABLED: "true"
+  FEATURE_XLSX_EXPORT_ENABLED: "true"
 
   # LangFuse (public key is non-secret per §5.D; secret key is in backend-secrets)
   LANGFUSE_PUBLIC_KEY: "pk-lf-disabled-v1"
