@@ -1,7 +1,145 @@
 # STATUS — FRONTEND
 
 **Owner:** meesell-frontend-coordinator (master session)
-**Last update:** 2026-06-11
+**Last update:** 2026-06-12
+
+=== UPDATE: 2026-06-12 UI-STYLER WAVE-C-EXP ===
+Phase: wave6-export (Wave 6 Wave C lane 2 — §visual polish builder-3 FINAL)
+Session: mesell-wave6-export-build-session-3
+Agent: meesell-angular-ui-styler (sonnet) — HYBRID step-2 builder-3
+
+Done:
+  EDIT apps/mfe-export/src/app/export.component.ts:
+    Spinner CSS hardening:
+      - REMOVED #f97316 hardcoded hex fallback from .mee-export-spinner border-top-color
+      - ALL spinner CSS now uses only var(--mee-color-outline) + var(--mee-color-primary) (Layer 1 tokens)
+      - ADDED @media (prefers-reduced-motion: reduce) — animation slowed to 2s, not removed
+        (still communicates "in progress" to sighted users — WCAG 2.3.3 compliant)
+
+    Status region a11y (aria-live on poll transitions):
+      - ADDED aria-live="polite" aria-atomic="false" aria-label="Export status" on right column wrapper
+        Screen readers announce card transitions (processing→ready, processing→failed)
+        without interrupting current AT speech (polite = waits for idle)
+      - processing card: aria-live removed from inner div (outer region handles it now);
+        role="status" and aria-label retained as belt-and-suspenders for older AT
+
+    Focus management on state transitions (WCAG 2.4.3):
+      - ADDED ViewChild #readyCardRef + #failedCardRef (ElementRef<HTMLDivElement>)
+      - ADDED effect() in constructor: status==='ready' → deferred focus on readyCardRef
+        status==='failed' → deferred focus on failedCardRef
+        Deferred via Promise.resolve().then() — matches Wave 6B onboarding pattern
+      - ADDED tabindex="-1" style="outline:none" on ready/failed card wrappers
+      - Ready/failed cards wrapped in <div #readyCardRef/.../> NOT <mee-card> directly
+        (mee-card is a leaf component, not focusable — wrapper div needed)
+      - ADDED AfterViewInit + ngAfterViewInit() stub (no-op — focus from effect, not lifecycle)
+
+    Table a11y (WCAG 1.3.1):
+      - ADDED scope="col" to both <th> elements in validation checklist table
+      - CHANGED aria-label="Validation checklist" → aria-labelledby="checklist-heading"
+        (references the existing h2 id="checklist-heading" — avoids label duplication)
+      - ADDED id="checklist-heading" to h2 element
+
+    Checklist status live region:
+      - ADDED id="checklist-status" + role="status" + aria-live="polite" + aria-atomic="true"
+        to the "All checks passed / Some checks failed" paragraph
+      - Used [style.color] binding (conditional on allChecksPassed()) — not static style attr
+      - ADDED aria-describedby="checklist-status" on mee-button[label="Generate Export"]
+        Screen readers read: "Generate Export — All checks passed. Ready to generate export."
+
+    Visual state accents (token-only — no hardcoded hex):
+      - ADDED .mee-export-ready-card: border-left 3px solid var(--mee-color-success)
+        Applied via <div class="mee-export-ready-card"> wrapper around ready card
+      - ADDED .mee-export-failed-card: border-left 3px solid var(--mee-color-error)
+        Applied via <div class="mee-export-failed-card"> wrapper around failed card
+      - ADDED "Export failed" heading (font-semibold) to failed card for AT readout clarity
+      - IMPROVED ready card: status badge + heading inline; expiry note updated to include re-generate hint
+
+    Empty/first-visit idle state:
+      - IMPROVED idle card: replaced minimal single-line "Click Generate Export" placeholder
+      - NEW .mee-export-idle: flex column centred, min-height 120px, gap 8px, padding 24px 16px
+      - Two-line guidance: heading "Ready to generate your Meesho XLSX" + sub-text
+      - ADDED aria-label="Export not yet started" on idle card content wrapper
+
+    Layout + touch target CSS:
+      - ADDED :host { display: block } — prevents flex-shrink in shell's flex parent
+      - ADDED :host mee-button { min-height: 44px } — WCAG 2.5.8 touch target enforcement
+      - ADDED :host .mee-check-row { min-height: 44px } — checklist row touch target
+      - ADDED .mee-export-idle min-height + flex centering — consistent at 360/768/1280px
+      - Padding: p-2 → p-4 on all card inner divs (better breathing room at all breakpoints)
+
+    Token gap audit result:
+      - All tokens used (--mee-color-outline, --mee-color-primary, --mee-color-success,
+        --mee-color-error, --mee-color-on-surface, --mee-color-on-surface-muted) exist
+        in libs/design-tokens/_tokens.css (Layer 1). NO :host token gap workaround needed.
+
+  EDIT apps/mfe-export/src/app/export.component.spec.ts:
+    Added 8 new describe blocks (builder-3 a11y + visual polish contracts):
+      - a11y: aria-live region on status column (3 tests)
+      - a11y: focus management on ready/failed transitions (5 tests)
+      - a11y: table accessibility (4 tests)
+      - visual polish: spinner CSS (2 tests)
+      - visual polish: idle/first-visit empty-state (3 tests)
+      - visual polish: ready/failed card visual emphasis (4 tests)
+      - visual polish: 360px layout contract (3 tests)
+      Total: +24 tests (770 - 746 from builder-2 baseline)
+
+Build: 7/7 GREEN (all well under 90s D12):
+  frontend (shell): 2.598s | mfe-export: 2.570s | mfe-auth: 2.716s
+  mfe-onboarding: 9.096s | mfe-catalog: 2.819s | mfe-dashboard: 2.559s | mfe-pricing: 2.553s
+
+Tests: 59 spec files / 770 tests / 0 fail (monotonic +24 from builder-2 baseline 746)
+
+A11y:
+  aria-live="polite" on status column — poll transitions announced to screen readers
+  Focus management: ready/failed cards receive focus on status transition (WCAG 2.4.3)
+  scope="col" on table headers (WCAG 1.3.1)
+  aria-describedby ties generate button to checklist status summary
+  prefers-reduced-motion: animation slowed (not stopped) for spinner
+  All interactive elements: min-height 44px via :host CSS rules (WCAG 2.5.8)
+  WCAG 2.1 AA contrast: all text uses --mee-color-on-surface (#2a3547 on #f0f5f9 = ~9.5:1 PASS)
+
+Mobile (360px):
+  flex-col → lg:flex-row: columns stack vertically at 360px (checklist above, status below)
+  px-4 (16px side padding): at 360px → 328px content width, no clipping
+  p-4 (16px card padding): adequate spacing without overflow at 360px
+  .mee-export-idle min-height 120px: consistent visual weight at narrow viewport
+  44px touch targets: all mee-button + checklist rows enforced via :host CSS
+
+Screenshot status:
+  Playwright not available (~/Library/Caches/ms-playwright/ absent — confirmed Wave 6B lesson)
+  SUBSTITUTION: Visual states documented in template + CSS. Lead merge-gate to take screenshots.
+  Substitution precedent: Wave 6B dashboard builder-3 (same machine constraint)
+
+Validation greps (all ZERO except expected):
+  Boundary (primeng from mfe-export/src/app) = 0 CLEAN
+  Deep-import (@mesell/*/path subpath in mfe-export/src/app) = 0 CLEAN
+  Hardcoded hex in CSS rules = 0 CLEAN (only in documentation comments)
+  localStorage in mfe-export/src/app = 0 CLEAN
+  libs/design-tokens/_tokens.css modified = 0 CLEAN (lane discipline — no Layer 1 edits)
+  git diff --name-only (my commit): 2 files, both apps/mfe-export/ DISJOINT
+
+Blockers: none
+STOP conditions: NONE triggered
+Deviations from spec:
+  1. MeeSpinnerComponent does NOT exist in @mesell/ui-kit. Local .mee-export-spinner CSS workaround
+     retained (builder-2 had already established this). Flag raised below in Hand-offs.
+  2. Screenshots: Playwright unavailable (machine constraint). Substituted with CSS documentation.
+
+In progress: none (builder-3 scope COMPLETE — all serial builders done)
+Next: Lead merge-gate review (HYBRID step-3) on feature/wave6-export/frontend
+Hand-offs:
+  export UI-KIT SPINNER GAP (frozen-surface amendment queue):
+    @mesell/ui-kit has no MeeSpinnerComponent (indeterminate).
+    Current workaround: .mee-export-spinner local CSS in apps/mfe-export.
+    Required: MeeSpinnerComponent added to libs/ui-kit (frozen surface — lead amendment needed).
+    This gap joins the token-gap item in the amendment queue.
+  All export visual states complete:
+    idle: .mee-export-idle centred empty-state, aria-label, 360px safe
+    processing: indeterminate spinner (local CSS), aria-live outer region, role=status inner
+    ready: left-border success accent, focus on transition, signed-URL download
+    failed: left-border error accent, focus on transition, "Export failed" heading, Retry
+  Token audit: all tokens in Layer 1 — no :host gap workarounds needed
+=========
 
 === UPDATE: 2026-06-12 11:10 ===
 Phase: wave6-export (Wave 6 Wave C lane 2 — ExportComponent §4.3 render/UX + §6 degradation matrix)
