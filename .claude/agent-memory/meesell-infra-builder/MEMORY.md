@@ -799,3 +799,52 @@ So when an apply changes Deployment shape, we wait for the kill-before-surge rol
 **Process lesson (durable):** NEVER chain a branch-delete unconditionally after a PR merge — gate on `merged == true`. The PR #124 incident (a delete fired on a non-merged path) was recovered via #126. Any "merge then delete branch" automation must read the merge result first.
 
 **Close-out mechanics:** docs + 2 memory files only (board + STATUS_INFRA + this MEMORY + ONE authorized scribe-entry to the director's `project_meesell_ci_activation.md` — explicit master-session exception to memory-ownership rule 4). Branch `docs/ci-activation-close-out` off origin/develop. NOTE: develop now carries 13 required checks — the close-out PR itself must pass the gates before it can merge (expected; reported, not merged by me). Cost ₹0/month; zero cluster/TF/secret/ci.yml mutations.
+
+---
+
+## Dead `meesell-`-prefixed secret scheme — cleanup F1/F2 — 2026-06-12
+
+**The prefixed-SM landmine, documented once and for all.** Early TF (the `terraform/` tree, NOT the live `infra/terraform/`) created Secret Manager secrets with a `meesell-` prefix (`meesell-gemini-api-key`, `meesell-jwt-secret`, etc.) and a legacy `meesell` k8s namespace. **That scheme was never the live path.** The applied `app_secrets` module (in `infra/terraform/`) uses `secret_id = each.key` → UN-prefixed IDs (`gemini-api-key`, `jwt-secret`, ...), surfaced into the k8s Secret `backend-secrets` in the `dev` ns via manual `gcloud secrets versions add`. A 2026-06-12 backend read-only audit confirmed ALL-CLEAR on the live path: cluster holds the VALID Gemini key (hash `ef9bbd1ca21f`); `meesell-gemini-api-key` is dead (HTTP 400) and unreferenced.
+
+**This chore (single-agent fast mode, founder-approved):**
+- F1 — `git rm scripts/secrets-from-gcp.sh` (it prepended `NAME_PREFIX=meesell` to all 7 IDs + wrote the legacy `meesell-secrets`/`meesell` ns Secret — pure dead path).
+- F1 refs (4 files): `terraform/README.md`, `terraform/templates/startup.sh` (2 hits), `terraform/outputs.tf`, `.nexus/results/ci-cd-terraform-gap-analysis.md` — pointed each at the live `backend-secrets` + `gcloud secrets versions add` path; the .nexus one got a SUPERSEDED annotation (historical artifact, body kept).
+- F2 — annotated `docs/INFRASTRUCTURE_TERRAFORM_AUDIT.md` (~L185 x7-secret-IDs list + ~L210 `secret_ids` output) with SUPERSEDED notes; did NOT rewrite the historical audit body.
+- **NO SM mutation in this chore** (explicit constraint). Dead `meesell-*` SM duplicates still exist → logged as a follow-up backlog row on `feature_board_infra.md` + a STATUS_INFRA recommendation: next session `gcloud secrets list --filter="name:meesell-"` → confirm unreferenced → `gcloud secrets delete` (founder approval in-prompt, destructive-op rule).
+
+**Larger landmine spotted (out of scope, flagged):** the ENTIRE `terraform/` tree (root-level, last touched ~Jun 5) is the OLD/superseded TF root — `meesell-` prefix, `meesell` ns, Ubuntu 24.04, AR repo `meesell-images` with `frontend` (not `worker`), `vm_name = meesell-vm`. The live root is `infra/terraform/`. A future cleanup should retire `terraform/` wholesale; this chore only touched its script-references.
+
+**Worktree-isolation gotcha (operational, important):** this agent runs in an isolated worktree at `.claude/worktrees/agent-<id>/`. Bash `cd /Users/.../mesell` lands in the SHARED checkout, not the worktree — my first `git rm` hit the shared checkout and had to be `git -C <shared> checkout --`'d back. **Rule: do NOT `cd` to the shared mesell root from this agent.** Stay in the worktree (the env cwd). Edit/Write/Read MUST use the full worktree-prefixed absolute path (`.../worktrees/agent-<id>/...`); the harness rejects shared-checkout paths for Edit and treats worktree paths as distinct file handles (must Read the worktree copy before Edit even if I read the shared copy earlier). `git rm` / `git status` without `-C` operate on the worktree correctly.
+
+---
+
+## GEMINI_API_KEY_CI SET + founder-verified — last CI-activation item DONE; flag dead meesell-gemini-api-key — 2026-06-12
+
+**Docs chore (CLAUDE.md Rule 7 single-agent fast mode). Branch `docs/gemini-ci-key-done` off origin/develop, worktree. Files: STATUS_INFRA + feature_board_infra + this MEMORY. ₹0, no terraform, no cluster, no secret values printed.**
+
+**GEMINI_API_KEY_CI is now SET (the last pending CI-activation tail item).** GitHub Actions secret, updated_at `2026-06-12T01:55:12Z` (verified via `gh api repos/Mugunthan93/mesell/actions/secrets --jq '.secrets[]|{name,updated_at}'` — names only, value never readable via that API). Sourced from GCP SM `gemini-api-key` (the proven-valid key, HTTP 200 against Gemini API; founder visually verified in AI Studio). Consumer = nightly cron `0 1 * * *` `pytest -m ai_eval` ONLY — gates+build+deploy never used it, so it was never blocking. All prior close-outs that listed it "founder-pending, nightly-only, non-blocking" are now superseded → DONE.
+
+**CAVEAT (durable):** `GEMINI_API_KEY_CI` is the SAME key as prod/local (both source SM `gemini-api-key`). There is NO separate quota cap. The original DEVOPS_ARCHITECTURE.md plan called for a distinct low-quota CI-only key — that capped-key swap is now OPTIONAL future hardening, NOT required for V1. If nightly ai_eval ever burns prod quota, this is the lever to pull.
+
+**NEW FLAG — SM `meesell-gemini-api-key` is DEAD (HTTP 400, placeholder/revoked).** This is a DIFFERENT container from the valid `gemini-api-key` (note the `meesell-` prefix). All live workloads + CI + the `backend-secrets` K8s secret + dev/staging templates source the VALID `gemini-api-key` (verified in prior sessions). But the dead `meesell-gemini-api-key` container EXISTS in SM and is a footgun: if any future k8s secret/manifest/backend config sources THAT name, runtime Gemini calls fail with 400. Logged an inter-lane ask for backend/AI to one-time grep secret refs and confirm nothing reads `meesell-gemini-api-key`. (I did NOT delete the dead container — deletes need explicit founder approval per hard constraints; just flagged it.)
+
+**Divergence noted (NOT acted on):** origin/develop's MEMORY.md was 801 lines; my master-tree local HEAD was ~1050 (branch-protection-infra-session-1 + other recent sessions are committed locally but NOT pushed to origin/develop). I appended ONLY to the END of the origin/develop copy (purely additive, won't clobber). The unpushed local-only memory sessions are a separate reconciliation for whoever pushes the master tree — out of scope for this chore. RULE reaffirmed: edit status/memory off origin/develop, and keep appends strictly additive at EOF so divergent histories merge cleanly.
+
+---
+
+## Final close-out chore — rebase #148/#146 onto fresh develop + log Gate-4 RED — 2026-06-12 (founder-ruled)
+
+**Two conflicted docs-only PRs rebased onto fresh origin/develop (post PR #158), KEEP-BOTH-SIDES; new Gate-4 RED logged as a formal inter-lead → backend.** Founder pre-approved admin-merging both after the rebase (master session executes the merges). Work done in dedicated worktrees `/private/tmp/mesell-wt/rebase-148` + `/private/tmp/mesell-wt/rebase-146`; master tree never left develop.
+
+**MERGE ORDER for the master session: #148 FIRST, then #146.** #148 (`chore/dead-gemini-key-cleanup`, rebased tip `f6ab3d1`) is the dead-gemini F1/F2 cleanup; #146 (`docs/gemini-ci-key-done`) is the GEMINI_API_KEY_CI-DONE flip + dead-key flag. #146 predates #148 content-wise, so I rebased **#146 onto the rebased #148 branch tip (`f6ab3d1`), NOT onto origin/develop** — this is the cleaner path because #146's GEMINI block must layer ON TOP of #148's content so both survive and neither undoes the other. Since the master session merges #148 first, #148's content is on develop by the time #146 merges; #146 fast-forwards cleanly because its base already contains #148.
+
+**KEEP-BOTH-SIDES resolution method (the reusable recipe for these status-doc rebases):**
+- **Header `Last update`/`Last updated` line** = a SINGLE line; the newest/last-merged entry wins the top slot, the displaced upstream entry is demoted to a `**Prior:**` line. Never drop the upstream entry — demote it.
+- **UPDATE blocks (STATUS) and Prior chains (board)** = pure stack — the branch's new block goes ABOVE the upstream blocks; ALL upstream blocks are preserved below. Newest-on-top ordering.
+- **The conflict's "theirs" half is usually a DUPLICATE** of the branch block I just placed at the top → delete the entire `=======`…`>>>>>>>` region after placing the branch content up top. (Both #148 and #146 STATUS/board conflicts were this shape.)
+- **A single shared row that BOTH sides edit (the board ci-activation Recently-merged row)** needs a true field-level merge: I kept HEAD's CORRECT protection wording (develop+main / strict:false / reviews:0 — the current-develop truth) AND folded in #146's GEMINI_API_KEY_CI "SET + founder-verified — DONE" + NEW-FLAG sentences (replacing HEAD's stale "STILL founder-pending"). Don't blindly take one side when each side carries a distinct true fact.
+- **MEMORY.md** = EOF append on both sides; both blocks survive in author order (#148's dead-gemini block, then #146's GEMINI block). The `^=======` grep false-positives on a pytest output line (`===... deselected ...===`, line ~661) — that's content, not a marker; only `^======= ` (7-eq exactly) / `^<<<<<<< ` / `^>>>>>>> ` are real markers. Grep `^=======$` to avoid the 9-equals STATUS report-closers (`=========`).
+
+**Gate-4 RED logged (per the #145 Gate-1-red precedent):** added an Inter-lead-requests-open row `gate4-integration` (OPEN, →backend-coordinator) on the #146 board + a short STATUS UPDATE block. Verbatim text per the founder brief (customer eligibility ×2, customer onboarding, iam replay-attack, catalog lifecycle, shared-database get_db, export router setup-errors ×4+, customer seller-profile setup-errors; first seen PR #158 run 27392278294 ~03:24Z; suspected #150 + feature-slice conftest/shared-module fallout). CHORE-C note included: backend triage sweeps open + recently-merged (~24h) PRs for an existing fix BEFORE dispatching. ci.yml Gate-4 block is correct (the #104/#107/#108/#110 saga made it green) — this is a fresh backend test-harness regression, NOT an infra defect.
+
+**Force-pushes:** #148 `--force-with-lease` (d2fe577→f6ab3d1) clean. #146 `--force-with-lease` after rebase onto f6ab3d1. Verified each branch: zero real conflict markers, only the expected files changed vs origin/develop.
