@@ -5228,4 +5228,180 @@ Hand-offs:
     change at that point).
   - infra: svc-export needs DATABASE_URL@export-schema role, VALKEY_URL, JWT_SECRET, GCS_*, AUDIT_PII_SALT,
     MONOLITH_INTERNAL_BASE_URL injected as pod env.
+=== UPDATE: 2026-06-12 — mesell-ms-category-session-1 (Session MS-F, PHASE 1) ===
+Phase: Microservices Migration — Sub-Plan F (category-service extraction) AUTHORING
+Session: mesell-ms-category-session-1 (PHASE 1, hybrid step 1, docs-only)
+Board sweep: 1 row ADDED (microservices-category, SPEC AUTHORED — gated on MS-3, additive F2 — no other rows touched); 1 inter-lead request ADDED (infra, gated on MS-4). No rows untouched 7+ days flagged this session (active feature churn current). Existing OPEN infra inter-leads (xlsx-export flag, flag-parity 3-flag) unchanged.
+Done:
+  - SUB_PLAN_0F_category_extraction.md AUTHORED (canonical SUB_PLAN_01 shape) — STATUS: AUTHORED, EXECUTION GATED ON MS-4 WAVE OPEN.
+  - spec_msF_backend.md (executable specialist task spec: services-builder / api-routes-builder / database-builder + category-picker-builder verify + lead integration test + merge-gate checklist).
+  - handoff_msF_infra.md (infra surfaces — DO NOT EXECUTE until MS-4).
+  - As-built grounding (file:line from SOURCE): 5 MOUNTED public routes (verified main.py:120, not schema existence); 8 public service methods; category = pure CALLEE (catalog/export/pricing call it, grep-verified; ZERO outbound domain calls — authors NO outbound client shims).
+  - ai_ops VENDORING decision (D6/A1): trimmed vendored copy (client+budget_cap+cost_tracker+guardrail+prompt_registry+eval+metrics + ONLY smart_picker_v1 prompt). NO ai-ops-svc until V2.
+  - SHARED budget brake wiring identified file:line: Valkey DB 0 (get_valkey_otp) keys ai:cost:daily:{date} (cost_tracker.py:92), ai:cost:pending:{date} (budget_cap.py:124), ai:budget:reservation:{id} (budget_cap.py:125), ai:cost:user:{user}:hourly:{hr} (cost_tracker.py:93); + public.audit_events DB write (cost_tracker.py:55). Carve-out: ai:* keyspace EXEMPT from §2.E category: prefixing so ₹500 cap stays global.
+  - PRIMITIVE_VALUES zero-drift (schema_contract.py:175 — 11 primitives; ENVELOPE_KEYS:147 — 7 keys): vendored read-only (doc-in-code per schema_contract.py:8-15); seed-writer scripts/build_template_schemas.py STAYS at repo root (data-track, NOT category-svc runtime); parity + envelope conformance contract tests pin the frozensets.
+In progress: none (single-shot PHASE-1 authoring chore).
+Blockers: none blocking authoring. NOTE: MS-A spec files (spec_msA_backend.md + handoff_msA_infra.md) are ABSENT from this worktree branch AND from develop (untracked master-tree artifacts). The two frozen category shim shapes were reproduced verbatim from the Session MS-F dispatch prompt (which quotes them). See Open Questions.
+SOURCE-WINS corrections recorded (Wave-6 fabricated-enum lesson):
+  (1) Filename: dispatch + this file = SUB_PLAN_0F; MASTER_PLAN §4 row F (line 306) says SUB_PLAN_06 — 0F wins (parallel program).
+  (2) Dependency: MASTER_PLAN §4 row F lists serial "A,B,C,D,E complete"; MS-PAR-1 supersedes to "MS-3 complete (pricing+customer), parallel with MS-G iam".
+  (3) fetch_xlsx_aliases: MASTER_PLAN §2.D line 68 implies a runtime category alias call; MS-A corrected to seed-time-only; as-built confirms (no FieldAlias ORM in repository, no fetch_xlsx_aliases in service __all__) → category implements only 2 frozen shims, NOT 3.
+  (4) Envelope key count: dispatch prompt said "6-key" envelope; schema_contract.py:17-18 corrects to 7 — SOURCE wins.
+Next: PHASE 2 (EXECUTION) is GATED on MS-4 wave open. When MS-3 (pricing+customer) both founder-gate-merged AND the MS-A recipe exists, the master session dispatches the 3 specialists per spec_msF_backend.md (hybrid step 2), infra handoff to meesell-infra-builder, then lead merge-gate (step 3). No execution now.
+Hand-offs:
+  - infra (gated): handoff_msF_infra.md — DO NOT EXECUTE until MS-4. Two grants (category schema SELECT + public.audit_events INSERT), Valkey DB-3 cache pre-warm, ai:* keyspace carve-out, JWT_SECRET shared with iam-svc.
+  - frontend (queued, notification-only): a handoff_contract_category_primitive.md will notify the FE lead at execution that the schema-serving surface moved to category-svc but the §5A.B envelope + PRIMITIVE_VALUES are byte-identical (zero FE work) — NOT authored this PHASE-1 session (notify at PHASE 2).
+Open questions for master session:
+  (a) Confirm the MS-A frozen contract: does pricing-svc (MS-D, already a pod at MS-4) call category over HTTP for get_commission? If yes, category implements a 3rd /internal/* shim (commission) — default is to author it. Verify against SUB_PLAN_0D.
+  (b) Does customer-svc (MS-E) consume list_super_categories at runtime? As-built grep found no customer→category import at develop tip. Author the super-categories shim defensively unless confirmed unneeded.
+  (c) Locate/confirm the MS-A spec + frozen-contract doc (absent here) so the implementing session cites the canonical source, not this sub-plan's reproduction.
+=== UPDATE: 2026-06-12 — MS-C image-service extraction PHASE 1 (spec authoring) ===
+Phase: Microservices Migration — Sub-Plan C (image), wave MS-2 (B dashboard ‖ C image)
+Session: mesell-ms-image-session-1 (MS-C PHASE 1 — HYBRID rule STEP 1, spec + sub-plan only)
+
+Board sweep (session start + end): Active features had 1 row (microservices-export, READY-TO-EXECUTE,
+  2026-06-12, NOT stale at 7d). Added microservices-image (MS-C) row. flag-parity + backend-chores rows are
+  FOUNDER-PR-OPEN (not stale). No rows untouched 7+ days. Recently-merged rows within 14d window. Inter-lead
+  requests: 3 (all RESOLVED/READY — no new opened this session; the MS-C infra request opens at Phase-2 dispatch,
+  not now, because execution is GATED).
+
+Done:
+  - Authored docs/plans/microservices_migration/SUB_PLAN_0C_image_extraction.md (canonical SUB_PLAN_01 shape,
+    11 sections, AS-BUILT grounded at origin/develop c859955, file:line citations throughout). Covers: module
+    inventory (8 files); 2 mounted public routes (main.py:46/:126 verified); Celery worker split (dedicated
+    svc-image queue, ground from celery_app.py — NO task_routes today; #143-OPEN nuance noted); ai_ops VENDORING
+    (D6/A1, shared Valkey DB-0 budget brake); the /internal/products/{id}/images callee shim (FROZEN
+    list_images→ImagesListResponse per MS-A spec_msA §0.4 row 6); the caller-side catalog dependency (monolith-
+    hosted until MS-5); GCS surface; rembg decision (§3.G DEFER); DB table owned (product_images, schema image);
+    A2 middleware vendoring (5 of 6 active, plan_guard NO-OP); strangler-fig + rollback; D3 VM-fit flag (§7 —
+    svc-image heaviest container); validation floor (monotonic ≥649). Execution marked GATED.
+  - Authored .claude/agent-memory/meesell-backend-coordinator/spec_msC_backend.md (HYBRID step-1 task spec for
+    services/api-routes/database builders; per-specialist file:line-cited shapes; branch/worktree plan;
+    merge-gate criteria; explicit GATE note).
+  - Authored .claude/agent-memory/meesell-backend-coordinator/handoff_msC_infra.md (infra surfaces: Dockerfile
+    rembg/Pillow size, k8s api + dedicated Celery worker, Traefik, Postgres image schema/role/grants incl.
+    audit cross-schema + §0.10 transitional products grant, GCS SA, Valkey DB-0 budget access, queue wiring;
+    D3 trigger flag).
+  - Board + this STATUS UPDATE.
+
+KEY DECISIONS / FINDINGS (Wave-6 law — all re-verified file:line from source):
+  - FROZEN SHIM: export→image is list_images (export/service.py:185, image/service.py:232), NOT get_image_bytes.
+    The MASTER_PLAN §1.C "get_image_bytes" cell is STALE; spec_msA §0.4 row 6 corrected it. Implement list_images.
+  - rembg: requirements.txt:14 BUT zero refs in backend/app (grep empty). Live pipeline = Pillow steps 1-4 +
+    ai_ops Gemini watermark step 5. No call site to move. DECISION: DEFER from svc-image requirements (recommended).
+  - ai_ops VENDORED per D6/A1 (image IS AI-consuming, watermark.v1 at tasks.py:206); ₹500 budget brake stays
+    SHARED via UN-prefixed Valkey DB-0 keys (ai:cost:daily/pending, ai:budget:reservation). image is the FIRST
+    AI-consuming service to extract.
+  - Outbound HTTP shim = catalog only (assert_product_ownership service.py:162/:248). catalog is MS-5 (LAST) →
+    shim base URL = monolith ClusterIP during MS-C.
+  - §0.10 cross-schema hazard (NEW, image-specific vs export): product_images↔products tenancy join breaks at
+    schema-split. Recommend Option-b (scope by product_id post-ownership-shim, §2.D-aligned) over Option-a
+    (transitional public.products grant). Escalate at Phase 2 if MS-A recipe silent.
+  - Test baseline 649 def test_ (MONOTONIC); image's own 29. Never hardcode 823 (collected-items, not def test_).
+
+In progress: none (single-shot Phase-1 docs authoring).
+Blockers: PHASE 2 (execution) GATED on (1) MS-A founder gate (export integration→develop) MERGED — currently
+  OPEN at c859955 — and (2) MS-A extraction recipe existing. Both must hold before any branch cut / specialist
+  dispatch. No backend blocker to Phase 1.
+Next: Phase 2 unblocks when the master session merges MS-A's founder gate AND the MS-A recipe lands. Then:
+  consume+reconcile the recipe → cut feature/microservices-image/integration off origin/develop → dispatch
+  database-builder (Phase A) ‖ infra handoff → services-builder → api-routes-builder → lead Phase C merge gate.
+  Reconcile the /internal/list-images shim against MS-A's final contract doc FIRST; STOP+escalate on drift.
+Hand-offs: handoff_msC_infra.md authored for meesell-infra-builder (NOT actioned now — execution gated; the
+  Inter-lead request row opens at Phase-2 dispatch). Cross-lane to AI lead at Phase 2: watermark.v1 prompt pin
+  must not drift. Decentralized per CLAUDE.md rule 3 — infra/AI leads read this STATUS + my memory; no memo
+  cut while execution is gated.
+
+=== UPDATE: 2026-06-12 — MS-E customer-extraction SUB-PLAN AUTHORED (HYBRID step 1, EXEC GATED MS-3) ===
+Phase: Microservices Migration — Sub-Plan E (customer), parallel program MS-PAR-1 / Session MS-E
+Session: mesell-ms-customer-session-1
+Board sweep: 1 row added (microservices-customer, SPEC AUTHORED — EXEC GATED MS-3). Active table now 4 rows (microservices-export READY-TO-EXECUTE; flag-parity + backend-chores founder-PR-open; microservices-customer SPEC AUTHORED). No rows untouched 7+ days (all 2026-06-12 IST). Inter-lead requests open: 1 pre-existing (infra image-tasks queue, backend-servicing). MS-E infra inter-lead row NOT opened yet — opens at MS-3 execution dispatch per handoff_msE_infra.md SLA note.
+
+Done (HYBRID rule 7 STEP 1 — SPEC AUTHORING ONLY, no code, no specialist, no git ops):
+  - SUB_PLAN_0E_customer_extraction.md authored (worktree, canonical SUB_PLAN_01 shape). Header status "AUTHORED 2026-06-12 — EXECUTION GATED (MS-3)". Grounded against develop c859955; every enum/contract/signature cited file:line from SOURCE.
+  - spec_msE_backend.md authored (own memory) — executable hybrid-step-2 task spec: 3 specialists (database/services/api-routes), phase sequence, acceptance + re-dispatch conditions, mirroring spec_msA_backend.md.
+  - handoff_msE_infra.md authored (own memory) — infra work-package for meesell-infra-builder (8 deliverables; NO GCS SA, NO Celery queue — the two MS-A surfaces customer omits; cross-svc base-URL re-points at cutover).
+  - feature_board_backend.md: microservices-customer row added (additive, minimal diff).
+  - This STATUS UPDATE block.
+
+Key as-built findings (3 corrections over the dispatch premise; SOURCE wins):
+  1. Customer INBOUND = 3 distinct methods across 3 callers (export get_compliance_block svc:503; dashboard get_onboarding_completeness svc:85; catalog assert_eligible_for_super_id svc:404 + get_compliance_block svc:837). The dispatch cited only the export shim. Catalog calls TWO customer methods (its "service ONLY" docstring is true re: which module, not how many methods).
+  2. Customer is NOT a pure callee. service.py:347 runs SELECT DISTINCT super_id FROM categories via CategoryORM (service.py:66) — a cross-schema read of category's table. Becomes the E3-A HTTP shim to category-svc /internal/super-categories (recommended; keeps the 3600s cache contract verbatim, only the loader body swaps SQL→httpx).
+  3. COMPLIANCE_EXTENSION_MAP = 11 keys / 6 source rules (domain.py:245, master ruling 3 2026-06-07), Beauty's 6 super_ids share one spec instance — NOT "6 super_ids" as the dispatch/my older §8 memory said.
+  + seller_profile.user_id PK==FK→users.id CASCADE + relationship("User") — both SEVERED at cutover (Risk #5; plain UUID PK in customer-svc ORM).
+  + REVERSE strangler shim: monolith-catalog (in-monolith until MS-5) gets the OUTBOUND customer_client at cutover — mirror image of MS-A where the extracted service got the shim.
+
+In progress: none (single-shot spec-authoring; execution GATED).
+Blockers: none. Lane is SPEC AUTHORED but NOT in execution until MS-2 (B dashboard + C image founder gates) merges to develop.
+Next: at MS-3 wave open (post-MS-2), cut branches from origin/develop, dispatch database-builder (Phase A) FIRST + infra handoff in parallel → services-builder → api-routes-builder → lead Phase C merge gate. Reconcile the 2 open contract questions BEFORE specialist dispatch.
+Hand-offs:
+  - INFRA (handoff_msE_infra.md) — schema customer + role grant incl INSERT on public.audit_events; Traefik /api/v1/seller-profile/*; cross-svc base-URL re-points; D3 checkpoint re-evaluated by master at MS-3 deploy. Inter-lead row opens at MS-3 execution.
+  - MASTER SESSION (escalation, never improvise a contract): (1) 0B dashboard /internal/* completeness shape (DRAFT-PENDING-0B-RECONCILE) — owned by Session MS-B; (2) 0F category /internal/super-categories shape (DRAFT-PENDING-0F-RECONCILE) — owned by Session MS-F. Both must reconcile before customer execution dispatch.
+=========
+
+=== UPDATE: 2026-06-12 — MS-B Sub-Plan B (`dashboard` extraction) SPEC AUTHORED (HYBRID STEP 1, EXECUTION GATED MS-2) ===
+Phase: Microservices Migration Sub-Plan B (`dashboard`) — HYBRID rule STEP 1 (SPEC/docs only; no extraction code, no git ops)
+Session: mesell-ms-dashboard-session-1
+Board sweep: 1 NEW row added (microservices-dashboard, SPEC AUTHORED — EXECUTION GATED MS-2). Active features otherwise unchanged (microservices-export READY-TO-EXECUTE; flag-parity + backend-chores GATE-PASS/FOUNDER-PR-OPEN per D1 — founder's gate). Inter-lead requests: none opened this turn (infra handoff frozen for Phase-2 dispatch, NOT opened now per the gate). No rows stale 7+ days that aren't already founder-PR-pending.
+
+DELIVERABLES (5):
+  1. SUB_PLAN_0B_dashboard_extraction.md (worktree docs/plans/microservices_migration/) — DRAFT, canonical SUB_PLAN_01 shape:
+       §0 GROUND TRUTH (worktree tip c859955 == origin/develop; 6-file module no-repository.py §13.D; NO ai_ops/NO Celery; 1 mounted route; 2 call sites; leaf consumer; A2/D7; test floor 698 def test_ / 36 own)
+       + Decisions B1-B4 + Agent lineup + Branch setup (Model C) + Code surfaces + Documentation deliverables
+       + FROZEN /internal/* shim contracts (2 endpoints, MS-A style) + Memory protocol + Review+iteration + Acceptance gate + Risk register (R1-R6) + Revision history.
+  2. Frozen /internal/* shim-contract section (inside SUB_PLAN_0B, marked FROZEN):
+       - catalog-svc GET /internal/products?page&limit  <- list_products(user_id,pagination,db)->PaginatedProductsInternal (catalog/service.py:999, domain.py:170)  [MS-H implements]
+       - customer-svc GET /internal/seller-profile/{user_id}/onboarding-completeness  <- get_onboarding_completeness(user_id,db)->ProfileCompleteness (customer/service.py:682, domain.py:98)  [MS-E implements]
+       Style COPIED verbatim from spec_msA_backend §5 (path prefix /internal/*, JWT-forward auth, MeesellError 4-field envelope, 5s/2s httpx, 1-retry-503/504).
+  3. spec_msB_backend.md + handoff_msB_infra.md — task spec + infra handoff (named specialists per task, build sequence, acceptance, merge-gate). WRITTEN TO WORKTREE FALLBACK (.claude/agent-memory/meesell-backend-coordinator/ under /tmp/mesell-wt/msB-docs) because the main-tree write was BLOCKED by the bg-session worktree-isolation guard. Session must relocate to the main-tree memory dir.
+  4. Board + STATUS (this UPDATE) — minimal + additive (shared files w/ parallel MS-C).
+  5. Memory append — see below (worktree fallback if main-tree blocked).
+
+KEY FINDINGS / PLAN-vs-SOURCE corrections:
+  - PLAN-TEXT CORRECTION: MASTER_PLAN §1.C names the dashboard->customer method `get_profile_completeness` — WRONG against source. AS-BUILT is `get_onboarding_completeness` (customer/service.py:682; dashboard/service.py:84; __init__.py:15). The dispatch prompt's grounding facts also said `get_profile_completeness` — both stale. The §8.C-era LOCK name was renamed during construction.
+  - GROUNDING-FACT NUANCE: the prompt cited main.py:137 for the mount; AS-BUILT mount is main.py:141 (import at main.py:43; §13 comment block 136-140).
+  - dashboard owns ZERO tables (§13.D, NO repository.py) -> database-builder is VERIFY-ONLY, NO schema-split migration (cheapest db lane of any extraction).
+  - dashboard is a LEAF CONSUMER (zero inbound callers) -> svc-dashboard exposes NO /internal/*. 2 outbound shims, zero inbound — lightest shim surface of any extraction.
+  - NO Celery -> NO worker pod, NO workers/celery_app.py change at cutover (contrast svc-export which removed export.tasks).
+  - §13-DASHBOARD-D2 path-key collision: GET /api/v1/products (dashboard) shares the path key with POST /api/v1/products (catalog, extracts LAST at MS-5) — Traefik must route METHOD-or-prefix-aware (infra I4); only the GET routes to svc-dashboard at MS-2.
+
+In progress: none (single-shot HYBRID STEP 1 docs authoring).
+Blockers: none. EXECUTION GATED — Phase 2 (specialist dispatch) opens at MS-2 only when Sub-Plan A founder gate merged to develop AND MS-A recipe in lead memory. NO contradictions found with MS-A artifacts or MASTER_PLAN (the only delta is the §1.C method-name correction, which is plan-prose not a LOCKED section).
+Next: at MS-2 open, the master session dispatches the specialists per spec_msB_backend.md (database-builder VERIFY-ONLY + services-builder heavy lift + api-routes-builder), opens the infra inter-lead row (handoff_msB_infra.md), runs the lead merge-gate, leaves the integration->develop founder PR OPEN. Phase 1 docs PR (this worktree branch docs/msB-subplan-0B) -> the session handles git (NOT this agent).
+Hand-offs: meesell-infra-builder — handoff_msB_infra.md FROZEN for MS-2 (lighter than MS-A: NO Postgres schema, NO GCS SA, NO worker pod; only audit-grant + Traefik method-aware route + ConfigMap flag + small pool). NOT opened as an inter-lead row yet (gated). meesell-services-builder + meesell-api-routes-builder + meesell-database-builder — specs frozen, dispatch at MS-2.
+
+=== UPDATE: 2026-06-12 — MS-G iam extraction Sub-Plan (PHASE 1, docs-only) ===
+Phase: Microservices migration — Sub-Plan G (iam) authoring per MS-PAR-1 Wave MS-4
+Session: mesell-ms-iam-session-1
+Board sweep: 1 row added (microservices-iam, PENDING/GATED). Stale-flag scan — microservices-export
+  row last-touched 2026-06-10 (>1d, <7d; not yet 7d-stale, NOT flagged). 1 inter-lead request opened
+  (→ infra, microservices-iam, Phase-2 gated). No MERGED rows aged >14d to evict.
+Done (Phase 1 — docs-only, NO code, NO specialist dispatch):
+  - docs/plans/microservices_migration/SUB_PLAN_0G_iam_extraction.md authored (canonical SUB_PLAN_01 shape).
+    Filename alias note: MASTER_PLAN row calls it SUB_PLAN_07; MS-PAR-1 names it SUB_PLAN_0G (used).
+  - spec_msG_backend.md (hybrid STEP-2 spec — 4 paste-able specialist prompts: auth-builder heavy lift,
+    api-routes, services, database-builder; sequenced; iteration cap 3).
+  - handoff_msG_infra.md (infra work-package, mirrors handoff_msA_infra; Traefik path-preserve as the
+    highest-blast-radius constraint; 2-replica+HPA Risk#2; no GCS SA; shared JWT_SECRET ownership note).
+  - feature_board_backend.md MS-G row (PENDING/GATED, additive F2) + infra inter-lead request row.
+GROUND-TRUTH verified (file:line, Wave-6 law):
+  - 6 MOUNTED iam routes confirmed in main.py:114 + router.py (otp/send :105, otp/verify :124,
+    refresh :152, logout :194, me :220, webhooks/razorpay :247). Not schema existence — APIRoute count.
+  - iam is ALL-✗ in the cross-module matrix → ZERO outbound shims, ZERO inbound /internal/*. iam's
+    contract = vendored core/auth.py + shared JWT_SECRET (A2/D7). MS-A froze nothing against iam.
+  - 6 cross-schema FKs to users.id flagged for DROP: audit_events(audit_event.py:54),
+    seller_profile(:123), catalogs(catalog.py:42), products(product.py:55), exports(export.py:48),
+    product_drafts(:76). All cross-checked against baseline migration 935e55b4852c (:66/:105/:118/:149/:168/:194).
+  - FE-D5 LIVE/FROZEN: cookie Path=/api/v1/auth (router.py:64), dual-pepper allowlist key
+    cache:refresh:v{N}:{hmac} (auth.py:370), Lua rotation verbatim (auth.py:435-443).
+Contradictions found: NONE between MASTER_PLAN §2.D prose and as-built FK set. Source REFINES prose:
+  the FK drop set is 6 FKs across 5 schemas, not just the single `products` example §2.D names.
+In progress: none (Phase 1 complete).
+Blockers: none. Phase 2 (specialist dispatch) GATED on Wave MS-3 complete (D pricing + E customer
+  founder gates merged) per MS-PAR-1 wave table — NOT a blocker, a gate.
+Next: founder/master opens Wave MS-4 when MS-3 merges; then hybrid STEP 2 (dispatch specialists per
+  spec_msG_backend.md) → STEP 3 (lead merge gate) → founder integration→develop gate.
+Hand-offs: meesell-infra-builder (handoff_msG_infra.md + board inter-lead row, Phase-2 gated). MS-F
+  (category, parallel partner) coordinates via shared-file discipline (decentralized — reads this STATUS
+  + my memory per CLAUDE.md rule 3).
 =========
