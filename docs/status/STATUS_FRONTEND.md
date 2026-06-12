@@ -3,6 +3,76 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-11
 
+=== UPDATE: 2026-06-12 10:30 ===
+Phase: wave6-export (Wave 6 Wave C lane 2 — ExportApiService real wire)
+Session: mesell-wave6-export-build-session-1
+Agent: meesell-angular-service-builder (sonnet) — HYBRID step-2 builder-1
+
+Done:
+  NEW export.service.ts (apps/mfe-export/src/app/export.service.ts):
+    - ExportApiService — route-scoped @Injectable() (providers in ExportComponent)
+    - initiate(productId, format='xlsx_with_images'): POST /api/v1/products/{id}/export-xlsx (202)
+      NEVER retried (non-idempotent — double-enqueue risk D18)
+    - poll(exportId): GET /api/v1/exports/{id} with 503-specific retry (catchError-before-retry pattern)
+    - Error matrix (R-W6-1 — complete):
+      initiate: 401→EMPTY, 404→InitiateUnavailableError, 422→InitiateValidationError, 400→EMPTY, 5xx→EMPTY
+      poll: 401→EMPTY, 404→throw ExportNotFoundError, 503→re-throw for retry, 5xx→EMPTY
+    - GAP-1 Option A: SIMULATED_PASSING_CHECKS retained as display-only; 422 is authoritative gate
+  EDIT export.model.ts:
+    - ADD: ExportInitiatedResponse (status literal 'pending'), ExportResponseDTO (full #28 shape),
+      ExportRequest (format), ExportFormat, ExportWireStatus, isTerminalStatus()
+    - REMOVE: MOCK_DOWNLOAD_URL (retired), ExportJob, nextProgress(), isProgressComplete()
+    - UPDATE: retryState() — no progress field (no progress_pct on wire)
+    - RETAIN: SIMULATED_PASSING_CHECKS, buildCheckItems, allChecksPassed, canGenerate (Option A)
+  EDIT export.component.ts:
+    - inject ExportApiService + ActivatedRoute; read product_id from route.snapshot.params['id']
+    - Real initiate→poll→ready/failed flow; setInterval poll (D18 preserved, 2s, max 60 ticks)
+    - clearInterval on terminal status AND ngOnDestroy (D18 proven by spec test)
+    - Retired fake progress bar (value=0 placeholder for builder 2 indeterminate replacement)
+    - Real signed-URL download (xlsx_signed_url + zip_signed_url from ready poll)
+    - notReadyMessage signal for 422 actionable surface (GAP-1 Option A)
+    - onRetry() re-triggers fresh initiate (new export_id, not just state reset)
+  NEW export.service.spec.ts: 35 tests — URL/method/body contract; full error matrix; retryOn503 policy
+  NEW export.model.spec.ts: 30 tests — isTerminalStatus, retryState (no progress), type exhaustion
+  EDIT export.component.spec.ts: D18 timer proof (vi.useFakeTimers); wire-to-UI status mapping
+
+Tests: 59 spec files / 722 tests / 0 fail (baseline 57 files / ~700 tests pre-builder-1)
+Build: 7/7 GREEN — mfe-export: 3.0s | mfe-catalog: 3.4s | mfe-dashboard: 3.6s |
+       mfe-onboarding: 3.0s | mfe-pricing: 3.0s | mfe-auth: 2.9s | frontend: 3.0s (all ≤90s D12)
+Branch tip: d2d0cad8cf371f756313fd0e3049b32d84820e4a (feature/wave6-export/frontend)
+Singleton: @mesell/core singleton:True in mfe-export remoteEntry.json; _mesell_core.js = 1 file
+
+Validation greps:
+  MOCK_DOWNLOAD_URL in export.component.ts = 0 (CLEAN)
+  setInterval.*PROGRESS / fake-progress in component.ts = 0 (CLEAN)
+  localStorage in mfe-export/src/app/ = 0 (FE-D5 CLEAN)
+  deep imports @mesell/*/path in mfe-export/src/app/ = 0 (barrel-only CLEAN)
+  primeng from mfe-export/src/app/ = 0 (boundary CLEAN)
+  URL /api/v1/products/{id}/export-xlsx confirmed in export.service.ts line 47
+  URL /api/v1/exports/{id} confirmed in export.service.ts line 51
+  Disjoint diff: all 6 changed files under apps/mfe-export/ only
+
+Blockers: none
+STOP conditions hit: NONE
+Deviations from spec:
+  1. MeeProgressBarComponent requires `value` input (required signal) — cannot be omitted for
+     indeterminate mode. Used [value]="0" as placeholder; builder-2 (component-builder) must replace
+     with proper indeterminate spinner (spec §4.3 delegates render states to builder 2).
+  2. retryOn503 applied in service pipe (not via ApiClient's retryOn503 option) because ApiClient's
+     applyRetry wraps retry() before catchError, causing ALL errors (including 404) to be retried.
+     Service-level retry after catchError correctly limits retry to 503 only. Spec intent preserved.
+
+In progress: none (builder-1 scope COMPLETE at d2d0cad)
+Next: meesell-angular-component-builder (builder-2) — §4.3 component wiring + component spec
+Hand-offs:
+  ExportApiService.initiate() ready — component can subscribe to Observable<ExportInitiatedResponse | InitiateErrorShape>
+  ExportApiService.poll() ready — component calls this inside its setInterval tick (D18 preserved)
+  export.component.ts partially wired: [value]="0" placeholder on mee-progress-bar needs
+    replacement with indeterminate spinner; notReadyMessage signal wired for 422 surface
+  product_id route read: route.snapshot.params['id'] per spec §4.3 (catalogs/:id/export route)
+  isTerminalStatus() pure function exported from export.model.ts for poll-loop gate
+=========
+
 === UPDATE: 2026-06-11 23:55 ===
 Phase: wave6-auth-core (Wave 6 Wave A — real auth core) — HYBRID step-3 LEAD MERGE-GATE
 Session: mesell-wave6-auth-core-gate-session-1
