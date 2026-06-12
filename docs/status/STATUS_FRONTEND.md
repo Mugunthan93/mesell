@@ -21,6 +21,282 @@ Hand-offs: 3-item frozen-surface amendment proposal queued for a post-Wave-D fas
 =========
 
 
+=== UPDATE: 2026-06-12 UI-STYLER WAVE-C-EXP ===
+Phase: wave6-export (Wave 6 Wave C lane 2 — §visual polish builder-3 FINAL)
+Session: mesell-wave6-export-build-session-3
+Agent: meesell-angular-ui-styler (sonnet) — HYBRID step-2 builder-3
+
+Done:
+  EDIT apps/mfe-export/src/app/export.component.ts:
+    Spinner CSS hardening:
+      - REMOVED #f97316 hardcoded hex fallback from .mee-export-spinner border-top-color
+      - ALL spinner CSS now uses only var(--mee-color-outline) + var(--mee-color-primary) (Layer 1 tokens)
+      - ADDED @media (prefers-reduced-motion: reduce) — animation slowed to 2s, not removed
+        (still communicates "in progress" to sighted users — WCAG 2.3.3 compliant)
+
+    Status region a11y (aria-live on poll transitions):
+      - ADDED aria-live="polite" aria-atomic="false" aria-label="Export status" on right column wrapper
+        Screen readers announce card transitions (processing→ready, processing→failed)
+        without interrupting current AT speech (polite = waits for idle)
+      - processing card: aria-live removed from inner div (outer region handles it now);
+        role="status" and aria-label retained as belt-and-suspenders for older AT
+
+    Focus management on state transitions (WCAG 2.4.3):
+      - ADDED ViewChild #readyCardRef + #failedCardRef (ElementRef<HTMLDivElement>)
+      - ADDED effect() in constructor: status==='ready' → deferred focus on readyCardRef
+        status==='failed' → deferred focus on failedCardRef
+        Deferred via Promise.resolve().then() — matches Wave 6B onboarding pattern
+      - ADDED tabindex="-1" style="outline:none" on ready/failed card wrappers
+      - Ready/failed cards wrapped in <div #readyCardRef/.../> NOT <mee-card> directly
+        (mee-card is a leaf component, not focusable — wrapper div needed)
+      - ADDED AfterViewInit + ngAfterViewInit() stub (no-op — focus from effect, not lifecycle)
+
+    Table a11y (WCAG 1.3.1):
+      - ADDED scope="col" to both <th> elements in validation checklist table
+      - CHANGED aria-label="Validation checklist" → aria-labelledby="checklist-heading"
+        (references the existing h2 id="checklist-heading" — avoids label duplication)
+      - ADDED id="checklist-heading" to h2 element
+
+    Checklist status live region:
+      - ADDED id="checklist-status" + role="status" + aria-live="polite" + aria-atomic="true"
+        to the "All checks passed / Some checks failed" paragraph
+      - Used [style.color] binding (conditional on allChecksPassed()) — not static style attr
+      - ADDED aria-describedby="checklist-status" on mee-button[label="Generate Export"]
+        Screen readers read: "Generate Export — All checks passed. Ready to generate export."
+
+    Visual state accents (token-only — no hardcoded hex):
+      - ADDED .mee-export-ready-card: border-left 3px solid var(--mee-color-success)
+        Applied via <div class="mee-export-ready-card"> wrapper around ready card
+      - ADDED .mee-export-failed-card: border-left 3px solid var(--mee-color-error)
+        Applied via <div class="mee-export-failed-card"> wrapper around failed card
+      - ADDED "Export failed" heading (font-semibold) to failed card for AT readout clarity
+      - IMPROVED ready card: status badge + heading inline; expiry note updated to include re-generate hint
+
+    Empty/first-visit idle state:
+      - IMPROVED idle card: replaced minimal single-line "Click Generate Export" placeholder
+      - NEW .mee-export-idle: flex column centred, min-height 120px, gap 8px, padding 24px 16px
+      - Two-line guidance: heading "Ready to generate your Meesho XLSX" + sub-text
+      - ADDED aria-label="Export not yet started" on idle card content wrapper
+
+    Layout + touch target CSS:
+      - ADDED :host { display: block } — prevents flex-shrink in shell's flex parent
+      - ADDED :host mee-button { min-height: 44px } — WCAG 2.5.8 touch target enforcement
+      - ADDED :host .mee-check-row { min-height: 44px } — checklist row touch target
+      - ADDED .mee-export-idle min-height + flex centering — consistent at 360/768/1280px
+      - Padding: p-2 → p-4 on all card inner divs (better breathing room at all breakpoints)
+
+    Token gap audit result:
+      - All tokens used (--mee-color-outline, --mee-color-primary, --mee-color-success,
+        --mee-color-error, --mee-color-on-surface, --mee-color-on-surface-muted) exist
+        in libs/design-tokens/_tokens.css (Layer 1). NO :host token gap workaround needed.
+
+  EDIT apps/mfe-export/src/app/export.component.spec.ts:
+    Added 8 new describe blocks (builder-3 a11y + visual polish contracts):
+      - a11y: aria-live region on status column (3 tests)
+      - a11y: focus management on ready/failed transitions (5 tests)
+      - a11y: table accessibility (4 tests)
+      - visual polish: spinner CSS (2 tests)
+      - visual polish: idle/first-visit empty-state (3 tests)
+      - visual polish: ready/failed card visual emphasis (4 tests)
+      - visual polish: 360px layout contract (3 tests)
+      Total: +24 tests (770 - 746 from builder-2 baseline)
+
+Build: 7/7 GREEN (all well under 90s D12):
+  frontend (shell): 2.598s | mfe-export: 2.570s | mfe-auth: 2.716s
+  mfe-onboarding: 9.096s | mfe-catalog: 2.819s | mfe-dashboard: 2.559s | mfe-pricing: 2.553s
+
+Tests: 59 spec files / 770 tests / 0 fail (monotonic +24 from builder-2 baseline 746)
+
+A11y:
+  aria-live="polite" on status column — poll transitions announced to screen readers
+  Focus management: ready/failed cards receive focus on status transition (WCAG 2.4.3)
+  scope="col" on table headers (WCAG 1.3.1)
+  aria-describedby ties generate button to checklist status summary
+  prefers-reduced-motion: animation slowed (not stopped) for spinner
+  All interactive elements: min-height 44px via :host CSS rules (WCAG 2.5.8)
+  WCAG 2.1 AA contrast: all text uses --mee-color-on-surface (#2a3547 on #f0f5f9 = ~9.5:1 PASS)
+
+Mobile (360px):
+  flex-col → lg:flex-row: columns stack vertically at 360px (checklist above, status below)
+  px-4 (16px side padding): at 360px → 328px content width, no clipping
+  p-4 (16px card padding): adequate spacing without overflow at 360px
+  .mee-export-idle min-height 120px: consistent visual weight at narrow viewport
+  44px touch targets: all mee-button + checklist rows enforced via :host CSS
+
+Screenshot status:
+  Playwright not available (~/Library/Caches/ms-playwright/ absent — confirmed Wave 6B lesson)
+  SUBSTITUTION: Visual states documented in template + CSS. Lead merge-gate to take screenshots.
+  Substitution precedent: Wave 6B dashboard builder-3 (same machine constraint)
+
+Validation greps (all ZERO except expected):
+  Boundary (primeng from mfe-export/src/app) = 0 CLEAN
+  Deep-import (@mesell/*/path subpath in mfe-export/src/app) = 0 CLEAN
+  Hardcoded hex in CSS rules = 0 CLEAN (only in documentation comments)
+  localStorage in mfe-export/src/app = 0 CLEAN
+  libs/design-tokens/_tokens.css modified = 0 CLEAN (lane discipline — no Layer 1 edits)
+  git diff --name-only (my commit): 2 files, both apps/mfe-export/ DISJOINT
+
+Blockers: none
+STOP conditions: NONE triggered
+Deviations from spec:
+  1. MeeSpinnerComponent does NOT exist in @mesell/ui-kit. Local .mee-export-spinner CSS workaround
+     retained (builder-2 had already established this). Flag raised below in Hand-offs.
+  2. Screenshots: Playwright unavailable (machine constraint). Substituted with CSS documentation.
+
+In progress: none (builder-3 scope COMPLETE — all serial builders done)
+Next: Lead merge-gate review (HYBRID step-3) on feature/wave6-export/frontend
+Hand-offs:
+  export UI-KIT SPINNER GAP (frozen-surface amendment queue):
+    @mesell/ui-kit has no MeeSpinnerComponent (indeterminate).
+    Current workaround: .mee-export-spinner local CSS in apps/mfe-export.
+    Required: MeeSpinnerComponent added to libs/ui-kit (frozen surface — lead amendment needed).
+    This gap joins the token-gap item in the amendment queue.
+  All export visual states complete:
+    idle: .mee-export-idle centred empty-state, aria-label, 360px safe
+    processing: indeterminate spinner (local CSS), aria-live outer region, role=status inner
+    ready: left-border success accent, focus on transition, signed-URL download
+    failed: left-border error accent, focus on transition, "Export failed" heading, Retry
+  Token audit: all tokens in Layer 1 — no :host gap workarounds needed
+=========
+
+=== UPDATE: 2026-06-12 11:10 ===
+Phase: wave6-export (Wave 6 Wave C lane 2 — ExportComponent §4.3 render/UX + §6 degradation matrix)
+Session: mesell-wave6-export-build-session-2
+Agent: meesell-angular-component-builder (sonnet) — HYBRID step-2 builder-2
+
+Done:
+  EDIT export.component.ts:
+    - Removed MeeProgressBarComponent import + [value]="0" placeholder
+    - Added indeterminate CSS spinner (.mee-export-spinner @keyframes) as local workaround
+      (FLAG for ui-styler builder-3: MeeProgressBarComponent.value is required — no indeterminate
+       mode in @mesell/ui-kit; replace with MeeSpinnerComponent once added to ui-kit)
+    - Added MeeAlertBannerComponent + MeeOfflineBannerComponent to imports[]
+    - Wired notReadyMessage() → <mee-alert-banner variant="warning"> (422 GAP-1 real gate)
+    - Added general error banner: <mee-alert-banner variant="error"> for errorMessage() when status=idle
+    - Added <mee-offline-banner /> as FIRST element in template (§6 degradation matrix)
+    - Processing card: role="status" aria-label + aria-live="polite" on wrapper div
+    - Component trimmed to 323 lines (≤400 hard limit)
+  EDIT export.component.spec.ts:
+    - Added §6 degradation matrix render-path tests: 7 describe blocks × multiple it()
+      - notReadyMessage render path (422 gate): 4 tests
+      - errorMessage general error path (5xx/network): 4 tests
+      - processing state (indeterminate spinner, no fake progress): 3 tests
+      - ready state (real signed-URL download): 4 tests
+      - failed state (retry affordance): 4 tests
+      - MeeOfflineBannerComponent placement: 2 tests
+      - MeeAlertBannerComponent wiring (variant=error vs warning): 3 tests
+    - Total +24 tests (746 - 722 baseline)
+
+Tests: 59 spec files / 746 tests / 0 fail (monotonic +24 from baseline 722)
+Build: 7/7 GREEN:
+  mfe-export: 2.624s | frontend: 2.786s | mfe-auth: 2.732s | mfe-catalog: 2.925s
+  mfe-dashboard: 2.905s | mfe-pricing: 2.650s | mfe-onboarding: 2.659s (all ≤90s D12)
+
+Validation greps (all ZERO except expected):
+  Boundary (primeng from mfe-export/src/app) = 0 CLEAN
+  Deep-import (@mesell/*/path in mfe-export/src/app) = 0 CLEAN
+  MOCK_DOWNLOAD_URL / fake-progress in component.ts = 0 CLEAN
+  localStorage in mfe-export/src/app = 0 CLEAN
+  [value]="0" (mee-progress-bar placeholder) = 0 REMOVED
+  mee-alert-banner (notReadyMessage wiring) = 1 PRESENT
+  mee-offline-banner = 1 PRESENT
+  mee-export-spinner (indeterminate) = 4 PRESENT
+  git status (my changes only): 2 files, both apps/mfe-export/ DISJOINT
+
+Blockers: none
+STOP conditions hit: NONE
+Deviations from spec (all documented):
+  1. No MeeSpinnerComponent exists in @mesell/ui-kit. Used inline CSS @keyframes animation
+     (.mee-export-spinner) as a LOCAL workaround. FLAG raised in both the component comment
+     and this STATUS for ui-styler builder-3. Do NOT edit ui-kit progress-bar (frozen).
+  2. Template render-path specs are pure-function (no TestBed). TestBed for export component
+     has a documented PrimeNG JIT issue (Wave 5 F12 export pattern). Pure-function analysis
+     of signal-state conditions is equivalent to template-branch testing per project convention.
+
+In progress: none (builder-2 scope COMPLETE)
+Next: meesell-angular-ui-styler (builder-3) — status-based state polish, 360/1280 screenshots,
+      a11y (aria-live on status region — already added), MeeSpinnerComponent if possible
+Hand-offs:
+  ExportComponent fully wired:
+    - indeterminate spinner during 'processing' (replace .mee-export-spinner with MeeSpinnerComponent)
+    - notReadyMessage → mee-alert-banner[variant=warning]
+    - errorMessage (5xx/network) → mee-alert-banner[variant=error] (only when status=idle)
+    - mee-offline-banner at template root
+    - Ready card: real xlsx_signed_url + zip_signed_url buttons
+    - Failed card: errorMessage text + Retry button (fresh initiate, new export_id)
+    - Processing card: role=status aria-live=polite (a11y baseline done)
+=========
+
+=== UPDATE: 2026-06-12 10:30 ===
+Phase: wave6-export (Wave 6 Wave C lane 2 — ExportApiService real wire)
+Session: mesell-wave6-export-build-session-1
+Agent: meesell-angular-service-builder (sonnet) — HYBRID step-2 builder-1
+
+Done:
+  NEW export.service.ts (apps/mfe-export/src/app/export.service.ts):
+    - ExportApiService — route-scoped @Injectable() (providers in ExportComponent)
+    - initiate(productId, format='xlsx_with_images'): POST /api/v1/products/{id}/export-xlsx (202)
+      NEVER retried (non-idempotent — double-enqueue risk D18)
+    - poll(exportId): GET /api/v1/exports/{id} with 503-specific retry (catchError-before-retry pattern)
+    - Error matrix (R-W6-1 — complete):
+      initiate: 401→EMPTY, 404→InitiateUnavailableError, 422→InitiateValidationError, 400→EMPTY, 5xx→EMPTY
+      poll: 401→EMPTY, 404→throw ExportNotFoundError, 503→re-throw for retry, 5xx→EMPTY
+    - GAP-1 Option A: SIMULATED_PASSING_CHECKS retained as display-only; 422 is authoritative gate
+  EDIT export.model.ts:
+    - ADD: ExportInitiatedResponse (status literal 'pending'), ExportResponseDTO (full #28 shape),
+      ExportRequest (format), ExportFormat, ExportWireStatus, isTerminalStatus()
+    - REMOVE: MOCK_DOWNLOAD_URL (retired), ExportJob, nextProgress(), isProgressComplete()
+    - UPDATE: retryState() — no progress field (no progress_pct on wire)
+    - RETAIN: SIMULATED_PASSING_CHECKS, buildCheckItems, allChecksPassed, canGenerate (Option A)
+  EDIT export.component.ts:
+    - inject ExportApiService + ActivatedRoute; read product_id from route.snapshot.params['id']
+    - Real initiate→poll→ready/failed flow; setInterval poll (D18 preserved, 2s, max 60 ticks)
+    - clearInterval on terminal status AND ngOnDestroy (D18 proven by spec test)
+    - Retired fake progress bar (value=0 placeholder for builder 2 indeterminate replacement)
+    - Real signed-URL download (xlsx_signed_url + zip_signed_url from ready poll)
+    - notReadyMessage signal for 422 actionable surface (GAP-1 Option A)
+    - onRetry() re-triggers fresh initiate (new export_id, not just state reset)
+  NEW export.service.spec.ts: 35 tests — URL/method/body contract; full error matrix; retryOn503 policy
+  NEW export.model.spec.ts: 30 tests — isTerminalStatus, retryState (no progress), type exhaustion
+  EDIT export.component.spec.ts: D18 timer proof (vi.useFakeTimers); wire-to-UI status mapping
+
+Tests: 59 spec files / 722 tests / 0 fail (baseline 57 files / ~700 tests pre-builder-1)
+Build: 7/7 GREEN — mfe-export: 3.0s | mfe-catalog: 3.4s | mfe-dashboard: 3.6s |
+       mfe-onboarding: 3.0s | mfe-pricing: 3.0s | mfe-auth: 2.9s | frontend: 3.0s (all ≤90s D12)
+Branch tip: d2d0cad8cf371f756313fd0e3049b32d84820e4a (feature/wave6-export/frontend)
+Singleton: @mesell/core singleton:True in mfe-export remoteEntry.json; _mesell_core.js = 1 file
+
+Validation greps:
+  MOCK_DOWNLOAD_URL in export.component.ts = 0 (CLEAN)
+  setInterval.*PROGRESS / fake-progress in component.ts = 0 (CLEAN)
+  localStorage in mfe-export/src/app/ = 0 (FE-D5 CLEAN)
+  deep imports @mesell/*/path in mfe-export/src/app/ = 0 (barrel-only CLEAN)
+  primeng from mfe-export/src/app/ = 0 (boundary CLEAN)
+  URL /api/v1/products/{id}/export-xlsx confirmed in export.service.ts line 47
+  URL /api/v1/exports/{id} confirmed in export.service.ts line 51
+  Disjoint diff: all 6 changed files under apps/mfe-export/ only
+
+Blockers: none
+STOP conditions hit: NONE
+Deviations from spec:
+  1. MeeProgressBarComponent requires `value` input (required signal) — cannot be omitted for
+     indeterminate mode. Used [value]="0" as placeholder; builder-2 (component-builder) must replace
+     with proper indeterminate spinner (spec §4.3 delegates render states to builder 2).
+  2. retryOn503 applied in service pipe (not via ApiClient's retryOn503 option) because ApiClient's
+     applyRetry wraps retry() before catchError, causing ALL errors (including 404) to be retried.
+     Service-level retry after catchError correctly limits retry to 503 only. Spec intent preserved.
+
+In progress: none (builder-1 scope COMPLETE at d2d0cad)
+Next: meesell-angular-component-builder (builder-2) — §4.3 component wiring + component spec
+Hand-offs:
+  ExportApiService.initiate() ready — component can subscribe to Observable<ExportInitiatedResponse | InitiateErrorShape>
+  ExportApiService.poll() ready — component calls this inside its setInterval tick (D18 preserved)
+  export.component.ts partially wired: [value]="0" placeholder on mee-progress-bar needs
+    replacement with indeterminate spinner; notReadyMessage signal wired for 422 surface
+  product_id route read: route.snapshot.params['id'] per spec §4.3 (catalogs/:id/export route)
+  isTerminalStatus() pure function exported from export.model.ts for poll-loop gate
+=========
+
 === UPDATE: 2026-06-11 23:55 ===
 Phase: wave6-auth-core (Wave 6 Wave A — real auth core) — HYBRID step-3 LEAD MERGE-GATE
 Session: mesell-wave6-auth-core-gate-session-1
