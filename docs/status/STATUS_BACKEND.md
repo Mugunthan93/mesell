@@ -4878,3 +4878,37 @@ Blockers: none.
 Next: coordinator STEP 3 merge-gate; squash chore/flag-parity → develop.
 Hand-offs: meesell-backend-coordinator — G1/G2/G3 evidence + 9/9 test PASS + ruff clean; PR not opened (coordinator gate owns that).
 =========
+
+=== UPDATE: 2026-06-12 — flag-parity sweep STEP 3 MERGE-GATE PASS ===
+Phase: V1 backend feature-flag story — flag-parity sweep (G1 price-calc / G2 dashboard / G3 live-preview)
+Session: mesell-flag-parity-sweep-session-1 (HYBRID STEP 3 — lead merge-gate review)
+Board sweep: flag-parity row IN PROGRESS → GATE PASS (FOUNDER PR OPEN→develop); 1 NEW infra inter-lead row added (3 flags → ConfigMaps); no rows stale 7+d (microservices-export 2026-06-10 = 2d). MERGED rows: none >14d to evict.
+
+GATE VERDICT: **PASS** — all 3 gaps + 9 tests + ruff + scope verified by lead.
+
+Diff reviewed vs origin/develop (note: develop moved 2b5ec60 → 81338c5 via infra #147 = k8s/worker.yaml + 2 infra docs, ZERO file overlap with this branch — confirmed via git diff --stat).
+  Scope: 9 files — shared/config.py + pricing/router.py + dashboard/router.py + catalog/router.py + 3 NEW test files + STATUS + board. NO service/model/main.py/migration changes (verified). §17 stays 28 (verified live mount: 28 /api/* APIRoute objects). §2.D unchanged (pure config reads, no new service edges).
+
+G1 price-calculator: PASS. FEATURE_PRICE_CALCULATOR_ENABLED=True in config §3.2; in-handler 404 POST (smart-picker pattern, BEFORE service); HTTPException(404, "Price Calculator is disabled in this environment").
+G2 tracking-dashboard: PASS. FEATURE_TRACKING_DASHBOARD_ENABLED=True; in-handler 404 GET — 404-on-read intentional (R1, D3 kill-switch, the read IS the feature); D3 comment inline.
+G3 live-preview: PASS. FEATURE_LIVE_PREVIEW_ENABLED=False (ONLY default-False V1 flag, SHIPS DARK); MeesellError(code="feature.live_preview.disabled", 404, "Preview unavailable") guard GET.
+
+ADJUDICATIONS (lead-verified this gate):
+  - MeesellError judgment call (G3): CORRECT and REQUIRED. Verified core/errors.py: _meesell_error_handler reads exc.code into envelope (L149); _http_exception_handler hardcodes code="http.404" (L210). Only MeesellError surfaces the D3-mandated code=feature.live_preview.disabled. No new envelope (R3 honored). Minor non-blocking FYI: G3 omits validation_message_id → envelope carries class-default server.internal_error as side-field; plan-mandated {detail,code} contract satisfied exactly, test asserts only those two.
+  - Defensive catalog-form patch (G3 reachable test): HARMLESS/inert, non-blocking FYI. main.py:126 include is import-time; catalog-form defaults True → router already mounted; patch targets app.modules.catalog.router.settings not app.main.settings → no-op no-harm.
+  - G1 wording FYI: plan §1.B mandated validation_message_id=feature.disabled, but that 2-segment key VIOLATES the locked §5A.H 3-segment regex (^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$) AND its messages_en.py registration is a services-builder dispatch (out of this api-routes-builder slice). Plain HTTPException is scope-correct. FYI to founder/future price-calc feature dispatch.
+
+R1-R4 CONSUMED (master-confirmed): R1 honor-plans 404-on-read for G2/G3; R2 plan-verbatim wording (with G1 nuance above); R3 in-handler not new core/feature_flags.py (no FeatureDisabledError subclass, no factory); R4 live-preview default-False.
+
+Test/ruff re-run (lead, master venv backend/.venv Py3.11, isolation per session-loop gotcha):
+  pricing 3/3 PASS · dashboard 3/3 PASS · live-preview 3/3 PASS → 9/9 PASS.
+  ruff check on 7 files (config + 3 routers + 3 tests) → All checks passed!
+
+LIVE-PREVIEW SHIPS DARK: FEATURE_LIVE_PREVIEW_ENABLED defaults False everywhere; preview returns 404 until founder flips the dev ConfigMap to true when the preview FE wires (D3 gated rollout).
+
+Done: STEP 3 gate PASS; FOUNDER GATE PR opened OPEN→develop (lead leaves OPEN, founder merges per D1); board + STATUS + infra inter-lead row + memo records committed on branch (ride the PR).
+In progress: none.
+Blockers: none.
+Next: founder merges the flag-parity PR → develop; infra injects 3 flags into ConfigMaps (inter-lead OPEN).
+Hand-offs: meesell-infra-builder — 3 flags → k8s ConfigMaps (dev: price-calc=true/dashboard=true/live-preview=false; staging: all false). Memo handoff_secret_flag_parity_flags.md.
+=========
