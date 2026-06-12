@@ -3,6 +3,32 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-12
 
+=== UPDATE: 2026-06-12 — FROZEN-SURFACE AMENDMENTS (4) — FOUNDER-APPROVED §7.3 → MERGED to develop ===
+Phase: shared-surface amendments (libs/core, libs/ui-kit, libs/design-tokens)
+Session: mesell-frozen-surface-amendments-session-1
+Board sweep: frozen-surface-amendments added to Recently merged (#176 squash be577e5); board header updated; no Active rows untouched 7+ days (plan-PENDING + image-precheck founder-gate rows, both 2026-06-11); no inter-lead requests opened.
+V1 routes/specialists touched: NONE (lead-executed FAST-MODE chore per HYBRID rule — shared code, no specialist dispatch). Surfaces: libs/core/services/{api-client,auth}.service.ts; libs/ui-kit/spinner/ (new) + barrel; libs/design-tokens/_tokens.css; apps/mfe-dashboard dashboard.component.ts (token re-point); one-line cleanup comments in catalog-form/images/export/pricing services.
+Founder approval: 2026-06-12 §7.3 — ALL 4 amendments. Wave D founder gates (#172 pricing, #175 images) merged on develop (tip b2cd292) → no live lane had frozen-surface churn risk.
+Done:
+  - (1) ApiClient retry filter: applyRetry/retryOn503 now retries ONLY on transient unavailability (503/504/network status-0) via isRetryable() — NEVER on 4xx. Original defect = bare retry({count}) retrying every error. New api-client.service.spec.ts: 12 tests (retries 503/504/network; no-retry 400/404/422/500; opt-in-only no-retry-on-503; POST body+path forwarded; POST retryOn503 retries 503 not 400). Survey: catalog-form getSchema / images poll / export post-catchError retry / pricing each got a one-line V1.5-cleanup pointer comment — NOT rewired (work today).
+  - (2) mee-spinner ui-kit primitive: libs/ui-kit/spinner/spinner.component.ts seals PrimeNG <p-progress-spinner> behind §2 wall; role=status + aria-busy + accessible label (sr-only + default "Loading" aria-label) + prefers-reduced-motion freeze; diameter/strokeWidth inputs; barrel-exported MeeSpinnerComponent; 8-test spec. Local spinners NOT rewired (V1.5).
+  - (3) --mee-color-surface-variant #f2f6fa added to Layer-1 :root in _tokens.css; dashboard :host stopgap block + escalation comment REMOVED; the 3 var(--mee-color-surface-variant) usages now resolve from Layer 1 (in-scope rewire — original defect; token cascades to remotes via shell apps/shell/src/styles.css @import).
+  - (4) AuthService setSession(token, user, expiresIn?) auto-schedules refresh when expiresIn provided; explicit scheduleRefresh() stays public/callable; 2-arg callers (otp-verify mock, SP06 C4, bootstrap) UNCHANGED (backward compatible). +3 auto-pair tests (auto-fire at expiresIn-30s; 2-arg omits; explicit still works).
+Validation (full, lead-run):
+  - 7 builds GREEN ≤90s D12: shell 2.983s / dashboard 2.758s / catalog 2.881s / pricing 2.444s / export 2.605s / onboarding 2.682s / auth 2.668s.
+  - Full suite: 64 spec files / 1046 tests, 0 fail / 0 skip, exit 0 (monotonic +21 from develop baseline 62/1025: 12 api-client + 6 spinner + 3 auth auto-pair). New specs discovered (spec-libs-core-services-api-client, spec-libs-ui-kit-spinner-spinner.component).
+  - Boundary: 0 primeng imports outside libs/ui-kit/ (spinner primeng import is inside libs/ui-kit/spinner/, the legal zone).
+  - §6.G singleton spot-check (mfe-auth + mfe-pricing): exactly ONE shared _mesell_core-QTK457AV.js chunk (same hash both remotes); @mesell/core singleton:true in remoteEntry; amended 3-arg setSession(t,r,o) DEF lives ONLY in _mesell_core (0 inlined in OtpVerifyComponent chunk, 2 call-sites there) — no auth drift.
+  - TS strict + strictTemplates ON (builds enforce; passing = clean).
+Merge ops: PR #176 base=develop, founder-approval stamp + self-review checklist in body; lead-gate APPROVE comment; squash --admin (be577e5); remote ref deleted via gh api (0 refs); worktree removed. Lead-lands-founder-decision shape per land-mf-rulings precedent — NOT a feature/{name}→develop approval; D1 held.
+V1.5 cleanup notes registered:
+  - C-V15-1: migrate hand-rolled retry workarounds to the now-filtered retryOn503 (catalog-form getSchema GET → opt in; images poll → keep D18 backoff; export poll → fold post-catchError retry into the flag preserving 404→stop-polling; pricing → keep OFF, POST non-idempotent). Pointer comments left in each file.
+  - C-V15-2: migrate existing local spinners (mfe-pricing, mfe-export inline <p-progress-spinner> / CSS) to MeeSpinnerComponent.
+Blockers: none.
+Next: Wave 6 program continues per docs/plans/wave6_api_wiring/MASTER_PLAN.md. The frozen-surface backlog is now CLEARED.
+Hand-offs: none (pure frontend shared-surface; no other lead's domain affected).
+=========
+
 === UPDATE: 2026-06-12 — WAVE 6D LANE 1 IMAGES — LEAD MERGE-GATE **PASS** ===
 Phase: wave6-images (Wave 6 Wave D lane 1 — /catalogs/:id/images RECONCILE; #23/#24)
 Session: mesell-wave6-images-gate-session-1
