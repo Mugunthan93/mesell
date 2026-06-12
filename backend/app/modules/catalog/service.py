@@ -47,18 +47,20 @@ any of the following occurs:
 DECISION FLAGS
 --------------
 §10-CATALOG-D1 — ``product_drafts`` wrapper applied (repository layer).
-§10-CATALOG-D2 — Audit-mw 5-min coalescing regex does NOT match
-    ``PATCH /products/{id}``; documented as cross-cutting deviation,
-    not a §10 blocker (§4.G amendment to widen the autosave regex is
-    queued for the next core sub-session).
+§10-CATALOG-D2 — Audit-mw 5-min coalescing now matches the real
+    autosave surface ``PATCH /products/{id}`` (widened in
+    ``core/middleware/audit_mw._is_autosave`` for the catalog-form slice;
+    the §4.G doc amendment is the coordinator's follow-up).
 §10-CATALOG-D3 — Canonical 3-segment ``validation_message_id`` IDs
     (already-shipped i18n entries) replace the §10.G 2-segment shorthand.
-§10-CATALOG-D4 — Auto-fill ``confidence`` defaults to 0.9 (above the
-    `MVP_ARCH §5.2` 0.85 auto-apply floor) for every field emitted by
-    the ``autofill.v1`` prompt.  Rationale: the prompt instructs the
-    model to OMIT fields it is not confident about — emission is the
-    confidence signal; the constant is service-owned so prompt-engineer
-    can refine the prompt independently.
+§10-CATALOG-D4 — Auto-fill ``confidence`` defaults to 0.9 for every
+    field emitted by the ``autofill.v1`` prompt.  Rationale: the prompt
+    instructs the model to OMIT fields it is not confident about —
+    emission is the confidence signal; the constant is service-owned so
+    prompt-engineer can refine the prompt independently.  NOTE: per the
+    FOUNDER RULING 2026-06-11 (ai-autofill D1) there is NO auto-apply —
+    confidence is a display/provenance signal only and never gates a
+    write to ``products.fields_jsonb``.
 """
 
 from __future__ import annotations
@@ -104,10 +106,10 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 _PLAN_FREE = "free"
 
-# Per §10.B.1 + MVP_ARCH §5.2.
-_AUTO_APPLY_CONFIDENCE_FLOOR = 0.85
-
-# Per §10-CATALOG-D4 — default confidence for an AI-emitted field.
+# Confidence value stamped onto each AI-emitted autofill suggestion for
+# provenance in ``ai_suggestions_jsonb``.  The auto-APPLY path was REMOVED
+# per the FOUNDER RULING 2026-06-11 (ai-autofill D1) — this is now purely a
+# display/provenance signal, never a gate for mutating accepted fields.
 _DEFAULT_AUTOFILL_CONFIDENCE = 0.9
 
 # Per §10.E AutofillRequest constraints — mirrored here for defensive
@@ -664,43 +666,43 @@ async def autofill_product(
         # still have nothing, offer fallback.
         return AutofillResponse(suggestions={}, applied={}, fallback_offered=True)
 
+    # FOUNDER RULING 2026-06-11 (ai-autofill D1): NO auto-apply.  Autofill
+    # writes ONLY to ``ai_suggestions_jsonb``; the user explicitly accepts
+    # each value per §F4 yellow-highlight UX.  ``autofill_product`` MUST NEVER
+    # mutate the product's accepted attribute fields directly — so every
+    # ``applied`` flag is False and ``fields_jsonb`` is left untouched.  The
+    # ``confidence`` signal is still emitted into the suggestion provenance.
     suggestions: dict[str, AutofillSuggestionInternal] = {}
     applied: dict[str, bool] = {}
-    applied_patch: dict[str, Any] = {}
     for canonical_name, value in raw_fields.items():
         if value is None or value == "":
             continue
         # If caller constrained fields_to_fill, reject keys outside the set.
         if request.fields_to_fill and canonical_name not in request.fields_to_fill:
             continue
-        confidence = _DEFAULT_AUTOFILL_CONFIDENCE
         suggestion = AutofillSuggestionInternal(
             canonical_name=str(canonical_name),
             value=value,
-            confidence=confidence,
+            confidence=_DEFAULT_AUTOFILL_CONFIDENCE,
             source="ai",
         )
         suggestions[str(canonical_name)] = suggestion
-        if confidence >= _AUTO_APPLY_CONFIDENCE_FLOOR:
-            applied[str(canonical_name)] = True
-            applied_patch[str(canonical_name)] = value
-        else:
-            applied[str(canonical_name)] = False
+        # Never auto-applied — the seller accepts each value in the UI.
+        applied[str(canonical_name)] = False
 
     if not suggestions:
         return AutofillResponse(suggestions={}, applied={}, fallback_offered=True)
 
-    # Step 8 — JSONB merge the auto-applied values.
-    if applied_patch:
-        await catalog_repo.update_fields_jsonb(db, user_id, product_id, applied_patch)
-
-    # Step 9 — persist the FULL suggestions payload for provenance.
+    # Step 8 — persist the FULL suggestions payload for provenance into
+    # ``ai_suggestions_jsonb`` ONLY.  No write to ``fields_jsonb`` (no
+    # auto-apply per the founder ruling above).  ``accepted`` is always
+    # False here; the per-field accept transition is a separate user action.
     suggestions_persisted = {
         canonical: {
             "value": suggestion.value,
             "confidence": suggestion.confidence,
             "source": suggestion.source,
-            "accepted": applied.get(canonical, False),
+            "accepted": False,
         }
         for canonical, suggestion in suggestions.items()
     }
