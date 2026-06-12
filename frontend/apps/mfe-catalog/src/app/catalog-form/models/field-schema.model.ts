@@ -7,6 +7,8 @@
  *
  * The adapter `adaptSchemaResponse` bridges Layer 1 → Layer 2.
  * `mapPrimitiveToWidget` maps the 11-value LOCKED primitive enum → widget hint.
+ * Source of truth: backend/app/i18n/schema_contract.py:175 (PRIMITIVE_VALUES)
+ * and backend/app/i18n/primitive_classifier.py (classify_primitive emitter).
  *
  * Both adapter and map are PURE FUNCTIONS — no Angular, no DI, no side effects.
  * They are unit-tested in catalog-form.model.spec.ts without TestBed.
@@ -48,23 +50,35 @@ export interface SchemaFieldDTO {
   /** UI widget hint — e.g. 'dropdown', 'text', 'textarea'. */
   data_type: string;
   /**
-   * 11-value LOCKED primitive enum (verified against backend seed data):
-   *   text_short | text_long | number | currency |
-   *   dropdown_small | dropdown_api_search |
-   *   image_upload | toggle | date | multiselect | rating
+   * 11-value LOCKED primitive enum.
+   * Source: backend/app/i18n/schema_contract.py:175 PRIMITIVE_VALUES (frozenset).
+   * Emitter: backend/app/i18n/primitive_classifier.py (classify_primitive()).
+   *
+   *   text_short         data_type=text, fallback (schema_contract.py:176)
+   *   text_long          data_type=text, long-text patterns (schema_contract.py:177)
+   *   number             data_type=number, no unit (schema_contract.py:178)
+   *   number_with_unit   data_type=number, unit companion or name keyword (schema_contract.py:179)
+   *   currency           data_type=text, price/mrp patterns (schema_contract.py:180)
+   *   dropdown_small     data_type=dropdown, enum_count 1-20 (schema_contract.py:181)
+   *   dropdown_medium    data_type=dropdown, enum_count 21-100 (schema_contract.py:182)
+   *   dropdown_large     data_type=dropdown, enum_count 101-500 (schema_contract.py:183)
+   *   dropdown_api_search data_type=dropdown, enum_count >500 (schema_contract.py:184)
+   *   image_upload       data_type=image_url (schema_contract.py:185)
+   *   address_group      seller-profile composite — NEVER in catalog schema_jsonb fields
+   *                      (primitive_classifier.py:16 note); included for type completeness.
    */
   primitive:
     | 'text_short'
     | 'text_long'
     | 'number'
+    | 'number_with_unit'
     | 'currency'
     | 'dropdown_small'
+    | 'dropdown_medium'
+    | 'dropdown_large'
     | 'dropdown_api_search'
     | 'image_upload'
-    | 'toggle'
-    | 'date'
-    | 'multiselect'
-    | 'rating';
+    | 'address_group';
   /** Optional hint text rendered below the field. */
   help_text?: string;
   /** True only for advanced fields (collapsed in the advanced section). */
@@ -242,20 +256,23 @@ export type WidgetType = 'text_short' | 'text_long' | 'number' | 'select' | 'ski
 /**
  * mapPrimitiveToWidget — maps the 11-value LOCKED wire primitive → widget hint.
  *
- * Mapping (§3 spec):
- *   text_short            → 'text_short'      (direct match — mee-input)
- *   text_long             → 'text_long'       (direct match — mee-textarea)
- *   number                → 'number'          (mee-input type=number)
- *   currency              → 'number'          (numeric input, unit at display layer)
- *   dropdown_small        → 'select'          (static options from enum_values or api-enum)
- *   dropdown_api_search   → 'select'          (async options via #16)
- *   image_upload          → 'skip'            (images page owns this)
- *   toggle                → 'select'          (yes/no as select in V1)
- *   date                  → 'text_short'      (text input; date picker V1.5)
- *   multiselect           → 'select'          (single-select in V1)
- *   rating                → 'number'          (numeric 1..5 in V1)
+ * Source: backend/app/i18n/schema_contract.py:175 PRIMITIVE_VALUES.
+ * Emitter: backend/app/i18n/primitive_classifier.py (classify_primitive()).
  *
- * Any unknown value defaults to 'text_short' for forward-compat.
+ * Mapping (§3 spec, gate ruling):
+ *   text_short          → 'text_short'    mee-input[type=text]
+ *   text_long           → 'text_long'     mee-textarea
+ *   number              → 'number'        mee-input[type=number]
+ *   number_with_unit    → 'number'        mee-input[type=number] (unit hint at display layer, V1.5)
+ *   currency            → 'number'        mee-input[type=number] (₹ prefix at display layer)
+ *   dropdown_small      → 'select'        mee-select (≤20 static options)
+ *   dropdown_medium     → 'select'        mee-select (21-100 options, api-enum pre-loaded)
+ *   dropdown_large      → 'select'        mee-select (101-500 options, api-enum pre-loaded)
+ *   dropdown_api_search → 'select'        mee-select (>500 options, async via #16)
+ *   image_upload        → 'skip'          images page owns this; excluded from form groups
+ *   address_group       → 'skip'          seller-profile composite; excluded from catalog form
+ *
+ * Any unknown value (forward-compat) defaults to 'text_short'.
  */
 export function mapPrimitiveToWidget(
   primitive: SchemaFieldDTO['primitive'] | string,
@@ -264,14 +281,14 @@ export function mapPrimitiveToWidget(
     case 'text_short':          return 'text_short';
     case 'text_long':           return 'text_long';
     case 'number':              return 'number';
+    case 'number_with_unit':    return 'number';
     case 'currency':            return 'number';
     case 'dropdown_small':      return 'select';
+    case 'dropdown_medium':     return 'select';
+    case 'dropdown_large':      return 'select';
     case 'dropdown_api_search': return 'select';
     case 'image_upload':        return 'skip';
-    case 'toggle':              return 'select';
-    case 'date':                return 'text_short';
-    case 'multiselect':         return 'select';
-    case 'rating':              return 'number';
+    case 'address_group':       return 'skip';
     default:                    return 'text_short';
   }
 }

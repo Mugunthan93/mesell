@@ -19,17 +19,18 @@
  *     - marker=compulsory → required: true
  *     - marker=optional  → required: false
  *   mapPrimitiveToWidget — all 11 locked values
+ *   Source: backend/app/i18n/schema_contract.py:175 PRIMITIVE_VALUES
  *     - text_short → text_short
  *     - text_long → text_long
  *     - number → number
+ *     - number_with_unit → number
  *     - currency → number
  *     - dropdown_small → select
+ *     - dropdown_medium → select
+ *     - dropdown_large → select
  *     - dropdown_api_search → select
  *     - image_upload → skip
- *     - toggle → select
- *     - date → text_short
- *     - multiselect → select
- *     - rating → number
+ *     - address_group → skip
  *     - unknown value → text_short (forward-compat)
  */
 
@@ -74,50 +75,52 @@ function makeDTO(fields: SchemaFieldDTO[]): SchemaResponseDTO {
 }
 
 // ── mapPrimitiveToWidget ───────────────────────────────────────────────────────
+// Source: backend/app/i18n/schema_contract.py:175 PRIMITIVE_VALUES (frozenset, 11 values).
+// Emitter: backend/app/i18n/primitive_classifier.py classify_primitive().
 
-describe('mapPrimitiveToWidget — 11 LOCKED values', () => {
-  it('text_short → text_short', () => {
+describe('mapPrimitiveToWidget — 11 LOCKED values (schema_contract.py:175)', () => {
+  it('text_short → text_short (data_type=text, fallback)', () => {
     expect(mapPrimitiveToWidget('text_short')).toBe('text_short');
   });
 
-  it('text_long → text_long', () => {
+  it('text_long → text_long (data_type=text, long-text patterns)', () => {
     expect(mapPrimitiveToWidget('text_long')).toBe('text_long');
   });
 
-  it('number → number', () => {
+  it('number → number (data_type=number, no unit)', () => {
     expect(mapPrimitiveToWidget('number')).toBe('number');
   });
 
-  it('currency → number (numeric input, unit at display layer)', () => {
+  it('number_with_unit → number (data_type=number, unit companion or keyword)', () => {
+    expect(mapPrimitiveToWidget('number_with_unit')).toBe('number');
+  });
+
+  it('currency → number (data_type=text, price/mrp patterns; ₹ prefix at display layer)', () => {
     expect(mapPrimitiveToWidget('currency')).toBe('number');
   });
 
-  it('dropdown_small → select', () => {
+  it('dropdown_small → select (enum_count 1-20, static options)', () => {
     expect(mapPrimitiveToWidget('dropdown_small')).toBe('select');
   });
 
-  it('dropdown_api_search → select (lazy options via #16)', () => {
+  it('dropdown_medium → select (enum_count 21-100, api-enum pre-loaded)', () => {
+    expect(mapPrimitiveToWidget('dropdown_medium')).toBe('select');
+  });
+
+  it('dropdown_large → select (enum_count 101-500, api-enum pre-loaded)', () => {
+    expect(mapPrimitiveToWidget('dropdown_large')).toBe('select');
+  });
+
+  it('dropdown_api_search → select (enum_count >500, lazy options via #16)', () => {
     expect(mapPrimitiveToWidget('dropdown_api_search')).toBe('select');
   });
 
-  it('image_upload → skip (images page owns this)', () => {
+  it('image_upload → skip (images page owns this; excluded from form groups)', () => {
     expect(mapPrimitiveToWidget('image_upload')).toBe('skip');
   });
 
-  it('toggle → select (yes/no as select in V1)', () => {
-    expect(mapPrimitiveToWidget('toggle')).toBe('select');
-  });
-
-  it('date → text_short (text input; date picker deferred V1.5)', () => {
-    expect(mapPrimitiveToWidget('date')).toBe('text_short');
-  });
-
-  it('multiselect → select (single-select in V1)', () => {
-    expect(mapPrimitiveToWidget('multiselect')).toBe('select');
-  });
-
-  it('rating → number (numeric 1..5 in V1)', () => {
-    expect(mapPrimitiveToWidget('rating')).toBe('number');
+  it('address_group → skip (seller-profile composite; never a catalog primitive per primitive_classifier.py:16)', () => {
+    expect(mapPrimitiveToWidget('address_group')).toBe('skip');
   });
 
   it('unknown value → text_short (forward-compat default)', () => {
