@@ -1,63 +1,53 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpHeaders, HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Observable, EMPTY, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { Router } from '@angular/router';
 
-import { AuthService } from '@mesell/core';
+import { ApiClient, AuthService } from '@mesell/core';
 import type { ImageUploadResponse, ImagesListResponse } from './image-uploader.model';
 
 /**
  * ImageService — feature-scoped (NO providedIn).
  * Must be listed in the ImageUploaderComponent providers[] array.
  *
- * ## HTTP wiring
- * Uses HttpClient directly (no global JWT interceptor — Wave 6 gap).
- * Bearer token is attached manually from AuthService.getToken().
+ * ## HTTP wiring (Wave D reconcile — D-IMG-1)
+ * Uses ApiClient from @mesell/core. The global jwtInterceptor (registered in
+ * apps/mfe-catalog/src/main.ts via withInterceptors([jwtInterceptor, ...])) attaches
+ * Authorization: Bearer automatically from AuthService.getToken() (FE-D5 in-memory).
+ * No manual authHeaders() is required or permitted.
  *
- * Migration note: when the global JWT interceptor ships (Wave 7 — see
- * frontend/src/app/core/interceptors/auth.interceptor.ts), add
- * withInterceptors([jwtInterceptor]) to provideHttpClient() in app.config.ts
- * AND apps/mfe-catalog/src/main.ts, then remove the authHeaders() helper and
- * the per-request { headers } option from this service.
+ * ## Retry policy
+ * Upload (POST) — NO retry. Non-idempotent: retrying would double-enqueue + double-bill GCS.
+ * Poll (GET) — NO ApiClient retryOn503 (defective: retries ALL errors, not just 503).
+ *   Resilience comes from the caller's bounded recursive-setTimeout backoff (D18-class).
  *
- * ## Error surface decision (DIP — matches CategoryService)
- * NO MeeToastService is injected here. Errors surface through the returned
- * observable shape only (EMPTY or safe fallback). The component layer decides
- * whether to surface a toast/snackbar.
+ * ## Error surface decision (DIP — matches DashboardApiService / ExportApiService)
+ * NO MeeToastService is injected here. Errors surface through the returned observable
+ * shape only (EMPTY or safe fallback). The component layer decides whether to surface
+ * a toast/snackbar.
  *
  * ## Error matrix
  * ### upload():
- *   401 → AuthService.logout() + return EMPTY (session invalidated)
- *   402 → return EMPTY (plan quota exceeded; caller shows plan-upgrade state)
- *   404 → return EMPTY (FEATURE_IMAGE_PRECHECK_ENABLED=false; caller shows disabled state)
- *   400 → return EMPTY (bad idx or invalid file; caller-validated responsibility)
- *   5xx → return EMPTY
+ *   401 → AuthService.logout() + navigate('/login') + EMPTY (refreshInterceptor already tried)
+ *   402 → EMPTY (plan quota exceeded; caller shows plan-upgrade state)
+ *   404 → EMPTY (FEATURE_IMAGE_PRECHECK_ENABLED=false; caller shows disabled state)
+ *   400 → EMPTY (bad idx or invalid file; caller-validated responsibility)
+ *   5xx → EMPTY
  *
  * ### listImages() / pollImages():
- *   401 → AuthService.logout() + return EMPTY
- *   404 → return of({ images: [] })  (defensive; backend returns 200+{images:[]} when OFF)
- *   5xx → return of({ images: [] })
- *   400 → return of({ images: [] })
+ *   401 → AuthService.logout() + navigate('/login') + EMPTY (post-refresh-failure fallback)
+ *   404 → of({ images: [] })  (defensive; backend returns 200+{images:[]} when flag off)
+ *   5xx → of({ images: [] })
+ *   400 → of({ images: [] })
  */
 @Injectable()
 export class ImageService {
-  private readonly http   = inject(HttpClient);
+  private readonly api    = inject(ApiClient);
   private readonly router = inject(Router);
   private readonly auth   = inject(AuthService);
 
-  // ── Private helpers ───────────────────────────────────────────────────────────
-
-  /**
-   * Build Authorization header from the in-memory token (FE-D5: never localStorage).
-   * Returns empty HttpHeaders when no token is present (unauthenticated state).
-   */
-  private authHeaders(): HttpHeaders {
-    const token = this.auth.getToken();
-    return token
-      ? new HttpHeaders({ Authorization: `Bearer ${token}` })
-      : new HttpHeaders();
-  }
+  // ── Private error handlers ────────────────────────────────────────────────────
 
   /** Error handler for upload() — per-method matrix. */
   private handleUploadError(err: HttpErrorResponse): Observable<never> {
@@ -101,11 +91,10 @@ export class ImageService {
     body.append('file', file);
     body.append('idx', String(idx));
 
-    return this.http
-      .post<ImageUploadResponse>(`/api/v1/products/${productId}/images`, body, {
-        headers: this.authHeaders(),
-        // NOTE: Do NOT set Content-Type — browser sets multipart/form-data + boundary
-      })
+    // NOTE: Do NOT set Content-Type — browser sets multipart/form-data + boundary
+    // NOTE: No retryOn503 — non-idempotent POST would double-enqueue
+    return this.api
+      .post<ImageUploadResponse>(`/api/v1/products/${productId}/images`, body)
       .pipe(
         catchError((err: HttpErrorResponse) => this.handleUploadError(err)),
       );
@@ -120,10 +109,9 @@ export class ImageService {
    * @param productId — product UUID
    */
   listImages(productId: string): Observable<ImagesListResponse> {
-    return this.http
-      .get<ImagesListResponse>(`/api/v1/products/${productId}/images`, {
-        headers: this.authHeaders(),
-      })
+    // NOTE: No retryOn503 — ApiClient retry is defective (retries ALL errors, not just 503)
+    return this.api
+      .get<ImagesListResponse>(`/api/v1/products/${productId}/images`)
       .pipe(
         catchError((err: HttpErrorResponse) => this.handleListError(err)),
       );
@@ -136,13 +124,16 @@ export class ImageService {
    *   Delay before each poll (ms): 1000 → 2000 → 4000 → 8000 → 16000 → 30000 (cap).
    *   Maximum 6 polls; real stop is earlier once no image has status==='pending'.
    *
-   * Implementation: recursive Observable constructor with setTimeout.
-   *   - Each poll waits `delay`, fires one HTTP GET, then either completes (no pending)
-   *     or schedules the next poll (pollIndex + 1, next delay from the schedule).
+   * Implementation: recursive Observable constructor with setTimeout (D18-class pattern).
+   *   - Each poll waits `delay`, fires one HTTP GET via ApiClient, then either completes
+   *     (no pending) or schedules the next poll (pollIndex + 1, next delay from schedule).
    *   - takeWhile equivalent: the recursive chain stops naturally when hasPending() is
    *     false OR when pollIndex reaches MAX_POLLS - 1 (hard cap).
    *   - The teardown function clears the live setTimeout handle and cancels any in-flight
    *     HTTP subscription, so unsubscribing before completion leaves no leaked handles.
+   *
+   * Retry policy: NO ApiClient retryOn503 (defective). This bounded recursive-setTimeout
+   * backoff IS the retry and resilience mechanism (D18-class, preserved exactly per spec).
    *
    * @param productId — product UUID
    */
@@ -163,10 +154,9 @@ export class ImageService {
         let httpSub: { unsubscribe(): void } | undefined;
 
         timerHandle = setTimeout(() => {
-          httpSub = this.http
-            .get<ImagesListResponse>(`/api/v1/products/${productId}/images`, {
-              headers: this.authHeaders(),
-            })
+          // NOTE: No retryOn503 — D18 bounded backoff is the resilience mechanism
+          httpSub = this.api
+            .get<ImagesListResponse>(`/api/v1/products/${productId}/images`)
             .pipe(catchError((err: HttpErrorResponse) => this.handleListError(err)))
             .subscribe({
               next: (response) => {
