@@ -4,6 +4,25 @@
 **Last update:** 2026-06-12 (**FINAL DEV REDEPLOY @ develop tip `80cda29` (#177) — VERIFIED via hands-free CI lane. DEV-COMPLETE: yes for the deployable V1 dev surface (api+worker).** Prior: Gate-4 RED inter-lead → backend (since RESOLVED — develop runs GREEN through Gate-4 by ~11:50Z); GEMINI_API_KEY_CI SET + founder-verified DONE. ₹0/mo.)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
 
+## UPDATE — 2026-06-12 — mesell-ms-export-infra-session-1 — Sub-Plan A INFRA GATE on PR #190 (APPROVE + in-gate fix)
+
+=== STEP: merge-gate review of PR #190 (feature/microservices-export/infra → /integration) ===
+Phase: INFRASTRUCTURE_PLAYBOOK.md §15 ([MANDATORY GATE] dry-run, offline branch when cluster unreachable) + §10 (secret discipline). Merge-gate criteria per `.github/PULL_REQUEST_TEMPLATE/infra.md` + board Acceptance gate.
+Session: mesell-ms-export-infra-session-1
+Reviewed tip: aafcc30 (at open) → **234e4d2** (after in-gate fix).
+
+**VERDICT: APPROVE.** PR comment https://github.com/Mugunthan93/mesell/pull/190#issuecomment-4693636063
+
+- I1–I8 verified IN THE DIFF at handoff-specified values (sizing 50m/128Mi + 200m/512Mi; ClusterIP 8001; 2 Traefik paths with exact `[^/]+/export-xlsx$` regex + `/api/v1/exports` prefix; `/internal/*` absent; schema-role.sql `GRANT INSERT ON public.audit_events TO export_user`; secrets.yaml.example NO AI/SMS/payment vars; TF `max_connections=200` minimal additive, prevent_destroy intact). Field-assertion pass ALL PASS.
+- Dev-namespace-only; secret scan on diff CLEAN (REPLACE-ME placeholders only); file-list scoped (12 files in-lane).
+- **§5 ADVERSARIAL CHECK vs landed backend tree (e23080c)** — 3 would-not-run defects found + FIXED in `234e4d2` (Dockerfile + deployment only, backend sole-writer files untouched): (1) gunicorn missing from landed requirements.txt → `pip install gunicorn==22.0.0` in image; (2) worker `-A app.workers.celery_app`→`app.celery_app` (no app/workers/ pkg); (3) worker `-Q celery`→`-Q svc-export` (landed `task_default_queue="svc-export"`). `app.main:app` confirmed.
+- Server-dry-run + dev smoke DEFERRED to deploy time (cluster unreachable; default ctx 34.180.58.185 dead, real VM 35.234.223.66 firewall-scoped) — playbook §15 F3 branch, honestly documented; NOT a Sub-Plan-A blocker (dev, zero-traffic).
+- D3: 250m CPU fits e2-standard-2, no D3 ask, ₹0/mo.
+- **Deploy-time bootstrap (founder):** create SM container `dev-export-db-password` (export_user Postgres pw) — used in I5 ALTER ROLE + I7 DATABASE_URL. Per-service DB pw, not a new IAM grant (within §4 ceiling).
+Validation: APPROVE. Squash executed by the session window after verdict (NOT this lane). Board row → IN REVIEW.
+
+---
+
 ## UPDATE — 2026-06-12 — mesell-ms-export-infra-session-1 — Sub-Plan A (export extraction) INFRA lane I1–I8
 
 === STEP: author + offline-validate the svc-export infra surfaces (Sub-Plan A, first microservices extraction) ===
