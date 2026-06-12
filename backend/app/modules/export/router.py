@@ -60,7 +60,7 @@ import logging
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import CurrentUser, get_current_user
@@ -72,6 +72,7 @@ from app.modules.export.schemas import (
     ExportRequest,
     ExportResponse,
 )
+from app.shared.config import settings
 from app.shared.database import get_db
 
 logger = logging.getLogger(__name__)
@@ -115,12 +116,19 @@ async def initiate_export(
     * 400 — invalid format (Pydantic ``extra="forbid"`` + Literal catches
       non-enumerated format values before this handler runs).
     * 401 — JWT missing or invalid (handled by §4.A auth middleware).
-    * 404 — product does not exist OR cross-tenant
+    * 404 — feature flag disabled OR product does not exist OR cross-tenant
       (``catalog.product.not_found`` from ``assert_product_ownership``).
     * 422 — product ``status != 'ready'``
       (``export.product_not_ready``) or front image missing when
       ``format='xlsx_with_images'`` (``export.front_image_missing``).
     """
+    # ── Feature flag guard (§3.2 / D2) ───────────────────────────────────
+    if not settings.FEATURE_XLSX_EXPORT_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="XLSX export is disabled in this environment",
+        )
+
     return await export_service.initiate_export(
         user_id=user.user_id,
         product_id=product_id,
