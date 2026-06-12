@@ -63,6 +63,40 @@ Sequential: iam → customer → category → catalog DONE. Parallel-eligible fr
 
 ## Updates Log
 
+=== UPDATE: 2026-06-12 — Gate-4 cross-loop contamination fix (Rule 7 STEP 2) ===
+Phase: CI Gate-4 integration test regression — cross-loop Future contamination
+Session: mesell-gate4-loop-contamination-session-1
+Done:
+- tests/integration/conftest.py: rewrote iam_client fixture — added get_db override (NullPool
+  NullPool engine, SAVEPOINT per-test isolation), get_valkey_otp override, audit_mw.AsyncSessionLocal
+  patch, shared.valkey._cache_client patch, explicit lifespan-state db_engine.dispose() +
+  valkey.aclose() after lifespan exit to drain pool callbacks. Mirrors customer_client pattern.
+- tests/test_shared_database.py: rewrote test_get_db_yields_async_session to patch AsyncSessionLocal
+  to a per-test NullPool session-maker for the test duration, eliminating the cross-loop Future
+  error from using the app-global session-loop-bound AsyncSessionLocal in a function-scoped test.
+- tests/test_customer_routes.py: added explicit lifespan-state engine dispose + valkey close after
+  lifespan context exits (inside the async context while function loop is still alive), draining
+  pending asyncpg pool callbacks before loop teardown.
+- tests/modules/export/test_router.py: same lifespan teardown hygiene for both export_client
+  and unauth_client fixtures.
+- docs/status/STATUS_BACKEND.md: this block appended.
+- PR fix/gate4-loop-contamination → develop opened. NOT merged — awaiting STEP 3 coordinator review.
+BEFORE (develop @ 2d9b8af run 27391715982): 6 failed, 162 passed, 16 skipped, 13 errors.
+AFTER target: 0 failed, 0 errors, ≥181 passed, ~16 skipped — to be confirmed by CI.
+Note: 4 pre-existing unit failures on baseline (test_price_calc_returns_404_when_flag_disabled,
+test_dashboard_flag_off_404_body_is_json, 2 test_catalog_routes unit failures) confirmed
+pre-existing on origin/develop before our changes — NOT regressions from this pass.
+Root cause: integration tests driving real FastAPI app through BaseHTTPMiddleware resolved
+Depends(get_db) against app-global session-loop engine while running on function-scoped loop.
+Fix surface: test harness only. app/, pytest.ini, alembic/, ci.yml, LOCKED conftest blocks untouched.
+In progress: none — fix implemented, PR open.
+Blockers: dev SSH tunnel to postgres not available locally — CI Gate-4 run is the acceptance
+confirmation (acceptance bar per spec: 0 failed / 0 errors on -m integration).
+Next: STEP 3 — meesell-backend-coordinator reviews PR, merge-gate check: diff confined to §4 fence,
+before/after evidence, all 13 checks green.
+Hand-offs: PR fix/gate4-loop-contamination ready for coordinator STEP 3 merge-gate review.
+=========
+
 === UPDATE: 2026-06-12 11:00 — flag-parity sweep STEP 1 (audit + SPEC) ===
 Phase: V1 backend feature-flag parity — comprehensive close-out sweep
 Session: mesell-flag-parity-sweep-session-1 (HYBRID STEP 1; no feature code, no dispatch)
@@ -4945,4 +4979,69 @@ Next: master session closes PR #156 (REJECT) + PR #154 (SPEC, superseded). Queue
 reload-pollution latent debt, api-routes-builder, low pri).
 Hand-offs: meesell-api-routes-builder — CHORE-B optional hardening. meesell-infra-builder — PR #145
 Gate-1-RED inter-lead request resolvable (PR #150 landed the fix).
+=========
+
+=== UPDATE: 2026-06-12 — Gate-4 repair loop 1 (PR #159) ===
+Phase: CI Gate-4 integration tests — repair loop 1 of 2
+Session: mesell-gate4-loop-backend-session-1 on fix/gate4-loop-contamination (PR #159)
+Commit: 0059272
+
+Done:
+- D1: removed SAVEPOINT isolation from iam_client (integration/conftest.py).
+  Root cause: split-engine eligibility+onboarding tests create user via iam_client
+  then read it back via a SEPARATE engine on os.environ["DATABASE_URL"]. SAVEPOINT kept
+  the user row uncommitted → ForeignKeyViolationError x4-5 on the second engine.
+  Fix: function-loop NullPool engine + commit-for-real; _cleanup_users_by_phone_prefix
+  handles teardown. Cross-loop error fixed by NullPool alone; no SAVEPOINT needed.
+
+- D2: patched _valkey_module._otp_client at module level in all three fixtures
+  (iam_client, customer_client, export_client). Root cause: rate_limit_mw._check_window
+  calls await get_valkey_otp() as a plain function — NOT through FastAPI DI — so
+  dependency_overrides[get_valkey_otp] had no effect on it. When test N's function loop
+  closes, the stale _otp_client StreamWriter.transport._loop is the closed loop; test
+  N+1 fixture setup triggers a pipeline call → loop.call_soon() on closed loop →
+  RuntimeError: Event loop is closed (all 13 teardown errors). Fix: replace _otp_client
+  singleton with a fresh function-loop-bound client at fixture start; restore in teardown.
+  Same pattern as _cache_client already used.
+
+- D3: updated stale assertion in test_integration.py test_full_lifecycle (L80).
+  Verification: G7 FOUNDER RULING 2026-06-11 (ai-autofill D1) confirmed in
+  docs/plans/features/ai-autofill/FEATURE_PLAN.md + feature_board_backend.md + service.py
+  lines 669-691. App is CORRECT (applied always False, writes only ai_suggestions_jsonb).
+  Test was STALE (asserted `is True`). Updated to assert False with BE-CATALOG-G7-AUTOAPPLY-1
+  citation. This is H2 (honest stale-test fix) — not assertion-weakening.
+
+Tests: CI run 27394254213 queued (awaiting results)
+Blockers: none
+Next: CI results confirm zero failed / zero errors; coordinator runs re-gate
+Hand-offs: meesell-backend-coordinator — re-gate PR #159 when CI run 27394254213 completes
+=========
+
+=== UPDATE: 2026-06-12 — Gate-4 repair loop 1 COMPLETE — CI GREEN ===
+Phase: CI Gate-4 integration tests — repair loop 1 of 2 COMPLETE
+Session: mesell-gate4-loop-backend-session-1 on fix/gate4-loop-contamination (PR #159)
+CI Run: 27394517680 (completed SUCCESS — all 13 checks PASS)
+Commits: 0059272 (repair-1a), b9d1557 (repair-1b)
+
+Gate-4 counts (run 27394517680):
+  Gate-1 unit:       638 passed, 282 deselected — PASS
+  Gate-2 smoke:      26 passed, 894 deselected — PASS
+  Gate-3 lint:       10 contracts — PASS
+  Gate-4 integration: 180 passed, 17 skipped, 0 failed, 0 errors, 3 warnings — PASS
+  Gate-5 golden:     18 passed, 902 deselected — PASS
+
+D1 RESOLVED: iam_client SAVEPOINT removed → commit-for-real; split-engine FK violations gone.
+D2 RESOLVED: _otp_client patched in all 4 fixtures (iam_client, customer_client, export_client,
+             unauth_client) → 13 Event-loop-closed errors gone.
+D3 RESOLVED: test_full_lifecycle G7 stale assertions fixed (2 updates):
+             applied=False (G7 D1); manually accept autofill before status=ready (G7 consequence).
+             BE-CATALOG-G7-AUTOAPPLY-1 cited in test comments.
+
+The 3 warnings are PytestUnraisableExceptionWarning from test_iam_refresh_validation.py
+(pre-existing; not new). Exit code 0.
+
+Done: REPAIR LOOP 1 OF 2 COMPLETE.
+Blockers: none.
+Next: coordinator runs re-gate on PR #159 (merge-gate STEP 3).
+Hand-offs: meesell-backend-coordinator — re-gate PR #159; CI run 27394517680 is GREEN.
 =========

@@ -322,3 +322,636 @@ the dev tunnel + seeded categories DB is available.
 | §13 path NO repository pattern | reference | dashboard subtree has 5 source files: __init__, router, service, schemas, domain (empty), exceptions. NO repository.py — structural §13.D + §3.C deviation locked since 2026-06-05. §19 CI linter must allowlist dashboard as documented exception to per-module subtree completeness check |
 | §13 i18n key already registered (Wave 1 §5A) | reference | "validation.dashboard.invalid_pagination" already in app/i18n/messages_en.py from §5A.I pre-commitment; no new key added by §13 construction. InvalidPaginationError defined in dashboard/exceptions.py for parity with §13.G surface even though Pydantic Field constraints catch all V1 cases before raising |
 
+
+## Per-feature memory > smart-picker
+
+- [feature_smart_picker_route-flag-guard.md](feature_smart_picker_route-flag-guard.md) — 2026-06-11: FEATURE_SMART_PICKER_ENABLED flag added to config.py; guard in router.py suggest_categories; §9.E/§9.G conformance verified (no drift); 5 smoke tests PASS; commit 6a107ca on feature/smart-picker/backend
+
+---
+
+## Session: 2026-06-11 — CI Gate-1 pytest-collection fix
+
+### Task summary
+Executed spec_ci_gate1_fix.md STEP 2 of 3. Added `pythonpath = .` to `backend/pytest.ini` to fix `ModuleNotFoundError: No module named 'app'` at pytest collection in CI Gate 1.
+
+### Root cause (precise)
+CI runs `pytest -m "unit" -v` (not `python -m pytest`). The direct `pytest` invocation does NOT add CWD to sys.path. `python -m pytest` would add CWD via the `-m` module mechanism. Since there is no `tests/__init__.py` and no `tests/modules/__init__.py`, importmode=prepend inserts `tests/` or `tests/modules/` (not `backend/`), and `app/` is unreachable. Fix: `pythonpath = .` in pytest>=7.0 prepends rootdir (= backend/) before any collection.
+
+### Key distinction to remember
+- `pytest` script directly: CWD NOT on sys.path
+- `python -m pytest`: CWD IS on sys.path (Python -m adds it)
+- CI uses the former; local venv users often run the latter — explains why CI failed but local seemed ok
+
+### BEFORE/AFTER reproducibility
+BEFORE: Use a throwaway venv (no .pth for the project), install deps, run `pytest` directly from backend/. Gets exit code 4 + `ModuleNotFoundError: No module named 'app'` at conftest.py:37.
+AFTER: Same command → `FATAL: required env var(s) empty or unset` (app config validation, not collection error). Exit code 1 (app's own guard). `No module named 'app'` gone.
+
+### Worktree pattern
+Branch: `fix/ci-gate1-pytest-collection` at `/tmp/mesell-wt/ci-gate1-fix`
+PR: #74, base: develop. Not merged — STEP 3 is coordinator.
+
+### Files touched
+- `backend/pytest.ini` (MODIFIED — 7 lines added after addopts: comment + `pythonpath = .`)
+- `docs/status/STATUS_BACKEND.md` (MODIFIED — UPDATE block appended)
+
+### Memory entry index (new entries)
+| Entry | Type | Summary |
+|---|---|---|
+| CI Gate-1 fix 2026-06-11 | project | pythonpath=. in pytest.ini; PR #74 open for coordinator STEP 3 |
+| pytest direct vs python -m | reference | Direct pytest does NOT add CWD to sys.path; python -m pytest does. CI uses direct. |
+| pythonpath ini key | reference | pytest>=7.0 feature; additive to §19.D-locked config; no founder flag needed per coordinator ruling |
+
+---
+
+## Session: 2026-06-11 — catalog-form backend slice G4 + G6 (HYBRID STEP 2b)
+
+### Task summary
+Authored the `/autofill` 404 flag guard (G4) and two test files (G6 routes-builder half):
+`backend/tests/unit/test_catalog_routes.py` (7 tests) + `backend/tests/integration/test_ai_autofill_integration.py` (5 tests).
+
+### G4 guard implementation (locked pattern)
+
+File: `backend/app/modules/catalog/router.py`
+
+New imports added:
+```python
+from fastapi import APIRouter, Depends, Header, HTTPException, status
+from app.shared.config import settings
+```
+
+Guard inside `autofill_product` handler (first statement, after FastAPI resolves auth dep):
+```python
+if not settings.FEATURE_AI_AUTOFILL_ENABLED:
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="AI Auto-fill is disabled in this environment",
+    )
+```
+
+This EXACTLY matches the smart-picker pattern in `category/router.py:117` (canonical guard for all feature-flagged routes in MeeSell V1).
+
+### Guard pattern rule (locked)
+- Import `settings` at module level (`from app.shared.config import settings`).
+- Read `settings.FEATURE_XXX` inside the handler body (not as a default argument or module-level constant).
+- This makes the guard monkeypatch-friendly: `monkeypatch.setattr(_config_module.settings, "FEATURE_XXX", False)` works per-request because the attribute read happens at call time, not at import time.
+- Pattern reference: `app/modules/category/router.py:68` (import) + `:117` (guard).
+
+### Unit route test pattern (G6 novelty)
+
+The `/autofill 404 when disabled` test requires auth to succeed (otherwise auth rejects first and you get 401 instead of 404). Pattern:
+```python
+from app.core.auth import CurrentUser, get_current_user
+fake_user = CurrentUser(user_id=uuid4(), plan="free")  # CurrentUser has ONLY user_id + plan (not phone)
+
+async def _fake_auth():
+    return fake_user
+
+_production_app.dependency_overrides[get_current_user] = _fake_auth
+# ... test ...
+_production_app.dependency_overrides.pop(get_current_user, None)  # ALWAYS restore in finally
+```
+
+For the "flag=True → service enters → assert not 404" test, also override `get_db` to prevent DB hit, and monkeypatch the first service method (e.g. `assert_product_ownership`) to raise a known non-404 exception (e.g. 403) so you can distinguish "flag guard 404" from "service 404":
+```python
+from app.shared.database import get_db
+
+async def _fake_db():
+    yield AsyncMock()
+
+_production_app.dependency_overrides[get_db] = _fake_db
+```
+
+### CurrentUser shape (CRITICAL)
+`CurrentUser` is a frozen dataclass with ONLY 2 fields:
+```python
+@dataclass(frozen=True)
+class CurrentUser:
+    user_id: UUID
+    plan: Literal["free"]
+```
+NO `phone` field. Discovered during test run — TypeError otherwise.
+
+### Integration test seed gotchas (CRITICAL — VARCHAR limits)
+When seeding `templates` + `categories` in integration tests:
+- `templates.parser_version`: `VARCHAR(8)` — use <= 8 chars (e.g. `"af1.0"`, NOT `"autofill-integ-1.0"`)
+- `categories.meesho_leaf_id`: `VARCHAR(16)` — use <= 16 chars (e.g. `"AF-INTEG-001"`, NOT `"AUTOFILL-INTEG-001"`)
+- `categories.super_id`: `VARCHAR(8)` — use <= 8 chars (e.g. `"99"`)
+- `categories.super_name`: `VARCHAR(64)` — fine for typical test names
+- `templates.schema_hash`: `String(64)` — fine for typical test hashes
+- `categories.path`: `Text` — no limit
+- `categories.leaf_name`: `String(255)` — fine
+
+Ref: see dashboard integration test `test_dashboard_list_flow.py` pattern (uses `parser_version="dash1.0"`).
+
+### Integration test mock boundary (ai-autofill)
+Mock at `catalog_service.ai_client.call_gemini` (the module-qualified reference inside the catalog service). Also stub `catalog_service.enforce_plan_limit` if running without a live Valkey:
+```python
+async def _fake_call_gemini(ctx, prompt_id, *, prompt_vars, allowed_enums):
+    return SimpleNamespace(parsed={"fields": {"fabric": "Cotton"}, "fallback_offered": False})
+
+monkeypatch.setattr(catalog_service.ai_client, "call_gemini", _fake_call_gemini)
+
+async def _noop_plan_guard(*args, **kwargs):
+    return None
+
+monkeypatch.setattr(catalog_service, "enforce_plan_limit", _noop_plan_guard)
+```
+
+### Test results
+- Unit tests/unit: 37/37 PASS (30 pre-existing from services-builder + 7 new route tests)
+- Integration test_ai_autofill_integration.py: 5/5 PASS (substrate available on laptop)
+- Ruff: all clean, line-length 100
+
+### Files touched
+- `backend/app/modules/catalog/router.py` (MODIFIED — G4 flag guard + 2 imports)
+- `backend/tests/unit/test_catalog_routes.py` (CREATED — 7 unit tests)
+- `backend/tests/integration/test_ai_autofill_integration.py` (CREATED — 5 integration tests)
+- `docs/status/STATUS_BACKEND.md` (MODIFIED — UPDATE block appended)
+
+### Git commits (on feature/catalog-form/backend)
+- 2678040 feat(catalog): /autofill 404 flag guard — catalog-form backend slice G4
+- 79ae93d test(catalog): route + autofill integration tests — catalog-form backend slice G6
+- Pushed to origin/feature/catalog-form/backend
+
+### Memory entry index (new entries)
+| Entry | Type | Summary |
+|---|---|---|
+| catalog-form G4 flag guard 2026-06-11 | project | /autofill 404 guard added; router.py:~218; matches smart-picker pattern; settings read at request-time |
+| Feature flag guard pattern (locked) | reference | `if not settings.FEATURE_XXX: raise HTTPException(404)`; import settings at module level; read inside handler body — NOT as default arg |
+| CurrentUser shape (locked) | reference | Frozen dataclass: ONLY user_id + plan — no phone field |
+| Route test auth-bypass pattern | reference | dependency_overrides[get_current_user] = lambda: fake_user; always pop in finally |
+| Integration seed VARCHAR limits | reference | parser_version VARCHAR(8); meesho_leaf_id VARCHAR(16); super_id VARCHAR(8) — use short strings |
+| Integration mock boundary (ai) | reference | monkeypatch catalog_service.ai_client.call_gemini + catalog_service.enforce_plan_limit |
+
+---
+
+## Session: 2026-06-11 — image-precheck backend slice G1/G2
+
+### Task summary
+Added FEATURE_IMAGE_PRECHECK_ENABLED flag (G1) and router gates (G2) for the
+image precheck feature. The image module was already fully built on develop;
+this session adds the 2 missing feature-flag surfaces only.
+
+### G1 config addition (config.py)
+Added to `backend/app/shared/config.py` adjacent to FEATURE_SMART_PICKER_ENABLED:
+```python
+FEATURE_IMAGE_PRECHECK_ENABLED: bool = True
+```
+Same dev-true/staging-false comment posture; references FEATURE_PLAN.md D2 + 3 staging gates.
+
+### G2 POST guard (router.py upload_image handler)
+```python
+if not settings.FEATURE_IMAGE_PRECHECK_ENABLED:
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Image upload is disabled in this environment",
+    )
+```
+Placed at TOP of handler, BEFORE idx validation and BEFORE service call.
+
+### G2 GET guard (router.py list_images handler)
+```python
+if not settings.FEATURE_IMAGE_PRECHECK_ENABLED:
+    return ImagesListResponse(images=[])
+```
+Placed at TOP of handler, BEFORE service call. Returns 200 + empty list (NOT 404) —
+read-only endpoint; sellers may have legacy images. Per D2: do NOT 404 the GET.
+
+### ImageSummary required fields gotcha
+`signed_url: str` and `created_at: datetime` are NON-OPTIONAL in the as-built schema.
+When constructing sentinel ImageSummary in tests: must provide a real string URL and
+a real datetime (timezone-aware). Cannot pass None.
+
+### Flag gate test pattern (image-specific)
+- stub auth via `dependency_overrides[get_current_user] = _stub_get_current_user`
+- patch at `app.modules.image.router.settings` (module-qualified, not `app.shared.config.settings`)
+- POST uses multipart: `files={"file": ...}, data={"idx": "1"}`
+- GET uses stub service return to distinguish "flag guard empty" from "service empty"
+- Env vars required for FATAL check: all 13 REQUIRED_FIELDS must be set (use test-sentinel values)
+
+### Files touched
+- `backend/app/shared/config.py` (MODIFIED — G1 flag)
+- `backend/app/modules/image/router.py` (MODIFIED — G2 POST + GET guards + imports)
+- `backend/tests/modules/image/test_flag_gate.py` (NEW — 4 tests)
+
+### Test results
+- 4/4 new flag-gate tests PASS
+- 11/11 tests/modules/image/ standalone (4 new + 7 pre-existing) PASS
+- Ruff: clean
+- Commits: 4444dce (feat) + de96aca (test) on feature/image-precheck/backend, pushed
+
+### Memory entry index (new entries)
+| Entry | Type | Summary |
+|---|---|---|
+| image-precheck G1/G2 2026-06-11 | project | flag + router gates + 4 tests PASS; 2 commits pushed |
+| ImageSummary non-optional fields | reference | signed_url:str and created_at:datetime are required (no None) |
+| Flag gate test env setup | reference | All 13 REQUIRED_FIELDS must be set (even test-sentinel) for config to pass |
+| GET-when-flag-OFF = 200+empty NOT 404 | reference | D2 contract: list endpoint is read-only; sellers may have legacy images |
+
+---
+
+## Features in flight
+
+| Feature slug | Status | Last entry | Files |
+|---|---|---|---|
+| image-precheck | COMPLETE (HYBRID STEP 2) | 2026-06-11 | feature_image_precheck_session_1_handoff.md |
+| catalog-form | COMPLETE (MERGED) | 2026-06-11 | (merged to develop) |
+| smart-picker | COMPLETE (MERGED) | 2026-06-11 | feature_smart_picker_route-flag-guard.md |
+
+---
+
+## Session: 2026-06-12 — xlsx-export backend slice G1/G2/G3
+
+### Task summary
+Added FEATURE_XLSX_EXPORT_ENABLED flag (G1), POST gate in export router (G2), and
+flag-404 integration test (G3) for V1 Feature 9 (XLSX Export).
+
+### G1 config addition (config.py:184+)
+Added to `backend/app/shared/config.py` after FEATURE_SMART_PICKER_ENABLED:
+```python
+FEATURE_XLSX_EXPORT_ENABLED: bool = True
+```
+D2 staging-gate note: dev True / staging False until 15 golden fixtures x3 consecutive
+runs + manual Meesho supplier-panel upload accepted.
+
+### G2 POST gate (export/router.py initiate_export handler)
+```python
+if not settings.FEATURE_XLSX_EXPORT_ENABLED:
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="XLSX export is disabled in this environment",
+    )
+```
+Placed at TOP of handler, BEFORE export_service call.
+R1 RULING: GET /exports/{id} is NOT gated — in-flight export polls must keep working.
+Imports added: `HTTPException` from fastapi + `settings` from app.shared.config.
+
+### G3 flag-404 test pattern (export-specific)
+- Fixture: `stub_export_client` — overrides get_current_user only; no DB/Valkey.
+- Patch surface: `app.modules.export.router.settings` (NOT `app.shared.config.settings`).
+- Test 4 (R1 verification): asserts GET /exports/{id} body.detail != guard string even
+  when flag=False — confirms guard is absent from GET handler.
+- 4/4 PASS standalone; 1 harmless ResourceWarning (unawaited coroutine in teardown
+  path for `get_valkey_otp` — same class as other flag-gate tests; not our code).
+
+### R1 ruling pattern (POST-only flag gate)
+When FEATURE_PLAN D2 says "POST 404 when disabled; GET stays UNGATED":
+- Add guard ONLY to the POST handler.
+- Do NOT add guard to the GET handler.
+- Add a test (test 4) that explicitly verifies the GET is NOT blocked.
+This pattern is now locked for any future export-class feature with inflight-poll GET.
+
+### Existing export test status (pre-existing infra-gated)
+39/46 collected tests PASS standalone. 7 errors in test_router.py are ALL
+OSError port 5433 (dev-tunnel absent) — pre-existing infra-gated condition,
+not regressions from G1/G2. Gate-5 golden runner collects 18 tests cleanly.
+
+### Files touched
+- `backend/app/shared/config.py` (MODIFIED — G1 flag)
+- `backend/app/modules/export/router.py` (MODIFIED — G2 imports + POST guard)
+- `backend/tests/integration/test_export_flag_404.py` (NEW — G3, 4 tests)
+- `docs/status/STATUS_BACKEND.md` (MODIFIED — UPDATE block appended)
+
+### Git commits (on feature/xlsx-export/backend)
+- 9a10a25 feat(export): FEATURE_XLSX_EXPORT_ENABLED flag + POST gate — xlsx-export backend slice G1/G2
+- afdcaff test(export): flag-404 test — G3
+- Pushed to origin/feature/xlsx-export/backend
+
+### Memory entry index (new entries)
+| Entry | Type | Summary |
+|---|---|---|
+| xlsx-export G1/G2/G3 2026-06-12 | project | flag + POST gate + 4 tests PASS; 2 commits pushed |
+| R1 POST-only gate pattern | reference | GET poll endpoint NOT gated; test 4 verifies absence |
+| Export flag-404 test 4 (R1) | reference | assert body.detail != guard-string on GET when flag=False |
+
+### Gate outcome (coordinator STEP 3 — 2026-06-12)
+- Coordinator merge-gate: PASS. PR #139 OPEN (feature/xlsx-export → develop, founder gate).
+- Squash SHA: d885daf on feature/xlsx-export. Sub-ref feature/xlsx-export/backend DELETED (204).
+- All 3 gaps adjudicated PASS: G1 config, G2 POST guard, G3 4/4 test.
+- Infra inter-lead request OPEN: meesell-infra-builder to wire FEATURE_XLSX_EXPORT_ENABLED into ConfigMaps.
+- Founder queue: merge PR #139; R2 FYI (runner name drift, no action); PR #115 still pending.
+
+---
+
+## Session: 2026-06-12 — flag-parity sweep G1/G2/G3 (chore/flag-parity)
+
+### Task summary
+Wired 3 missing V1 feature flags + in-handler route guards + flag-404 tests.
+Branch: chore/flag-parity (worktree /tmp/mesell-wt/flag-parity).
+9 tests across 3 files — all PASS. 2 commits pushed.
+
+### G1 price-calculator (pricing/router.py)
+Added `FEATURE_PRICE_CALCULATOR_ENABLED: bool = True` to config.py §3.2 after FEATURE_AI_AUTOFILL_ENABLED.
+Added `HTTPException, status` + `settings` imports to pricing/router.py (were absent).
+In-handler guard BEFORE service call:
+```python
+if not settings.FEATURE_PRICE_CALCULATOR_ENABLED:
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Price Calculator is disabled in this environment",
+    )
+```
+Test file: tests/modules/pricing/test_feature_flag.py (3 tests, @unit marker).
+Patch surface: `app.modules.pricing.router.settings`.
+
+### G2 dashboard (dashboard/router.py)
+Added `FEATURE_TRACKING_DASHBOARD_ENABLED: bool = True` to config.py §3.2.
+Added `HTTPException, status` + `settings` imports to dashboard/router.py.
+In-handler guard BEFORE service call. R1 RULING: GET/read endpoint gets 404 — the read IS the feature
+(D3 kill-switch). Guard comment explains this divergence from "writes only get 404" convention.
+Test file: tests/modules/dashboard/test_feature_flag.py (3 tests, @unit marker).
+Patch surface: `app.modules.dashboard.router.settings`.
+
+### G3 live-preview (catalog/router.py)
+Added `FEATURE_LIVE_PREVIEW_ENABLED: bool = False` to config.py §3.2.
+DEFAULT FALSE — the ONLY V1 flag that ships default-False; all others default True.
+
+CRITICAL JUDGMENT CALL: HTTPException does NOT carry a custom `code` field.
+The _http_exception_handler in core/errors.py always sets `code = f"http.{exc.status_code}"`.
+To emit the spec-required `{"code": "feature.live_preview.disabled"}`, must use MeesellError directly.
+MeesellError.__init__ accepts `code: str | None` as a per-instance override.
+Pattern used:
+```python
+from app.core.errors import MeesellError
+# ...
+if not settings.FEATURE_LIVE_PREVIEW_ENABLED:
+    raise MeesellError(
+        code="feature.live_preview.disabled",
+        status_code=404,
+        detail="Preview unavailable",
+    )
+```
+This goes through _meesell_error_handler which emits the §4.F envelope with `code = "feature.live_preview.disabled"`.
+R3 RULING HONORED: no new core/feature_flags.py; MeesellError is the codebase's existing coded-error mechanism.
+
+Test file: tests/integration/test_live_preview_flag_404.py (3 tests; no @unit marker — placed in integration/).
+R4: test_preview_returns_404_with_default_flag does NOT patch the flag — default IS False, so 404 is the default.
+The `code` field is verified explicitly: `assert body.get("code") == "feature.live_preview.disabled"`.
+
+### HTTPException vs MeesellError for coded errors — decision table (LOCKED PATTERN)
+| Need | Use |
+|---|---|
+| Simple 404 flag guard (no custom code) | HTTPException(status_code=404, detail="...") |
+| Coded 404 flag guard (custom code field) | MeesellError(code="...", status_code=404, detail="...") |
+The _http_exception_handler hardcodes `code = "http.{status_code}"`. Only MeesellError escapes this.
+
+### Config comment style (locked for §3.2 flag block)
+```
+# FEATURE_XYZ_ENABLED: dev default True/False; staging default False
+# (staging gate conditions from FEATURE_PLAN.md Decision D2 or D3).
+# Route path returns 404 when False per Master Plan §3.2 backend protocol.
+# Note if default False: DEFAULT FALSE — the only / one of few V1 flags that ships default-False.
+FEATURE_XYZ_ENABLED: bool = True/False
+```
+
+### Pre-existing reds observed
+None encountered in isolation runs. (Gate-1 unit RED on develop tip is pre-existing per D-2 note
+in audit memo — not caused by this sweep.)
+
+### Commits
+- a61c864 feat(flags): price-calc + dashboard + live-preview flags + guards — flag-parity G1/G2/G3
+- 41b654d test(flags): flag-404 tests x3 — flag-parity G1/G2/G3
+- Pushed to origin/chore/flag-parity
+
+### Memory entry index (new entries)
+| Entry | Type | Summary |
+|---|---|---|
+| flag-parity sweep 2026-06-12 | project | G1/G2/G3: 3 flags + 3 guards + 9 tests; 2 commits pushed on chore/flag-parity |
+| HTTPException vs MeesellError for coded errors | reference | Use MeesellError when spec requires custom `code` field; HTTPException always emits `code="http.N"` |
+| FEATURE_LIVE_PREVIEW_ENABLED default-False | reference | ONLY V1 flag that ships default-False; test 1 verifies default WITHOUT patching the flag |
+| R1 GET-route 404 (dashboard kill-switch) | reference | dashboard list_products IS the feature — R1 mandates 404 on GET, not just writes |
+
+---
+
+## Session: 2026-06-12 — Gate-4 cross-loop contamination fix (fix/gate4-loop-contamination)
+
+### Task summary
+Fixed 6 FAILED + 13 ERROR integration tests unmasked by PR #150 (Gate-1 event-loop fix).
+Root cause: `iam_client` fixture had `loop_scope="function"` but NO `get_db` override —
+routes resolved `Depends(get_db)` against the app-global `AsyncSessionLocal`, whose asyncpg
+pool was bound to the session loop. Function-scoped tests get their own loop → `RuntimeError:
+got Future attached to a different loop`. Starlette's `BaseHTTPMiddleware` + anyio TaskGroup
+wrapped this as an ExceptionGroup that bypassed test assertions.
+
+Secondary root cause (13 ERRORs): `app.state.db_engine` (pooled, `pool_pre_ping=True`) created
+by lifespan schedules asyncpg pool callbacks via `loop.call_soon()`. These fire AFTER the
+function loop teardown → `Event loop is closed` teardown errors.
+
+### Authoritative spec
+`.claude/agent-memory/meesell-backend-coordinator/spec_ci_gate4_loop_contamination.md`
+on branch `origin/docs/gate1-resolved-gate4-spec` (locked before this session).
+
+### Files modified (test harness only — app/ untouched)
+
+**1. `backend/tests/integration/conftest.py` — PRIMARY FIX (complete rewrite)**
+- Old: 118 lines, iam_client had NO `get_db` override
+- New: ~264 lines, mirrors `customer_client` / `export_client` twin pattern
+- Key additions:
+  - `_cleanup_users_by_phone_prefix(db_url)` — accepts explicit `db_url` param; uses NullPool
+  - `iam_client` fixture: full NullPool engine + SAVEPOINT isolation + DI overrides
+  - Patches: `audit_mw.AsyncSessionLocal`, `shared.valkey._cache_client`
+  - Explicit lifespan-state disposal (see pattern below)
+  - Provision-aware schema setup: skip drop_all/create_all when `TEST_DATABASE_URL` set
+  - Phone prefix `+9155500` — non-routable Indian test numbers
+
+**2. `backend/tests/test_shared_database.py` — MODIFIED**
+- `test_get_db_yields_async_session`: patched `AsyncSessionLocal` with per-test NullPool
+  session-maker instead of using app-global session-loop-bound engine.
+- Added `create_async_engine` to SQLAlchemy import line.
+
+**3. `backend/tests/test_customer_routes.py` — MODIFIED**
+- Added lifespan-state tracking + explicit disposal after lifespan exits (inside async body).
+
+**4. `backend/tests/modules/export/test_router.py` — MODIFIED**
+- Same lifespan teardown hygiene applied to both `export_client` and `unauth_client` fixtures.
+
+### Canonical iam_client fixture pattern (LOCKED)
+
+```python
+@pytest_asyncio.fixture(loop_scope="function")
+async def iam_client():
+    import redis.asyncio as _redis_lib
+    db_url = _DEV_DATABASE_URL
+    valkey_base = _valkey_base()
+
+    # 1. NullPool engine (no Future binding)
+    engine = create_async_engine(db_url, poolclass=NullPool, echo=False)
+    _provisioned = bool(os.environ.get("TEST_DATABASE_URL"))
+    if not _provisioned:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
+
+    # 2. SAVEPOINT per-test isolation
+    shared_conn = await engine.connect()
+    outer_txn = await shared_conn.begin()
+    TestSession = async_sessionmaker(
+        bind=shared_conn, expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
+    )
+
+    # 3. FastAPI DI overrides
+    app.dependency_overrides[get_valkey_otp] = _otp_override
+    app.dependency_overrides[get_db] = _db_override
+
+    # 4. Module-level singleton patches
+    _audit_mw.AsyncSessionLocal = TestSession
+    _valkey_module._cache_client = _redis_lib.from_url(f"{valkey_base}/3", ...)
+
+    # 5. Pre-test cleanup (NullPool engine)
+    await _cleanup_users_by_phone_prefix(db_url)
+
+    # 6. Boot lifespan + yield + teardown
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+        async with app.router.lifespan_context(app):
+            lifespan_db_engine = getattr(app.state, "db_engine", None)
+            lifespan_valkey_client = getattr(app.state, "valkey", None)
+            yield ac
+        # CRITICAL: explicit disposal AFTER lifespan exits, WITHIN async body
+        if lifespan_db_engine is not None:
+            try: await lifespan_db_engine.dispose()
+            except Exception: pass
+        if lifespan_valkey_client is not None:
+            try: await lifespan_valkey_client.aclose()
+            except Exception: pass
+
+    # finally: restore singletons, rollback outer_txn, dispose engine, pop overrides
+```
+
+### Double-dispose pattern (LOCKED for lifespan teardown hygiene)
+When a fixture boots a FastAPI lifespan that creates a pooled engine (`app.state.db_engine`
+with `pool_pre_ping=True`), you MUST explicitly dispose that engine AFTER the lifespan
+exits but while still inside the fixture's async body (function loop active). This drains
+pending asyncpg pool callbacks BEFORE the function loop is torn down. Without this,
+`Event loop is closed` teardown errors fire on every test.
+
+The same applies to `app.state.valkey` (async Redis client) — explicit `aclose()` needed.
+
+Pattern:
+```python
+async with app.router.lifespan_context(app):
+    lifespan_db_engine = getattr(app.state, "db_engine", None)
+    lifespan_valkey_client = getattr(app.state, "valkey", None)
+    yield ac
+# Here: lifespan has exited its own dispose calls, but callbacks still pending
+if lifespan_db_engine is not None:
+    try: await lifespan_db_engine.dispose()  # drain asyncpg pool callbacks
+    except Exception: pass
+if lifespan_valkey_client is not None:
+    try: await lifespan_valkey_client.aclose()
+    except Exception: pass
+```
+
+### Gate-1 unmasks Gate-4 lesson
+Removing a session-scope `event_loop` fixture (PR #150) correctly shifts all session-scoped
+fixtures to the session event loop. This unmasks latent cross-loop contamination in any
+fixture that did NOT override `get_db`. Lesson: every fixture that boots a FastAPI lifespan
+MUST override `get_db` with a NullPool session-maker bound to the fixture's own loop, regardless
+of whether it looks like it "works" with the session-scope fixture present.
+
+### `_valkey_base()` helper — precedence chain
+Strips trailing `/<db>` from Valkey URLs to prevent `/0/0` double-suffix.
+Precedence: `TEST_VALKEY_URL > VALKEY_URL > CORE_TEST_VALKEY_URL > redis://localhost:6379`
+Defined in `tests/conftest.py`. Import: `from tests.conftest import _DEV_DATABASE_URL, _valkey_base`
+
+### `_DEV_DATABASE_URL` — precedence chain (LOCKED)
+`TEST_DATABASE_URL > DEV_DATABASE_URL > baked K3s-dev DSN`
+Defined in `tests/conftest.py`. Required by any test module that needs a per-fixture NullPool engine.
+
+### Phone prefix convention
+Every integration test uses `+9155500XXXXX` range — non-routable Indian SIM numbers.
+Safe to DELETE-by-prefix at teardown. Hard-coded in `_INTEGRATION_PHONE_PREFIX`.
+
+### Local env note (Gate-4 session)
+Dev tunnel to postgres (port 5433) NOT available locally during this session.
+Only Valkey on port 6379 available. Integration tests require live DB → CI is the
+formal acceptance confirmation. Unit tests (634 passing) verified no regressions.
+4 pre-existing unit failures on `origin/develop` baseline CONFIRMED pre-existing
+(verified via git stash + baseline run before our changes).
+
+### Worktree + PR
+- Worktree: `/tmp/mesell-wt/gate4-fix/`
+- Branch: `fix/gate4-loop-contamination`
+- Commit SHA: `6c5941f`
+- PR: #159 → develop (OPEN, awaiting coordinator STEP 3)
+
+### Memory entry index (new entries)
+| Entry | Type | Summary |
+|---|---|---|
+| Gate-4 cross-loop fix 2026-06-12 | project | 4 test harness files fixed; PR #159 open for coordinator STEP 3 |
+| NullPool + get_db override rule | reference | Every fixture that boots FastAPI lifespan MUST override get_db with NullPool session |
+| Double-dispose lifespan teardown | reference | Explicit dispose()/aclose() after lifespan exits, while still in async body |
+| Gate-1 unmasks Gate-4 lesson | reference | Removing session event_loop fixture reveals latent cross-loop contamination |
+| _valkey_base() / _DEV_DATABASE_URL | reference | Imported from tests/conftest.py; precedence chains locked |
+| Integration phone prefix | reference | +9155500XXXXX range; non-routable; safe for DELETE-by-prefix teardown |
+
+---
+
+## Session: 2026-06-12 — Gate-4 repair loop 1 (fix/gate4-loop-contamination, PR #159)
+
+### Task summary
+Repaired 3 defects (D1/D2/D3) rejected by coordinator's STEP 3 merge-gate.
+PR #159 Gate-4 went from `5f/13e` to `180p/17s/0f/0e` (PASS). CI run 27394517680 GREEN.
+Commits: 0059272 + b9d1557 on fix/gate4-loop-contamination.
+
+### D1: SAVEPOINT on iam_client was a net regression
+Root cause: split-engine tests (`test_customer_cross_module_eligibility`,
+`test_customer_full_onboarding_flow`) create user via `iam_client` then read it back
+via a SEPARATE NullPool engine on `os.environ["DATABASE_URL"]`. With SAVEPOINT isolation
+the user row is inside an uncommitted outer transaction → invisible to the second engine
+→ ForeignKeyViolationError.
+Fix: remove SAVEPOINT from `iam_client`. Use plain commit-for-real `async_sessionmaker(engine)`.
+The function-loop NullPool engine ALONE kills the cross-loop error; SAVEPOINT not needed for
+iam_client because `_cleanup_users_by_phone_prefix` handles teardown.
+Key distinction: `customer_client` / `export_client` CAN use SAVEPOINT because they are
+self-contained (no split-engine pattern). `iam_client` MUST NOT use SAVEPOINT.
+
+### D2: _otp_client module singleton bypasses DI — must patch explicitly
+Root cause: `rate_limit_mw._check_window` calls `await get_valkey_otp()` as a plain
+function (not through FastAPI DI). `dependency_overrides[get_valkey_otp]` has ZERO effect
+on middleware. When test N's function loop closes, `_otp_client.connection._writer._transport._loop`
+is the closed loop. Test N+1 fixture setup boots a new lifespan and the rate_limit_mw pipeline
+call invokes `loop.call_soon(self._call_connection_lost, None)` on the closed loop →
+`RuntimeError: Event loop is closed`.
+Fix: patch `_valkey_module._otp_client` at module level in ALL fixtures that boot a lifespan
+and make requests (including `unauth_client`!). Same pattern as `_cache_client` patching.
+The `unauth_client` erroneously documents "does NOT require Valkey" — FALSE: rate_limit_mw
+always runs before auth rejection in the middleware chain.
+Affected fixtures: iam_client (integration/conftest.py), customer_client (test_customer_routes.py),
+export_client (modules/export/test_router.py), unauth_client (modules/export/test_router.py).
+
+### D3: G7 auto-apply test was stale at 2 assertion points
+Root cause: G7 FOUNDER RULING 2026-06-11 (ai-autofill D1) removed auto-apply from
+`autofill_product`. Service is correct (applied always False, writes only ai_suggestions_jsonb).
+Two test assertions were stale:
+1. `autofill_result.applied.get("product_name") is True` → `is False` (direct assertion)
+2. `patch_product(status="ready")` fails with ValidationFailedError (3 compulsory fields empty)
+   because G7 means autofill no longer writes to `fields_jsonb`.
+Fix: (1) change `is True` → `is False`. (2) add a PATCH step that manually accepts the
+suggested field values (simulates seller accepting autofill suggestions in UI), THEN transitions
+to `status=ready`. Both fixes cite `BE-CATALOG-G7-AUTOAPPLY-1` in comments.
+Lesson: when G7 (or any ruling) changes behavior, ALL downstream test steps that depended on
+the OLD behavior must also be updated — not just the direct assertion.
+
+### Key insight: always interrogate ALL assertions in a lifecycle test
+When a ruling removes behavior (e.g. auto-apply), a multi-step test will cascade failures:
+- Step N: assertion against the removed behavior → fixed
+- Step N+2: downstream step that was predicated on step N's OLD behavior → also broken
+Both must be fixed. Do not stop after fixing the first visible assertion.
+
+### Rate limit middleware always runs before auth rejection
+`AuthContextMiddleware` sets `request.state.user = None` — it does NOT short-circuit the
+request. The 401 is raised inside the route handler's `get_current_user` dependency, which
+runs AFTER all middleware. So `RateLimitMiddleware` always runs for every request, including
+unauthenticated ones. Any fixture that boots the lifespan and makes ANY request must patch
+`_otp_client`.
+
+### Memory entry index (new entries)
+| Entry | Type | Summary |
+|---|---|---|
+| Gate-4 repair-1 COMPLETE 2026-06-12 | project | 5 files fixed; 2 commits; CI 27394517680 GREEN 180p/17s/0f/0e |
+| SAVEPOINT vs commit-for-real | reference | iam_client MUST NOT use SAVEPOINT (split-engine); customer/export CAN. |
+| _otp_client singleton patch | reference | ALL lifespan-booting fixtures must patch _otp_client; DI override alone insufficient |
+| unauth_client also needs _otp_client patch | reference | rate_limit_mw runs before auth rejection; unauth requests hit _check_window |
+| G7 cascade lesson | reference | Ruling that removes behavior breaks ALL downstream steps predicated on it; fix all |
