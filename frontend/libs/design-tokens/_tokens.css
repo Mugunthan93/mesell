@@ -20,9 +20,13 @@
 
   /* Semantic */
   --mee-color-error:            #DC2626;
+  --mee-color-error-light:      rgba(220, 38, 38, 0.10);
   --mee-color-success:          #16A34A;
+  --mee-color-success-light:    rgba(22, 163, 74, 0.10);
   --mee-color-warning:          #D97706;
+  --mee-color-warning-light:    rgba(217, 119, 6, 0.10);
   --mee-color-info:             #2563EB;
+  --mee-color-info-light:       rgba(37, 99, 235, 0.10);
 
   /* Border */
   --mee-color-outline:          #e5eaef;
