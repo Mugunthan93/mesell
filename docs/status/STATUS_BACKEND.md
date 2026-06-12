@@ -5138,3 +5138,32 @@ Blockers: none. The lane is READY but NOT IN EXECUTION until the master session 
 Next: PR chore/ms-rekey-ruling → develop; lead-gate comment; squash --admin; ref-delete. On dev-complete declaration, the master session dispatches the export-extraction coding session (Sub-Plan A) — first step D5 pool/PgBouncer.
 Hand-offs: none new. NOTE for infra: when Sub-Plan A executes, D5 pool right-size + PgBouncer is the ₹0 first step; the D3 VM upgrade (e2-standard-4) is a fresh founder ask at the moment services outgrow the current node — do NOT pre-provision on the strength of the plan-level pre-approval.
 =========
+
+=== UPDATE: 2026-06-12 — mesell-ms-category-session-1 (Session MS-F, PHASE 1) ===
+Phase: Microservices Migration — Sub-Plan F (category-service extraction) AUTHORING
+Session: mesell-ms-category-session-1 (PHASE 1, hybrid step 1, docs-only)
+Board sweep: 1 row ADDED (microservices-category, SPEC AUTHORED — gated on MS-3, additive F2 — no other rows touched); 1 inter-lead request ADDED (infra, gated on MS-4). No rows untouched 7+ days flagged this session (active feature churn current). Existing OPEN infra inter-leads (xlsx-export flag, flag-parity 3-flag) unchanged.
+Done:
+  - SUB_PLAN_0F_category_extraction.md AUTHORED (canonical SUB_PLAN_01 shape) — STATUS: AUTHORED, EXECUTION GATED ON MS-4 WAVE OPEN.
+  - spec_msF_backend.md (executable specialist task spec: services-builder / api-routes-builder / database-builder + category-picker-builder verify + lead integration test + merge-gate checklist).
+  - handoff_msF_infra.md (infra surfaces — DO NOT EXECUTE until MS-4).
+  - As-built grounding (file:line from SOURCE): 5 MOUNTED public routes (verified main.py:120, not schema existence); 8 public service methods; category = pure CALLEE (catalog/export/pricing call it, grep-verified; ZERO outbound domain calls — authors NO outbound client shims).
+  - ai_ops VENDORING decision (D6/A1): trimmed vendored copy (client+budget_cap+cost_tracker+guardrail+prompt_registry+eval+metrics + ONLY smart_picker_v1 prompt). NO ai-ops-svc until V2.
+  - SHARED budget brake wiring identified file:line: Valkey DB 0 (get_valkey_otp) keys ai:cost:daily:{date} (cost_tracker.py:92), ai:cost:pending:{date} (budget_cap.py:124), ai:budget:reservation:{id} (budget_cap.py:125), ai:cost:user:{user}:hourly:{hr} (cost_tracker.py:93); + public.audit_events DB write (cost_tracker.py:55). Carve-out: ai:* keyspace EXEMPT from §2.E category: prefixing so ₹500 cap stays global.
+  - PRIMITIVE_VALUES zero-drift (schema_contract.py:175 — 11 primitives; ENVELOPE_KEYS:147 — 7 keys): vendored read-only (doc-in-code per schema_contract.py:8-15); seed-writer scripts/build_template_schemas.py STAYS at repo root (data-track, NOT category-svc runtime); parity + envelope conformance contract tests pin the frozensets.
+In progress: none (single-shot PHASE-1 authoring chore).
+Blockers: none blocking authoring. NOTE: MS-A spec files (spec_msA_backend.md + handoff_msA_infra.md) are ABSENT from this worktree branch AND from develop (untracked master-tree artifacts). The two frozen category shim shapes were reproduced verbatim from the Session MS-F dispatch prompt (which quotes them). See Open Questions.
+SOURCE-WINS corrections recorded (Wave-6 fabricated-enum lesson):
+  (1) Filename: dispatch + this file = SUB_PLAN_0F; MASTER_PLAN §4 row F (line 306) says SUB_PLAN_06 — 0F wins (parallel program).
+  (2) Dependency: MASTER_PLAN §4 row F lists serial "A,B,C,D,E complete"; MS-PAR-1 supersedes to "MS-3 complete (pricing+customer), parallel with MS-G iam".
+  (3) fetch_xlsx_aliases: MASTER_PLAN §2.D line 68 implies a runtime category alias call; MS-A corrected to seed-time-only; as-built confirms (no FieldAlias ORM in repository, no fetch_xlsx_aliases in service __all__) → category implements only 2 frozen shims, NOT 3.
+  (4) Envelope key count: dispatch prompt said "6-key" envelope; schema_contract.py:17-18 corrects to 7 — SOURCE wins.
+Next: PHASE 2 (EXECUTION) is GATED on MS-4 wave open. When MS-3 (pricing+customer) both founder-gate-merged AND the MS-A recipe exists, the master session dispatches the 3 specialists per spec_msF_backend.md (hybrid step 2), infra handoff to meesell-infra-builder, then lead merge-gate (step 3). No execution now.
+Hand-offs:
+  - infra (gated): handoff_msF_infra.md — DO NOT EXECUTE until MS-4. Two grants (category schema SELECT + public.audit_events INSERT), Valkey DB-3 cache pre-warm, ai:* keyspace carve-out, JWT_SECRET shared with iam-svc.
+  - frontend (queued, notification-only): a handoff_contract_category_primitive.md will notify the FE lead at execution that the schema-serving surface moved to category-svc but the §5A.B envelope + PRIMITIVE_VALUES are byte-identical (zero FE work) — NOT authored this PHASE-1 session (notify at PHASE 2).
+Open questions for master session:
+  (a) Confirm the MS-A frozen contract: does pricing-svc (MS-D, already a pod at MS-4) call category over HTTP for get_commission? If yes, category implements a 3rd /internal/* shim (commission) — default is to author it. Verify against SUB_PLAN_0D.
+  (b) Does customer-svc (MS-E) consume list_super_categories at runtime? As-built grep found no customer→category import at develop tip. Author the super-categories shim defensively unless confirmed unneeded.
+  (c) Locate/confirm the MS-A spec + frozen-contract doc (absent here) so the implementing session cites the canonical source, not this sub-plan's reproduction.
+=========
