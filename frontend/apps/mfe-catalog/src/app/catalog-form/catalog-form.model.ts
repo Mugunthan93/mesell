@@ -166,3 +166,89 @@ export function buildImagesRoute(productId: string): [string, string, string] {
 export function buildDashboardRoute(): [string] {
   return ['/dashboard'];
 }
+
+// ── Wave 6C builder-2: autofill overlay + enum resolution helpers ──────────────
+
+export interface AutofillSuggestionEntry {
+  canonical: string;
+  value: unknown;
+}
+
+/**
+ * extractSuggestionEntries — maps the AutofillResponse suggestions map to
+ * a flat array of { canonical, value } entries for the overlay @for loop.
+ */
+export function extractSuggestionEntries(
+  suggestions: Record<string, { value: unknown }>,
+): AutofillSuggestionEntry[] {
+  return Object.entries(suggestions).map(([canonical, s]) => ({ canonical, value: s.value }));
+}
+
+/**
+ * applySuggestion — returns a new fieldValues map with the suggestion value applied
+ * for the given canonical key. Immutable.
+ */
+export function applySuggestion(
+  canonical: string,
+  suggestions: Record<string, { value: unknown }>,
+  fieldValues: FieldValuesMap,
+): FieldValuesMap {
+  const suggestion = suggestions[canonical];
+  if (!suggestion) return fieldValues;
+  return { ...fieldValues, [canonical]: suggestion.value };
+}
+
+/**
+ * dismissSuggestion — returns a new suggestions map with the given canonical removed.
+ * Immutable.
+ */
+export function dismissSuggestion(
+  canonical: string,
+  suggestions: Record<string, { value: unknown }>,
+): Record<string, { value: unknown }> {
+  const { [canonical]: _removed, ...rest } = suggestions;
+  return rest;
+}
+
+/**
+ * resolveFieldOptions — returns the select options for a field.
+ * Uses enumCache for needs_api_enum fields; falls back to field.enum_options for static.
+ *
+ * @param canonical - the canonical_name of the field
+ * @param needsApiEnum - true when enum_resolver==='category' (lazy via #16)
+ * @param staticOptions - field.enum_options (may be undefined for api-enum fields)
+ * @param enumCache - populated by getFieldEnum #16 calls at schema-load time
+ */
+export function resolveFieldOptions(
+  canonical: string,
+  needsApiEnum: boolean,
+  staticOptions: Array<{ label: string; value: string }> | undefined,
+  enumCache: Record<string, Array<{ label: string; value: string }>>,
+): Array<{ label: string; value: string }> {
+  if (needsApiEnum) {
+    return enumCache[canonical] ?? [];
+  }
+  return staticOptions ?? [];
+}
+
+/**
+ * buildSections — creates the 3-section descriptor array from the schema.
+ * Used by the component's computed sections() signal and unit-tested here.
+ */
+export interface SectionDescriptor {
+  id: 'compulsory' | 'recommended' | 'optional';
+  label: string;
+  open: boolean;
+  fields: FieldSchema[];
+}
+
+export function buildSections(
+  schema: FieldGroup[],
+  openState: Record<string, boolean>,
+): SectionDescriptor[] {
+  return [
+    { id: 'compulsory',  label: 'Compulsory',  open: !!openState['compulsory'],  fields: getCompulsoryFields(schema) },
+    { id: 'recommended', label: 'Recommended', open: !!openState['recommended'], fields: getRecommendedFields(schema) },
+    { id: 'optional',    label: 'Optional',    open: !!openState['optional'],    fields: getOptionalFields(schema) },
+  ];
+}
