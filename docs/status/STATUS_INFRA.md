@@ -1,8 +1,46 @@
 # STATUS — INFRASTRUCTURE
 
 **Owner:** `meesell-infra-builder`
-**Last update:** 2026-06-12 (image-precheck infra slice session-2 — 5th feature flag `FEATURE_XLSX_EXPORT_ENABLED` joined the lane on PR #138: dev=true APPLIED + verified live, staging=false manifest-only; also reconciled session-1's flags onto the real cluster. ₹0/mo.)
+**Last update:** 2026-06-12 (BRANCH PROTECTION APPLIED + UPGRADED on develop + main — founder-approved; 13 CI contexts required; strict false, reviews 0, enforce_admins false; supersedes the develop-only/strict/1-review record; sanity-tested via throwaway PR #142 — see latest UPDATE)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
+
+## UPDATE — 2026-06-12 — mesell-branch-protection-infra-session-1 (FOUNDER APPROVED: apply branch protection)
+
+=== STEP: apply branch protection on develop + main via gh api ===
+Phase: DEVOPS_ARCHITECTURE.md §5 (CI gates) — GitHub-settings op (Rule 7 standalone, direct execute). FOUNDER APPROVAL 2026-06-12 ("go branch protection") = the authority. Long-pending since CI activation session 1.
+Session: mesell-branch-protection-infra-session-1
+
+**Pre-flight:** gh auth = `Mugunthan93` (repo owner). Repo `Mugunthan93/mesell` = **public** → branch protection is FREE (no plan upgrade; the private-repo-protection paywall does not apply). Green pipeline baseline = run **27388030304** (develop, squash `eb84779`), all green end-to-end.
+
+**What this changed vs the prior record:** PR #140/#132 recorded protection as "develop-only, strict, 1 review, main bare." My live check at session start found develop already had the 13 contexts but with `strict:true` + `count:1`, and **main was bare**. Per the founder brief I UPGRADED to: develop **and** main, `strict:false`, reviews `0`. This is now the real, applied, founder-approved state.
+
+**Required-context set (the 13 PR-reporting jobs — verified verbatim against run 27388030304 job `name:` fields):**
+- 5 backend gates: `CI Gate 1: unit`, `CI Gate 2: smoke`, `CI Gate 3: lint (10 contracts)`, `CI Gate 4: integration`, `CI Gate 5: golden_roundtrip`
+- 8 frontend jobs: `Frontend: detect changed workspace units`, `Frontend: shell`, `Frontend: mfe-pricing`, `Frontend: mfe-catalog`, `Frontend: mfe-onboarding`, `Frontend: mfe-dashboard`, `Frontend: mfe-auth`, `Frontend: mfe-export` (the matrix is pinned per-job — matrix contexts MUST be listed individually).
+
+**Deliberately EXCLUDED** (would deadlock every PR — they never report on a `pull_request`): `Build container images` + `Deploy to K3s (dev namespace)` (push+`refs/heads/develop`-guarded), `AI eval: smart-picker recall (token-free)` + `Nightly: slow + perf + ai_eval` (schedule-only). On a PR they show `skipped` and are simply absent from the required set.
+
+**Config applied to BOTH develop and main** (`gh api -X PUT .../branches/<b>/protection --input <json>`):
+- `required_status_checks.strict = false` — don't require branches up-to-date before merge. Single-account repo; avoids rebase churn.
+- `required_status_checks.contexts` = the 13 above.
+- `required_pull_request_reviews = null` → required approving reviews = **0**. Self-approval is impossible on a single-account repo; the merge-gate review lives in PR comments per Model C. **Trade-off:** CHANGE from develop's prior `count:1` (which had forced `--admin` merges). With count 0, a plain merge is allowed once checks are green; `--admin` is now only needed to override a RED required check.
+- `enforce_admins = false` → founder `--admin` merges still bypass when needed (the escape hatch). **Trade-off stated:** an admin can still merge a red PR; acceptable because the only admin IS the founder.
+- `restrictions = null` on both. main push-restriction-to-owner was **attempted and rejected** — `restrictions` (user/team push lists) is an **org-only** feature; on a User-owned repo the API returns `422 "Only organization repositories can have users and team restrictions"`. Owner-only push is already true by repo ownership and remains a convention.
+
+**Validation / sanity test (the lock proven, not just configured):**
+- Threw a comment-only throwaway PR **#142** (`chore/bp-sanity-test` → develop, single new `.bp-sanity-test.md` file, Model C worktree).
+- While the 13 checks ran: `mergeable_state = blocked` — merge button disabled.
+- After all 13 went `success` (Build/Deploy/AI-eval/Nightly correctly `skipped` and NOT counted): `mergeable_state = clean` — merge available.
+- Closed PR #142, deleted remote branch + worktree + local branch. Verified ref 404 (gone). No litter.
+
+**Live protection state (post-apply, both branches):** `strict:false`, 13 contexts, `required_pull_request_reviews:null`, `enforce_admins:false`, `restrictions:null`.
+
+**This documentation PR (#144) itself exercises the protection** — it targets develop and must pass the 13 checks before it can merge (the point of the lock). NOTE: it hit a rebase against PR #138's board/STATUS edits; resolved by re-applying onto the current develop tip.
+
+Cost: ₹0. No K8s/TF/secret/app-code change — GitHub settings + 2 status docs only.
+Escape hatch retained: founder `gh pr merge --admin` (enforce_admins=false).
+Founder action needed: none — protection is live. (Optional future: `paths-ignore: docs/**` on build/deploy if doc-only develop pushes cause unwanted deploy churn — unrelated to protection.)
+=========
 
 ## UPDATE — 2026-06-12 — mesell-image-precheck-infra-session-2 (5th feature flag joins the lane — xlsx-export backend gate)
 
