@@ -183,6 +183,59 @@ class Settings(BaseSettings):
     # Route returns 404 when False per Master Plan §3.2 backend protocol.
     FEATURE_SMART_PICKER_ENABLED: bool = True
 
+    # FEATURE_XLSX_EXPORT_ENABLED: dev default True; staging default False
+    # until 15 golden fixtures pass ×3 consecutive develop-HEAD runs AND a
+    # manual Meesho supplier-panel upload is accepted (D2 staging gate per
+    # docs/plans/features/xlsx-export/FEATURE_PLAN.md D2).
+    # POST /products/{id}/export-xlsx returns 404 when False.
+    # GET /exports/{id} is NOT gated — in-flight export polls must keep working.
+    # Route returns 404 on POST when False per Master Plan §3.2 backend protocol.
+    FEATURE_XLSX_EXPORT_ENABLED: bool = True
+
+    # FEATURE_IMAGE_PRECHECK_ENABLED: dev default True; staging default False
+    # until 3 gates pass (watermark ≥ 85%, deterministic Pillow smoke,
+    # GCS tenant-isolation verified) per Decision D2 in
+    # docs/plans/features/image-precheck/FEATURE_PLAN.md.
+    # POST /products/{id}/images returns 404 when False (Master Plan §3.2).
+    # GET  /products/{id}/images returns empty list when False (read-only
+    # endpoint; sellers may have legacy images — do NOT 404).
+    FEATURE_IMAGE_PRECHECK_ENABLED: bool = True
+
+    # FEATURE_CATALOG_FORM_ENABLED: dev default True; staging default False
+    # (set via env) until the 5-condition soak passes
+    # (Decision D2 in docs/plans/features/catalog-form/FEATURE_PLAN.md).
+    # Catalog routes (/api/v1/products/*) return 404 when False per
+    # Master Plan §3.2 backend protocol.
+    FEATURE_CATALOG_FORM_ENABLED: bool = True
+
+    # FEATURE_AI_AUTOFILL_ENABLED: dev default True; staging default False
+    # (set via env) until soak passes
+    # (Decision in docs/plans/features/ai-autofill/FEATURE_PLAN.md).
+    # POST /api/v1/products/{id}/autofill returns 404 when False per
+    # Master Plan §3.2 backend protocol (route guard owned by api-routes-builder).
+    FEATURE_AI_AUTOFILL_ENABLED: bool = True
+
+    # FEATURE_PRICE_CALCULATOR_ENABLED: dev default True; staging default False
+    # (set via env) until staging soak confirms P&L formula accuracy ≥ target
+    # (Decision D2 in docs/plans/features/price-calculator/FEATURE_PLAN.md §1.B).
+    # POST /api/v1/products/{id}/price-calc returns 404 when False per
+    # Master Plan §3.2 backend protocol.
+    FEATURE_PRICE_CALCULATOR_ENABLED: bool = True
+
+    # FEATURE_TRACKING_DASHBOARD_ENABLED: dev default True; staging default False
+    # (set via env) until staging soak confirms paginated list latency + accuracy
+    # (Decision D3 in docs/plans/features/tracking-dashboard/FEATURE_PLAN.md §2.2).
+    # GET /api/v1/products returns 404 when False per Master Plan §3.2.
+    # D3 kill-switch: the read IS the feature — 404 on GET is intentional.
+    FEATURE_TRACKING_DASHBOARD_ENABLED: bool = True
+
+    # FEATURE_LIVE_PREVIEW_ENABLED: dev default FALSE (gated rollout — the ONLY
+    # V1 flag that ships default-False; all others default True).
+    # Decision D3 in docs/plans/features/live-preview/FEATURE_PLAN.md §3.
+    # GET /api/v1/products/{id}/preview returns 404 when False.
+    # Set FEATURE_LIVE_PREVIEW_ENABLED=true in .env to enable in development.
+    FEATURE_LIVE_PREVIEW_ENABLED: bool = False
+
     # ── Validators ─────────────────────────────────────────────────────────
     @field_validator("CORS_ALLOWED_ORIGINS", mode="before")
     @classmethod

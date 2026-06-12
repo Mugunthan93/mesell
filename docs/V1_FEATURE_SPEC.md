@@ -195,7 +195,7 @@ Reference: `docs/VALIDATED_PAIN_POINTS.md` (themes T1–T6, new pains S3.x)
 **Pain solved:** Section 3.1 (NEW pain — image policy rejection) + Theme 4 sub-pain. EcomSarthi's free checker proves user pull.
 
 **User journey:**
-1. User on `/catalogs/:id/images` drags up to 6 images (max 10 MB each)
+1. User on `/catalogs/:id/images` drags up to 4 images (max 10 MB each)
 2. Frontend uploads to `POST /api/v1/products/:id/images` (multipart)
 3. Backend stores in GCS, queues Celery job to run checks
 4. Worker runs: JPEG check, RGB/CMYK check (Pillow), resolution ≥1500×1500, white-BG heuristic, watermark detection (Gemini vision)
@@ -226,7 +226,7 @@ Reference: `docs/VALIDATED_PAIN_POINTS.md` (themes T1–T6, new pains S3.x)
 - [ ] User sees per-check pass/fail with one-line fix hint ("Convert image to RGB before upload")
 - [ ] Failed images marked red; user can re-upload to replace
 - [ ] Watermark check accuracy ≥85 % on 30-image seed test
-- [ ] Total upload size capped at 60 MB per product (6 × 10 MB)
+- [ ] Total upload size capped at 40 MB per product (4 × 10 MB)
 
 **Edge cases:**
 - Upload not JPEG/PNG → reject at API with 415
