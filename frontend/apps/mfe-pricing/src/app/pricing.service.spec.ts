@@ -17,7 +17,7 @@ import {
   provideHttpClientTesting,
   HttpTestingController,
 }                                           from '@angular/common/http/testing';
-import { firstValueFrom, EMPTY }            from 'rxjs';
+import { firstValueFrom }                   from 'rxjs';
 
 import { ApiClient } from '@mesell/core';
 
@@ -308,32 +308,32 @@ describe('PricingApiService — error matrix (DECISION-1: no local math fallback
     expect(resultAny['profit']).toBeUndefined();
   });
 
-  it('500 → EMPTY (explicit 5xx error; component re-submit affordance)', async () => {
+  it('500 → emits {kind:"server_error"} (explicit error shape; component renders retry banner)', async () => {
+    // REAL assertion: 5xx must NOT silently swallow into EMPTY — spec §3.1 mandates
+    // explicit error + retry affordance. Service emits PriceCalcServerError shape.
     const { service, controller } = setup();
-    let emitted = false;
-    let completed = false;
-
-    service.calc(PRODUCT_ID, VALID_REQUEST).subscribe({
-      next:     () => { emitted = true; },
-      complete: () => { completed = true; },
-    });
+    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST);
+    const promise = firstValueFrom(result$);
 
     controller.expectOne(ENDPOINT).flush(
       { detail: 'Internal Server Error' },
       { status: 500, statusText: 'Internal Server Error' },
     );
 
-    expect(emitted).toBe(false);
-    expect(completed).toBe(true); // EMPTY completes silently
+    const result = await promise;
+    // Must emit the typed server_error shape — not EMPTY (EMPTY would have thrown in firstValueFrom)
+    expect(result).toMatchObject({ kind: 'server_error' });
+    // Breakdown keys must NOT be present — no local math (DECISION-1)
+    const resultAny = result as unknown as Record<string, unknown>;
+    expect(resultAny['mrp']).toBeUndefined();
+    expect(resultAny['profit']).toBeUndefined();
   });
 
-  it('503 → EMPTY (same as 5xx; no auto-retry — ApiClient retryOn503 is defective)', async () => {
+  it('503 → emits {kind:"server_error"} (5xx; no auto-retry — ApiClient retryOn503 is defective)', async () => {
+    // 503 follows the same path as 500: emit server_error. No retry (§3.2 POST non-idempotent).
     const { service, controller } = setup();
-    let emitted = false;
-
-    service.calc(PRODUCT_ID, VALID_REQUEST).subscribe({
-      next: () => { emitted = true; },
-    });
+    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST);
+    const promise = firstValueFrom(result$);
 
     // Only ONE request expected — no retry (ApiClient retryOn503 is NOT used)
     controller.expectOne(ENDPOINT).flush(
@@ -341,7 +341,26 @@ describe('PricingApiService — error matrix (DECISION-1: no local math fallback
       { status: 503, statusText: 'Service Unavailable' },
     );
 
-    expect(emitted).toBe(false);
+    const result = await promise;
+    expect(result).toMatchObject({ kind: 'server_error' });
+  });
+
+  it('network/non-HTTP error → emits {kind:"server_error"} (spec §3.1 retry affordance)', async () => {
+    // Network drop (e.g. offline, DNS failure) reaches _handleError with a non-HttpErrorResponse.
+    // Must emit server_error so the component renders the retry banner — NOT bare EMPTY.
+    const { service, controller } = setup();
+    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST);
+    const promise = firstValueFrom(result$);
+
+    // Simulate network error via HttpTestingController.error()
+    controller.expectOne(ENDPOINT).error(new ProgressEvent('error'));
+
+    const result = await promise;
+    expect(result).toMatchObject({ kind: 'server_error' });
+    // Breakdown keys must NOT be present
+    const resultAny = result as unknown as Record<string, unknown>;
+    expect(resultAny['mrp']).toBeUndefined();
+    expect(resultAny['profit']).toBeUndefined();
   });
 });
 

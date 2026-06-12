@@ -26,7 +26,7 @@ import { MeeInputComponent }         from '@mesell/ui-kit';
 
 import { formatRupee, parseDecimal } from './pricing.utils';
 import { PricingApiService }         from './pricing.service';
-import type { PriceCalcResponse, PriceCalcErrorShape } from './pricing.model';
+import type { PriceCalcResponse, PriceCalcErrorShape, PriceCalcServerError } from './pricing.model';
 import { ALERT_MESSAGES } from './pricing.model';
 
 // ── Error-state type (§3.1 degradation matrix) ──────────────────────────────
@@ -696,6 +696,12 @@ export class PricingComponent implements OnInit, AfterViewChecked {
       case 'validation':
         this.errorState.set('validation');
         this.validationDetail.set(shape.detail);
+        break;
+      case 'server_error':
+        // 5xx or network error — surface retry affordance banner (spec §3.1).
+        // Service emits this shape instead of bare EMPTY so the component can render
+        // the "Couldn't calculate — please try again" banner.
+        this.errorState.set('server_error');
         break;
     }
   }

@@ -117,11 +117,22 @@ export interface PriceCalcValidationError {
   detail: string;
 }
 
+/**
+ * 5xx or network/non-HTTP error (spec §3.1 degradation matrix).
+ * Emitted instead of bare EMPTY so the component can surface an explicit error banner
+ * and retry affordance — Spec §3.1 mandates "5xx → explicit error + retry affordance".
+ * 401 is intentionally NOT mapped here; it stays EMPTY (refreshInterceptor/logout owns it).
+ */
+export interface PriceCalcServerError {
+  kind: 'server_error';
+}
+
 /** Union of typed non-throwing error shapes emitted by PricingApiService.calc(). */
 export type PriceCalcErrorShape =
   | PriceCalcUnavailableError
   | PriceCalcCommissionMissingError
-  | PriceCalcValidationError;
+  | PriceCalcValidationError
+  | PriceCalcServerError;
 
 // ─── i18n: static alert message map (transloco not wired — Wave-2B drop) ─────
 

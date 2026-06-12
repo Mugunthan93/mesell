@@ -11,12 +11,12 @@
  * NO ApiClient retryOn503 (defective — retries ALL errors, not 503-only; and this is
  *   a POST — even a correct retry would risk non-idempotent behaviour, spec §3.2).
  * Degradation matrix (R-W6-1, DECISION-1 — NEVER a local-math fallback):
- *   401  → EMPTY  (refreshInterceptor handles retry; if it reaches here = logout path)
- *   404  → emit PriceCalcUnavailableError (flag off OR product not found)
+ *   401  → EMPTY                          (refreshInterceptor handles retry; logout path owns it)
+ *   404  → emit PriceCalcUnavailableError  (flag off OR product not found)
  *   422  → emit PriceCalcCommissionMissingError (no commission rate for category)
- *   400  → emit PriceCalcValidationError (Pydantic constraint violation)
- *   5xx  → EMPTY  (component sets errorState; user re-submits — export-lane pattern)
- *   other → EMPTY
+ *   400  → emit PriceCalcValidationError   (Pydantic constraint violation)
+ *   5xx  → emit PriceCalcServerError       (§3.1: explicit error + retry affordance)
+ *   non-HTTP / network → emit PriceCalcServerError (§3.1: explicit error + retry affordance)
  * The breakdown stays null on any error → component renders explicit error state.
  */
 
@@ -30,6 +30,7 @@ import type {
   PriceCalcRequest,
   PriceCalcResponse,
   PriceCalcErrorShape,
+  PriceCalcServerError,
 } from './pricing.model';
 
 /** Endpoint path constant — single source of truth (no duplication across service + spec). */
@@ -61,20 +62,21 @@ export class PricingApiService {
       );
   }
 
-  /** Maps HTTP errors to typed error shapes or EMPTY per the degradation matrix. */
+  /** Maps HTTP errors to typed error shapes per the degradation matrix (spec §3.1). */
   private _handleError(
     err: unknown,
   ): Observable<PriceCalcErrorShape> {
+    // Network drop or non-HTTP error → emit server_error so the component can render
+    // the explicit "Couldn't calculate — please try again" banner (spec §3.1).
     if (!(err instanceof HttpErrorResponse)) {
-      // Network / non-HTTP error — EMPTY (component errorState handles)
-      return EMPTY;
+      return of({ kind: 'server_error' } satisfies PriceCalcServerError);
     }
 
     const status = err.status;
 
     if (status === 401) {
       // refreshInterceptor (Wave A) already handled retry + re-login.
-      // If we reach here the logout path fired — stay EMPTY.
+      // If we reach here the logout path fired — stay EMPTY (auth layer owns this).
       return EMPTY;
     }
 
@@ -101,7 +103,8 @@ export class PricingApiService {
       } as const);
     }
 
-    // 5xx and any other status — EMPTY (component shows "try again" message).
-    return EMPTY;
+    // 5xx and any other HTTP status → emit server_error so the component can render
+    // the explicit retry affordance banner (spec §3.1).
+    return of({ kind: 'server_error' } satisfies PriceCalcServerError);
   }
 }
