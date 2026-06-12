@@ -322,3 +322,82 @@ the dev tunnel + seeded categories DB is available.
 | §13 path NO repository pattern | reference | dashboard subtree has 5 source files: __init__, router, service, schemas, domain (empty), exceptions. NO repository.py — structural §13.D + §3.C deviation locked since 2026-06-05. §19 CI linter must allowlist dashboard as documented exception to per-module subtree completeness check |
 | §13 i18n key already registered (Wave 1 §5A) | reference | "validation.dashboard.invalid_pagination" already in app/i18n/messages_en.py from §5A.I pre-commitment; no new key added by §13 construction. InvalidPaginationError defined in dashboard/exceptions.py for parity with §13.G surface even though Pydantic Field constraints catch all V1 cases before raising |
 
+---
+
+## Session: 2026-06-12 — CI Gate-1 event-loop fix (mesell-ci-gate1-event-loop-backend-session-1)
+
+### Task summary
+Fixed 13 failing unit tests (`pytest -m unit`) that all failed with
+`RuntimeError: There is no current event loop in thread 'MainThread'`.
+Branch: `fix/ci-gate1-event-loop` off `origin/develop`.
+Result: BRANCH 2 (both Polluter A + Polluter B). 2 commits, PR created.
+
+### Root cause: Polluter A (conftest.py event_loop fixture)
+The session-scoped `event_loop` fixture in `backend/tests/conftest.py` (lines 270-275):
+- Created a new loop with `asyncio.new_event_loop()`.
+- Never called `asyncio.set_event_loop()` — so this loop was NOT installed as "current".
+- Called `loop.close()` at session teardown.
+- pytest-asyncio 0.24 owns loop lifecycle via `asyncio_default_fixture_loop_scope = session`;
+  having a user fixture that interferes with teardown left no current loop for subsequent tests.
+
+Fix: deleted the 5-line fixture block + removed the now-unused `import asyncio`.
+pytest-asyncio 0.24 warning: user-redefinable `event_loop` was deprecated in 0.23 and
+removed in 0.24. Presence of this fixture in the codebase is a hard error in 0.24+.
+
+### Root cause: Polluter B (actual — NOT as spec predicted)
+Spec predicted: asyncio.run() calls in test_worker_db_isolation.py / test_shared_database.py
+clear the event loop on Py3.12+ exit.
+Empirical bisection finding: Those tests were NOT the polluter. The ACTUAL Polluter B is:
+
+tests/test_config.py calls importlib.reload(app.shared.config) inside _reload_config().
+This replaces the module-level settings object singleton.
+Modules that imported via 'from app.shared.config import settings' keep the OLD reference.
+monkeypatch.setattr(_config_module.settings, "FEATURE_AI_AUTOFILL_ENABLED", ...) was patching
+the NEW post-reload object — which catalog/router.py never reads.
+The router reads the OLD settings reference bound at module import time.
+
+Fix: changed test import from `import app.shared.config as _config_module` to
+`import app.modules.catalog.router as _catalog_router_module` and all 4 monkeypatch targets
+from `_config_module.settings` to `_catalog_router_module.settings`.
+
+### Bisection evidence (BRANCH 2)
+1. `pytest -m unit tests/unit/` (isolation): 37/37 PASS — unit/ subdir alone was always green.
+2. Full `pytest -m unit`: 13 FAIL — ordering effect from integration/test_config.py running first.
+3. After removing event_loop fixture: 10/13 fixed. 3 remaining failures in test_catalog_routes.py.
+4. After fixing monkeypatch target: 638/638 PASS, 282 deselected.
+
+### Monkeypatch target rule (LOCKED PATTERN)
+Always patch the MODULE that READS the attribute, not the module that OWNS it.
+When a module does `from x import settings`, it binds `settings` locally at import time.
+`monkeypatch.setattr(x, "settings", ...)` replaces the OWNER's attribute but not the LOCAL copy.
+Correct: `import reading_module; monkeypatch.setattr(reading_module, "settings", value)`
+OR: `monkeypatch.setattr(reading_module.settings, "FEATURE_XXX", value)` — patches the attribute
+directly on the SAME object the reader is holding.
+When importlib.reload() is in play anywhere in the test session, the OWNER's object may have
+been replaced entirely — making the owner-patch approach unsafe even without the local-copy issue.
+
+### importlib.reload() singleton invalidation — CRITICAL warning
+importlib.reload() replaces ALL module-level objects (including singletons like settings).
+Any module that bound a reference before the reload keeps the stale OLD object.
+Tests that call importlib.reload() on a shared config module MUST patch the reading module.
+
+### All 6 verification items (Gate-1 definition of done)
+1. Full `-m unit` run: 638 passed, 0 failed, 282 deselected (was 13 failed).
+2. Isolation `pytest -m unit tests/unit/ -v`: 37 passed.
+3. `test_worker_db_isolation.py` + `test_shared_database.py`: 12 passed.
+4. No event_loop deprecation warning.
+5. ruff check tests/conftest.py tests/unit/test_catalog_routes.py: All checks passed!
+6. Collected count: 638/920 (282 deselected — identical before/after).
+
+### Git commits (on fix/ci-gate1-event-loop)
+- 56c6e7d fix(tests): drop redefined event_loop fixture — pytest-asyncio 0.24 owns the loop (Gate-1)
+- bbedb5c fix(tests): patch catalog router-local settings ref in unit tests — test_config.py reload invalidates shared-config module reference (Gate-1)
+
+### Memory entry index (new entries)
+| Entry | Type | Summary |
+|---|---|---|
+| CI Gate-1 event-loop fix 2026-06-12 | project | BRANCH 2; 2 polluters; 638 PASS; 2 commits on fix/ci-gate1-event-loop |
+| Polluter A: event_loop fixture | reference | pytest-asyncio 0.24 removes user event_loop; delete it entirely |
+| Polluter B actual: importlib.reload() | reference | test_config.py reload invalidates settings singleton; spec predicted asyncio.run() — wrong |
+| monkeypatch target rule (LOCKED) | reference | Patch reading_module.settings, NOT owning_module.settings |
+| importlib.reload() singleton invalidation | reference | Any module binding 'from x import y' keeps stale ref after reload; patch the reader |
