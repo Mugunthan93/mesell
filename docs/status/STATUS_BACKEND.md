@@ -5222,6 +5222,64 @@ Hand-offs: handoff_msC_infra.md authored for meesell-infra-builder (NOT actioned
   Inter-lead request row opens at Phase-2 dispatch). Cross-lane to AI lead at Phase 2: watermark.v1 prompt pin
   must not drift. Decentralized per CLAUDE.md rule 3 — infra/AI leads read this STATUS + my memory; no memo
   cut while execution is gated.
+
+=== UPDATE: 2026-06-12 — MS-E customer-extraction SUB-PLAN AUTHORED (HYBRID step 1, EXEC GATED MS-3) ===
+Phase: Microservices Migration — Sub-Plan E (customer), parallel program MS-PAR-1 / Session MS-E
+Session: mesell-ms-customer-session-1
+Board sweep: 1 row added (microservices-customer, SPEC AUTHORED — EXEC GATED MS-3). Active table now 4 rows (microservices-export READY-TO-EXECUTE; flag-parity + backend-chores founder-PR-open; microservices-customer SPEC AUTHORED). No rows untouched 7+ days (all 2026-06-12 IST). Inter-lead requests open: 1 pre-existing (infra image-tasks queue, backend-servicing). MS-E infra inter-lead row NOT opened yet — opens at MS-3 execution dispatch per handoff_msE_infra.md SLA note.
+
+Done (HYBRID rule 7 STEP 1 — SPEC AUTHORING ONLY, no code, no specialist, no git ops):
+  - SUB_PLAN_0E_customer_extraction.md authored (worktree, canonical SUB_PLAN_01 shape). Header status "AUTHORED 2026-06-12 — EXECUTION GATED (MS-3)". Grounded against develop c859955; every enum/contract/signature cited file:line from SOURCE.
+  - spec_msE_backend.md authored (own memory) — executable hybrid-step-2 task spec: 3 specialists (database/services/api-routes), phase sequence, acceptance + re-dispatch conditions, mirroring spec_msA_backend.md.
+  - handoff_msE_infra.md authored (own memory) — infra work-package for meesell-infra-builder (8 deliverables; NO GCS SA, NO Celery queue — the two MS-A surfaces customer omits; cross-svc base-URL re-points at cutover).
+  - feature_board_backend.md: microservices-customer row added (additive, minimal diff).
+  - This STATUS UPDATE block.
+
+Key as-built findings (3 corrections over the dispatch premise; SOURCE wins):
+  1. Customer INBOUND = 3 distinct methods across 3 callers (export get_compliance_block svc:503; dashboard get_onboarding_completeness svc:85; catalog assert_eligible_for_super_id svc:404 + get_compliance_block svc:837). The dispatch cited only the export shim. Catalog calls TWO customer methods (its "service ONLY" docstring is true re: which module, not how many methods).
+  2. Customer is NOT a pure callee. service.py:347 runs SELECT DISTINCT super_id FROM categories via CategoryORM (service.py:66) — a cross-schema read of category's table. Becomes the E3-A HTTP shim to category-svc /internal/super-categories (recommended; keeps the 3600s cache contract verbatim, only the loader body swaps SQL→httpx).
+  3. COMPLIANCE_EXTENSION_MAP = 11 keys / 6 source rules (domain.py:245, master ruling 3 2026-06-07), Beauty's 6 super_ids share one spec instance — NOT "6 super_ids" as the dispatch/my older §8 memory said.
+  + seller_profile.user_id PK==FK→users.id CASCADE + relationship("User") — both SEVERED at cutover (Risk #5; plain UUID PK in customer-svc ORM).
+  + REVERSE strangler shim: monolith-catalog (in-monolith until MS-5) gets the OUTBOUND customer_client at cutover — mirror image of MS-A where the extracted service got the shim.
+
+In progress: none (single-shot spec-authoring; execution GATED).
+Blockers: none. Lane is SPEC AUTHORED but NOT in execution until MS-2 (B dashboard + C image founder gates) merges to develop.
+Next: at MS-3 wave open (post-MS-2), cut branches from origin/develop, dispatch database-builder (Phase A) FIRST + infra handoff in parallel → services-builder → api-routes-builder → lead Phase C merge gate. Reconcile the 2 open contract questions BEFORE specialist dispatch.
+Hand-offs:
+  - INFRA (handoff_msE_infra.md) — schema customer + role grant incl INSERT on public.audit_events; Traefik /api/v1/seller-profile/*; cross-svc base-URL re-points; D3 checkpoint re-evaluated by master at MS-3 deploy. Inter-lead row opens at MS-3 execution.
+  - MASTER SESSION (escalation, never improvise a contract): (1) 0B dashboard /internal/* completeness shape (DRAFT-PENDING-0B-RECONCILE) — owned by Session MS-B; (2) 0F category /internal/super-categories shape (DRAFT-PENDING-0F-RECONCILE) — owned by Session MS-F. Both must reconcile before customer execution dispatch.
+=========
+
+=== UPDATE: 2026-06-12 — MS-B Sub-Plan B (`dashboard` extraction) SPEC AUTHORED (HYBRID STEP 1, EXECUTION GATED MS-2) ===
+Phase: Microservices Migration Sub-Plan B (`dashboard`) — HYBRID rule STEP 1 (SPEC/docs only; no extraction code, no git ops)
+Session: mesell-ms-dashboard-session-1
+Board sweep: 1 NEW row added (microservices-dashboard, SPEC AUTHORED — EXECUTION GATED MS-2). Active features otherwise unchanged (microservices-export READY-TO-EXECUTE; flag-parity + backend-chores GATE-PASS/FOUNDER-PR-OPEN per D1 — founder's gate). Inter-lead requests: none opened this turn (infra handoff frozen for Phase-2 dispatch, NOT opened now per the gate). No rows stale 7+ days that aren't already founder-PR-pending.
+
+DELIVERABLES (5):
+  1. SUB_PLAN_0B_dashboard_extraction.md (worktree docs/plans/microservices_migration/) — DRAFT, canonical SUB_PLAN_01 shape:
+       §0 GROUND TRUTH (worktree tip c859955 == origin/develop; 6-file module no-repository.py §13.D; NO ai_ops/NO Celery; 1 mounted route; 2 call sites; leaf consumer; A2/D7; test floor 698 def test_ / 36 own)
+       + Decisions B1-B4 + Agent lineup + Branch setup (Model C) + Code surfaces + Documentation deliverables
+       + FROZEN /internal/* shim contracts (2 endpoints, MS-A style) + Memory protocol + Review+iteration + Acceptance gate + Risk register (R1-R6) + Revision history.
+  2. Frozen /internal/* shim-contract section (inside SUB_PLAN_0B, marked FROZEN):
+       - catalog-svc GET /internal/products?page&limit  <- list_products(user_id,pagination,db)->PaginatedProductsInternal (catalog/service.py:999, domain.py:170)  [MS-H implements]
+       - customer-svc GET /internal/seller-profile/{user_id}/onboarding-completeness  <- get_onboarding_completeness(user_id,db)->ProfileCompleteness (customer/service.py:682, domain.py:98)  [MS-E implements]
+       Style COPIED verbatim from spec_msA_backend §5 (path prefix /internal/*, JWT-forward auth, MeesellError 4-field envelope, 5s/2s httpx, 1-retry-503/504).
+  3. spec_msB_backend.md + handoff_msB_infra.md — task spec + infra handoff (named specialists per task, build sequence, acceptance, merge-gate). WRITTEN TO WORKTREE FALLBACK (.claude/agent-memory/meesell-backend-coordinator/ under /tmp/mesell-wt/msB-docs) because the main-tree write was BLOCKED by the bg-session worktree-isolation guard. Session must relocate to the main-tree memory dir.
+  4. Board + STATUS (this UPDATE) — minimal + additive (shared files w/ parallel MS-C).
+  5. Memory append — see below (worktree fallback if main-tree blocked).
+
+KEY FINDINGS / PLAN-vs-SOURCE corrections:
+  - PLAN-TEXT CORRECTION: MASTER_PLAN §1.C names the dashboard->customer method `get_profile_completeness` — WRONG against source. AS-BUILT is `get_onboarding_completeness` (customer/service.py:682; dashboard/service.py:84; __init__.py:15). The dispatch prompt's grounding facts also said `get_profile_completeness` — both stale. The §8.C-era LOCK name was renamed during construction.
+  - GROUNDING-FACT NUANCE: the prompt cited main.py:137 for the mount; AS-BUILT mount is main.py:141 (import at main.py:43; §13 comment block 136-140).
+  - dashboard owns ZERO tables (§13.D, NO repository.py) -> database-builder is VERIFY-ONLY, NO schema-split migration (cheapest db lane of any extraction).
+  - dashboard is a LEAF CONSUMER (zero inbound callers) -> svc-dashboard exposes NO /internal/*. 2 outbound shims, zero inbound — lightest shim surface of any extraction.
+  - NO Celery -> NO worker pod, NO workers/celery_app.py change at cutover (contrast svc-export which removed export.tasks).
+  - §13-DASHBOARD-D2 path-key collision: GET /api/v1/products (dashboard) shares the path key with POST /api/v1/products (catalog, extracts LAST at MS-5) — Traefik must route METHOD-or-prefix-aware (infra I4); only the GET routes to svc-dashboard at MS-2.
+
+In progress: none (single-shot HYBRID STEP 1 docs authoring).
+Blockers: none. EXECUTION GATED — Phase 2 (specialist dispatch) opens at MS-2 only when Sub-Plan A founder gate merged to develop AND MS-A recipe in lead memory. NO contradictions found with MS-A artifacts or MASTER_PLAN (the only delta is the §1.C method-name correction, which is plan-prose not a LOCKED section).
+Next: at MS-2 open, the master session dispatches the specialists per spec_msB_backend.md (database-builder VERIFY-ONLY + services-builder heavy lift + api-routes-builder), opens the infra inter-lead row (handoff_msB_infra.md), runs the lead merge-gate, leaves the integration->develop founder PR OPEN. Phase 1 docs PR (this worktree branch docs/msB-subplan-0B) -> the session handles git (NOT this agent).
+Hand-offs: meesell-infra-builder — handoff_msB_infra.md FROZEN for MS-2 (lighter than MS-A: NO Postgres schema, NO GCS SA, NO worker pod; only audit-grant + Traefik method-aware route + ConfigMap flag + small pool). NOT opened as an inter-lead row yet (gated). meesell-services-builder + meesell-api-routes-builder + meesell-database-builder — specs frozen, dispatch at MS-2.
 =========
 
 === UPDATE: 2026-06-12 22:40 ===
