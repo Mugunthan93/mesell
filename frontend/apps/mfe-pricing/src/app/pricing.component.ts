@@ -1,7 +1,10 @@
 import {
+  AfterViewChecked,
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
   OnInit,
+  ViewChild,
   computed,
   inject,
   signal,
@@ -13,208 +16,531 @@ import {
 } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 
-import { MeeBadgeComponent }   from '@mesell/ui-kit';
-import { MeeButtonComponent }  from '@mesell/ui-kit';
-import { MeeCardComponent }    from '@mesell/ui-kit';
-import { MeeInputComponent }   from '@mesell/ui-kit';
-import { PageHeaderComponent } from '@mesell/composites';
+import { MeeAlertBannerComponent }  from '@mesell/composites';
+import { MeeOfflineBannerComponent } from '@mesell/composites';
+import { PageHeaderComponent }       from '@mesell/composites';
+import { MeeBadgeComponent }         from '@mesell/ui-kit';
+import { MeeButtonComponent }        from '@mesell/ui-kit';
+import { MeeCardComponent }          from '@mesell/ui-kit';
+import { MeeInputComponent }         from '@mesell/ui-kit';
 
-import { computePnlBreakdown, formatRupee } from './pricing.utils';
-import type { PnlBreakdown } from './pricing.model';
+import { formatRupee, parseDecimal } from './pricing.utils';
+import { PricingApiService }         from './pricing.service';
+import type { PriceCalcResponse, PriceCalcErrorShape, PriceCalcServerError } from './pricing.model';
+import { ALERT_MESSAGES } from './pricing.model';
+
+// ── Error-state type (§3.1 degradation matrix) ──────────────────────────────
+// null   = initial / cleared
+// unavailable       = 404 (flag-off or product not found)
+// commission_missing = 422 (no commission rate for category)
+// validation         = 400 (Pydantic constraint violation)
+// server_error       = 5xx / EMPTY path
+export type PricingErrorState =
+  | 'unavailable'
+  | 'commission_missing'
+  | 'validation'
+  | 'server_error'
+  | null;
 
 @Component({
   selector: 'app-pricing',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  providers: [PricingApiService],
   imports: [
     ReactiveFormsModule,
+    MeeAlertBannerComponent,
+    MeeOfflineBannerComponent,
+    PageHeaderComponent,
     MeeBadgeComponent,
     MeeButtonComponent,
     MeeCardComponent,
     MeeInputComponent,
-    PageHeaderComponent,
   ],
+
+  // ─── Component-scoped CSS ─────────────────────────────────────────────────
+  // All values use var(--mee-*) tokens. Zero hardcoded hex (lane guard).
+  // Undefined tokens defined locally in :host per wave6b dashboard-styler lesson.
+  // libs/design-tokens/_tokens.css is FROZEN — not touched here.
+  styles: [`
+    :host {
+      /* --mee-color-surface-variant missing from Layer 1 — local scope only.
+         Escalation: lead queues a frozen-surface Wave-A amendment. */
+      --mee-color-surface-variant: #f2f6fa;
+    }
+
+    /* ── Spinner ────────────────────────────────────────────────────────── */
+    /* MeeSpinnerComponent is a queued ui-kit amendment (NOT yet available).
+       Local spinner bridge used until the ui-kit component lands. */
+    .mee-pricing__spinner {
+      display: inline-block;
+      width: 32px;
+      height: 32px;
+      border: 3px solid var(--mee-color-outline);
+      border-top-color: var(--mee-color-primary);
+      border-radius: 50%;
+      animation: mee-pricing-spin 0.8s linear infinite;
+    }
+
+    /* prefers-reduced-motion: halt the spinner, use opacity pulse instead */
+    @media (prefers-reduced-motion: reduce) {
+      .mee-pricing__spinner {
+        animation: mee-pricing-fade 1.2s ease-in-out infinite;
+        border-top-color: var(--mee-color-primary);
+      }
+    }
+
+    @keyframes mee-pricing-spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes mee-pricing-fade {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.35; }
+    }
+
+    /* ── P&L table ──────────────────────────────────────────────────────── */
+    .mee-pricing__table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem; /* 14px */
+    }
+
+    .mee-pricing__table td {
+      padding: var(--mee-space-2) 0;
+      vertical-align: middle;
+    }
+
+    /* Label column: left-align, muted colour */
+    .mee-pricing__table .mee-pricing__table-label {
+      color: var(--mee-color-on-surface-muted);
+      text-align: left;
+    }
+
+    /* Value column: right-align, tabular numbers for rupee alignment */
+    .mee-pricing__table .mee-pricing__table-value {
+      color: var(--mee-color-on-surface);
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    /* Body rows (non-profit) */
+    .mee-pricing__row {
+      border-bottom: 1px solid var(--mee-color-outline);
+    }
+
+    /* Profit summary row — thicker border above, semibold text */
+    .mee-pricing__row--profit {
+      border-bottom: 2px solid var(--mee-color-outline);
+    }
+
+    .mee-pricing__row--profit .mee-pricing__table-label {
+      color: var(--mee-color-on-surface);
+      font-weight: 600;
+    }
+
+    .mee-pricing__row--profit .mee-pricing__table-value {
+      font-weight: 600;
+    }
+
+    /* Profit % row — last row, no bottom border */
+    .mee-pricing__row--profit-pct {
+      border-bottom: none;
+    }
+
+    /* Semantic colour classes (token-only, no hardcoded hex) */
+    .mee-pricing__value--positive {
+      color: var(--mee-color-success) !important;
+    }
+
+    .mee-pricing__value--negative {
+      color: var(--mee-color-error) !important;
+    }
+
+    /* 360px: ensure table label doesn't truncate — allow wrap */
+    @media (max-width: 400px) {
+      .mee-pricing__table-label {
+        max-width: 140px;
+        word-break: break-word;
+      }
+
+      .mee-pricing__table {
+        font-size: 0.8125rem; /* 13px at 360px */
+      }
+    }
+
+    /* ── Alert chips ────────────────────────────────────────────────────── */
+    .mee-pricing__alert-chip {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--mee-space-2);
+      padding: var(--mee-space-2) var(--mee-space-3);
+      border-radius: var(--mee-radius-sm);
+      font-size: 0.8125rem; /* 13px */
+      line-height: 1.4;
+      min-height: 44px; /* WCAG 2.5.8 touch target */
+    }
+
+    .mee-pricing__alert-chip--warning {
+      background: var(--mee-color-warning-light);
+      color: var(--mee-color-warning);
+      border-left: 3px solid var(--mee-color-warning);
+    }
+
+    .mee-pricing__alert-chip--info {
+      background: var(--mee-color-info-light);
+      color: var(--mee-color-info);
+      border-left: 3px solid var(--mee-color-info);
+    }
+
+    /* ── Empty / first-visit state ──────────────────────────────────────── */
+    .mee-pricing__empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: var(--mee-space-10) var(--mee-space-4);
+      gap: var(--mee-space-3);
+      text-align: center;
+    }
+
+    .mee-pricing__empty-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: var(--mee-color-primary-light);
+      color: var(--mee-color-primary);
+      font-size: 1.25rem;
+    }
+
+    .mee-pricing__empty-title {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--mee-color-on-surface);
+    }
+
+    .mee-pricing__empty-hint {
+      font-size: 0.8125rem;
+      color: var(--mee-color-on-surface-muted);
+    }
+
+    /* ── Form layout at 360px ───────────────────────────────────────────── */
+    .mee-pricing__form {
+      display: flex;
+      flex-direction: column;
+      gap: var(--mee-space-4);
+      padding: var(--mee-space-3);
+    }
+
+    /* ── Result region wrapper — used for focus target ──────────────────── */
+    .mee-pricing__result-region {
+      outline: none; /* focus ring suppressed for programmatic focus only */
+    }
+
+    /* ── 44px minimum touch targets on interactive buttons ─────────────── */
+    .mee-pricing__calculate-area {
+      min-height: 44px;
+    }
+
+    /* ── Calculating state wrapper ─────────────────────────────────────── */
+    .mee-pricing__calculating {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--mee-space-3);
+      padding: var(--mee-space-10) 0;
+    }
+
+    .mee-pricing__calculating-label {
+      font-size: 0.875rem;
+      color: var(--mee-color-on-surface-muted);
+    }
+
+    /* ── Disclaimer ─────────────────────────────────────────────────────── */
+    .mee-pricing__disclaimer {
+      font-size: 0.75rem;
+      color: var(--mee-color-on-surface-muted);
+      margin-top: var(--mee-space-2);
+    }
+
+    /* ── Section headings ───────────────────────────────────────────────── */
+    .mee-pricing__section-title {
+      font-size: 0.9375rem;
+      font-weight: 600;
+      color: var(--mee-color-on-surface);
+      margin-bottom: var(--mee-space-1);
+    }
+
+    /* ── Results region top: badge + alerts row ─────────────────────────── */
+    .mee-pricing__results-footer {
+      padding-top: var(--mee-space-3);
+      display: flex;
+      flex-direction: column;
+      gap: var(--mee-space-2);
+    }
+  `],
+
   template: `
     <div class="max-w-5xl mx-auto px-4 py-6 space-y-6">
 
-      <!-- Page Header -->
+      <!-- Offline banner (R-W6-1 degradation matrix) -->
+      <mee-offline-banner />
+
       <mee-page-header
         title="Price Calculator"
-        subtitle="Set your MRP and see the margin breakdown"
+        subtitle="Enter your cost and target margin to calculate pricing"
       />
 
-      <!-- Main layout: stacked on mobile, 2-col on desktop -->
       <div class="flex flex-col gap-6 lg:flex-row lg:items-start">
 
         <!-- INPUT SECTION -->
         <div class="lg:w-2/5">
           <mee-card>
-            <form [formGroup]="form" class="space-y-4 p-2">
+            <form
+              [formGroup]="form"
+              aria-label="Pricing calculation form"
+              class="mee-pricing__form"
+            >
+              <h2 class="mee-pricing__section-title">Enter pricing details</h2>
 
-              <h2 class="text-base font-semibold" style="color: var(--mee-color-on-surface)">
-                Enter pricing details
-              </h2>
-
-              <!-- MRP field -->
+              <!-- COGS per unit — replaces retired MRP input (DECISION-1) -->
               <mee-input
-                label="MRP"
+                label="Input cost (COGS per unit)"
                 type="number"
                 prefix="&#8377;"
-                placeholder="e.g. 899"
-                formControlName="mrp"
-                (change)="onMrpInput()"
-                [error]="mrpError()"
+                placeholder="e.g. 300"
+                formControlName="input_cost"
+                [error]="inputCostError()"
               />
 
-              <!-- Target margin field -->
+              <!-- Target margin % — replaces retired target_margin (INR) -->
               <mee-input
-                label="Target margin"
+                label="Target margin %"
                 type="number"
-                prefix="&#8377;"
-                placeholder="e.g. 150"
-                formControlName="target_margin"
+                suffix="%"
+                placeholder="e.g. 30"
+                formControlName="target_margin_pct"
                 [error]="targetMarginError()"
               />
 
-              <!-- Native range slider (no mee-slider primitive exists in UI Kit) -->
-              <div class="space-y-2">
-                <label
-                  class="block text-sm font-medium"
-                  style="color: var(--mee-color-on-surface)"
-                >
-                  Adjust MRP via slider
-                </label>
-                <input
-                  type="range"
-                  [value]="sliderMrp()"
-                  min="100"
-                  max="5000"
-                  step="50"
-                  (input)="onSliderInput($event)"
-                  class="w-full rounded-full outline-none"
-                  style="
-                    accent-color: var(--mee-color-primary);
-                    min-height: 44px;
-                    cursor: pointer;
-                    display: block;
-                  "
-                  aria-label="Adjust MRP"
+              <!-- Disabled when form invalid OR calculating in-flight (§4.4 disabled-submit) -->
+              <div class="mee-pricing__calculate-area">
+                <mee-button
+                  label="Calculate"
+                  variant="primary"
+                  [fullWidth]="true"
+                  [disabled]="form.invalid || calculating()"
+                  (clicked)="onCalculate()"
                 />
-                <div class="flex justify-between text-xs" style="color: var(--mee-color-on-surface-muted)">
-                  <span>&#8377;100</span>
-                  <span class="font-medium" style="color: var(--mee-color-on-surface)">
-                    Current: {{ formatRupeeLabel(sliderMrp()) }}
-                  </span>
-                  <span>&#8377;5,000</span>
-                </div>
               </div>
-
-              <!-- Calculate button -->
-              <mee-button
-                label="Calculate"
-                variant="primary"
-                [fullWidth]="true"
-                [disabled]="form.invalid"
-                (clicked)="onCalculate()"
-              />
-
             </form>
           </mee-card>
         </div>
 
-        <!-- P&L BREAKDOWN -->
+        <!-- P&L BREAKDOWN + ERROR STATES -->
         <div class="lg:w-3/5">
           <mee-card>
-            <div class="p-2 space-y-4">
+            <div class="p-3 space-y-4">
+              <h2 class="mee-pricing__section-title">P&amp;L Breakdown</h2>
 
-              <h2 class="text-base font-semibold" style="color: var(--mee-color-on-surface)">
-                P&amp;L Breakdown
-              </h2>
+              <!--
+                Error banners: role="alert" + aria-live="assertive" is handled
+                inside MeeAlertBannerComponent (Wave 6A composites — verified).
+                Focus is moved programmatically to #resultRegion after any
+                state transition (calculate success, error) via _focusPending.
+              -->
 
-              @if (breakdown()) {
-                <table class="w-full text-sm" aria-label="Pricing breakdown">
-                  <tbody>
-                    <tr class="border-b" style="border-color: var(--mee-color-outline)">
-                      <td class="py-2" style="color: var(--mee-color-on-surface-muted)">MRP</td>
-                      <td class="py-2 text-right font-medium" style="color: var(--mee-color-on-surface)">
-                        {{ formatRupeeLabel(breakdown()!.mrp) }}
-                      </td>
-                    </tr>
-                    <tr class="border-b" style="border-color: var(--mee-color-outline)">
-                      <td class="py-2" style="color: var(--mee-color-on-surface-muted)">Meesho Price</td>
-                      <td class="py-2 text-right font-medium" style="color: var(--mee-color-on-surface)">
-                        {{ formatRupeeLabel(breakdown()!.meesho_price) }}
-                      </td>
-                    </tr>
-                    <tr class="border-b" style="border-color: var(--mee-color-outline)">
-                      <td class="py-2" style="color: var(--mee-color-on-surface-muted)">
-                        Commission ({{ breakdown()!.commission_pct }}%)
-                      </td>
-                      <td class="py-2 text-right" style="color: var(--mee-color-on-surface)">
-                        {{ formatRupeeLabel(breakdown()!.commission_amt) }}
-                      </td>
-                    </tr>
-                    <tr class="border-b" style="border-color: var(--mee-color-outline)">
-                      <td class="py-2" style="color: var(--mee-color-on-surface-muted)">
-                        GST ({{ breakdown()!.gst_pct }}%)
-                      </td>
-                      <td class="py-2 text-right" style="color: var(--mee-color-on-surface)">
-                        {{ formatRupeeLabel(breakdown()!.gst_amt) }}
-                      </td>
-                    </tr>
-                    <tr class="border-b-2" style="border-color: var(--mee-color-outline)">
-                      <td class="py-2 font-semibold" style="color: var(--mee-color-on-surface)">
-                        Seller Payout
-                      </td>
-                      <td class="py-2 text-right font-semibold" style="color: var(--mee-color-on-surface)">
-                        {{ formatRupeeLabel(breakdown()!.seller_payout) }}
-                      </td>
-                    </tr>
-                    <tr class="border-b" style="border-color: var(--mee-color-outline)">
-                      <td class="py-2 font-semibold" style="color: var(--mee-color-on-surface)">
-                        Net Margin
-                      </td>
-                      <td
-                        class="py-2 text-right font-semibold"
-                        [style.color]="marginIsPositive()
-                          ? 'var(--mee-color-success)'
-                          : 'var(--mee-color-error)'"
-                      >
-                        {{ formatRupeeLabel(breakdown()!.net_margin) }}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td class="py-2" style="color: var(--mee-color-on-surface-muted)">Net Margin %</td>
-                      <td
-                        class="py-2 text-right font-medium"
-                        [style.color]="marginIsPositive()
-                          ? 'var(--mee-color-success)'
-                          : 'var(--mee-color-error)'"
-                      >
-                        {{ breakdown()!.net_margin_pct }}%
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-
-                <!-- Margin status badge -->
-                <div class="flex items-center gap-2 pt-2">
-                  <mee-badge
-                    [value]="marginIsPositive() ? 'POSITIVE' : 'NEGATIVE'"
-                    [severity]="marginIsPositive() ? 'success' : 'danger'"
-                  />
-                </div>
-
-                <!-- V1 shipping disclaimer -->
-                <p class="text-xs mt-2" style="color: var(--mee-color-on-surface-muted)">
-                  Shipping costs are not included in V1 calculations.
-                </p>
-
-              } @else {
-                <p class="text-sm py-6 text-center" style="color: var(--mee-color-on-surface-muted)">
-                  Enter MRP and target margin above, then click "Calculate" to see your P&amp;L.
-                </p>
+              <!-- 404 — flag off or product not found. NO local math (DECISION-1) -->
+              @if (errorState() === 'unavailable') {
+                <mee-alert-banner
+                  variant="error"
+                  message="Price Calculator is unavailable. Please try again later or contact support."
+                />
               }
+
+              <!-- 422 — category has no usable commission rate -->
+              @if (errorState() === 'commission_missing') {
+                <mee-alert-banner
+                  variant="warning"
+                  [message]="commissionMissingDetail()"
+                />
+              }
+
+              <!-- 400 — Pydantic constraint violation (form validators prevent most) -->
+              @if (errorState() === 'validation') {
+                <mee-alert-banner
+                  variant="warning"
+                  [message]="validationDetail()"
+                />
+              }
+
+              <!-- 5xx / network — manual re-submit (export-lane pattern §3.2) -->
+              @if (errorState() === 'server_error') {
+                <mee-alert-banner
+                  variant="error"
+                  message="Couldn't calculate price — please try again."
+                />
+              }
+
+              <!--
+                Calculating state spinner.
+                MeeSpinnerComponent is queued as a ui-kit amendment — NOT yet available.
+                FLAG: replace .mee-pricing__spinner with <mee-spinner /> when landed.
+                prefers-reduced-motion: CSS @media rule switches animation → opacity pulse.
+                aria-live="polite" + role="status" announces to screen readers.
+              -->
+              @if (calculating()) {
+                <div
+                  role="status"
+                  aria-live="polite"
+                  aria-label="Calculating price, please wait"
+                  class="mee-pricing__calculating"
+                >
+                  <span class="mee-pricing__spinner" aria-hidden="true"></span>
+                  <span class="mee-pricing__calculating-label">Calculating…</span>
+                </div>
+              }
+
+              <!--
+                P&L result table.
+                aria-live="polite" announces to screen readers when results arrive.
+                tabindex="-1" allows programmatic focus (AfterViewChecked → _focusPending).
+                Results focus is deferred one microtask to avoid CD-cycle conflicts.
+              -->
+              <div
+                #resultRegion
+                class="mee-pricing__result-region"
+                tabindex="-1"
+                role="region"
+                aria-label="Pricing results"
+                aria-live="polite"
+                aria-atomic="false"
+              >
+
+                @if (breakdown()) {
+                  <table
+                    class="mee-pricing__table"
+                    aria-label="P&L breakdown"
+                  >
+                    <thead class="sr-only">
+                      <tr>
+                        <th scope="col">Item</th>
+                        <th scope="col">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <!-- MRP: server-COMPUTED output. Not an input (DECISION-1). -->
+                      <tr class="mee-pricing__row">
+                        <td class="mee-pricing__table-label" scope="row">MRP (server-computed)</td>
+                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.mrp) }}</td>
+                      </tr>
+                      <tr class="mee-pricing__row">
+                        <td class="mee-pricing__table-label" scope="row">Meesho Price</td>
+                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.meesho_price) }}</td>
+                      </tr>
+                      <tr class="mee-pricing__row">
+                        <td class="mee-pricing__table-label" scope="row">Seller Price</td>
+                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.seller_price) }}</td>
+                      </tr>
+                      <tr class="mee-pricing__row">
+                        <td class="mee-pricing__table-label" scope="row">
+                          Commission ({{ breakdown()!.commission_pct }}%)
+                        </td>
+                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.commission_amount) }}</td>
+                      </tr>
+                      <tr class="mee-pricing__row">
+                        <td class="mee-pricing__table-label" scope="row">
+                          GST ({{ breakdown()!.gst_pct }}%)
+                        </td>
+                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.gst_amount) }}</td>
+                      </tr>
+                      <!-- Profit row — semantic colour via CSS class (token-only, no inline hex) -->
+                      <tr class="mee-pricing__row mee-pricing__row--profit">
+                        <td class="mee-pricing__table-label" scope="row">Profit</td>
+                        <td
+                          class="mee-pricing__table-value"
+                          [class.mee-pricing__value--positive]="marginIsPositive()"
+                          [class.mee-pricing__value--negative]="!marginIsPositive()"
+                          [attr.aria-label]="'Profit: ' + formatRupeeLabel(breakdown()!.profit) + (marginIsPositive() ? ', positive' : ', negative')"
+                        >
+                          {{ formatRupeeLabel(breakdown()!.profit) }}
+                        </td>
+                      </tr>
+                      <tr class="mee-pricing__row mee-pricing__row--profit-pct">
+                        <td class="mee-pricing__table-label" scope="row">Profit %</td>
+                        <td
+                          class="mee-pricing__table-value"
+                          [class.mee-pricing__value--positive]="marginIsPositive()"
+                          [class.mee-pricing__value--negative]="!marginIsPositive()"
+                        >
+                          {{ breakdown()!.profit_pct }}%
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  <!-- POSITIVE / NEGATIVE badge -->
+                  <div class="mee-pricing__results-footer">
+                    <div class="flex items-center gap-2">
+                      <mee-badge
+                        [value]="marginIsPositive() ? 'POSITIVE' : 'NEGATIVE'"
+                        [severity]="marginIsPositive() ? 'success' : 'danger'"
+                      />
+                    </div>
+
+                    <!--
+                      Server-issued alert chips: LOW_MARGIN / HIGH_MRP_MULTIPLIER / THIN_PROFIT.
+                      Styled by severity via mee-pricing__alert-chip--warning/info classes
+                      (token-only, no hardcoded hex). MeeAlertBanner uses role="alert" internally;
+                      here we use a lighter chip variant to avoid stacking full alert banners.
+                      aria-label on the wrapper provides screen reader context.
+                    -->
+                    @if (breakdown()!.alerts.length > 0) {
+                      <div
+                        role="list"
+                        aria-label="Pricing alerts"
+                        class="flex flex-col gap-2"
+                      >
+                        @for (alert of breakdown()!.alerts; track alert.code) {
+                          <div
+                            role="listitem"
+                            class="mee-pricing__alert-chip"
+                            [class.mee-pricing__alert-chip--warning]="alert.severity === 'warning'"
+                            [class.mee-pricing__alert-chip--info]="alert.severity === 'info'"
+                          >
+                            {{ resolveAlertMessage(alert.message_id) }}
+                          </div>
+                        }
+                      </div>
+                    }
+
+                    <p class="mee-pricing__disclaimer">
+                      Shipping costs are not included in V1 calculations.
+                    </p>
+                  </div>
+
+                } @else if (!calculating() && !errorState()) {
+
+                  <!--
+                    Empty / first-visit state.
+                    Shown when: no breakdown, not calculating, no error.
+                    Design: centred icon + heading + hint copy.
+                  -->
+                  <div class="mee-pricing__empty" aria-label="No results yet">
+                    <div class="mee-pricing__empty-icon" aria-hidden="true">&#8377;</div>
+                    <p class="mee-pricing__empty-title">Ready to calculate</p>
+                    <p class="mee-pricing__empty-hint">
+                      Enter your input cost and target margin, then tap "Calculate".
+                    </p>
+                  </div>
+
+                }
+              </div><!-- /#resultRegion -->
 
             </div>
           </mee-card>
@@ -222,7 +548,7 @@ import type { PnlBreakdown } from './pricing.model';
 
       </div>
 
-      <!-- Save & Continue -->
+      <!-- Save & Continue: full-width, min 44px touch target via mee-button internals -->
       <div class="pt-2">
         <mee-button
           label="Save &amp; Continue"
@@ -235,53 +561,65 @@ import type { PnlBreakdown } from './pricing.model';
     </div>
   `,
 })
-export class PricingComponent implements OnInit {
-  private readonly fb     = inject(FormBuilder);
-  private readonly route  = inject(ActivatedRoute);
-  private readonly router = inject(Router);
+export class PricingComponent implements OnInit, AfterViewChecked {
+  private readonly fb      = inject(FormBuilder);
+  private readonly route   = inject(ActivatedRoute);
+  private readonly router  = inject(Router);
+  private readonly service = inject(PricingApiService);
 
-  /** Exposed to template (avoids TS strict no-property-access-from-index). */
-  readonly formatRupeeLabel = formatRupee;
+  /** Reference to the P&L result region — used for programmatic focus after calculate. */
+  @ViewChild('resultRegion') private resultRegionEl?: ElementRef<HTMLElement>;
 
-  /** Reactive form: MRP + target margin. */
+  /** Pending focus flag: set true after a calc completes/errors; consumed in AfterViewChecked. */
+  private _focusPending = false;
+
+  readonly formatRupeeLabel    = formatRupee;
+  readonly resolveAlertMessage = (messageId: string): string =>
+    ALERT_MESSAGES[messageId] ?? messageId;
+
+  // Form: input_cost (COGS) + target_margin_pct (%). MRP slider + mrp input = DEAD (DECISION-1).
   readonly form = this.fb.group({
-    mrp:           [899,  [Validators.required, Validators.min(1), Validators.max(99999)]],
-    target_margin: [150,  [Validators.required, Validators.min(0)]],
+    input_cost:        ['300',  [Validators.required, Validators.min(0.01)]],
+    target_margin_pct: ['30',   [Validators.required, Validators.min(0), Validators.max(500)]],
   });
 
-  /** Mirrors slider thumb position (synced two-way with form MRP control). */
-  readonly sliderMrp = signal<number>(899);
+  // P&L breakdown — null until successful server response; stays null on any error (R-W6-1).
+  readonly breakdown = signal<PriceCalcResponse | null>(null);
 
-  /** Computed P&L breakdown — null until Calculate is first clicked. */
-  readonly breakdown = signal<PnlBreakdown | null>(null);
-
-  /** Reserved for future async API wiring. */
+  // True while HTTP POST is in-flight.
   readonly calculating = signal<boolean>(false);
 
-  /** Extracted from route params in ngOnInit. */
+  // Typed error state per §3.1 degradation matrix. null = no error.
+  readonly errorState = signal<PricingErrorState>(null);
+
+  // Detail copy for 422 commission_missing — set from server response.
+  readonly commissionMissingDetail = signal<string>('Pricing is not available for this category yet.');
+
+  // Detail copy for 400 validation — set from server response.
+  readonly validationDetail = signal<string>('Invalid pricing input.');
+
   private productId = '';
 
-  /** True when net_margin is strictly positive. */
+  // True when profit > 0 — drives badge + colour. Based on server profit (not retired net_margin).
   readonly marginIsPositive = computed<boolean>(
-    () => (this.breakdown()?.net_margin ?? -1) > 0
+    () => parseDecimal(this.breakdown()?.profit ?? '0') > 0,
   );
 
-  // ── Form validation error messages ──
-
-  readonly mrpError = computed<string | undefined>(() => {
-    const ctrl = this.form.controls.mrp;
+  // Inline field error signals — only show after user has touched the field.
+  readonly inputCostError = computed<string | undefined>(() => {
+    const ctrl = this.form.controls.input_cost;
     if (!ctrl.touched || ctrl.valid) return undefined;
-    if (ctrl.hasError('required')) return 'MRP is required.';
-    if (ctrl.hasError('min'))      return 'MRP must be at least 1.';
-    if (ctrl.hasError('max'))      return 'MRP cannot exceed 99,999.';
-    return 'Invalid MRP.';
+    if (ctrl.hasError('required')) return 'Input cost is required.';
+    if (ctrl.hasError('min'))      return 'Input cost must be greater than 0.';
+    return 'Invalid input cost.';
   });
 
   readonly targetMarginError = computed<string | undefined>(() => {
-    const ctrl = this.form.controls.target_margin;
+    const ctrl = this.form.controls.target_margin_pct;
     if (!ctrl.touched || ctrl.valid) return undefined;
     if (ctrl.hasError('required')) return 'Target margin is required.';
     if (ctrl.hasError('min'))      return 'Target margin cannot be negative.';
+    if (ctrl.hasError('max'))      return 'Target margin cannot exceed 500%.';
     return 'Invalid target margin.';
   });
 
@@ -290,38 +628,81 @@ export class PricingComponent implements OnInit {
   }
 
   /**
-   * Native range slider moved — sync slider signal AND form MRP control.
-   * Pattern: "native range for V1 margin slider" (no mee-slider primitive exists).
+   * After Angular updates the view: if a focus is pending (result or error arrived),
+   * shift focus to the result region so screen readers announce the updated content.
+   * Deferred microtask avoids focusing during change-detection cycle.
+   * Pattern mirrors wave6b_onboarding_builder3_polish error-banner focus.
    */
-  onSliderInput(event: Event): void {
-    const val = (event.target as HTMLInputElement).valueAsNumber;
-    this.sliderMrp.set(val);
-    this.form.patchValue({ mrp: val });
-  }
-
-  /**
-   * MRP text field changed — clamp and sync slider signal from form value.
-   */
-  onMrpInput(): void {
-    const val = this.form.controls.mrp.value;
-    if (val !== null && val !== undefined && !isNaN(Number(val))) {
-      const clamped = Math.min(Math.max(Number(val), 100), 5000);
-      this.sliderMrp.set(clamped);
+  ngAfterViewChecked(): void {
+    if (this._focusPending && this.resultRegionEl) {
+      this._focusPending = false;
+      const el = this.resultRegionEl.nativeElement;
+      // Defer to next microtask — avoids NG0100 ExpressionChangedAfterChecked
+      Promise.resolve().then(() => el.focus());
     }
   }
 
-  /** Run client-side P&L calculation. Synchronous — no HTTP in V1 simulation. */
+  // DECISION-1: NEVER compute locally. Server-calc only. No ApiClient retry (§3.2 defect + POST).
   onCalculate(): void {
     if (this.form.invalid) return;
+
     this.calculating.set(true);
-    const mrp    = this.form.controls.mrp.value ?? 0;
-    const margin = this.form.controls.target_margin.value ?? 0;
-    this.breakdown.set(computePnlBreakdown(mrp, margin));
-    this.calculating.set(false);
+    this.errorState.set(null);
+    this.breakdown.set(null);
+
+    const raw  = this.form.getRawValue();
+    const body = {
+      input_cost:        String(raw.input_cost ?? ''),
+      target_margin_pct: String(raw.target_margin_pct ?? ''),
+    };
+
+    this.service.calc(this.productId, body).subscribe({
+      next: (result) => {
+        this.calculating.set(false);
+        if ('kind' in result) {
+          this._handleErrorShape(result);
+        } else {
+          this.breakdown.set(result);
+        }
+        // Shift focus to result region after any calc outcome (success or error).
+        this._focusPending = true;
+      },
+      error: () => {
+        // Service absorbs all errors via catchError. Defensive guard.
+        this.calculating.set(false);
+        this.errorState.set('server_error');
+        this._focusPending = true;
+      },
+      complete: () => {
+        // Fires on EMPTY (401/5xx). Ensure calculating is cleared.
+        this.calculating.set(false);
+      },
+    });
   }
 
-  /** Navigate forward to the export step. */
   onSaveContinue(): void {
     void this.router.navigate(['/catalogs', this.productId, 'export']);
+  }
+
+  private _handleErrorShape(shape: PriceCalcErrorShape): void {
+    switch (shape.kind) {
+      case 'unavailable':
+        this.errorState.set('unavailable');
+        break;
+      case 'commission_missing':
+        this.errorState.set('commission_missing');
+        this.commissionMissingDetail.set(shape.detail);
+        break;
+      case 'validation':
+        this.errorState.set('validation');
+        this.validationDetail.set(shape.detail);
+        break;
+      case 'server_error':
+        // 5xx or network error — surface retry affordance banner (spec §3.1).
+        // Service emits this shape instead of bare EMPTY so the component can render
+        // the "Couldn't calculate — please try again" banner.
+        this.errorState.set('server_error');
+        break;
+    }
   }
 }
