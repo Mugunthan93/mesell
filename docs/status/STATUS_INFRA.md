@@ -2119,3 +2119,77 @@ short-lived Job that runs `alembic upgrade head` on the NEW image before `set im
 **Board:** ci-activation flipped DONE (CI ACTIVE) and moved Active → Recently merged in the same edit.
 **Cost:** ₹0/month — close-out is docs + memory only; zero cluster/TF/Secret Manager/ci.yml mutations.
 =========
+
+---
+
+=== UPDATE 2026-06-12 — mesell-infra-tail-session-1 — image-tasks queue activation + dev ConfigMap reconcile ===
+Phase: Playbook §15 (Safe deployment template — MANDATORY server-dry-run gate) + §18 task routing.
+Session: mesell-infra-tail-session-1
+Worktree: /tmp/mesell-wt/infra-tail on chore/infra-tail-image-queue (off origin/develop @ 2b5ec60).
+Cluster: 35.234.223.66 (pinned --kubeconfig ~/.kube/meesell-dev.yaml; verified server target + node Ready before any apply).
+
+CONTEXT: 7 founder gates merged to develop this morning. develop carries
+`task_routes={"image.precheck":{"queue":"image-tasks"}}` in celery_app.py (#143) and the
+#138 worker.yaml `-Q image-tasks` scaffold + dev config.yaml with 5 FEATURE flags.
+
+ITEM 1 — Activate the -Q worker queue split (Task 1)
+- Re-read my #138 scaffold: it activates `-Q` on the SINGLE existing worker Deployment (NOT a
+  second Deployment). DESIGN CORRECTION over the naive scaffold value: backend routes ONLY
+  `image.precheck` to `image-tasks`; `export.xlsx` has NO route → stays on default `celery`.
+  So the worker must name BOTH queues: `-Q celery,image-tasks`. Naive `-Q image-tasks` alone
+  would stop the worker consuming `celery` → export.xlsx STALLS. Edited worker.yaml args
+  accordingly + rewrote the now-stale "adding -Q would break the pipeline" comment block to the
+  RESOLVED state.
+- [MANDATORY GATE] `kubectl --dry-run=server -f k8s/worker.yaml` → `deployment.apps/worker configured (server dry run)` CLEAN.
+- Applied live to dev: `deployment.apps/worker configured`. Live deploy args now:
+  `["-A","app.workers.celery_app","worker","--loglevel=info","-Q","celery,image-tasks","--concurrency=4","--max-tasks-per-child=100"]`.
+- VERIFY (queue bindings) — `celery -A app.workers.celery_app inspect active_queues` from a worker
+  pod exec: BOTH worker pods (worker-78b6dc7656-2rtnv, -864sn) report active_queues =
+  {name:'celery', routing_key:'celery'} + {name:'image-tasks', routing_key:'image-tasks'}.
+  → image.precheck (routed) + export.xlsx (default) both consumed. Validation: PASS.
+
+ITEM 2 — Rolling restart api + worker for ConfigMap pickup (Task 2)
+- PRE-CHECK DISCOVERY (important): the live `meesell-config` ConfigMap had only 20 keys and ZERO
+  FEATURE_* flags — the 5 flags + GCS_BUCKET_IMAGES were NOT actually live (the #138 board claimed
+  applied; live cluster disagreed). A bare rollout restart would have picked up nothing.
+- CORRECTED SEQUENCE: applied develop's k8s/config.yaml FIRST. [MANDATORY GATE]
+  `kubectl --dry-run=server -f k8s/config.yaml` → `configmap/meesell-config configured (server dry run)`
+  CLEAN; `kubectl diff` showed exactly +6 keys (5 FEATURE flags + GCS_BUCKET_IMAGES), none changed/removed.
+  Applied: `configmap/meesell-config configured` → 26 keys live, 5 FEATURE flags + GCS_BUCKET_IMAGES present.
+- `kubectl -n dev rollout restart deployment/api deployment/worker` → both restarted.
+  `rollout status` both: `successfully rolled out` (worker maxSurge:0/maxUnavailable:1 kill-before-surge honored).
+- VERIFY (env) — fresh pods api-99cc75648-9thwz + worker-78b6dc7656-2rtnv: `printenv | grep ^FEATURE_`
+  shows ALL 5 = `FEATURE_{AI_AUTOFILL,CATALOG_FORM,IMAGE_PRECHECK,SMART_PICKER,XLSX_EXPORT}_ENABLED=true`
+  (booleans, not secrets). GCS_BUCKET_IMAGES=meesell-images also present. Validation: PASS.
+
+APPLIED LIVE TO DEV (namespace dev only — NEVER touched staging/prod):
+  - configmap/meesell-config (+6 keys → 26)
+  - deployment/worker (args -Q celery,image-tasks; rolling restart)
+  - deployment/api (rolling restart)
+
+Board sweep: image-tasks inter-lead row (→backend) flipped OPEN→RESOLVED. New Active row
+`image-tasks-queue-activation` = IN REVIEW (founder-gated develop PR). Session-end sweep: no infra
+Active row untouched 7+ days (auth-otp/mfe-cutover last 2026-06-11 = 1 day; rest 2026-06-12).
+Two backend inter-lead rows remain OPEN (catalog-form Gate-1 event-loop; not mine to close).
+
+Cost: ₹0/month (ConfigMap keys + worker arg; no new GCP resource).
+PR: chore/infra-tail-image-queue → develop — LEFT OPEN (founder/master merges; not an infra group-PR I merge).
+Next action: founder/master merges the PR; the queue split + flags are ALREADY live on dev regardless of PR merge.
+=========
+
+=== UPDATE 2026-06-12 — mesell-infra-tail-session-1 — POST-APPLY: concurrent-session live overwrite (resolved) ===
+Phase: operational coordination finding.
+At 02:08Z my `-Q celery,image-tasks` worker apply went live + verified (both pods bound
+{celery, image-tasks}). At ~02:10–02:12Z a CONCURRENT background infra session ("go both in
+background") re-applied develop's worker.yaml — which does NOT yet carry `-Q` (my change is in
+PR #147, unmerged) — REVERTING the worker to default-`celery`-only and rolling 2 fresh pods.
+The dev ConfigMap was NOT affected (config.yaml content already matched develop, so a re-apply is
+a no-op for it; all 5 FEATURE flags + GCS_BUCKET_IMAGES stayed live — re-verified 26 keys).
+RESOLUTION: re-applied my worker.yaml (server-dry-run clean → applied → rollout complete);
+re-verified BOTH worker pods bind {celery, image-tasks}. api 2/2, worker 2/2 stable.
+DURABLE FIX: PR #147. Until #147 merges + the develop deploy runs, any concurrent re-apply of
+develop's (pre-#147) worker.yaml will keep reverting the live `-Q`. This is a transient race, not a
+defect in the change. LESSON: when two background sessions both `kubectl apply` against the same dev
+cluster, the last writer wins per-resource; live `-Q` is only durable once the manifest carrying it
+lands on develop and deploys.
+=========
