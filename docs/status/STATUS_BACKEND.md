@@ -5138,3 +5138,61 @@ Blockers: none. The lane is READY but NOT IN EXECUTION until the master session 
 Next: PR chore/ms-rekey-ruling → develop; lead-gate comment; squash --admin; ref-delete. On dev-complete declaration, the master session dispatches the export-extraction coding session (Sub-Plan A) — first step D5 pool/PgBouncer.
 Hand-offs: none new. NOTE for infra: when Sub-Plan A executes, D5 pool right-size + PgBouncer is the ₹0 first step; the D3 VM upgrade (e2-standard-4) is a fresh founder ask at the moment services outgrow the current node — do NOT pre-provision on the strength of the plan-level pre-approval.
 =========
+
+=== UPDATE: 2026-06-12 — MS-C image-service extraction PHASE 1 (spec authoring) ===
+Phase: Microservices Migration — Sub-Plan C (image), wave MS-2 (B dashboard ‖ C image)
+Session: mesell-ms-image-session-1 (MS-C PHASE 1 — HYBRID rule STEP 1, spec + sub-plan only)
+
+Board sweep (session start + end): Active features had 1 row (microservices-export, READY-TO-EXECUTE,
+  2026-06-12, NOT stale at 7d). Added microservices-image (MS-C) row. flag-parity + backend-chores rows are
+  FOUNDER-PR-OPEN (not stale). No rows untouched 7+ days. Recently-merged rows within 14d window. Inter-lead
+  requests: 3 (all RESOLVED/READY — no new opened this session; the MS-C infra request opens at Phase-2 dispatch,
+  not now, because execution is GATED).
+
+Done:
+  - Authored docs/plans/microservices_migration/SUB_PLAN_0C_image_extraction.md (canonical SUB_PLAN_01 shape,
+    11 sections, AS-BUILT grounded at origin/develop c859955, file:line citations throughout). Covers: module
+    inventory (8 files); 2 mounted public routes (main.py:46/:126 verified); Celery worker split (dedicated
+    svc-image queue, ground from celery_app.py — NO task_routes today; #143-OPEN nuance noted); ai_ops VENDORING
+    (D6/A1, shared Valkey DB-0 budget brake); the /internal/products/{id}/images callee shim (FROZEN
+    list_images→ImagesListResponse per MS-A spec_msA §0.4 row 6); the caller-side catalog dependency (monolith-
+    hosted until MS-5); GCS surface; rembg decision (§3.G DEFER); DB table owned (product_images, schema image);
+    A2 middleware vendoring (5 of 6 active, plan_guard NO-OP); strangler-fig + rollback; D3 VM-fit flag (§7 —
+    svc-image heaviest container); validation floor (monotonic ≥649). Execution marked GATED.
+  - Authored .claude/agent-memory/meesell-backend-coordinator/spec_msC_backend.md (HYBRID step-1 task spec for
+    services/api-routes/database builders; per-specialist file:line-cited shapes; branch/worktree plan;
+    merge-gate criteria; explicit GATE note).
+  - Authored .claude/agent-memory/meesell-backend-coordinator/handoff_msC_infra.md (infra surfaces: Dockerfile
+    rembg/Pillow size, k8s api + dedicated Celery worker, Traefik, Postgres image schema/role/grants incl.
+    audit cross-schema + §0.10 transitional products grant, GCS SA, Valkey DB-0 budget access, queue wiring;
+    D3 trigger flag).
+  - Board + this STATUS UPDATE.
+
+KEY DECISIONS / FINDINGS (Wave-6 law — all re-verified file:line from source):
+  - FROZEN SHIM: export→image is list_images (export/service.py:185, image/service.py:232), NOT get_image_bytes.
+    The MASTER_PLAN §1.C "get_image_bytes" cell is STALE; spec_msA §0.4 row 6 corrected it. Implement list_images.
+  - rembg: requirements.txt:14 BUT zero refs in backend/app (grep empty). Live pipeline = Pillow steps 1-4 +
+    ai_ops Gemini watermark step 5. No call site to move. DECISION: DEFER from svc-image requirements (recommended).
+  - ai_ops VENDORED per D6/A1 (image IS AI-consuming, watermark.v1 at tasks.py:206); ₹500 budget brake stays
+    SHARED via UN-prefixed Valkey DB-0 keys (ai:cost:daily/pending, ai:budget:reservation). image is the FIRST
+    AI-consuming service to extract.
+  - Outbound HTTP shim = catalog only (assert_product_ownership service.py:162/:248). catalog is MS-5 (LAST) →
+    shim base URL = monolith ClusterIP during MS-C.
+  - §0.10 cross-schema hazard (NEW, image-specific vs export): product_images↔products tenancy join breaks at
+    schema-split. Recommend Option-b (scope by product_id post-ownership-shim, §2.D-aligned) over Option-a
+    (transitional public.products grant). Escalate at Phase 2 if MS-A recipe silent.
+  - Test baseline 649 def test_ (MONOTONIC); image's own 29. Never hardcode 823 (collected-items, not def test_).
+
+In progress: none (single-shot Phase-1 docs authoring).
+Blockers: PHASE 2 (execution) GATED on (1) MS-A founder gate (export integration→develop) MERGED — currently
+  OPEN at c859955 — and (2) MS-A extraction recipe existing. Both must hold before any branch cut / specialist
+  dispatch. No backend blocker to Phase 1.
+Next: Phase 2 unblocks when the master session merges MS-A's founder gate AND the MS-A recipe lands. Then:
+  consume+reconcile the recipe → cut feature/microservices-image/integration off origin/develop → dispatch
+  database-builder (Phase A) ‖ infra handoff → services-builder → api-routes-builder → lead Phase C merge gate.
+  Reconcile the /internal/list-images shim against MS-A's final contract doc FIRST; STOP+escalate on drift.
+Hand-offs: handoff_msC_infra.md authored for meesell-infra-builder (NOT actioned now — execution gated; the
+  Inter-lead request row opens at Phase-2 dispatch). Cross-lane to AI lead at Phase 2: watermark.v1 prompt pin
+  must not drift. Decentralized per CLAUDE.md rule 3 — infra/AI leads read this STATUS + my memory; no memo
+  cut while execution is gated.
+=========
