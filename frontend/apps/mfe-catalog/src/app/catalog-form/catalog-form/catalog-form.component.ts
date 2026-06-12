@@ -33,6 +33,7 @@ import {
 } from '@mesell/composites';
 
 import type { FieldGroup, FieldSchema } from '../models/field-schema.model';
+import type { AutofillResponse } from '../services/catalog-form-api.service';
 import { CatalogFormApiService } from '../services/catalog-form-api.service';
 
 @Component({
@@ -341,6 +342,18 @@ export class CatalogFormComponent implements OnInit {
   readonly recommendedOpen = signal(false);
   readonly optionalOpen    = signal(false);
   readonly productId       = signal<string>('');
+  /**
+   * categoryId — resolved from Router navigation state (GAP-1 interim, spec §4).
+   * Set by smart-picker's selectCategory() call: router.navigate(['/catalogs', id, 'edit'], { state: { categoryId } }).
+   * On hard-reload (nav-state absent), this is null → form shows an explicit error state.
+   * TODO(builder-2): render error banner when categoryId is null after loading.
+   */
+  readonly categoryId      = signal<string | null>(null);
+  /**
+   * categoryIdMissing — true when hard-reload/deep-link arrived without nav-state.
+   * TODO(builder-2): render an explicit error state / "return to dashboard" CTA.
+   */
+  readonly categoryIdMissing = signal(false);
 
   // ── Computed ──────────────────────────────────────────────────────────────
   readonly productName = computed<string>(() => {
@@ -375,18 +388,59 @@ export class CatalogFormComponent implements OnInit {
     const id = (this.route.snapshot.params['id'] as string | undefined) ?? 'new';
     this.productId.set(id);
 
-    // Wire autosave pipeline in ngOnInit (DestroyRef injected explicitly — not constructor)
+    // GAP-1 resolution (spec §4): Resolve category_id from Router navigation state.
+    // smart-picker navigates: router.navigate(['/catalogs', id, 'edit'], { state: { categoryId } })
+    // On hard-reload the nav-state is absent → categoryIdMissing=true → form shows error state.
+    // TODO(builder-2): wire categoryIdMissing to an error banner / "Return to dashboard" CTA.
+    const navState = this.router.getCurrentNavigation()?.extras.state as
+      | { categoryId?: string }
+      | null
+      | undefined;
+    const catId = navState?.['categoryId'] as string | undefined;
+
+    if (catId) {
+      this.categoryId.set(catId);
+    } else {
+      // Hard-reload path — nav-state lost. Show explicit error state.
+      this.categoryIdMissing.set(true);
+      this.loading.set(false);
+      this.toast.error('Cannot load form. Please return to the dashboard and try again.');
+      return;
+    }
+
+    // Wire autosave pipeline (DestroyRef injected explicitly — not constructor).
     this.autosaveTrigger$
       .pipe(debounceTime(10_000), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.performAutosave());
 
-    // Load schema (simulated)
-    this.apiSvc.getSchema(id).subscribe({
+    // #22 getDraft — pre-fill fieldValues with autosaved data for resume-on-reload.
+    // Non-blocking: form renders even if draft fails (getDraft error matrix → null).
+    this.apiSvc.getDraft(id).subscribe({
+      next: (draft) => {
+        if (draft?.fields && Object.keys(draft.fields).length > 0) {
+          this.fieldValues.set(draft.fields);
+        }
+        // After draft recovery (or empty draft), load the schema.
+        this.loadSchema(catId);
+      },
+      error: () => {
+        // getDraft error matrix guarantees this is never reached (all errors → null).
+        // Defensive: proceed to schema load.
+        this.loadSchema(catId);
+      },
+    });
+  }
+
+  private loadSchema(categoryId: string): void {
+    // #15 getSchema — load the category-specific field schema.
+    // getSchema error matrix: non-401 errors return of([]) → loading=false + empty schema.
+    this.apiSvc.getSchema(categoryId).subscribe({
       next: (groups) => {
         this.schema.set(groups);
         this.loading.set(false);
       },
       error: () => {
+        // Only 401 reaches here (rethrown). All other errors return of([]) in the service.
         this.loading.set(false);
         this.toast.error('Failed to load product schema. Please refresh.');
       },
@@ -425,16 +479,44 @@ export class CatalogFormComponent implements OnInit {
   }
 
   onAutofill(): void {
+    // Per spec §5.3 (GAP-1 autofill): description is REQUIRED by the backend (1..2000 chars).
+    // Source: the product_title field value if filled; else block with a toast.
+    const description = this.fieldValues()['product_title'];
+    if (typeof description !== 'string' || !description.trim()) {
+      this.toast.error('Add a product title first — autofill needs it.');
+      return;
+    }
+
     this.autofilling.set(true);
-    this.apiSvc.autofill(this.productId()).subscribe({
-      next: (suggestions) => {
-        this.aiSuggestions.set(suggestions);
-        this.fieldValues.update(cur => ({ ...cur, ...suggestions }));
+    this.apiSvc.autofill(this.productId(), description).subscribe({
+      next: (resp: AutofillResponse) => {
+        // Map AutofillResponse.suggestions {[k]:{value,confidence,source}} → flat {[k]:value}
+        // for the aiSuggestions highlight signal (Record<string, unknown>).
+        // TODO(builder-2): surface confidence as display hint (V1.5 spec §5.3).
+        const flatSuggestions: Record<string, unknown> = {};
+        for (const [key, suggestion] of Object.entries(resp.suggestions)) {
+          flatSuggestions[key] = suggestion.value;
+        }
+        this.aiSuggestions.set(flatSuggestions);
+        this.fieldValues.update(cur => ({ ...cur, ...flatSuggestions }));
+
+        if (resp.fallback_offered && Object.keys(resp.suggestions).length === 0) {
+          // AI couldn't fill — no suggestions returned
+          this.toast.error("AI couldn't fill — try adding more product details.");
+        }
+
         this.autofilling.set(false);
       },
-      error: () => {
+      error: (err: { status?: number }) => {
         this.autofilling.set(false);
-        this.toast.error('AI fill failed. Please try again.');
+        if (err.status === 402) {
+          this.toast.error('AI fill quota reached. Upgrade your plan to continue.');
+        } else if (err.status === 404) {
+          // FEATURE_AI_AUTOFILL_ENABLED=false — GAP-2 graceful
+          this.toast.error('AI fill is not available in your current plan.');
+        } else {
+          this.toast.error('AI fill failed. Please try again.');
+        }
       },
     });
   }
