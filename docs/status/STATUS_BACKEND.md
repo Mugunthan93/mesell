@@ -4397,3 +4397,69 @@ Follow-up tickets opened (NOT fixed here):
   - (Resolved inline, not ticketed) the test_config + worker_db_isolation stale-API repairs were the
     lead-authorized exceptions, done in this PR; no separate ticket needed.
 =========
+
+=== UPDATE: 2026-06-12 — backend chores batch (2 items) STEP 1: micro-audit + SPECs ===
+Phase: backend chores follow-ups (post-V1-feature housekeeping)
+Session: mesell-backend-chores-session-1
+Board sweep: 1 row added (backend-chores IN PROGRESS) + 1 incoming inter-lead row (infra image-tasks
+  queue, IN PROGRESS — backend servicing). Stale scan: microservices-export last touched 2026-06-10
+  (2 days, NOT stale — <7d; it is a POST-V1 extraction track awaiting founder A1/A2 ratification, not
+  abandoned). No 7+-day-stale rows. No MERGED rows older than 14 days to evict.
+
+ITEM 1 — Celery task routing (infra inter-lead unblock)
+  AUDIT: infra memo (handoff_image_tasks_queue.md) cites task name "image.precheck". VERIFIED REAL
+  task name = "image.precheck" — explicit `@shared_task(name="image.precheck", ...)` at
+  backend/app/modules/image/tasks.py:416 (NOT a dotted-module-path default). Infra's cited mapping is
+  CORRECT verbatim.
+  AS-BUILT: workers/celery_app.py has NO task_routes / task_queues. image.precheck publishes to the
+  default `celery` queue; worker runs --concurrency=4 with NO -Q, so it consumes default. Pipeline
+  FUNCTIONAL today. The second V1 task is export.xlsx (name=, also default queue) per the include list
+  (celery_app.py:103-105) + _TASKS_REQUIRING_USER_REVALIDATION frozenset (L125-128).
+  FIX SHAPE: add `task_routes = {"image.precheck": {"queue": "image-tasks"}}` to the existing
+  celery_app.conf.update(...) block (or as celery_app.conf.task_routes). MAPS ONLY image.precheck →
+  export.xlsx + any future task stay on default `celery` queue (default-queue invariant PRESERVED —
+  required because the worker that runs export consumes default with no -Q). Owner: services-builder.
+
+ITEM 2 — _GLOBAL_TABLES drift (queued from smart-picker gate PR #72)
+  AUDIT: docs assert a `core/tenancy._GLOBAL_TABLES` frozenset exists. As-built core/tenancy.py
+  (128 lines) exports ONLY {TenantViolationError, assert_owned, scope_to_user} — NO _GLOBAL_TABLES.
+  The symbol is referenced in THREE doc/docstring locations: BACKEND_ARCHITECTURE.md §9.D (L3245),
+  §9.J (~L3461), and category/repository.py:17 docstring. CRITICAL FINDING: the as-built §19 linter
+  `tests/lint/check_scope_to_user.py` enforces the global-table carve-out by MODULE-NAME ALLOWLIST
+  (`ALLOWLISTED_MODULES = frozenset({"category","dashboard","iam"})`, L61) — it does NOT read
+  _GLOBAL_TABLES at all. So _GLOBAL_TABLES has ZERO runtime/linter consumer; it is a pure
+  documentation-vs-code drift (docstring promises a symbol the code never grew).
+  §4.C LOCKED text (L938) names the 4 global tables in PROSE but does NOT itself reference the
+  _GLOBAL_TABLES symbol — so adding the frozenset does NOT touch a LOCKED contract's required shape.
+  FIX SHAPE (minimal, NO behaviour change): add a documentation-sentinel
+  `_GLOBAL_TABLES: frozenset[str] = frozenset({"categories","templates","field_enum_values",
+  "field_aliases"})` to core/tenancy.py with a docstring tying it to §4.C/§9.D + a note that the
+  linter currently keys on module-name (so the sentinel is documentation/future-proofing, NOT yet a
+  linter input). Owner: database-builder (as queued; tenancy-foundation symbol). database-builder may
+  OPTIONALLY (R2 below) re-point check_scope_to_user.py to consume the frozenset — FLAGGED as a
+  founder decision, NOT bundled by default.
+
+OVERLAP / BRANCH:
+  Branch chore/backend-followups cut off origin/develop @ eb84779 (worktree /tmp/mesell-wt/backend-chores),
+  pushed. Verified ZERO file overlap with the 6 OPEN founder-gate PRs (#115/#118/#122/#133/#138/#139):
+  none touch core/tenancy.py or workers/celery_app.py/workers/. chore/ namespace → no D/F refname concern.
+
+SPECIALIST RULING: NOT folded — 2 separate specialists (services-builder owns celery_app.py per §3.I /
+  §18; database-builder owns core/tenancy.py per §4.C). Different files, different owners, different
+  domains → 2 SPECs, can land in ONE PR or two (lead's call at gate; recommend ONE PR
+  chore/backend-followups → develop since both are sub-10-line additive diffs with zero test risk).
+
+FOUNDER RULINGS NEEDED (FLAG, not picked):
+  R1 — Item 2 scope: documentation-sentinel ONLY (docstring↔code agree) vs ALSO re-point the linter
+       to consume _GLOBAL_TABLES (replacing the module-name allowlist for category). DEFAULT = sentinel
+       only (lower risk, the allowlist works). Re-point is a §19 linter behaviour change.
+  R2 — does this 2-item batch land as ONE PR to develop or two? (lead recommends ONE.)
+
+Done: micro-audit (both items, file:line evidence + real task name); branch+worktree+push; board row +
+  incoming inter-lead row; this STATUS block; SPECs authored (returned to master for dispatch).
+In progress: awaiting master to dispatch services-builder (Item 1) + database-builder (Item 2); lead
+  gates both after.
+Blockers: none (R1/R2 are FLAGS, not blockers — defaults stated).
+Next: master dispatches the 2 specialists with the paste-ready SPECs; lead runs merge-gate review.
+Hand-offs: infra (image-tasks queue) being serviced — after develop merge, infra uncomments -Q image-tasks.
+=========
