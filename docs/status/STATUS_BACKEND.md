@@ -5139,6 +5139,90 @@ Next: PR chore/ms-rekey-ruling → develop; lead-gate comment; squash --admin; r
 Hand-offs: none new. NOTE for infra: when Sub-Plan A executes, D5 pool right-size + PgBouncer is the ₹0 first step; the D3 VM upgrade (e2-standard-4) is a fresh founder ask at the moment services outgrow the current node — do NOT pre-provision on the strength of the plan-level pre-approval.
 =========
 
+=== UPDATE: 2026-06-12 — mesell-ms-category-session-1 (Session MS-F, PHASE 1) ===
+Phase: Microservices Migration — Sub-Plan F (category-service extraction) AUTHORING
+Session: mesell-ms-category-session-1 (PHASE 1, hybrid step 1, docs-only)
+Board sweep: 1 row ADDED (microservices-category, SPEC AUTHORED — gated on MS-3, additive F2 — no other rows touched); 1 inter-lead request ADDED (infra, gated on MS-4). No rows untouched 7+ days flagged this session (active feature churn current). Existing OPEN infra inter-leads (xlsx-export flag, flag-parity 3-flag) unchanged.
+Done:
+  - SUB_PLAN_0F_category_extraction.md AUTHORED (canonical SUB_PLAN_01 shape) — STATUS: AUTHORED, EXECUTION GATED ON MS-4 WAVE OPEN.
+  - spec_msF_backend.md (executable specialist task spec: services-builder / api-routes-builder / database-builder + category-picker-builder verify + lead integration test + merge-gate checklist).
+  - handoff_msF_infra.md (infra surfaces — DO NOT EXECUTE until MS-4).
+  - As-built grounding (file:line from SOURCE): 5 MOUNTED public routes (verified main.py:120, not schema existence); 8 public service methods; category = pure CALLEE (catalog/export/pricing call it, grep-verified; ZERO outbound domain calls — authors NO outbound client shims).
+  - ai_ops VENDORING decision (D6/A1): trimmed vendored copy (client+budget_cap+cost_tracker+guardrail+prompt_registry+eval+metrics + ONLY smart_picker_v1 prompt). NO ai-ops-svc until V2.
+  - SHARED budget brake wiring identified file:line: Valkey DB 0 (get_valkey_otp) keys ai:cost:daily:{date} (cost_tracker.py:92), ai:cost:pending:{date} (budget_cap.py:124), ai:budget:reservation:{id} (budget_cap.py:125), ai:cost:user:{user}:hourly:{hr} (cost_tracker.py:93); + public.audit_events DB write (cost_tracker.py:55). Carve-out: ai:* keyspace EXEMPT from §2.E category: prefixing so ₹500 cap stays global.
+  - PRIMITIVE_VALUES zero-drift (schema_contract.py:175 — 11 primitives; ENVELOPE_KEYS:147 — 7 keys): vendored read-only (doc-in-code per schema_contract.py:8-15); seed-writer scripts/build_template_schemas.py STAYS at repo root (data-track, NOT category-svc runtime); parity + envelope conformance contract tests pin the frozensets.
+In progress: none (single-shot PHASE-1 authoring chore).
+Blockers: none blocking authoring. NOTE: MS-A spec files (spec_msA_backend.md + handoff_msA_infra.md) are ABSENT from this worktree branch AND from develop (untracked master-tree artifacts). The two frozen category shim shapes were reproduced verbatim from the Session MS-F dispatch prompt (which quotes them). See Open Questions.
+SOURCE-WINS corrections recorded (Wave-6 fabricated-enum lesson):
+  (1) Filename: dispatch + this file = SUB_PLAN_0F; MASTER_PLAN §4 row F (line 306) says SUB_PLAN_06 — 0F wins (parallel program).
+  (2) Dependency: MASTER_PLAN §4 row F lists serial "A,B,C,D,E complete"; MS-PAR-1 supersedes to "MS-3 complete (pricing+customer), parallel with MS-G iam".
+  (3) fetch_xlsx_aliases: MASTER_PLAN §2.D line 68 implies a runtime category alias call; MS-A corrected to seed-time-only; as-built confirms (no FieldAlias ORM in repository, no fetch_xlsx_aliases in service __all__) → category implements only 2 frozen shims, NOT 3.
+  (4) Envelope key count: dispatch prompt said "6-key" envelope; schema_contract.py:17-18 corrects to 7 — SOURCE wins.
+Next: PHASE 2 (EXECUTION) is GATED on MS-4 wave open. When MS-3 (pricing+customer) both founder-gate-merged AND the MS-A recipe exists, the master session dispatches the 3 specialists per spec_msF_backend.md (hybrid step 2), infra handoff to meesell-infra-builder, then lead merge-gate (step 3). No execution now.
+Hand-offs:
+  - infra (gated): handoff_msF_infra.md — DO NOT EXECUTE until MS-4. Two grants (category schema SELECT + public.audit_events INSERT), Valkey DB-3 cache pre-warm, ai:* keyspace carve-out, JWT_SECRET shared with iam-svc.
+  - frontend (queued, notification-only): a handoff_contract_category_primitive.md will notify the FE lead at execution that the schema-serving surface moved to category-svc but the §5A.B envelope + PRIMITIVE_VALUES are byte-identical (zero FE work) — NOT authored this PHASE-1 session (notify at PHASE 2).
+Open questions for master session:
+  (a) Confirm the MS-A frozen contract: does pricing-svc (MS-D, already a pod at MS-4) call category over HTTP for get_commission? If yes, category implements a 3rd /internal/* shim (commission) — default is to author it. Verify against SUB_PLAN_0D.
+  (b) Does customer-svc (MS-E) consume list_super_categories at runtime? As-built grep found no customer→category import at develop tip. Author the super-categories shim defensively unless confirmed unneeded.
+  (c) Locate/confirm the MS-A spec + frozen-contract doc (absent here) so the implementing session cites the canonical source, not this sub-plan's reproduction.
+=== UPDATE: 2026-06-12 — MS-C image-service extraction PHASE 1 (spec authoring) ===
+Phase: Microservices Migration — Sub-Plan C (image), wave MS-2 (B dashboard ‖ C image)
+Session: mesell-ms-image-session-1 (MS-C PHASE 1 — HYBRID rule STEP 1, spec + sub-plan only)
+
+Board sweep (session start + end): Active features had 1 row (microservices-export, READY-TO-EXECUTE,
+  2026-06-12, NOT stale at 7d). Added microservices-image (MS-C) row. flag-parity + backend-chores rows are
+  FOUNDER-PR-OPEN (not stale). No rows untouched 7+ days. Recently-merged rows within 14d window. Inter-lead
+  requests: 3 (all RESOLVED/READY — no new opened this session; the MS-C infra request opens at Phase-2 dispatch,
+  not now, because execution is GATED).
+
+Done:
+  - Authored docs/plans/microservices_migration/SUB_PLAN_0C_image_extraction.md (canonical SUB_PLAN_01 shape,
+    11 sections, AS-BUILT grounded at origin/develop c859955, file:line citations throughout). Covers: module
+    inventory (8 files); 2 mounted public routes (main.py:46/:126 verified); Celery worker split (dedicated
+    svc-image queue, ground from celery_app.py — NO task_routes today; #143-OPEN nuance noted); ai_ops VENDORING
+    (D6/A1, shared Valkey DB-0 budget brake); the /internal/products/{id}/images callee shim (FROZEN
+    list_images→ImagesListResponse per MS-A spec_msA §0.4 row 6); the caller-side catalog dependency (monolith-
+    hosted until MS-5); GCS surface; rembg decision (§3.G DEFER); DB table owned (product_images, schema image);
+    A2 middleware vendoring (5 of 6 active, plan_guard NO-OP); strangler-fig + rollback; D3 VM-fit flag (§7 —
+    svc-image heaviest container); validation floor (monotonic ≥649). Execution marked GATED.
+  - Authored .claude/agent-memory/meesell-backend-coordinator/spec_msC_backend.md (HYBRID step-1 task spec for
+    services/api-routes/database builders; per-specialist file:line-cited shapes; branch/worktree plan;
+    merge-gate criteria; explicit GATE note).
+  - Authored .claude/agent-memory/meesell-backend-coordinator/handoff_msC_infra.md (infra surfaces: Dockerfile
+    rembg/Pillow size, k8s api + dedicated Celery worker, Traefik, Postgres image schema/role/grants incl.
+    audit cross-schema + §0.10 transitional products grant, GCS SA, Valkey DB-0 budget access, queue wiring;
+    D3 trigger flag).
+  - Board + this STATUS UPDATE.
+
+KEY DECISIONS / FINDINGS (Wave-6 law — all re-verified file:line from source):
+  - FROZEN SHIM: export→image is list_images (export/service.py:185, image/service.py:232), NOT get_image_bytes.
+    The MASTER_PLAN §1.C "get_image_bytes" cell is STALE; spec_msA §0.4 row 6 corrected it. Implement list_images.
+  - rembg: requirements.txt:14 BUT zero refs in backend/app (grep empty). Live pipeline = Pillow steps 1-4 +
+    ai_ops Gemini watermark step 5. No call site to move. DECISION: DEFER from svc-image requirements (recommended).
+  - ai_ops VENDORED per D6/A1 (image IS AI-consuming, watermark.v1 at tasks.py:206); ₹500 budget brake stays
+    SHARED via UN-prefixed Valkey DB-0 keys (ai:cost:daily/pending, ai:budget:reservation). image is the FIRST
+    AI-consuming service to extract.
+  - Outbound HTTP shim = catalog only (assert_product_ownership service.py:162/:248). catalog is MS-5 (LAST) →
+    shim base URL = monolith ClusterIP during MS-C.
+  - §0.10 cross-schema hazard (NEW, image-specific vs export): product_images↔products tenancy join breaks at
+    schema-split. Recommend Option-b (scope by product_id post-ownership-shim, §2.D-aligned) over Option-a
+    (transitional public.products grant). Escalate at Phase 2 if MS-A recipe silent.
+  - Test baseline 649 def test_ (MONOTONIC); image's own 29. Never hardcode 823 (collected-items, not def test_).
+
+In progress: none (single-shot Phase-1 docs authoring).
+Blockers: PHASE 2 (execution) GATED on (1) MS-A founder gate (export integration→develop) MERGED — currently
+  OPEN at c859955 — and (2) MS-A extraction recipe existing. Both must hold before any branch cut / specialist
+  dispatch. No backend blocker to Phase 1.
+Next: Phase 2 unblocks when the master session merges MS-A's founder gate AND the MS-A recipe lands. Then:
+  consume+reconcile the recipe → cut feature/microservices-image/integration off origin/develop → dispatch
+  database-builder (Phase A) ‖ infra handoff → services-builder → api-routes-builder → lead Phase C merge gate.
+  Reconcile the /internal/list-images shim against MS-A's final contract doc FIRST; STOP+escalate on drift.
+Hand-offs: handoff_msC_infra.md authored for meesell-infra-builder (NOT actioned now — execution gated; the
+  Inter-lead request row opens at Phase-2 dispatch). Cross-lane to AI lead at Phase 2: watermark.v1 prompt pin
+  must not drift. Decentralized per CLAUDE.md rule 3 — infra/AI leads read this STATUS + my memory; no memo
+  cut while execution is gated.
+
 === UPDATE: 2026-06-12 — MS-E customer-extraction SUB-PLAN AUTHORED (HYBRID step 1, EXEC GATED MS-3) ===
 Phase: Microservices Migration — Sub-Plan E (customer), parallel program MS-PAR-1 / Session MS-E
 Session: mesell-ms-customer-session-1
