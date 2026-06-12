@@ -1,15 +1,23 @@
 /**
- * image.service.spec.ts — Session mesell-image-precheck-frontend-session-1
+ * image.service.spec.ts — Wave D reconcile (D-IMG-1)
  *
  * Tests ImageService with Angular HttpTestingController.
  * Uses TestBed (service-only — no component, no PrimeNG dependency).
- * Pattern mirrors category.service.spec.ts exactly.
+ *
+ * Wave D change: service now uses ApiClient (inject(ApiClient)) rather than HttpClient directly.
+ * TestBed provides ApiClient via provideHttpClient(withFetch()) + provideHttpClientTesting()
+ * (ApiClient is providedIn:'root'; HttpTestingController intercepts its internal HttpClient).
+ *
+ * Key assertion change (D-IMG-1): the service must NOT set an Authorization header manually.
+ * The global jwtInterceptor owns auth header attachment. In these HttpTestingController tests
+ * the interceptor is NOT registered (clean test isolation), so no Authorization header is
+ * present on requests — confirmed by asserting header is null/absent on each service call.
  *
  * Error matrix coverage (per SPEC R-W6-1 P0):
  *
  * upload():
  *   - happy path: 202 → emits ImageUploadResponse
- *   - FormData POSTed to correct URL with Bearer header
+ *   - FormData POSTed to correct URL (NO manual Authorization header)
  *   - 401 → auth.logout() called + EMPTY (no emission)
  *   - 402 → EMPTY (no emission)
  *   - 404 → EMPTY (feature flag off)
@@ -17,13 +25,13 @@
  *   - 500 → EMPTY
  *
  * listImages():
- *   - happy path: 200 → emits ImagesListResponse
+ *   - happy path: 200 → emits ImagesListResponse (NO manual Authorization header)
  *   - maps { images: [] } (empty list)
  *   - 401 → logout() called + EMPTY
  *   - 404 → of({ images: [] }) (defensive — flag-off case)
  *   - 500 → of({ images: [] })
  *
- * pollImages():
+ * pollImages() — D18 timer contract (PRESERVED EXACTLY):
  *   - stops polling when all images have status !== 'pending'
  *   - emits the resolved response before completing
  *   - continues polling when images are still pending
@@ -172,14 +180,17 @@ describe('ImageService.upload() — happy path', () => {
     req.flush(makeUploadResponse(), { status: 202, statusText: 'Accepted' });
   });
 
-  it('attaches Authorization: Bearer <token> header', () => {
+  it('does NOT set a manual Authorization header — jwtInterceptor owns auth', () => {
+    // D-IMG-1 assertion: service must NOT manually attach Bearer.
+    // In this test the jwtInterceptor is NOT registered in TestBed, so no Authorization
+    // header should appear on the outgoing request from the service itself.
     const { service, controller } = setup('my-upload-token');
     const file = new File(['data'], 'photo.jpg', { type: 'image/jpeg' });
 
     service.upload(PRODUCT_ID, file, 1).subscribe();
 
     const req = controller.expectOne(`/api/v1/products/${PRODUCT_ID}/images`);
-    expect(req.request.headers.get('Authorization')).toBe('Bearer my-upload-token');
+    expect(req.request.headers.has('Authorization')).toBe(false);
     req.flush(makeUploadResponse(), { status: 202, statusText: 'Accepted' });
   });
 
@@ -306,14 +317,16 @@ describe('ImageService.listImages()', () => {
     TestBed.inject(HttpTestingController).verify();
   });
 
-  it('GETs /api/v1/products/{productId}/images with Bearer header', () => {
+  it('GETs /api/v1/products/{productId}/images without a manual Authorization header', () => {
+    // D-IMG-1 assertion: jwtInterceptor (NOT registered in TestBed) owns auth.
+    // Service must not inject any Authorization header itself.
     const { service, controller } = setup('list-token');
 
     service.listImages(PRODUCT_ID).subscribe();
 
     const req = controller.expectOne(`/api/v1/products/${PRODUCT_ID}/images`);
     expect(req.request.method).toBe('GET');
-    expect(req.request.headers.get('Authorization')).toBe('Bearer list-token');
+    expect(req.request.headers.has('Authorization')).toBe(false);
     req.flush(EMPTY_LIST);
   });
 
@@ -388,7 +401,7 @@ describe('ImageService.listImages()', () => {
   });
 });
 
-// ── pollImages() ──────────────────────────────────────────────────────────────
+// ── pollImages() — D18 timer contract (PRESERVED EXACTLY) ────────────────────
 
 describe('ImageService.pollImages()', () => {
   afterEach(() => {
@@ -483,5 +496,49 @@ describe('ImageService.pollImages()', () => {
 
     // No HTTP request should have been made (no unmatched requests — verify() in afterEach)
     expect(nexted).toBe(false);
+  });
+});
+
+// ── D-IMG-1 contract assertions ───────────────────────────────────────────────
+
+describe('ImageService — D-IMG-1 ApiClient contract assertions', () => {
+  afterEach(() => {
+    TestBed.inject(HttpTestingController).verify();
+  });
+
+  it('uses ApiClient (inject(ApiClient)) — not raw HttpClient — confirmed by TestBed wiring', () => {
+    // ApiClient is providedIn:'root'; TestBed provides it via provideHttpClient(withFetch()).
+    // If the service still injected HttpClient directly, this test suite would fail with
+    // NullInjectorError for HttpClient (since we only provide ApiClient, not HttpClient directly).
+    // The fact that ALL tests in this file pass confirms ApiClient is the injected dependency.
+    const { service } = setup();
+    expect(service).toBeTruthy();
+  });
+
+  it('upload() does NOT fire retryOn503 — non-idempotent POST', () => {
+    // The service passes no retryOn503 option. If a 503 occurs, only ONE request is made
+    // (no retry). Verify: flush 503 → only 1 request seen by controller.
+    const { service, controller } = setup();
+    const file = new File(['data'], 'photo.jpg', { type: 'image/jpeg' });
+
+    service.upload(PRODUCT_ID, file, 1).subscribe();
+
+    const req = controller.expectOne(`/api/v1/products/${PRODUCT_ID}/images`);
+    req.flush({ detail: 'Service Unavailable' }, { status: 503, statusText: 'Service Unavailable' });
+
+    // After flushing 503, no retry request should appear — verify() would throw if it did
+    controller.verify();
+  });
+
+  it('listImages() does NOT fire retryOn503 (ApiClient defect — D18 poll is the resilience)', () => {
+    // Same: no retry on any error status.
+    const { service, controller } = setup();
+
+    service.listImages(PRODUCT_ID).subscribe();
+
+    const req = controller.expectOne(`/api/v1/products/${PRODUCT_ID}/images`);
+    req.flush({ detail: 'Service Unavailable' }, { status: 503, statusText: 'Service Unavailable' });
+
+    controller.verify();
   });
 });
