@@ -183,6 +183,8 @@ random_password.postgres_password
 - `random_password.jwt_secret` — [REDACTED]
 - `random_password.postgres_password` — [REDACTED]
 - `google_secret_manager_secret.secret` x7 — secret IDs: meesell-gemini-api-key, meesell-jwt-secret, meesell-msg91-auth-key, meesell-msg91-template-id, meesell-postgres-password, meesell-razorpay-key-id, meesell-razorpay-key-secret
+
+> SUPERSEDED 2026-06-12: the applied `app_secrets` module uses un-prefixed secret IDs (`gemini-api-key`, `jwt-secret`, etc.; `secret_id = each.key`); the `meesell-*` prefixed scheme described here was never created. The SM secret `meesell-gemini-api-key` is dead (HTTP 400) and unreferenced by any live path.
 - `google_secret_manager_secret_version.version` x7 — version 1 of each, [REDACTED values]
 - `google_secret_manager_secret_iam_member.workload_access` x7 — workload SA: roles/secretmanager.secretAccessor on each
 
@@ -208,6 +210,8 @@ cloud_build_service_account_email = "888244156264-compute@developer.gserviceacco
 dns_name_servers            = []    (manage_dns=false)
 registry_docker_login_hint  = "gcloud auth configure-docker asia-south1-docker.pkg.dev"
 secret_ids                  = { GEMINI_API_KEY: "meesell-gemini-api-key", ... }
+                              # SUPERSEDED 2026-06-12: applied app_secrets module uses un-prefixed IDs
+                              # (gemini-api-key etc.); meesell-* prefix never created. meesell-gemini-api-key is dead (HTTP 400).
 ssh_command                 = "ssh mugunthansrinivasan@34.93.9.139"
 vm_external_ip              = "34.93.9.139"
 vm_name                     = "meesell-vm"

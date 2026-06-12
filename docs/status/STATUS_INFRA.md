@@ -1,8 +1,31 @@
 # STATUS — INFRASTRUCTURE
 
 **Owner:** `meesell-infra-builder`
-**Last update:** 2026-06-12 (DEV DEPLOY-FROM-DEVELOP @ tip 067d664 — api+worker hand-built+pushed (Cloud Build, SHA tag) + rolled out 2/2 to dev; 5/5 verifications GREEN; CI auto-deploy lane gated RED at Gate-1 backend bug so direct deploy used per founder "Deploy now" — see latest UPDATE)
+**Last update:** 2026-06-12 (dead-gemini-key-cleanup — backend audit ALL-CLEAR on the live path (cluster holds the VALID `gemini-api-key`, hash `ef9bbd1ca21f`); F1 deleted stale `scripts/secrets-from-gcp.sh`; F2 annotated the audit doc; **GCP Secret Manager still holds the dead `meesell-gemini-api-key` (and likely other `meesell-*`-prefixed duplicates) — recommend verify + delete next session, SM mutation NOT done in this chore**. Prior: DEV DEPLOY-FROM-DEVELOP @ tip 067d664 — api+worker hand-built+pushed + rolled out 2/2 to dev; 5/5 verifications GREEN.)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
+
+## UPDATE — 2026-06-12 — dead-gemini-key-cleanup (single-agent fast mode, founder-approved)
+
+=== STEP: defuse the two stale surfaces naming the DEAD `meesell-gemini-api-key` secret (audit F1/F2) ===
+Phase: INFRASTRUCTURE_PLAYBOOK §10 (secret management) — config/docs-only chore (Rule 7 single-agent fast mode, no specialists). NO Secret Manager mutations, no terraform, no cluster.
+
+**Context (read-only backend-coordinator audit):** verdict ALL CLEAR on the live path — the cluster holds the VALID Gemini key (hash `ef9bbd1ca21f`) in the k8s Secret `backend-secrets` (dev ns), sourced from the un-prefixed SM ID `gemini-api-key` (the `app_secrets` module's `secret_id = each.key`). The `meesell-`-prefixed scheme was never the live path. This chore purely removes dormant landmines.
+
+**F1 — DELETED `scripts/secrets-from-gcp.sh`** (lines 23-26 prepended `NAME_PREFIX=meesell` → would fetch the DEAD `meesell-gemini-api-key` + wrong-prefixed names for all 7 secrets; lines 44-45 wrote the legacy `meesell-secrets` Secret into the unused legacy `meesell` namespace). Deleted via `git rm`.
+
+**References to the deleted script — updated (4 files):**
+- `terraform/README.md` (Day-2 rotate-a-secret bullet) — replaced the `secrets-from-gcp.sh` re-render step with a note pointing at the live `backend-secrets` + `gcloud secrets versions add` path.
+- `terraform/templates/startup.sh` (2 hits: hand-off comment + "Next:" echo) — dropped the script from the operator next-steps.
+- `terraform/outputs.tf` (next_steps heredoc) — replaced the `scripts/secrets-from-gcp.sh` line with the `backend-secrets` populate note.
+- `.nexus/results/ci-cd-terraform-gap-analysis.md` (§1.4) — added a SUPERSEDED annotation (historical analysis artifact; body left intact). NOTE: the whole `terraform/` tree (NOT `infra/terraform/`) is itself the OLD/superseded TF root — out of scope for this chore; flagged for a future cleanup.
+
+**F2 — ANNOTATED `docs/INFRASTRUCTURE_TERRAFORM_AUDIT.md`** at the two prefixed-scheme cites (the `secrets.tf` x7 secret-IDs list ~L185 and the `secret_ids` output ~L210). Added SUPERSEDED 2026-06-12 notes; historical audit text left intact (annotate, not rewrite).
+
+**FOLLOW-UP for next infra session (SM mutation NOT done here):** GCP Secret Manager still contains the dead `meesell-gemini-api-key` (HTTP 400, unreferenced by any live path) and very likely other `meesell-*`-prefixed duplicates (`meesell-jwt-secret`, `meesell-msg91-auth-key`, `meesell-msg91-template-id`, `meesell-postgres-password`, `meesell-razorpay-key-id`, `meesell-razorpay-key-secret`). RECOMMEND: next session run `gcloud secrets list --filter="name:meesell-"` to enumerate, confirm each is unreferenced (no k8s Secret / TF module reads it), then `gcloud secrets delete` the dead duplicates (founder approval in-prompt per the destructive-op rule).
+
+**Cost:** ₹0 (file deletes + doc annotations only; no billable resource touched).
+
+---
 
 ## UPDATE — 2026-06-12 — mesell-deploy-develop-infra-session-2 (DEV DEPLOY-FROM-DEVELOP @ develop tip 067d664)
 
