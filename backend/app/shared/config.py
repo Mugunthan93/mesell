@@ -183,6 +183,20 @@ class Settings(BaseSettings):
     # Route returns 404 when False per Master Plan §3.2 backend protocol.
     FEATURE_SMART_PICKER_ENABLED: bool = True
 
+    # FEATURE_CATALOG_FORM_ENABLED: dev default True; staging default False
+    # (set via env) until the 5-condition soak passes
+    # (Decision D2 in docs/plans/features/catalog-form/FEATURE_PLAN.md).
+    # Catalog routes (/api/v1/products/*) return 404 when False per
+    # Master Plan §3.2 backend protocol.
+    FEATURE_CATALOG_FORM_ENABLED: bool = True
+
+    # FEATURE_AI_AUTOFILL_ENABLED: dev default True; staging default False
+    # (set via env) until soak passes
+    # (Decision in docs/plans/features/ai-autofill/FEATURE_PLAN.md).
+    # POST /api/v1/products/{id}/autofill returns 404 when False per
+    # Master Plan §3.2 backend protocol (route guard owned by api-routes-builder).
+    FEATURE_AI_AUTOFILL_ENABLED: bool = True
+
     # ── Validators ─────────────────────────────────────────────────────────
     @field_validator("CORS_ALLOWED_ORIGINS", mode="before")
     @classmethod

@@ -62,7 +62,7 @@ import logging
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,6 +70,7 @@ from app.core.auth import CurrentUser, get_current_user
 from app.core.middleware.audit_mw import audit_event
 from app.core.middleware.rate_limit_mw import rate_limit
 from app.modules.catalog import service as catalog_service
+from app.shared.config import settings
 from app.modules.catalog.domain import Pagination as PaginationInternal
 from app.modules.catalog.exceptions import (
     DraftNotFoundError,
@@ -214,9 +215,21 @@ async def autofill_product(
     Plan-guard ``ai_autofill_hourly`` (50/h/user) is enforced INSIDE
     the service (step 2 of the §10.B.3 flow).
 
+    Feature flag: returns 404 when ``FEATURE_AI_AUTOFILL_ENABLED=false``
+    per Master Plan §3.2 + ai-autofill FEATURE_PLAN.md D2.  Reading
+    ``settings`` at request-time (not import-time) so tests can
+    monkeypatch the attribute and the guard reflects the override.
+
     Status codes: 200 (success OR graceful fallback), 400, 401, 402,
     404, 422.
     """
+    # ── Feature flag guard (§3.2 / ai-autofill D2) ───────────────────
+    if not settings.FEATURE_AI_AUTOFILL_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="AI Auto-fill is disabled in this environment",
+        )
+
     # The request_id is set by RequestIdMiddleware on request.state.
     # We forward it to ai_ops so the LangFuse trace_id correlates with
     # the inbound request.  Falling back to a per-call UUID inside
