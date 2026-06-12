@@ -4912,3 +4912,37 @@ Blockers: none.
 Next: founder merges the flag-parity PR → develop; infra injects 3 flags into ConfigMaps (inter-lead OPEN).
 Hand-offs: meesell-infra-builder — 3 flags → k8s ConfigMaps (dev: price-calc=true/dashboard=true/live-preview=false; staging: all false). Memo handoff_secret_flag_parity_flags.md.
 =========
+
+=== UPDATE: 2026-06-12 — CI Gate-1 event-loop fix · Rule-7 STEP 3 merge gate ===
+Phase: CI Gate-1 event-loop (HYBRID STEP 3 — backend-coordinator merge gate on PR #156)
+Session: gate/ci-gate1-event-loop-review (off origin/develop fe3f3ff)
+Board sweep: no Active feature rows touched (CI hotfix, D1 N/A); 0 stale flagged this pass.
+
+VERDICT: REJECT PR #156 (fix/ci-gate1-event-loop) — close UNMERGED. Do not bounce-and-fix.
+
+Reason: the problem #156 targets ("Gate-1 unit RED on develop") was ALREADY FIXED by parallel
+PR #150 (`2d9b8af`, merged 2026-06-12 03:02 UTC) BEFORE #156 opened. #156 was cut from stale base
+`a732729` (predates `2d9b8af`) → it is a stale-base DUPLICATE. Merging it would REGRESS develop:
+it reverts PR #150's `unauth_client` singleton-contamination hardening and swaps the robust `patch()`
+approach for a `monkeypatch.setattr` approach.
+
+Independent CI verification (the gate that matters):
+- develop tip `fe3f3ff` push run: Gate 1 (unit)=SUCCESS, Gate 2 (smoke)=SUCCESS, Gate 3 (lint)=SUCCESS.
+  Only Gate 4 (integration)=fail — ADVISORY per MASTER_PLAN §2.1. Gate-1 RED is RESOLVED on develop.
+- PR #150 own CI: Gate 1=pass (58s), Gate 2=pass, Gate 3=pass (Py3.12.13, pytest-asyncio 0.24.0).
+- PR #156: no CI checks ever ran on the branch.
+- Local master venv (Py3.11, pytest-asyncio 0.24.0) shows 2 catalog flag-guard reds on develop even in
+  isolation — documented local-macOS-vs-CI-Linux teardown artifact (does NOT reproduce on CI Gate-1).
+
+Report inaccuracies caught: (a) "3 files" → PR has 4 (omitted api-routes-builder/MEMORY.md +79);
+(b) test_catalog_routes.py "+4/−4" → actual +6/−6.
+
+Done: STEP-3 gate complete; spec_ci_gate1_event_loop.md §9 OUTCOME landed; gate-record PR opened.
+In progress: none.
+Blockers: none. Gate-1 is GREEN on develop CI — infra inter-lead PR #145 ("Gate-1 RED") is effectively
+RESOLVED by PR #150; flag for closure on next board sweep.
+Next: master session closes PR #156 (REJECT) + PR #154 (SPEC, superseded). Queue CHORE-B (_reload_config
+reload-pollution latent debt, api-routes-builder, low pri).
+Hand-offs: meesell-api-routes-builder — CHORE-B optional hardening. meesell-infra-builder — PR #145
+Gate-1-RED inter-lead request resolvable (PR #150 landed the fix).
+=========
