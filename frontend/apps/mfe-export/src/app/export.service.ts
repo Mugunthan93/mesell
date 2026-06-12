@@ -173,6 +173,12 @@ export class ExportApiService {
    * AFTER catchError here, we can distinguish 503 (re-throw to trigger retry) from
    * 404 (throw ExportNotFoundError — component stops polling) and 401 / 5xx (EMPTY).
    *
+   * V1.5 CLEANUP: ApiClient.applyRetry is now status-filtered (503/504/network only —
+   * frozen-surface amendment 2026-06-12), so a bare `{ retryOn503: true }` would no longer
+   * retry a 404. This hand-rolled post-catchError retry can be simplified to the ApiClient
+   * flag in V1.5. Left as-is for V1 (the bespoke pipe also encodes the 404→stop-polling
+   * semantics, so the simplification is non-trivial — defer, do not rewire now).
+   *
    * Pipe order: http.get → catchError → retry(on 503 only)
    *
    * On 404: throws ExportNotFoundError — component must clearInterval + surface error.

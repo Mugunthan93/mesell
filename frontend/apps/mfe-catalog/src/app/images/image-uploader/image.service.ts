@@ -21,6 +21,10 @@ import type { ImageUploadResponse, ImagesListResponse } from './image-uploader.m
  * Upload (POST) — NO retry. Non-idempotent: retrying would double-enqueue + double-bill GCS.
  * Poll (GET) — NO ApiClient retryOn503 (defective: retries ALL errors, not just 503).
  *   Resilience comes from the caller's bounded recursive-setTimeout backoff (D18-class).
+ *   V1.5 CLEANUP: ApiClient retryOn503 is now status-filtered (503/504/network only —
+ *   frozen-surface amendment 2026-06-12). The "defective" note above is stale; the GET
+ *   poll could fold in `{ retryOn503: true }`, but the D18 backoff already covers it —
+ *   leave the recursive-setTimeout rhythm intact (it owns MAX_POLLS / teardown).
  *
  * ## Error surface decision (DIP — matches DashboardApiService / ExportApiService)
  * NO MeeToastService is injected here. Errors surface through the returned observable

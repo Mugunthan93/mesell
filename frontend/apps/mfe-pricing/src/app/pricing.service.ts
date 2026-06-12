@@ -10,6 +10,9 @@
  * NO raw HttpClient, NO manual auth headers (interceptors own the auth layer, Wave A).
  * NO ApiClient retryOn503 (defective — retries ALL errors, not 503-only; and this is
  *   a POST — even a correct retry would risk non-idempotent behaviour, spec §3.2).
+ *   V1.5 CLEANUP: ApiClient retryOn503 is now status-filtered (503/504/network only —
+ *   frozen-surface amendment 2026-06-12). The "defective" half of this note is stale,
+ *   but the POST-non-idempotency reason STANDS — keep retryOn503 OFF here permanently.
  * Degradation matrix (R-W6-1, DECISION-1 — NEVER a local-math fallback):
  *   401  → EMPTY                          (refreshInterceptor handles retry; logout path owns it)
  *   404  → emit PriceCalcUnavailableError  (flag off OR product not found)

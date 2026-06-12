@@ -59,12 +59,23 @@ export class AuthService implements OnDestroy {
 
   /**
    * Called by login/OTP flow after backend confirms token.
-   * scheduleRefresh() is the caller's responsibility AFTER setSession
-   * (otp-verify calls it explicitly; bootstrap() calls it after hydration).
+   *
+   * Frozen-surface amendment (2026-06-12, founder-approved §7.3): setSession
+   * now AUTO-PAIRS with scheduleRefresh. When the optional `expiresIn` (seconds)
+   * is supplied, a proactive silent refresh is scheduled automatically — the
+   * caller no longer has to remember the setSession → scheduleRefresh pairing.
+   *
+   * BACKWARD COMPATIBLE: when `expiresIn` is omitted (the existing 2-arg
+   * call shape — otp-verify mock, SP06 C4 smoke, bootstrap pre-hydration),
+   * behaviour is UNCHANGED: token + user are set, no refresh is scheduled.
+   * scheduleRefresh() remains public and callable for those paths.
    */
-  setSession(token: string, user: AuthUser): void {
+  setSession(token: string, user: AuthUser, expiresIn?: number): void {
     this._token.set(token);
     this._user.set(user);
+    if (expiresIn !== undefined) {
+      this.scheduleRefresh(expiresIn);
+    }
   }
 
   logout(): void {
