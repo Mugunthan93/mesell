@@ -4,17 +4,31 @@
 # Spec: docs/DEVOPS_ARCHITECTURE.md §5 (CI), §6 (build), §7 (deploy), §9 (frontend matrix)
 #
 # Triggers:
-#   push to main              → 5 backend CI gates + frontend matrix → build → deploy to dev
-#   push to develop           → 5 backend CI gates + frontend matrix only (NO build, NO deploy —
-#                               build/deploy jobs are ref-guarded to refs/heads/main)
+#   push to develop           → 5 backend CI gates + frontend matrix → build → deploy to dev
+#   push to main              → 5 backend CI gates + frontend matrix only (NO build, NO deploy —
+#                               build/deploy jobs are ref-guarded to refs/heads/develop. main is
+#                               reserved for future staging/prod promotion, founder-gated.)
 #   pull_request to main       → 5 backend CI gates + frontend matrix only (no build, no deploy)
 #   pull_request to develop    → 5 backend CI gates + frontend matrix only (no build, no deploy)
 #   schedule (nightly)         → slow/perf + ai_eval (no CI gates, no build, no deploy)
 #
-# Founder ruling 2026-06-11 ("why develop->main / let keep in develop"): the pipeline must
-# exercise on `develop` itself. A develop->main promotion is NOT the re-fire mechanism — every
-# push/PR to develop runs Gates 1-5 + the frontend matrix directly. build + deploy stay
-# main-only via their `github.ref == 'refs/heads/main'` guards, so a develop push NEVER deploys.
+# FOUNDER RULING 2026-06-12: dev deploys fire from develop; main is reserved for staging/prod
+# promotion (founder-gated).
+#   Rationale: develop is the integration branch where CI already runs; the dev-namespace deploy
+#   is a TEST-SERVER deploy, not a customer ship — so it should fire from the same commit CI
+#   gates. main no longer triggers any build/deploy (no staging/prod deploy exists yet — see the
+#   "future push to main" note below). When staging/prod land in V1.5, their deploy jobs get
+#   their OWN ref-guards (refs/heads/main or a release tag) behind a founder-gated promotion.
+#
+#   Future push to main (deliberate choice): the build + deploy jobs simply DO NOT fire on main
+#   for now. main pushes still run the 5 gates + frontend matrix (so main never goes un-tested),
+#   but produce no image and no deploy. This is the simplest correct behaviour until a
+#   staging/prod target physically exists.
+#
+# Prior ruling (2026-06-11, superseded by the above for the deploy ref): the pipeline must
+# exercise on `develop` itself — every push/PR to develop runs Gates 1-5 + the frontend matrix
+# directly; a develop->main promotion was NOT the re-fire mechanism. The 2026-06-12 ruling
+# extends this: develop now also fires build + deploy (not just the gates).
 #
 # Backend CI gates (sequential — each needs its predecessor; fast-fail at gate 1 cancels the rest):
 #   1. unit              pytest -m "unit"            no services    < 30s
@@ -666,14 +680,16 @@ jobs:
 
   # =============================================================================
   # BUILD — Docker images via Cloud Build
-  # Runs ONLY on push to main, after all 5 backend CI gates + the frontend matrix pass.
+  # FOUNDER RULING 2026-06-12: dev deploys fire from develop; main is reserved for staging/prod
+  # promotion (founder-gated). Runs ONLY on push to develop, after all 5 backend CI gates + the
+  # frontend matrix pass. A push to main does NOT build (no staging/prod target exists yet).
   # See cloudbuild.yaml + DEVOPS_ARCHITECTURE.md §6.
   # =============================================================================
   build:
     name: "Build container images"
     runs-on: ubuntu-latest
     needs: [unit, smoke, lint, integration, golden_roundtrip, frontend-build]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     timeout-minutes: 30
 
     permissions:
@@ -706,14 +722,17 @@ jobs:
 
   # =============================================================================
   # DEPLOY — Rolling deploy to dev namespace via IAP TCP tunnel
-  # Runs ONLY on push to main, after build succeeds.
+  # FOUNDER RULING 2026-06-12: dev deploys fire from develop; main is reserved for staging/prod
+  # promotion (founder-gated). Runs ONLY on push to develop, after build succeeds. The deployed
+  # code (VM repo reset, manifests, image tag) all track develop so the cluster matches the
+  # triggering commit. A push to main does NOT deploy (no staging/prod target exists yet).
   # See DEVOPS_ARCHITECTURE.md §7.
   # =============================================================================
   deploy:
     name: "Deploy to K3s (dev namespace)"
     runs-on: ubuntu-latest
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     timeout-minutes: 20
 
     permissions:
@@ -751,12 +770,44 @@ jobs:
               FRONTEND_IMAGE=${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}/frontend:\${IMAGE_TAG}
 
               # 1. Refresh the manifest checkout on the VM so any k8s/*.yaml change ships.
+              #    FOUNDER RULING 2026-06-12: dev deploys fire from develop, so the VM repo is
+              #    reset to origin/develop (the branch this deploy was triggered from) — the
+              #    deployed manifests + scripts match the triggering commit. The image tag below
+              #    (github.sha) is already the develop commit SHA, so cluster code == repo code.
+              #    main is reserved for staging/prod promotion (founder-gated) — not deployed here.
               if [ -d ~/mesell/.git ]; then
-                git -C ~/mesell fetch origin main
-                git -C ~/mesell reset --hard origin/main
+                git -C ~/mesell fetch origin develop
+                git -C ~/mesell reset --hard FETCH_HEAD
               else
-                git clone --depth=1 https://github.com/Mugunthan93/mesell.git ~/mesell
+                git clone --depth=1 --branch develop https://github.com/Mugunthan93/mesell.git ~/mesell
               fi
+
+              # 1b. Refresh the Artifact Registry pull token and make containerd reload it.
+              #     K3s reads /etc/rancher/k3s/registries.yaml ONLY at startup — it does not
+              #     hot-reload the file. The metadata-server access token in it expires after
+              #     ~60 min, so a deploy that lands on a stale token gets a 401 ImagePullBackOff
+              #     on the new image (this deadlocked CI deploy run 27360475090). A 45-min cron
+              #     keeps the file fresh, but we re-run the refresh here for determinism and
+              #     restart k3s so containerd loads the current token before any pull. The
+              #     restart is ~10s; already-running pods recover from cached image layers.
+              sudo /usr/local/bin/refresh-ar-token.sh
+              sudo systemctl restart k3s
+              # Wait for the API server to come back before issuing kubectl commands.
+              # NOTE: this loop runs on the REMOTE VM via gcloud ssh --command='...'. Every
+              # shell construct that must evaluate remotely is \$-escaped so the GitHub runner
+              # does not expand it locally. A bare \$(seq 1 20) expanded on the runner and
+              # injected newline-separated tokens into the command string, malforming the
+              # remote script (run 27364056936: 'syntax error near unexpected token 2'). We use
+              # a self-contained counter — no command substitution — to remove that failure class.
+              READYZ_TRIES=0
+              until kubectl get --raw='/readyz' >/dev/null 2>&1; do
+                READYZ_TRIES=\$((READYZ_TRIES + 1))
+                if [ \"\${READYZ_TRIES}\" -ge 20 ]; then
+                  echo 'API server did not become ready within 60s after k3s restart.'
+                  exit 1
+                fi
+                sleep 3
+              done
 
               # 2. Apply ConfigMap + Deployment shapes (idempotent).
               kubectl apply -f ~/mesell/k8s/config.yaml
@@ -766,6 +817,12 @@ jobs:
               if [ -f ~/mesell/frontend/Dockerfile ]; then
                 kubectl apply -f ~/mesell/k8s/frontend.yaml
               fi
+
+              # 2b. If the applies changed the Deployment shapes, wait for that rollout to
+              #     settle BEFORE exec'ing migrations — exec on a terminating pod = exit 137
+              #     (CI run 27365266379).
+              kubectl -n ${{ env.NAMESPACE }} rollout status deployment/api    --timeout=180s
+              kubectl -n ${{ env.NAMESPACE }} rollout status deployment/worker --timeout=180s
 
               # 3. Migrate the schema on the CURRENT api pod BEFORE rolling the new image.
               kubectl exec -n ${{ env.NAMESPACE }} deploy/api -- alembic upgrade head

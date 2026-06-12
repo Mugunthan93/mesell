@@ -1,12 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { loadRemoteModule } from '@angular-architects/native-federation';
 
 // Mock the native-federation runtime so the helper can be exercised headlessly
 // (no live remoteEntry.json fetch). Proves the success-resolution shape (§9.A-4)
 // and the D12 fallback path (§9.A-5) without a browser.
-const loadRemoteModuleMock = vi.fn();
+//
+// WAVE 6A FIX (test-isolation): reference the mock via `vi.mocked(loadRemoteModule)`
+// instead of a module-level closure (`const loadRemoteModuleMock = vi.fn()` captured by
+// the vi.mock factory). When this spec and `csp-smoke.spec.ts` (which mocks the SAME
+// module with its OWN closure) land in the same Vitest worker, the two factory closures
+// alias one shared module export — the closure-captured `vi.fn` invoked at runtime was
+// the OTHER file's instance, so `mockResolvedValue` here had no effect and the helper
+// saw `undefined` → fell back to RemoteFailureComponent (4 order-dependent failures).
+// Binding through `vi.mocked(loadRemoteModule)` resolves to the actual mocked export
+// regardless of co-located factories. Pre-existing latent defect surfaced by Wave A's
+// added spec files shifting worker sharding; not a Wave A code regression.
 vi.mock('@angular-architects/native-federation', () => ({
-  loadRemoteModule: (...args: unknown[]) => loadRemoteModuleMock(...args),
+  loadRemoteModule: vi.fn(),
 }));
+
+const loadRemoteModuleMock = vi.mocked(loadRemoteModule);
 
 import { loadRemoteWithFallback, loadRemoteRoutesWithFallback } from './load-remote';
 import { RemoteFailureComponent } from './remote-failure.component';
