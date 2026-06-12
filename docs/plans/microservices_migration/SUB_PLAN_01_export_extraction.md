@@ -6,13 +6,25 @@ extraction sub-plan of the Microservices Migration MASTER_PLAN (LOCKED
 2026-06-10, v1.1). It implements MASTER_PLAN §4 row **A** (`export`,
 complexity **S**, no upstream service deps).
 
-> **Execution gate — PLANNING ONLY.** Per the MASTER_PLAN's post-V1
-> framing, NO extraction code is written by this session. This document is
-> the executable specification a future post-V1 coding session will follow.
-> Three open decisions (§1 below) require founder ratification before the
-> coding session is dispatched; two of them (ai_ops placement, middleware
-> placement) are presented here as **analysis + recommendation only — NOT
-> locked**. They are Sub-Plan-A-time founder decisions.
+> **Execution gate — START CONDITION RE-KEYED 2026-06-12 ("ms go").** The
+> MASTER_PLAN start condition moved from _post-V1-launch_ to _dev-complete_
+> (MASTER_PLAN §3.A.1 + Revision History v1.3). **This extraction now
+> unblocks at dev-complete — imminent.** The first step remains the **D5
+> connection-pool right-sizing + PgBouncer transaction-pooling (₹0, no
+> hardware change)**, THEN the extraction itself on the **current node** —
+> `export`'s locked K3s sizing (50m CPU requests per pod, infra plan §6.3 /
+> this doc's manifest table) fits the current hardware, so no VM upgrade is
+> triggered by Sub-Plan A. The D3 VM-spend ask (e2-standard-4, ~₹2,600/mo)
+> is a LATER-extraction event re-asked fresh of the founder when services
+> outgrow the node — NOT triggered here.
+>
+> **Execution posture — PLANNING ONLY (unchanged).** This document is the
+> executable specification a coding session (dispatched once dev-complete is
+> declared) will follow. NO extraction code is written by the authoring
+> session. The two open decisions below (ai_ops placement, middleware
+> placement) were Sub-Plan-A-time founder decisions and are now **LOCKED**
+> via founder rulings D6 / D7 (2026-06-10) — see the A1 / A2 supersession
+> banner in the Decisions section.
 
 > Authoritative inputs read for this sub-plan:
 > - `docs/plans/microservices_migration/MASTER_PLAN.md` (LOCKED v1.1 — §2.D, §3.B, §4 row A, §5.A/B/C/D/E/F, §6 risks)

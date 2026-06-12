@@ -1,6 +1,6 @@
 # MeeSell Microservices Migration — MASTER PLAN
 
-STATUS: LOCKED 2026-06-10 — ratified by founder as post-V1 roadmap (per its own Lock target convention)
+STATUS: LOCKED 2026-06-10 — ratified by founder as the migration roadmap (per its own Lock target convention). **START CONDITION RE-KEYED 2026-06-12 (founder ruling "ms go"): execution unblocks at _dev-complete_, NOT post-V1-launch — see §3.A.1 "Execution Start Condition" + Revision History v1.3.**
 
 > Scope: planning-only. Zero code changes. This document is the master roadmap for converting the MeeSell modular monolith into a set of independent FastAPI microservices, one per domain module. It does NOT itself migrate anything; it specifies HOW the migration will be carried out, in what ORDER, with which AGENTS, and against which RISKS.
 
@@ -236,6 +236,27 @@ Each service has its own Alembic chain, rooted at the schema it owns. Alembic `v
 
 Both must pass before the extraction is declared complete. Locked at §21.F.4 / §16.G.4.
 
+### 3.A.1 Execution Start Condition — RE-KEYED 2026-06-12 (founder ruling "ms go")
+
+**Prior condition (v1.0–v1.2): execution begins _post-V1-launch_.** This is now SUPERSEDED.
+
+**New condition (v1.3): execution unblocks at _dev-complete_.** The migration may begin extracting the moment the V1 feature build is dev-complete — it no longer waits for the V1 production launch.
+
+> **Founder ruling — verbatim (2026-06-12, "ms go"):**
+> "**The microservices migration's start condition is RE-KEYED from 'post-V1 launch' to 'dev-complete.'**"
+
+**Rationale (recorded by the master session at ruling time):**
+1. **All V1 feature lanes are finished** — Wave 6 (frontend API wiring), the AI lane, and the dual-pepper rotation are complete. The V1 dev build is at (or imminently at) dev-complete.
+2. **Launch is deferred** — the production move is parked; there are no users yet.
+3. **Extracting in dev with zero traffic is the lowest-risk window** — a Strangler-Fig extraction (§3.A) run against a no-traffic dev cluster carries none of the latency/rollback exposure that the same extraction would carry against live production traffic. Risk #1 (catalog autosave P95) and Risk #2 (iam blast radius) are de-fanged when there is no production load to blow a budget or page.
+4. **By production time the MS architecture will be long-proven in dev** — extracting now means the 8-service hybrid posture has months of in-dev soak before it ever fronts a real user. Production cutover inherits a battle-tested topology rather than a fresh one.
+
+**What this does NOT change:**
+- The **A–H extraction order** (§3.B), the **per-module rollback contract** (§3.C), the **hybrid-mode CI gate** (§3.A), and **every locked decision** (D3–D7 / A1–A2) are untouched. Only the _gate that opens execution_ moved earlier.
+- The **dev-complete declaration itself** is the trigger. Until the master session formally declares dev-complete, the lane stays READY-TO-EXECUTE (pending that declaration), not IN EXECUTION.
+
+**EXPLICIT FRESH FOUNDER ASK on the VM spend trigger (standing rule).** Decision **D3** (VM upgrade to `e2-standard-4`, ~₹2,600/mo — pre-approved at the *plan* level) gets an **explicit fresh founder ask at the moment services outgrow the current node**, NOT at the moment execution begins. The pre-approval is for the plan; the spend-trigger is re-asked. Early extractions (Sub-Plan A `export`, B `dashboard`) fit the current node at their locked K3s sizing (50m CPU requests per pod) — the upgrade is a later-extraction event re-confirmed in real time, per the master-session standing rule. No money is committed by this re-key.
+
 ### 3.B Extraction order (locked at §16.H / §21.B)
 
 The order is FIXED — established by founder-locked rulings on §16.H. Easiest first, hardest last:
@@ -464,6 +485,7 @@ Today `products.user_id REFERENCES users(id)` enforces that every product has a 
 | 1.0 | 2026-06-10 | founder + master Director session | Ratified DRAFT → LOCKED as V1.5/V2 roadmap. Execution begins post-V1-launch. A–H order locked per §16.H. ai_ops + middleware decisions stay deferred to Sub-Plan A. Noted: full extraction forces VM upgrade e2-standard-2 → ≥e2-standard-4 (~₹2.5–6k/mo) at execution time. |
 | 1.1 | 2026-06-10 | founder + master Director session | Embedded founder-mandated post-extraction repo-management compliance audit into program completion criteria. |
 | 1.2 | 2026-06-10 | founder (rulings) + meesell-backend-coordinator (landing) | **D6 / A1 LOCKED** — `ai_ops/` vendored per AI-service at V1.5 → dedicated `ai-ops-svc` at V2; ₹500 budget brake stays shared via Valkey/DB. §2.E deferral marked RESOLVED. **D7 / A2 LOCKED** — 6-middleware chain vendored per service; JWT verification LOCAL in every service; `iam-svc` owns OTP/login/refresh only; gateway-JWT REJECTED. §5.A confirmed against export-svc middleware list and marked RESOLVED. (Companion infra rulings D3/D4/D5 landed in `docs/plans/infra/microservices_infra_plan.md` v1.1, now APPROVED.) |
+| 1.3 | 2026-06-12 | founder (ruling "ms go") + meesell-backend-coordinator (landing) | **START CONDITION RE-KEYED — post-V1-launch → dev-complete.** Verbatim ruling + 4-point rationale + scope landed at new §3.A.1 "Execution Start Condition"; header STATUS line amended. All V1 feature lanes finished (Wave 6, AI, dual-pepper); launch deferred (no users); extracting in dev at zero traffic is the lowest-risk window; MS architecture will be long-proven in dev by production time. **No locked decision changed** — only the execution gate moved earlier. **D3 VM-spend trigger (~₹2,600/mo e2-standard-4) gets an EXPLICIT FRESH founder ask at the moment services outgrow the current node** — the pre-approval is plan-level only; the spend-trigger is re-asked (master-session standing rule). Early extractions (A `export`, B `dashboard`) fit the current node (50m sizing). |
 
 ---
 
