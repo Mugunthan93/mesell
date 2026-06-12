@@ -1,8 +1,34 @@
 # STATUS — INFRASTRUCTURE
 
 **Owner:** `meesell-infra-builder`
-**Last update:** 2026-06-11 (ci-activation — PR #120 develop→main MERGED; full pipeline ran Gates 1-5 + Frontend 8/8 + **Build GREEN (first ever)**; Deploy still RED on 2 more deploy-script bugs — #123 git-ref already fixed, #127 readyz-escape now on develop awaiting fresh founder gate)
+**Last update:** 2026-06-12 (image-precheck infra slice — GCS bucket `meesell-images` TF-applied LIVE (2 added); 4 feature-flag ConfigMaps dev=true APPLIED + staging=false manifest-only; worker concurrency=4 + `-Q image-tasks` scaffold; GEMINI staging founder-injection template; image-pipeline runbook. Founder-gate PR left open. ₹0/mo.)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
+
+## UPDATE — 2026-06-12 — mesell-image-precheck-infra-session-1 (image-precheck infra slice — founder-gate PR)
+
+=== STEP: image-precheck infra slice (5 items) — GCS bucket + flag ConfigMaps + queue + GEMINI staging mechanism + runbook ===
+Phase: FEATURE_PLAN docs/plans/features/image-precheck/FEATURE_PLAN.md §Infra (rows 1-8) + INFRASTRUCTURE_PLAYBOOK §10 (secrets discipline), §13 (cost), §15 (MANDATORY server-side dry-run gate). Founder lifted the k8s/terraform bar for this dispatch.
+Session: mesell-image-precheck-infra-session-1
+
+**Git (Model C, FLAT branch):** `feature/image-precheck-infra` cut from origin/develop (48ec697) in worktree /private/tmp/mesell-wt/image-precheck-infra. FLAT (NOT a sub-ref) because leaf `feature/image-precheck` exists on origin — sub-refs `feature/image-precheck/*` are unpushable (D/F lesson). Founder-gate PR `feature/image-precheck-infra` → develop, LEFT OPEN. Explicit-path staging only. Pre-snapshot /tmp/meesell-pre-image-precheck-state.txt (protected VMs meesell-vm/shotfox-* untouched).
+
+**Pre-flight:** gcloud active = vaishnaviramoorthy@gmail.com ✅, project = project-1f5cbf72-2820-4cdb-949 ✅, ADC token obtainable ✅. Cluster REACHABLE (meesell-dev-master Ready, K3s v1.35.5).
+
+**(1) GCS bucket `meesell-images` — TF-APPLIED LIVE.** New module `infra/terraform/modules/gcs_images/` (main+variables+outputs), mirrors module.asset_bucket conventions with a feature-specific 1-yr lifecycle. Wired in main.tf (after asset_bucket) + var `gcs_images_bucket_name`/`workload_service_account_email` in variables.tf + dev.tfvars + 2 outputs. `terraform plan -target=module.gcs_images -var-file=environments/dev.tfvars` = **Plan: 2 to add, 0 to change, 0 to destroy** (clean — bucket + objectAdmin IAM member). APPLIED (saved plan, ADC token). **Apply complete! Resources: 2 added, 0 changed, 0 destroyed.** Verified LIVE in GCP: `gs://meesell-images` asia-south1, uniform BLA, public_access_prevention=enforced, lifecycle DELETE age=365, IAM roles/storage.objectAdmin → serviceAccount:888244156264-compute@developer.gserviceaccount.com. AS-BUILT note: K3s-on-GCE has no GKE Workload Identity; the api/worker pods authenticate via GCE metadata ADC as the compute default SA, so the plan's "Workload Identity binding for the API/worker SA" = a bucket-scoped objectAdmin grant to that compute SA (exactly mirrors meesell-prod-assets, verified live). Naming note: distinct namespace from the AR repo of similar name (404-verified the bucket name free).
+
+**(2) Feature-flag ConfigMaps — dev APPLIED, staging MANIFEST-ONLY.** k8s/config.yaml (dev): 4 flags = true (FEATURE_SMART_PICKER/CATALOG_FORM/AI_AUTOFILL/IMAGE_PRECHECK_ENABLED) + GCS_BUCKET_IMAGES=meesell-images. [MANDATORY GATE] server-side dry-run clean (`configmap/meesell-config configured`). Diff showed +5 keys only. APPLIED to dev ns; verified live (all 4 = true, GCS_BUCKET_IMAGES=meesell-images). k8s/overlays/staging/config.yaml: 4 flags = false per D2 soak posture + mirrored GCS_BUCKET_IMAGES. `kubectl kustomize` renders correctly; server-side dry-run clean (`created` in staging ns) — NOT applied (staging stays manifest-only until founder soak sign-off). NOTE: envFrom ConfigMap changes need a pod restart to take effect — flags take effect on next api/worker rollout (did NOT force a rollout — would force an unrelated `:latest` image change + risk single-node CPU deadlock per the deploy memory).
+
+**(3) Worker queue — concurrency=4 done, `-Q image-tasks` SCAFFOLD ONLY.** k8s/worker.yaml already runs `--concurrency=4` (satisfies plan). Added a commented-out `-Q image-tasks` scaffold + explanation: backend `image.precheck` @shared_task has no `queue=` and celery_app.py has no `task_routes` → tasks publish to the default `celery` queue. Adding `-Q image-tasks` now would stall the pipeline. MANIFEST-ONLY (not applied — comment-only change; applying would force a `:latest` rollout). Inter-lead request → backend-coordinator OPEN (add task_routes), memo handoff_image_tasks_queue.md. NOT a blocker (pipeline functional on default queue).
+
+**(4) GEMINI_API_KEY staging — MECHANISM ONLY.** New k8s/overlays/staging/secrets.yaml.example template documenting the staging `backend-secrets` population with a clearly-marked **FOUNDER INJECTION** step for GEMINI_API_KEY (Option A reuse SM gemini-api-key / Option B separate staging-scoped key). NO key value invented/printed/committed (all REPLACE-ME). Notes that ci.yml `secrets.GEMINI_API_KEY_CI` is a SEPARATE CI-only nightly key (ci.yml NOT touched — another track's).
+
+**(5) Runbook + README.** docs/runbooks/image-pipeline-troubleshooting.md (pipeline at-a-glance as-built; stuck-job introspection §1; re-enqueue §2; D2-Gate-3 GCS tenant-isolation verification §3 with the exact gcloud commands; cost monitoring §4; staging-flag-flip cross-ref §5). New docs/runbooks/README.md index (links auth-secret-rotation + image-pipeline-troubleshooting).
+
+**Cost:** ₹0/mo. The `meesell-images` bucket is standard-class asia-south1 storage with a 1-yr lifecycle; at V1 traffic (~40 MB/seller) it is immaterial vs the project budget — well under the ₹500/mo founder cost gate. No new standing compute/LB.
+
+**Founder action items:** (a) review + merge the founder-gate PR (develop); (b) at staging deploy time, inject GEMINI_API_KEY into the staging `backend-secrets` per the new template; (c) flip staging flags to true only after each feature's D2 soak gates pass (image-precheck: watermark ≥85% + 4 Pillow checks + GCS tenant-isolation — see runbook §3/§5); (d) backend adds celery task_routes so infra can uncomment `-Q image-tasks`.
+
+Board sweep (start+end): Active rows ci-activation/auth-otp/mfe-cutover all last-touched 2026-06-11; none stale 7+ days as of 2026-06-12. Added image-precheck row (IN REVIEW on PR open) + inter-lead request to backend.
 
 ## UPDATE — 2026-06-11 — mesell-ci-activation-infra-session-8 (land PR #120 + watch main pipeline + readyz-escape fix)
 

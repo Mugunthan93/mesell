@@ -36,6 +36,8 @@ spec:
             - "app.workers.celery_app"
             - "worker"
             - "--loglevel=info"
+            # image-precheck Feature 5: concurrency=4 per FEATURE_PLAN §Infra row 4
+            # (8s/image × 4 = 32s budget/min × 60 ≈ 7,500 images/hr capacity).
             - "--concurrency=4"
             - "--max-tasks-per-child=100"
           envFrom:
@@ -43,8 +45,24 @@ spec:
                 name: meesell-config
             - secretRef:
                 name: backend-secrets
-          # NOTE: No -Q queue override — celery_app.py INCLUDE list locked to
-          # [image.tasks, export.tasks] per §18.B. Workers process both queues.
+          # QUEUE ROUTING — image-tasks (image-precheck Feature 5, FEATURE_PLAN §Infra row 4):
+          #   The feature plan asks for a dedicated `image-tasks` queue at concurrency=4.
+          #   As-built reality (verified 2026-06-12): celery_app.py has NO task_routes /
+          #   task_queues config, and the `image.precheck` @shared_task
+          #   (modules/image/tasks.py:415) carries no queue= kwarg — so it publishes to the
+          #   DEFAULT `celery` queue. This worker (no -Q) consumes that default queue, so the
+          #   pipeline works today at concurrency=4.
+          #   Adding `-Q image-tasks` HERE NOW would BREAK the pipeline: the worker would
+          #   consume only `image-tasks` while tasks still publish to `celery`. The split
+          #   requires a BACKEND change first (task_routes `image.precheck -> image-tasks`
+          #   in celery_app.py) — an infra↔backend inter-lead dependency
+          #   (memo handoff_image_tasks_queue.md). After backend lands task_routes,
+          #   uncomment in a follow-up infra micro-feature:
+          #     - "-Q"
+          #     - "image-tasks"
+          #
+          # NOTE (pre-existing): celery_app.py INCLUDE list locked to
+          # [image.tasks, export.tasks] per §18.B. Workers process both task modules.
           # NOTE: GOOGLE_APPLICATION_CREDENTIALS absent — ADC via GCE metadata server
           # (VM SA 888244156264-compute@... has storage.objectAdmin on
           # gs://meesell-prod-assets per Phase A A2). If Workload Identity is later

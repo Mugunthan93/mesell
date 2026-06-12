@@ -41,6 +41,16 @@ output "asset_bucket_url" {
   description = "GCS bucket URL for the production asset bucket. Set as GCS_BUCKET in backend/.env."
 }
 
+output "images_bucket_name" {
+  value       = module.gcs_images.bucket_name
+  description = "GCS bucket name for product images (image-precheck). Set as GCS_BUCKET_IMAGES in k8s/config.yaml."
+}
+
+output "images_bucket_url" {
+  value       = module.gcs_images.bucket_url
+  description = "GCS bucket URL (gs://meesell-images) for product images. Use for the D2-Gate-3 tenant-isolation verification."
+}
+
 output "ci_sa_email" {
   value       = module.ci_identity.ci_sa_email
   description = "CI service account email. Set as SERVICE_ACCOUNT_EMAIL in GitLab CI project variables (masked)."
