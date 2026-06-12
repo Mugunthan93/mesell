@@ -158,6 +158,18 @@ variable "artifact_registry_repo_id" {
   description = "Artifact Registry repository ID for production Docker images. Isolated from the R&D registry meesell-images."
 }
 
+variable "gcs_images_bucket_name" {
+  type        = string
+  default     = "meesell-images"
+  description = "GCS bucket name for product images (image-precheck Feature 5). Globally unique across all GCP accounts. NOTE: distinct namespace from the Artifact Registry repo of a similar name — this is a STORAGE BUCKET. 404-verified free 2026-06-12. Override in tfvars if a 409 collision occurs."
+}
+
+variable "workload_service_account_email" {
+  type        = string
+  default     = "888244156264-compute@developer.gserviceaccount.com"
+  description = "Service account the api/worker pods run as via GCE metadata ADC (Compute Engine default SA). Receives bucket-scoped roles/storage.objectAdmin on the product-image bucket. K3s-on-GCE has no GKE Workload Identity; the metadata-ADC compute SA IS the workload identity here."
+}
+
 variable "ci_service_account_id" {
   type        = string
   default     = "meesell-prod-ci"
