@@ -60,6 +60,12 @@ data:
   FEATURE_AI_AUTOFILL_ENABLED: "true"
   FEATURE_IMAGE_PRECHECK_ENABLED: "true"
   FEATURE_XLSX_EXPORT_ENABLED: "true"
+  FEATURE_PRICE_CALCULATOR_ENABLED: "true"
+  FEATURE_TRACKING_DASHBOARD_ENABLED: "true"
+  # live-preview SHIPS DARK by founder ruling (PR #149) — backend default is False
+  # and the gated rollout begins disabled even in dev. Do NOT set this to "true"
+  # until the founder lights the gated rollout. Staging overlay also carries "false".
+  FEATURE_LIVE_PREVIEW_ENABLED: "false"
 
   # LangFuse (public key is non-secret per §5.D; secret key is in backend-secrets)
   LANGFUSE_PUBLIC_KEY: "pk-lf-disabled-v1"

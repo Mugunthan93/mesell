@@ -65,6 +65,14 @@ data:
   # Meesho supplier-panel upload accepted. Flipped to true via a one-line
   # micro-feature branch once those gates are recorded green.
   FEATURE_XLSX_EXPORT_ENABLED: "false"
+  # price-calculator + tracking-dashboard — staging stays false until each
+  # feature's D2 staging soak gate clears (flipped via a one-line micro-feature
+  # branch once green).
+  FEATURE_PRICE_CALCULATOR_ENABLED: "false"
+  FEATURE_TRACKING_DASHBOARD_ENABLED: "false"
+  # live-preview SHIPS DARK by founder ruling (PR #149) — stays false in staging
+  # too; the gated rollout starts disabled until the founder lights it.
+  FEATURE_LIVE_PREVIEW_ENABLED: "false"
 
   # LangFuse (public key is non-secret per §5.D; secret key is in backend-secrets)
   LANGFUSE_PUBLIC_KEY: "pk-lf-disabled-v1"

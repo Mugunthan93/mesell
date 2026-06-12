@@ -1,8 +1,43 @@
 # STATUS — INFRASTRUCTURE
 
 **Owner:** `meesell-infra-builder`
-**Last update:** 2026-06-12 (BRANCH PROTECTION APPLIED + UPGRADED on develop + main — founder-approved; 13 CI contexts required; strict false, reviews 0, enforce_admins false; supersedes the develop-only/strict/1-review record; sanity-tested via throwaway PR #142 — see latest UPDATE)
+**Last update:** 2026-06-12 (8-FLAG SET COMPLETE — price-calc/dashboard/live-preview flags injected into dev ConfigMap (live, 26→29 keys) + staging overlay (manifest-only); api+worker rolling-restarted + env-verified; live-preview SHIPS DARK — see latest UPDATE)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
+
+## UPDATE — 2026-06-12 — mesell-infra-flags-2-session-1 (final 3 feature flags → ConfigMaps; 8-flag set complete)
+
+=== STEP: inject price-calc/dashboard/live-preview flags into k8s ConfigMaps ===
+Phase: INFRASTRUCTURE_PLAYBOOK.md §15 (Safe deployment template — diff → MANDATORY server-dry-run gate → apply → verify) + §10 (secret discipline — config-only, zero secrets touched). Rule 7 standalone, direct execute. FOUNDER AUTHORIZATION: standing.
+Session: mesell-infra-flags-2-session-1
+
+**Context:** backend #149 (flag-parity sweep, develop `bb7feb8`) landed the final 3 backend feature flags: `FEATURE_PRICE_CALCULATOR_ENABLED` (default True), `FEATURE_TRACKING_DASHBOARD_ENABLED` (default True), `FEATURE_LIVE_PREVIEW_ENABLED` (default **False** — gated rollout, SHIPS DARK by founder ruling). Backend board inter-lead row 54 (`flag-parity (final 3 flags)`, OPEN) requested ConfigMap injection so all 8 V1 flags are ConfigMap-consistent.
+
+**Pre-flight:** `gcloud auth list` → `vaishnaviramoorthy@gmail.com` active. KUBECONFIG pinned `~/.kube/meesell-dev.yaml` (env-var pin; the `--kubeconfig` flag mis-parses before the verb). `kubectl get nodes` → `meesell-dev-master Ready v1.35.5+k3s1`; context server `https://35.234.223.66:6443` (the REAL cluster — standing lesson 1). PRE-SNAPSHOT live `meesell-config`: 26 keys, 5 FEATURE flags (smart_picker/catalog_form/ai_autofill/image_precheck/xlsx_export).
+
+**Dev (k8s/config.yaml) — APPLIED LIVE:**
+- Added `FEATURE_PRICE_CALCULATOR_ENABLED: "true"`, `FEATURE_TRACKING_DASHBOARD_ENABLED: "true"`, `FEATURE_LIVE_PREVIEW_ENABLED: "false"` (commented DARK — do not flip true until founder lights gated rollout).
+- `kubectl -n dev diff` → exactly +3 lines (the 3 new flags).
+- **MANDATORY GATE** `kubectl -n dev apply -f k8s/config.yaml --dry-run=server` → `configmap/meesell-config configured (server dry run)` — CLEAN.
+- `kubectl -n dev apply` → `configmap/meesell-config configured`. Live verify: **29 keys** (26→29 as expected); 3 new vars = `true/true/false`.
+
+**Rolling restart (envFrom cache):** api + worker consume `meesell-config` via `envFrom: configMapRef` (cached at pod start) → `kubectl -n dev rollout restart deployment/api deployment/worker`.
+- **AR-token hiccup:** new ReplicaSet pods hit `401 ErrImagePull` (`failed to fetch oauth token ... 401 Unauthorized`) — stale `registries.yaml` token. Image tag (`api:138f6982...`,latest) EXISTS in AR; fresh metadata-SA token tested against AR `/v2/token` → HTTP 200 (SA `888244156264-compute@` has pull). Root cause = containerd cached old auth. Fix per MEMORY Phase-D AR-auth note: `sudo /usr/local/bin/refresh-ar-token.sh` then `sudo systemctl restart k3s` (reloads registries.yaml; pods recover from cached layers, ~10s). After restart: api 2/2 + worker 2/2 rolled out clean.
+- Fresh-pod env verify (`printenv` in a new api pod AND a new worker pod): `FEATURE_PRICE_CALCULATOR_ENABLED=true`, `FEATURE_TRACKING_DASHBOARD_ENABLED=true`, `FEATURE_LIVE_PREVIEW_ENABLED=false`.
+
+**Staging (k8s/overlays/staging/config.yaml) — MANIFEST-ONLY:**
+- Added all 3 flags = `"false"`. Key count 26→29.
+- `kubectl apply -f ... --dry-run=server` → `configmap/meesell-config created (server dry run)` — CLEAN ("created" because the staging ConfigMap isn't live yet; staging is overlay-populated Day-7+, not this task). NOT applied (NEVER applies to staging ns — D2 soak gates + live-preview dark).
+
+**Race re-check (standing lesson 2):** post-work live `meesell-config` = 29 keys, all 3 new flags intact (`true/true/false`). PASS — no sibling session reverted me. Snapshots `/tmp/meesell-{pre,post}-flags2-cm.txt`.
+
+**Validation:** all PASS. Dev applied + env-verified live; staging dry-run-clean manifest-only; race-check clean.
+
+**Files (2 manifests + records):** `k8s/config.yaml` (+3 keys), `k8s/overlays/staging/config.yaml` (+3 keys), `docs/status/feature_board_infra.md` (header + IN REVIEW row + incoming inter-lead RESOLVED row 54), `docs/status/STATUS_INFRA.md` (this block).
+
+**PR:** `chore/infra-flags-2` → develop, founder-gated (LEAVE OPEN — D1, master/founder merges develop PRs). Resolves backend board inter-lead row 54.
+Cost: ₹0/mo (config-only, no new secret/primitive). No TF/secret/app-code change.
+
+---
 
 ## UPDATE — 2026-06-12 — mesell-branch-protection-infra-session-1 (FOUNDER APPROVED: apply branch protection)
 
