@@ -23,10 +23,16 @@
 # MUST match `postgres-credentials` (the value the postgres StatefulSet was
 # created with).
 #
-# AUTH MODE: this config uses plain `auth_type=md5` with a userlist.txt that
-# carries the `meesell` role + its md5 hash. `auth_query` (asking Postgres for
-# the hash) is the alternative but needs a dedicated lookup role + pg_shadow
-# grant — deferred; for V1 dev the static userlist is simpler and sufficient.
+# AUTH MODE: Postgres is configured with `password_encryption = scram-sha-256`
+# (the `meesell` role's stored secret is SCRAM, not md5). PgBouncer must
+# therefore use `auth_type = scram-sha-256` with the PLAINTEXT password in
+# userlist.txt — it does client-side SCRAM verification AND forwards SCRAM to
+# the server (it can only do server-side SCRAM when it holds the plaintext).
+# NOTE: an md5 userlist hash fails here with "cannot do SCRAM authentication:
+# wrong password type" (hit on the 2026-06-12 dev apply; fixed forward).
+# `auth_query` (asking Postgres for the verifier) is the alternative but needs a
+# dedicated lookup role + pg_shadow grant — deferred; for V1 dev the static
+# userlist is simpler and sufficient.
 # ----------------------------------------------------------------------------
 apiVersion: v1
 kind: ConfigMap
@@ -66,8 +72,11 @@ data:
     reserve_pool_timeout = 3
     max_db_connections = 25
 
-    # Auth: static userlist (see Secret pgbouncer-userlist). md5 hashes only.
-    auth_type = md5
+    # Auth: static userlist (see Secret pgbouncer-userlist). Postgres uses
+    # scram-sha-256, so the userlist carries the PLAINTEXT password and
+    # pgbouncer forwards SCRAM to the server. (md5 userlist => "wrong password
+    # type" against a SCRAM server.)
+    auth_type = scram-sha-256
     auth_file = /etc/pgbouncer/userlist.txt
 
     # Admin/stats access for `SHOW POOLS;` etc. (the `meesell` role is the only
@@ -119,7 +128,11 @@ spec:
         - name: pgbouncer
           # edoburu/pgbouncer: file-driven config (mounts pgbouncer.ini + userlist.txt),
           # matches our ConfigMap+Secret pattern. Pinned tag (no :latest).
-          image: edoburu/pgbouncer:1.23.1
+          # TAG: edoburu uses a `vMAJOR.MINOR.PATCH-pN` image convention; the bare
+          # `1.23.1` tag does NOT exist on Docker Hub (caused ErrImagePull on the
+          # 2026-06-12 dev apply). `v1.23.1-p3` is the latest patch of the 1.23.1
+          # pgbouncer line — fixed forward during the apply (MS-0 apply record).
+          image: edoburu/pgbouncer:v1.23.1-p3
           ports:
             - containerPort: 6432
               name: pgbouncer

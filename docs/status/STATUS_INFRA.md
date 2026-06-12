@@ -1,8 +1,55 @@
 # STATUS — INFRASTRUCTURE
 
 **Owner:** `meesell-infra-builder`
-**Last update:** 2026-06-12 (**MS-0 / D5 step 1 AUTHORED + VALIDATED, NOT applied (founder-gated).** PgBouncer (transaction-pool) + Postgres `max_connections=200`, dev-only, ₹0. Branch `feature/microservices-pgbouncer/integration` → develop, founder-gate PR OPEN. See UPDATE below.)
+**Last update:** 2026-06-12 (**MS-0 / D5 step 1 MERGED (#181, develop 29ed457) + APPLIED LIVE to dev — founder-authorized.** Runbook steps 1–2: Postgres `max_connections=200` LIVE + PgBouncer transaction-pool LIVE (`pgbouncer.dev.svc.cluster.local:6432`). Step 3 (DATABASE_URL flip) NOT applied — separate founder gate, blocked on backend R-MS-8. Dev-only, ₹0. Two apply-time manifest fixes (image tag, scram auth). See APPLY UPDATE below.)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
+
+## UPDATE — 2026-06-12 — mesell-ms-pgbouncer-session-1 (APPLY) — MS-0 / D5 step 1 APPLIED LIVE to dev
+
+=== STEP: apply runbook steps 1–2 — Postgres max_connections=200 + PgBouncer (transaction-pool) ===
+Phase: Playbook §5 (PostgreSQL — TF `module.postgres_dev`), §10 (Secret discipline — userlist),
+       §15 (Safe deployment — server dry-run [MANDATORY GATE], RE-RUN immediately before apply).
+       Executing `docs/runbooks/pgbouncer-cutover.md` steps 0/1/2 ONLY. Step 3 NOT authorized.
+Session: mesell-ms-pgbouncer-session-1 (APPLY phase)
+Authorization: founder "run the apply per the runbook" after PR #181 reviewed/APPROVED/squash-merged
+       to develop @ 29ed457. Dev namespace only, ₹0 new spend.
+
+**Session-start sweep:** feature_board_infra.md — all Active rows touched 2026-06-11/12 (current). No 7+ day stale row.
+
+**Pre-flight (runbook §0) — all pass:**
+- gcloud auth: vaishnaviramoorthy@gmail.com ACTIVE; project project-1f5cbf72-2820-4cdb-949.
+- `kubectl get nodes`: meesell-dev-master Ready (K3s API reachable — founder IP in firewall /32).
+- `SHOW max_connections` = **100** (pre, as expected). postgres-0 1/1 Running.
+- Snapshots: `/tmp/meesell-pre-ms0-state.txt` (instances — meesell-dev confirmed), `/tmp/meesell-pre-ms0-postgres-sts.yaml`.
+- Baseline: api 2/2, worker 2/2 Running (the zero-impact reference).
+
+**Step 1 — Postgres max_connections=200 (TF) APPLIED:**
+- `terraform init` in fresh worktree `/tmp/mesell-wt/ms0-apply/infra/terraform` (GCS backend `meesell-tfstate`, read-config, safe).
+- `terraform plan -target=module.postgres_dev` (dev.tfvars + 2 password vars from ~/.meesell-secrets, ADC token via GOOGLE_OAUTH_ACCESS_TOKEN workaround):
+  **`Plan: 0 to add, 1 to change, 0 to destroy`** (in-place update of `kubernetes_stateful_set.postgres`:
+  `args += ["-c","max_connections=200"]`, `resources.limits.memory "1Gi" -> "1536Mi"`) — matches the hard-limit gate exactly. Saved `.tflogs/ms0-postgres.tfplan`.
+- `terraform apply` saved plan: OK. `rollout status statefulset/postgres`: complete. postgres-0 1/1 Running (fresh, RESTARTS 0).
+- VERIFY: `pg_isready` → accepting connections; `SHOW max_connections` → **200** (expected 200, MATCH).
+
+**Step 2 — PgBouncer (transaction-pool) APPLIED:**
+- 2a. `pgbouncer-userlist` Secret populated from live `postgres-credentials` (password NEVER printed; temp file shredded). [see auth fix below]
+- 2b. **MANDATORY §15 server dry-run** `kubectl -n dev apply --dry-run=server -f k8s/pgbouncer.yaml` → clean (3 objects: configmap/deployment/service). Re-run clean after each manifest fix.
+- 2c. `kubectl apply -f k8s/pgbouncer.yaml` → applied; `rollout status deployment/pgbouncer` → successfully rolled out; pod **1/1 Running**.
+- VERIFY: end-to-end **SELECT 1 through `:6432` → `1`** (app→pgbouncer→postgres); `SHOW POOLS` → `meesell` pool `pool_mode=transaction` (sv_idle=1, real backend opened+returned). Endpoint `pgbouncer.dev.svc.cluster.local:6432` LIVE.
+
+**TWO apply-time manifest defects found + fixed forward (folded into k8s/pgbouncer.yaml; ride the docs-record PR):**
+1. **Image tag `1.23.1`→`v1.23.1-p3`.** `edoburu/pgbouncer:1.23.1` 404s on Docker Hub (`not found` → ErrImagePull); edoburu uses a `vMAJOR.MINOR.PATCH-pN` convention. `v1.23.1-p3` is the latest patch of the 1.23.1 line. Verified the real tag via the Docker Hub tags API before applying.
+2. **`auth_type` `md5`→`scram-sha-256` + PLAINTEXT userlist.** Postgres runs `password_encryption=scram-sha-256` (the `meesell` rolpassword is `SCRA...`); pgbouncer with an md5 userlist failed server-side auth: `cannot do SCRAM authentication: wrong password type`. Fix: `auth_type=scram-sha-256` with the plaintext password in userlist.txt (pgbouncer forwards SCRAM to the server). Also corrected the runbook §2a procedure + verify queries (the `user:pw@host` DSN form breaks on `@`-containing base64 passwords — switched to `env PGPASSWORD=` + discrete `-h/-p/-U/-d` flags, per MEMORY).
+
+**Post-apply health sweep — zero impact confirmed:**
+- api 2/2 + worker 2/2 still Running, AGE preserved (NOT restarted — nothing routes through pgbouncer; api/worker untouched as required). api `/health` → {postgres:ok,valkey:ok}.
+- postgres mem **limit = 1536Mi** live; live usage postgres 37Mi (<<limit), pgbouncer 1Mi/10m CPU.
+- Node meesell-dev-master post-apply: CPU req **1675m/2000m (83%)** (pgbouncer's 25m fit the ~325m free), mem req 44% — headroom OK, no breach.
+
+**Step 3 (DATABASE_URL flip to :6432):** NOT applied — separate founder gate, blocked on backend R-MS-8 (asyncpg/SQLAlchemy transaction-pool compat). Inter-lead request to backend remains OPEN. D5 step-1 PREREQUISITE is now LIVE; the flip is the next (separately gated) step.
+
+**Records:** docs-only PR to develop from worktree `/tmp/mesell-wt/ms0-apply` branch `chore/ms0-apply-record` (NOT a founder gate). Board MS-0 row → Recently merged (MERGED+APPLIED). Cost ₹0/mo.
+
 
 ## UPDATE — 2026-06-12 — mesell-ms-pgbouncer-session-1 — MS-0 / D5 step 1 (PgBouncer + max_connections=200)
 
