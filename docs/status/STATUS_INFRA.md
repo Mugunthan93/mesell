@@ -4,6 +4,61 @@
 **Last update:** 2026-06-12 (**FINAL DEV REDEPLOY @ develop tip `80cda29` (#177) — VERIFIED via hands-free CI lane. DEV-COMPLETE: yes for the deployable V1 dev surface (api+worker).** Prior: Gate-4 RED inter-lead → backend (since RESOLVED — develop runs GREEN through Gate-4 by ~11:50Z); GEMINI_API_KEY_CI SET + founder-verified DONE. ₹0/mo.)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
 
+## UPDATE — 2026-06-12 — mesell-ms-export-infra-session-1 — Sub-Plan A INFRA GATE on PR #190 (APPROVE + in-gate fix)
+
+=== STEP: merge-gate review of PR #190 (feature/microservices-export/infra → /integration) ===
+Phase: INFRASTRUCTURE_PLAYBOOK.md §15 ([MANDATORY GATE] dry-run, offline branch when cluster unreachable) + §10 (secret discipline). Merge-gate criteria per `.github/PULL_REQUEST_TEMPLATE/infra.md` + board Acceptance gate.
+Session: mesell-ms-export-infra-session-1
+Reviewed tip: aafcc30 (at open) → **234e4d2** (after in-gate fix).
+
+**VERDICT: APPROVE.** PR comment https://github.com/Mugunthan93/mesell/pull/190#issuecomment-4693636063
+
+- I1–I8 verified IN THE DIFF at handoff-specified values (sizing 50m/128Mi + 200m/512Mi; ClusterIP 8001; 2 Traefik paths with exact `[^/]+/export-xlsx$` regex + `/api/v1/exports` prefix; `/internal/*` absent; schema-role.sql `GRANT INSERT ON public.audit_events TO export_user`; secrets.yaml.example NO AI/SMS/payment vars; TF `max_connections=200` minimal additive, prevent_destroy intact). Field-assertion pass ALL PASS.
+- Dev-namespace-only; secret scan on diff CLEAN (REPLACE-ME placeholders only); file-list scoped (12 files in-lane).
+- **§5 ADVERSARIAL CHECK vs landed backend tree (e23080c)** — 3 would-not-run defects found + FIXED in `234e4d2` (Dockerfile + deployment only, backend sole-writer files untouched): (1) gunicorn missing from landed requirements.txt → `pip install gunicorn==22.0.0` in image; (2) worker `-A app.workers.celery_app`→`app.celery_app` (no app/workers/ pkg); (3) worker `-Q celery`→`-Q svc-export` (landed `task_default_queue="svc-export"`). `app.main:app` confirmed.
+- Server-dry-run + dev smoke DEFERRED to deploy time (cluster unreachable; default ctx 34.180.58.185 dead, real VM 35.234.223.66 firewall-scoped) — playbook §15 F3 branch, honestly documented; NOT a Sub-Plan-A blocker (dev, zero-traffic).
+- D3: 250m CPU fits e2-standard-2, no D3 ask, ₹0/mo.
+- **Deploy-time bootstrap (founder):** create SM container `dev-export-db-password` (export_user Postgres pw) — used in I5 ALTER ROLE + I7 DATABASE_URL. Per-service DB pw, not a new IAM grant (within §4 ceiling).
+Validation: APPROVE. Squash executed by the session window after verdict (NOT this lane). Board row → IN REVIEW.
+
+---
+
+## UPDATE — 2026-06-12 — mesell-ms-export-infra-session-1 — Sub-Plan A (export extraction) INFRA lane I1–I8
+
+=== STEP: author + offline-validate the svc-export infra surfaces (Sub-Plan A, first microservices extraction) ===
+Phase: INFRASTRUCTURE_PLAYBOOK.md §5 (PostgreSQL) + §7 (Ingress/TLS) + §15 ([MANDATORY GATE] dry-run; offline-only branch when cluster unreachable). Authorities: docs/plans/microservices_migration/MASTER_PLAN.md §2.B/§2.C/§2.D/§2.E/§5.A/§5.B/§5.D, docs/plans/infra/microservices_infra_plan.md §2.4/§3.2/§3.3/§6.3, handoff_msA_infra.md (work-package I1–I8), backend/app/modules/export/router.py (exact route paths).
+Session: mesell-ms-export-infra-session-1
+Branch: feature/microservices-export/infra (cut from origin/develop `c859955`) → PR to feature/microservices-export/integration (infra-lead-reviewed; founder gates integration→develop).
+
+**Constraints honored:** dev namespace ONLY · current `e2-standard-2` hardware (NO D3 ask) · ₹0 spend · NO terraform/gcloud APPLY (founder applies; my ADC is not vaishnaviramoorthy and no live GCP mutation is in scope for this lane) · no `git add -A` (exact paths only).
+
+**Deliverables landed (paths):**
+- I1 `backend/services/svc-export/Dockerfile` — python:3.12-slim, ONE image (api default CMD = gunicorn on :8001; worker overrides command in deployment.yaml). Authored against the spec'd tree shape (app/ + alembic/ + requirements.txt authored by the parallel backend lane; validated at integration).
+- I2 `k8s/svc-export/deployment.yaml` — svc-export-api 1 replica req 50m/128Mi lim 200m/512Mi; svc-export-worker 1 replica req 200m/512Mi lim 400m/1Gi (lim=2×req per R-MS-9). kill-before-surge strategy (dev CPU-tight). Worker consumes ONLY `-Q celery` (export.xlsx has no task_route → default queue; image-tasks belongs to a different service, NOT consumed here).
+- I3 `k8s/svc-export/service.yaml` — ClusterIP `svc-export` :8001→:8001, selects component=api only.
+- I4 `k8s/svc-export/ingressroute.yaml` — Traefik IngressRoute (traefik.io/v1alpha1, websecure, api.mesell.xyz TLS reused). Route 1 `PathRegexp(^/api/v1/products/[^/]+/export-xlsx$)` (tight — does NOT hijack catalog's /products/*); Route 2 `PathPrefix(/api/v1/exports)`. `/internal/*` deliberately NOT routed (cluster-DNS-only isolation, MASTER_PLAN §2.C). Param name `product_id` per router.py:91.
+- I5 `k8s/svc-export/schema-role.sql` — idempotent: CREATE SCHEMA export; CREATE ROLE export_user (LOGIN, least-priv); ALTER SCHEMA OWNER; USAGE+DML on export schema (+default privileges); **`GRANT USAGE ON SCHEMA public` + `GRANT INSERT ON public.audit_events TO export_user` (R3 — the backend merge gate's audit-row test depends on this)**. INSERT-only on audit_events (least privilege). Password set out-of-band from SM (not in git).
+- I6 `k8s/svc-export/gcs-sa.yaml.example` — GCS SA SPEC (reference, not appliable). DECISION for Sub-Plan A: option A (inherit node VM SA `888244156264-compute@`, which already has storage.objectAdmin on gs://meesell-prod-assets; app-layer prefix tenancy under `exports/{user_id}/...`; ₹0; ZERO new IAM). Dedicated export SA + Workload Identity + prefix-scoped IAM Condition (MASTER_PLAN §2.E target, option B) deferred to MS-K8S-4 when WI lands on K3s. Keyless (org policy forbids SA JSON keys). Within the §4 one-SA ceiling (actually zero new SAs).
+- I7 `k8s/svc-export/secrets.yaml.example` — svc-export-secrets template: DATABASE_URL (role export_user, `?options=-csearch_path%3Dexport,public`), VALKEY_URL + CELERY_BROKER/RESULT, JWT_SECRET (SM jwt-secret; LOCAL verify per D7/A2), APP_ENV="development", GCS_BUCKET/GCS_PROJECT_ID (keyless). **DELIBERATELY ABSENT: GEMINI/LANGFUSE/MSG91/RAZORPAY/REFRESH_TOKEN_PEPPER*/AUDIT_PII_SALT** (export is deterministic). All values REPLACE-ME placeholders — no secret committed (verified by secret-scan: 0 real key material).
+- I8 `infra/terraform/modules/postgres/main.tf` — minimal additive `args = ["-c", "max_connections=200"]` on the postgres StatefulSet container. **I8 OVERLAP CHECK CLEAN:** no MS-0 / pgbouncer / max_connections PR or branch exists in origin (`gh pr list --search pgbouncer` → only doc PRs; `git log origin/develop` → none; `git ls-remote --heads origin | grep -iE 'pgbouncer|ms-0|pool|ms-db'` → none; only the 3 microservices-export branches exist). Genuinely absent → I made the minimal change. PgBouncer (MS-DB-4) NOT in Sub-Plan A (deferred; dev-only zero-traffic).
+
+**Validation evidence (offline-only — cluster UNREACHABLE):**
+- Cluster: `34.180.58.185:6443` connection refused (K3s API /32-firewalled to founder IP per the memory IP-rotation pattern; the VM endpoint also differs from the memory's `35.234.223.66`). `kubectl --dry-run=client/server` BOTH require the API server (RESTMapper/OpenAPI fetch) → impossible offline. This is the playbook §15 "offline-only / deferred-to-deploy-time" branch (same posture as the mfe-cutover SP07 session). Server dry-run + dev smoke are DEFERRED to deploy time (the integration→develop deploy job runs `kubectl apply` on the VM + gates on rollout-status + health smoke + auto-rollback).
+- Offline validation performed: (a) `yaml.safe_load_all` PARSE OK on all 4 manifests (Deployment×2, Service, IngressRoute, Secret); (b) field-level assertions PASS — api req 50m/128Mi lim 200m/512Mi, worker req 200m/512Mi lim 400m/1Gi, both port/targetPort 8001, worker `-Q celery` (no image-tasks), IngressRoute both routes → :8001, `/internal` not present, export-xlsx regex anchored; (c) `terraform fmt -check infra/terraform/modules/postgres/` exit 0 (no diff); (d) SQL structural sanity PASS (balanced `$$`, all 7 key statements incl the audit_events grant present); (e) secret-scan clean (5 REPLACE-ME placeholders, 0 real key material).
+- `terraform plan` NOT run: requires GCS state backend + K8s provider (unreachable cluster) + ADC=vaishnaviramoorthy (active ADC is not). Plan/apply is the founder step per constraint §4. Documented honestly — not faked.
+
+**Acceptance items the backend merge gate needs (handoff §5):**
+1. I5 audit_events INSERT grant — PRESENT (`GRANT INSERT ON public.audit_events TO export_user` at schema-role.sql:79; verified by grep + SQL sanity). ✅
+2. I8 max_connections=200 — DONE here (not deferred to MS-0; overlap check clean — no MS-0 PR exists). Shipped as the minimal additive TF arg; founder applies the targeted `terraform apply -target=module.postgres_dev`. ✅
+3. I2 sizing — svc-export at api 50m + worker 200m = **250m CPU request fits the current e2-standard-2 (2000m) node** alongside the monolith → "fits current node, no D3 ask" holds for §4 row-A. ✅
+
+**D3 capacity statement:** svc-export adds 250m CPU request (50m api + 200m worker). Current node app+infra request was ~1700m/2000m (infra plan §6.1); +250m = ~1950m < 2000m — fits with thin headroom on `e2-standard-2`. NO D3 VM-upgrade ask for Sub-Plan A (D3 e2-standard-4 is plan-pre-approved but gets a fresh founder cost-ask only when services genuinely outgrow the node). No provisioning/upgrade performed.
+
+**One inter-lead note surfaced (recorded on my board, incoming row):** svc-export needs ONE new SM secret — the export_user DB password (`dev-export-db-password`, suggested ID) — created by the founder at bootstrap and composed into DATABASE_URL (I7) + used in the I5 `ALTER ROLE export_user WITH PASSWORD`. This is a per-service DB password, NOT a new IAM grant → within the §4 ceiling.
+
+Board sweep (session-start + session-end): no rows untouched 7+ days (all Active rows ≥ 2026-06-11; today 2026-06-12). Added microservices-export IN PROGRESS row + the backend-coordinator incoming inter-lead row. Inter-lead requests still OPEN that are NOT mine to close: frontend/mfe-cutover, backend/catalog-form (Gate-1), backend/gate4-integration.
+Next action: commit exact paths + push to origin/feature/microservices-export/infra; open the infra group PR to feature/microservices-export/integration (sets row IN REVIEW at PR-open). Server dry-run + dev smoke at deploy time.
+
 ## UPDATE — 2026-06-12 — mesell-dev-final-redeploy-session-1 — FINAL DEV REDEPLOY @ `80cda29` (VERIFY, not redeploy)
 
 === STEP: verify the hands-free CI deploy of develop tip `80cda29` to the dev namespace ===
