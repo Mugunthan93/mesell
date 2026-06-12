@@ -5105,3 +5105,36 @@ Next: land the held docs queue (#157 spec/Gate-1-resolved with this RESOLVED fli
 Hand-offs: meesell-infra-builder — ci-gate4-loop-contamination inter-lead CLOSED; develop deploy pipeline confirmed working (image rolled to dev namespace). No ci.yml action needed.
 LESSON (keeper): rate_limit_mw resolves get_valkey_otp() as a PLAIN FUNCTION CALL, not via FastAPI Depends — so `app.dependency_overrides[get_valkey_otp]` is INVISIBLE to it. Any integration fixture that needs to redirect the OTP Valkey client for middleware MUST monkeypatch the module-level singleton `app.shared.valkey._otp_client` directly (mirror the existing `_cache_client` patch), and restore it in teardown. This is the root of the recurring 13 Event-loop-closed teardown errors. The DI override alone never fixed them.
 =========
+
+=== UPDATE: 2026-06-12 — MICROSERVICES MIGRATION START CONDITION RE-KEYED (founder "ms go") ===
+Phase: Microservices Migration MASTER_PLAN — start-condition re-key (docs chore, FAST-MODE rule-7 docs class)
+Session: mesell-ms-rekey-ruling-session-1
+Board sweep: 1 row touched (microservices-export IN PROGRESS → READY-TO-EXECUTE pending dev-complete declaration). Active features otherwise unchanged (flag-parity + backend-chores still GATE-PASS/FOUNDER-PR-OPEN per D1 — founder's gate, not mine). Inter-lead requests: none opened this turn; existing infra requests (ci-gate1 RESOLVED, ci-gate4 READY-TO-RE-FIRE, dual-pepper RESOLVED) untouched. No rows stale 7+ days that aren't already founder-PR-pending.
+
+FOUNDER RULING (2026-06-12, verbatim "ms go"): "The microservices migration's start condition is RE-KEYED from 'post-V1 launch' to 'dev-complete.'"
+
+Done:
+  - MASTER_PLAN.md amended (ADDITIVE, zero locked-decision change):
+      (1) header STATUS line now records the re-key + pointers to §3.A.1 and Rev v1.3.
+      (2) NEW §3.A.1 "Execution Start Condition" inserted after §3.A (Approach), before §3.B (order):
+            verbatim founder ruling + 4-point rationale (V1 lanes finished: Wave6/AI/dual-pepper;
+            launch deferred no users; dev zero-traffic = lowest-risk window; MS proven in dev by prod time)
+            + explicit "what this does NOT change" (A–H order, rollback contract, hybrid CI gate, D3–D7/A1–A2 all intact;
+            only the execution gate moved earlier; dev-complete DECLARATION is the trigger).
+            + EXPLICIT FRESH FOUNDER ASK on the D3 VM spend (~₹2,600/mo e2-standard-4) at the moment services
+            outgrow the current node — plan-level pre-approval only, spend-trigger re-asked (master-session standing rule);
+            early extractions (A export, B dashboard) fit current node at 50m sizing; no money committed by the re-key.
+      (3) Revision History row v1.3 appended.
+  - SUB_PLAN_01_export_extraction.md header note flipped: execution gate framing
+      post-V1 → dev-complete (imminent); first step remains D5 pool right-sizing + PgBouncer
+      transaction-pooling (₹0, no hardware change) THEN the extraction on the CURRENT node
+      (export's locked 50m CPU K3s sizing fits; D3 VM ask is a later-extraction re-ask, not triggered here).
+      Execution posture stays PLANNING-ONLY; A1/A2 noted already-LOCKED via D6/D7.
+  - feature_board_backend.md: microservices-export row IN PROGRESS → READY-TO-EXECUTE (pending dev-complete
+      declaration); board "Last updated" header line records the re-key.
+
+In progress: none (single-shot docs chore).
+Blockers: none. The lane is READY but NOT IN EXECUTION until the master session formally declares dev-complete.
+Next: PR chore/ms-rekey-ruling → develop; lead-gate comment; squash --admin; ref-delete. On dev-complete declaration, the master session dispatches the export-extraction coding session (Sub-Plan A) — first step D5 pool/PgBouncer.
+Hand-offs: none new. NOTE for infra: when Sub-Plan A executes, D5 pool right-size + PgBouncer is the ₹0 first step; the D3 VM upgrade (e2-standard-4) is a fresh founder ask at the moment services outgrow the current node — do NOT pre-provision on the strength of the plan-level pre-approval.
+=========
