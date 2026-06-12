@@ -4980,3 +4980,39 @@ reload-pollution latent debt, api-routes-builder, low pri).
 Hand-offs: meesell-api-routes-builder — CHORE-B optional hardening. meesell-infra-builder — PR #145
 Gate-1-RED inter-lead request resolvable (PR #150 landed the fix).
 =========
+
+=== UPDATE: 2026-06-12 — Gate-4 repair loop 1 (PR #159) ===
+Phase: CI Gate-4 integration tests — repair loop 1 of 2
+Session: mesell-gate4-loop-backend-session-1 on fix/gate4-loop-contamination (PR #159)
+Commit: 0059272
+
+Done:
+- D1: removed SAVEPOINT isolation from iam_client (integration/conftest.py).
+  Root cause: split-engine eligibility+onboarding tests create user via iam_client
+  then read it back via a SEPARATE engine on os.environ["DATABASE_URL"]. SAVEPOINT kept
+  the user row uncommitted → ForeignKeyViolationError x4-5 on the second engine.
+  Fix: function-loop NullPool engine + commit-for-real; _cleanup_users_by_phone_prefix
+  handles teardown. Cross-loop error fixed by NullPool alone; no SAVEPOINT needed.
+
+- D2: patched _valkey_module._otp_client at module level in all three fixtures
+  (iam_client, customer_client, export_client). Root cause: rate_limit_mw._check_window
+  calls await get_valkey_otp() as a plain function — NOT through FastAPI DI — so
+  dependency_overrides[get_valkey_otp] had no effect on it. When test N's function loop
+  closes, the stale _otp_client StreamWriter.transport._loop is the closed loop; test
+  N+1 fixture setup triggers a pipeline call → loop.call_soon() on closed loop →
+  RuntimeError: Event loop is closed (all 13 teardown errors). Fix: replace _otp_client
+  singleton with a fresh function-loop-bound client at fixture start; restore in teardown.
+  Same pattern as _cache_client already used.
+
+- D3: updated stale assertion in test_integration.py test_full_lifecycle (L80).
+  Verification: G7 FOUNDER RULING 2026-06-11 (ai-autofill D1) confirmed in
+  docs/plans/features/ai-autofill/FEATURE_PLAN.md + feature_board_backend.md + service.py
+  lines 669-691. App is CORRECT (applied always False, writes only ai_suggestions_jsonb).
+  Test was STALE (asserted `is True`). Updated to assert False with BE-CATALOG-G7-AUTOAPPLY-1
+  citation. This is H2 (honest stale-test fix) — not assertion-weakening.
+
+Tests: CI run 27394254213 queued (awaiting results)
+Blockers: none
+Next: CI results confirm zero failed / zero errors; coordinator runs re-gate
+Hand-offs: meesell-backend-coordinator — re-gate PR #159 when CI run 27394254213 completes
+=========

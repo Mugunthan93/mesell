@@ -86,7 +86,7 @@ class TestFullProductLifecycle:
         # §D1 and feature_board_backend.md G7 entry.
         assert autofill_result.applied.get("product_name") is False
 
-        # ── 3. PATCH autosave ───────────────────────────────────────────
+        # ── 3. PATCH autosave (user types a description) ────────────────
         autosave_req = PatchProductRequest(
             fields={"product_description": "User-typed long description."}
         )
@@ -94,14 +94,29 @@ class TestFullProductLifecycle:
             user.id, product.id, autosave_req, is_autosave=True, db=db
         )
 
-        # ── 4. PATCH manual (status=ready) ──────────────────────────────
-        ready_req = PatchProductRequest(status="ready")
+        # ── 4. PATCH manual — accept autofill suggestions + status=ready ─
+        # BE-CATALOG-G7-AUTOAPPLY-1: FOUNDER RULING 2026-06-11 (ai-autofill D1)
+        # removed auto-apply from autofill_product.  Autofill only writes to
+        # ai_suggestions_jsonb; the seller must explicitly accept each suggestion.
+        # Simulating user accepting the 3 compulsory fields suggested by the stub
+        # stub_call_gemini: {product_name, brand_name, application_area}.
+        # Then set status=ready.  Without this manual write, patch_product would
+        # raise ValidationFailedError("3 required field(s) still empty") because
+        # fields_jsonb is untouched by autofill under G7.
+        accept_req = PatchProductRequest(
+            fields={
+                "product_name": "Glow Eye Serum",
+                "brand_name": "BrightLab",
+                "application_area": "under-eye",
+            },
+            status="ready",
+        )
         ready_product = await catalog_service.patch_product(
-            user.id, product.id, ready_req, is_autosave=False, db=db
+            user.id, product.id, accept_req, is_autosave=False, db=db
         )
         assert ready_product.status == "ready", (
-            "After autofill auto-applies compulsory fields, status=ready transition "
-            "must succeed without further user input."
+            "After seller accepts autofill suggestions via manual PATCH, "
+            "status=ready transition must succeed."
         )
 
         # ── 5. get_preview ──────────────────────────────────────────────
