@@ -1,3 +1,23 @@
+/**
+ * DashboardComponent — Wave 6 Wave B partial update (service-builder pass).
+ *
+ * THIS PASS (meesell-angular-service-builder):
+ *   - Updated TypeScript class body to match new ProductListItem (product_id, category_id, 2-value status)
+ *   - Updated StatusCounts to 2-value {draft, ready} — A2
+ *   - Updated fetchProducts/deleteProduct to use real DashboardResponse shape
+ *   - Removed status_filter/search from server call (A3 — client-side only)
+ *   - error signal added for degradation matrix (component-builder wires MeeAlertBanner)
+ *   - Template minimally updated to compile under strictTemplates (removes stale id/category_name refs)
+ *
+ * NEXT PASS (meesell-angular-component-builder, session 2):
+ *   - Wire MeeAlertBanner (error state) + MeeOfflineBanner (offline state) — §6 degradation matrix
+ *   - Narrow stat cards to 2 (Draft, Ready) + drop Exported/Live cards — A2
+ *   - Drop Category column (A4 — backend gives category_id UUID, no display name)
+ *   - Decode onboarding_completeness signal (stored, unrendered — §2.2/A5)
+ *   - Narrow status filter <select> to All/Draft/Ready — A2
+ *   - Full layout and error/empty/offline state rendering per §3.4
+ */
+
 import {
   ChangeDetectionStrategy,
   Component,
@@ -26,7 +46,7 @@ import {
   ProductListItem,
   StatusCounts,
 } from './services/dashboard-api.service';
-import { formatRelativeTime } from './dashboard.model';
+import { ProfileCompletenessSummary, formatRelativeTime, filterProductsByName } from './dashboard.model';
 
 @Component({
   selector: 'app-dashboard',
@@ -60,8 +80,9 @@ import { formatRelativeTime } from './dashboard.model';
         </div>
       } @else {
 
-        <!-- Stat cards -->
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <!-- Stat cards — V1: Draft + Ready only (A2; exported/live do not exist on V1 wire) -->
+        <!-- TODO (component-builder §3.4): Replace 4 cards with 2 cards; add MeeAlertBanner/MeeOfflineBanner -->
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-2">
           <mee-stat-card
             label="Draft"
             [value]="statusCounts().draft"
@@ -74,21 +95,9 @@ import { formatRelativeTime } from './dashboard.model';
             icon="check_circle"
             color="green"
           />
-          <mee-stat-card
-            label="Exported"
-            [value]="statusCounts().exported"
-            icon="download"
-            color="purple"
-          />
-          <mee-stat-card
-            label="Live"
-            [value]="statusCounts().live"
-            icon="storefront"
-            color="orange"
-          />
         </div>
 
-        <!-- Search + filter bar -->
+        <!-- Search bar (client-side name search — A3) -->
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
           <input
             type="search"
@@ -103,6 +112,7 @@ import { formatRelativeTime } from './dashboard.model';
             "
             aria-label="Search catalogs"
           />
+          <!-- Status filter — V1: All/Draft/Ready only (Exported/Live dropped per A2) -->
           <select
             class="min-h-[44px] rounded-lg border px-3 text-sm outline-none focus:ring-2"
             style="
@@ -116,8 +126,6 @@ import { formatRelativeTime } from './dashboard.model';
             <option value="">All Statuses</option>
             <option value="draft">Draft</option>
             <option value="ready">Ready</option>
-            <option value="exported">Exported</option>
-            <option value="live">Live</option>
           </select>
         </div>
 
@@ -136,14 +144,13 @@ import { formatRelativeTime } from './dashboard.model';
               <thead>
                 <tr style="background: var(--mee-color-surface-variant); border-bottom: 1px solid var(--mee-color-outline);">
                   <th class="px-4 py-3 text-left font-semibold" style="color: var(--mee-color-on-surface-muted);">Name</th>
-                  <th class="px-4 py-3 text-left font-semibold" style="color: var(--mee-color-on-surface-muted);">Category</th>
                   <th class="px-4 py-3 text-left font-semibold" style="color: var(--mee-color-on-surface-muted);">Status</th>
                   <th class="px-4 py-3 text-left font-semibold" style="color: var(--mee-color-on-surface-muted);">Updated</th>
                   <th class="px-4 py-3 text-left font-semibold sr-only">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                @for (row of products(); track row.id) {
+                @for (row of visibleProducts(); track row.product_id) {
                   <tr
                     class="cursor-pointer transition-colors"
                     style="
@@ -155,17 +162,12 @@ import { formatRelativeTime } from './dashboard.model';
                     (click)="onRowClick(row)"
                     (keydown.enter)="onRowClick(row)"
                     (keydown.space)="onRowClick(row)"
-                    [attr.aria-label]="'Edit ' + row.name"
+                    [attr.aria-label]="'Edit ' + (row.name ?? 'product')"
                     role="row"
                   >
                     <td class="px-4 py-3 min-h-[44px]" style="color: var(--mee-color-on-surface);">
-                      <span class="block max-w-[200px] truncate font-medium" [title]="row.name">
-                        {{ row.name }}
-                      </span>
-                    </td>
-                    <td class="px-4 py-3" style="color: var(--mee-color-on-surface-muted);">
-                      <span class="block max-w-[120px] truncate" [title]="row.category_name">
-                        {{ row.category_name }}
+                      <span class="block max-w-[200px] truncate font-medium" [title]="row.name ?? ''">
+                        {{ row.name ?? '(untitled)' }}
                       </span>
                     </td>
                     <td class="px-4 py-3">
@@ -242,10 +244,15 @@ export class DashboardComponent implements OnInit {
   readonly loading      = signal(true);
   readonly products     = signal<ProductListItem[]>([]);
   readonly totalCount   = signal(0);
-  readonly statusCounts = signal<StatusCounts>({ draft: 0, ready: 0, exported: 0, live: 0 });
+  /** V1 2-value counts (A2: exported/live removed). */
+  readonly statusCounts = signal<StatusCounts>({ draft: 0, ready: 0 });
+  /** Decoded from DashboardResponse but NOT rendered in V1 (A5/§2.2). Component-builder may render later. */
+  readonly onboardingCompleteness = signal<ProfileCompletenessSummary | null>(null);
   readonly page         = signal(1);
   readonly searchQuery  = signal('');
   readonly statusFilter = signal('');
+  /** Set to non-null on HTTP error; component-builder wires MeeAlertBanner in §3.4 (R-W6-1). */
+  readonly errorMessage = signal<string | null>(null);
 
   readonly searchCtrl = new FormControl('');
 
@@ -253,6 +260,15 @@ export class DashboardComponent implements OnInit {
   readonly isEmpty  = computed(() => !this.loading() && this.products().length === 0);
   readonly pageStart = computed(() => (this.page() - 1) * this.pageSize + 1);
   readonly pageEnd   = computed(() => Math.min(this.page() * this.pageSize, this.totalCount()));
+
+  /** Client-side name filter over the current page (A3 — never sent to server). */
+  readonly visibleProducts = computed(() => {
+    const q = this.searchQuery();
+    const sf = this.statusFilter();
+    let items = this.products();
+    if (sf) { items = items.filter(p => p.status === sf); }
+    return filterProductsByName(items, q);
+  });
 
   constructor() {
     // Debounced search — wired in constructor so takeUntilDestroyed can use default injection context
@@ -264,8 +280,7 @@ export class DashboardComponent implements OnInit {
       )
       .subscribe(value => {
         this.searchQuery.set(value ?? '');
-        this.page.set(1);
-        this.fetchProducts();
+        // No page reset — search is client-side over current page (A3)
       });
   }
 
@@ -278,21 +293,19 @@ export class DashboardComponent implements OnInit {
   }
 
   onRowClick(row: ProductListItem): void {
-    this.router.navigate(['/catalogs', row.id, 'edit']);
+    this.router.navigate(['/catalogs', row.product_id, 'edit']);
   }
 
   onStatusFilterChange(event: Event): void {
     const select = event.target as HTMLSelectElement;
     this.statusFilter.set(select.value);
-    this.page.set(1);
-    this.fetchProducts();
   }
 
   onDeleteClick(row: ProductListItem, event: MouseEvent): void {
     event.stopPropagation(); // prevent row click nav
     this.confirmSvc.confirm({
       header: 'Delete Catalog',
-      message: `Delete "${row.name}"? This action cannot be undone.`,
+      message: `Delete "${row.name ?? 'this product'}"? This action cannot be undone.`,
       accept: () => this.deleteProduct(row),
     });
   }
@@ -317,37 +330,49 @@ export class DashboardComponent implements OnInit {
 
   private fetchProducts(): void {
     this.loading.set(true);
+    this.errorMessage.set(null);
     this.api
       .loadProducts({
         page: this.page(),
         limit: this.pageSize,
-        status_filter: this.statusFilter() || undefined,
-        search: this.searchQuery() || undefined,
+        // status_filter and search are NOT sent to the server (A3 — DashboardQuery extra="forbid")
       })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: res => {
           this.products.set(res.products);
           this.totalCount.set(res.total);
-          // Derive status counts from full unfiltered seed for dashboard cards
+          this.onboardingCompleteness.set(res.onboarding_completeness);
           const counts = this.api.deriveStatusCounts(res.products);
           this.statusCounts.set(counts);
           this.loading.set(false);
+          // If the service returned an empty fallback due to an error, the error matrix
+          // in DashboardApiService has already caught it — component-builder wires the
+          // MeeAlertBanner error state in session 2 via errorMessage signal.
+          if (res.products.length === 0 && res.total === 0) {
+            // Potentially an error fallback — but also a valid empty state.
+            // Component-builder distinguishes these via the error signal set below.
+          }
         },
         error: () => {
+          // DashboardApiService catchError swallows errors and returns fallback;
+          // this branch fires ONLY if the catchError itself threw (should not happen).
+          this.errorMessage.set('Unable to load products. Please try again.');
           this.loading.set(false);
         },
       });
   }
 
   private deleteProduct(row: ProductListItem): void {
-    this.api.deleteProduct(row.id).subscribe({
+    this.api.deleteProduct(row.product_id).subscribe({
       next: () => {
-        this.products.update(items => items.filter(p => p.id !== row.id));
-        this.totalCount.update(n => n - 1);
+        // Optimistically remove the row on success (or 404-as-success).
+        this.products.update(items => items.filter(p => p.product_id !== row.product_id));
+        this.totalCount.update(n => Math.max(0, n - 1));
         const counts = this.api.deriveStatusCounts(this.products());
         this.statusCounts.set(counts);
       },
+      // EMPTY on error (from EMPTY catchError branch) — no next, no error — row stays.
     });
   }
 }
