@@ -26,6 +26,19 @@ import { PricingApiService }         from './pricing.service';
 import type { PriceCalcResponse, PriceCalcErrorShape } from './pricing.model';
 import { ALERT_MESSAGES } from './pricing.model';
 
+// ── Error-state type (§3.1 degradation matrix) ──────────────────────────────
+// null   = initial / cleared
+// unavailable       = 404 (flag-off or product not found)
+// commission_missing = 422 (no commission rate for category)
+// validation         = 400 (Pydantic constraint violation)
+// server_error       = 5xx / EMPTY path
+export type PricingErrorState =
+  | 'unavailable'
+  | 'commission_missing'
+  | 'validation'
+  | 'server_error'
+  | null;
+
 @Component({
   selector: 'app-pricing',
   standalone: true,
@@ -47,25 +60,22 @@ import { ALERT_MESSAGES } from './pricing.model';
       <!-- Offline banner (R-W6-1 degradation matrix) -->
       <mee-offline-banner />
 
-      <!-- Page Header -->
       <mee-page-header
         title="Price Calculator"
         subtitle="Enter your cost and target margin to calculate pricing"
       />
 
-      <!-- Main layout: stacked on mobile, 2-col on desktop -->
       <div class="flex flex-col gap-6 lg:flex-row lg:items-start">
 
         <!-- INPUT SECTION -->
         <div class="lg:w-2/5">
           <mee-card>
             <form [formGroup]="form" class="space-y-4 p-2">
-
-              <h2 class="text-base font-semibold" style="color: var(--mee-color-on-surface)">
+              <h2 class="text-base font-semibold" style="color:var(--mee-color-on-surface)">
                 Enter pricing details
               </h2>
 
-              <!-- Input cost field (COGS per unit — replaces the retired MRP input, DECISION-1) -->
+              <!-- COGS per unit — replaces retired MRP input (DECISION-1) -->
               <mee-input
                 label="Input cost (COGS per unit)"
                 type="number"
@@ -75,7 +85,7 @@ import { ALERT_MESSAGES } from './pricing.model';
                 [error]="inputCostError()"
               />
 
-              <!-- Target margin (% of input_cost) — replaces retired target_margin (INR) -->
+              <!-- Target margin % — replaces retired target_margin (INR) -->
               <mee-input
                 label="Target margin %"
                 type="number"
@@ -85,7 +95,7 @@ import { ALERT_MESSAGES } from './pricing.model';
                 [error]="targetMarginError()"
               />
 
-              <!-- Calculate button — server round-trip on click; NO auto-fire on input (§3.3) -->
+              <!-- Disabled when form invalid OR calculating in-flight (§4.4 disabled-submit) -->
               <mee-button
                 label="Calculate"
                 variant="primary"
@@ -93,7 +103,6 @@ import { ALERT_MESSAGES } from './pricing.model';
                 [disabled]="form.invalid || calculating()"
                 (clicked)="onCalculate()"
               />
-
             </form>
           </mee-card>
         </div>
@@ -102,12 +111,11 @@ import { ALERT_MESSAGES } from './pricing.model';
         <div class="lg:w-3/5">
           <mee-card>
             <div class="p-2 space-y-4">
-
-              <h2 class="text-base font-semibold" style="color: var(--mee-color-on-surface)">
+              <h2 class="text-base font-semibold" style="color:var(--mee-color-on-surface)">
                 P&amp;L Breakdown
               </h2>
 
-              <!-- Error: 404 — flag off or product not found (NO local math, DECISION-1) -->
+              <!-- 404 — flag off or product not found. NO local math (DECISION-1) -->
               @if (errorState() === 'unavailable') {
                 <mee-alert-banner
                   variant="error"
@@ -115,7 +123,7 @@ import { ALERT_MESSAGES } from './pricing.model';
                 />
               }
 
-              <!-- Error: 422 — category has no usable commission rate -->
+              <!-- 422 — category has no usable commission rate -->
               @if (errorState() === 'commission_missing') {
                 <mee-alert-banner
                   variant="warning"
@@ -123,7 +131,7 @@ import { ALERT_MESSAGES } from './pricing.model';
                 />
               }
 
-              <!-- Error: 400 — Pydantic validation failure -->
+              <!-- 400 — Pydantic constraint violation (form validators prevent most) -->
               @if (errorState() === 'validation') {
                 <mee-alert-banner
                   variant="warning"
@@ -131,7 +139,7 @@ import { ALERT_MESSAGES } from './pricing.model';
                 />
               }
 
-              <!-- Error: 5xx / network — manual re-submit (export-lane pattern, §3.2) -->
+              <!-- 5xx / network — manual re-submit (export-lane pattern §3.2) -->
               @if (errorState() === 'server_error') {
                 <mee-alert-banner
                   variant="error"
@@ -139,103 +147,58 @@ import { ALERT_MESSAGES } from './pricing.model';
                 />
               }
 
-              <!-- Calculating in-flight spinner (a11y live region) -->
+              <!-- Calculating spinner (raw CSS — MeeSpinnerComponent queued, not yet in ui-kit) -->
+              <!-- FLAG(ui-styler builder-3): replace with MeeSpinnerComponent when available -->
               @if (calculating()) {
-                <div
-                  role="status"
-                  aria-live="polite"
-                  aria-label="Calculating price..."
-                  class="flex items-center justify-center py-8"
-                >
-                  <!--
-                    Raw CSS spinner: MeeSpinnerComponent not yet in @mesell/ui-kit.
-                    Builder-3 (ui-styler) TODO: replace when MeeSpinnerComponent ships.
-                  -->
-                  <div
-                    class="mee-pricing-spinner"
-                    style="
-                      width: 32px; height: 32px;
-                      border: 3px solid var(--mee-color-outline);
-                      border-top-color: var(--mee-color-primary);
-                      border-radius: 50%;
-                      animation: mee-spin 0.8s linear infinite;
-                    "
-                  ></div>
-                  <style>
-                    @keyframes mee-spin { to { transform: rotate(360deg); } }
-                  </style>
+                <div role="status" aria-live="polite" aria-label="Calculating price..."
+                     class="flex items-center justify-center py-8">
+                  <div class="mee-pricing-spinner" style="width:32px;height:32px;border:3px solid var(--mee-color-outline);border-top-color:var(--mee-color-primary);border-radius:50%;animation:mee-spin 0.8s linear infinite;"></div>
+                  <style>@keyframes mee-spin { to { transform:rotate(360deg); } }</style>
                 </div>
               }
 
               <!-- P&L result table: real server keys, Decimal strings parsed for display -->
               @if (breakdown()) {
-                <table
-                  class="w-full text-sm"
-                  aria-label="Pricing breakdown"
-                  role="region"
-                  aria-live="polite"
-                >
+                <table class="w-full text-sm" aria-label="Pricing breakdown"
+                       role="region" aria-live="polite">
                   <tbody>
-                    <tr class="border-b" style="border-color: var(--mee-color-outline)">
-                      <td class="py-2" style="color: var(--mee-color-on-surface-muted)">MRP (server-computed)</td>
-                      <td class="py-2 text-right font-medium" style="color: var(--mee-color-on-surface)">
-                        {{ formatRupeeLabel(breakdown()!.mrp) }}
-                      </td>
+                    <tr class="border-b" style="border-color:var(--mee-color-outline)">
+                      <td class="py-2" style="color:var(--mee-color-on-surface-muted)">MRP (server-computed)</td>
+                      <td class="py-2 text-right font-medium" style="color:var(--mee-color-on-surface)">{{ formatRupeeLabel(breakdown()!.mrp) }}</td>
                     </tr>
-                    <tr class="border-b" style="border-color: var(--mee-color-outline)">
-                      <td class="py-2" style="color: var(--mee-color-on-surface-muted)">Meesho Price</td>
-                      <td class="py-2 text-right font-medium" style="color: var(--mee-color-on-surface)">
-                        {{ formatRupeeLabel(breakdown()!.meesho_price) }}
-                      </td>
+                    <tr class="border-b" style="border-color:var(--mee-color-outline)">
+                      <td class="py-2" style="color:var(--mee-color-on-surface-muted)">Meesho Price</td>
+                      <td class="py-2 text-right font-medium" style="color:var(--mee-color-on-surface)">{{ formatRupeeLabel(breakdown()!.meesho_price) }}</td>
                     </tr>
-                    <tr class="border-b" style="border-color: var(--mee-color-outline)">
-                      <td class="py-2" style="color: var(--mee-color-on-surface-muted)">Seller Price</td>
-                      <td class="py-2 text-right font-medium" style="color: var(--mee-color-on-surface)">
-                        {{ formatRupeeLabel(breakdown()!.seller_price) }}
-                      </td>
+                    <tr class="border-b" style="border-color:var(--mee-color-outline)">
+                      <td class="py-2" style="color:var(--mee-color-on-surface-muted)">Seller Price</td>
+                      <td class="py-2 text-right font-medium" style="color:var(--mee-color-on-surface)">{{ formatRupeeLabel(breakdown()!.seller_price) }}</td>
                     </tr>
-                    <tr class="border-b" style="border-color: var(--mee-color-outline)">
-                      <td class="py-2" style="color: var(--mee-color-on-surface-muted)">
-                        Commission ({{ breakdown()!.commission_pct }}%)
-                      </td>
-                      <td class="py-2 text-right" style="color: var(--mee-color-on-surface)">
-                        {{ formatRupeeLabel(breakdown()!.commission_amount) }}
-                      </td>
+                    <tr class="border-b" style="border-color:var(--mee-color-outline)">
+                      <td class="py-2" style="color:var(--mee-color-on-surface-muted)">Commission ({{ breakdown()!.commission_pct }}%)</td>
+                      <td class="py-2 text-right" style="color:var(--mee-color-on-surface)">{{ formatRupeeLabel(breakdown()!.commission_amount) }}</td>
                     </tr>
-                    <tr class="border-b" style="border-color: var(--mee-color-outline)">
-                      <td class="py-2" style="color: var(--mee-color-on-surface-muted)">
-                        GST ({{ breakdown()!.gst_pct }}%)
-                      </td>
-                      <td class="py-2 text-right" style="color: var(--mee-color-on-surface)">
-                        {{ formatRupeeLabel(breakdown()!.gst_amount) }}
-                      </td>
+                    <tr class="border-b" style="border-color:var(--mee-color-outline)">
+                      <td class="py-2" style="color:var(--mee-color-on-surface-muted)">GST ({{ breakdown()!.gst_pct }}%)</td>
+                      <td class="py-2 text-right" style="color:var(--mee-color-on-surface)">{{ formatRupeeLabel(breakdown()!.gst_amount) }}</td>
                     </tr>
-                    <tr class="border-b-2" style="border-color: var(--mee-color-outline)">
-                      <td class="py-2 font-semibold" style="color: var(--mee-color-on-surface)">Profit</td>
-                      <td
-                        class="py-2 text-right font-semibold"
-                        [style.color]="marginIsPositive()
-                          ? 'var(--mee-color-success)'
-                          : 'var(--mee-color-error)'"
-                      >
+                    <tr class="border-b-2" style="border-color:var(--mee-color-outline)">
+                      <td class="py-2 font-semibold" style="color:var(--mee-color-on-surface)">Profit</td>
+                      <td class="py-2 text-right font-semibold"
+                          [style.color]="marginIsPositive() ? 'var(--mee-color-success)' : 'var(--mee-color-error)'">
                         {{ formatRupeeLabel(breakdown()!.profit) }}
                       </td>
                     </tr>
                     <tr>
-                      <td class="py-2" style="color: var(--mee-color-on-surface-muted)">Profit %</td>
-                      <td
-                        class="py-2 text-right font-medium"
-                        [style.color]="marginIsPositive()
-                          ? 'var(--mee-color-success)'
-                          : 'var(--mee-color-error)'"
-                      >
+                      <td class="py-2" style="color:var(--mee-color-on-surface-muted)">Profit %</td>
+                      <td class="py-2 text-right font-medium"
+                          [style.color]="marginIsPositive() ? 'var(--mee-color-success)' : 'var(--mee-color-error)'">
                         {{ breakdown()!.profit_pct }}%
                       </td>
                     </tr>
                   </tbody>
                 </table>
 
-                <!-- Margin status badge (driven off profit, not retired net_margin) -->
                 <div class="flex items-center gap-2 pt-2">
                   <mee-badge
                     [value]="marginIsPositive() ? 'POSITIVE' : 'NEGATIVE'"
@@ -255,14 +218,13 @@ import { ALERT_MESSAGES } from './pricing.model';
                   </div>
                 }
 
-                <!-- V1 shipping disclaimer -->
-                <p class="text-xs mt-2" style="color: var(--mee-color-on-surface-muted)">
+                <p class="text-xs mt-2" style="color:var(--mee-color-on-surface-muted)">
                   Shipping costs are not included in V1 calculations.
                 </p>
 
               } @else if (!calculating() && !errorState()) {
-                <!-- Empty state: no result, no error — initial view -->
-                <p class="text-sm py-6 text-center" style="color: var(--mee-color-on-surface-muted)">
+                <!-- Empty state: initial view — no result, no error -->
+                <p class="text-sm py-6 text-center" style="color:var(--mee-color-on-surface-muted)">
                   Enter your input cost and target margin, then click "Calculate".
                 </p>
               }
@@ -273,7 +235,6 @@ import { ALERT_MESSAGES } from './pricing.model';
 
       </div>
 
-      <!-- Save & Continue -->
       <div class="pt-2">
         <mee-button
           label="Save &amp; Continue"
@@ -292,60 +253,39 @@ export class PricingComponent implements OnInit {
   private readonly router  = inject(Router);
   private readonly service = inject(PricingApiService);
 
-  /** Display helpers exposed to the template. */
-  readonly formatRupeeLabel = formatRupee;
+  readonly formatRupeeLabel    = formatRupee;
   readonly resolveAlertMessage = (messageId: string): string =>
     ALERT_MESSAGES[messageId] ?? messageId;
 
-  /**
-   * Reactive form: input_cost + target_margin_pct.
-   * DECISION-1 (RULED 2026-06-11): MRP input + MRP slider are DEAD.
-   * input_cost = COGS per unit (was mrp); target_margin_pct = % (was target_margin in INR).
-   * Defaults are numbers but form controls are string (FormBuilder infers from the default).
-   */
+  // Form: input_cost (COGS) + target_margin_pct (%). MRP slider + mrp input = DEAD (DECISION-1).
   readonly form = this.fb.group({
     input_cost:        ['300',  [Validators.required, Validators.min(0.01)]],
     target_margin_pct: ['30',   [Validators.required, Validators.min(0), Validators.max(500)]],
   });
 
-  /**
-   * Server-computed P&L breakdown — null until a successful Calculate response.
-   * Stays null on any error; component renders explicit error state instead (R-W6-1).
-   */
+  // P&L breakdown — null until successful server response; stays null on any error (R-W6-1).
   readonly breakdown = signal<PriceCalcResponse | null>(null);
 
-  /** True while the HTTP POST is in-flight. */
+  // True while HTTP POST is in-flight.
   readonly calculating = signal<boolean>(false);
 
-  /**
-   * Typed error state.
-   * null = no error (initial or after cleared).
-   * Set from PriceCalcErrorShape.kind or 'server_error' for 5xx EMPTY path.
-   */
-  readonly errorState = signal<
-    'unavailable' | 'commission_missing' | 'validation' | 'server_error' | null
-  >(null);
+  // Typed error state per §3.1 degradation matrix. null = no error.
+  readonly errorState = signal<PricingErrorState>(null);
 
-  /** Detail text for 422 commission_missing (from server response). */
-  readonly commissionMissingDetail = signal<string>(
-    'Pricing is not available for this category yet.',
-  );
+  // Detail copy for 422 commission_missing — set from server response.
+  readonly commissionMissingDetail = signal<string>('Pricing is not available for this category yet.');
 
-  /** Detail text for 400 validation failure. */
+  // Detail copy for 400 validation — set from server response.
   readonly validationDetail = signal<string>('Invalid pricing input.');
 
   private productId = '';
 
-  /**
-   * True when profit is strictly positive.
-   * Drives POSITIVE/NEGATIVE badge and colour (was driven off net_margin).
-   */
+  // True when profit > 0 — drives badge + colour. Based on server profit (not retired net_margin).
   readonly marginIsPositive = computed<boolean>(
     () => parseDecimal(this.breakdown()?.profit ?? '0') > 0,
   );
 
-  // ── Form validation computed signals ──────────────────────────────────────
-
+  // Inline field error signals — only show after user has touched the field.
   readonly inputCostError = computed<string | undefined>(() => {
     const ctrl = this.form.controls.input_cost;
     if (!ctrl.touched || ctrl.valid) return undefined;
@@ -367,13 +307,7 @@ export class PricingComponent implements OnInit {
     this.productId = this.route.snapshot.paramMap.get('id') ?? '';
   }
 
-  /**
-   * Trigger SERVER-SIDE price calculation.
-   * Sends {input_cost, target_margin_pct} to POST /price-calc.
-   * DECISION-1: NEVER computes locally — server-calc only.
-   * No ApiClient retry: defective (retries all errors) + POST is non-idempotent (§3.2).
-   * Explicit 5xx error + manual re-submit (export-lane pattern).
-   */
+  // DECISION-1: NEVER compute locally. Server-calc only. No ApiClient retry (§3.2 defect + POST).
   onCalculate(): void {
     if (this.form.invalid) return;
 
@@ -381,7 +315,7 @@ export class PricingComponent implements OnInit {
     this.errorState.set(null);
     this.breakdown.set(null);
 
-    const raw = this.form.getRawValue();
+    const raw  = this.form.getRawValue();
     const body = {
       input_cost:        String(raw.input_cost ?? ''),
       target_margin_pct: String(raw.target_margin_pct ?? ''),
@@ -391,32 +325,27 @@ export class PricingComponent implements OnInit {
       next: (result) => {
         this.calculating.set(false);
         if ('kind' in result) {
-          // Typed error shape from catchError — map to error state (never local math)
           this._handleErrorShape(result);
         } else {
           this.breakdown.set(result);
         }
       },
       error: () => {
-        // Defensive: service absorbs all errors via catchError + EMPTY.
-        // This should not be reached but guards against unexpected throws.
+        // Service absorbs all errors via catchError. Defensive guard.
         this.calculating.set(false);
         this.errorState.set('server_error');
       },
       complete: () => {
-        // EMPTY path (401 / 5xx): calculating must be set false; breakdown stays null.
-        // The 'complete' callback fires on both normal completion AND EMPTY.
+        // Fires on EMPTY (401/5xx). Ensure calculating is cleared.
         this.calculating.set(false);
       },
     });
   }
 
-  /** Navigate forward to the export step. */
   onSaveContinue(): void {
     void this.router.navigate(['/catalogs', this.productId, 'export']);
   }
 
-  /** Map PriceCalcErrorShape to component error state signals. Never calls local math. */
   private _handleErrorShape(shape: PriceCalcErrorShape): void {
     switch (shape.kind) {
       case 'unavailable':
