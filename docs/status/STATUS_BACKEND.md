@@ -5280,4 +5280,39 @@ In progress: none (single-shot HYBRID STEP 1 docs authoring).
 Blockers: none. EXECUTION GATED — Phase 2 (specialist dispatch) opens at MS-2 only when Sub-Plan A founder gate merged to develop AND MS-A recipe in lead memory. NO contradictions found with MS-A artifacts or MASTER_PLAN (the only delta is the §1.C method-name correction, which is plan-prose not a LOCKED section).
 Next: at MS-2 open, the master session dispatches the specialists per spec_msB_backend.md (database-builder VERIFY-ONLY + services-builder heavy lift + api-routes-builder), opens the infra inter-lead row (handoff_msB_infra.md), runs the lead merge-gate, leaves the integration->develop founder PR OPEN. Phase 1 docs PR (this worktree branch docs/msB-subplan-0B) -> the session handles git (NOT this agent).
 Hand-offs: meesell-infra-builder — handoff_msB_infra.md FROZEN for MS-2 (lighter than MS-A: NO Postgres schema, NO GCS SA, NO worker pod; only audit-grant + Traefik method-aware route + ConfigMap flag + small pool). NOT opened as an inter-lead row yet (gated). meesell-services-builder + meesell-api-routes-builder + meesell-database-builder — specs frozen, dispatch at MS-2.
+
+=== UPDATE: 2026-06-12 — MS-G iam extraction Sub-Plan (PHASE 1, docs-only) ===
+Phase: Microservices migration — Sub-Plan G (iam) authoring per MS-PAR-1 Wave MS-4
+Session: mesell-ms-iam-session-1
+Board sweep: 1 row added (microservices-iam, PENDING/GATED). Stale-flag scan — microservices-export
+  row last-touched 2026-06-10 (>1d, <7d; not yet 7d-stale, NOT flagged). 1 inter-lead request opened
+  (→ infra, microservices-iam, Phase-2 gated). No MERGED rows aged >14d to evict.
+Done (Phase 1 — docs-only, NO code, NO specialist dispatch):
+  - docs/plans/microservices_migration/SUB_PLAN_0G_iam_extraction.md authored (canonical SUB_PLAN_01 shape).
+    Filename alias note: MASTER_PLAN row calls it SUB_PLAN_07; MS-PAR-1 names it SUB_PLAN_0G (used).
+  - spec_msG_backend.md (hybrid STEP-2 spec — 4 paste-able specialist prompts: auth-builder heavy lift,
+    api-routes, services, database-builder; sequenced; iteration cap 3).
+  - handoff_msG_infra.md (infra work-package, mirrors handoff_msA_infra; Traefik path-preserve as the
+    highest-blast-radius constraint; 2-replica+HPA Risk#2; no GCS SA; shared JWT_SECRET ownership note).
+  - feature_board_backend.md MS-G row (PENDING/GATED, additive F2) + infra inter-lead request row.
+GROUND-TRUTH verified (file:line, Wave-6 law):
+  - 6 MOUNTED iam routes confirmed in main.py:114 + router.py (otp/send :105, otp/verify :124,
+    refresh :152, logout :194, me :220, webhooks/razorpay :247). Not schema existence — APIRoute count.
+  - iam is ALL-✗ in the cross-module matrix → ZERO outbound shims, ZERO inbound /internal/*. iam's
+    contract = vendored core/auth.py + shared JWT_SECRET (A2/D7). MS-A froze nothing against iam.
+  - 6 cross-schema FKs to users.id flagged for DROP: audit_events(audit_event.py:54),
+    seller_profile(:123), catalogs(catalog.py:42), products(product.py:55), exports(export.py:48),
+    product_drafts(:76). All cross-checked against baseline migration 935e55b4852c (:66/:105/:118/:149/:168/:194).
+  - FE-D5 LIVE/FROZEN: cookie Path=/api/v1/auth (router.py:64), dual-pepper allowlist key
+    cache:refresh:v{N}:{hmac} (auth.py:370), Lua rotation verbatim (auth.py:435-443).
+Contradictions found: NONE between MASTER_PLAN §2.D prose and as-built FK set. Source REFINES prose:
+  the FK drop set is 6 FKs across 5 schemas, not just the single `products` example §2.D names.
+In progress: none (Phase 1 complete).
+Blockers: none. Phase 2 (specialist dispatch) GATED on Wave MS-3 complete (D pricing + E customer
+  founder gates merged) per MS-PAR-1 wave table — NOT a blocker, a gate.
+Next: founder/master opens Wave MS-4 when MS-3 merges; then hybrid STEP 2 (dispatch specialists per
+  spec_msG_backend.md) → STEP 3 (lead merge gate) → founder integration→develop gate.
+Hand-offs: meesell-infra-builder (handoff_msG_infra.md + board inter-lead row, Phase-2 gated). MS-F
+  (category, parallel partner) coordinates via shared-file discipline (decentralized — reads this STATUS
+  + my memory per CLAUDE.md rule 3).
 =========
