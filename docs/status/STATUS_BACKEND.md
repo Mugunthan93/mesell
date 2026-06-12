@@ -63,6 +63,29 @@ Sequential: iam → customer → category → catalog DONE. Parallel-eligible fr
 
 ## Updates Log
 
+=== UPDATE: 2026-06-12 — Microservices Sub-Plan A (`export`) Phase A/B/C BUILT — READY FOR GATE ===
+Phase: Microservices migration — Sub-Plan A `export` extraction (first extraction, §16.H order #1)
+Session: mesell-ms-export-backend-session-1 (Phase C, LEAD-owned integration)
+Board sweep: 1 row touched (microservices-export READY-TO-EXECUTE → READY FOR GATE); stale-row sweep — see "Stale-row flag" below; inter-lead requests open: 2 (xlsx-export flag + flag-parity flags to infra; both pre-existing, unchanged; the msA infra handoff is a memo+row already open on the infra side).
+V1 feature(s)/specialist mapping: V1 Feature 9 (XLSX Export) module, now being extracted to svc-export. Specialists: database-builder (Phase A schema-split), services-builder (Phase B heavy lift), api-routes-builder (Phase B routes) — all complete; this block is the LEAD Phase C (integration test + docs + board/STATUS), NOT a specialist dispatch.
+Done:
+ - `backend/services/svc-export/tests/test_export_extraction.py` — 11 tests, ALL GREEN (incl. LIVE cross-schema audit round-trip on local PG 16). Three classes, all NON-TAUTOLOGICAL:
+   (1) §16.G AST parity — both service.py twins parsed, docstring + ALL imports (incl. lazy/nested) recursively stripped, ast.dump compared → identical executable body. Re-proves §16.G on every CI run, not the one-time services-builder report.
+   (2) Wire-shape parity — model_json_schema() of all 4 export Pydantic models vs the monolith twins, prose `description` stripped (the `{id}`→`{product_id}` §0.6 doc rename is not a wire-contract diff). ForwardRef resolution via sys.modules registration + model_rebuild.
+   (3) HTTP-shim mode — mocked httpx transport; `catalog_service.get_product_for_export` (the real pipeline symbol) forwards JWT + X-Request-ID to monolith ClusterIP and deserializes the REAL ExportSnapshotInternal shape (asserts `snapshot.validation_summary.status`); 404 → typed ProductNotFoundError, no retry on 4xx.
+   (4) Cross-schema audit — model binds to public.audit_events (export.exports coexists) UNCONDITIONAL; live INSERT-then-SELECT round-trip PG-gated (auth-otp no-tunnel pattern; SQLite rejected — cannot honour schema-qualified DDL). Round-trip RAN and PASSED against PG 16 (`svc_export`/`meesell_test` created with the I5-equivalent public-schema grant).
+ - 5 doc deliverables: SHIM_CONTRACT_export_callees.md (FROZEN 2026-06-12, program-level — the 6 `/internal/*` endpoints for Sub-Plans C/E/F/H, each cited from callee source + shim impl + transport contract), CI_HYBRID_MODE_export.md (callees docker-composed: NONE — still in-process; shim → monolith ClusterIP), docs/runbooks/svc-export-rollback.md (5 steps + Rollback Log), MASTER_PLAN.md §4 row-A "IN EXECUTION 2026-06-12" annotation + status note, recipe_ms_extraction.md (validated SP01 pilot for waves MS-2..5).
+Validation (real output):
+ - svc-export full suite: 37 passed (was 26; +11 new). ruff: clean (homebrew ruff 0.15.11).
+ - full monolith `def test_`: 698 (≥ 649 spec baseline → MONOTONIC; the +49 are from the newer develop tip the branch cut from, NOT this branch).
+ - monolith unit suite: 634 passed / 4 failed / 282 deselected. The 4 = known local-macOS-Py3.11-vs-CI-Linux-Py3.12 teardown artifacts (`got 500` flag-guard ×3 + `Event loop is closed` ×1 — MEMORY gotcha #1). PROVEN not ours: `git diff --stat origin/develop...HEAD -- backend/app backend/tests` = EMPTY (zero monolith code on this branch). Green on CI Linux Py3.12.
+ - import-linter Contract 2 (no domain→adapters.gemini) + M10 (no meesho_* symbols in schemas.py) verified by direct grep — hold.
+In progress: none (build complete).
+Blockers: none. Stale-row flag: no Active-features row is >7 days untouched (all touched 2026-06-12). MERGED rows >14 days: none past the housekeeping-v1 2026-06-10 entry (still within window).
+Next: group PR `feature/microservices-export/backend` → `feature/microservices-export/integration` (set row IN REVIEW on PR open per D2); merge-gate review is a SEPARATE later dispatch (NOT pre-approved here). Founder gates integration → develop (D1).
+Hand-offs: SHIM_CONTRACT_export_callees.md is the program-level handoff to the future Sub-Plan C/E/F/H sessions. Infra handoff (handoff_msA_infra.md) acceptance items I5/I8/I2 still tracked. **§14 LOCKED amendment owed to founder** ("Extracted to svc-export V1.5" note) — NOT self-applied (§7.3); carried to the integration→develop founder-gate PR notes.
+=========
+
 === UPDATE: 2026-06-12 — Gate-4 cross-loop contamination fix (Rule 7 STEP 2) ===
 Phase: CI Gate-4 integration test regression — cross-loop Future contamination
 Session: mesell-gate4-loop-contamination-session-1
