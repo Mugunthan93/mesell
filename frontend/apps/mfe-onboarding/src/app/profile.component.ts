@@ -18,19 +18,34 @@ import { MeeInputComponent }  from '@mesell/ui-kit/input/input.component';
 import { MeeButtonComponent } from '@mesell/ui-kit/button/button.component';
 import type { MeeBadgeSeverity } from '@mesell/ui-kit/badge/badge.types';
 import { AuthService } from '@mesell/core';
+import { NetworkService } from '@mesell/core';
+import { MeeAlertBannerComponent, MeeOfflineBannerComponent } from '@mesell/composites';
+import { SellerProfileService, ProfileValidationError } from './services/seller-profile.service';
+
+/** Validator for 6-digit Indian PIN code (backend pattern ^\d{6}$). */
+function pincodeValidator(control: { value: string | null | undefined }): { pincodeInvalid: true } | null {
+  const value = control.value ?? '';
+  if (!value) return null; // optional field — empty is allowed
+  return /^\d{6}$/.test(value) ? null : { pincodeInvalid: true };
+}
 
 @Component({
   selector: 'app-profile',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  providers: [SellerProfileService],
   imports: [
     ReactiveFormsModule,
     MeeCardComponent,
     MeeBadgeComponent,
     MeeInputComponent,
     MeeButtonComponent,
+    MeeAlertBannerComponent,
+    MeeOfflineBannerComponent,
   ],
   template: `
+    <mee-offline-banner />
+
     <!-- Page heading -->
     <div class="p-4 pb-2 md:p-8 md:pb-4">
       <h1 class="text-2xl font-semibold" style="color: var(--mee-color-on-surface)">Profile</h1>
@@ -70,72 +85,141 @@ import { AuthService } from '@mesell/core';
         </div>
       </mee-card>
 
-      <!-- Edit form -->
-      <form [formGroup]="form" (ngSubmit)="onSubmit()" novalidate class="space-y-4">
+      <!-- Loading state -->
+      @if (profileLoading()) {
+        <div class="flex items-center justify-center py-8">
+          <span
+            class="inline-block w-6 h-6 rounded-full border-2 animate-spin"
+            style="border-color: var(--mee-color-primary) transparent transparent transparent;"
+            aria-label="Loading profile"
+          ></span>
+        </div>
+      } @else {
 
-        <!-- Display name -->
-        <mee-input
-          [label]="'Display Name'"
-          [placeholder]="'Your name'"
-          [required]="true"
-          [error]="nameError()"
-          formControlName="name"
-        />
-
-        <!-- Phone read-only — displayed via placeholder; no CVA binding needed -->
-        <mee-input
-          [label]="'Phone'"
-          [disabled]="true"
-          [placeholder]="displayPhone()"
-        />
-
-        <!-- Error message -->
+        <!-- Error banner -->
         @if (errorMessage()) {
-          <p class="text-sm" style="color: var(--mee-color-error)" role="alert">
-            {{ errorMessage() }}
-          </p>
+          <mee-alert-banner
+            variant="error"
+            [message]="errorMessage()!"
+          />
         }
 
-        <!-- Save button -->
+        <!-- Edit form -->
+        <form [formGroup]="form" (ngSubmit)="onSubmit()" novalidate class="space-y-4">
+
+          <!-- Manufacturer section -->
+          <p class="text-sm font-semibold mt-2" style="color: var(--mee-color-on-surface);">
+            Manufacturer Details
+          </p>
+
+          <mee-input
+            [label]="'Manufacturer Name'"
+            [error]="fieldError('manufacturer_name') || manufacturerNameError()"
+            formControlName="manufacturer_name"
+          />
+
+          <mee-input
+            [label]="'Manufacturer Address'"
+            [error]="fieldError('manufacturer_address') || manufacturerAddressError()"
+            formControlName="manufacturer_address"
+          />
+
+          <mee-input
+            [label]="'Manufacturer Pincode'"
+            [error]="fieldError('manufacturer_pincode') || manufacturerPincodeError()"
+            formControlName="manufacturer_pincode"
+          />
+
+          <!-- Packer section -->
+          <p class="text-sm font-semibold mt-2" style="color: var(--mee-color-on-surface);">
+            Packer Details
+          </p>
+
+          <mee-input
+            [label]="'Packer Name'"
+            [error]="fieldError('packer_name') || packerNameError()"
+            formControlName="packer_name"
+          />
+
+          <mee-input
+            [label]="'Packer Address'"
+            [error]="fieldError('packer_address') || packerAddressError()"
+            formControlName="packer_address"
+          />
+
+          <mee-input
+            [label]="'Packer Pincode'"
+            [error]="fieldError('packer_pincode') || packerPincodeError()"
+            formControlName="packer_pincode"
+          />
+
+          <!-- Country of Origin -->
+          <mee-input
+            [label]="'Country of Origin'"
+            [error]="fieldError('country_of_origin') || countryError()"
+            formControlName="country_of_origin"
+          />
+
+          <!-- Phone read-only — displayed via placeholder; no CVA binding needed -->
+          <mee-input
+            [label]="'Phone'"
+            [disabled]="true"
+            [placeholder]="displayPhone()"
+          />
+
+          <!-- Save button -->
+          <mee-button
+            [label]="saved() ? 'Saved!' : 'Save changes'"
+            variant="primary"
+            [loading]="saving()"
+            [disabled]="saving()"
+            [fullWidth]="true"
+            (clicked)="onSubmit()"
+          />
+        </form>
+
+        <!-- Divider -->
+        <hr style="border-color: var(--mee-color-outline)" />
+
+        <!-- Log out -->
         <mee-button
-          [label]="saved() ? 'Saved!' : 'Save changes'"
-          variant="primary"
-          [loading]="saving()"
-          [disabled]="form.invalid || saving()"
+          label="Log out"
+          variant="danger"
           [fullWidth]="true"
-          (clicked)="onSubmit()"
+          (clicked)="onLogout()"
         />
-      </form>
 
-      <!-- Divider -->
-      <hr style="border-color: var(--mee-color-outline)" />
-
-      <!-- Log out -->
-      <mee-button
-        label="Log out"
-        variant="danger"
-        [fullWidth]="true"
-        (clicked)="onLogout()"
-      />
-
+      }
     </div>
   `,
 })
 export class ProfileComponent implements OnInit {
-  protected readonly auth   = inject(AuthService);
-  private  readonly router  = inject(Router);
-  private  readonly fb      = inject(FormBuilder);
+  protected readonly auth    = inject(AuthService);
+  private  readonly router   = inject(Router);
+  private  readonly fb       = inject(FormBuilder);
+  private  readonly profileService = inject(SellerProfileService);
+  protected readonly network = inject(NetworkService);
 
   readonly form = this.fb.group({
-    name: ['', [Validators.required, Validators.minLength(2), Validators.maxLength(60)]],
+    manufacturer_name:    ['', [Validators.maxLength(200)]],
+    manufacturer_address: ['', [Validators.maxLength(500)]],
+    manufacturer_pincode: ['', [pincodeValidator]],
+    packer_name:          ['', [Validators.maxLength(200)]],
+    packer_address:       ['', [Validators.maxLength(500)]],
+    packer_pincode:       ['', [pincodeValidator]],
+    country_of_origin:    ['India', [Validators.required, Validators.maxLength(100)]],
   });
 
   // Local reactive state
-  readonly saving       = signal(false);
-  readonly saved        = signal(false);
-  readonly errorMessage = signal<string | null>(null);
+  readonly profileLoading = signal(true);
+  readonly saving         = signal(false);
+  readonly saved          = signal(false);
+  readonly errorMessage   = signal<string | null>(null);
+  /** Per-field 422 errors from the backend. */
+  readonly fieldErrors    = signal<Record<string, string>>({});
 
-  // Derived display values
+  // ── Derived display values ─────────────────────────────────────────────────
+
   readonly displayPhone = computed<string>(() => {
     const p = this.auth.currentUser()?.phone ?? '';
     return p.startsWith('+91') ? p.slice(3) : p;
@@ -151,52 +235,154 @@ export class ProfileComponent implements OnInit {
 
   readonly planSeverity = computed<MeeBadgeSeverity>(() => 'neutral');
 
-  readonly planLabel = computed<string>(() => 'Free plan');
+  readonly planLabel = computed<string>(() => {
+    const plan = this.auth.currentUser()?.plan;
+    if (!plan) return 'Free plan';
+    return `${plan.charAt(0).toUpperCase()}${plan.slice(1)} plan`;
+  });
 
   readonly avatarInitial = computed<string>(() => {
     const name = this.auth.currentUser()?.name ?? '';
     return name.charAt(0).toUpperCase() || 'S';
   });
 
-  /**
-   * Not a computed() signal — FormControl state is not reactive to Angular signals.
-   * Must be called as a method in the template: nameError()
-   * Re-evaluated on every change detection cycle (OnPush: triggered by markAllAsTouched
-   * or manual detectChanges in tests).
-   */
-  nameError(): string | undefined {
-    const ctrl = this.form.get('name');
+  // ── Computed field-level errors (form validators) ──────────────────────────
+
+  readonly manufacturerNameError = computed<string | undefined>(() => {
+    const ctrl = this.form.get('manufacturer_name');
     if (!ctrl || ctrl.valid || ctrl.pristine) return undefined;
-    if (ctrl.hasError('required'))   return 'Name is required';
-    if (ctrl.hasError('minlength'))  return 'Name must be at least 2 characters';
-    if (ctrl.hasError('maxlength'))  return 'Name must be 60 characters or fewer';
+    if (ctrl.errors?.['maxlength']) return 'Too long (max 200 characters).';
     return undefined;
+  });
+
+  readonly manufacturerAddressError = computed<string | undefined>(() => {
+    const ctrl = this.form.get('manufacturer_address');
+    if (!ctrl || ctrl.valid || ctrl.pristine) return undefined;
+    if (ctrl.errors?.['maxlength']) return 'Too long (max 500 characters).';
+    return undefined;
+  });
+
+  readonly manufacturerPincodeError = computed<string | undefined>(() => {
+    const ctrl = this.form.get('manufacturer_pincode');
+    if (!ctrl || ctrl.valid || ctrl.pristine) return undefined;
+    if (ctrl.errors?.['pincodeInvalid']) return 'Enter a valid 6-digit pincode.';
+    return undefined;
+  });
+
+  readonly packerNameError = computed<string | undefined>(() => {
+    const ctrl = this.form.get('packer_name');
+    if (!ctrl || ctrl.valid || ctrl.pristine) return undefined;
+    if (ctrl.errors?.['maxlength']) return 'Too long (max 200 characters).';
+    return undefined;
+  });
+
+  readonly packerAddressError = computed<string | undefined>(() => {
+    const ctrl = this.form.get('packer_address');
+    if (!ctrl || ctrl.valid || ctrl.pristine) return undefined;
+    if (ctrl.errors?.['maxlength']) return 'Too long (max 500 characters).';
+    return undefined;
+  });
+
+  readonly packerPincodeError = computed<string | undefined>(() => {
+    const ctrl = this.form.get('packer_pincode');
+    if (!ctrl || ctrl.valid || ctrl.pristine) return undefined;
+    if (ctrl.errors?.['pincodeInvalid']) return 'Enter a valid 6-digit pincode.';
+    return undefined;
+  });
+
+  readonly countryError = computed<string | undefined>(() => {
+    const ctrl = this.form.get('country_of_origin');
+    if (!ctrl || ctrl.valid || ctrl.pristine) return undefined;
+    if (ctrl.errors?.['required']) return 'Country of origin is required.';
+    return undefined;
+  });
+
+  /** Return a per-field 422 error string if the backend returned one. */
+  fieldError(field: string): string | undefined {
+    return this.fieldErrors()[field] ?? undefined;
   }
 
   ngOnInit(): void {
-    this.form.patchValue({
-      name: this.auth.currentUser()?.name ?? '',
+    this.profileLoading.set(true);
+    this.profileService.getProfile().subscribe({
+      next: (profile) => {
+        this.form.patchValue({
+          manufacturer_name:    profile.manufacturer_name ?? '',
+          manufacturer_address: profile.manufacturer_address ?? '',
+          manufacturer_pincode: profile.manufacturer_pincode ?? '',
+          packer_name:          profile.packer_name ?? '',
+          packer_address:       profile.packer_address ?? '',
+          packer_pincode:       profile.packer_pincode ?? '',
+          country_of_origin:    profile.country_of_origin || 'India',
+        });
+        this.profileLoading.set(false);
+      },
+      error: (err: unknown) => {
+        this.profileLoading.set(false);
+        // ProfileNetworkError → show banner; FRESH_SELLER_PROFILE for 404 is handled in the service.
+        this.errorMessage.set(
+          err instanceof Error
+            ? err.message
+            : 'Could not load profile. You can still update your details.',
+        );
+      },
     });
   }
 
   onSubmit(): void {
-    if (this.form.invalid || this.saving()) return;
+    if (this.saving()) return;
 
     this.form.markAllAsTouched();
     if (this.form.invalid) return;
 
     this.saving.set(true);
     this.errorMessage.set(null);
+    this.fieldErrors.set({});
 
-    // Simulated save — Wave 6 will replace with real PATCH /api/v1/seller-profile
-    // Direct setTimeout (no Promise wrapper) so vi.advanceTimersByTime() works in tests.
-    setTimeout(() => {
-      this.saving.set(false);
-      this.saved.set(true);
-      setTimeout(() => {
-        if (this.saved()) this.saved.set(false);
-      }, 3000);
-    }, 800);
+    const val = this.form.value;
+    this.profileService.patchProfile({
+      manufacturer_name:    val.manufacturer_name    || null,
+      manufacturer_address: val.manufacturer_address || null,
+      manufacturer_pincode: val.manufacturer_pincode || null,
+      packer_name:          val.packer_name          || null,
+      packer_address:       val.packer_address       || null,
+      packer_pincode:       val.packer_pincode       || null,
+      country_of_origin:    val.country_of_origin    || 'India',
+    }).subscribe({
+      next: (profile) => {
+        // Refresh the form with the server-confirmed values
+        this.form.patchValue({
+          manufacturer_name:    profile.manufacturer_name ?? '',
+          manufacturer_address: profile.manufacturer_address ?? '',
+          manufacturer_pincode: profile.manufacturer_pincode ?? '',
+          packer_name:          profile.packer_name ?? '',
+          packer_address:       profile.packer_address ?? '',
+          packer_pincode:       profile.packer_pincode ?? '',
+          country_of_origin:    profile.country_of_origin || 'India',
+        });
+        this.saving.set(false);
+        this.saved.set(true);
+      },
+      error: (err: unknown) => {
+        this.saving.set(false);
+        if (err instanceof ProfileValidationError) {
+          const errors: Record<string, string> = {};
+          const rawErrors = (err.envelope.errors ?? []) as Array<{ field?: string; msg?: string }>;
+          for (const fe of rawErrors) {
+            if (fe.field) {
+              errors[fe.field] = fe.msg ?? err.envelope.validation_message_id ?? 'Invalid value.';
+            }
+          }
+          this.fieldErrors.set(errors);
+          this.errorMessage.set(
+            err.envelope.validation_message_id ??
+            'Please correct the highlighted fields and try again.',
+          );
+        } else {
+          this.errorMessage.set('Something went wrong. Please try again.');
+        }
+      },
+    });
   }
 
   onLogout(): void {
