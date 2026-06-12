@@ -45,6 +45,34 @@ data:
   GCS_BUCKET: "meesell-prod-assets"
   GCS_PROJECT_ID: "project-1f5cbf72-2820-4cdb-949"
   GCS_SIGNED_URL_TTL_SECONDS: "3600"
+  # Product-image bucket (image-precheck Feature 5) — mirrored from the dev base.
+  # Staging uses the SAME bucket as dev for V1 (single product-image bucket); tenant
+  # isolation is by the {user_id}/ path prefix, not by bucket. The flag below gates
+  # whether staging actually writes to it.
+  GCS_BUCKET_IMAGES: "meesell-images"
+
+  # Feature flags (repo MASTER §3.2) — STAGING default = false until each feature's
+  # soak gates pass (per each feature plan's D2). meesell-infra-builder flips a flag
+  # to true via a one-line micro-feature branch once the gates are green
+  # (image-precheck: D2 Gates 1-3 — watermark ≥85%, 4 Pillow checks, GCS tenant
+  # isolation; see docs/runbooks/image-pipeline-troubleshooting.md).
+  FEATURE_SMART_PICKER_ENABLED: "false"
+  FEATURE_CATALOG_FORM_ENABLED: "false"
+  FEATURE_AI_AUTOFILL_ENABLED: "false"
+  FEATURE_IMAGE_PRECHECK_ENABLED: "false"
+  # xlsx-export (Feature) — stays false until its D2 staging gate clears:
+  # 15 golden fixtures x 3 consecutive develop-HEAD runs GREEN + one manual
+  # Meesho supplier-panel upload accepted. Flipped to true via a one-line
+  # micro-feature branch once those gates are recorded green.
+  FEATURE_XLSX_EXPORT_ENABLED: "false"
+  # price-calculator + tracking-dashboard — staging stays false until each
+  # feature's D2 staging soak gate clears (flipped via a one-line micro-feature
+  # branch once green).
+  FEATURE_PRICE_CALCULATOR_ENABLED: "false"
+  FEATURE_TRACKING_DASHBOARD_ENABLED: "false"
+  # live-preview SHIPS DARK by founder ruling (PR #149) — stays false in staging
+  # too; the gated rollout starts disabled until the founder lights it.
+  FEATURE_LIVE_PREVIEW_ENABLED: "false"
 
   # LangFuse (public key is non-secret per §5.D; secret key is in backend-secrets)
   LANGFUSE_PUBLIC_KEY: "pk-lf-disabled-v1"

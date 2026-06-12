@@ -63,6 +63,24 @@ Sequential: iam → customer → category → catalog DONE. Parallel-eligible fr
 
 ## Updates Log
 
+=== UPDATE: 2026-06-12 11:00 — flag-parity sweep STEP 1 (audit + SPEC) ===
+Phase: V1 backend feature-flag parity — comprehensive close-out sweep
+Session: mesell-flag-parity-sweep-session-1 (HYBRID STEP 1; no feature code, no dispatch)
+Board sweep: 1 IN PROGRESS row added (flag-parity); 0 stale rows (microservices-export touched 2026-06-10 = 2d; backend-chores 2026-06-12 GATE-PASS awaiting founder PR #143). 3 inter-lead requests on board all RESOLVED/READY. No 7d+ stale.
+Done:
+- Enumerated ALL remaining V1 modules vs the 5 done flag features. Flag inventory: 5 present in shared/config.py (smart-picker L184, xlsx-export L193, image-precheck L202, catalog-form L209, ai-autofill L216).
+- Per-module verdict (file:line evidence) in memo audit_flag_parity_sweep.md.
+- 3 REAL gaps (FLAG-MANDATED-AND-MISSING): G1 price-calculator (FEATURE_PRICE_CALCULATOR_ENABLED; pricing/router.py:76 POST no guard); G2 tracking-dashboard (FEATURE_TRACKING_DASHBOARD_ENABLED; dashboard/router.py:86 GET, D3 kill-switch 404-on-read); G3 live-preview (FEATURE_LIVE_PREVIEW_ENABLED default False; catalog/router.py:268 GET preview route exists no guard, D3 code feature.live_preview.disabled).
+- NO-FLAG-BY-DESIGN verified (no gap): auth-otp (D2 explicit "skip flag, prerequisite zero", FEATURE_PLAN.md:40-42); customer/seller-profile (foundational onboarding, no plan mandate); category browse/tree/schema/field-enum (only /suggest flagged; flagging foundational catalog surface would break every feature); iam refresh/logout/me/webhook.
+- ONE api-routes-builder SPEC authored (config field + in-handler 404 + flag-404 test ×3). NO database-builder/services-builder (request-time settings read, no schema, no business logic).
+- Branch chore/flag-parity cut off origin/develop 2b5ec60, worktree /tmp/mesell-wt/flag-parity, pushed.
+In progress: none (STEP 1 deliverables complete; STEP 2 dispatch awaits master + R1-R4 rulings).
+Blockers: none. (4 founder rulings FLAGGED, not blocking the audit: R1 honor-plans 404-on-read for the 2 GET-route gaps; R2 flag-404 message-id wording per-plan; R3 in-handler raise NOT new core/feature_flags.py dependency-factory; R4 live-preview default-False.)
+Drift FYI (do not churn): D-1 guard-mechanism cosmetic drift across 5 done flags (catalog-form main.py conditional-include vs in-handler raise everywhere else — both valid, accepted at each gate); D-2 Gate-1 unit RED on develop (infra PR #145, tip 2b5ec60, NOT this scope — new tests must not worsen).
+Next: master dispatches ONE meesell-api-routes-builder with the SPEC (STEP 2); lead merge-gates (STEP 3, squash chore/flag-parity → develop directly, D1 N/A for chore branch per ci-gate-fix precedent).
+Hand-offs: INFRA inter-lead candidate at merge time — 3 new flags (FEATURE_PRICE_CALCULATOR_ENABLED=true dev/false staging, FEATURE_TRACKING_DASHBOARD_ENABLED=true, FEATURE_LIVE_PREVIEW_ENABLED=false) → k8s dev/staging ConfigMaps. Open at STEP 3, not now.
+=========
+
 === UPDATE: 2026-06-11 — CI Gate-1 pytest-collection fix (Rule 7 STEP 2) ===
 Phase: CI infrastructure fix — pytest.ini pythonpath key
 Session: mesell-ci-gate1-fix-session-1
@@ -4279,6 +4297,60 @@ Hand-offs: infra notified via board inter-lead row (READY TO RE-FIRE; expected C
   (decentralized — reads this STATUS + my memory per CLAUDE.md rule 3; no separate memo cut for a V1.5-deferred item).
 WRITE-GUARD NOTE: write-tool (Edit/Write) bg-isolation guard active again this turn; all record writes (board move,
   inter-lead updates, this STATUS block) performed via Bash/python to the shared checkout (bash-writable).
+=== UPDATE: 2026-06-11 13:00 — catalog-form (+ai-autofill) BACKEND slice STEP 1 (as-built audit + SPECs) ===
+Phase: V1 Feature 3 (Fast Catalog Form) + Feature 4 (AI Auto-fill) — backend slice
+Session: mesell-catalog-form-backend-session-1 (HYBRID step 1 of 3: audit + author specialist SPECs; NO feature code, NO dispatch)
+Working on feature: catalog-form. Memo file: feature_catalog-form.md.
+
+Board sweep (session start): 2 active rows (microservices-export, ci-gate4-pass3) — neither stale (touched 2026-06-10/11).
+  Added catalog-form (+ai-autofill backend) IN PROGRESS row. 3 inter-lead requests open (2 infra OPEN, 1 RESOLVED). No 7+day-stale rows.
+  NOTE: master working tree's feature_board_backend.md carries UNRESOLVED stash-conflict markers (<<<<<<< / ======= / >>>>>>>).
+  origin/develop board is CLEAN and authoritative — this update committed on the clean copy in the backend worktree.
+
+BRANCH REALITY RECONCILIATION (vs Director premise):
+  - Director said "feature/catalog-form/integration EXISTS on origin, PR #57 OPEN against develop."
+  - ACTUAL: PR #56 (ai → integration) MERGED 2026-06-11 01:29Z; PR #57 (integration → develop) MERGED 2026-06-11 03:42Z.
+    origin has ONLY feature/catalog-form/ai (629f6ef); NO origin integration branch. Local integration branch is STALE (0 ahead / 95 behind develop).
+  - RULING: the AI slice (autofill_v1.py prompt + eval dir + autofill route/schemas/service) ALREADY landed on develop via #57.
+    Therefore feature/catalog-form/backend was cut off origin/develop (tip 5cd6e32), NOT the stale local integration branch.
+
+SCOPE RULING: this backend slice carries BOTH F3 (catalog-form) AND F4 (ai-autofill) backend gaps on ONE branch
+  (feature/catalog-form/backend). Rationale: autofill route/schemas/service already live IN the catalog module on develop;
+  splitting to a separate feature/ai-autofill/backend would fork the same files. Single branch, single board row.
+
+As-built AUDIT (catalog module ~95% BUILT — auth-otp/smart-picker pattern repeats):
+  BUILT: 7-file canonical layout (router/schemas/service/repository/domain/exceptions/__init__); 6 routes incl. POST /autofill
+    (router.py:193); 10 service methods incl. autofill_product (service.py:583) + assert_product_ownership (919) verbatim §10.C;
+    13 repository methods incl. upsert_draft/get_draft; 11 domain dataclasses; all Pydantic schemas (Create/Patch/Autofill*/Preview/Draft);
+    product.py + product_draft.py models (composite PK (user_id,product_id)); autofill_v1.py prompt; audit_mw coalesce helper;
+    plan_guard limits (product_count/ai_autofill_hourly).
+  REAL GAPS (specialist work — the honest small list):
+    G1  FEATURE_CATALOG_FORM_ENABLED MISSING from shared/config.py (D2 unwired)
+    G2  FEATURE_AI_AUTOFILL_ENABLED MISSING from shared/config.py (F4 D2 unwired)
+    G3  main.py includes catalog_router UNCONDITIONALLY — no 404-when-disabled guard (D2)
+    G4  POST /autofill route has NO flag guard — no 404 when FEATURE_AI_AUTOFILL_ENABLED=false (F4 D2)
+    G5  §10-CATALOG-D2 autosave-coalesce regex = /products/{id}/(draft|autosave) but plan autosave = PATCH /products/{id}
+        → coalescing SILENTLY never fires for the real autosave path. Needs regex widen (§4.G amendment, founder FYI).
+    G6  ALL catalog tests MISSING: test_catalog_unit.py / test_catalog_routes.py / test_audit_coalescing.py /
+        test_catalog_form_integration.py / test_ai_autofill_integration.py
+    G7  CONTRACT RECONCILIATION: F4 plan D1 says §10 auto-apply path must be REMOVED from autofill_product;
+        as-built RETAINS it (service.py:684-695). Two contracts conflict (§10 auto-apply-at-0.85 vs F4 ai-autofill-no-auto-apply).
+        Needs explicit founder/lead ruling at STEP 2 dispatch — flagged, NOT silently resolved.
+
+Conflict check (in-flight backend sessions vs my file set):
+  - microservices-export (feature/microservices-export/backend): touches export module + SUB_PLAN docs. NO overlap with catalog files.
+  - ci-gate4-integration pass3 (fix/ci-gate4-integration-pass3): touches tests/conftest.py + module conftests + audit_mw SAVEPOINT binding.
+    POTENTIAL OVERLAP: audit_mw.py (pass3 binds savepoint; my G5 widens autosave regex) AND backend/tests/conftest.py.
+    MITIGATION: G5 is an additive regex change in a different function than pass3's savepoint binding; tests are NEW files (no conftest edit needed).
+    Sequencing note for STEP 2: prefer catalog-form backend specialist to rebase on develop AFTER ci-gate4-pass3 merges to avoid audit_mw collision.
+
+Done: as-built audit (file:line evidence); scope ruling (F3+F4 one branch); branch reality reconciliation; 3 specialist SPECs authored
+  (in coordinator session output); worktree /tmp/mesell-wt/catalog-form-backend created off origin/develop; feature/catalog-form/backend cut;
+  board IN PROGRESS row added (clean origin/develop copy).
+In progress: STEP 1 close-out. STEP 2 (master dispatches specialists) + STEP 3 (lead merge gate) follow.
+Blockers: none P0. G7 (auto-apply contract conflict) needs a ruling at dispatch; G5 needs §4.G amendment (founder FYI, not a blocker for the slice).
+Next: master session dispatches services-builder + api-routes-builder per the STEP-1 SPECs; database is VERIFY-only (no migration).
+Hand-offs: none cross-lead yet (F3+F4 backend is self-contained per O1/agent-lineup — AI/auth/infra NONE). frontend slice is separate (frontend lead).
 =========
 
 === UPDATE: 2026-06-11 13:40 — catalog-form (+ai-autofill) BACKEND slice STEP 3 (MERGE GATE) ===
@@ -4396,4 +4468,481 @@ Follow-up tickets opened (NOT fixed here):
   - CI-INT-DB-PROVISION (infra) — Gate-4/5 CI DB provisioning (above).
   - (Resolved inline, not ticketed) the test_config + worker_db_isolation stale-API repairs were the
     lead-authorized exceptions, done in this PR; no separate ticket needed.
+=========
+
+=== UPDATE: 2026-06-11 — image-precheck (Feature 5) backend STEP 1 (as-built audit + branch setup) ===
+Phase: V1 Feature 5 (Image Pre-check) — BACKEND_ARCHITECTURE.md §11
+Session: mesell-image-precheck-backend-session-1 (HYBRID STEP 1 of 3)
+Board sweep: 1 active row added (image-precheck IN PROGRESS); microservices-export untouched since 2026-06-10
+  (1 day, not stale-7d). No inter-lead requests opened. Recently-merged hygiene OK (catalog-form #115 still
+  the freshest founder-gate-open row).
+
+Done:
+  - AS-BUILT AUDIT: the entire image module is ALREADY BUILT on develop (13321759). Verified by git show:
+    ORM (product_image.py, 4-slot CHECK, is_front Computed GENERATED), table in BASELINE migration
+    935e55b4852c (NOT a separate migration), service.py (6 methods), repository.py (7 methods), domain.py
+    (4 dataclasses), exceptions.py (5), tasks.py (Celery shell + full 5-step pipeline body), router.py
+    (2 endpoints, mounted main.py:126), schemas.py (3), gcs.py (4 methods), i18n (5 keys, DOT form
+    image.slot.occupied/image.not.found), watermark_v1.py + registry (PR #59), tests (7 unit + 3 integration).
+  - assert_product_ownership keyword-db form (product_id, user_id, *, db) VERIFIED at 2 image call sites
+    (upload_image + list_images) — NO drift; R5 board signature confirmed AS-BUILT.
+  - Honest REAL-GAP list (G-numbered): G1 FEATURE_IMAGE_PRECHECK_ENABLED absent (config.py:184 has only
+    FEATURE_SMART_PICKER_ENABLED); G2 router.py has zero flag-gate (D2 needs POST→404/GET→empty when OFF);
+    G3 docs §F5 stale (lines 198/229 still "6 images"/"60 MB" — amend 6→4/60→40MB per plan D1).
+  - Branch setup: stale feature/image-precheck/ai (ac4dd35) VERIFIED content-identical to develop, DELETED
+    (origin+local+remote-tracking); stale local feature/image-precheck/integration (7783842) deleted;
+    D/F Model-C conflict confirmed ON ORIGIN TOO ("directory file conflict" rejecting sub-branch while leaf
+    exists) → pushed ONLY feature/image-precheck/backend @ 13321759, leaf reconstituted at group-PR time.
+    Worktree /tmp/mesell-wt/image-precheck-backend.
+  - feature_image_precheck_backend.md memo written; MEMORY.md index appended.
+
+In progress: STEP 2 (master dispatches specialist for G1+G2) → STEP 3 (lead merge-gate) — NOT this session.
+
+Blockers: none. R1 ruling FLAGGED (not blocking): config.py is lead-owned per role scope, but the smart-picker
+  /catalog-form precedent landed the flag via the feature branch specialist. Recommend api-routes-builder owns
+  BOTH the config flag (G1) AND its only consumer the router gate (G2) in ONE coherent slice (the flag + its
+  consumer travel together, mirroring catalog-form's G1+G3 pairing). database-builder SKIP/VERIFY-only.
+
+Next: master ratifies R1 lineup ruling, then dispatches the named specialist for G1+G2 on
+  feature/image-precheck/backend. Lead does G3 docs amendment in the same PR. STEP 3 merge-gate after.
+
+Hand-offs: (to AI lead, via master) precheck_smoke fixtures (plan rows 25-26, Gate 2) are AI-track-owned
+  (meesell-image-precheck-builder) and ABSENT on develop — not a backend gap; flag to AI track. No backend↔
+  frontend/data/infra memos this step (contract is as-built and stable).
+=========
+
+=== UPDATE: 2026-06-11 21:59 ===
+Phase: image-precheck Feature 5 — backend slice G1/G2 (HYBRID STEP 2)
+Agent: meesell-api-routes-builder
+Branch: feature/image-precheck/backend
+Commits: 4444dce feat(image) + de96aca test(image), pushed to origin
+
+Done:
+  G1 — FEATURE_IMAGE_PRECHECK_ENABLED: bool = True added to backend/app/shared/config.py
+       adjacent to FEATURE_SMART_PICKER_ENABLED; same dev-true/staging-false comment posture.
+  G2 — backend/app/modules/image/router.py gated at REQUEST TIME (not import time):
+       - POST /api/v1/products/{id}/images → HTTP 404 when flag OFF (before idx validation)
+       - GET  /api/v1/products/{id}/images → ImagesListResponse(images=[]) + 200 when flag OFF
+         (before service call; read-only endpoint, NOT 404 per FEATURE_PLAN.md D2)
+  Tests — backend/tests/modules/image/test_flag_gate.py: 4 new tests, all PASS
+         - test_post_images_returns_404_when_flag_disabled
+         - test_get_images_returns_empty_list_when_flag_disabled
+         - test_post_images_flag_on_does_not_return_flag_guard_404
+         - test_get_images_flag_on_does_not_return_empty_list_from_guard
+
+Tests: 4 new PASS; 11/11 PASS standalone (4 new + 7 pre-existing unit tests in tests/modules/image/)
+Ruff: clean on all 3 files
+Memory: DONE (feature_image_precheck_session_1_handoff.md + MEMORY.md "Features in flight" updated)
+
+In progress: HYBRID STEP 3 — meesell-backend-coordinator merge-gate review
+
+Blockers: none
+
+Next: Lead STEP 3 merge-gate → PR feature/image-precheck/backend → feature/image-precheck → develop.
+  Lead also owns G3 docs amendment (V1_FEATURE_SPEC.md §F5 6→4 images + 60→40MB cap) in the same PR.
+
+Hand-offs: backend G1+G2 complete; API contract unchanged (router was already mounted + schemas unchanged).
+  Frontend can proceed against the existing OpenAPI spec — no contract delta from this slice.
+=========
+
+=== UPDATE: 2026-06-11 — image-precheck BACKEND slice MERGE-GATE PASS (STEP 3) ===
+Phase: V1 Feature 5 (Image Pre-check) — backend slice (flag surfaces only)
+Session: mesell-image-precheck-backend-session-1
+Board sweep: image-precheck row moved Active→Recently merged (MERGED-to-integration + founder-gate PR #118 in Notes). microservices-export row unchanged (IN PROGRESS, last touched 2026-06-10 — 1 day, not stale). No rows untouched 7+ days. Inter-lead requests open: none added this session (handoffs are master-relayed: AI-track precheck_smoke + infra ConfigMap injection — see below).
+
+GATE VERDICT: PASS
+- G1 PASS — FEATURE_IMAGE_PRECHECK_ENABLED added to shared/config.py (dev=True / staging=False until 3 gates pass per D2). Ruff clean.
+- G2 PASS — router.py flag gates per D2 contract: POST→404 when OFF (guard BEFORE idx validation, line 109<119); GET→ImagesListResponse(images=[]) 200 when OFF (read-only, BEFORE service call); request-time settings read inside handler (smart-picker category/router.py:117 pattern). 4 flag-gate tests + ruff clean.
+- G3 DONE — V1_FEATURE_SPEC §F5 6→4 images / 60→40 MB (line 198/229), lead-direct per D1. §F5 doc-level lock ("V1 Locked") is NOT a §7.3 founder-LOCKED architecture-section lock — lead amendment authority confirmed and exercised.
+- DATABASE VERIFY PASS — no model/migration changes on the slice; single alembic head f31c75438e61 (935e55b4852c → a1b2c3d4e5f6 → f31c75438e61).
+
+TEST/RUFF RE-RUN (lead, Py3.11 master venv /Users/.../backend/.venv, isolation run):
+- tests/modules/image/ : 14 passed (4 new flag-gate + 7 service-unit + 3 integration). 0.06s flag-gate / 1.89s module.
+- ruff check --line-length 100 on router.py + config.py + test_flag_gate.py: All checks passed.
+
+MERGE FLOW (Model C):
+- Leaf feature/image-precheck cut from origin/develop @ 13321759; squash-merge of 5-commit backend slice → leaf squash 7bd2120 (gate decision in commit body).
+- D/F handled: local + origin backend sub-ref deleted (gh api DELETE) BEFORE leaf push (origin D/F constraint forces delete-before-push, reverse of literal dispatch order; slice content verified preserved in leaf 6-file diff before deletion). Stale local remote-tracking ref pruned.
+- FOUNDER GATE PR #118 OPEN (https://github.com/Mugunthan93/mesell/pull/118) feature/image-precheck → develop — LEFT OPEN (founder's gate per D1; lead does NOT merge).
+
+Done: G1/G2 review PASS, G3 authored+committed, DB-verify, squash-merge to leaf, founder-gate PR opened, board + STATUS records.
+In progress: none (slice complete pending founder merge of #118).
+Blockers: none.
+Next: founder reviews/merges #118 → develop.
+Hand-offs:
+- AI track (master-relay to meesell-ai-coordinator): precheck_smoke eval fixtures absent on develop — owned by meesell-image-precheck-builder, separate dispatch. NOT a backend blocker.
+- Infra (master-relay to meesell-infra-builder): FEATURE_IMAGE_PRECHECK_ENABLED into k8s ConfigMaps dev=true / staging=false.
+Founder queue: (1) merge #118; (2) §F5 doc-cohesion sweep — lines 379+588 still "6 images" (Feature-4 generation-timing criterion + launch-readiness checklist), outside D1's named line scope, left unamended deliberately.
+
+=== UPDATE: 2026-06-12 — xlsx-export (V1 Feature 9) STEP 1 as-built audit + branch + SPECs ===
+Phase: V1 Feature 9 — XLSX Export (BACKEND_ARCHITECTURE.md §14 LOCKED)
+Session: mesell-xlsx-export-backend-session-1 (HYBRID STEP 1 of 3 — audit + SPECs; NO feature code, NO dispatch)
+Board sweep: xlsx-export IN PROGRESS row added; microservices-export distinction note added (POST-V1 extraction, zero
+  file overlap); 1 inter-lead request (CI-INT-DB-PROVISION) already RESOLVED upstream; no rows stale 7+ days
+  (microservices-export 2026-06-10 = 2 days). No new stale flags.
+
+AUDIT VERDICT — module ~100% BUILT on develop (5th consecutive burn-rebuild feature):
+  BUILT (verified file:line on origin/develop @ 48ec697):
+  - backend/app/modules/export/{__init__,domain,exceptions,repository,router,schemas,service,tasks}.py — all 8 files
+  - Full 9-step pipeline in service.py: _run_export_pipeline (L290) → _resolve_schema/_select_strategy/_build_row/
+    _apply_strategy/_translate_enums (Layer-3 guardrail, L637)/_reorder_columns/_restore_aliases/_write_xlsx (openpyxl,
+    L731)/_round_trip_validate (L759)/_package_images_zip (L824, calls gcs.download_bytes per-image best-effort)
+  - 3 ComplianceStrategy concretes + MeeshoExportAdapter in domain.py; 7 exception classes in exceptions.py
+  - tasks.py: export_xlsx_task (bind=True) → asyncio.run(_run_export_pipeline) + _emit_export_terminal_audit
+  - router.py: POST /products/{id}/export-xlsx (202, @rate_limit export_initiate 10/3600, @audit_event) + GET /exports/{id}
+  - main.py L142 registers export_router (UNCONDITIONAL — see G2/G3); L44 imports export_router
+  - shared/models/export.py: Export ORM (exports table); exports IN baseline migration 935e55b4852c L157 (13-table baseline)
+  - Cross-module contracts all wired & signature-correct:
+      catalog.assert_product_ownership(product_id, user_id, db) — keyword-db; bubbles 404 (R5-published form)
+      catalog.get_product_for_export(product_id, user_id, db) -> ExportSnapshotInternal
+      customer.get_compliance_block(user_id, db) -> ComplianceBlock
+      image.list_images(user_id, product_id, *, db) — front-image gate L185 (idx==1 & status=='ready')
+      image.get_image_bytes(image_id, user_id, *, db) — NOTE: ZIP packager uses gcs.download_bytes(path) directly,
+        not get_image_bytes; get_image_bytes remains the §11.C published surface but is NOT a live export call site
+  - Tests: tests/modules/export/ (10 unit + test_router 6) + 3 integration (happy/blocked-by-failed-precheck/
+    round-trip-failure) + perf/test_export_pipeline.py + 15 golden fixtures + test_golden_fixtures_runner.py (gate-5,
+    @pytest.mark.golden_roundtrip) + lint contract-9 (no-meesho-symbols-outside-export)
+  - CI gate-5 golden_roundtrip WIRED in ci.yml L378-485 (pytest -m golden_roundtrip); marker registered pytest.ini L27
+  - openpyxl==3.1.5 already in requirements.txt (PR #85 lead-fix)
+
+REAL GAPS (honest, file:line evidence):
+  G1 — FEATURE_XLSX_EXPORT_ENABLED absent. shared/config.py L184 has only FEATURE_SMART_PICKER_ENABLED. Add the new
+       bool flag (default True) in the §3.2 feature-flag block (L179-184), mirroring smart-picker comment style + the
+       FEATURE_PLAN.md D2 staging-gate note (dev True / staging False until 15 fixtures green ×3 + manual Meesho upload).
+  G2 — export router has NO flag-gate. router.py initiate_export (L102+) does not import settings and has no
+       "if not settings.FEATURE_XLSX_EXPORT_ENABLED: raise HTTPException(404)" guard. PROVEN PATTERN: smart-picker
+       category/router.py:117 in-handler 404 (NOT a main.py conditional-include — that pattern was catalog-form's G3,
+       still OPEN to develop in PR #115). FEATURE_PLAN.md D2: POST returns 404 when disabled; GET /exports/{id} stays
+       UNGATED (read-only poll on already-created rows must keep working for in-flight exports — confirm with founder
+       if ambiguous, but D2 text only short-circuits the POST initiate handler).
+  G3 — no flag-disabled test. No test asserts POST→404 when FEATURE_XLSX_EXPORT_ENABLED=False (smart-picker has
+       test_suggest_flag_404.py as precedent). Bundle with G2 (same specialist, same slice).
+
+SPECIALIST LINEUP (STEP 1 ruling):
+  - api-routes-builder — OWNS G1 + G2 + G3 in ONE slice (config flag + router in-handler 404 + flag-404 test). Same
+    consolidation ruling as image-precheck R1 (api-routes-builder owns flag+guard). PRIMARY & ONLY code dispatch.
+  - services-builder — VERIFY-ONLY (no code). Pipeline/strategies/ZIP/round-trip all built & gate-5-green. No gap.
+  - database-builder — SKIP/VERIFY-ONLY. exports table in baseline; single head f31c75438e61; no migration needed.
+  Dispatch order: api-routes-builder solo. No parallelism needed (single specialist).
+
+FOUNDER RULINGS NEEDED:
+  R1 (recommend, not blocking) — confirm GET /exports/{id} stays UNGATED by the flag (only POST 404s). FEATURE_PLAN.md
+     D2 supports POST-only short-circuit; raising for confirmation since gating GET would strand in-flight export polls.
+  R2 (FYI) — FEATURE_PLAN.md §3.1 names the gate-5 runner `tests/modules/export/test_round_trip.py`; as-built it is
+     `tests/integration/test_golden_fixtures_runner.py`. No action — gate-5 is wired & green to the as-built path; the
+     plan's path is the stale dispatch-prompt name. Note in PR body, no amendment.
+
+BRANCH: feature/xlsx-export/backend cut off origin/develop @ 48ec697 → pushed @ 48ec697;
+  worktree /tmp/mesell-wt/xlsx-export-backend. D/F playbook: leaf feature/xlsx-export NOT created (avoids refname
+  conflict); leaf reconstituted at gate time (catalog-form/image-precheck precedent). No D/F conflict on origin (clean).
+
+Done: as-built audit (G1-G3 + BUILT inventory); branch+worktree; board IN PROGRESS row; this STATUS block; SPECs authored
+  in this turn's return payload for master to dispatch (STEP 2).
+In progress: none (STEP 1 deliverable complete).
+Blockers: none. R1 confirmation recommended before STEP 2 dispatch but api-routes-builder SPEC encodes the POST-only
+  default so dispatch is not hard-blocked.
+Next: master dispatches meesell-api-routes-builder (STEP 2) with the G1+G2+G3 SPEC; I run merge-gate (STEP 3).
+Hand-offs: none new (no contract drift — module consumes already-published R5 + §11.C signatures unchanged).
+=========
+
+=== UPDATE: 2026-06-12 — xlsx-export (V1 Feature 9) BACKEND slice MERGE-GATE PASS (STEP 3) ===
+Phase: V1 Feature 9 (XLSX Export) — backend slice merge gate
+Session: mesell-xlsx-export-backend-session-1
+Board sweep: xlsx-export row Active→Recently-merged (MERGED); microservices-export row untouched (IN PROGRESS,
+  POST-V1 extraction, no overlap); +1 infra inter-lead request row OPENED (5th feature flag → ConfigMaps). No rows
+  flagged stale this sweep (catalog-form #115 + the 3 Gate-4 infra rows all dated 2026-06-11, within 7 days).
+
+GATE VERDICT: PASS. HYBRID STEP 3 merge-gate on api-routes-builder's G1+G2+G3 slice.
+
+G1 (FEATURE_XLSX_EXPORT_ENABLED) — PASS. `shared/config.py` §3.2 block: `bool = True`, smart-picker comment style,
+  D2 staging-gate note (dev=true/staging=false until 15 fixtures ×3 + manual Meesho upload), explicit GET-not-gated
+  comment. Exactly as specced.
+G2 (POST flag gate) — PASS. `app/modules/export/router.py` initiate_export: in-handler `if not
+  settings.FEATURE_XLSX_EXPORT_ENABLED: raise HTTPException(404, "XLSX export is disabled in this environment")` fires
+  BEFORE `export_service.initiate_export`; exact smart-picker `category/router.py:117` pattern; `settings` imported;
+  `HTTPException` added to fastapi import; docstring 404-line updated. GET `/exports/{id}` handler verified to carry NO
+  guard (R1 consumed). No new routes — §17 stays 28; no contract/pipeline touches.
+G3 (flag-404 test) — PASS. `tests/integration/test_export_flag_404.py`, 4 tests (POST 404-off + exact detail string,
+  JSON body shape, POST reachable-on, GET ungated-off), patch surface `app.modules.export.router.settings`. 4/4 PASS
+  (0.23s, master venv Py3.11 isolated, CI dummy-env mirrored from ci.yml).
+
+VERIFY re-runs (master venv .venv Py3.11, worktree code, CI dummy-env block mirrored):
+  - flag-404 test: 4 passed (0.23s). 1 harmless unawaited-coroutine warning in Valkey-OTP lifespan teardown (no tunnel).
+  - export module unit suite (tests/modules/export/): 35 passed + 7 ERROR. The 7 errors all in `test_router.py`, all
+    `OSError: Connect call failed port 5433` — dev-tunnel Postgres absence; error at DB-connection fixture setup,
+    never reaches assertions; touches only PRE-EXISTING router tests, not this slice. Confirmed substrate-absence, NOT
+    a regression. (Specialist's "39/39" was the unit/router split counted differently; substance matches.)
+  - ruff (homebrew /opt/homebrew/bin/ruff) on config.py + router.py + test file: All checks passed.
+  - gate-5 golden runner (-m golden_roundtrip --collect-only): 18 tests collected clean (15 fixtures + 3 enum).
+
+DATABASE/SERVICES VERIFY (folded per STEP-1 ruling): diff vs develop = only 2 non-test .py (router.py + config.py) +
+  1 test file + 2 status docs. NO service/domain/tasks/repository/models change; NO alembic version added. Single head
+  `f31c75438e61` (linear `935e55b4852c`→`a1b2c3d4e5f6`→`f31c75438e61`). database-builder SKIP held; services-builder
+  VERIFY-only held (no gap).
+
+MERGE FLOW (Model C, 4th run): leaf cut off CURRENT develop `eb84779` (origin/develop advanced from base `48ec697` via
+  #137 CI-only `deploy dev from develop` — zero file overlap with this slice). D/F refname conflict hit as predicted
+  (local leaf `feature/xlsx-export` cannot coexist with local `feature/xlsx-export/backend`) → resolved via temp-branch
+  squash + remote sub-ref delete + push leaf. Gate verdict in squash body.
+
+Done: STEP-3 merge gate PASS (G1/G2/G3 + DB/services verify); board flip (MERGED + infra inter-lead row); this STATUS
+  block; squash leaf; founder-gate PR opened (LEFT OPEN); memo authored.
+In progress: none (STEP 3 deliverable complete).
+Blockers: none.
+Next: FOUNDER — merge the founder-gate PR (`feature/xlsx-export` → develop). INFRA — wire 5th flag into ConfigMaps
+  (inter-lead OPEN). No further backend specialist dispatch on this feature.
+Hand-offs: meesell-infra-builder (5th feature flag → k8s ConfigMaps dev=true/staging=false; join image-precheck-infra
+  flag PR or follow-up) — memo handoff_secret_xlsx_export_flag.md + board inter-lead row OPEN.
+
+=== UPDATE: 2026-06-12 — backend chores batch (2 items) STEP 1: micro-audit + SPECs ===
+Phase: backend chores follow-ups (post-V1-feature housekeeping)
+Session: mesell-backend-chores-session-1
+Board sweep: 1 row added (backend-chores IN PROGRESS) + 1 incoming inter-lead row (infra image-tasks
+  queue, IN PROGRESS — backend servicing). Stale scan: microservices-export last touched 2026-06-10
+  (2 days, NOT stale — <7d; it is a POST-V1 extraction track awaiting founder A1/A2 ratification, not
+  abandoned). No 7+-day-stale rows. No MERGED rows older than 14 days to evict.
+
+ITEM 1 — Celery task routing (infra inter-lead unblock)
+  AUDIT: infra memo (handoff_image_tasks_queue.md) cites task name "image.precheck". VERIFIED REAL
+  task name = "image.precheck" — explicit `@shared_task(name="image.precheck", ...)` at
+  backend/app/modules/image/tasks.py:416 (NOT a dotted-module-path default). Infra's cited mapping is
+  CORRECT verbatim.
+  AS-BUILT: workers/celery_app.py has NO task_routes / task_queues. image.precheck publishes to the
+  default `celery` queue; worker runs --concurrency=4 with NO -Q, so it consumes default. Pipeline
+  FUNCTIONAL today. The second V1 task is export.xlsx (name=, also default queue) per the include list
+  (celery_app.py:103-105) + _TASKS_REQUIRING_USER_REVALIDATION frozenset (L125-128).
+  FIX SHAPE: add `task_routes = {"image.precheck": {"queue": "image-tasks"}}` to the existing
+  celery_app.conf.update(...) block (or as celery_app.conf.task_routes). MAPS ONLY image.precheck →
+  export.xlsx + any future task stay on default `celery` queue (default-queue invariant PRESERVED —
+  required because the worker that runs export consumes default with no -Q). Owner: services-builder.
+
+ITEM 2 — _GLOBAL_TABLES drift (queued from smart-picker gate PR #72)
+  AUDIT: docs assert a `core/tenancy._GLOBAL_TABLES` frozenset exists. As-built core/tenancy.py
+  (128 lines) exports ONLY {TenantViolationError, assert_owned, scope_to_user} — NO _GLOBAL_TABLES.
+  The symbol is referenced in THREE doc/docstring locations: BACKEND_ARCHITECTURE.md §9.D (L3245),
+  §9.J (~L3461), and category/repository.py:17 docstring. CRITICAL FINDING: the as-built §19 linter
+  `tests/lint/check_scope_to_user.py` enforces the global-table carve-out by MODULE-NAME ALLOWLIST
+  (`ALLOWLISTED_MODULES = frozenset({"category","dashboard","iam"})`, L61) — it does NOT read
+  _GLOBAL_TABLES at all. So _GLOBAL_TABLES has ZERO runtime/linter consumer; it is a pure
+  documentation-vs-code drift (docstring promises a symbol the code never grew).
+  §4.C LOCKED text (L938) names the 4 global tables in PROSE but does NOT itself reference the
+  _GLOBAL_TABLES symbol — so adding the frozenset does NOT touch a LOCKED contract's required shape.
+  FIX SHAPE (minimal, NO behaviour change): add a documentation-sentinel
+  `_GLOBAL_TABLES: frozenset[str] = frozenset({"categories","templates","field_enum_values",
+  "field_aliases"})` to core/tenancy.py with a docstring tying it to §4.C/§9.D + a note that the
+  linter currently keys on module-name (so the sentinel is documentation/future-proofing, NOT yet a
+  linter input). Owner: database-builder (as queued; tenancy-foundation symbol). database-builder may
+  OPTIONALLY (R2 below) re-point check_scope_to_user.py to consume the frozenset — FLAGGED as a
+  founder decision, NOT bundled by default.
+
+OVERLAP / BRANCH:
+  Branch chore/backend-followups cut off origin/develop @ eb84779 (worktree /tmp/mesell-wt/backend-chores),
+  pushed. Verified ZERO file overlap with the 6 OPEN founder-gate PRs (#115/#118/#122/#133/#138/#139):
+  none touch core/tenancy.py or workers/celery_app.py/workers/. chore/ namespace → no D/F refname concern.
+
+SPECIALIST RULING: NOT folded — 2 separate specialists (services-builder owns celery_app.py per §3.I /
+  §18; database-builder owns core/tenancy.py per §4.C). Different files, different owners, different
+  domains → 2 SPECs, can land in ONE PR or two (lead's call at gate; recommend ONE PR
+  chore/backend-followups → develop since both are sub-10-line additive diffs with zero test risk).
+
+FOUNDER RULINGS NEEDED (FLAG, not picked):
+  R1 — Item 2 scope: documentation-sentinel ONLY (docstring↔code agree) vs ALSO re-point the linter
+       to consume _GLOBAL_TABLES (replacing the module-name allowlist for category). DEFAULT = sentinel
+       only (lower risk, the allowlist works). Re-point is a §19 linter behaviour change.
+  R2 — does this 2-item batch land as ONE PR to develop or two? (lead recommends ONE.)
+
+Done: micro-audit (both items, file:line evidence + real task name); branch+worktree+push; board row +
+  incoming inter-lead row; this STATUS block; SPECs authored (returned to master for dispatch).
+In progress: awaiting master to dispatch services-builder (Item 1) + database-builder (Item 2); lead
+  gates both after.
+Blockers: none (R1/R2 are FLAGS, not blockers — defaults stated).
+Next: master dispatches the 2 specialists with the paste-ready SPECs; lead runs merge-gate review.
+Hand-offs: infra (image-tasks queue) being serviced — after develop merge, infra uncomments -Q image-tasks.
+=========
+
+=== UPDATE: 2026-06-12 (chore batch STEP 2, item 1/2 — services-builder) ===
+Phase: image-precheck (Feature 5) — Celery queue isolation chore
+Done: Added `task_routes={"image.precheck": {"queue": "image-tasks"}}` to the existing
+  celery_app.conf.update(...) call in backend/app/workers/celery_app.py (+10 lines, additive only).
+  Inline comment cites §18 + the infra handoff path + "Default queue preserved for export.xlsx".
+  NO touch to image/tasks.py body (§11.E LOCKED), NO change to worker_prefetch_multiplier /
+  task_acks_late / task_reject_on_worker_lost / the task_prerun handler.
+Evidence:
+  task_routes = {'image.precheck': {'queue': 'image-tasks'}}
+  export.xlsx in routes? False  (proves export.xlsx stays on default `celery` queue)
+  ruff check celery_app.py → All checks passed!
+Tests: import-evidence command runs clean under CI dummy-env; no new test file (one-line additive
+  config route — guarded behaviourally by the evidence assertion above).
+Commit: 26261ce on chore/backend-followups (pushed origin). NO PR opened (lead gates per Model C).
+In progress: database-builder runs serially next in same worktree (item 2/2 — core/tenancy.py).
+Blockers: none.
+Next: lead STEP 3 merge-gate review.
+Hand-offs: infra (meesell-infra-builder) — after develop merge, uncomment `-Q image-tasks` in
+  k8s/worker.yaml per handoff_image_tasks_queue.md. image.precheck now publishes to `image-tasks`;
+  export.xlsx stays on default `celery` queue (worker with no -Q consumes both today).
+=========
+
+=== UPDATE: 2026-06-12 (chore batch STEP 2, item 2/2 — database-builder) ===
+Phase: core/tenancy — §9.D _GLOBAL_TABLES drift reconcile
+Done: Added `_GLOBAL_TABLES: frozenset[str]` documentation-sentinel to
+  backend/app/core/tenancy.py. Symbol names the 4 global tables (categories,
+  templates, field_enum_values, field_aliases) per BACKEND_ARCHITECTURE.md §4.C
+  prose. Added to __all__. Module docstring updated to cross-reference the symbol.
+  R1 ruling honoured: check_scope_to_user.py NOT modified — linter continues to
+  use ALLOWLISTED_MODULES (L61) module-name allowlist, not this frozenset.
+Evidence:
+  python -c "from app.core.tenancy import _GLOBAL_TABLES; print(sorted(_GLOBAL_TABLES))"
+  → ['categories', 'field_aliases', 'field_enum_values', 'templates']
+  ruff check backend/app/core/tenancy.py → All checks passed!
+  scope_to_user / assert_owned behaviour: UNCHANGED (additive symbol only).
+In progress: none — task complete.
+Blockers: none.
+Next: lead STEP 3 merge-gate review of chore/backend-followups (both items 1/2 + 2/2).
+Hand-offs: meesell-backend-coordinator — both chore items COMPLETE, branch pushed.
+  Schema ready: `from app.core.tenancy import _GLOBAL_TABLES` is now importable.
+  R1 re-ruling (future): when founder lifts sentinel-only gate, database-builder
+  wires _GLOBAL_TABLES into check_scope_to_user.py ALLOWLISTED_MODULES replacement.
+=========
+
+=== UPDATE: 2026-06-12 — backend chores batch STEP 3: MERGE-GATE VERDICT (PASS) + PR #143 ===
+Phase: backend chores follow-ups (2 items) — lead merge-gate
+Session: mesell-backend-chores-session-1
+Board sweep (session-end): backend-chores row flipped IN PROGRESS → "GATE PASS — FOUNDER PR #143
+  OPEN→develop". Incoming infra image-tasks row stays IN PROGRESS (resolves on develop merge). No
+  7+-day-stale rows. microservices-export last touched 2026-06-10 (<7d, not stale). No MERGED rows
+  older than 14 days to evict.
+
+MERGE-GATE VERDICT: PASS (both items). Branch chore/backend-followups, 4 files / +153 -0, tip d262c95.
+  Item 1 (services-builder, 26261ce): celery_app.py task_routes.
+    GATE EVIDENCE (lead-run, main-checkout venv interpreter + worktree PYTHONPATH + CI dummy env):
+      task_routes = {'image.precheck': {'queue': 'image-tasks'}}
+      image.precheck -> {'queue': 'image-tasks'}   ✓
+      export.xlsx routed? False                     ✓ (DEFAULT-QUEUE INVARIANT PRESERVED — load-bearing)
+    §11.E LOCKED image/tasks.py body + worker_prefetch_multiplier/task_acks_late/
+    task_reject_on_worker_lost/task_prerun ALL untouched ✓. ruff clean ✓.
+  Item 2 (database-builder, d262c95): core/tenancy.py _GLOBAL_TABLES sentinel.
+    GATE EVIDENCE:
+      _GLOBAL_TABLES = ['categories','field_aliases','field_enum_values','templates']  ✓ ; in __all__ ✓
+      §19 `python -m tests.lint.check_scope_to_user` → Contract 8 PASS ✓ (module-name allowlist intact —
+        the new sentinel did NOT alter or break enforcement; R1 sentinel-only default honored)
+    BACKEND_ARCHITECTURE.md untouched (no LOCKED-shape edit; §4.C prose already named the 4 tables) ✓.
+    ruff clean ✓.
+  Cross-cutting: 0 new route decorators → §17 stays 28; 0 alembic → no head divergence; §2.D matrix
+    unchanged. STATUS fold by database-builder verified (both specialist entries present, L4467 + L4490).
+
+FOUNDER RULINGS (FLAGGED, defaults applied in PR #143):
+  R1 — sentinel-only vs re-point linter. APPLIED: sentinel only (lower risk; allowlist works). Re-point
+       is a §19 linter behaviour change for a future ruling.
+  R2 — one PR vs two. APPLIED: ONE PR (#143). Both sub-10-line additive diffs, zero test risk.
+
+PR #143 (chore/backend-followups → develop) is the FOUNDER'S GATE per D1 — lead authored + gated, leaves
+  OPEN. NOT a feature/{name}/backend→feature/{name} PR, so the full backend PR-template is N/A (no
+  Alembic, no contract change, no module additions — all additive config/doc).
+
+Done: STEP 3 merge-gate (both items PASS), PR #143 opened with verdict, board flip, this STATUS block,
+  session-end sweep, memory append.
+In progress: none (batch gated; awaiting founder merge of #143).
+Blockers: none.
+Next: founder merges #143 → develop; THEN infra opens 1-line follow-up to uncomment -Q image-tasks.
+Hand-offs: meesell-infra-builder (image-tasks worker -Q switch, post-#143-merge).
+=========
+
+=== UPDATE: 2026-06-12 16:00 ===
+Phase: flag-parity sweep (chore/flag-parity) — G1 price-calc, G2 dashboard, G3 live-preview
+Done:
+  G1 — FEATURE_PRICE_CALCULATOR_ENABLED: bool = True added to config.py §3.2 (after L216).
+       Guard in pricing/router.py price_calc handler (POST /api/v1/products/{id}/price-calc):
+       `if not settings.FEATURE_PRICE_CALCULATOR_ENABLED: raise HTTPException(404, "Price Calculator is disabled in this environment")`
+  G2 — FEATURE_TRACKING_DASHBOARD_ENABLED: bool = True added to config.py §3.2.
+       Guard in dashboard/router.py list_products handler (GET /api/v1/products):
+       `if not settings.FEATURE_TRACKING_DASHBOARD_ENABLED: raise HTTPException(404, "Tracking Dashboard is disabled in this environment")`
+       R1 RULING HONORED: GET/read route — 404-on-read is intentional (the read IS the feature).
+  G3 — FEATURE_LIVE_PREVIEW_ENABLED: bool = False added to config.py §3.2.
+       DEFAULT FALSE — the ONLY V1 flag that ships default-False (gated rollout per D3).
+       Guard in catalog/router.py get_product_preview handler (GET /api/v1/products/{id}/preview):
+       `raise MeesellError(code="feature.live_preview.disabled", status_code=404, detail="Preview unavailable")`
+       Uses MeesellError (not HTTPException) to emit the machine-readable `code` field per §4.F envelope.
+       R3 RULING HONORED: no new core/feature_flags.py; in-handler raise; MeesellError is the codebase's
+       coded-error pattern (not a new envelope).
+  3 new test files:
+    - backend/tests/modules/pricing/test_feature_flag.py (3 tests, @unit marker)
+    - backend/tests/modules/dashboard/test_feature_flag.py (3 tests, @unit marker)
+    - backend/tests/integration/test_live_preview_flag_404.py (3 tests)
+Tests: 9 passed / 0 failed (3 isolation runs, Py3.11 venv)
+  G1 pricing:   3/3 PASS
+  G2 dashboard: 3/3 PASS
+  G3 preview:   3/3 PASS
+Ruff: all clean (E,F,W --line-length 100) on all 6 changed/new files
+In progress: none — all 3 gaps closed.
+Blockers: none.
+Next: coordinator STEP 3 merge-gate; squash chore/flag-parity → develop.
+Hand-offs: meesell-backend-coordinator — G1/G2/G3 evidence + 9/9 test PASS + ruff clean; PR not opened (coordinator gate owns that).
+=========
+
+=== UPDATE: 2026-06-12 — flag-parity sweep STEP 3 MERGE-GATE PASS ===
+Phase: V1 backend feature-flag story — flag-parity sweep (G1 price-calc / G2 dashboard / G3 live-preview)
+Session: mesell-flag-parity-sweep-session-1 (HYBRID STEP 3 — lead merge-gate review)
+Board sweep: flag-parity row IN PROGRESS → GATE PASS (FOUNDER PR OPEN→develop); 1 NEW infra inter-lead row added (3 flags → ConfigMaps); no rows stale 7+d (microservices-export 2026-06-10 = 2d). MERGED rows: none >14d to evict.
+
+GATE VERDICT: **PASS** — all 3 gaps + 9 tests + ruff + scope verified by lead.
+
+Diff reviewed vs origin/develop (note: develop moved 2b5ec60 → 81338c5 via infra #147 = k8s/worker.yaml + 2 infra docs, ZERO file overlap with this branch — confirmed via git diff --stat).
+  Scope: 9 files — shared/config.py + pricing/router.py + dashboard/router.py + catalog/router.py + 3 NEW test files + STATUS + board. NO service/model/main.py/migration changes (verified). §17 stays 28 (verified live mount: 28 /api/* APIRoute objects). §2.D unchanged (pure config reads, no new service edges).
+
+G1 price-calculator: PASS. FEATURE_PRICE_CALCULATOR_ENABLED=True in config §3.2; in-handler 404 POST (smart-picker pattern, BEFORE service); HTTPException(404, "Price Calculator is disabled in this environment").
+G2 tracking-dashboard: PASS. FEATURE_TRACKING_DASHBOARD_ENABLED=True; in-handler 404 GET — 404-on-read intentional (R1, D3 kill-switch, the read IS the feature); D3 comment inline.
+G3 live-preview: PASS. FEATURE_LIVE_PREVIEW_ENABLED=False (ONLY default-False V1 flag, SHIPS DARK); MeesellError(code="feature.live_preview.disabled", 404, "Preview unavailable") guard GET.
+
+ADJUDICATIONS (lead-verified this gate):
+  - MeesellError judgment call (G3): CORRECT and REQUIRED. Verified core/errors.py: _meesell_error_handler reads exc.code into envelope (L149); _http_exception_handler hardcodes code="http.404" (L210). Only MeesellError surfaces the D3-mandated code=feature.live_preview.disabled. No new envelope (R3 honored). Minor non-blocking FYI: G3 omits validation_message_id → envelope carries class-default server.internal_error as side-field; plan-mandated {detail,code} contract satisfied exactly, test asserts only those two.
+  - Defensive catalog-form patch (G3 reachable test): HARMLESS/inert, non-blocking FYI. main.py:126 include is import-time; catalog-form defaults True → router already mounted; patch targets app.modules.catalog.router.settings not app.main.settings → no-op no-harm.
+  - G1 wording FYI: plan §1.B mandated validation_message_id=feature.disabled, but that 2-segment key VIOLATES the locked §5A.H 3-segment regex (^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$) AND its messages_en.py registration is a services-builder dispatch (out of this api-routes-builder slice). Plain HTTPException is scope-correct. FYI to founder/future price-calc feature dispatch.
+
+R1-R4 CONSUMED (master-confirmed): R1 honor-plans 404-on-read for G2/G3; R2 plan-verbatim wording (with G1 nuance above); R3 in-handler not new core/feature_flags.py (no FeatureDisabledError subclass, no factory); R4 live-preview default-False.
+
+Test/ruff re-run (lead, master venv backend/.venv Py3.11, isolation per session-loop gotcha):
+  pricing 3/3 PASS · dashboard 3/3 PASS · live-preview 3/3 PASS → 9/9 PASS.
+  ruff check on 7 files (config + 3 routers + 3 tests) → All checks passed!
+
+LIVE-PREVIEW SHIPS DARK: FEATURE_LIVE_PREVIEW_ENABLED defaults False everywhere; preview returns 404 until founder flips the dev ConfigMap to true when the preview FE wires (D3 gated rollout).
+
+Done: STEP 3 gate PASS; FOUNDER GATE PR opened OPEN→develop (lead leaves OPEN, founder merges per D1); board + STATUS + infra inter-lead row + memo records committed on branch (ride the PR).
+In progress: none.
+Blockers: none.
+Next: founder merges the flag-parity PR → develop; infra injects 3 flags into ConfigMaps (inter-lead OPEN).
+Hand-offs: meesell-infra-builder — 3 flags → k8s ConfigMaps (dev: price-calc=true/dashboard=true/live-preview=false; staging: all false). Memo handoff_secret_flag_parity_flags.md.
+=========
+
+=== UPDATE: 2026-06-12 — CI Gate-1 event-loop fix · Rule-7 STEP 3 merge gate ===
+Phase: CI Gate-1 event-loop (HYBRID STEP 3 — backend-coordinator merge gate on PR #156)
+Session: gate/ci-gate1-event-loop-review (off origin/develop fe3f3ff)
+Board sweep: no Active feature rows touched (CI hotfix, D1 N/A); 0 stale flagged this pass.
+
+VERDICT: REJECT PR #156 (fix/ci-gate1-event-loop) — close UNMERGED. Do not bounce-and-fix.
+
+Reason: the problem #156 targets ("Gate-1 unit RED on develop") was ALREADY FIXED by parallel
+PR #150 (`2d9b8af`, merged 2026-06-12 03:02 UTC) BEFORE #156 opened. #156 was cut from stale base
+`a732729` (predates `2d9b8af`) → it is a stale-base DUPLICATE. Merging it would REGRESS develop:
+it reverts PR #150's `unauth_client` singleton-contamination hardening and swaps the robust `patch()`
+approach for a `monkeypatch.setattr` approach.
+
+Independent CI verification (the gate that matters):
+- develop tip `fe3f3ff` push run: Gate 1 (unit)=SUCCESS, Gate 2 (smoke)=SUCCESS, Gate 3 (lint)=SUCCESS.
+  Only Gate 4 (integration)=fail — ADVISORY per MASTER_PLAN §2.1. Gate-1 RED is RESOLVED on develop.
+- PR #150 own CI: Gate 1=pass (58s), Gate 2=pass, Gate 3=pass (Py3.12.13, pytest-asyncio 0.24.0).
+- PR #156: no CI checks ever ran on the branch.
+- Local master venv (Py3.11, pytest-asyncio 0.24.0) shows 2 catalog flag-guard reds on develop even in
+  isolation — documented local-macOS-vs-CI-Linux teardown artifact (does NOT reproduce on CI Gate-1).
+
+Report inaccuracies caught: (a) "3 files" → PR has 4 (omitted api-routes-builder/MEMORY.md +79);
+(b) test_catalog_routes.py "+4/−4" → actual +6/−6.
+
+Done: STEP-3 gate complete; spec_ci_gate1_event_loop.md §9 OUTCOME landed; gate-record PR opened.
+In progress: none.
+Blockers: none. Gate-1 is GREEN on develop CI — infra inter-lead PR #145 ("Gate-1 RED") is effectively
+RESOLVED by PR #150; flag for closure on next board sweep.
+Next: master session closes PR #156 (REJECT) + PR #154 (SPEC, superseded). Queue CHORE-B (_reload_config
+reload-pollution latent debt, api-routes-builder, low pri).
+Hand-offs: meesell-api-routes-builder — CHORE-B optional hardening. meesell-infra-builder — PR #145
+Gate-1-RED inter-lead request resolvable (PR #150 landed the fix).
 =========

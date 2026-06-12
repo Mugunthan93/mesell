@@ -116,6 +116,16 @@ celery_app.conf.update(
     # SESSION 2 G3 CLEANUP LOCK — §18.G — DO NOT REMOVE.
     task_reject_on_worker_lost=True,
     worker_prefetch_multiplier=1,
+    # §18 task routing — route ONLY image.precheck to a dedicated
+    # ``image-tasks`` queue, unblocking infra's worker ``-Q image-tasks``
+    # switch (infra inter-lead handoff
+    # .claude/agent-memory/meesell-infra-builder/handoff_image_tasks_queue.md).
+    # export.xlsx is deliberately ABSENT here so it stays on the default
+    # ``celery`` queue, which the (-Q-less) worker also consumes. Default
+    # queue preserved for export.xlsx.
+    task_routes={
+        "image.precheck": {"queue": "image-tasks"},
+    },
 )
 
 

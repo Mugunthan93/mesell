@@ -102,6 +102,23 @@ module "asset_bucket" {
   ]
 }
 
+# image-precheck feature (Feature 5) — separate product-image bucket with a 1-year
+# DELETE lifecycle and a bucket-scoped objectAdmin grant to the workload (compute
+# default SA, via GCE metadata ADC). See module README/comments for the K3s-on-GCE
+# "Workload Identity" reality. Plan: docs/plans/features/image-precheck/FEATURE_PLAN.md.
+module "gcs_images" {
+  source = "./modules/gcs_images"
+
+  bucket_name                    = var.gcs_images_bucket_name
+  workload_service_account_email = var.workload_service_account_email
+  environment                    = var.environment
+
+  depends_on = [
+    null_resource.account_lock_guard,
+    google_project_service.required,
+  ]
+}
+
 module "app_secrets" {
   source = "./modules/app_secrets"
 
