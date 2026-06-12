@@ -1,7 +1,25 @@
 # STATUS — FRONTEND
 
 **Owner:** meesell-frontend-coordinator (master session)
-**Last update:** 2026-06-11
+**Last update:** 2026-06-12
+
+=== UPDATE: 2026-06-12 — WAVE 6C LANE 2 EXPORT — LEAD MERGE-GATE PASS ===
+Phase: wave6-export (Wave 6 Wave C lane 2 — /catalogs/:id/export real wiring)
+Session: mesell-wave6-export-gate-session-1
+Board sweep: wave6-export row added to Recently merged (MERGED to integration); no Active-features rows untouched 7+ days; no new inter-lead requests opened this session.
+Done:
+  - HYBRID step-3 merge-gate of feature/wave6-export/frontend@c28434b (chain d2d0cad service-builder → 21da63b component-builder → c28434b ui-styler). TRUE tip verified first (Wave B lesson).
+  - Independent re-verification in fresh worktree /tmp/mesell-wt/w6c-exp-review — 0 discrepancies vs builder reports on all 6 focal points.
+  - VERDICT: PASS. Group PR #165 lead-gate APPROVE + squash --admin (a0954f6); frontend branch deleted via gh api.
+  - develop→integration sync conflict-free (frontend tree byte-identical across merge; catalog-form lane #166 touched 0 frontend files — no union); re-cert merged tip d9ef8f7: 59 files/770 tests 0 fail/0 skip, mfe-export 3.168s.
+  - Founder-gate PR #167 [FOUNDER GATE — DO NOT MERGE] integration→develop OPENED + LEFT OPEN — lead does NOT approve (D1).
+Focal findings (all PASS): D18 setInterval preserved (clear on terminal+ngOnDestroy+maxPolls; fake-timer proofs re-run); retry layering (POST never retried, poll bypasses ApiClient all-errors-retry defect + layers 503-only max 2; defect verified real in frozen libs/core api-client.service.ts; confirmed BOTH lanes); no progress_pct (status-based UI, 422 product_not_ready via notReadyMessage); lane discipline (only apps/mfe-export/** + sanctioned STATUS, 0 libs/ edits, barrel-only, styler hex-removal in-lane); §6.G singleton ONE _mesell_core chunk no inline (mfe-export now first @mesell/core consumer in remote); boundary/localStorage/deep-import 0; contract URLs exact; tsc strict+strictTemplates EXIT 0.
+In progress: none (gate complete).
+Blockers: none.
+Next: founder reviews #167 (and lane-1 #164). Wave D (images‖pricing) per master plan §4.2 — images unblocks on #164 to develop (R-W6-9); pricing independent.
+Hand-offs: 3-item frozen-surface amendment proposal queued for a post-Wave-D fast-mode chore (§7.3 founder approval): (a) ApiClient.retryOn503 status-filter fix [confirmed BOTH lanes], (b) ui-kit MeeSpinnerComponent indeterminate gap, (c) Wave B token gap. Screenshots deferred → founder Gate-5 UI-review (SP01-07 precedent). No backend/AI memo (export has no AI surface; 422 contract honored as-is).
+=========
+
 
 === UPDATE: 2026-06-11 23:55 ===
 Phase: wave6-auth-core (Wave 6 Wave A — real auth core) — HYBRID step-3 LEAD MERGE-GATE
