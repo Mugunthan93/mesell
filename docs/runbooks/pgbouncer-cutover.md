@@ -4,8 +4,14 @@
 **Scope:** DEV namespace only. ₹0 new spend. Current hardware (`e2-standard-2`).
 **Source of truth:** `docs/plans/infra/microservices_infra_plan.md` §3.3 (MS-DB-3 + MS-DB-4),
 `docs/plans/microservices_migration/MASTER_PLAN.md` D5.
-**Status:** AUTHORED + validated, NOT applied. Application is founder-gated (see PR
-`[FOUNDER GATE — DO NOT MERGE] MS-0`).
+**Status:** **Steps 1–2 APPLIED to DEV 2026-06-12** (founder-authorized post PR #181 merge
+to develop @ 29ed457). Postgres `max_connections=200` LIVE; PgBouncer transaction-pool LIVE
+(`pgbouncer.dev.svc.cluster.local:6432`, SELECT-1 smoke green, `SHOW POOLS` meesell=transaction).
+**Step 3 (DATABASE_URL flip to :6432) is NOT applied** — separate founder gate, blocked on
+backend R-MS-8 (asyncpg/SQLAlchemy transaction-pool compat). Two apply-time fixes folded into
+`k8s/pgbouncer.yaml` (recorded inline): image tag `1.23.1`→`v1.23.1-p3` (bare tag didn't exist
+on Docker Hub), and `auth_type` `md5`→`scram-sha-256` with PLAINTEXT userlist (Postgres uses
+`password_encryption=scram-sha-256`; md5 userlist => "wrong password type").
 
 This runbook covers two coupled changes:
 1. **Postgres `max_connections` 100 → 200** (TF-managed StatefulSet, `module.postgres_dev`).
@@ -69,10 +75,15 @@ kubectl -n dev exec postgres-0 -- psql -U meesell -d meesell -tAc "SHOW max_conn
 **[MANDATORY GATE — playbook §15 step 3]** server-side dry-run first:
 ```bash
 # 2a. Populate the userlist Secret (procedure in k8s/pgbouncer-userlist.secret.yaml.example).
-#     The md5 hash is computed from the LIVE postgres password; never committed.
+#     IMPORTANT (corrected 2026-06-12 apply): Postgres here runs
+#     password_encryption=scram-sha-256. PgBouncer's auth_type is therefore
+#     scram-sha-256 (k8s/pgbouncer.yaml) and the userlist carries the PLAINTEXT
+#     password (pgbouncer forwards SCRAM to the server). An md5 userlist hash
+#     fails against a SCRAM server with "cannot do SCRAM authentication: wrong
+#     password type". The password is read from the LIVE postgres-credentials
+#     Secret; never committed, never printed, temp file shredded.
 PGPW="$(kubectl -n dev get secret postgres-credentials -o jsonpath='{.data.password}' | base64 -d)"
-HASH="md5$(printf '%s%s' "$PGPW" "meesell" | md5sum | cut -d' ' -f1)"
-printf '"meesell" "%s"\n' "$HASH" > /tmp/userlist.txt
+printf '"meesell" "%s"\n' "$PGPW" > /tmp/userlist.txt
 kubectl -n dev create secret generic pgbouncer-userlist \
   --from-file=userlist.txt=/tmp/userlist.txt --dry-run=client -o yaml | kubectl apply -f -
 shred -u /tmp/userlist.txt 2>/dev/null || rm -f /tmp/userlist.txt
@@ -86,21 +97,27 @@ kubectl -n dev apply -f k8s/pgbouncer.yaml
 kubectl -n dev rollout status deployment/pgbouncer --timeout=120s
 ```
 
-VERIFY PgBouncer is pooling against Postgres:
+VERIFY PgBouncer is pooling against Postgres. NOTE: pass the password via
+`env PGPASSWORD=` + discrete `-h/-p/-U/-d` flags, NOT a `postgresql://user:pw@host`
+DSN — base64 passwords contain `@` / `/` which corrupt DSN parsing ("invalid integer
+value for connection option port"). See MEMORY.
 ```bash
 kubectl -n dev get pods -l app=pgbouncer    # 1/1 Running
+PGPW="$(kubectl -n dev get secret postgres-credentials -o jsonpath='{.data.password}' | base64 -d)"
 # SHOW POOLS via the pgbouncer admin DB (auth as meesell over 127.0.0.1:6432):
-kubectl -n dev exec deploy/pgbouncer -- \
-  psql "postgresql://meesell:$PGPW@127.0.0.1:6432/pgbouncer" -c "SHOW POOLS;"
+kubectl -n dev exec deploy/pgbouncer -- env PGPASSWORD="$PGPW" \
+  psql -h 127.0.0.1 -p 6432 -U meesell -d pgbouncer -c "SHOW POOLS;"
 # EXPECT a row for database `meesell`, pool_mode `transaction`, cl_active/sv_idle columns.
-unset PGPW HASH
+# (the admin `pgbouncer` pool always shows pool_mode `statement` — only the real
+#  `meesell` pool reflects our transaction setting; meesell pool appears after the
+#  first real client query below.)
 ```
 
 Smoke (proves a real query flows app → pgbouncer → postgres):
 ```bash
-kubectl -n dev exec deploy/pgbouncer -- \
-  psql "postgresql://meesell:$(kubectl -n dev get secret postgres-credentials -o jsonpath='{.data.password}' | base64 -d)@127.0.0.1:6432/meesell" \
-  -c "SELECT 1;"   # EXPECT: 1 row, value 1
+kubectl -n dev exec deploy/pgbouncer -- env PGPASSWORD="$PGPW" \
+  psql -h 127.0.0.1 -p 6432 -U meesell -d meesell -tAc "SELECT 1;"   # EXPECT: 1
+unset PGPW
 ```
 
 ### Step 3 — DATABASE_URL flip (FOUNDER-GATED — NOT part of MS-0)
@@ -125,13 +142,16 @@ kubectl -n dev rollout restart deployment/api deployment/worker
 
 ## 2. Verification queries (reference)
 
+All pgbouncer :6432 queries use `env PGPASSWORD=` + discrete flags (NOT a `user:pw@host` DSN).
+Prefix each with `PGPW="$(kubectl -n dev get secret postgres-credentials -o jsonpath='{.data.password}' | base64 -d)"`.
+
 | What | Command |
 |---|---|
 | Postgres ceiling | `kubectl -n dev exec postgres-0 -- psql -U meesell -d meesell -tAc "SHOW max_connections;"` → `200` |
 | Postgres live conns | `kubectl -n dev exec postgres-0 -- psql -U meesell -d meesell -tAc "SELECT count(*) FROM pg_stat_activity;"` |
-| PgBouncer pools | `... psql ".../pgbouncer" -c "SHOW POOLS;"` |
-| PgBouncer clients | `... psql ".../pgbouncer" -c "SHOW CLIENTS;"` |
-| End-to-end | `... psql ".../meesell" -c "SELECT 1;"` via :6432 |
+| PgBouncer pools | `kubectl -n dev exec deploy/pgbouncer -- env PGPASSWORD="$PGPW" psql -h 127.0.0.1 -p 6432 -U meesell -d pgbouncer -c "SHOW POOLS;"` |
+| PgBouncer clients | `kubectl -n dev exec deploy/pgbouncer -- env PGPASSWORD="$PGPW" psql -h 127.0.0.1 -p 6432 -U meesell -d pgbouncer -c "SHOW CLIENTS;"` |
+| End-to-end | `kubectl -n dev exec deploy/pgbouncer -- env PGPASSWORD="$PGPW" psql -h 127.0.0.1 -p 6432 -U meesell -d meesell -tAc "SELECT 1;"` → `1` |
 
 ---
 
