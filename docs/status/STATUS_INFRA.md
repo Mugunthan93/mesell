@@ -1,6 +1,51 @@
 # STATUS — INFRASTRUCTURE
 
 **Owner:** `meesell-infra-builder`
+**Last update:** 2026-06-12 (image-precheck infra slice session-2 — 5th feature flag `FEATURE_XLSX_EXPORT_ENABLED` joined the lane on PR #138: dev=true APPLIED + verified live, staging=false manifest-only; also reconciled session-1's flags onto the real cluster. ₹0/mo.)
+**SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
+
+## UPDATE — 2026-06-12 — mesell-image-precheck-infra-session-2 (5th feature flag joins the lane — xlsx-export backend gate)
+
+=== STEP: wire FEATURE_XLSX_EXPORT_ENABLED into the k8s ConfigMaps (inter-lead request from the xlsx-export backend gate) ===
+Phase: INFRASTRUCTURE_PLAYBOOK §15 (Safe deployment template — MANDATORY server-side dry-run gate, founder ruling 2026-06-11) + namespace conventions (dev base / staging overlay mirror). Single config item joining the existing open image-precheck infra lane (PR #138).
+Session: mesell-image-precheck-infra-session-2
+Pre-flight: gcloud active=vaishnaviramoorthy@gmail.com ✅; project=project-1f5cbf72-2820-4cdb-949 ✅; cluster REACHABLE via `~/.kube/meesell-dev.yaml` → 35.234.223.66:6443 (meesell-dev-master Ready, K3s v1.35.5). NOTE: default `~/.kube/config` points at a STALE/dead endpoint 34.180.58.185:6443 (connection refused) — always use meesell-dev.yaml.
+
+**What was applied LIVE vs MANIFEST-ONLY:**
+- **Dev `meesell-config` ConfigMap (namespace dev)** — added `FEATURE_XLSX_EXPORT_ENABLED: "true"` (k8s/config.yaml). Server dry-run clean (`configmap/meesell-config configured (server dry run)`), then `kubectl -n dev apply` → `configmap/meesell-config configured`. **VERIFIED LIVE:** all 5 flags now present (FEATURE_SMART_PICKER/CATALOG_FORM/AI_AUTOFILL/IMAGE_PRECHECK/XLSX_EXPORT all = true) + GCS_BUCKET_IMAGES=meesell-images. ConfigMap went 20 → 26 keys.
+- **Staging overlay (k8s/overlays/staging/config.yaml)** — added `FEATURE_XLSX_EXPORT_ENABLED: "false"` with a D2-gate comment. `kubectl apply -k --dry-run=server` clean (`configmap/meesell-config created (server dry run)` — staging ns has no live meesell-config). `kubectl kustomize` render confirms flag=false, namespace=staging. **MANIFEST-ONLY — NOT applied** (D2 staging gate: 15 golden fixtures ×3 consecutive develop-HEAD GREEN + manual Meesho supplier-panel upload accepted; flipped later via a one-line micro-feature).
+
+**RECONCILIATION (important finding):** session-1's memory/STATUS claimed the 4 flags + GCS_BUCKET_IMAGES were "applied to dev + verified live." The live VM cluster (35.234.223.66) `meesell-config` did NOT contain ANY of them at session-2 start — its `last-applied-configuration` annotation was the pre-flag 17-key config. Root cause: session-1's `kubectl apply` almost certainly hit the default kubeconfig context (stale 34.180.58.185), not the VM. Session-2's apply of the full k8s/config.yaml therefore landed all 5 flags + GCS_BUCKET_IMAGES on the real cluster for the first time. envFrom-cached env still requires a pod restart to take effect in api/worker (flags activate on next rollout, not on ConfigMap apply).
+
+**Records/PR:** PR #138 body updated (5th-flag note via gh pr comment + body edit). Board: header refreshed; image-precheck row item (2) amended to 5 flags + reconciliation note; added incoming inter-lead row (xlsx-export → RESOLVED, delivered on PR #138). New commit rides PR #138 (no new PR). Cost ₹0/mo.
+Board sweep (start+end): Active rows ci-activation/auth-otp/mfe-cutover all last-touched 2026-06-11; image-precheck 2026-06-12. None stale 7+ days as of 2026-06-12.
+
+## UPDATE — 2026-06-12 — mesell-image-precheck-infra-session-1 (image-precheck infra slice — founder-gate PR)
+
+=== STEP: image-precheck infra slice (5 items) — GCS bucket + flag ConfigMaps + queue + GEMINI staging mechanism + runbook ===
+Phase: FEATURE_PLAN docs/plans/features/image-precheck/FEATURE_PLAN.md §Infra (rows 1-8) + INFRASTRUCTURE_PLAYBOOK §10 (secrets discipline), §13 (cost), §15 (MANDATORY server-side dry-run gate). Founder lifted the k8s/terraform bar for this dispatch.
+Session: mesell-image-precheck-infra-session-1
+
+**Git (Model C, FLAT branch):** `feature/image-precheck-infra` cut from origin/develop (48ec697) in worktree /private/tmp/mesell-wt/image-precheck-infra. FLAT (NOT a sub-ref) because leaf `feature/image-precheck` exists on origin — sub-refs `feature/image-precheck/*` are unpushable (D/F lesson). Founder-gate PR `feature/image-precheck-infra` → develop, LEFT OPEN. Explicit-path staging only. Pre-snapshot /tmp/meesell-pre-image-precheck-state.txt (protected VMs meesell-vm/shotfox-* untouched).
+
+**Pre-flight:** gcloud active = vaishnaviramoorthy@gmail.com ✅, project = project-1f5cbf72-2820-4cdb-949 ✅, ADC token obtainable ✅. Cluster REACHABLE (meesell-dev-master Ready, K3s v1.35.5).
+
+**(1) GCS bucket `meesell-images` — TF-APPLIED LIVE.** New module `infra/terraform/modules/gcs_images/` (main+variables+outputs), mirrors module.asset_bucket conventions with a feature-specific 1-yr lifecycle. Wired in main.tf (after asset_bucket) + var `gcs_images_bucket_name`/`workload_service_account_email` in variables.tf + dev.tfvars + 2 outputs. `terraform plan -target=module.gcs_images -var-file=environments/dev.tfvars` = **Plan: 2 to add, 0 to change, 0 to destroy** (clean — bucket + objectAdmin IAM member). APPLIED (saved plan, ADC token). **Apply complete! Resources: 2 added, 0 changed, 0 destroyed.** Verified LIVE in GCP: `gs://meesell-images` asia-south1, uniform BLA, public_access_prevention=enforced, lifecycle DELETE age=365, IAM roles/storage.objectAdmin → serviceAccount:888244156264-compute@developer.gserviceaccount.com. AS-BUILT note: K3s-on-GCE has no GKE Workload Identity; the api/worker pods authenticate via GCE metadata ADC as the compute default SA, so the plan's "Workload Identity binding for the API/worker SA" = a bucket-scoped objectAdmin grant to that compute SA (exactly mirrors meesell-prod-assets, verified live). Naming note: distinct namespace from the AR repo of similar name (404-verified the bucket name free).
+
+**(2) Feature-flag ConfigMaps — dev APPLIED, staging MANIFEST-ONLY.** k8s/config.yaml (dev): 4 flags = true (FEATURE_SMART_PICKER/CATALOG_FORM/AI_AUTOFILL/IMAGE_PRECHECK_ENABLED) + GCS_BUCKET_IMAGES=meesell-images. [MANDATORY GATE] server-side dry-run clean (`configmap/meesell-config configured`). Diff showed +5 keys only. APPLIED to dev ns; verified live (all 4 = true, GCS_BUCKET_IMAGES=meesell-images). k8s/overlays/staging/config.yaml: 4 flags = false per D2 soak posture + mirrored GCS_BUCKET_IMAGES. `kubectl kustomize` renders correctly; server-side dry-run clean (`created` in staging ns) — NOT applied (staging stays manifest-only until founder soak sign-off). NOTE: envFrom ConfigMap changes need a pod restart to take effect — flags take effect on next api/worker rollout (did NOT force a rollout — would force an unrelated `:latest` image change + risk single-node CPU deadlock per the deploy memory).
+
+**(3) Worker queue — concurrency=4 done, `-Q image-tasks` SCAFFOLD ONLY.** k8s/worker.yaml already runs `--concurrency=4` (satisfies plan). Added a commented-out `-Q image-tasks` scaffold + explanation: backend `image.precheck` @shared_task has no `queue=` and celery_app.py has no `task_routes` → tasks publish to the default `celery` queue. Adding `-Q image-tasks` now would stall the pipeline. MANIFEST-ONLY (not applied — comment-only change; applying would force a `:latest` rollout). Inter-lead request → backend-coordinator OPEN (add task_routes), memo handoff_image_tasks_queue.md. NOT a blocker (pipeline functional on default queue).
+
+**(4) GEMINI_API_KEY staging — MECHANISM ONLY.** New k8s/overlays/staging/secrets.yaml.example template documenting the staging `backend-secrets` population with a clearly-marked **FOUNDER INJECTION** step for GEMINI_API_KEY (Option A reuse SM gemini-api-key / Option B separate staging-scoped key). NO key value invented/printed/committed (all REPLACE-ME). Notes that ci.yml `secrets.GEMINI_API_KEY_CI` is a SEPARATE CI-only nightly key (ci.yml NOT touched — another track's).
+
+**(5) Runbook + README.** docs/runbooks/image-pipeline-troubleshooting.md (pipeline at-a-glance as-built; stuck-job introspection §1; re-enqueue §2; D2-Gate-3 GCS tenant-isolation verification §3 with the exact gcloud commands; cost monitoring §4; staging-flag-flip cross-ref §5). New docs/runbooks/README.md index (links auth-secret-rotation + image-pipeline-troubleshooting).
+
+**Cost:** ₹0/mo. The `meesell-images` bucket is standard-class asia-south1 storage with a 1-yr lifecycle; at V1 traffic (~40 MB/seller) it is immaterial vs the project budget — well under the ₹500/mo founder cost gate. No new standing compute/LB.
+
+**Founder action items:** (a) review + merge the founder-gate PR (develop); (b) at staging deploy time, inject GEMINI_API_KEY into the staging `backend-secrets` per the new template; (c) flip staging flags to true only after each feature's D2 soak gates pass (image-precheck: watermark ≥85% + 4 Pillow checks + GCS tenant-isolation — see runbook §3/§5); (d) backend adds celery task_routes so infra can uncomment `-Q image-tasks`.
+
+Board sweep (start+end): Active rows ci-activation/auth-otp/mfe-cutover all last-touched 2026-06-11; none stale 7+ days as of 2026-06-12. Added image-precheck row (IN REVIEW on PR open) + inter-lead request to backend.
+
 **Last update:** 2026-06-12 (ci-activation CLOSE-OUT — **CI/CD PIPELINE ACTIVE**: run 9 / PR #132 / merge `62713935` = first fully-green end-to-end pipeline; 6-rung deploy-bug ladder codified (#113/#116/#119/#123/#127/#131); branch protection develop-only (13 contexts); GEMINI_API_KEY_CI founder-pending. Prior same-day: deploy-from-develop FOUNDER RULING #137 — dev deploys fire from develop, NOT main. See the two latest UPDATE blocks.)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
 
