@@ -248,9 +248,17 @@ async def export_client():
     )
     await otp_seed_client.set(f"otp:{_EXPORT_TEST_PHONE}", otp_payload, ex=300)
 
+    # Track the lifespan-created engine + Valkey client so we can explicitly
+    # dispose/close them AFTER the lifespan exits — prevents
+    # ``Event loop is closed`` teardown errors (same fix as customer_client).
+    _lifespan_db_engine = None
+    _lifespan_valkey = None
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
         async with app.router.lifespan_context(app):
+            _lifespan_db_engine = getattr(app.state, "db_engine", None)
+            _lifespan_valkey = getattr(app.state, "valkey", None)
             # Obtain Bearer token via /otp/verify.
             resp = await ac.post(
                 "/api/v1/auth/otp/verify",
@@ -264,6 +272,19 @@ async def export_client():
             body = resp.json()
             ac.headers["Authorization"] = f"Bearer {body['access_token']}"
             yield ac
+
+        # Lifespan has exited — explicitly dispose residual pool connections
+        # while still in the function loop (prevents ``Event loop is closed``).
+        if _lifespan_db_engine is not None:
+            try:
+                await _lifespan_db_engine.dispose()
+            except Exception:
+                pass
+        if _lifespan_valkey is not None:
+            try:
+                await _lifespan_valkey.aclose()
+            except Exception:
+                pass
 
     # Teardown.
     app.dependency_overrides.clear()
@@ -309,10 +330,27 @@ async def unauth_client():
     middleware Futures bind to the test's own loop (clears the
     ``BaseHTTPMiddleware … Future attached to a different loop`` error).
     """
+    _lifespan_db_engine = None
+    _lifespan_valkey = None
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
         async with app.router.lifespan_context(app):
+            _lifespan_db_engine = getattr(app.state, "db_engine", None)
+            _lifespan_valkey = getattr(app.state, "valkey", None)
             yield ac
+
+        # Explicit disposal to drain pending pool callbacks before loop teardown.
+        if _lifespan_db_engine is not None:
+            try:
+                await _lifespan_db_engine.dispose()
+            except Exception:
+                pass
+        if _lifespan_valkey is not None:
+            try:
+                await _lifespan_valkey.aclose()
+            except Exception:
+                pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -233,9 +233,18 @@ async def customer_client():
     await otp_seed_client.set(f"otp:{phone}", payload, ex=300)
 
     # ── 5. Boot lifespan + obtain Bearer token ─────────────────────────────
+    # Track the lifespan-created engine + Valkey client so we can explicitly
+    # dispose/close them AFTER the lifespan exits (still inside the async
+    # context) to drain pending asyncpg pool callbacks before the function
+    # loop is torn down — prevents ``Event loop is closed`` teardown errors.
+    _lifespan_db_engine = None
+    _lifespan_valkey = None
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
         async with app.router.lifespan_context(app):
+            _lifespan_db_engine = getattr(app.state, "db_engine", None)
+            _lifespan_valkey = getattr(app.state, "valkey", None)
             resp = await ac.post(
                 "/api/v1/auth/otp/verify", json={"phone": phone, "otp": otp}
             )
@@ -249,6 +258,20 @@ async def customer_client():
             me_resp = await ac.get("/api/v1/auth/me")
             ac.test_user_id = me_resp.json()["user_id"]  # type: ignore[attr-defined]
             yield ac
+
+        # Lifespan has exited (lifespan teardown already ran dispose/aclose).
+        # Explicitly dispose again while still inside the AsyncClient context
+        # and the function loop to drain any residual asyncpg pool callbacks.
+        if _lifespan_db_engine is not None:
+            try:
+                await _lifespan_db_engine.dispose()
+            except Exception:
+                pass
+        if _lifespan_valkey is not None:
+            try:
+                await _lifespan_valkey.aclose()
+            except Exception:
+                pass
 
     # ── 6. Teardown ────────────────────────────────────────────────────────
     # Restore module-level singletons.

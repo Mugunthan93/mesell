@@ -63,6 +63,40 @@ Sequential: iam → customer → category → catalog DONE. Parallel-eligible fr
 
 ## Updates Log
 
+=== UPDATE: 2026-06-12 — Gate-4 cross-loop contamination fix (Rule 7 STEP 2) ===
+Phase: CI Gate-4 integration test regression — cross-loop Future contamination
+Session: mesell-gate4-loop-contamination-session-1
+Done:
+- tests/integration/conftest.py: rewrote iam_client fixture — added get_db override (NullPool
+  NullPool engine, SAVEPOINT per-test isolation), get_valkey_otp override, audit_mw.AsyncSessionLocal
+  patch, shared.valkey._cache_client patch, explicit lifespan-state db_engine.dispose() +
+  valkey.aclose() after lifespan exit to drain pool callbacks. Mirrors customer_client pattern.
+- tests/test_shared_database.py: rewrote test_get_db_yields_async_session to patch AsyncSessionLocal
+  to a per-test NullPool session-maker for the test duration, eliminating the cross-loop Future
+  error from using the app-global session-loop-bound AsyncSessionLocal in a function-scoped test.
+- tests/test_customer_routes.py: added explicit lifespan-state engine dispose + valkey close after
+  lifespan context exits (inside the async context while function loop is still alive), draining
+  pending asyncpg pool callbacks before loop teardown.
+- tests/modules/export/test_router.py: same lifespan teardown hygiene for both export_client
+  and unauth_client fixtures.
+- docs/status/STATUS_BACKEND.md: this block appended.
+- PR fix/gate4-loop-contamination → develop opened. NOT merged — awaiting STEP 3 coordinator review.
+BEFORE (develop @ 2d9b8af run 27391715982): 6 failed, 162 passed, 16 skipped, 13 errors.
+AFTER target: 0 failed, 0 errors, ≥181 passed, ~16 skipped — to be confirmed by CI.
+Note: 4 pre-existing unit failures on baseline (test_price_calc_returns_404_when_flag_disabled,
+test_dashboard_flag_off_404_body_is_json, 2 test_catalog_routes unit failures) confirmed
+pre-existing on origin/develop before our changes — NOT regressions from this pass.
+Root cause: integration tests driving real FastAPI app through BaseHTTPMiddleware resolved
+Depends(get_db) against app-global session-loop engine while running on function-scoped loop.
+Fix surface: test harness only. app/, pytest.ini, alembic/, ci.yml, LOCKED conftest blocks untouched.
+In progress: none — fix implemented, PR open.
+Blockers: dev SSH tunnel to postgres not available locally — CI Gate-4 run is the acceptance
+confirmation (acceptance bar per spec: 0 failed / 0 errors on -m integration).
+Next: STEP 3 — meesell-backend-coordinator reviews PR, merge-gate check: diff confined to §4 fence,
+before/after evidence, all 13 checks green.
+Hand-offs: PR fix/gate4-loop-contamination ready for coordinator STEP 3 merge-gate review.
+=========
+
 === UPDATE: 2026-06-12 11:00 — flag-parity sweep STEP 1 (audit + SPEC) ===
 Phase: V1 backend feature-flag parity — comprehensive close-out sweep
 Session: mesell-flag-parity-sweep-session-1 (HYBRID STEP 1; no feature code, no dispatch)
