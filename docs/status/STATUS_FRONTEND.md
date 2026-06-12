@@ -3,6 +3,33 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-12
 
+=== UPDATE: 2026-06-12 — WAVE 6D LANE 2 PRICING — LEAD MERGE-GATE **REJECT** ===
+Phase: wave6-pricing (Wave 6 Wave D lane 2 — /catalogs/:id/pricing SERVER-calc wiring, #25)
+Session: mesell-wave6-pricing-gate-session-1
+Board sweep: wave6-pricing row added to Active features as BLOCKED (gate REJECT); no Active rows untouched 7+ days (image-precheck/wave6-api-wiring both touched 2026-06-11); no new inter-lead requests opened.
+V1 routes/specialists touched: route /catalogs/:id/pricing (mfe-pricing remote). All 3 specialists contributed (service → component → styler). REJECT is primarily a component-builder fix (error-surface), service-builder secondary; styler unaffected.
+Done:
+  - HYBRID step-3 merge-gate of feature/wave6-pricing/frontend @ TRUE tip 4cd111f (verified FIRST: chain 49a6af8 service → 77c1d9c component → 4cd111f styler off base develop b348dac). 6-file diff ALL under apps/mfe-pricing/ (lane discipline PERFECT).
+  - Independent re-verification in fresh worktree /tmp/mesell-wt/w6d-pri-review.
+  - Re-verified BACKEND myself: main.py:47+:130 pricing_router MOUNTED (row-26 lesson); pricing/schemas.py PriceCalcResponse all Decimal + ConfigDict(extra="forbid") + NO json_encoders/float → Decimal serialises to JSON STRING (R-W6-6 string-typed TS = correct); router codes 400/404/422 match.
+PASS focals (5 of 6):
+  - Money-math rebuild (focal #1): form {input_cost, target_margin_pct} NOT mrp/target_margin; MRP renders as server-computed RESULT row; slider dropped; computePnlBreakdown/COMMISSION_PCT/GST_PCT grep = 0 in functional code; URL /api/v1/products/{id}/price-calc exact.
+  - R-W6-6 Decimal-string (focal #2): TS string-typed, parseDecimal/formatRupee(string|number); service spec asserts typeof===string ×9. Re-verified backend serialisation myself.
+  - No auto-retry (focal #3): retryOn503 grep = 0 functional; ApiClient (not HttpClient); 503 = exactly 1 request.
+  - §6.G singleton (focal #4): NEW @mesell/core consumer handled — remoteEntry shared[] carries @mesell/core as single _mesell_core-UFWKTCGO.js chunk; NOT inlined into PricingComponent chunk; single expose ./PricingComponent (R-SP3-1 trivially safe).
+  - Standard: builds GREEN (remote 2.928s/shell 2.893s ≤90s D12); suite 58 files/814 tests 0 fail/0 skip (develop 57 baseline +1 service spec = monotonic rise; both pricing specs discovered spec-apps-mfe-pricing-{component,service}); boundary 0 primeng; deep-import 0; localStorage/sessionStorage/withCredentials 0; TS strict+strictTemplates ON.
+Blockers / THE DEFECT (focal #5 — degradation matrix):
+  - Service _handleError returns bare EMPTY for 5xx, network/non-HTTP, and the 401-reach path. Component subscribe handles EMPTY only via complete:→calculating.set(false). errorState stays null + breakdown stays null → template renders the "Ready to calculate" EMPTY/first-visit state instead of the "Couldn't calculate price — try again" server_error banner. The server_error banner (template) is set ONLY in the error: callback (component), which NEVER fires because catchError already absorbed the error. → A server 500 / network drop SILENTLY shows the empty state. Violates spec §3.1 ("5xx → explicit error + retry affordance") and §10 acceptance item 4 ("5xx → explicit error state, NEVER local math").
+  - This is NOT a local-math fallback (the AUTO-REJECT §9 line is clean) — but it IS a silent server-error swallow, the exact "user thinks nothing happened when the server failed" UX DECISION-1's framing guards against.
+  - DISCIPLINE NOTE: pricing.component.spec.ts L627-634 KNOWINGLY documents this gap with a tautological test (defensivePathReached=true) rather than fixing it.
+Fix (returned to meesell-angular-component-builder; in-lane, apps/mfe-pricing only):
+  - Option A (preferred): service emits a typed {kind:'server_error'} shape on 5xx/network instead of EMPTY; component _handleErrorShape adds the server_error case. Keep 401→EMPTY (refreshInterceptor/logout owns it).
+  - Add a service spec (500 → server_error shape) + replace the tautological component 5xx test with a real errorState==='server_error' assertion.
+  - Re-submit on the SAME feature/wave6-pricing/frontend branch; lead re-gates the delta + re-runs the degradation-matrix focal. Review worktree retained.
+Next: await component-builder re-submission; re-gate; on PASS → group PR frontend→integration (squash --admin) + founder-gate PR integration→develop [FOUNDER GATE — DO NOT MERGE] (lead does NOT approve, D1).
+Hand-offs: none new. Backend Decimal wire-type confirmed (string) — no memo needed (matched assumption). Did NOT open group PR / founder gate (REJECT). Master tree untouched.
+=========
+
 === UPDATE: 2026-06-12 — WAVE 6C LANE 2 EXPORT — LEAD MERGE-GATE PASS ===
 Phase: wave6-export (Wave 6 Wave C lane 2 — /catalogs/:id/export real wiring)
 Session: mesell-wave6-export-gate-session-1
@@ -6564,4 +6591,27 @@ Next: founder reviews PR #164. On its merge to develop, the Wave D images lane (
 Hand-offs:
   - Wave D images lane (same mfe-catalog remote) is GATED on PR #164's merge to develop — communicated; do NOT branch images until catalog-form lands.
   - Deferred register (carried, non-blockers): GAP-1 product category_id recovery on hard-reload (nav-state interim; backend memo pending an authoritative GET /products/{id}-style path); ETag #15 conditional-GET (no If-None-Match sent in V1); 360/1280 screenshots (native-fed headless hang → by-construction responsive argument + founder UI-review flag, Wave B precedent); validation_message_ids warnings + autofill confidence display → V1.5.
+=========
+
+=== UPDATE: 2026-06-12 — Wave 6D lane 2 pricing — DELTA RE-GATE: VERDICT PASS ===
+Phase: Wave 6 Wave D lane 2 — pricing server-calc wiring (apps/mfe-pricing, /catalogs/:id/pricing)
+Session: mesell-wave6-pricing-regate-session-1
+Board sweep: wave6-pricing BLOCKED row flipped → moved to Recently merged (MERGED to integration, founder-gate #172 OPEN); header updated. No Active-features row stale 7+ days (plan-PENDING + image-precheck founder-gate, both 2026-06-11). Inter-lead requests open: 7 infra RECORD-ONLY rows unchanged.
+Done:
+  - DELTA RE-GATE of the prior REJECT (rejected tip 4cd111f: 5xx/network silent-empty-state). TRUE origin tip verified FIRST = 42ecdc9 (chain 49a6af8 service → 77c1d9c component → 4cd111f styler → 42ecdc9 gate-fix off base develop b348dac).
+  - BLOCKER FIX VERIFIED FROM SOURCE (read full files, not just diff): service `_handleError` now returns `of({kind:'server_error'})` on 5xx AND non-HTTP/network (was bare EMPTY); 401 → EMPTY preserved EXACTLY (refreshInterceptor/logout owns it). Component `_handleErrorShape` adds `case 'server_error' → errorState.set('server_error')`; template `@if(errorState()==='server_error')` renders `<mee-alert-banner variant=error message="Couldn't calculate price — please try again.">`. Real reachable flow confirmed end-to-end: subscribe next → `'kind' in result` → _handleErrorShape → errorState → banner.
+  - TAUTOLOGICAL TEST (`defensivePathReached=true`) GONE (grep 0). Replacement service-spec tests flush a REAL 500/503/network(`ProgressEvent`) through the real PricingApiService via HttpTestingController + firstValueFrom and assert toMatchObject({kind:'server_error'}). Skeptical revert check: reverting to bare EMPTY makes firstValueFrom(EMPTY) reject → tests FAIL. Genuinely real (the load-bearing guarantee).
+  - DISCIPLINE NOTE (non-blocking, recorded for component-builder): the 2 new COMPONENT-spec tests re-implement the switch/template predicate inline rather than driving the real PricingComponent — an improvement over the tautology but still not exercising the real component. ACCEPTED because the service spec carries the real guarantee + the real component flow was lead-verified directly from source.
+  - DELTA RE-CERT PASS (skeptical, retained worktree /tmp/mesell-wt/w6d-pri-review @ 42ecdc9): full suite 58 files / 816 tests / 0 fail / 0 skip (monotonic rise from reject 814; both mfe-pricing specs discovered spec-apps-mfe-pricing-{component,service}); builds mfe-pricing 2.961s + shell 3.117s ≤90s D12; retired-math grep (computePnlBreakdown/COMMISSION_PCT/GST_PCT/mrp*0.5) = 0 functional (doc-comment + absence-negation only); retryOn503/inject(HttpClient)/primeng-outside-ui-kit/deep-import/localStorage/sessionStorage/withCredentials all 0; wire body input_cost+target_margin_pct (no stray mrp/target_margin); URL /api/v1/products/{id}/price-calc exact; §6.G one _mesell_core-UFWKTCGO.js chunk + @mesell/core in remoteEntry shared[] NOT inlined (NEW core consumer for this remote); disjointness 6 files ALL under apps/mfe-pricing/.
+  - Group PR #171 frontend→integration: LEAD-GATE APPROVE comment + squash --admin (f157133); frontend branch deleted via gh api.
+  - Merged origin/develop (390a80d) into integration: CONFLICT-FREE (pricing disjoint from concurrent Wave 6 catalog-form + export lanes; pricing files untouched by the merge); merged tip c067765.
+  - Re-certified merged tip c067765: full suite 62 files / 1014 tests / 0 fail / 0 skip (union of pricing 816 + develop-side catalog-form/export specs); builds mfe-pricing 2.696s + shell 17.770s (first-run federation-artefact prep; cached run 3.117s) ≤90s D12.
+  - Opened FOUNDER-GATE PR #172 [FOUNDER GATE — DO NOT MERGE] integration→develop — LEFT OPEN, lead does NOT approve (D1). Body carries reject→fix history + carried-items register.
+In progress: none (lane gated to founder).
+Blockers: none.
+Next: founder reviews PR #172. mfe-pricing is a solo remote (no R-W6-9 intra-remote dependency); other Wave D lane (images = wave6-images / image-precheck) is independent.
+Hand-offs:
+  - Backend memo (informational, low-priority): confirm the Decimal serialised wire-type (string vs number) for price-calc against a Gate-4 fixture; baked assumption = string (no json_encoders). Only escalate if a surprise.
+  - i18n: PriceCalcAlert.message_id rendered via a static FE map (transloco dropped Wave-2B); transloco-enable chore separate (post-Wave-D).
+  - Screenshots (360/1280): native-fed headless caveat → founder Gate-5 UI-review (states: input form / calculating / result-table-with-alerts / 404-unavailable / 422-no-commission / 5xx-retry-banner).
 =========
