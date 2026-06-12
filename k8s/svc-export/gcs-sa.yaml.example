@@ -1,0 +1,78 @@
+# k8s/svc-export/gcs-sa.yaml.example
+# ===========================================================================
+# svc-export — Sub-Plan A (export extraction), INFRA deliverable I6.
+#
+# GCS Service Account SPEC for the export path prefix. REFERENCE/SPEC ONLY —
+# this is NOT a kubectl-appliable manifest (GCS SAs are a GCP IAM concern,
+# created via Terraform + applied by the founder; the org policy forbids SA JSON
+# keys so there is NO k8s Secret to apply).
+#
+# Authority: handoff_msA_infra.md §1 I6 + MASTER_PLAN §2.E ("Each service that
+# touches GCS (image-svc, export-svc) gets its own GCP Service Account with
+# storage.objectAdmin on its path prefix. No bucket split in V1.5.").
+#
+# ── SCOPE GUARD (Sub-Plan A constraint §4) ─────────────────────────────────
+#   This authorizes EXACTLY ONE new GCP Service Account (the export workload SA)
+#   with storage.objectAdmin SCOPED to the exports path prefix. Anything bigger —
+#   a new bucket, a new IAM role beyond this one SA, project-level grants — is
+#   OUT OF SCOPE: STOP and flag to the founder. Do NOT execute.
+#
+# ── AUTH MODEL: KEYLESS (GCE metadata server) ──────────────────────────────
+#   The org policy constraints/iam.disableServiceAccountKeyCreation (org
+#   698205129974) FORBIDS SA JSON keys. So:
+#     - There is NO k8s Secret holding a key.json.
+#     - GOOGLE_APPLICATION_CREDENTIALS is ABSENT from the svc-export pods.
+#     - The pod inherits a GCP identity via the GCE metadata server (169.254.169.254)
+#       on the K3s node.
+#
+#   TWO viable bindings (founder/TF picks one at apply):
+#
+#   (A) V1.5 SIMPLEST — reuse the node's VM SA (current monolith pattern).
+#       The K3s node VM SA `888244156264-compute@developer.gserviceaccount.com`
+#       ALREADY has roles/storage.objectAdmin on gs://meesell-prod-assets (Phase A
+#       A2, mirrored by image-precheck's meesell-images bucket). svc-export pods on
+#       the node inherit it transparently — ZERO new IAM. Path-prefix tenancy is
+#       enforced in APPLICATION code (export_service writes only under
+#       exports/{user_id}/{export_id}.xlsx), NOT by IAM. This is the ₹0, no-new-SA
+#       path and is RECOMMENDED for Sub-Plan A (dev, zero-traffic).
+#
+#   (B) V1.5 HARDENED (MASTER_PLAN §2.E target) — a DEDICATED export workload SA
+#       bound to the K8s ServiceAccount via Workload Identity, with
+#       storage.objectAdmin granted via an IAM Condition scoping it to the
+#       `exports/` prefix. This is the "own SA per GCS-touching service" target.
+#       It requires Workload Identity wiring on K3s (kubelet credential provider) —
+#       deferred per MEMORY (Phase E follow-up) and per infra plan MS-K8S-4 (L,
+#       V1.5 hardening, NOT the Sub-Plan-A default per R-MS-6).
+#
+#   DECISION for Sub-Plan A: take (A) — inherit the node VM SA, app-layer prefix
+#   tenancy, ₹0, no new IAM. The dedicated-SA (B) ships with MS-K8S-4 when Workload
+#   Identity lands on the cluster. This keeps Sub-Plan A within "the one export SA"
+#   ceiling (here: zero new SAs — even tighter than the ceiling).
+#
+# ── PATH PREFIX ────────────────────────────────────────────────────────────
+#   Bucket: gs://meesell-prod-assets (single-bucket SSOT, Phase A / MEMORY D1).
+#   Export objects: exports/{user_id}/{export_id}.xlsx  (and …/{export_id}.zip for
+#   xlsx_with_images). This matches the live GCS_BUCKET + the export_service GCS
+#   write path. (The handoff/MASTER_PLAN write `meesell-exports/{user_id}/...` as a
+#   logical name; the live single-bucket SSOT realizes it as the `exports/` prefix
+#   inside meesell-prod-assets — D1 reconciliation, MEMORY 2026-06-08.)
+#
+# ── TERRAFORM (when option B is taken at V1.5) ──────────────────────────────
+#   New module infra/terraform/modules/svc_export_gcs_sa/ (NOT authored/applied in
+#   Sub-Plan A — option A needs no module):
+#     resource "google_service_account" "svc_export"            # export workload SA
+#     resource "google_storage_bucket_iam_member" "svc_export"  # objectAdmin w/ IAM
+#                                                               # Condition on prefix
+#                                                               # "exports/"
+#     resource "google_service_account_iam_member" "wi_binding" # WI: KSA → GSA
+#   Apply: terraform apply -target=module.svc_export_gcs_sa  (founder-run).
+#
+# ── ENV (set regardless of A/B; non-secret, from meesell-config) ────────────
+#   GCS_BUCKET=meesell-prod-assets
+#   GCS_PROJECT_ID=project-1f5cbf72-2820-4cdb-949
+#   GCS_SIGNED_URL_TTL_SECONDS=3600   (export poll returns 1-hour signed URLs)
+#   (NO GOOGLE_APPLICATION_CREDENTIALS — keyless.)
+#
+# Cost impact: ₹0 (option A reuses the existing node SA + existing bucket; export
+# object storage is immaterial at V1 volume).
+# ===========================================================================

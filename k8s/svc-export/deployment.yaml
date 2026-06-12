@@ -1,0 +1,159 @@
+# k8s/svc-export/deployment.yaml
+# ---------------------------------------------------------------------------
+# svc-export — Sub-Plan A (export extraction), INFRA deliverable I2.
+#
+# TWO Deployments from ONE image (asia-south1-docker.pkg.dev/.../svc-export):
+#   - svc-export-api    1 replica, FastAPI HTTP server on :8001
+#   - svc-export-worker 1 replica, Celery worker (no HTTP port)
+#
+# Sizing authority — handoff_msA_infra.md §1 I2 + infra plan §6.3 table
+# (svc-export is api-LIGHT, worker-HEAVY because the XLSX build is CPU + memory):
+#   api    req  50m CPU / 128Mi  ·  lim 200m CPU / 512Mi   (handoff exact)
+#   worker req 200m CPU / 512Mi  ·  lim 400m CPU /   1Gi   (lim = 2× req per
+#                                                            R-MS-9 OOM-cascade rule;
+#                                                            mirrors monolith worker 1Gi cap)
+#
+# D3 capacity (handoff §3 / infra plan §6.3): svc-export adds 50m + 200m = 250m
+# CPU request. This FITS the current e2-standard-2 (2 vCPU) node alongside the
+# monolith — NO D3 VM-upgrade ask for Sub-Plan A. (D3 e2-standard-4 is plan-pre-
+# approved but gets a FRESH founder cost-ask only when services genuinely outgrow
+# the node — not here.)
+#
+# Namespace: dev ONLY (constraint §4 — no staging/prod manifests in Sub-Plan A).
+#
+# Rolling-update strategy mirrors k8s/api.yaml + k8s/worker.yaml: the dev node is
+# CPU-tight, so kill-before-surge (maxSurge:0 / maxUnavailable:1) avoids the
+# "new pod Pending: Insufficient cpu" deadlock seen on CI run 27360475090.
+#
+# Secrets/config (deliverable I7): both containers consume the svc-export Secret
+# (svc-export-secrets) + the shared ConfigMap (meesell-config) via envFrom.
+# svc-export needs ONLY: DATABASE_URL (@schema export), VALKEY_URL, JWT_SECRET,
+# GCS_* , APP_ENV. It does NOT receive GEMINI/LANGFUSE/MSG91/RAZORPAY (export is
+# deterministic — no AI / SMS / payment). See k8s/svc-export/secrets.yaml.example.
+#
+# GCS auth (deliverable I6): KEYLESS via the GCE metadata server (the K3s node's
+# VM SA). GOOGLE_APPLICATION_CREDENTIALS is deliberately ABSENT — the org policy
+# constraints/iam.disableServiceAccountKeyCreation forbids SA JSON keys. The
+# export GCS SA is scoped to the meesell-exports/{user_id}/... prefix (I6 doc).
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: svc-export-api
+  namespace: dev
+  labels:
+    app: svc-export
+    component: api
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Kill-before-surge: dev node is CPU-saturated; a surge pod cannot schedule.
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: svc-export
+      component: api
+  template:
+    metadata:
+      labels:
+        app: svc-export
+        component: api
+    spec:
+      containers:
+        - name: svc-export-api
+          image: asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-prod-images/svc-export:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8001
+          envFrom:
+            - configMapRef:
+                name: meesell-config
+            - secretRef:
+                name: svc-export-secrets
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: svc-export-worker
+  namespace: dev
+  labels:
+    app: svc-export
+    component: worker
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: svc-export
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: svc-export
+        component: worker
+    spec:
+      containers:
+        - name: svc-export-worker
+          image: asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-prod-images/svc-export:latest
+          imagePullPolicy: Always
+          command: ["celery"]
+          args:
+            - "-A"
+            - "app.workers.celery_app"
+            - "worker"
+            - "--loglevel=info"
+            # export.xlsx has NO task_route (verified in app/modules/export/tasks.py:
+            # @shared_task(name="export.xlsx") with no queue=) → it publishes to the
+            # DEFAULT `celery` queue. svc-export-worker consumes ONLY that queue;
+            # image.precheck (image-tasks queue) belongs to a DIFFERENT service and
+            # must NOT be consumed here. Hence `-Q celery` (single, explicit).
+            - "-Q"
+            - "celery"
+            # XLSX build is CPU+mem-heavy and runs one job at a time per worker slot;
+            # concurrency=2 is sufficient for dev zero-traffic (vs the monolith's 4,
+            # which also served image.precheck).
+            - "--concurrency=2"
+            - "--max-tasks-per-child=100"
+          envFrom:
+            - configMapRef:
+                name: meesell-config
+            - secretRef:
+                name: svc-export-secrets
+          # No HTTP port and no readiness/liveness probe — Celery health is governed
+          # by --max-tasks-per-child + the pod restartPolicy (infra plan §2.2 worker rule).
+          # GCS auth: keyless via GCE metadata server (VM SA). GOOGLE_APPLICATION_CREDENTIALS
+          # deliberately ABSENT (I6 — org policy forbids SA JSON keys).
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "400m"
+              memory: "1Gi"
