@@ -40,6 +40,7 @@ Design notes
 
 from __future__ import annotations
 
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -47,7 +48,6 @@ import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-import app.shared.config as _config_module
 from app.main import app as _production_app
 
 pytestmark = pytest.mark.unit
@@ -69,10 +69,23 @@ async def unauth_client():
 
     Suitable for asserting 401 (auth rejected) or 404 (flag guard / route
     absent) without touching DB or Valkey.
+
+    Pattern mirrors ``tests/modules/image/test_flag_gate.py`` (the reference
+    template): ``raise_app_exceptions=False`` + lifespan via
+    ``app.router.lifespan_context``.  Dependency overrides are cleared at
+    fixture entry so that any singleton contamination from other test files
+    sharing the same ``_production_app`` instance is neutralised before each
+    test.  They are restored to empty on exit.
     """
-    transport = ASGITransport(app=_production_app)
+    # Save and clear any overrides set by other test files that import the same
+    # singleton; restore to empty dict on teardown.
+    _saved_overrides = dict(_production_app.dependency_overrides)
+    _production_app.dependency_overrides.clear()
+    transport = ASGITransport(app=_production_app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
-        yield ac
+        async with _production_app.router.lifespan_context(_production_app):
+            yield ac
+    _production_app.dependency_overrides.clear()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -83,7 +96,7 @@ class TestAutofillFlagGuard:
 
     @pytest.mark.asyncio
     async def test_autofill_returns_404_when_flag_disabled(
-        self, unauth_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+        self, unauth_client: AsyncClient
     ) -> None:
         """(a) Flag False → 404 even for an authenticated-looking request.
 
@@ -93,8 +106,11 @@ class TestAutofillFlagGuard:
         or be bypassed.
 
         Strategy: override the ``get_current_user`` dependency on the
-        production app so it returns a fake user, then set the flag False.
-        The guard then fires and 404 is returned before the service is reached.
+        production app so it returns a fake user, then patch the flag at the
+        router's module-level binding (``app.modules.catalog.router.settings``).
+        This survives any ``importlib.reload(app.shared.config)`` calls made
+        by other test modules because we replace the name in the router's
+        namespace directly — the standard ``patch()`` approach.
         """
         from app.core.auth import CurrentUser, get_current_user
 
@@ -107,14 +123,13 @@ class TestAutofillFlagGuard:
         # Override the dependency on the production app for this test.
         _production_app.dependency_overrides[get_current_user] = _fake_auth
 
-        # Disable the feature flag on the live settings object.
-        monkeypatch.setattr(_config_module.settings, "FEATURE_AI_AUTOFILL_ENABLED", False)
-
         try:
-            response = await unauth_client.post(
-                _AUTOFILL_URL,
-                json={"description": "a red cotton kurti"},
-            )
+            with patch("app.modules.catalog.router.settings") as mock_settings:
+                mock_settings.FEATURE_AI_AUTOFILL_ENABLED = False
+                response = await unauth_client.post(
+                    _AUTOFILL_URL,
+                    json={"description": "a red cotton kurti"},
+                )
         finally:
             # Always restore the override — other tests share the app object.
             _production_app.dependency_overrides.pop(get_current_user, None)
@@ -130,7 +145,7 @@ class TestAutofillFlagGuard:
 
     @pytest.mark.asyncio
     async def test_autofill_flag_disabled_not_401(
-        self, unauth_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+        self, unauth_client: AsyncClient
     ) -> None:
         """(a) supplementary — when flag is False, result is specifically NOT 401.
 
@@ -145,13 +160,14 @@ class TestAutofillFlagGuard:
             return fake_user
 
         _production_app.dependency_overrides[get_current_user] = _fake_auth
-        monkeypatch.setattr(_config_module.settings, "FEATURE_AI_AUTOFILL_ENABLED", False)
 
         try:
-            response = await unauth_client.post(
-                _AUTOFILL_URL,
-                json={"description": "saree"},
-            )
+            with patch("app.modules.catalog.router.settings") as mock_settings:
+                mock_settings.FEATURE_AI_AUTOFILL_ENABLED = False
+                response = await unauth_client.post(
+                    _AUTOFILL_URL,
+                    json={"description": "saree"},
+                )
         finally:
             _production_app.dependency_overrides.pop(get_current_user, None)
 
@@ -162,7 +178,7 @@ class TestAutofillFlagGuard:
 
     @pytest.mark.asyncio
     async def test_autofill_returns_non_404_when_flag_enabled(
-        self, unauth_client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+        self, unauth_client: AsyncClient
     ) -> None:
         """(b) Flag True → NOT 404 — guard does not fire; auth layer rejects (401).
 
@@ -171,12 +187,12 @@ class TestAutofillFlagGuard:
         response is NOT 404 (which would indicate the guard wrongly fired).
         """
         # Ensure the flag is True (default, but explicit for test clarity).
-        monkeypatch.setattr(_config_module.settings, "FEATURE_AI_AUTOFILL_ENABLED", True)
-
-        response = await unauth_client.post(
-            _AUTOFILL_URL,
-            json={"description": "a red cotton kurti"},
-        )
+        with patch("app.modules.catalog.router.settings") as mock_settings:
+            mock_settings.FEATURE_AI_AUTOFILL_ENABLED = True
+            response = await unauth_client.post(
+                _AUTOFILL_URL,
+                json={"description": "a red cotton kurti"},
+            )
 
         assert response.status_code != 404, (
             f"FEATURE_AI_AUTOFILL_ENABLED=True: guard must NOT fire; "
@@ -240,19 +256,23 @@ class TestAutofillFlagGuard:
 
         try:
             # First request: flag off → 404 from the flag guard.
-            monkeypatch.setattr(_config_module.settings, "FEATURE_AI_AUTOFILL_ENABLED", False)
-            r1 = await unauth_client.post(
-                _AUTOFILL_URL,
-                json={"description": "a kurti"},
-            )
+            # Patch the router's own settings binding directly (survives
+            # importlib.reload(app.shared.config) in test_config.py).
+            with patch("app.modules.catalog.router.settings") as mock_off:
+                mock_off.FEATURE_AI_AUTOFILL_ENABLED = False
+                r1 = await unauth_client.post(
+                    _AUTOFILL_URL,
+                    json={"description": "a kurti"},
+                )
 
             # Second request: flag on → guard does NOT fire → service entered →
             # ownership stub raises 403.
-            monkeypatch.setattr(_config_module.settings, "FEATURE_AI_AUTOFILL_ENABLED", True)
-            r2 = await unauth_client.post(
-                _AUTOFILL_URL,
-                json={"description": "a kurti"},
-            )
+            with patch("app.modules.catalog.router.settings") as mock_on:
+                mock_on.FEATURE_AI_AUTOFILL_ENABLED = True
+                r2 = await unauth_client.post(
+                    _AUTOFILL_URL,
+                    json={"description": "a kurti"},
+                )
         finally:
             _production_app.dependency_overrides.pop(get_current_user, None)
             _production_app.dependency_overrides.pop(get_db, None)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import os
 
 import pytest
@@ -265,13 +264,6 @@ async def _seed_data_absent(conn) -> bool:
     """
     result = await conn.execute(text("SELECT COUNT(*) FROM field_enum_values"))
     return result.scalar_one() == 0
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest_asyncio.fixture(loop_scope="function")
