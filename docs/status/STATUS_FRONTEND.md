@@ -3,6 +3,30 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-12
 
+=== UPDATE: 2026-06-12 — WAVE 6D LANE 1 IMAGES — LEAD MERGE-GATE **PASS** ===
+Phase: wave6-images (Wave 6 Wave D lane 1 — /catalogs/:id/images RECONCILE; #23/#24)
+Session: mesell-wave6-images-gate-session-1
+Board sweep: wave6-images added to Recently merged (group PR #174 squash eb5b404 → founder-gate #175 OPEN); board header updated; no Active rows untouched 7+ days (plan-PENDING + image-precheck founder-gate both 2026-06-11); no new inter-lead requests opened.
+V1 routes/specialists touched: route /catalogs/:id/images (mfe-catalog remote). 2 specialists (service-builder D-IMG-1 → component-builder D-IMG-2); ui-styler SKIPPED (AMBIGUITY-2 ruling — no visible surface).
+Done:
+  - HYBRID step-3 merge-gate of feature/wave6-images/frontend @ TRUE origin tip 09af184 (verified FIRST: chain 976a719 service [D-IMG-1] → 09af184 component [D-IMG-2]; integration base 8c58fee). Fresh review worktree /tmp/mesell-wt/w6d-img-review.
+  - This is the RECONCILE of the early-landed image-precheck FE slice (already on develop), NOT a greenfield wire — ground-truthed per spec §0.
+  - R-W6-9 sequencing verified: catalog-form on develop uses inject(ApiClient), no of(.*delay) → images correctly branched after catalog-form landed.
+  - 3-dot disjointness develop...frontend = exactly 4 files all under apps/mfe-catalog/src/app/images/image-uploader/ (lane discipline PERFECT; 0 catalog-form/libs/main.ts/docs).
+PASS focals (all 6):
+  - D-IMG-1 ApiClient migration: image.service.ts inject(ApiClient), 0 inject(HttpClient); authHeaders() + 3 call sites removed; 0 manual Authorization/Bearer in live code; multipart upload via FormData (no Content-Type, no retryOn503); poll GET via api.get (no retryOn503 — §3.1 ApiClient defect avoided); recursive-setTimeout poll (DELAYS 1-2-4-8-16-30s, MAX_POLLS=6, D18) PRESERVED byte-identical (http.get→api.get only) with teardown clearing timer+in-flight GET; catchError matrix preserved. Service-spec timer tests re-run; retryOn503-absence proven via controller.verify() after 503 flush (REAL).
+  - D-IMG-2 real re-upload: onReuploadFileSelected() routes input.files[0] (real seller File) to upload(); zero-byte new File([]) removed from live code (JSDoc-only survival); inputEl.value='' same-file-reselection guard; viewChild optional + featureDisabled null guard; DestroyRef unused import removed.
+  - Degradation/contract: URLs /api/v1/products/{id}/images exact (both verbs); 5 precheck keys live, old keys 0; flag-OFF {images:[]} handled; pending|ready|failed_precheck intact; precheck render untouched (feature_board_ai.md re-checked — no AI double-wire).
+  - Lane discipline: disjointness 4 in-lane files; barrel-only; 0 docs commits by builders; 0 libs/.
+  - Standard: 7 builds GREEN ≤90s D12 (shell 12.4s, mfe-catalog 2.762s, mfe-pricing 2.574s, mfe-export 2.579s, mfe-onboarding 2.572s, mfe-dashboard 2.497s, mfe-auth 2.559s); suite 61 files/886 tests 0 fail/0 skip (both image specs discovered spec-apps-mfe-catalog-*; edits-in-place no drop = R-W6-8); boundary 0; deep-import 0; localStorage/sessionStorage/withCredentials 0; §6.G one _mesell_core-WVKUEIYA.js chunk no inline AuthService; tsc app+spec EXIT 0.
+  - Styler-skip (AMBIGUITY-2): ACCEPTED — hidden file input (display:none, aria-hidden, programmatic .click() from existing keyboard-reachable mee-button) = no visible surface; no styler pass ordered.
+Blockers: none.
+Discipline note (non-blocking, recorded for specialist): the new B9/B10 component-spec tests re-implement file/state-machine/timer logic INLINE rather than instantiating ImageUploaderComponent (0 createComponent across all 81 it() blocks — the file's pre-existing pure-model house style, accepted at the original image-precheck gate). The D-IMG-2 live code is read-verified correct, so this is a test-STRENGTH gap, not a behavioural defect. Logged to the post-Wave-D frozen-surface hardening chore (alongside the §3.1 ApiClient.retryOn503 filter fix). NOT a reject — distinct from the pricing-lane REJECT, which was a real behavioural silent-swallow defect.
+Merge: group PR #174 LEAD-GATE APPROVE comment + squash --admin (eb5b404); frontend branch deleted via gh api. develop 62677ed merged into integration CONFLICT-FREE (docs/status-only advance from pricing RE-GATE #173; images code untouched on develop side; merged tip aeacafc). Founder-gate PR #175 [FOUNDER GATE — DO NOT MERGE] integration→develop OPEN — lead does NOT approve (D1).
+Next: founder reviews #175 (and the parallel pricing #172) to land Wave 6D on develop. Carried: 360/1280 screenshots → founder UI-review.
+Hand-offs: none new (AI lane re-confirmed clean; §3.1 ApiClient fix already in the queued 3-item frozen-surface amendment proposal to infra/founder).
+=========
+
 === UPDATE: 2026-06-12 — WAVE 6D LANE 2 PRICING — LEAD MERGE-GATE **REJECT** ===
 Phase: wave6-pricing (Wave 6 Wave D lane 2 — /catalogs/:id/pricing SERVER-calc wiring, #25)
 Session: mesell-wave6-pricing-gate-session-1
