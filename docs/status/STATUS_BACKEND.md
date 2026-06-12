@@ -5016,3 +5016,32 @@ Blockers: none
 Next: CI results confirm zero failed / zero errors; coordinator runs re-gate
 Hand-offs: meesell-backend-coordinator — re-gate PR #159 when CI run 27394254213 completes
 =========
+
+=== UPDATE: 2026-06-12 — Gate-4 repair loop 1 COMPLETE — CI GREEN ===
+Phase: CI Gate-4 integration tests — repair loop 1 of 2 COMPLETE
+Session: mesell-gate4-loop-backend-session-1 on fix/gate4-loop-contamination (PR #159)
+CI Run: 27394517680 (completed SUCCESS — all 13 checks PASS)
+Commits: 0059272 (repair-1a), b9d1557 (repair-1b)
+
+Gate-4 counts (run 27394517680):
+  Gate-1 unit:       638 passed, 282 deselected — PASS
+  Gate-2 smoke:      26 passed, 894 deselected — PASS
+  Gate-3 lint:       10 contracts — PASS
+  Gate-4 integration: 180 passed, 17 skipped, 0 failed, 0 errors, 3 warnings — PASS
+  Gate-5 golden:     18 passed, 902 deselected — PASS
+
+D1 RESOLVED: iam_client SAVEPOINT removed → commit-for-real; split-engine FK violations gone.
+D2 RESOLVED: _otp_client patched in all 4 fixtures (iam_client, customer_client, export_client,
+             unauth_client) → 13 Event-loop-closed errors gone.
+D3 RESOLVED: test_full_lifecycle G7 stale assertions fixed (2 updates):
+             applied=False (G7 D1); manually accept autofill before status=ready (G7 consequence).
+             BE-CATALOG-G7-AUTOAPPLY-1 cited in test comments.
+
+The 3 warnings are PytestUnraisableExceptionWarning from test_iam_refresh_validation.py
+(pre-existing; not new). Exit code 0.
+
+Done: REPAIR LOOP 1 OF 2 COMPLETE.
+Blockers: none.
+Next: coordinator runs re-gate on PR #159 (merge-gate STEP 3).
+Hand-offs: meesell-backend-coordinator — re-gate PR #159; CI run 27394517680 is GREEN.
+=========
