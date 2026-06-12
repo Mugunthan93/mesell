@@ -1128,3 +1128,14 @@ First microservices extraction Phase C. Worktree `/tmp/mesell-wt/msA-backend`, b
 **FOUNDER-GATE NOTE:** `BACKEND_ARCHITECTURE.md §14` is LOCKED — the "Extracted to svc-export V1.5" amendment is NOT self-applied (§7.3); carried to the integration→develop founder-gate PR notes. Did NOT touch §14.
 
 **LESSON:** the spec's test-count baseline (649) was a point-in-time figure; the branch cut from a newer origin/develop so the live count is higher — assert MONOTONIC ≥ baseline + quote live, never hardcode, and prove zero-monolith-change with the `origin/develop...HEAD` path-scoped diff before attributing any monolith failure elsewhere.
+
+---
+
+### GATE VERDICT — MS Sub-Plan A export extraction (PR #189) — 2026-06-12 (mesell-ms-export-session-1)
+- **APPROVE.** First microservices extraction (MS-1 pilot) cleared the merge gate clean on the FIRST gate (no re-dispatch). All 11 checklist items + §6 PASS.
+- **§16.G proof technique that worked (reusable for Sub-Plans B–H):** filter both service.py twins to non-import lines and `diff` — remaining deltas must be docstring-only. The builders ALSO shipped a CI test (`test_service_py_executable_body_byte_for_byte_identical`) that re-proves it via import-stripped `ast.dump` equality — adopt this as the standard §16.G CI gate for every future extraction. ast.dump is whitespace/comment-insensitive + order-sensitive = exact structural equality.
+- **Gate-run gotcha:** no project venv exists; system python is 3.9 / asyncpg 0.29.0 won't compile on py3.13. Workaround that worked: `python3.13 -m venv`, install requirements but let asyncpg float to a py3.13-compatible wheel (test behavior doesn't depend on the exact asyncpg version since shim tests mock httpx and don't hit a live DB). 37 passed, ruff clean.
+- **Pattern confirmed:** monolith ZERO-touch is verifiable in one command — `git diff --name-status <integration>...<backend> | grep -vE "^(backend/services/svc-export/|docs/|\.claude/agent-memory/)"` must be empty. Strangler integrity = a grep, not a vibe.
+- **Non-blocking obs logged in verdict:** `tasks.py` uses `except (SQLAlchemyError, Exception)` (redundant — Exception subsumes); cosmetic, did NOT block. The 4 monolith test "failures" are local-Py3.11 macOS teardown artifacts on a zero-monolith-touch branch — mathematically not the branch's regression.
+- **§14 LOCKED discipline held:** builders correctly did NOT self-apply the §14 amendment; carried it to the founder-gate PR notes per §7.3. BACKEND_ARCHITECTURE.md is absent from the diff. Good.
+- **Verdict delivery:** posted as PR comment (not a self-merge). Board flipped IN REVIEW; STATUS UPDATE block appended. Squash executed by session window.

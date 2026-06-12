@@ -1,5 +1,32 @@
 # STATUS — BACKEND
 
+```
+=== UPDATE: 2026-06-12 (mesell-ms-export-session-1) ===
+Phase: Microservices Sub-Plan A (export extraction) — HYBRID STEP 3 MERGE-GATE REVIEW
+Session: mesell-ms-export-session-1
+Board sweep: microservices-export row flipped READY-FOR-GATE → IN REVIEW (gate APPROVE). No rows untouched 7+ days (all 3 active rows touched 2026-06-12). No new inter-lead requests opened by this gate.
+Done:
+  - Reviewed PR #189 (feature/microservices-export/backend → …/integration) FRESH against the DIFF + my own gate-run commands, NOT builder reports. My own Phase-C participation scrutinized at equal severity.
+  - GATE VERDICT: APPROVE. All 11 checklist items + §6 validation PASS.
+    1. §16.G byte-identical call sites (filtered diff = ZERO executable-line drift; CI AST-dump re-proof present).
+    2. 4 shims/6 methods — httpx Timeout(5.0,connect=2.0), 1 retry on {503,504} only, JWT+X-Request-ID forward, image=list_images (NOT get_image_bytes), frozen /internal paths exact.
+    3. Trimmed Settings — NO GEMINI/LANGFUSE/MSG91/RAZORPAY Field (only docstring "absent" list).
+    4. Celery — queue svc-export, broker DB1/results DB2, global_keyprefix svc-export:, include=[app.tasks], task export.xlsx; _emit_export_terminal_audit cross-schema to public.audit_events (AuditEvent→public / Export→export verified).
+    5. Router — exactly 2 /api/v1 routes, product_id/export_id, @rate_limit on POST only, no business logic in handlers, NO /internal/*.
+    6. Alembic — standalone chain (down_revision=None), version_table_schema="export", root migration up/down + Risk#5 orphan abort; monolith chain f31c75438e61 untouched.
+    7. Monolith ZERO-touch — no backend/app/**, backend/alembic/**, backend/tests/** changes. Strangler intact.
+    8. Tests non-tautological — test_extracted_clients / test_export_routes / test_export_extraction all assert real behavior/shape; no assert-True echoes.
+    9. Gate-run BY ME — svc-export pytest 37 passed exit 0; ruff "All checks passed!".
+    10. Doc deliverables present — SHIM_CONTRACT (FROZEN, 6 endpoints cited), CI_HYBRID_MODE note, svc-export-rollback runbook, MASTER_PLAN §4 row-A flip, recipe_ms_extraction. BACKEND_ARCHITECTURE.md §14 NOT touched (LOCKED; carried to founder gate).
+    11. True tip 5b63d35; full file list scoped (zero stray files outside backend/services/svc-export, docs/, .claude/agent-memory/).
+  - Verdict posted as PR comment: https://github.com/Mugunthan93/mesell/pull/189#issuecomment-4693528600
+In progress: Squash-merge of PR #189 executed by the session window post-verdict (lead does NOT self-merge).
+Blockers: none.
+Next: On merge — flip board row to MERGED, move to Recently merged. integration→develop is the FOUNDER gate (D1) — §14 amendment carried to that PR's notes (NOT self-applied per §7.3). Sub-Plan B (dashboard) is the next extraction.
+Hand-offs: none new this gate (the program-level SHIM_CONTRACT already freezes the /internal/* interface for Sub-Plans C/E/F/H; infra lane tracked via handoff_msA_infra.md).
+=========
+```
+
 **Owner:** BACKEND sub-session (mesell-backend-session-* lineage)
 **Last update:** 2026-06-09 (**Wave 10 §22 AUDITED — V1 NO-GO** — CRITICAL-1: AI eval sets 0/3 populated; CRITICAL-2: 2/3 SM secrets unpopulated [razorpay + langfuse]; MEDIUM-1/2: F6 @audit_event + F7 read-flood gate unresolved. F1/F3/F6-F9 PASS; F2/F4/F5 FAIL [AI track not dispatched]. §22 attempt #2 after: AI coordinator dispatch + 2 founder secret actions + F6+F7 fixes + F-15-1/F-15-2 rulings. — **Wave 9 COMPLETE** — **§22A Risk Register = PASS** (12/12; 1 non-blocking V1.5 advisory A-1 R9) — **§21 Extraction Path = PARTIAL** (3/5 PASS: sigs stable / landing-zone absent / §21.B==§16.H exact; 2 PARTIAL: F-21-1 MEDIUM §7.K+§10.K stale extraction orders contradict §21.B [amendment pending founder] / F-21-2/F-21-3 LOW V1.5 serializer wiring gaps; zero V1 blockers) — **§16 Inter-Module Rules = PASS** (9/9 checks; 27/0 re-run; 4 non-blocking OBS: OBS-16-1 LOW export→image method drift needs §16.B.1 8d amendment, OBS-16-2/-3/-4 INFO accepted as-is) — **§15 Cross-Cutting = PARTIAL** (7 PASS · 3 PARTIAL · 0 FAIL · 0 CRITICAL; import-linter 27/0 re-run): tenancy/AI-single-import/CSRF/refresh-allowlist all intact; NEW F-15-1 export worker emits no audit rows [corroborates Wave 8 §17 F6] · F-15-2 Prometheus metrics unimplemented · F-15-3 customer direct DB-3 invalidation · F-15-4 `core/audit_helpers` helper absent — founder build-vs-V1.5-defer ruling requested on F-15-1/F-15-2 before §22. — Wave 8 COMPLETE — **§0 PASS · §1 PARTIAL (pre-Phase-D EXPECTED) · §2 PASS · §3 PARTIAL (V0-remnants) · §17 PARTIAL** — §17: 28/28 routes mounted + auth posture correct on all; PARTIAL = doc drift (F1 row-25 path / F2 counts 29→28/35→34 / F3 six rate-limit values / F5 ten audit-event names — escalated to founder for §17/§18/§22 amendment ruling) + 3 code defects (F6 customer/export missing @audit_event; F7 audit_mw no read-flood gate; F8 create_product_hourly plan-guard unenforced) — F6+F7 must fix before §22; F4/F9 accepted; §3 PARTIAL = 6 V0-era app/ artifacts, dead from V1; §2 PASS 8 modules + 27/0 linter; §1 PARTIAL pre-Phase-D; §0 PASS; Wave 9 audits next; D4 ruling pending; 2 founder SM secrets pending)
 **SSOT:** `docs/BACKEND_ARCHITECTURE.md` (read first — the construction contract)
