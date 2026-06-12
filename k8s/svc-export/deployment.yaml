@@ -126,16 +126,22 @@ spec:
           command: ["celery"]
           args:
             - "-A"
-            - "app.workers.celery_app"
+            # Landed module path (origin/feature/microservices-export/backend
+            # e23080c): the Celery instance `celery_app` lives in `app/celery_app.py`
+            # — there is NO `app/workers/` package in svc-export (that was the
+            # monolith's layout). Use `app.celery_app`.
+            - "app.celery_app"
             - "worker"
             - "--loglevel=info"
-            # export.xlsx has NO task_route (verified in app/modules/export/tasks.py:
-            # @shared_task(name="export.xlsx") with no queue=) → it publishes to the
-            # DEFAULT `celery` queue. svc-export-worker consumes ONLY that queue;
-            # image.precheck (image-tasks queue) belongs to a DIFFERENT service and
-            # must NOT be consumed here. Hence `-Q celery` (single, explicit).
+            # The landed app/celery_app.py sets `task_default_queue="svc-export"` and
+            # `task_routes={"export.xlsx": {"queue": "svc-export"}}` (celery_app.py:39,77-78)
+            # — export.xlsx publishes to the DEDICATED `svc-export` queue, NOT the
+            # default `celery` queue. The worker therefore consumes `-Q svc-export`.
+            # image.precheck (image-tasks queue) belongs to a DIFFERENT service and is
+            # not consumed here. Broker keys carry the `svc-export:` global_keyprefix
+            # (§2.E) so this queue cannot collide with the monolith's keyspace.
             - "-Q"
-            - "celery"
+            - "svc-export"
             # XLSX build is CPU+mem-heavy and runs one job at a time per worker slot;
             # concurrency=2 is sufficient for dev zero-traffic (vs the monolith's 4,
             # which also served image.precheck).

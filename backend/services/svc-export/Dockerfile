@@ -21,10 +21,16 @@
 #   backend/services/svc-export/
 #   ├── Dockerfile          <- this file (I1)
 #   ├── requirements.txt    <- backend lane (svc-export trimmed deps)
-#   ├── app/                <- backend lane (main.py, vendored shared/ + core/, modules/export/)
-#   │   ├── main.py         (FastAPI app on :8001 — public /api/v1/* + internal /internal/*)
-#   │   └── workers/celery_app.py  (Celery app; export.xlsx task on default `celery` queue)
+#   ├── app/                <- backend lane (main.py, vendored shared/ + core/, router/service/tasks)
+#   │   ├── main.py         (FastAPI app `app` on :8001 — public /api/v1/* + internal /internal/*)
+#   │   └── celery_app.py   (Celery instance `celery_app`; export.xlsx on the DEDICATED
+#   │                        `svc-export` queue — task_default_queue=svc-export)
 #   └── alembic/            <- backend lane (export-schema-rooted migration chain)
+#
+# VALIDATED against the ACTUAL landed tree on origin/feature/microservices-export/backend
+# (e23080c) at the infra merge gate: COPY targets (requirements.txt, app/, alembic/,
+# alembic.ini) all present; entrypoint app.main:app confirmed (main.py:58 `app = FastAPI(...)`);
+# worker module is app.celery_app (NOT app.workers.celery_app — corrected in deployment.yaml).
 # ---------------------------------------------------------------------------
 FROM python:3.12-slim
 
@@ -38,6 +44,13 @@ RUN apt-get update \
 # Dependency layer first for build-cache efficiency.
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+# gunicorn is the production process manager for the api container (CMD below,
+# mirrors the monolith backend/Dockerfile). The backend lane's svc-export
+# requirements.txt ships uvicorn[standard] but NOT gunicorn (it is sole-writer
+# for that file; infra must not edit it) — so the infra image layer installs
+# gunicorn explicitly, pinned to the monolith's exact version (gunicorn==22.0.0,
+# backend/requirements.txt) so the served runtime is byte-identical to the monolith.
+RUN pip install --no-cache-dir gunicorn==22.0.0
 
 # Application code + migrations. Alembic is required so the per-service migration
 # Job (DEVOPS migration-before-deploy pattern, applied per-service) can run
