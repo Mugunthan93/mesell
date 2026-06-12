@@ -5138,3 +5138,44 @@ Blockers: none. The lane is READY but NOT IN EXECUTION until the master session 
 Next: PR chore/ms-rekey-ruling → develop; lead-gate comment; squash --admin; ref-delete. On dev-complete declaration, the master session dispatches the export-extraction coding session (Sub-Plan A) — first step D5 pool/PgBouncer.
 Hand-offs: none new. NOTE for infra: when Sub-Plan A executes, D5 pool right-size + PgBouncer is the ₹0 first step; the D3 VM upgrade (e2-standard-4) is a fresh founder ask at the moment services outgrow the current node — do NOT pre-provision on the strength of the plan-level pre-approval.
 =========
+
+=== UPDATE: 2026-06-12 21:30 ===
+Phase: Microservices Sub-Plan A (export extraction) — PHASE B, services-builder lane (the heavy lift)
+Done: Extracted export into backend/services/svc-export/app/ (32 files):
+  - service.py / tasks.py / repository.py / domain.py / exceptions.py — pipeline logic BYTE-FOR-BYTE.
+    DIFF PROOF: monolith service.py vs extracted = ZERO non-import diffs (7 import-line blocks only:
+    4 cross-module → extracted_clients shims + 3 intra-module path rewrites). The 7 call sites
+    (:174/:177/:185/:314/:452/:503/:659) are byte-identical (§16.G ABSOLUTE CONTRACT satisfied).
+  - 4 HTTP-shim clients (core/extracted_clients/{catalog,category,customer,image}_client.py) + _transport.py:
+    httpx.AsyncClient, 5s read / 2s connect timeout, EXACTLY 1 retry on 503/504 only (no retry 500/4xx),
+    forward JWT (Authorization) + X-Request-ID, base URL = settings.MONOLITH_INTERNAL_BASE_URL (R4 hybrid →
+    http://monolith-svc:8001). 6 methods → frozen /internal/* paths. image shim = list_images (NOT
+    get_image_bytes — §0.4). customer shim hydrates the VENDORED app.domain.ComplianceBlock.
+  - Trimmed Settings (shared/config.py): DATABASE_URL@export-schema, VALKEY_URL, JWT_SECRET, GCS_*, AUDIT_PII_SALT,
+    MONOLITH_INTERNAL_BASE_URL, APP_ENV. NO gemini/langfuse/msg91/razorpay (asserted by test).
+  - celery_app.py: single task (include=["app.tasks"]), queue svc-export, broker Valkey DB1 / results DB2,
+    keys prefixed svc-export: (global_keyprefix on broker+result transport options).
+  - main.py: standalone FastAPI; 6-mw chain (plan_guard NO-OP) + request_context_mw (shim ctx feed);
+    error handlers; /health + /metrics. Export router import is tolerant (api-routes-builder delivers
+    app/router.py AFTER me — Phase B near-parallel).
+  - Vendored: core/{errors,tenancy,metrics,auth}, 6 middleware, adapters/gcs, shared/{database,valkey},
+    3 ORM models (Export@export-schema, AuditEvent@public, User@public), i18n subset, requirements.txt
+    (openpyxl==3.1.5 pinned R5; NO gemini/langfuse).
+  - tasks.py keeps name="export.xlsx", asyncio.run internals, cross-schema public.audit_events writes.
+Tests: 19 passed / 0 failed (tests/test_extracted_clients.py 14 + tests/test_import_sanity.py 5).
+  Non-tautological: assert JWT+X-Request-ID forwarded, 5s/2s timeout, 1-retry-on-503/504 + no-retry-on-500/4xx,
+  real-shape deserialization (ComplianceBlock/ExportSnapshotInternal/ImagesListResponse). ruff clean.
+In progress: none.
+Blockers: app.schemas / app.router are api-routes-builder's deliverable (spec §3.B). I shipped a PLACEHOLDER
+  schemas.py (verbatim monolith wire shapes) so service.py imports + unit-tests run; api-routes-builder owns the
+  authoritative router.py + may re-author schemas.py (MUST keep the 2 response shapes identical).
+Next: api-routes-builder Phase B (router.py + schemas.py); then lead Phase C (hybrid CI + merge-gate review).
+Hand-offs:
+  - api-routes-builder: service methods FROZEN — initiate_export(user_id, product_id, request, db) and
+    get_export(user_id, export_id, db); router imports `from app.service import ...`. schemas placeholder in place.
+  - callee sub-plans (C image / E customer / F category / H catalog): the 6 /internal/* contract paths are
+    frozen in the 4 shim modules — implement them server-side when those services extract (base URL is the only
+    change at that point).
+  - infra: svc-export needs DATABASE_URL@export-schema role, VALKEY_URL, JWT_SECRET, GCS_*, AUDIT_PII_SALT,
+    MONOLITH_INTERNAL_BASE_URL injected as pod env.
+=========
