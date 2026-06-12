@@ -87,19 +87,11 @@ app.add_middleware(
 register_error_handlers(app)
 
 # ── Router ─────────────────────────────────────────────────────────────────
-# The 2 export routes are delivered by api-routes-builder in app/router.py.
-# Import-tolerant so this module loads before that file lands (Phase B
-# near-parallel dispatch — spec §1).
-try:
-    from app.router import router as export_router
+# The 2 export routes live in app/router.py (meesell-api-routes-builder §3.B).
+from app.router import router as export_router  # noqa: E402
 
-    app.include_router(export_router)
-    logger.info("svc-export: export router mounted")
-except ImportError:  # pragma: no cover — only during the pre-routes window
-    logger.warning(
-        "svc-export: app.router not yet available — export routes NOT mounted. "
-        "api-routes-builder delivers app/router.py in Phase B (spec §3.B)."
-    )
+app.include_router(export_router)
+logger.info("svc-export: export router mounted")
 
 # ── Prometheus metrics scrape ───────────────────────────────────────────────
 app.mount("/metrics", make_asgi_app())
