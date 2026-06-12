@@ -73,7 +73,8 @@ output "next_steps" {
          ssh ${var.ssh_user}@${google_compute_address.static.address}
          git clone https://github.com/Mugunthan93/mesell.git ~/mesell
          cd ~/mesell
-         scripts/secrets-from-gcp.sh          # materialises k8s/secrets.yaml
+         # populate the k8s Secret `backend-secrets` via `gcloud secrets versions add`
+         # (the legacy secrets-from-gcp.sh materialiser was removed 2026-06-12)
          sudo bash scripts/setup-vm.sh        # installs K3s + applies manifests
     4) Once api pods are Ready, run the DB migration:
          kubectl -n meesell exec deploy/api -- alembic upgrade head

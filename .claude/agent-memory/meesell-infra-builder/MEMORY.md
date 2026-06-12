@@ -799,3 +799,19 @@ So when an apply changes Deployment shape, we wait for the kill-before-surge rol
 **Process lesson (durable):** NEVER chain a branch-delete unconditionally after a PR merge — gate on `merged == true`. The PR #124 incident (a delete fired on a non-merged path) was recovered via #126. Any "merge then delete branch" automation must read the merge result first.
 
 **Close-out mechanics:** docs + 2 memory files only (board + STATUS_INFRA + this MEMORY + ONE authorized scribe-entry to the director's `project_meesell_ci_activation.md` — explicit master-session exception to memory-ownership rule 4). Branch `docs/ci-activation-close-out` off origin/develop. NOTE: develop now carries 13 required checks — the close-out PR itself must pass the gates before it can merge (expected; reported, not merged by me). Cost ₹0/month; zero cluster/TF/secret/ci.yml mutations.
+
+---
+
+## Dead `meesell-`-prefixed secret scheme — cleanup F1/F2 — 2026-06-12
+
+**The prefixed-SM landmine, documented once and for all.** Early TF (the `terraform/` tree, NOT the live `infra/terraform/`) created Secret Manager secrets with a `meesell-` prefix (`meesell-gemini-api-key`, `meesell-jwt-secret`, etc.) and a legacy `meesell` k8s namespace. **That scheme was never the live path.** The applied `app_secrets` module (in `infra/terraform/`) uses `secret_id = each.key` → UN-prefixed IDs (`gemini-api-key`, `jwt-secret`, ...), surfaced into the k8s Secret `backend-secrets` in the `dev` ns via manual `gcloud secrets versions add`. A 2026-06-12 backend read-only audit confirmed ALL-CLEAR on the live path: cluster holds the VALID Gemini key (hash `ef9bbd1ca21f`); `meesell-gemini-api-key` is dead (HTTP 400) and unreferenced.
+
+**This chore (single-agent fast mode, founder-approved):**
+- F1 — `git rm scripts/secrets-from-gcp.sh` (it prepended `NAME_PREFIX=meesell` to all 7 IDs + wrote the legacy `meesell-secrets`/`meesell` ns Secret — pure dead path).
+- F1 refs (4 files): `terraform/README.md`, `terraform/templates/startup.sh` (2 hits), `terraform/outputs.tf`, `.nexus/results/ci-cd-terraform-gap-analysis.md` — pointed each at the live `backend-secrets` + `gcloud secrets versions add` path; the .nexus one got a SUPERSEDED annotation (historical artifact, body kept).
+- F2 — annotated `docs/INFRASTRUCTURE_TERRAFORM_AUDIT.md` (~L185 x7-secret-IDs list + ~L210 `secret_ids` output) with SUPERSEDED notes; did NOT rewrite the historical audit body.
+- **NO SM mutation in this chore** (explicit constraint). Dead `meesell-*` SM duplicates still exist → logged as a follow-up backlog row on `feature_board_infra.md` + a STATUS_INFRA recommendation: next session `gcloud secrets list --filter="name:meesell-"` → confirm unreferenced → `gcloud secrets delete` (founder approval in-prompt, destructive-op rule).
+
+**Larger landmine spotted (out of scope, flagged):** the ENTIRE `terraform/` tree (root-level, last touched ~Jun 5) is the OLD/superseded TF root — `meesell-` prefix, `meesell` ns, Ubuntu 24.04, AR repo `meesell-images` with `frontend` (not `worker`), `vm_name = meesell-vm`. The live root is `infra/terraform/`. A future cleanup should retire `terraform/` wholesale; this chore only touched its script-references.
+
+**Worktree-isolation gotcha (operational, important):** this agent runs in an isolated worktree at `.claude/worktrees/agent-<id>/`. Bash `cd /Users/.../mesell` lands in the SHARED checkout, not the worktree — my first `git rm` hit the shared checkout and had to be `git -C <shared> checkout --`'d back. **Rule: do NOT `cd` to the shared mesell root from this agent.** Stay in the worktree (the env cwd). Edit/Write/Read MUST use the full worktree-prefixed absolute path (`.../worktrees/agent-<id>/...`); the harness rejects shared-checkout paths for Edit and treats worktree paths as distinct file handles (must Read the worktree copy before Edit even if I read the shared copy earlier). `git rm` / `git status` without `-C` operate on the worktree correctly.
