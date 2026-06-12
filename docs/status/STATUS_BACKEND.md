@@ -5138,3 +5138,30 @@ Blockers: none. The lane is READY but NOT IN EXECUTION until the master session 
 Next: PR chore/ms-rekey-ruling → develop; lead-gate comment; squash --admin; ref-delete. On dev-complete declaration, the master session dispatches the export-extraction coding session (Sub-Plan A) — first step D5 pool/PgBouncer.
 Hand-offs: none new. NOTE for infra: when Sub-Plan A executes, D5 pool right-size + PgBouncer is the ₹0 first step; the D3 VM upgrade (e2-standard-4) is a fresh founder ask at the moment services outgrow the current node — do NOT pre-provision on the strength of the plan-level pre-approval.
 =========
+
+=== UPDATE: 2026-06-12 — MS-E customer-extraction SUB-PLAN AUTHORED (HYBRID step 1, EXEC GATED MS-3) ===
+Phase: Microservices Migration — Sub-Plan E (customer), parallel program MS-PAR-1 / Session MS-E
+Session: mesell-ms-customer-session-1
+Board sweep: 1 row added (microservices-customer, SPEC AUTHORED — EXEC GATED MS-3). Active table now 4 rows (microservices-export READY-TO-EXECUTE; flag-parity + backend-chores founder-PR-open; microservices-customer SPEC AUTHORED). No rows untouched 7+ days (all 2026-06-12 IST). Inter-lead requests open: 1 pre-existing (infra image-tasks queue, backend-servicing). MS-E infra inter-lead row NOT opened yet — opens at MS-3 execution dispatch per handoff_msE_infra.md SLA note.
+
+Done (HYBRID rule 7 STEP 1 — SPEC AUTHORING ONLY, no code, no specialist, no git ops):
+  - SUB_PLAN_0E_customer_extraction.md authored (worktree, canonical SUB_PLAN_01 shape). Header status "AUTHORED 2026-06-12 — EXECUTION GATED (MS-3)". Grounded against develop c859955; every enum/contract/signature cited file:line from SOURCE.
+  - spec_msE_backend.md authored (own memory) — executable hybrid-step-2 task spec: 3 specialists (database/services/api-routes), phase sequence, acceptance + re-dispatch conditions, mirroring spec_msA_backend.md.
+  - handoff_msE_infra.md authored (own memory) — infra work-package for meesell-infra-builder (8 deliverables; NO GCS SA, NO Celery queue — the two MS-A surfaces customer omits; cross-svc base-URL re-points at cutover).
+  - feature_board_backend.md: microservices-customer row added (additive, minimal diff).
+  - This STATUS UPDATE block.
+
+Key as-built findings (3 corrections over the dispatch premise; SOURCE wins):
+  1. Customer INBOUND = 3 distinct methods across 3 callers (export get_compliance_block svc:503; dashboard get_onboarding_completeness svc:85; catalog assert_eligible_for_super_id svc:404 + get_compliance_block svc:837). The dispatch cited only the export shim. Catalog calls TWO customer methods (its "service ONLY" docstring is true re: which module, not how many methods).
+  2. Customer is NOT a pure callee. service.py:347 runs SELECT DISTINCT super_id FROM categories via CategoryORM (service.py:66) — a cross-schema read of category's table. Becomes the E3-A HTTP shim to category-svc /internal/super-categories (recommended; keeps the 3600s cache contract verbatim, only the loader body swaps SQL→httpx).
+  3. COMPLIANCE_EXTENSION_MAP = 11 keys / 6 source rules (domain.py:245, master ruling 3 2026-06-07), Beauty's 6 super_ids share one spec instance — NOT "6 super_ids" as the dispatch/my older §8 memory said.
+  + seller_profile.user_id PK==FK→users.id CASCADE + relationship("User") — both SEVERED at cutover (Risk #5; plain UUID PK in customer-svc ORM).
+  + REVERSE strangler shim: monolith-catalog (in-monolith until MS-5) gets the OUTBOUND customer_client at cutover — mirror image of MS-A where the extracted service got the shim.
+
+In progress: none (single-shot spec-authoring; execution GATED).
+Blockers: none. Lane is SPEC AUTHORED but NOT in execution until MS-2 (B dashboard + C image founder gates) merges to develop.
+Next: at MS-3 wave open (post-MS-2), cut branches from origin/develop, dispatch database-builder (Phase A) FIRST + infra handoff in parallel → services-builder → api-routes-builder → lead Phase C merge gate. Reconcile the 2 open contract questions BEFORE specialist dispatch.
+Hand-offs:
+  - INFRA (handoff_msE_infra.md) — schema customer + role grant incl INSERT on public.audit_events; Traefik /api/v1/seller-profile/*; cross-svc base-URL re-points; D3 checkpoint re-evaluated by master at MS-3 deploy. Inter-lead row opens at MS-3 execution.
+  - MASTER SESSION (escalation, never improvise a contract): (1) 0B dashboard /internal/* completeness shape (DRAFT-PENDING-0B-RECONCILE) — owned by Session MS-B; (2) 0F category /internal/super-categories shape (DRAFT-PENDING-0F-RECONCILE) — owned by Session MS-F. Both must reconcile before customer execution dispatch.
+=========
