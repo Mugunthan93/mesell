@@ -1,0 +1,278 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MeeSell svc-dashboard",
+    "description": "Standalone seller-dashboard read microservice (MS Sub-Plan B)",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/products": {
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "Paginated product listing (Feature 8 \u2014 Tracking Dashboard)",
+        "description": "\u00a713.B.1 \u2014 GET /api/v1/products.\n\nComposes the seller's tracking-dashboard view by aggregating:\n\n* :func:`catalog.service.list_products` \u2014 paginated active products\n  (most-recently-updated first per \u00a710.D).\n* :func:`customer.service.get_onboarding_completeness` \u2014 profile\n  completeness badge data.\n\nEmpty inventory returns 200 with ``products=[]`` + ``total=0`` (NOT 404\n\u2014 empty inventory is a valid state for first-time sellers).\n\nPer \u00a713.A.1 amendment (2026-06-07): ``status_filter`` and ``search``\ndeferred to V1.5. V1 ships ``page`` + ``limit`` only.\n\nStatus codes: 200, 400 (``validation.dashboard.invalid_pagination`` \u2014\nraised by Pydantic ``Query`` validators on out-of-range inputs), 401.\n\nNo audit event (read-only per \u00a713.B + \u00a74.G).\nNo plan_guard (\u00a713.I lock \u2014 dashboard is one of 3 plan_guard-excluded\nmodules alongside customer + pricing).",
+        "operationId": "list_products_api_v1_products_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "description": "Liveness probe.  DB / Valkey deep checks are deferred to the\nreadiness probe wired by the infra lane.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "DashboardResponse": {
+        "properties": {
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/ProductListItem"
+            },
+            "type": "array",
+            "title": "Products"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "onboarding_completeness": {
+            "$ref": "#/components/schemas/ProfileCompletenessSummary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "products",
+          "total",
+          "page",
+          "limit",
+          "onboarding_completeness"
+        ],
+        "title": "DashboardResponse",
+        "description": "Wire shape for ``GET /api/v1/products`` (200 OK)."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ProductListItem": {
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Product Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "category_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Category Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "ready"
+            ],
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id",
+          "name",
+          "category_id",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ProductListItem",
+        "description": "One row in the dashboard product listing.\n\nMaps from :class:`app.modules.catalog.domain.Product` per \u00a713.B.4\nflow step 4 (composition). The ``id`` -> ``product_id`` rename happens\nat this boundary so the wire shape is dashboard-flavoured (sellers\nthink in \"products\", not \"catalog rows\")."
+      },
+      "ProfileCompletenessSummary": {
+        "properties": {
+          "base_complete_count": {
+            "type": "integer",
+            "title": "Base Complete Count"
+          },
+          "base_total_count": {
+            "type": "integer",
+            "title": "Base Total Count"
+          },
+          "extension_complete_count": {
+            "type": "integer",
+            "title": "Extension Complete Count"
+          },
+          "extension_total_count": {
+            "type": "integer",
+            "title": "Extension Total Count"
+          },
+          "onboarding_complete": {
+            "type": "boolean",
+            "title": "Onboarding Complete"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_complete_count",
+          "base_total_count",
+          "extension_complete_count",
+          "extension_total_count",
+          "onboarding_complete"
+        ],
+        "title": "ProfileCompletenessSummary",
+        "description": "Customer profile completeness summary for the dashboard header strip.\n\nMaps 1:1 from :class:`app.modules.customer.domain.ProfileCompleteness`\nper \u00a78.F. ``base_total_count`` is always 10 (the 10 base seller-profile\nfields per \u00a78.F + ``MVP_ARCH \u00a73.2``); the field is sent over the wire\nanyway so the frontend can render \"8 of 10\" without re-hardcoding the\ndenominator. ``extension_total_count`` varies by the seller's\n``active_super_categories`` per \u00a78.B ``COMPLIANCE_EXTENSION_MAP``."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "OAuth2PasswordBearer": {
+        "type": "oauth2",
+        "flows": {
+          "password": {
+            "scopes": {},
+            "tokenUrl": "/api/v1/auth/otp/verify"
+          }
+        }
+      }
+    }
+  }
+}
