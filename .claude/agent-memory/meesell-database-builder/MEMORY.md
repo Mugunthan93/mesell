@@ -670,3 +670,32 @@ Alembic's `_ensure_version_table()` runs at `context.configure()` time and needs
 | MS Sub-Plan A Phase A svc-export schema-split | project | 4-file standalone Alembic chain; head e7a3c1f9b42d; version_table_schema="export"; monolith head f31c75438e61 unchanged; round-trip validated on local Homebrew PG 16.11 |
 | schema-split env.py gotcha | reference | CREATE SCHEMA + commit MUST precede context.configure() — _ensure_version_table() needs schema visible at configure time |
 | schema-split recipe for MS-2..5 | reference | version_table_schema per service; blank sqlalchemy.url; Risk#5 orphan-abort pattern; commit DDL before context.configure() |
+
+---
+
+## MS Sub-Plan B Phase A — svc-dashboard DB attestation B4 (2026-06-13)
+
+### Scope
+VERIFY-ONLY task. Confirmed that the dashboard module (`backend/app/modules/dashboard/`) owns ZERO tables and introduces NO Alembic chain. Worktree: `/tmp/mesell-wt/msB-backend/`, commit `98f6a96`.
+
+### What I confirmed
+- All 6 dashboard module files read in full: `__init__.py`, `router.py`, `service.py`, `schemas.py`, `domain.py`, `exceptions.py`.
+- Grep for `Base`, `__tablename__`, `Mapped[`, `mapped_column`, `Column`, `declarative_base`, `alembic`, `op.create_table`, `revision`, `down_revision` across the dashboard subtree: zero SQLAlchemy ORM or Alembic hits. The only `Base` match was `pydantic.BaseModel` (Pydantic, not SQLAlchemy) in `schemas.py`.
+- Grep for raw query execution (`select`, `execute`, `scalars`, `scalar_one`, `fetchall`, `fetchone`, `text(`, `db.`, `session.`) in `service.py`: zero matches. `AsyncSession` appears only as a type annotation on the `db` parameter that is forwarded to catalog and customer service calls — never used to execute a query directly.
+- `router.py` imports `get_db` from `app.shared.database` and `AsyncSession` from `sqlalchemy.ext.asyncio` solely to declare the `db` dependency injection parameter — the session is immediately forwarded to `dashboard_service.list_products_for_dashboard(user_id=..., query=..., db=db)` with no intermediate query.
+- `service.py` `list_products_for_dashboard` contains exactly two DB-touching awaits: `catalog_service.list_products(user_id, pagination, db)` and `customer_service.get_onboarding_completeness(user_id, db)`. Both are cross-module service calls; `scope_to_user(user_id)` is enforced in the respective downstream repository layers.
+- `repository.py` does NOT exist in the dashboard subtree — confirmed deliberate §13.D deviation.
+- `backend/services/` contains only `svc-export/` — no `svc-dashboard/` directory.
+- `backend/alembic/versions/` contains no dashboard migration. The single match of the word "dashboards" in `f31c75438e61_add_idx_product_drafts_saved_at.py` (line 10) is a prose comment about "product_drafts auto-save dashboards, manual cleanup runs during V1" — no schema action.
+- Monolith Alembic head `f31c75438e61` is UNCHANGED. No new migration chain introduced.
+- `domain.py` is intentionally empty of types (post-§13.A.1 amendment) — imports `catalog.domain.Pagination` directly rather than duplicating a 2-field dataclass.
+- `exceptions.py` defines `DashboardError` and `InvalidPaginationError`, both subclassing `app.core.errors.MeesellError` — no DB access.
+
+### Learning (§13.D pattern for future reference)
+When a module is a pure consumer (leaf in the §2.D dependency matrix) that composes results from two other modules' service functions, the correct database-builder stance is to author NO migration, NO model file, NO Alembic chain, and NO repository.py — the §13.D structural deviation is load-bearing, not an oversight. The verification discipline for such modules is: grep for `__tablename__`, `Mapped[`, `Base`, `alembic` across the subtree (must all be zero for ORM / migration terms); confirm `AsyncSession` appears only as a forwarded parameter, never as a query-issuing call site; confirm no `repository.py` exists; confirm no entry in `backend/services/`. This pattern generalises to any future "view-only aggregation" module (e.g., a reporting module that reads from catalog + pricing).
+
+### Memory index entry
+| Entry | Type | Summary |
+|---|---|---|
+| MS-B B4 svc-dashboard DB attestation | project | ZERO tables, ZERO migrations, ZERO model files, NO repository.py; monolith head f31c75438e61 unchanged; commit 98f6a96; all 6 files read + grep-verified |
+| §13.D no-repository pattern | reference | Pure consumer modules own no DB objects; AsyncSession forwarded not queried; grep __tablename__/Mapped[/Base to confirm clean |
