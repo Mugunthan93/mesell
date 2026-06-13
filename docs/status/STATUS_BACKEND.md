@@ -5446,3 +5446,71 @@ Blockers (at the time): Gate-4 lane not re-fireable until PR #159 (or a successo
 Next (as taken): master session re-dispatched meesell-api-routes-builder with the 3-defect repair brief (repair loop 1 of 2); the repair cleared all three; coordinator re-gated and merged honestly (no override).
 Hand-offs: meesell-infra-builder — Gate-4 develop→main re-fire is GREEN (the post-#110 "READY TO RE-FIRE" expectation is genuinely satisfied via #159, not invalidated). No FE/AI/data memo (test-only). GATE-4 SAGA 2 CLOSED.
 =========
+
+=== UPDATE: 2026-06-12 22:40 ===
+Phase: Microservices Migration — Session MS-H (catalog-service extraction), PHASE 1 (hybrid step 1, docs-only).
+  THE LAST + RISKIEST extraction — the spine. Wave MS-5 (catalog ALONE, no parallel partner).
+Session: mesell-ms-catalog-session-1
+Board sweep: +1 Active row (microservices-catalog, PHASE 1 DONE / EXECUTION GATED MS-5). +1 Inter-lead request
+  (infra, gated-on-MS-5). NO stale rows flagged this sweep (the prior MS rows — export READY-TO-EXECUTE, category
+  SPEC-AUTHORED, image PHASE-1, plus the 2 founder-gate PRs #143/flag-parity — are all <7d, correctly held).
+  Board header "Last updated" advanced to MS-H; prior MS-C narrative preserved.
+Done:
+  - SUB_PLAN_0H_catalog_extraction.md AUTHORED (804 lines) — canonical pattern mirroring the freshest template
+    SUB_PLAN_0F (PR #183). All enums/contracts cited file:line from SOURCE (Wave-6 law).
+  - spec_msH_backend.md AUTHORED (executable 3-specialist task spec: services-builder / api-routes-builder /
+    database-builder + lead integration test + merge-gate reject-class list + the PHASE-2 TAIL).
+  - handoff_msH_infra.md AUTHORED (Dockerfile/K8s/Traefik-method-split/Postgres-grants/Secret/budget-carve-out/D3).
+  - AS-BUILT GROUND TRUTH verified against the worktree source (NOT plan prose):
+    * 6 MOUNTED public routes, FLAG-GUARDED by FEATURE_CATALOG_FORM_ENABLED (main.py:126-127). The §3.4 inventory's
+      "11 endpoints" disambiguated — that list mingles image/pricing/export/dashboard routes sharing /products/*;
+      catalog OWNS exactly 6 (create/patch/autofill/preview/delete/draft).
+    * 4 INBOUND callers (the spine): image (service.py:53,:162,:248), pricing (:65,:134,:241),
+      export (:57,:174,:177,:314), dashboard (:36,:78). Methods consumed: assert_product_ownership (image+pricing+
+      export), get_product_for_export (export — the 2 MS-A frozen shims), list_products (dashboard).
+    * 2 OUTBOUND callees: category (service.py:98 — fetch_schema ×6 sites + assert_category_exists + get_field_enum)
+      + customer (:99 — assert_eligible_for_super_id + get_compliance_block). 5 outbound shims total, targeting REAL
+      sibling pods (category=MS-4, customer=MS-3 already extracted) — FIRST extraction whose outbound shims target
+      real siblings from day one (not the monolith).
+    * autofill AI call site: service.py:638 call_gemini(ctx, "autofill.v1", ...) with AICallContext(workload="autofill")
+      at :628; graceful fallback fallback_offered=True at :649. ai_ops vendored TRIMMED (autofill_v1 prompt only).
+    * 3 TENANT-SCOPED tables (catalogs/products/product_drafts; repository.py:59-61); scope_to_user on every read
+      (:87,:108,:126,:143) — MUST preserve (§10 leak rule). Cross-schema FK products.user_id→users = Risk #5.
+    * NO Celery worker (grep confirms only a doc comment; autosave draft upsert is synchronous).
+    * SHARED budget brake = same `ai:*` Valkey DB-0 keyspace carve-out as MS-F (global ₹500 cap across
+      category+catalog+image; 3-source assertion at MS-5 — the last AI extraction).
+  - TRUE-BRANCH-TIP CONTRADICTIONS surfaced (reported, not papered over):
+    (1) get_validation_summary is documented dashboard-consumed (__init__.py:11, service.py:23, schemas.py:245,
+        domain.py:135) but has ZERO live caller at develop tip (dashboard calls only list_products). → latent surface;
+        exposed as a DEFENSIVE /internal shim + Open Question; docstring correction flagged for founder-touch.
+    (2) catalog's image edge (service.py:828,:980 getattr+hasattr "get_image_refs") is DEAD code — get_image_refs
+        does NOT exist on image/service.py (its methods: upload_image/list_images/get_image_urls/get_image_bytes/
+        write_precheck_result/summary). The hasattr resolves False in V1; image_refs stays empty tuple. → NO image_client
+        shim authored; the dead getattr travels verbatim (§16.G), never fires. Recorded as known dead branch.
+  - export-snapshot is a 2-HOP internal chain (export-svc → catalog-svc → category-svc): catalog's
+    get_product_for_export (service.py:945) internally calls category_service.fetch_schema (:962). Shim timeouts must
+    account for the nested hop (cached ≥99% at category, so ~10ms not cold).
+  - PHASE-2 TAIL encoded (MS-H only): T1 §5.G post-extraction repo-management compliance audit (owner: backend-
+    coordinator + master review; MASTER_PLAN line 397) → T2 MASTER_PLAN completion stamp (gated on T1; founder
+    ratifies — the lead does NOT self-declare program completion).
+  - Live full-suite `def test_` count = 698 (validation floor MONOTONIC ≥698; catalog's own 24 = 7 test_catalog_routes
+    + 9 test_catalog_unit + 5 test_ai_autofill_integration + 3 test_live_preview_flag_404). Do NOT hardcode at PR time.
+  - SOURCE-WINS reconciliation: canonical filename SUB_PLAN_0H (not the MASTER_PLAN §4 row H "SUB_PLAN_08"); dependency
+    "MS-4 complete, runs ALONE" (not the A–G serial chain — though they converge since MS-5 is after MS-4).
+In progress: none (PHASE 1 is authoring-only; no branch cut for execution, no specialist dispatched, no code written).
+Blockers: none. EXECUTION GATED on MS-5 wave open (MS-4 = category + iam both founder-gate-merged). Open Questions
+  (4) recorded in the sub-plan for master-session resolution before any MS-5 dispatch: (1) assert_category_exists →
+  /internal/categories/{id}/exists server shim on category-svc (SUB_PLAN_0F deferred to MS-5); (2) customer-svc
+  /internal/.../eligibility/{super_id} shim presence (SUB_PLAN_0E verify); (3) dashboard list_products frozen contract
+  match (SUB_PLAN_0B); (4) get_validation_summary defensive-shim confirm.
+Next: HALT at PHASE 1 boundary (hybrid step 1 complete). Session window pushes feature/microservices-catalog/
+  docs-subplan0h + opens the PR. At MS-5 (after MS-4 both founder-gate-merged): consume the spec → cut
+  feature/microservices-catalog/integration off origin/develop → dispatch database-builder (Phase A) ‖ infra handoff →
+  services-builder (the heaviest lift: vendor + 5 outbound shims) → api-routes-builder → lead Phase C merge gate →
+  founder gate left OPEN → after founder gate: T1 compliance audit + T2 completion stamp.
+Hand-offs: handoff_msH_infra.md authored for meesell-infra-builder (NOT actioned now — execution gated; the Inter-lead
+  request row opens at Phase-2 dispatch). Cross-lane at Phase 2: AI lead (autofill.v1 prompt pin must not drift),
+  category-svc + customer-svc leads (the /internal/exists + /internal/eligibility shims may need ADDING at MS-5 —
+  Open Questions 1+2). Decentralized per CLAUDE.md rule 3 — infra/AI leads read this STATUS + my memory; no memo cut
+  while execution is gated.
+=========
