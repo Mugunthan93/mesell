@@ -121,6 +121,17 @@ class Settings(BaseSettings):
     # ── App ────────────────────────────────────────────────────────────────
     APP_ENV: Literal["development", "staging", "production"] = "development"
 
+    # ── Feature flags ────────────────────────────────────────────────────────
+    # FEATURE_PRICE_CALCULATOR_ENABLED: dev default True; staging default False
+    # (set via env) until staging soak confirms P&L formula accuracy ≥ target
+    # (Decision D2 in docs/plans/features/price-calculator/FEATURE_PLAN.md §1.B).
+    # POST /api/v1/products/{id}/price-calc returns 404 when False per
+    # Master Plan §3.2 backend protocol.  Mirrors the monolith definition at
+    # backend/app/shared/config.py:223 (FEATURE_PRICE_CALCULATOR_ENABLED: bool = True).
+    # This is the ONLY feature flag the extracted pricing route (router.py:99)
+    # consumes — trimmed Settings MUST retain every flag the moved routes read.
+    FEATURE_PRICE_CALCULATOR_ENABLED: bool = True
+
     # ── Validators ─────────────────────────────────────────────────────────
     @field_validator("CORS_ALLOWED_ORIGINS", mode="before")
     @classmethod
