@@ -1,6 +1,27 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-13 (mesell-ms3-wave-open-session-1) — MS-2 WAVE COMPLETE; MS-3 (D pricing ‖ E customer) OPEN ===
+Phase: Microservices migration — MS-2 wave close-out + MS-3 wave OPEN (FAST-MODE docs/status chore, CLAUDE.md hybrid rule 7, lead-direct, no specialist)
+Session: mesell-ms3-wave-open-session-1 (worktree /tmp/mesell-wt/ms3-open, branch chore/ms3-wave-open off origin/develop tip 84424e0)
+Board sweep: microservices-dashboard (MS-B) + microservices-image (MS-C) rows MOVED from Active → Recently merged (condensed); microservices-pricing (MS-D) + microservices-customer (MS-E) flipped SPEC-AUTHORED/EXEC-GATED → READY-TO-EXECUTE (MS-3 OPEN). Header line flipped "MS-C Phase 2 COMPLETE / FOUNDER GATE OPEN" → "MS-2 WAVE COMPLETE — MS-3 (D pricing ‖ E customer) OPEN" (prior demoted to Prior:). No rows untouched 7+ days (all MS rows touched 2026-06-12/13). No MERGED rows older than 14 days to evict. No new inter-lead requests opened by this status flip (the existing MS-3/MS-4/MS-5 infra handoffs unblock for meesell-infra-builder as their waves open). Inter-lead requests OPEN unchanged (xlsx-export flag, flag-parity flags, MS-4 category, MS-5 catalog, MS-iam — all gated/open).
+Done:
+  - MASTER/FOUNDER CONFIRMATION (2026-06-13): MS-2 wave is COMPLETE — BOTH founder gates merged: MS-B dashboard (PR #198, squash 18d829e, svc-dashboard on develop) + MS-C image (PR #207, squash 84424e0, svc-image on develop). Develop tip = 84424e0.
+  - THREE services now extracted + live: svc-export (#191 79525f3), svc-dashboard (#198 18d829e), svc-image (#207 84424e0). All STRANGLER-FIG — the monoliths still serve; 3 extracted, ZERO cut over.
+  - Per MS-PAR-1, MS-3 wave OPENS: MS-D (pricing) ‖ MS-E (customer). Phase-2 execution gate SATISFIED: (a) MS-2 both founder-gate-merged; (b) recipe_ms_extraction.md in lead memory; (c) frozen shim contracts on develop (SHIM_CONTRACT_export_callees.md + the dashboard/image shims).
+  - microservices-pricing (MS-D) + microservices-customer (MS-E) rows flipped READY-TO-EXECUTE; their sub-plans (0D, 0E) are already authored; specs in lead memory (spec_msD/spec_msE + handoff_msD/handoff_msE).
+In progress: none — this is a status/board flip. MS-D ‖ MS-E Phase-2 execution is owned by the two execution sessions the founder opens next (mesell-ms-pricing-session-1 ‖ mesell-ms-customer-session-1).
+Blockers: none.
+Next: each MS-3 execution session runs hybrid steps 2–3 (specialists build per the authored sub-plan/spec → infra handoff to meesell-infra-builder → lead merge-gate → founder-gate PR left OPEN). MS-4 (F category ‖ G iam) opens when MS-3 both founder gates merge.
+STANDING REMINDERS (carried into the D‖E lanes):
+  - STRANGLER-FIG: each cutover (route live traffic to a new svc) is a SEPARATE per-service founder gate — none taken (3 extracted, 0 cut over).
+  - D3 VM WATCH: 3 small services now share the node with the monolith. pricing + customer are SMALL (no Celery, no AI, no vendor for pricing; 1 table for customer) — but FLAG at the MS-3 gates if the node tightens. image was the heaviest and fit (~126% of e2-standard-2 at deploy → the e2-standard-4 ~₹2,600/mo ask is a fresh deploy-time founder ask, never auto-provisioned).
+  - SHARED-FILE ADDITIVE discipline between the D‖E lanes: backend/app/main.py router removal is ADDITIVE-minimal; each integration branch merges origin/develop BEFORE its founder-gate PR opens; union-merge conflicts keep-both (the Wave-6 / MS-2 parallel pattern).
+  - OPTION-B cross-schema-tenancy recipe (recipe §7A): any D/E join that crosses a schema boundary resolves via an HTTP ownership/data shim, NOT a cross-schema DB read-grant — verify per sub-plan. pricing: §0.6 `db.get(ProductORM)` + repository.py:149 products JOIN → catalog `assert_product_ownership` shim. customer: service.py:347 SELECT DISTINCT super_id on categories → category-svc `/internal/super-categories` shim (DRAFT-PENDING-0F, category is MS-4).
+  - customer is a CALLEE of export AND dashboard: MS-E implements the `/internal/*` shims those services froze — export `get_compliance_block` (FROZEN-0A) + dashboard `get_onboarding_completeness` (MS-E makes the dashboard mock-tested shim LIVE).
+Hand-offs: none new this flip. The existing MS-3 infra handoffs (handoff_msD_infra.md ‖ handoff_msE_infra.md) now UNBLOCK for meesell-infra-builder as the wave executes.
+=========
+
 === UPDATE: 2026-06-13 (mesell-msC-mergegate-session-1) — B2-FIX RE-GATE + FOUNDER GATE OPENED ===
 Phase: Microservices Sub-Plan C (image extraction) — Phase 2, MERGE GATE re-pass (HYBRID step 3, B2 fix)
 Session: mesell-msC-mergegate-session-1 (meesell-backend-coordinator, lead gate)
