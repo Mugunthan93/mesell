@@ -1,6 +1,29 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-13 (mesell-ms-dashboard-session-1) — MS-B Phase 2 COMPLETE, merge-gate PASS, founder-gate open ===
+Phase: Microservices Sub-Plan B (dashboard extraction) — Phase C LEAD integration + post-gate docs; merge-gate PASSED; founder gate OPEN
+Session: mesell-ms-dashboard-session-1 (worktree /tmp/mesell-wt/msB-integration, branch feature/microservices-dashboard/integration)
+Board sweep: microservices-dashboard row flipped IN PROGRESS → PHASE 2 COMPLETE / MERGE-GATE PASSED / AWAITING FOUNDER GATE (board header keep-both with prior demoted to Prior:). MS-C (image) lane left UNTOUCHED (parallel additive discipline). No rows untouched 7+ days. Inter-lead requests open: flag-parity (carried), msB-infra (RESOLVED — I1–I9 + SM secret confirmed).
+Done:
+  - svc-dashboard EXTRACTED + INTEGRATED: 35 app files + 30 svc test cases (12 extraction + 11 routes + 5 import-sanity + 2 parametrized cases), ALL GREEN. Both group PRs squash-merged into integration: #195 backend + #196 infra.
+  - §16.G AST parity (recursive import+docstring strip → identical ast.dump) PROVEN; wire-shape JSON-schema parity (model_json_schema, description stripped) PROVEN — in tests/test_dashboard_extraction.py.
+  - 2 frozen-contract shims: catalog list_products → GET /internal/products; customer get_onboarding_completeness → GET /internal/seller-profile/{user_id}/onboarding-completeness. Both forward JWT via httpx.MockTransport in tests. The customer shim is MOCK-tested because /internal/seller-profile/.../onboarding-completeness is not live until MS-3/E. Method name confirmed get_onboarding_completeness (NOT get_profile_completeness — the MASTER_PLAN §1.C prose typo).
+  - Infra I1–I9 + docs/runbooks/svc-dashboard-rollback.md landed (api-only Dockerfile, 50m/128Mi 1-replica k8s, ClusterIP, Traefik GET /api/v1/products method-split, audit-only PG grant with NO owned schema, trimmed secret, ConfigMap flag, MS-DB-3 pool=2-3).
+  - dashboard owns ZERO tables → database-builder VERIFY-ONLY (NO schema-split), NO Celery, NO ai_ops; LEAF consumer exposes NO /internal/*. Lightest service of the program.
+  - NO D3 spend (fits current node at 50m/128Mi). Monolith UNTOUCHED — full monolith def test_ = 698 (monotonic ≥ baseline); branch touches ZERO backend/app|backend/tests.
+  - 5 Phase-C doc deliverables: board flip, this STATUS block, recipe_ms_extraction MS-B entry, MASTER_PLAN §4 row-B annotation + §1.C prose fix, CI_HYBRID_MODE_dashboard.md (callees docker-composed: NONE).
+In progress: none — Phase C docs complete; merge-gate already PASSED (#195/#196 in integration).
+Blockers: none.
+Next: founder reviews/merges the integration→develop PR (the FOUNDER gate per D1 — I do NOT approve it). Strangler-fig: monolith dashboard STAYS LIVE; cutover is a SEPARATE founder gate.
+Hand-offs / founder-gate flags:
+  - MASTER_PLAN §1.C prose corrected get_profile_completeness → get_onboarding_completeness — plan-PROSE fix, NOT a §13 LOCKED amendment (flagged in PR body for founder awareness).
+  - BACKEND_ARCHITECTURE.md §13 "Extracted to svc-dashboard V1.5" note is LOCKED → NOT self-applied; needs FOUNDER approval at the gate (§7.3).
+  - NEW infra dependency: SM secret dev-dashboard-db-password (dashboard_user password; the one new Secret Manager entry for Sub-Plan B — handoff_msB_infra.md I5/I7).
+=========
+```
+
+```
 === UPDATE: 2026-06-13 (mesell-ms-dashboard-backend-session-1) ===
 Phase: Microservices Sub-Plan B (dashboard extraction) — Phase B services-builder slice (the heavy lift)
 Session: meesell-services-builder, worktree /tmp/mesell-wt/msB-backend, branch feature/microservices-dashboard/backend
