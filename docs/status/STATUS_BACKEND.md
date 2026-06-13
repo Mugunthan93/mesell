@@ -5535,3 +5535,36 @@ Hand-offs: handoff_msH_infra.md authored for meesell-infra-builder (NOT actioned
   Open Questions 1+2). Decentralized per CLAUDE.md rule 3 — infra/AI leads read this STATUS + my memory; no memo cut
   while execution is gated.
 =========
+
+=== UPDATE: 2026-06-13 11:30 ===
+Phase: MS-C image extraction — §0.10 cross-schema tenancy hazard RULING landing
+Session: mesell-msc-tenancy-ruling-session-1
+Board sweep: 1 row touched (microservices-image MS-C). No rows stale 7+ days (MS waves all touched 2026-06-12/13).
+  Inter-lead requests open: unchanged (the standing infra/AI cross-lane notes carry; no new memo — see Hand-offs).
+Done:
+  - FOUNDER RULING (2026-06-13) landed: §0.10 cross-schema tenancy hazard = RULED OPTION B — resolve image-service
+    tenancy via the catalog `assert_product_ownership` HTTP shim, NOT a cross-schema DB read-grant. Repository scopes
+    by `product_id` alone (post-shim); `products` join REMOVED; `image_user` granted NO `products` read access; the
+    transitional read-grant (former Option A) DISCARDED, not a fallback. Rationale (founder): matches LOCKED §2.D
+    ("no cross-schema reads — services talk via HTTP, never SQL"); zero MS-5 transitional debt; avoids two services
+    sharing one DB. NEW precedent — MS-A did not cover this (export owns its read path).
+  - Surface 1: `SUB_PLAN_0C_image_extraction.md` flipped to v1.1 — 8 edits (§0.10 hazard block verbatim RULED, the
+    "Option (b) recommended target" framing replaced; database-builder dispatch row; PHASE A dispatch line;
+    repository.py file row; Postgres role-grant row; acceptance criterion; acceptance checklist item; RC1 risk row) +
+    a revision-history row (v1.1).
+  - Surface 2 (LOAD-BEARING): `recipe_ms_extraction.md §7A REUSABLE PATTERNS` — added "Cross-schema tenancy → resolve
+    via the owning service's ownership HTTP shim, never a read-grant" so MS-4 (category) + MS-5 (catalog) + any future
+    cross-schema-tenancy case INHERIT the precedent by default. Written to the main-tree memory dir per the §6 relay
+    convention (the worktree write to `.claude/agent-memory/` is bg-isolation-guard-blocked; recipe is lead-memory,
+    not a PR-tracked surface).
+  - Surface 3: this board row (microservices-image MS-C) records the ONE open MS-C decision as RESOLVED + the stale
+    "recommend Option-b … else transitional grant" sentence corrected; this STATUS UPDATE block.
+In progress: none — ruling fully landed.
+Blockers: none. MS-C execution is UNBLOCKED on the tenancy axis (no longer Risk #5-class on this point); still gated
+  ONLY on the dedicated MS-C execution session running, which the founder opens.
+Next: none from this chore. MS-C Phase-2 builders, when dispatched, scope the repository by product_id alone (via the
+  assert_product_ownership shim result), write ZERO cross-schema SQL, and the database-builder grants NO products read.
+Hand-offs: NO new memo cut (execution gated; decentralized per CLAUDE.md rule 3). At MS-C Phase-2 dispatch the infra
+  handoff `handoff_msC_infra.md` must be updated to DROP any `GRANT SELECT ON public.products TO image_user` line —
+  Option B grants nothing there. Infra + database-builder read this STATUS + `recipe_ms_extraction.md §7A`.
+=========
