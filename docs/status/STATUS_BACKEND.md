@@ -1,6 +1,27 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-13 (mesell-ms-image-backend-session-1 B2) ===
+Phase: Microservices Sub-Plan C (image extraction) — Phase 2, Build step B2
+Session: mesell-ms-image-backend-session-1 (meesell-api-routes-builder, B2 route layer)
+Done:
+  - CREATED /tmp/mesell-wt/msC-routes/backend/services/svc-image/app/router.py
+  - 2 public routes (verbatim from monolith backend/app/modules/image/router.py):
+      POST /api/v1/products/{id}/images — 202 ACCEPTED, @rate_limit(image_upload,10,60), @audit_event("image.upload.received"), feature-flag guard, idx fast-fail
+      GET  /api/v1/products/{id}/images — 200 OK, @rate_limit(image_list,600,3600), no audit, feature-flag guard (returns empty list when OFF)
+  - /internal callee shim per FROZEN SHIM_CONTRACT §2.6:
+      GET /internal/products/{product_id}/images?user_id={user_id} — cluster-internal, no get_current_user, include_in_schema=False
+  - Router object: ``router`` at module path ``app.router`` (matches svc-export precedent: from app.router import router)
+  - Internal route composed into public router via router.include_router(_internal_router) — one include_router call in main.py mounts all 3 routes
+  - Ruff clean (all checks passed)
+  - Worktree: /tmp/mesell-wt/msC-routes on branch feature/microservices-image/routes (tip 3dc0f91)
+In progress: commit + push + PR open.
+Blockers: none. B1's schemas.py / exceptions.py / service.py not yet merged to integration; router imports coded to spec signatures — modulo B1 merge.
+Next: commit, push, gh api F3 protection, open group PR targeting feature/microservices-image/integration.
+Hand-offs: svc-image route layer live on feature/microservices-image/routes; B1 services-builder can confirm router object name=``router``, module path=``app.router``, include call=``app.include_router(router)``.
+=========
+
+```
 === UPDATE: 2026-06-13 (mesell-ms2-wave-confirm-session-1) ===
 Phase: Microservices — MS-2 wave DISPATCH CONFIRMATION (B dashboard ‖ C image)
 Session: mesell-ms2-wave-confirm-session-1 (FAST-MODE docs chore, rule-7 docs class, lead-direct, no specialist)
