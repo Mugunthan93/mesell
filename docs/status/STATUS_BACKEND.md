@@ -1,6 +1,59 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-13 (mesell-msC-mergegate-session-1) ===
+Phase: Microservices Sub-Plan C (image extraction) — Phase 2, MERGE GATE (HYBRID step 3)
+Session: mesell-msC-mergegate-session-1 (meesell-backend-coordinator, lead gate)
+Board sweep: MS-C row → IN REVIEW (3/4 PASS-merged, #202 REJECTED). No rows untouched 7+ days
+  (the program is high-velocity; MS-B dashboard row also IN PROGRESS this wave). No new inter-lead
+  requests opened (deploy-time founder asks ride the founder-gate PR body, not inter-lead memos).
+Done:
+  - Gated 4 group PRs into feature/microservices-image/integration in dependency order:
+    #200 A1 db PASS (squash 19ce33e) — Risk#5 pre-scan, FK drop BEFORE SET SCHEMA, version_table_schema="image",
+      tested downgrade re-adds FK, Option-B, NO products grant.
+    #201 A2 infra PASS (squash bf12bca) — dedicated svc-image Celery worker (queue svc-image), grants =
+      image-schema CRUD + GRANT INSERT public.audit_events ONLY (NO products read-grant), rembg deferred.
+    #204 B1 svc PASS (squash 461d2f2) — service.py + tasks.py byte-for-byte AST-identical to monolith twins
+      (§16.G, recursive import-strip); repository Option-B (no ProductORM import, no products join, scopes
+      product_id/image_id); ai_ops VENDORED with SHARED un-prefixed ai:cost:*/ai:budget:* DB-0 keys;
+      watermark.v1 call preserved; catalog HTTP shim; main.py `from app.router import router as image_router`.
+    #202 B2 routes REJECTED — frozen-contract path drift (below).
+  - Resolved a STATUS_BACKEND.md union conflict on the #202 branch (#204 had appended) — kept-both,
+    pushed ac2b391 on the routes branch, then merged 5b5fe19.
+  - COMPOSITION VERIFICATION (row-26 lesson — mounted the real assembled app on py3.11/fastapi 0.115):
+    `from app.router import router` resolves; app.include_router mounts the 2 public routes correctly at
+    /api/v1/products/{id}/images (POST+GET). The internal shim, however, mounts at
+    /api/v1/internal/products/{product_id}/images.
+  - Authored Phase-C test backend/services/svc-image/tests/test_image_extraction.py (committed e520510 on
+    integration): 8 tests, 7 PASS / 1 RED. NON-tautological — the RED catches the real defect.
+Blockers:
+  - #202 (B2 routes) REJECTED — FROZEN SHIM_CONTRACT §2.6 violation. The /internal callee shim must mount at
+    bare /internal/products/{product_id}/images (the shipped svc-export image_client.py:73 calls that exact
+    path with NO /api/v1 prefix; no Traefik StripPrefix on the east-west path per ingressroute.yaml).
+    As built it mounts at /api/v1/internal/... because _internal_router (prefix /internal) was nested INSIDE
+    the /api/v1 public router → prefixes concatenate → svc-export 404s at MS-2 cutover. FIX (1-line, B2):
+    un-nest _internal_router from the /api/v1 router; main.py includes both routers separately. Needs a
+    meesell-api-routes-builder re-dispatch from the master session; fresh PR onto integration.
+  - FOUNDER GATE PR (integration → develop) NOT opened — blocking on the #202 drift. Will open after B2 fix
+    lands and test_internal_shim_path_frozen goes green.
+Validation (reported faithfully):
+  - Monolith full-suite floor: MONOTONIC 698 def test_ (live count on integration tree; ≥698 held).
+    The branch touches ZERO monolith app/test code (all work under backend/services/svc-image/) so the
+    monolith count is unaffected by construction.
+  - svc-image Phase-C gate: 7 PASS / 1 RED (the RED is the documented #202 defect, not a flake).
+  - svc-image has NO other unit tests (the B1/B2 builders shipped none; Phase-C test is the lead deliverable).
+  - BLOCKED in this env, stated honestly (NOT claimed green): (a) live `alembic upgrade head` — dev SSH tunnel
+    down; (b) full svc-image py3.12 suite — no py3.12 venv available (route/parity/Option-B gate ran on py3.11,
+    which supports PEP-604 + future-annotations so the mount + AST checks are valid). Both are CI/deploy-gated.
+Next:
+  - Master session re-dispatches meesell-api-routes-builder to fix the #202 internal-shim prefix; lead re-gates
+    the fresh PR, re-runs the Phase-C test (expect 8/8 green), then opens the FOUNDER-GATE PR (LEFT OPEN per D1).
+Hand-offs:
+  - Two DEPLOY-TIME founder asks to carry into the founder-gate PR body (NOT merge blockers): (1) D3 VM overflow
+    — MS-2 deploy projects ~126% of e2-standard-2 → needs e2-standard-4 (~₹2,600/mo), re-asked FRESH at deploy;
+    (2) new bootstrap secret `dev-image-db-password` (infra/Secret Manager).
+=========
+
 === UPDATE: 2026-06-13 (mesell-ms-image-backend-session-1 B2) ===
 Phase: Microservices Sub-Plan C (image extraction) — Phase 2, Build step B2
 Session: mesell-ms-image-backend-session-1 (meesell-api-routes-builder, B2 route layer)
