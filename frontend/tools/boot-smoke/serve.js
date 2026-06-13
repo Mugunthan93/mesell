@@ -53,6 +53,17 @@ const MIME = {
 const INDEX = path.join(ROOT, 'index.html');
 
 function serve(req, res) {
+  // Handle CORS preflight — the federation client may send OPTIONS before GET.
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin':  '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    });
+    res.end();
+    return;
+  }
+
   // Strip query string for file resolution only.
   const urlPath = req.url.split('?')[0];
   const candidate = path.join(ROOT, urlPath);
@@ -88,8 +99,15 @@ function serve(req, res) {
   try {
     const data = fs.readFileSync(filePath);
     res.writeHead(200, {
-      'Content-Type':  mime,
-      'Cache-Control': 'no-cache',
+      'Content-Type':             mime,
+      'Cache-Control':            'no-cache',
+      // CORS required: the shell (port 4200) fetches remoteEntry.json from the remote
+      // ports (4201-4206) — a cross-origin fetch. Without this header the browser
+      // blocks the request with "No 'Access-Control-Allow-Origin' header" and the
+      // federation runtime falls back to RemoteFailureComponent for every remote.
+      'Access-Control-Allow-Origin':  '*',
+      'Access-Control-Allow-Methods': 'GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
     });
     res.end(data);
   } catch (err) {
