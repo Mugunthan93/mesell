@@ -724,7 +724,14 @@ jobs:
         needs.frontend-changes.outputs.mfe_onboarding == 'true' ||
         needs.frontend-changes.outputs.mfe_dashboard  == 'true'
       )
-    timeout-minutes: 90
+    # Development builds are used (not production) for two reasons:
+    # 1. Production builds stall ~24 min each on NF cold "Preparing shared npm packages"
+    #    (7 x 24 min approaches the timeout ceiling — the first timeout was 90 min).
+    # 2. The F-001 class failure (import-map subpath resolution) reproduces identically
+    #    in development builds — the federation.manifest.json and remoteEntry.json are
+    #    generated from the federation config, not from production optimisation.
+    # Development builds complete in ~3-5 min each (no tree-shaking, no minification).
+    timeout-minutes: 30
 
     steps:
       - name: Checkout source
@@ -753,35 +760,37 @@ jobs:
         working-directory: frontend
         run: npx playwright install --with-deps chromium
 
-      # Build all 7 apps sequentially. The shell needs all remotes built first so
-      # its federation manifest can point at real remoteEntry.json files.
+      # Build all 7 apps sequentially in development mode. The shell needs all remotes
+      # built first so its federation manifest can point at real remoteEntry.json files.
+      # Dev builds produce the same dist/<app>/browser/ structure as production; the
+      # federation.manifest.json and remoteEntry.json are config-driven (not opt-driven).
       - name: Build shell
         working-directory: frontend
-        run: pnpm exec ng build frontend --configuration production
+        run: pnpm exec ng build frontend --configuration development
 
       - name: Build mfe-pricing
         working-directory: frontend
-        run: pnpm exec ng build mfe-pricing --configuration production
+        run: pnpm exec ng build mfe-pricing --configuration development
 
       - name: Build mfe-export
         working-directory: frontend
-        run: pnpm exec ng build mfe-export --configuration production
+        run: pnpm exec ng build mfe-export --configuration development
 
       - name: Build mfe-onboarding
         working-directory: frontend
-        run: pnpm exec ng build mfe-onboarding --configuration production
+        run: pnpm exec ng build mfe-onboarding --configuration development
 
       - name: Build mfe-dashboard
         working-directory: frontend
-        run: pnpm exec ng build mfe-dashboard --configuration production
+        run: pnpm exec ng build mfe-dashboard --configuration development
 
       - name: Build mfe-catalog
         working-directory: frontend
-        run: pnpm exec ng build mfe-catalog --configuration production
+        run: pnpm exec ng build mfe-catalog --configuration development
 
       - name: Build mfe-auth
         working-directory: frontend
-        run: pnpm exec ng build mfe-auth --configuration production
+        run: pnpm exec ng build mfe-auth --configuration development
 
       # Assert the manifest points at localhost (not prod URLs).
       # This is a guard against accidentally shipping a manifest that makes CI
@@ -856,12 +865,12 @@ jobs:
           SMOKE_RESULTS_FILE: tools/boot-smoke/smoke-results.json
         run: node tools/boot-smoke/boot-smoke.js
 
-      # Upload screenshots + results on failure so the founder can diagnose.
-      - name: Upload smoke artifacts (on failure)
-        if: failure()
+      # Upload screenshots + results always so the founder can diagnose pass and fail runs.
+      - name: Upload smoke artifacts (always)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: boot-smoke-failure-${{ github.run_id }}
+          name: boot-smoke-artifacts-${{ github.run_id }}
           path: |
             frontend/tools/boot-smoke/screenshots/
             frontend/tools/boot-smoke/smoke-results.json
