@@ -1,6 +1,28 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-13 (mesell-ms-dashboard-backend-session-1) ===
+Phase: Microservices Sub-Plan B (dashboard extraction) — Phase B services-builder slice (the heavy lift)
+Session: meesell-services-builder, worktree /tmp/mesell-wt/msB-backend, branch feature/microservices-dashboard/backend
+Done:
+  - Created backend/services/svc-dashboard/ (35 source files) mirroring the svc-export pilot, trimmed for dashboard (owns NO tables, NO Celery, leaf consumer).
+  - app/service.py extracted from modules/dashboard/service.py — §16.G PROVEN: raw diff shows ONLY import-line changes (lines 36-43); AST recursive-strip (imports+docstring) dump IDENTICAL → zero executable-line drift. The 2 call sites (:78 catalog list_products, :84 customer get_onboarding_completeness) byte-for-byte unchanged; _compose_response PURE (AST: not async, zero Await nodes).
+  - 2 outbound HTTP shims under app/core/extracted_clients/: catalog_client.list_products(*, user_id, pagination, db) → GET /internal/products?page=&limit= (vendors Product/Pagination/PaginatedProductsInternal); customer_client.get_onboarding_completeness(*, user_id, db) → GET /internal/seller-profile/{user_id}/onboarding-completeness (vendors ProfileCompleteness, 5 fields). Method name = get_onboarding_completeness (NOT get_profile_completeness). _transport.py copied with frozen contract: httpx.AsyncClient, Timeout(5.0, connect=2.0), 1 retry on {503,504} ONLY, JWT+X-Request-ID from contextvars. Both shims forward JWT; db accepted+ignored (call-site parity).
+  - Trimmed Settings: carries DATABASE_URL/VALKEY_URL/JWT_SECRET/FEATURE_TRACKING_DASHBOARD_ENABLED/AUDIT_PII_SALT/CORS/MONOLITH_INTERNAL_BASE_URL/APP_ENV; NO gemini/langfuse/msg91/razorpay/GCS (model_fields check confirms []). DB pool tiny (2/1). NO make_worker_session.
+  - Vendored core (auth/errors/metrics/tenancy) + 6-mw chain (request_id, request_context, auth, tenancy, rate_limit, plan_guard INERT, audit INERT on read-only GET) + i18n subset (validation.dashboard.invalid_pagination + cross-cutting). Standalone main.py boots: 8 user_middleware (CORS→...→Audit), 5 error handlers, /health + /metrics; router include import-tolerant (api-routes delivers router.py + schemas.py next). NO Celery anywhere (sys.modules check confirms).
+  - requirements.txt: fastapi/uvicorn/sqlalchemy/asyncpg/httpx/redis/pyjwt/pydantic-settings/prometheus-client; NO celery/openpyxl/gemini/langfuse/rembg/gcs.
+Tests: import smoke (py3.11 venv w/ deps) — service.py + both shims + all vendored dataclasses + transport contract + main.py boot ALL GREEN. ruff check backend/services/svc-dashboard/ → All checks passed. AST §16.G parity PROVEN. (No pytest suite yet — test_dashboard_extraction.py is the lead's Phase C deliverable.)
+In progress: none — services-builder slice complete.
+Blockers: none. (Note: customer /internal/seller-profile/{user_id}/onboarding-completeness not yet live on the monolith — customer extracts at MS-3/E; shim built against FROZEN contract, mock-tested; expected per spec §3.A.)
+Next: meesell-api-routes-builder Phase B — author app/router.py (1 route GET /api/v1/products, preserve @rate_limit(dashboard_list,600,3600) + FEATURE_TRACKING_DASHBOARD_ENABLED 404 guard) + app/schemas.py (DashboardQuery/ProductListItem/ProfileCompletenessSummary/DashboardResponse). main.py's `from app.schemas import (...)` + include_router are wired and ready.
+Hand-offs:
+  - api-routes-builder: service signature FROZEN — `await list_products_for_dashboard(user_id, query, db)`; schemas symbols service.py imports = DashboardQuery, DashboardResponse, ProductListItem, ProfileCompletenessSummary (from app.schemas). main.py router mount is import-tolerant (try/except ImportError) and will pick up app.router.router on landing.
+  - infra-builder: Dockerfile/k8s/Traefik/ConfigMap(FEATURE_TRACKING_DASHBOARD_ENABLED)/audit-grant are the INFRA lane (handoff_msB_infra.md) — NOT authored here. svc-dashboard is api-only, 1 replica, NO worker pod, NO broker/result Valkey; pool 2/1.
+  - lead (Phase C): §16.G AST parity reproducible (recipe §2 recursive NodeTransformer); wire-shape parity will compare app.schemas twins once api-routes lands.
+=========
+```
+
+```
 === UPDATE: 2026-06-13 (mesell-ms2-wave-confirm-session-1) ===
 Phase: Microservices — MS-2 wave DISPATCH CONFIRMATION (B dashboard ‖ C image)
 Session: mesell-ms2-wave-confirm-session-1 (FAST-MODE docs chore, rule-7 docs class, lead-direct, no specialist)
