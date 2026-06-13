@@ -5985,3 +5985,66 @@ Hand-offs:
     no-ProductORM/no-products executable-ref assertion; T1 Decimal byte-golden; T6 cross-schema audit round-trip;
     T3/T4 shim 404/422 round-trips; carry check_scope_to_user allowlist `pricing.repository.insert_calc`.
 =========
+
+=== UPDATE: 2026-06-13 — MS-D Phase C — MERGE GATE: REJECT ===
+Phase: MS-3 / Sub-Plan D — svc-pricing extraction — Phase C (LEAD-owned test + merge gate)
+Session: mesell-ms-pricing-backend-session-1
+Board sweep: pricing row → "PHASE 2 BUILT — MERGE-GATE REJECTED (1 item)"; customer (MS-E) untouched
+  (parallel lane); SP01 export / dashboard / image rows all founder-gated/merged (no staleness — all
+  <14d). No inter-lead requests opened this session (the cross-wave TLS finding + the 2 new shim
+  contracts are carried to the founder-gate PR body when the fix lands, per spec §5).
+Done:
+  - DELIVERABLE 1 — LEAD integration test authored + committed to feature/microservices-pricing/backend:
+    `backend/services/svc-pricing/tests/test_pricing_extraction.py` (14 tests) + conftest.py + pytest.ini +
+    __init__.py. Result: 13 PASS, 1 FAIL. The 13 PASS: §16.G AST recursive-strip parity (the §0.6
+    ProductORM block normalised in BOTH twins — proven the ONLY executable delta is 3-stmt→1-stmt; a
+    companion sanity test proves the §0.6 delta is REAL so parity isn't vacuous); ProductORM/`products`
+    executable-ref AST scan (zero); import-rewire assertion; wire-shape JSON-schema parity (3 schemas);
+    T1 Decimal-string byte-golden (9 fields emit as JSON strings, verbatim values); T3 catalog
+    get_category_id shim (JWT+X-Request-ID forward, 5s/2s, real UUID deserialise); T3 404→ProductNotFoundError
+    (no retry on 4xx); T4 category commission Decimal-NEVER-null (seeded/unseeded/404); audit+pricing_calc
+    schema-binding; **T6 LIVE cross-schema audit INSERT→SELECT round-trip on PG16 localhost (ran, not
+    skipped)**. The 1 FAIL is the flag-parity regression guard — it caught the REJECT defect (below).
+  - DELIVERABLE 3 — MERGE GATE executed. VERDICT = **REJECT — DO NOT MERGE.** Group PRs NOT opened;
+    founder gate NOT opened (per HYBRID rule-7 the gate is real and rejects to the specialist).
+Blockers:
+  - **MERGE-GATE REJECT (P1, owner = meesell-services-builder):** svc-pricing `app/router.py:99` carries the
+    monolith flag guard `if not settings.FEATURE_PRICE_CALCULATOR_ENABLED:` verbatim (flag-parity discipline,
+    correct), BUT the trimmed `app/shared/config.py` OMITS the `FEATURE_PRICE_CALCULATOR_ENABLED` field that the
+    monolith defines at config.py:223 (`bool = True`). `model_config` is `extra="ignore"`, so the attr does NOT
+    exist → `AttributeError: 'Settings' object has no attribute 'FEATURE_PRICE_CALCULATOR_ENABLED'` on EVERY
+    request, BEFORE the service runs → the single mounted route 500s 100% of the time. PROVEN: (1) settings probe
+    raised the AttributeError; (2) replicated router.py:99 guard raised it; (3) LEAD test FAIL. FIX: add
+    `FEATURE_PRICE_CALCULATOR_ENABLED: bool = True` to svc-pricing `app/shared/config.py` (mirror monolith
+    config.py:218-223 dev-default-True / staging-default-False comment), re-run Phase C — the LEAD test
+    `test_feature_flag_exists_on_trimmed_settings` will go green and validate the fix.
+Verified-PASS gate items (independent, not trusting self-reports):
+  - §16.G: service.py executable AST identical to monolith save the §0.6 block (3 monolith stmts
+    `db.get(ProductORM)` + soft-delete `if` + `category_id=product.category_id` → 1 svc stmt
+    `category_id=await catalog_service.get_category_id(...)`); _compute_pnl/_generate_alerts/_q/get_last_calc verbatim.
+  - §0.6 RD1: NO executable ProductORM/`products` ref in extracted service.py + repository.py (AST scan; the
+    grep matches are docstrings/comments only). repository find_latest_by_product JOIN→bare WHERE; user_id param
+    retained for call-site parity. pricing_calc ORM = bare UUID product_id, no FK/relationship to catalog ORM.
+  - Route: exactly 1 mounted (`POST /api/v1/products/{id}/price-calc`, `{id}` not `{product_id}`), zero
+    `/internal/*`; `@rate_limit price_calc 600/3600` + `@audit_event pricing.calculated` + get_current_user+get_db
+    preserved; app boots clean. OpenAPI = 1 business path + /health, 3 pricing schemas.
+  - Decimal contract: 9 bare-Decimal fields, extra="forbid", NO json_encoders, NO float (schemas verbatim).
+  - DB: migration 97c9dd63f587 (root, down_rev None), version_table_schema="pricing", Risk#5 orphan pre-scan
+    with abort, tested downgrade SET SCHEMA public, cross-schema FK kept valid, audit bound public / calc bound pricing.
+  - Infra: I5 `GRANT INSERT ON public.audit_events TO pricing_user` PRESENT; I9 `GRANT SELECT ON public.products`
+    DELIBERATELY OMITTED (Option B); Traefik tight regex `^/api/v1/products/[^/]+/price-calc$` outranks catalog
+    catch-all on specificity, no numeric priority; TLS `api-tls` (correct live name).
+  - Monolith UNTOUCHED: `git diff --stat origin/develop...HEAD -- backend/app backend/tests` = EMPTY. Branch
+    adds only `backend/services/svc-pricing/**` + STATUS doc. NO pyc/cache tracked (43 source files).
+  - Counts: monolith 698 `def test_` (≥649 monotonic). ruff clean on svc tree + tests.
+Cross-wave finding (carried, NOT a pricing reject): svc-image + svc-export ingressroutes reference nonexistent
+  TLS secret `api-mesell-xyz-tls` (live name = `api-tls`); their cutover would fall back to Traefik default cert.
+  svc-pricing uses the correct `api-tls`. To be raised to infra + master at the founder gate (informational).
+Pending founder asks (to carry to the founder-gate PR body AFTER the fix lands):
+  - §12 BACKEND_ARCHITECTURE.md "Extracted to svc-pricing V1.5" amendment — §12 LOCKED, NOT self-applied (§7.3).
+  - `dev-pricing-db-password` GCP Secret Manager secret at deploy time (new infra dep).
+Next: re-dispatch meesell-services-builder with the 1-field config fix; on its return, re-run the LEAD test
+  (expect 14/14 with live PG), then proceed to DELIVERABLE 2 (5 docs) + DELIVERABLE 3 (open group PRs → squash to
+  integration → open founder gate left OPEN). Docs were NOT authored this pass (premature before the code is green).
+Hand-offs: none opened (memo'd at the founder gate per spec §5 once green). Infra TLS finding noted above.
+=========
