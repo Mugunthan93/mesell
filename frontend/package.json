@@ -14,7 +14,8 @@
     "start:mfe-catalog": "ng serve mfe-catalog",
     "start:mfe-dashboard": "ng serve mfe-dashboard",
     "start:mfe-auth": "ng serve mfe-auth",
-    "start:all": "node tools/dev/start-all.mjs"
+    "start:all": "node tools/dev/start-all.mjs",
+    "smoke:boot": "node tools/boot-smoke/boot-smoke.js"
   },
   "private": true,
   "packageManager": "pnpm@11.5.2",
@@ -41,6 +42,7 @@
     "@angular/compiler-cli": "^21.2.0",
     "@tailwindcss/postcss": "^4.3.0",
     "jsdom": "^28.0.0",
+    "playwright": "1.52.0",
     "prettier": "^3.8.1",
     "tailwindcss": "^4.3.0",
     "typescript": "~5.9.2",
