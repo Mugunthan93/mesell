@@ -1,0 +1,44 @@
+# svc-image runtime dependencies (MS Sub-Plan C, spec §1 B1).
+#
+# Versions PINNED to the monolith's exact pins (backend/requirements.txt) so
+# the extracted pipeline behaves identically — pillow in particular is the
+# precheck pipeline's deterministic-check engine (JPEG / colour / resolution /
+# white-bg) and google-generativeai backs the vendored watermark.v1 step.
+#
+# rembg is DEFERRED (spec §0.5 / §3.G): declared in the monolith requirements
+# (backend/requirements.txt:14) but has ZERO call sites — it is NOT carried
+# into svc-image.  (Cheapest D3 VM-fit mitigation; founder/AI-lead confirm at
+# Phase 2 if they want it carried.)
+#
+# NO openpyxl (export-only) / msg91 / razorpay (image has no SMS/payment).
+
+# ── Web framework ────────────────────────────────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+pydantic-settings>=2.5,<3
+
+# ── Database (async) ─────────────────────────────────────────────────────
+sqlalchemy[asyncio]==2.0.32
+asyncpg==0.29.0
+
+# ── Cache / queue ────────────────────────────────────────────────────────
+redis==5.0.8
+celery==5.4.0
+
+# ── Auth (local JWT verification — A2) ───────────────────────────────────
+pyjwt==2.9.0
+
+# ── Storage ──────────────────────────────────────────────────────────────
+google-cloud-storage==2.18.0
+
+# ── Image processing (precheck deterministic checks — pinned to monolith) ─
+pillow==10.4.0
+
+# ── AI (vendored watermark.v1 step — C1/D6) ──────────────────────────────
+google-generativeai==0.8.0
+
+# ── HTTP shim transport (extracted_clients) + LangFuse egress ────────────
+httpx==0.27.0
+
+# ── Observability ────────────────────────────────────────────────────────
+prometheus-client>=0.20,<1

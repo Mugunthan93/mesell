@@ -1,6 +1,162 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-13 (mesell-msC-mergegate-session-1) — B2-FIX RE-GATE + FOUNDER GATE OPENED ===
+Phase: Microservices Sub-Plan C (image extraction) — Phase 2, MERGE GATE re-pass (HYBRID step 3, B2 fix)
+Session: mesell-msC-mergegate-session-1 (meesell-backend-coordinator, lead gate)
+Board sweep: MS-C row IN REVIEW → FOUNDER GATE OPEN; Blocking cleared. No rows untouched 7+ days
+  (high-velocity program). No new inter-lead requests (deploy-time founder asks ride the founder-gate PR body).
+Done:
+  - RE-GATED B2 fix PR #205 (feature/microservices-image/routes-fix tip e8f44bb → integration). Single-file
+    change to backend/services/svc-image/app/router.py: top-level `router` now PREFIXLESS, composing
+    `_public_router` (/api/v1) + `_internal_router` (/internal) as SIBLINGS. Exported symbol `router` at
+    `app.router` unchanged → B1 main.py needs no edit. Scope clean (only router.py, +47/-10).
+  - INDEPENDENT re-verification (row-26 lesson — did NOT trust the builder): py3.11/fastapi 0.115 venv,
+    mounted the real svc-image app. Route table is EXACTLY:
+      POST /api/v1/products/{id}/images
+      GET  /api/v1/products/{id}/images
+      GET  /internal/products/{product_id}/images
+    NO /api/v1/internal route exists. Phase-C test_image_extraction.py 8/8 GREEN incl. previously-RED
+    test_internal_shim_path_frozen. Ruff clean on router.py.
+  - SQUASH-MERGED #205 into integration → squash `cddacc8`. PR state MERGED 2026-06-13T07:38:16Z. routes-fix
+    branch ref-delete blocked by wildcard branch protection (cosmetic; non-blocking).
+  - Merged origin/develop into integration (shared-file discipline). Union keep-both resolved on
+    docs/status/STATUS_BACKEND.md + .claude/agent-memory/meesell-services-builder/MEMORY.md (both append-only;
+    kept both sides). feature_board_backend.md auto-merged (both MS-B + MS-C rows present). Merge commit
+    `4445abd`. Re-ran Phase-C on the merged tip: still 8/8 GREEN.
+  - Opened the FOUNDER-GATE PR (integration → develop, [FOUNDER GATE — DO NOT MERGE]) and LEFT IT OPEN.
+    Posted the final lead-gate verdict (all 4 lanes PASS) as a PR comment.
+Validation (reported faithfully — run vs documented-blocked):
+  - RUN GREEN: route-table mount assertion (3 exact routes, no /api/v1/internal); Phase-C 8/8 (both pre- and
+    post-develop-merge); ruff clean; Option-B AST (no products read); §16.G service+tasks AST parity hooks.
+  - Monolith floor MONOTONIC: `def test_` = 698 (excl. services/; zero monolith touch). services/ subtotal 68
+    (svc-export 32 + svc-image 8 + svc-dashboard 28 post develop-merge); total backend 766.
+  - BLOCKED-honestly (NOT claimed green; CI/deploy-gated): (a) live `alembic upgrade head` — dev SSH tunnel
+    DOWN (localhost:5433 closed); (b) full svc-image py3.12 suite — no py3.12 interpreter present (gate ran on
+    py3.11, which supports PEP-604 + future-annotations so mount + AST checks are valid).
+  - NON-BLOCKING obs: python-multipart missing from svc-image requirements.txt (transitive runtime dep for the
+    Form-based upload route; app boot fails without it). Flagged for a follow-up chore — NOT a merge blocker.
+Blockers: none. Founder gate is OPEN — founder/master merges integration → develop (D1, NOT the lead's gate).
+Next: founder reviews/merges the founder-gate PR. Strangler-fig: monolith image module STAYS LIVE; the Traefik
+  cutover to svc-image is a SEPARATE future founder gate, NOT taken at this merge. MS-3 (pricing ‖ customer)
+  opens only when BOTH MS-B + MS-C founder gates are merged to develop.
+Hand-offs / founder-gate flags (carried in the PR body, NOT inter-lead memos):
+  - Two DEPLOY-TIME founder asks (NOT merge blockers): (1) D3 VM overflow — MS-2 deploy projects ~126% of
+    e2-standard-2 → needs e2-standard-4 (~₹2,600/mo), re-asked FRESH at deploy; (2) new bootstrap secret
+    `dev-image-db-password` (infra / Secret Manager).
+=========
+
+=== UPDATE: 2026-06-13 (mesell-msC-mergegate-session-1) ===
+Phase: Microservices Sub-Plan C (image extraction) — Phase 2, MERGE GATE (HYBRID step 3)
+Session: mesell-msC-mergegate-session-1 (meesell-backend-coordinator, lead gate)
+Board sweep: MS-C row → IN REVIEW (3/4 PASS-merged, #202 REJECTED). No rows untouched 7+ days
+  (the program is high-velocity; MS-B dashboard row also IN PROGRESS this wave). No new inter-lead
+  requests opened (deploy-time founder asks ride the founder-gate PR body, not inter-lead memos).
+Done:
+  - Gated 4 group PRs into feature/microservices-image/integration in dependency order:
+    #200 A1 db PASS (squash 19ce33e) — Risk#5 pre-scan, FK drop BEFORE SET SCHEMA, version_table_schema="image",
+      tested downgrade re-adds FK, Option-B, NO products grant.
+    #201 A2 infra PASS (squash bf12bca) — dedicated svc-image Celery worker (queue svc-image), grants =
+      image-schema CRUD + GRANT INSERT public.audit_events ONLY (NO products read-grant), rembg deferred.
+    #204 B1 svc PASS (squash 461d2f2) — service.py + tasks.py byte-for-byte AST-identical to monolith twins
+      (§16.G, recursive import-strip); repository Option-B (no ProductORM import, no products join, scopes
+      product_id/image_id); ai_ops VENDORED with SHARED un-prefixed ai:cost:*/ai:budget:* DB-0 keys;
+      watermark.v1 call preserved; catalog HTTP shim; main.py `from app.router import router as image_router`.
+    #202 B2 routes REJECTED — frozen-contract path drift (below).
+  - Resolved a STATUS_BACKEND.md union conflict on the #202 branch (#204 had appended) — kept-both,
+    pushed ac2b391 on the routes branch, then merged 5b5fe19.
+  - COMPOSITION VERIFICATION (row-26 lesson — mounted the real assembled app on py3.11/fastapi 0.115):
+    `from app.router import router` resolves; app.include_router mounts the 2 public routes correctly at
+    /api/v1/products/{id}/images (POST+GET). The internal shim, however, mounts at
+    /api/v1/internal/products/{product_id}/images.
+  - Authored Phase-C test backend/services/svc-image/tests/test_image_extraction.py (committed e520510 on
+    integration): 8 tests, 7 PASS / 1 RED. NON-tautological — the RED catches the real defect.
+Blockers:
+  - #202 (B2 routes) REJECTED — FROZEN SHIM_CONTRACT §2.6 violation. The /internal callee shim must mount at
+    bare /internal/products/{product_id}/images (the shipped svc-export image_client.py:73 calls that exact
+    path with NO /api/v1 prefix; no Traefik StripPrefix on the east-west path per ingressroute.yaml).
+    As built it mounts at /api/v1/internal/... because _internal_router (prefix /internal) was nested INSIDE
+    the /api/v1 public router → prefixes concatenate → svc-export 404s at MS-2 cutover. FIX (1-line, B2):
+    un-nest _internal_router from the /api/v1 router; main.py includes both routers separately. Needs a
+    meesell-api-routes-builder re-dispatch from the master session; fresh PR onto integration.
+  - FOUNDER GATE PR (integration → develop) NOT opened — blocking on the #202 drift. Will open after B2 fix
+    lands and test_internal_shim_path_frozen goes green.
+Validation (reported faithfully):
+  - Monolith full-suite floor: MONOTONIC 698 def test_ (live count on integration tree; ≥698 held).
+    The branch touches ZERO monolith app/test code (all work under backend/services/svc-image/) so the
+    monolith count is unaffected by construction.
+  - svc-image Phase-C gate: 7 PASS / 1 RED (the RED is the documented #202 defect, not a flake).
+  - svc-image has NO other unit tests (the B1/B2 builders shipped none; Phase-C test is the lead deliverable).
+  - BLOCKED in this env, stated honestly (NOT claimed green): (a) live `alembic upgrade head` — dev SSH tunnel
+    down; (b) full svc-image py3.12 suite — no py3.12 venv available (route/parity/Option-B gate ran on py3.11,
+    which supports PEP-604 + future-annotations so the mount + AST checks are valid). Both are CI/deploy-gated.
+Next:
+  - Master session re-dispatches meesell-api-routes-builder to fix the #202 internal-shim prefix; lead re-gates
+    the fresh PR, re-runs the Phase-C test (expect 8/8 green), then opens the FOUNDER-GATE PR (LEFT OPEN per D1).
+Hand-offs:
+  - Two DEPLOY-TIME founder asks to carry into the founder-gate PR body (NOT merge blockers): (1) D3 VM overflow
+    — MS-2 deploy projects ~126% of e2-standard-2 → needs e2-standard-4 (~₹2,600/mo), re-asked FRESH at deploy;
+    (2) new bootstrap secret `dev-image-db-password` (infra/Secret Manager).
+=========
+
+=== UPDATE: 2026-06-13 (mesell-ms-image-backend-session-1 B2) ===
+Phase: Microservices Sub-Plan C (image extraction) — Phase 2, Build step B2
+Session: mesell-ms-image-backend-session-1 (meesell-api-routes-builder, B2 route layer)
+Done:
+  - CREATED /tmp/mesell-wt/msC-routes/backend/services/svc-image/app/router.py
+  - 2 public routes (verbatim from monolith backend/app/modules/image/router.py):
+      POST /api/v1/products/{id}/images — 202 ACCEPTED, @rate_limit(image_upload,10,60), @audit_event("image.upload.received"), feature-flag guard, idx fast-fail
+      GET  /api/v1/products/{id}/images — 200 OK, @rate_limit(image_list,600,3600), no audit, feature-flag guard (returns empty list when OFF)
+  - /internal callee shim per FROZEN SHIM_CONTRACT §2.6:
+      GET /internal/products/{product_id}/images?user_id={user_id} — cluster-internal, no get_current_user, include_in_schema=False
+  - Router object: ``router`` at module path ``app.router`` (matches svc-export precedent: from app.router import router)
+  - Internal route composed into public router via router.include_router(_internal_router) — one include_router call in main.py mounts all 3 routes
+  - Ruff clean (all checks passed)
+  - Worktree: /tmp/mesell-wt/msC-routes on branch feature/microservices-image/routes (tip 3dc0f91)
+In progress: commit + push + PR open.
+Blockers: none. B1's schemas.py / exceptions.py / service.py not yet merged to integration; router imports coded to spec signatures — modulo B1 merge.
+Next: commit, push, gh api F3 protection, open group PR targeting feature/microservices-image/integration.
+Hand-offs: svc-image route layer live on feature/microservices-image/routes; B1 services-builder can confirm router object name=``router``, module path=``app.router``, include call=``app.include_router(router)``.
+=========
+
+=== UPDATE: 2026-06-13 13:00 ===
+Phase: MS-C image extraction — A1 schema-split migration (database-builder)
+Session: meesell-database-builder (A1, feature/microservices-image/db)
+Done:
+- Authored standalone svc-image Alembic chain at backend/services/svc-image/alembic/:
+  alembic.ini, env.py (version_table_schema="image", async, NullPool, no configparser),
+  script.py.mako, revision c2a4e8f1d7b3.
+- Migration c2a4e8f1d7b3: public.product_images → image.product_images.
+  Step 1: Risk#5 pre-scan — all product_images.product_id rows must resolve to
+    public.products; raises RuntimeError on orphans (logs up to 20 detail rows).
+  Step 2 (OPTION B, founder-RULED 2026-06-13): DROP FK product_images_product_id_fkey
+    (auto-named, references public.products.id ON DELETE CASCADE, created in
+    baseline migration 935e55b4852c without explicit name= arg). product_id becomes
+    a plain indexed column; ownership enforced at runtime via catalog
+    assert_product_ownership HTTP shim (service.py:162/:248 unchanged).
+    image_user granted NO SELECT on public.products.
+  Step 3: CREATE SCHEMA IF NOT EXISTS image (idempotent).
+  Step 4: ALTER TABLE public.product_images SET SCHEMA image.
+  Downgrade: SET SCHEMA public + op.create_foreign_key() restores the FK.
+- FK drop rationale: moving a table with FK to a different schema creates a
+  cross-schema FK — disallowed by MASTER_PLAN §2.D + Option B ruling.
+  Drop first, then move is the correct sequence.
+- Chain isolation: c2a4e8f1d7b3 down_revision=None (root); monolith head stays
+  f31c75438e61; image.alembic_version ≠ public.alembic_version — no collision.
+- ruff clean + Python AST parse verified on all 4 files.
+- Committed c821559 on feature/microservices-image/db, pushed to origin.
+- PR #200 opened: feature/microservices-image/db → feature/microservices-image/integration
+  (title: feat(ms): MS-C A1 — svc-image schema-split migration). NOT merged.
+- F3 protection applied to feature/microservices-image/db branch.
+In progress: none — A1 complete; awaiting A2 infra lane (meesell-infra-builder).
+Blockers: B19.1 (dev SSH tunnel down) — live alembic upgrade head validation SKIPPED.
+  Revision chain and import correctness confirmed offline.
+Next: services-builder (B1) can now target schema image for the repository rewrite.
+  Infra-builder (A2) should create the image schema/role + audit grant in parallel.
+Hand-offs: Schema c2a4e8f1d7b3 ready. services-builder reads this migration's FK-drop
+  rationale before writing the Option-B repository. Merge gate: backend-coordinator.
+=========
+
 === UPDATE: 2026-06-13 (mesell-ms-dashboard-session-1) — MS-B Phase 2 COMPLETE, merge-gate PASS, founder-gate open ===
 Phase: Microservices Sub-Plan B (dashboard extraction) — Phase C LEAD integration + post-gate docs; merge-gate PASSED; founder gate OPEN
 Session: mesell-ms-dashboard-session-1 (worktree /tmp/mesell-wt/msB-integration, branch feature/microservices-dashboard/integration)
@@ -5612,4 +5768,70 @@ Next: none from this chore. MS-C Phase-2 builders, when dispatched, scope the re
 Hand-offs: NO new memo cut (execution gated; decentralized per CLAUDE.md rule 3). At MS-C Phase-2 dispatch the infra
   handoff `handoff_msC_infra.md` must be updated to DROP any `GRANT SELECT ON public.products TO image_user` line —
   Option B grants nothing there. Infra + database-builder read this STATUS + `recipe_ms_extraction.md §7A`.
+=========
+
+=== UPDATE: 2026-06-13 — MS-C B1 svc-image service layer (meesell-services-builder) ===
+Phase: MS-C (image extraction) — Phase 2 EXECUTION, step B1 (HEAVY-LIFT)
+Branch: feature/microservices-image/svc (cut from feature/microservices-image/integration @ 3dc0f91)
+Worktree: /tmp/mesell-wt/msC-svc
+Done: Built backend/services/svc-image/ (52 files) — the svc-image service/business-logic layer, mirroring the
+  landed svc-export structure (recipe §1 + §7C image variation):
+  - service.py + tasks.py — BYTE-FOR-BYTE from the monolith app.modules.image (§16.G); ONLY import lines changed
+    (catalog cross-module import → core.extracted_clients.catalog_client re-exporting `catalog_service`; intra-module
+    app.modules.image.* → flat app.*; ai_ops lazy import → vendored app.ai_ops). The 2 assert_product_ownership call
+    sites (service.py upload_image + list_images) are UNCHANGED in form — they now call the catalog ownership over
+    HTTP. §16.G AST-parity check (recursive import+docstring strip) PASSES on BOTH service.py and tasks.py.
+  - repository.py — OPTION-B rewrite (founder-RULED §16.G EXEMPT, develop d4aa572 / PR #197): removed
+    `from app.core.tenancy import scope_to_user` + `from app.shared.models.product import Product as ProductORM`;
+    removed `_owned_product_ids_subquery` helper; every method (find_by_product/find_by_id/find_by_slot/
+    soft_delete_by_idx/update_precheck_result/summarize_by_products) now scopes by product_id/image_id DIRECT — NO
+    cross-schema products join, NO products read-grant. AST scan confirms ZERO live scope_to_user/ProductORM/
+    products-join references (docstring-only mentions documenting the removal). Worker-path tenancy reasoning
+    (update_precheck_result scopes by image_id alone) is documented in a code comment for the §16.G reviewer.
+  - domain.py / exceptions.py / schemas.py — vendored verbatim (no intra-app import rewrites needed beyond
+    app.core.errors which is at the same flat path).
+  - ORM model app/shared/models/product_image.py — targets schema `image` (table image.product_images) per A1's
+    migration (PR #200); DROPS the products ForeignKey + relationship (Option B — no products read).
+  - catalog ownership shim CLIENT: app/core/extracted_clients/{__init__,_transport,catalog_client}.py — the single
+    `assert_product_ownership` method → monolith ClusterIP GET /internal/products/{id}/ownership-check?user_id=,
+    raise-on-404 → ProductNotFoundError (raise-on-not-owned semantics preserved). Same transport pattern as svc-export.
+  - ai_ops VENDORED (C1/D6): full app/ai_ops/ package (client, cost_tracker, guardrail, budget_cap, prompt_registry,
+    eval, __init__ + prompts/watermark_v1) + the gemini + langfuse adapters it needs. Autofill/smart_picker prompts
+    TRIMMED (not image's; prompt_registry resolves lazily via importlib so trimming is safe). Budget brake keyspace
+    is UN-prefixed + SHARED on Valkey DB 0 (ai:cost:daily / ai:cost:pending / ai:budget:reservation) — global ₹500/day
+    cap per D6, NOT namespaced. BudgetExceededError → watermark_check="skipped_budget" graceful fallback preserved.
+  - Celery: app/celery_app.py — own single-task Celery app, queue `svc-image` (NOT image-tasks, NOT default), keys
+    prefixed `svc-image:`, broker DB1/results DB2, all locked invariants (acks_late, reject_on_worker_lost,
+    prefetch=1, Asia/Kolkata, track_started). CARRIES the task_prerun JWT re-validation handler scoped to
+    image.precheck (§1.G — svc-export did not need it; image's spec requires it).
+  - app/main.py — standalone FastAPI app with the vendored A2/D7 6-mw chain (CORS→request_id→request_context→auth_mw→
+    tenancy_mw→rate_limit_mw→plan_guard_mw→audit_mw); JWT verified LOCALLY via vendored core/auth.py + shared
+    JWT_SECRET; plan_guard_mw NO-OP for image (§11.J); rate_limit + audit ACTIVE. include_routers `app.router`
+    (B2-owned). Direct audit write (image.precheck.completed → public.audit_events, cross-schema §15.E) preserved.
+  - Trimmed shared/{config,database,valkey}.py + i18n (5 image IDs + catalog.product.not_found + ai_ops/gcs +
+    cross-cutting) + core/metrics (added AI_OPS_BUDGET_ALARM + AI_OPS_COST_INR back vs svc-export). requirements.txt
+    (fastapi/sqlalchemy/asyncpg/celery/redis/httpx/pillow/google-cloud-storage/google-generativeai/pyjwt/prometheus;
+    rembg DEFERRED — declared in monolith but zero call sites, NOT carried; NO openpyxl/msg91/razorpay). pytest.ini.
+  - rembg: NOT imported/called anywhere (deferred per §0.5/§3.G).
+Tests: svc-image unit tests (tests/modules/image/test_service_unit.py logic) BLOCKED in this worktree — no Py3.12
+  venv + no connectable Postgres (system py is 3.9, can't run pydantic-v2 / `str|None` runtime or schema-qualified
+  PG assertions). Structural validation GREEN: ruff clean on the whole tree; §16.G AST-parity PASS on service.py +
+  tasks.py; py_compile (parse) PASS on all 52 files; import-graph scan confirms all app.* imports resolve within the
+  svc-image tree (only app.router unresolved — B2-owned, expected); Option-B no-products-read AST assertion PASS.
+  The image unit-test run + cross-schema PG round-trip are Phase-C (lead-owned test_image_extraction.py).
+In progress: none — B1 build complete.
+Blockers: none.
+Next: open group PR svc → integration (LEAD squash gate). B2 (api-routes-builder) builds router.py + schemas wiring;
+  lead wires Phase-C CI parity tests + merge-gate review.
+Hand-offs:
+  - B2 (api-routes-builder): main.py imports `from app.router import router as image_router` (svc-export precedent —
+    NOT pinned by the EXECUTION spec; NOTED for lead verification). Build app/router.py exporting `router` with the 2
+    public routes (verbatim @rate_limit + POST @audit_event + idx fast-fail) + the internal route
+    GET /internal/products/{product_id}/images?user_id= → service.list_images(user_id=, product_id=, db=) →
+    ImagesListResponse. schemas.py is ALREADY present (B1 vendored it); ImageSummary field names = the FROZEN §2.6 5
+    keys (image_id, idx, status, signed_url, precheck_jsonb) + additive extras (verified — do NOT rename the 5).
+  - LEAD: §16.G CI parity (AST on service.py+tasks.py [EXEMPT repository.py]); Option-B no-products-read assertion;
+    ai_ops budget DB-0 cross-service coherence; cross-schema audit round-trip; /internal shim JWT-forward parity.
+  - infra (A2) + database-builder (A1): the SOLE cross-schema grant is GRANT INSERT ON public.audit_events TO
+    image_user — NO products SELECT (Option B). svc-image ORM targets schema `image` (image.product_images).
 =========
