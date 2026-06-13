@@ -64,6 +64,28 @@ Router composition contract (for B1 main.py)
 Router object:   ``router``
 Module path:     ``app.router``
 Include call:    ``app.include_router(router)``
+
+``router`` is a PREFIXLESS top-level router.  It composes TWO SIBLING sub-routers:
+
+  * ``_public_router``   (prefix ``/api/v1``)  — public image endpoints
+  * ``_internal_router`` (prefix ``/internal``) — cluster-internal callee shim
+
+Both are included into ``router`` at the same level:
+
+    router.include_router(_public_router)
+    router.include_router(_internal_router)
+
+This ensures B1's single ``app.include_router(router)`` mounts all 3 routes at
+the correct BARE paths:
+
+    POST  /api/v1/products/{id}/images
+    GET   /api/v1/products/{id}/images
+    GET   /internal/products/{product_id}/images
+
+WITHOUT nesting — a prefix-concatenation trap where nesting _internal_router
+INSIDE _public_router would produce the WRONG path /api/v1/internal/... which
+svc-export 404s on at MS-2 cutover (east-west route has no Traefik StripPrefix).
+
 Mirrors:         svc-export precedent (``from app.router import router as ...``)
 """
 
@@ -92,11 +114,18 @@ logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Router
+# Top-level router — PREFIXLESS.
+# B1's main.py does: app.include_router(router)
+# This router composes _public_router + _internal_router as SIBLINGS so that
+# prefixes do NOT concatenate.
 # ─────────────────────────────────────────────────────────────────────────────
-router = APIRouter(prefix="/api/v1", tags=["image"])
+router = APIRouter()
 
-# Separate internal router — NOT exposed via Traefik ingress (cluster-DNS only)
+# Public sub-router — prefix /api/v1
+_public_router = APIRouter(prefix="/api/v1", tags=["image"])
+
+# Internal sub-router — prefix /internal (BARE path, no /api/v1 ancestor)
+# NOT exposed via Traefik ingress (cluster-DNS only — SHIM_CONTRACT §2.6 + infra I4)
 _internal_router = APIRouter(prefix="/internal", tags=["image-internal"])
 
 
@@ -104,7 +133,7 @@ _internal_router = APIRouter(prefix="/internal", tags=["image-internal"])
 # 1. POST /products/{id}/images  — §11.B.1
 # Source: monolith backend/app/modules/image/router.py:75-124
 # ─────────────────────────────────────────────────────────────────────────────
-@router.post(
+@_public_router.post(
     "/products/{id}/images",
     response_model=ImageUploadResponse,
     status_code=202,
@@ -160,7 +189,7 @@ async def upload_image(
 # 2. GET /products/{id}/images  — §11.B.2
 # Source: monolith backend/app/modules/image/router.py:130-158
 # ─────────────────────────────────────────────────────────────────────────────
-@router.get(
+@_public_router.get(
     "/products/{id}/images",
     response_model=ImagesListResponse,
     summary="List images for a product with precheck status",
@@ -237,12 +266,20 @@ async def internal_list_images(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Compose: merge public + internal sub-router into the exported router object.
-# B1's main.py calls: from app.router import router; app.include_router(router)
-# Both public routes (/api/v1/products/{id}/images) and the internal route
-# (/internal/products/{product_id}/images) will be reachable after one
-# include_router call, because _internal_router is included into router here.
+# Compose: two SIBLING sub-routers merged into the PREFIXLESS top-level router.
+#
+# CRITICAL: _public_router and _internal_router must be SIBLINGS — NOT nested.
+# Nesting _internal_router inside _public_router concatenates prefixes to
+# /api/v1/internal/... which violates FROZEN SHIM_CONTRACT §2.6 and causes
+# svc-export to 404 at MS-2 cutover (east-west internal route has no Traefik
+# StripPrefix — ingressroute.yaml does NOT route /internal/* to this service).
+#
+# Final route table after app.include_router(router):
+#   POST  /api/v1/products/{id}/images       (public upload)
+#   GET   /api/v1/products/{id}/images       (public list)
+#   GET   /internal/products/{product_id}/images  (callee shim — bare path)
 # ─────────────────────────────────────────────────────────────────────────────
+router.include_router(_public_router)
 router.include_router(_internal_router)
 
 
