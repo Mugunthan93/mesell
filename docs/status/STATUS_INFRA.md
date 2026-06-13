@@ -1,8 +1,77 @@
 # STATUS — INFRASTRUCTURE
 
 **Owner:** `meesell-infra-builder`
-**Last update:** 2026-06-12 (**MS-0 / D5 step 1 MERGED (#181, develop 29ed457) + APPLIED LIVE to dev — founder-authorized.** Runbook steps 1–2: Postgres `max_connections=200` LIVE + PgBouncer transaction-pool LIVE (`pgbouncer.dev.svc.cluster.local:6432`). Step 3 (DATABASE_URL flip) NOT applied — separate founder gate, blocked on backend R-MS-8. Dev-only, ₹0. Two apply-time manifest fixes (image tag, scram auth). See APPLY UPDATE below.)
+**Last update:** 2026-06-13 (**MS-C A2 — svc-image INFRA lane AUTHORED + offline-VALIDATED (₹0, dev-only).** 7 files on `feature/microservices-image/infra` (recipe-copy of MS-A svc-export). §0.10 OPTION B grant surface (NO products read-grant). rembg DEFERRED. **D3 VM-FIT VERDICT: node OVERFLOWS (~2525m > 2000m allocatable) → FRESH founder e2-standard-4 ask needed BEFORE deploy — NOT silently provisioned.** Cluster unreachable → offline yaml-validated; server dry-run + dev smoke deferred (§15 F3). PR → integration. See MS-C A2 UPDATE below.)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
+
+## UPDATE — 2026-06-13 — mesell-microservices-image-infra-session-1 — MS-C A2 svc-image INFRA lane (authored + offline-validated)
+
+=== STEP A2: svc-image infra surfaces (I1–I10) — Sub-Plan C image extraction ===
+Phase: Playbook §15 (Safe deployment — server dry-run [MANDATORY GATE], F3 deferral branch when
+       cluster unreachable), §5 (Postgres role/grants), §7 (Traefik ingress), §10 (Secret discipline).
+       Recipe authority: recipe_ms_extraction.md + the PROVEN MS-A svc-export manifests (copy pattern).
+       Task authority: handoff_msC_infra.md (Option-B-updated) + spec_msC_backend_EXECUTION.md.
+Session: mesell-microservices-image-infra-session-1
+Authorization: master-session A2 dispatch (parallel with database-builder). Dev namespace ONLY, ₹0
+       unless the D3 VM-fit limit fires (it DID — deploy gated on a fresh founder ask).
+
+**Session-start sweep:** feature_board_infra.md — all Active rows touched 2026-06-11/12/13 (current). No 7+ day stale row to flag.
+
+**Pre-flight:**
+- gcloud auth: vaishnaviramoorthy@gmail.com ACTIVE; project project-1f5cbf72-2820-4cdb-949 confirmed.
+- Cluster reachability: `kubectl get nodes` → `34.180.58.185:6443 connection refused` — UNREACHABLE
+  (6443 /32-firewalled to the founder IP; my laptop isn't it). §15 server dry-run DEFERRED per the F3
+  branch (deploy-time on the VM). NOT a blocker for authoring dev-only manifests.
+- Worktree: `/tmp/mesell-wt/msC-infra` on `feature/microservices-image/infra` cut from origin
+  `feature/microservices-image/integration` (`3dc0f91`). Master tree never switched branch.
+- svc-image BACKEND code NOT yet on integration (db/svc/routes lanes run PARALLEL) — manifests validated
+  against the SPEC tree-shape (spec §1.B1), the SAME deferred-validation posture MS-A svc-export used.
+
+**Deliverables authored (7 files):**
+- I1 `backend/services/svc-image/Dockerfile` — python:3.12-slim, ONE image api+worker. Image-size rationale
+  documented: Pillow (~30MB) + google-cloud-storage + ai_ops (Gemini SDK + langfuse) on the svc-export
+  baseline. **rembg DELIBERATELY DEFERRED** (zero call sites; carrying = +onnxruntime ~300MB + u2net ONNX
+  ~170MB pre-bake). Native deps add libjpeg62-turbo + zlib1g (Pillow decode). gunicorn==22.0.0 pinned.
+- I2 `k8s/svc-image/deployment.yaml` — svc-image-api 1× (50m/128Mi, lim 200m/512Mi) + DEDICATED
+  svc-image-worker 1× (req **500m/1Gi**, lim **1000m/2Gi** — heaviest early-wave; lim=2× req R-MS-9). Worker
+  `-Q svc-image`, module `app.celery_app`, concurrency=2. Kill-before-surge (maxSurge:0).
+- I3 `k8s/svc-image/service.yaml` — ClusterIP `svc-image:8001`, selects component=api only.
+- I4 `k8s/svc-image/ingressroute.yaml` — Traefik websecure, tight PathRegexp `^/api/v1/products/[^/]+/images$`
+  (POST+GET) → svc-image:8001, reuses api-mesell-xyz-tls. `/internal/*` NOT routed (cluster-DNS isolation).
+- I5 `k8s/svc-image/schema-role.sql` — `image` schema + `image_user` (least-priv) + image DML +
+  **`GRANT INSERT ON public.audit_events`**. **§0.10 OPTION B: NO `products` read-grant** (DISCARDED line
+  left commented as negative assertion; grep confirms zero active products GRANT).
+- I6 `k8s/svc-image/gcs-sa.yaml.example` — keyless (GCE metadata). Option A: node VM SA ALREADY holds
+  `roles/storage.objectAdmin` on `gs://meesell-images` (VERIFIED get-iam-policy 2026-06-13). Path
+  `{user_id}/{product_id}/{idx}.jpg`. ₹0, no new IAM.
+- I7 `k8s/svc-image/secrets.yaml.example` — `svc-image-secrets`: DATABASE_URL@schema image, VALKEY_URL(DB0),
+  CELERY DB1/DB2, JWT_SECRET, **GEMINI_API_KEY + LANGFUSE_SECRET_KEY (image IS AI-consuming)**, GCS_*, APP_ENV.
+  NOT MSG91/RAZORPAY/pepper/pii-salt. GEMINI+LANGFUSE+JWT verified ENABLED in SM 2026-06-13. One new bootstrap
+  SM secret: `dev-image-db-password` (founder creates).
+- I8 (in secrets) — Valkey budget-brake: VALKEY_URL → SHARED instance DB 0; un-prefixed global
+  `ai:cost:*`/`ai:budget:*` (₹500/day brake per D6) stays cross-service coordinated.
+- I9 (in deployment + secrets) — dedicated `svc-image` queue (broker DB1/results DB2, keys `svc-image:`),
+  disjoint from monolith `image-tasks` (PR #143) + default `celery`.
+- I10 — MS-DB-3 `max_connections=200` already LIVE (MS-0). svc-image pools fit under 200. No action.
+
+**D3 VM-FIT CAPACITY MATH (handoff §3 — the LOUD flag):**
+- e2-standard-2 allocatable ≈ 2000m. Live baseline = ~1675m (84%, MS-0 post-apply).
+- Projected MS-2 adds: svc-export 250m + svc-dashboard ~50m + svc-image 550m → **≈ 2525m = 126% → OVERFLOWS ~525m.**
+- **VERDICT: STOP. Node does NOT fit svc-image at MS-2.** FRESH founder D3 ask (e2-standard-4 ~₹2,600/mo,
+  >₹500/mo gate) required BEFORE apply. NOT silently provisioned (constraint §4). rembg-deferred already
+  applied (cheapest mitigation; cuts image+RAM, not enough CPU to fit). On e2-standard-4 (~4000m), 2525m=63%.
+  Deploy-time gate, NOT a merge blocker (manifests dev-only, ₹0).
+
+Validation: OFFLINE PASS — `yaml.safe_load_all` on 4 appliable manifests (deployment ×2, service,
+  ingressroute, secret) parse clean, kind/name/namespace=dev + resources/envFrom asserted; schema-role.sql
+  idempotent guards present + Option-B grant grep-verified; Dockerfile structural review clean (no rembg).
+  Server `--dry-run=server` + dev smoke DEFERRED to deploy time (§15 F3, cluster unreachable; the deploy
+  itself is D3-gated).
+Board sweep: 1 Active row added (microservices-image IN PROGRESS → IN REVIEW on PR open); 1 outgoing
+  inter-lead row added (backend-coordinator, 6 confirmations incl D3 overflow); no stale rows.
+Next action: open PR → `feature/microservices-image/integration` (infra-lead-reviewed; backend lead runs the
+  integration merge gate, NOT self-merged). Flag the D3 overflow to founder in the PR body. Provision NOTHING.
+=========
 
 ## UPDATE — 2026-06-12 — mesell-ms-pgbouncer-session-1 (APPLY) — MS-0 / D5 step 1 APPLIED LIVE to dev
 
