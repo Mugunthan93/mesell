@@ -1,6 +1,27 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-13 (mesell-ms2-wave-confirm-session-1) ===
+Phase: Microservices — MS-2 wave DISPATCH CONFIRMATION (B dashboard ‖ C image)
+Session: mesell-ms2-wave-confirm-session-1 (FAST-MODE docs chore, rule-7 docs class, lead-direct, no specialist)
+Board sweep: feature_board_backend.md MS-2 state line flipped "MS-2 WAVE OPEN — awaiting master confirm" → "MS-2 DISPATCHED — MS-B (dashboard) ‖ MS-C (image) executing in parallel sessions"; microservices-dashboard row SPEC-AUTHORED/EXECUTION-GATED → IN PROGRESS (session mesell-ms-dashboard-session-1); microservices-image (MS-C) row PHASE-1-SPEC/PHASE-2-GATED → IN PROGRESS (session mesell-ms-image-session-1); both noting "Phase 2 execution; gated-condition SATISFIED (MS-A merged 79525f3 + recipe + frozen shim contract)". No rows untouched 7+ days (all MS rows touched 2026-06-12/13). No new inter-lead requests opened by this confirmation.
+Done:
+- MASTER/FOUNDER CONFIRMATION (2026-06-13): MS-2 wave is CONFIRMED DISPATCHED. The founder is opening the two execution sessions per docs/sub_session_prompts/microservices_execution/00-ms-parallel-program-dispatch.md (MS-PAR-1 wave structure).
+- Gated-condition for MS-2 Phase-2 execution = SATISFIED: (a) Sub-Plan A export founder gate MERGED to develop (squash 79525f3, PR #191, 2026-06-13T01:39:45Z); (b) recipe_ms_extraction.md present in lead memory dir; (c) SHIM_CONTRACT_export_callees.md FROZEN on develop via #191.
+- STANDING REMINDERS recorded for both parallel lanes:
+  (1) STRANGLER-FIG: the monolith stays LIVE during extraction; the cutover (routing traffic to each new svc) is a SEPARATE founder gate PER SERVICE — NOT taken at dispatch and NOT taken by the lead.
+  (2) D3 VM SPEND: the ~₹2,600/mo e2-standard-4 pre-approval is plan-level only; the actual spend gets a FRESH founder ask AT node-outgrow (not yet — MS-2's small svcs fit the current e2-standard-2 node). svc-image is the heaviest container and the most likely trigger; flag, never auto-provision.
+  (3) SHARED-FILE DISCIPLINE between the two lanes: backend/app/main.py router removal is ADDITIVE-minimal; each integration branch merges origin/develop BEFORE its founder-gate PR opens; union-merge conflicts keep-both (the Wave-6 parallel pattern).
+  (4) image is a CALLEE of export: MS-C implements the /internal/* shims that SHIM_CONTRACT_export_callees.md froze (frozen callee shim = list_images→ImagesListResponse, NOT get_image_bytes).
+- HOUSEKEEPING: orphan remote branch feature/microservices-pgbouncer/integration (tip 4ff407b) DELETED. Verified content fully represented on develop — its only unique commit (MS-0 PgBouncer/max_connections) is a STRICTLY-EARLIER, pre-apply version of MS-0 already landed via #181 (29ed457) + apply record #192 (cd890be). Per-file diff: 4 of 6 MS-0 files IDENTICAL to develop; 2 differ (k8s/pgbouncer.yaml + docs/runbooks/pgbouncer-cutover.md) where DEVELOP IS STRICTLY AHEAD (develop carries the apply-time fixes — auth_type=scram-sha-256, image edoburu/pgbouncer:v1.23.1-p3, SCRAM/userlist lessons; the orphan has the OLD md5 + bare 1.23.1 pre-apply form). ZERO unique non-merged content on the orphan → safe delete.
+In progress: MS-B dashboard ‖ MS-C image Phase-2 execution (owned by the two execution sessions, not this docs chore).
+Blockers: none.
+Next: each execution session runs hybrid steps 2–3 (specialists build per spec → infra handoff to meesell-infra-builder → lead merge-gate → founder-gate PR left open). MS-3 (D pricing ‖ E customer) opens when MS-2 both founder gates merge.
+Hand-offs: none new (MS-2 infra handoffs handoff_msB_infra.md / handoff_msC_infra.md already authored and gated; they unblock for meesell-infra-builder now that the wave is dispatched).
+=========
+```
+
+```
 === UPDATE: 2026-06-13 (mesell-ms-export-session-1) ===
 Phase: Microservices Sub-Plan A (export extraction) — FOUNDER GATE MERGED; MS-2 wave OPEN
 Session: mesell-ms-export-session-1 (master-window relay; founder delegation "ok goahead" 2026-06-13)
