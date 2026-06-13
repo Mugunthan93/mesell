@@ -18,6 +18,12 @@ module.exports = withNativeFederation({
     'rxjs/fetch',
     'rxjs/testing',
     'rxjs/webSocket',
+    // F-001: @primeuix/themes is imported via subpath (/aura) inside libs/ui-kit/theme.ts.
+    // Subpaths are NOT registered in the import map (only root keys are), so any consumer
+    // that loads the shared kit chunk would fail to resolve '@primeuix/themes/aura' at runtime.
+    // Unsharing bundles Aura directly into the _mesell_ui_kit.js shared chunk — no import-map lookup.
+    '@primeuix/themes', // F-001
+    '@primeuix/themes/aura', // F-001 guard
     // Add further packages you don't need at runtime
   ],
 

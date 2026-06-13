@@ -9,9 +9,9 @@ import { provideAnimationsAsync } from '@angular/platform-browser/animations/asy
 import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
 
 import { routes } from './app.routes';
-// Deep import (not the barrel) so the root bundle pulls only the PrimeNG
-// providers + theme, never the full set of mee-* wrappers.
-import { provideMeeUi } from '@mesell/ui-kit/providers';
+// F-001: barrel import — Native Federation maps only the root @mesell/ui-kit key
+// in the import map; subpath imports resolve at compile time but not at runtime.
+import { provideMeeUi } from '@mesell/ui-kit';
 
 import {
   jwtInterceptor,
