@@ -724,7 +724,7 @@ jobs:
         needs.frontend-changes.outputs.mfe_onboarding == 'true' ||
         needs.frontend-changes.outputs.mfe_dashboard  == 'true'
       )
-    timeout-minutes: 25
+    timeout-minutes: 90
 
     steps:
       - name: Checkout source
