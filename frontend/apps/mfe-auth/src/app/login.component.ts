@@ -10,8 +10,8 @@ import { Router, RouterLink } from '@angular/router';
 import { catchError, EMPTY } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
 import { AuthLayoutComponent, MeeAlertBannerComponent } from '@mesell/composites';
-import { MeeInputComponent } from '@mesell/ui-kit/input/input.component';
-import { MeeButtonComponent } from '@mesell/ui-kit/button/button.component';
+// F-001: barrel import — subpaths are not in the federation import map at runtime
+import { MeeInputComponent, MeeButtonComponent } from '@mesell/ui-kit';
 import { AuthApiService } from '@mesell/core';
 
 @Component({

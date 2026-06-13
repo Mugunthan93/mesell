@@ -12,8 +12,8 @@ import { catchError, EMPTY, switchMap } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
 import { AuthLayoutComponent, MeeAlertBannerComponent } from '@mesell/composites';
 import { AuthService, AuthApiService } from '@mesell/core';
-import { MeeOtpInputComponent } from '@mesell/ui-kit/otp-input/otp-input.component';
-import { MeeButtonComponent } from '@mesell/ui-kit/button/button.component';
+// F-001: barrel import — subpaths are not in the federation import map at runtime
+import { MeeOtpInputComponent, MeeButtonComponent } from '@mesell/ui-kit';
 
 @Component({
   selector: 'mee-otp-verify',
