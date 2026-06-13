@@ -54,7 +54,48 @@ would cause the gate to FAIL even on a clean build (false negative).
 In production (Traefik ingress), CORS is handled at the ingress level. In CI, the
 static server must handle it explicitly.
 
-## How to run locally
+## How to run locally (recommended — dev serve path)
+
+The local run path matches CI exactly: boot all 7 servers via `start:all`, then run
+the smoke harness. **Screen images are written to `frontend/tools/boot-smoke/screenshots/`.**
+
+Prerequisites: Node 22, pnpm 11.5.2, Playwright chromium installed.
+
+```bash
+# Terminal 1 — boot all 7 ng serve processes (shell + 6 remotes)
+cd frontend
+pnpm run start:all
+# Wait until all 7 servers print "Local:" URLs (takes 1-3 min on a warm machine,
+# up to 8 min on a cold machine due to NF shared-package prepare).
+
+# Terminal 2 — install Playwright chromium (once) and run the gate
+cd frontend
+npx playwright install chromium   # first time only
+pnpm run smoke:boot
+
+# Check exit code
+echo "Exit: $?"   # 0 = all pass, 1 = at least one assertion failed
+```
+
+After a local run, the screen images are at:
+
+```
+frontend/tools/boot-smoke/screenshots/
+  boot-smoke-root-360px.png
+  boot-smoke-root-1280px.png
+  boot-smoke-login-360px.png
+  boot-smoke-login-1280px.png
+  boot-smoke-profile-360px.png
+  boot-smoke-profile-1280px.png
+```
+
+The JSON results summary is at `frontend/tools/boot-smoke/smoke-results.json`.
+
+## How to run locally (alternative — prod-static path)
+
+The prod-static path (build → serve.js) is retained for reference and for manual
+regression testing. It is **no longer used by CI** (replaced by the dev-serve path
+above). See the steps below if you need to reproduce a prod-build scenario locally.
 
 Prerequisites: Node 22, pnpm 11.5.2, Playwright chromium installed.
 
@@ -162,4 +203,5 @@ It is **not yet a required status check** — the founder promotes it to require
 GitHub branch protection settings (Settings → Branches → Require status checks → add
 `Frontend: boot smoke`) after the first green CI run confirms reliability.
 
-Timeout: 25 minutes (build 7 apps + boot + run Playwright).
+Timeout: 15 minutes hard ceiling (dev ng serve path — target < 10 min wall clock;
+no prod builds, no static serve.js servers).
