@@ -681,16 +681,23 @@ jobs:
   # =============================================================================
   # FRONTEND: BOOT SMOKE — browser-boot gate that catches F-001-class failures.
   #
-  # Purpose: prove that the built + statically-served Angular SPA actually boots
-  # in a real browser — build-green does NOT mean browser-green for federated apps.
+  # Purpose: prove that the served Angular SPA actually boots in a real browser —
+  # build-green does NOT mean browser-green for federated apps.
   # The classic failure mode (F-001): a native-federation import-map subpath miss
   # compiles fine (TypeScript resolves via tsconfig aliases) but throws
   # "Unable to resolve specifier" at runtime, crashing the app.
   #
+  # Serve strategy — DEV PATH (ng serve via start:all):
+  #   The previous approach (7 sequential `ng build --configuration production` +
+  #   static serve) stalled ~24 min PER BUILD on NF cold "Preparing shared npm
+  #   packages" (7 x 24 min = 168 min > any timeout). Even dev builds stall the
+  #   same way — this is NOT a dev vs prod distinction. `ng serve` takes a different
+  #   code path that avoids the cold-prepare stall, delivering a ready server in
+  #   minutes. F-001 class failures fire identically under ng serve because the
+  #   import map is generated from the same federation config.
+  #
   # False-pass immunity (the round-1 gate shipped a false pass):
-  #   * Serve strategy: build-then-static-serve with SPA history-fallback via
-  #     frontend/tools/boot-smoke/serve.js (NOT python -m http.server which returns
-  #     404 on /login and /profile, allowing Angular to silently never boot).
+  #   * Serve strategy: ng serve (native SPA history-fallback, no static server).
   #   * Assertion (a): document HTTP status MUST be 200 — captured via
   #     page.on('response'). This is the assertion that was missing from round-1.
   #   * Assertion (b): real component selectors per route, NOT generic body checks.
@@ -703,7 +710,7 @@ jobs:
   #
   # Triggers: any push/PR to develop or main that touches frontend libs, shell,
   #   mfe-auth, mfe-onboarding, or mfe-dashboard — the three routes tested
-  #   (/, /login, /profile) touch these units. CI not fires on schedule.
+  #   (/, /login, /profile) touch these units. CI does not fire on schedule.
   #
   # NOTE: This job does NOT gate the build/deploy jobs (needs: not added to them).
   # The founder will wire it into required_status_checks separately (D1).
@@ -724,16 +731,11 @@ jobs:
         needs.frontend-changes.outputs.mfe_onboarding == 'true' ||
         needs.frontend-changes.outputs.mfe_dashboard  == 'true'
       )
-    # Development builds are used (not production) for two reasons:
-    # 1. Production builds stall ~24 min each on NF cold "Preparing shared npm packages"
-    #    (7 x 24 min approaches the timeout ceiling — the first timeout was 90 min).
-    # 2. The F-001 class failure (import-map subpath resolution) reproduces identically
-    #    in development builds — the federation.manifest.json and remoteEntry.json are
-    #    generated from the federation config, not from production optimisation.
-    # Development builds complete in ~25-30 min total (NF cold-start is slow regardless
-    # of dev/prod; the key benefit is dev builds DO NOT HANG the way production builds
-    # do — they complete and move to the next step). 60 min leaves generous headroom.
-    timeout-minutes: 60
+    # Target: < 10 min wall clock (dev ng serve path, no prod builds).
+    # Hard ceiling: 15 min so a regression can never hang for an hour again.
+    # Previous timeout of 90m was masking the real problem (7 sequential prod builds
+    # stalling ~24 min each on NF cold "Preparing shared npm packages" → job hung).
+    timeout-minutes: 15
 
     steps:
       - name: Checkout source
@@ -756,79 +758,49 @@ jobs:
       - name: pnpm rebuild native binaries
         working-directory: frontend
         # Required on CI — pnpm ignores build scripts for esbuild et al. by default.
+        # ng serve (dev path) still needs the native binaries for esbuild + file watching.
         run: pnpm rebuild esbuild @parcel/watcher lmdb msgpackr-extract
 
       - name: Install Playwright chromium
         working-directory: frontend
         run: npx playwright install --with-deps chromium
 
-      # Build all 7 apps sequentially in development mode. The shell needs all remotes
-      # built first so its federation manifest can point at real remoteEntry.json files.
-      # Dev builds produce the same dist/<app>/browser/ structure as production; the
-      # federation.manifest.json and remoteEntry.json are config-driven (not opt-driven).
-      - name: Build shell
-        working-directory: frontend
-        run: pnpm exec ng build frontend --configuration development
-
-      - name: Build mfe-pricing
-        working-directory: frontend
-        run: pnpm exec ng build mfe-pricing --configuration development
-
-      - name: Build mfe-export
-        working-directory: frontend
-        run: pnpm exec ng build mfe-export --configuration development
-
-      - name: Build mfe-onboarding
-        working-directory: frontend
-        run: pnpm exec ng build mfe-onboarding --configuration development
-
-      - name: Build mfe-dashboard
-        working-directory: frontend
-        run: pnpm exec ng build mfe-dashboard --configuration development
-
-      - name: Build mfe-catalog
-        working-directory: frontend
-        run: pnpm exec ng build mfe-catalog --configuration development
-
-      - name: Build mfe-auth
-        working-directory: frontend
-        run: pnpm exec ng build mfe-auth --configuration development
-
-      # Assert the manifest points at localhost (not prod URLs).
-      # This is a guard against accidentally shipping a manifest that makes CI
-      # servers try to pull remoteEntry.json from production.
-      - name: Assert federation manifest uses localhost
+      # ── DEV PATH: start all 7 ng serve processes via start:all ───────────────
+      #
+      # REPLACES the 7 sequential production/dev builds + the 7 static serve.js
+      # servers + the manifest localhost assertion.
+      #
+      # WHY DEV PATH:
+      #   The 7 prod builds stalled ~24 min on a cold CI runner inside Native
+      #   Federation's "Preparing shared npm packages" step. Dev builds stall
+      #   identically. The ng serve code path avoids the cold-prepare stall and
+      #   matches exactly what the founder runs locally. F-001 class failures
+      #   (import-map subpath misses) fire identically under ng serve because the
+      #   import map is generated from the same federation config.
+      #
+      # PGID trick: setsid creates a new process group so a single `kill -- -$PGID`
+      # in teardown kills the entire start:all subtree (all 7 ng serve children).
+      - name: Start dev servers (start:all in background)
         working-directory: frontend
         run: |
-          MANIFEST=dist/frontend/browser/federation.manifest.json
-          echo "--- federation.manifest.json ---"
-          cat "$MANIFEST"
-          if grep -q 'https://' "$MANIFEST"; then
-            echo "ERROR: federation.manifest.json contains https:// URLs — CI expects localhost-only."
-            exit 1
-          fi
-          echo "OK: manifest uses localhost only."
+          setsid pnpm run start:all > /tmp/start-all.log 2>&1 &
+          echo $! > /tmp/start-all.pid
+          echo "start:all PID: $(cat /tmp/start-all.pid)"
 
-      # Start 7 SPA-aware static servers (background). Capture PIDs for teardown.
-      - name: Start static servers (SPA fallback)
-        working-directory: frontend
+      # ── READINESS GATE ───────────────────────────────────────────────────────
+      #
+      # Dev differences vs prod-static:
+      #   Shell: poll http://localhost:4200/ (root, not /index.html — ng serve
+      #     does not expose /index.html as a distinct path in all configurations).
+      #   Remotes: poll /remoteEntry.json exactly as before — ng serve exposes it.
+      #   SPA fallback: ng serve natively provides history-API fallback; curl
+      #     http://localhost:4200/login MUST return 200.
+      #
+      # Budget: 480 seconds (8 min) — generous for cold-runner NF dev prepare.
+      # Hard-fail with log tail so the failure is diagnosable.
+      - name: Wait for dev servers to be ready
         run: |
-          node tools/boot-smoke/serve.js dist/frontend/browser    4200 &  echo $! >> /tmp/smoke-pids
-          node tools/boot-smoke/serve.js dist/mfe-pricing/browser 4201 &  echo $! >> /tmp/smoke-pids
-          node tools/boot-smoke/serve.js dist/mfe-export/browser  4202 &  echo $! >> /tmp/smoke-pids
-          node tools/boot-smoke/serve.js dist/mfe-onboarding/browser 4203 &  echo $! >> /tmp/smoke-pids
-          node tools/boot-smoke/serve.js dist/mfe-dashboard/browser  4204 &  echo $! >> /tmp/smoke-pids
-          node tools/boot-smoke/serve.js dist/mfe-catalog/browser    4205 &  echo $! >> /tmp/smoke-pids
-          node tools/boot-smoke/serve.js dist/mfe-auth/browser    4206 &  echo $! >> /tmp/smoke-pids
-          echo "Servers started. PIDs:"
-          cat /tmp/smoke-pids
-
-      # Readiness gate: poll until all 7 servers respond (bounded loop, hard-fail).
-      # Remotes: wait for remoteEntry.json (proves the federation entry point is live).
-      # Shell: wait for index.html (the document the browser fetches first).
-      - name: Wait for servers to be ready
-        run: |
-          MAX_TRIES=30
+          MAX_TRIES=480
           check() {
             local url="$1"
             local tries=0
@@ -836,29 +808,35 @@ jobs:
               tries=$((tries + 1))
               if [ "$tries" -ge "$MAX_TRIES" ]; then
                 echo "FAIL: $url did not become ready after ${MAX_TRIES}s"
+                echo "--- start:all log (last 60 lines) ---"
+                tail -60 /tmp/start-all.log || true
                 exit 1
               fi
               sleep 1
             done
             echo "READY: $url"
           }
-          check http://localhost:4200/index.html
+          # Shell: poll root path (ng serve SPA — always 200)
+          check http://localhost:4200/
+          # Remotes: poll remoteEntry.json (proves federation entry point is live)
           check http://localhost:4201/remoteEntry.json
           check http://localhost:4202/remoteEntry.json
           check http://localhost:4203/remoteEntry.json
           check http://localhost:4204/remoteEntry.json
           check http://localhost:4205/remoteEntry.json
           check http://localhost:4206/remoteEntry.json
-          # Prove SPA fallback: /login MUST return 200 (not 404) before driving the browser.
+          # SPA fallback proof: /login MUST return 200 (ng serve history fallback).
           HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4200/login)
           echo "SPA fallback check: /login → HTTP $HTTP_CODE"
           if [ "$HTTP_CODE" != "200" ]; then
             echo "ERROR: SPA fallback is not working — /login returned $HTTP_CODE (expected 200)."
+            echo "--- start:all log (last 60 lines) ---"
+            tail -60 /tmp/start-all.log || true
             exit 1
           fi
           echo "SPA fallback OK: /login → 200"
 
-      # Run the boot smoke gate.
+      # Run the boot smoke gate (UNCHANGED — harness is correct, do NOT modify).
       - name: Run boot smoke
         working-directory: frontend
         env:
@@ -867,26 +845,38 @@ jobs:
           SMOKE_RESULTS_FILE: tools/boot-smoke/smoke-results.json
         run: node tools/boot-smoke/boot-smoke.js
 
-      # Upload screenshots + results always so the founder can diagnose pass and fail runs.
+      # Upload screenshots + results ALWAYS so the founder can diagnose pass and fail.
       - name: Upload smoke artifacts (always)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: boot-smoke-artifacts-${{ github.run_id }}
+          name: boot-smoke-${{ github.run_id }}
           path: |
             frontend/tools/boot-smoke/screenshots/
             frontend/tools/boot-smoke/smoke-results.json
           retention-days: 7
 
-      # Always kill the background servers, even on failure.
-      - name: Teardown servers
+      # Also upload the start:all log for diagnosis on any outcome.
+      - name: Upload start:all log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: start-all-log-${{ github.run_id }}
+          path: /tmp/start-all.log
+          retention-days: 7
+
+      # Teardown: kill the entire start:all process group (setsid creates a new
+      # PGID equal to the PID we stored). Falls back to individual kill if setsid
+      # wasn't available. Always runs, even on failure.
+      - name: Teardown dev servers
         if: always()
         run: |
-          if [ -f /tmp/smoke-pids ]; then
-            while IFS= read -r pid; do
-              kill "$pid" 2>/dev/null || true
-            done < /tmp/smoke-pids
-            echo "Servers stopped."
+          if [ -f /tmp/start-all.pid ]; then
+            PGID=$(cat /tmp/start-all.pid)
+            kill -- -"$PGID" 2>/dev/null || kill "$PGID" 2>/dev/null || true
+            echo "Dev servers stopped (PGID/PID: $PGID)."
+          else
+            echo "No start:all PID file found — nothing to kill."
           fi
 
   # =============================================================================
