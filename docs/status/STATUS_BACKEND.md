@@ -1,6 +1,28 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-13 (mesell-ms-pricing-db-session-1) — MS-D Phase A COMPLETE ===
+Phase: Microservices Sub-Plan D (pricing extraction) — Phase A database-builder schema-split
+Session: meesell-database-builder, worktree /tmp/mesell-wt/msD-backend, branch feature/microservices-pricing/backend
+Done:
+  - Standalone Alembic chain created at backend/services/svc-pricing/alembic/ (4 files: alembic.ini, env.py, script.py.mako, versions/97c9dd63f587_move_pricing_calcs_to_pricing_schema.py).
+  - version_table_schema="pricing" — alembic_version row lives in pricing schema, isolated from monolith public.alembic_version.
+  - Revision 97c9dd63f587 (root of chain, down_revision=None).
+  - upgrade(): Risk#5 pre-scan (pricing_calcs.product_id orphan count, abort + up to 20 detail rows on non-zero), CREATE SCHEMA IF NOT EXISTS pricing, ALTER TABLE public.pricing_calcs SET SCHEMA pricing.
+  - downgrade(): ALTER TABLE pricing.pricing_calcs SET SCHEMA public. Clean round-trip.
+  - CRITICAL FK preserved: pricing_calcs.product_id → public.products.id (FK name: pricing_calcs_product_id_fkey). NOT dropped — catalog is MS-5; FK drops at MS-H. Verified via information_schema post-upgrade.
+  - Source citations: __tablename__ = "pricing_calcs" (pricing_calc.py:33); ForeignKey("products.id", ondelete="CASCADE") (pricing_calc.py:42-44).
+  - Round-trip validated LIVE on local Homebrew PG 16.11 (dev tunnel down — PG-gate substitution per recipe §7). Risk#5 abort tested (orphan row injected, RuntimeError raised, rollback clean).
+  - ruff clean on all svc-pricing alembic files.
+  - Monolith head f31c75438e61 UNCHANGED. Committed f14c7d5, pushed origin feature/microservices-pricing/backend.
+In progress: none — Phase A complete.
+Blockers: none.
+Next: Phase B — meesell-services-builder (service/repo/domain/exceptions + 2 HTTP shims + §0.6 shared-ORM resolution) + meesell-api-routes-builder (1 route POST /products/{id}/price-calc, Decimal verbatim).
+Hand-offs: Schema ready for Phase B specialists. pricing_calcs is in pricing schema. Cross-schema FK to public.products VALID. No new infra dependency beyond handoff_msD_infra.md.
+=========
+```
+
+```
 === UPDATE: 2026-06-13 (mesell-ms3-wave-open-session-1) — MS-2 WAVE COMPLETE; MS-3 (D pricing ‖ E customer) OPEN ===
 Phase: Microservices migration — MS-2 wave close-out + MS-3 wave OPEN (FAST-MODE docs/status chore, CLAUDE.md hybrid rule 7, lead-direct, no specialist)
 Session: mesell-ms3-wave-open-session-1 (worktree /tmp/mesell-wt/ms3-open, branch chore/ms3-wave-open off origin/develop tip 84424e0)
