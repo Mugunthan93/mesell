@@ -1,6 +1,21 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-13 (mesell-ms-export-session-1) ===
+Phase: Microservices Sub-Plan A (export extraction) — FOUNDER GATE MERGED; MS-2 wave OPEN
+Session: mesell-ms-export-session-1 (master-window relay; founder delegation "ok goahead" 2026-06-13)
+Board sweep: microservices-export row flipped FOUNDER GATE OPEN (PR #191) → MERGED `79525f3` (in-place, one row per feature). No rows untouched 7+ days. No new inter-lead requests opened by this status flip.
+Done:
+  - Founder gate PR #191 (feature/microservices-export/integration → develop) MERGED by founder account 2026-06-13T01:39:45Z — squash commit `79525f3`. Develop tip = `79525f3`. All 13 CI checks GREEN pre-merge.
+  - #181 `max_connections` terraform conflict RESOLVED prior to merge: MS-0's var-based `max_connections=${var.max_connections}` form KEPT, no duplicate declaration.
+  - PgBouncer + `max_connections=200` are LIVE on dev (#181 merged earlier + apply record #192).
+  - Board + STATUS + own memory updated (this status-only chore, FAST-MODE per CLAUDE.md hybrid rule 7).
+In progress: none — Sub-Plan A is closed at the founder gate. Strangler-fig: the monolith `export` module STAYS LIVE alongside svc-export.
+Blockers: none.
+Next: **MS-2 wave is OPEN** per MS-PAR-1 — Phase-2 execution gate for MS-B (dashboard) ‖ MS-C (image) is SATISFIED (`recipe_ms_extraction.md` in lead memory + `SHIM_CONTRACT_export_callees.md` FROZEN on develop via #191). The next FOUNDER decision is the **cutover flip** (route live traffic to svc-export) — that is a SEPARATE gate, NOT taken now.
+Hand-offs: none new this flip (program-level SHIM_CONTRACT already freezes the /internal/* interface for Sub-Plans C/E/F/H; MS-B/MS-C infra lanes tracked via handoff_msB_infra.md + handoff_msC_infra.md).
+=========
+
 === UPDATE: 2026-06-12 (mesell-ms-export-session-1) ===
 Phase: Microservices Sub-Plan A (export extraction) — HYBRID STEP 3 MERGE-GATE REVIEW
 Session: mesell-ms-export-session-1
