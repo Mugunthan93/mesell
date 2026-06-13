@@ -1,7 +1,46 @@
 # STATUS — FRONTEND
 
 **Owner:** meesell-frontend-coordinator (master session)
-**Last update:** 2026-06-12
+**Last update:** 2026-06-13
+
+=== UPDATE: 2026-06-13 12:10 ===
+Phase: F-001 federation subpath import-map fix (P0 hotfix — shell blank-screen)
+Agent: meesell-angular-service-builder (HYBRID step 2)
+Branch: fix/frontend/f001-federation-subpath @ 3ae9fd3 — PUSHED
+PR: #203 (fix/frontend/f001-federation-subpath → develop)
+
+Done:
+  PART A — 11 deep @mesell/ui-kit/<subpath> → barrel @mesell/ui-kit rewrites (4 files):
+    apps/shell/src/app/app.config.ts: @mesell/ui-kit/providers → @mesell/ui-kit
+    apps/mfe-auth/src/app/login.component.ts: 2 subpath → 1 barrel import
+    apps/mfe-auth/src/app/signup.component.ts: 2 subpath → 1 barrel import
+    apps/mfe-auth/src/app/otp-verify.component.ts: 2 subpath → 1 barrel import
+    apps/mfe-onboarding/src/app/profile.component.ts: ALREADY CORRECT on develop (PR #153)
+  PART B — @primeuix/themes + @primeuix/themes/aura added to skip[] in all 7 federation configs:
+    apps/shell, mfe-pricing, mfe-export, mfe-onboarding, mfe-dashboard, mfe-catalog, mfe-auth
+  BONUS — pnpm-workspace.yaml allowBuilds placeholders → true (GATE5 §6 must-land fix)
+
+Grep proof (ZERO subpath imports remain):
+  @mesell/ui-kit/ → 0 hits  |  @mesell/core/ → 0 hits  |  @mesell/composites/ → 0 hits
+
+remoteEntry.json proof (@primeuix/themes absent from shared[]):
+  shell: 161 shared entries, 0 @primeuix entries — PASS
+  mfe-auth: 161 shared entries, 0 @primeuix entries — PASS
+  mfe-onboarding: 161 shared entries, 0 @primeuix entries — PASS
+  @mesell/ui-kit: singleton=True, outFileName=_mesell_ui_kit.js (Aura bundled in, 204 kB)
+
+Browser boot smoke (headless chromium 148.0.7778.96 arm64):
+  / @ 360px+1280px: PASS | /login @ 360px+1280px: PASS | /profile @ 360px+1280px: PASS
+  6/6 PASS — ZERO "Unable to resolve specifier" errors on all routes
+
+Tests: 64 spec files / 1046 tests / 0 fail
+Build: shell 3.6s | mfe-auth 3.1s | mfe-onboarding 3.1s (all ≤90s D12)
+
+Blockers: none
+Hand-offs:
+  PR #203 IN REVIEW — meesell-frontend-coordinator merge-gate (HYBRID step 3)
+  Gate 5 re-run unblocked once PR #203 merges (all 6 remotes now bootable in browser)
+=========
 
 === UPDATE: 2026-06-12 — FROZEN-SURFACE AMENDMENTS (4) — FOUNDER-APPROVED §7.3 → MERGED to develop ===
 Phase: shared-surface amendments (libs/core, libs/ui-kit, libs/design-tokens)
