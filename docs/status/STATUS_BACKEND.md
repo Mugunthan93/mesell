@@ -5856,3 +5856,67 @@ Hand-offs:
   - infra (A2) + database-builder (A1): the SOLE cross-schema grant is GRANT INSERT ON public.audit_events TO
     image_user — NO products SELECT (Option B). svc-image ORM targets schema `image` (image.product_images).
 =========
+
+=== UPDATE: 2026-06-13 (MS-E customer extraction — EXECUTION COMPLETE, MERGE-GATE PASS, FOUNDER GATE OPEN) ===
+Phase: Microservices Sub-Plan E (customer extraction) — HYBRID rule 7 STEP 3 (merge gate + lead-owned Phase C)
+Session: mesell-ms-customer-backend-session-1
+Board sweep: microservices-customer row flipped READY-TO-EXECUTE → MERGED-TO-INTEGRATION / FOUNDER GATE OPEN.
+  No rows untouched 7+ days (whole board churned this week across the MS program). No new inter-lead requests opened
+  (the 2 deploy items go in the founder-gate PR body, not as inter-lead memos — they are founder actions, not lead-to-lead).
+Done:
+  - MERGE-GATE STEP 3a VERDICT = PASS (real gate, every spec §3/§5/§6 criterion checked against the deliverables):
+    * service.py AST-PROVEN — 21 functions, names match monolith, the SOLE function with a body diff is
+      `_load_super_id_set` (the sanctioned SQL→`category_client.get_super_category_set()` swap). Imports = dropped
+      `select` + `CategoryORM` (sanctioned) + added `category_client` (sanctioned) + mechanical app-path flattening
+      (recipe-expected for a standalone service). The "2 sanctioned edits" claim HOLDS.
+    * domain.py / exceptions.py / repository.py / schemas.py = BYTE-IDENTICAL to monolith (diff exit 0).
+      SellerProfileResponse + RequiredFieldsResponse zero-drift vs LIVE frontend confirmed by the byte-identical schemas.py.
+      COMPLIANCE_EXTENSION_MAP = 11 keys (preserved by construction — domain.py byte-identical). 7 exception classes
+      (CustomerError + 6 subclasses).
+    * Router AST-PROVEN — all 5 public handler BODIES + DECORATORS identical to monolith; 3 PATCH carry
+      @rate_limit(60,3600)+@audit_event; 2 GET carry neither. No logic inlined.
+    * 3 INBOUND /internal/* serialize the EXACT frozen field sets/order: compliance-block = asdict(ComplianceBlock)
+      10 fields / 404 ProfileNotFoundError; onboarding-completeness = asdict(ProfileCompleteness) 5 fields / get_onboarding_completeness
+      has ZERO raise stmts → NEVER 404 (first-time seller returns the 10-base/all-zero shape at 200); eligibility = {}
+      on success / 422 ProfileIncompleteForCategoryError, super_id as query param.
+    * MOUNTED ROUTE COUNT (count routes not schemas — row-26 lesson) = 8 (5 public /api/v1/seller-profile/* + 3 /internal/*),
+      verified by booting app.main and introspecting app.routes.
+    * seller_profile ORM: ForeignKeyConstraint + relationship("User") SEVERED; plain UUID PK; GIN
+      idx_seller_profile_super_cats KEPT (postgresql_using="gin"); {"schema":"customer"}.
+    * Migration a9f3b2c5e1d8: down_revision None (chain root); Risk#5 pre-scan (raises on orphans); DROP CONSTRAINT
+      before SET SCHEMA; clean downgrade (SET SCHEMA public + re-add FK); version_table_schema="customer" in env.py.
+    * Trimmed Settings (DATABASE_URL@customer / VALKEY_URL / JWT_SECRET / CACHE_VERSION / MONOLITH_INTERNAL_BASE_URL /
+      APP_ENV only — gemini/langfuse/msg91/razorpay/gcs explicitly excluded). NO Celery anywhere (all "celery" hits are
+      doc comments stating its absence). requirements.txt: no celery/gemini/langfuse/msg91/razorpay/gcs/openpyxl.
+    * OUTBOUND category shim returns list[str] (FROZEN-0E), forwards JWT + X-Request-ID, 5s/2s timeout, 1 retry on 503/504.
+    * 22/22 svc-customer own tests PASS (master venv Py3.11). Tests assert REAL equality (AST body compare, 11-key map,
+      exception status codes, GIN/schema presence, shim header-forward + list[str] + retry) — NO tautologies.
+  - STEP 3b (lead-owned Phase C, additive, NOT cut over):
+    * backend/app/core/extracted_clients/customer_client.py — REVERSE shim re-exporting customer.service's
+      get_compliance_block + assert_eligible_for_super_id over HTTP to customer-svc, honoring all frozen contracts
+      (compliance-block 10-field/404→ProfileNotFoundError; eligibility 200-{}→None/422→ProfileIncompleteForCategoryError
+      with super_id+missing_keys forwarded). STRANGLER: catalog/service.py:99 import UNFLIPPED, customer_router mount
+      main.py:117 UNREMOVED. Base URL via os.environ CUSTOMER_SVC_BASE_URL default http://customer-svc:8001 — deliberately
+      NOT added to LOCKED §5.D Settings (§7.3); Settings-wiring is a cutover-time item flagged in the PR body.
+    * backend/tests/test_customer_extraction.py — 7 reverse-shim tests, REAL equality (10-field round-trip, 404/422
+      exception translation w/ envelope forwarding, eligibility None+query-param, 503 single-retry, inspect.signature
+      parity vs in-process customer.service for §16.G). All 7 PASS; ruff clean.
+    * docs/runbooks/customer-svc-rollback.md — PROVIDER rollback (table-owning schema downgrade + 3-caller revert:
+      monolith-catalog reverse-import, svc-export base URL, svc-dashboard base URL).
+  - STEP 3c INTEGRATE: backend + infra group branches LEAD-merged --no-ff into
+    feature/microservices-customer/integration; origin/develop (f3c4ff0) merged clean (frontend-docs-only advance:
+    Gate-5 briefs + F-001 close-out — ZERO conflict on backend/status/board shared files). Integration tip 697d236.
+    Monolith app/ diff vs develop = ONLY the 2 additive extracted_clients files (in-process customer module UNTOUCHED).
+    Full-suite 705 def test_ (develop 698 + 7 new) — MONOTONIC ≥698.
+In progress: none — MS-E build + gate + integration complete.
+Blockers: none.
+Next: integration→develop FOUNDER GATE PR left OPEN (D1 — lead does NOT approve/merge). Founder reviews + merges.
+  After merge + 7-day hybrid-green window: cutover is a SEPARATE founder gate (flip catalog import, remove customer_router
+  mount, re-point export/dashboard svc base URLs, Traefik /api/v1/seller-profile/* → customer-svc).
+Hand-offs (in the founder-gate PR body, NOT inter-lead memos — these are founder/deploy actions):
+  - INFRA/FOUNDER deploy item 1: create SM secret `dev-customer-db-password` (mirrors dev-export/dashboard-db-password;
+    not a new IAM grant).
+  - INFRA/FOUNDER deploy item 2: cross-service TLS latent defect — svc-image/svc-export/svc-dashboard ingressroutes
+    reference non-existent `api-mesell-xyz-tls`; correct to `api-tls` before THEIR cutover. svc-customer is already correct.
+  - FOUNDER approval (§7.3): BACKEND_ARCHITECTURE §8.B "Extracted to customer-svc V1.5" note — LOCKED, NOT self-amended.
+=========
