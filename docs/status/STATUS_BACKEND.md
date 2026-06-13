@@ -1,6 +1,48 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-13 (mesell-ms-pricing-backend-session-1) — MS-D Phase C ROUND 2: MERGE-GATE PASS, FOUNDER GATE OPEN ===
+Phase: Microservices Sub-Plan D (pricing extraction) — Phase C lead merge-gate, round 2 (post round-1 reject fix)
+Session: mesell-ms-pricing-backend-session-1 (meesell-backend-coordinator), worktree /tmp/mesell-wt/msD-backend
+Board sweep: pricing row → PHASE 2 FOUNDER-GATE-OPEN (additive; round-1 REJECT history preserved). No rows untouched
+  7+ days (MS-3 wave is current; MS-E customer parallel row active). Inter-lead requests open: handoff_msD_infra
+  (dev-pricing-db-password SM secret — carried to founder gate, deploy-time).
+Done:
+  - RE-RAN THE FULL MERGE GATE on backend tip 014a5a7 (parent cab21a9 = round-1 integration-test commit, undisturbed).
+    Round-1 REJECT (flag-parity) FIXED: services-builder added FEATURE_PRICE_CALCULATOR_ENABLED: bool = True at
+    svc-pricing config.py:133 (NOT in REQUIRED_FIELDS — bool-with-default). git diff cab21a9..014a5a7 --
+    backend/services/svc-pricing/ = 1 file, +11 insertions (comment+field only). Nothing else regressed.
+  - LEAD integration test backend/services/svc-pricing/tests/test_pricing_extraction.py RE-RUN = 14/14 PASS
+    (was 13P/1F). T6 cross-schema audit round-trip ran LIVE (conftest setdefault DATABASE_URL → local PG meesell
+    connectable; NOT skipped). Previously-failing test_feature_flag_exists_on_trimmed_settings now PASS.
+  - RE-CONFIRMED all round-1 PASSED items on tip 014a5a7: §16.G AST parity (only §0.6 ProductORM-elimination
+    delta + import rewires); ProductORM/products AST-empty in service.py+repository.py (Name+Attribute scan);
+    1 mounted route POST /api/v1/products/{id}/price-calc with {id} param, zero /internal/*; Decimal contract;
+    wire-shape ×3; T3/T4 shims; infra I5 audit-grant PRESENT + I9 products-grant ABSENT + Traefik tight regex
+    ^/api/v1/products/[^/]+/price-calc$ (+ svc-pricing TLS secret = live api-tls); monolith UNTOUCHED
+    (git diff origin/develop...HEAD -- backend/app backend/tests EMPTY; 698 def test_ monotonic); ruff clean.
+  - Authored 5 Phase-C docs: SHIM_CONTRACT_pricing_callees.md (FROZEN — 2 endpoints; Sub-Plan F + H obligations);
+    CI_HYBRID_MODE_pricing.md; docs/runbooks/svc-pricing-rollback.md; MASTER_PLAN §4 row-D flip + Rev v1.5;
+    recipe_ms_extraction.md MS-D session entry + §8 row-D variation-confirmed.
+  - Opened + SQUASH-MERGED (--admin) both group PRs into feature/microservices-pricing/integration; posted the
+    PASS merge-gate verdict as a PR comment on each; deleted merged group branch refs via gh api.
+  - Merged origin/develop into integration (develop advanced past round-1 base — MS-C image landed).
+  - Opened the FOUNDER GATE PR (integration→develop) — LEFT OPEN per D1 (founder owns this gate).
+In progress: none (Phase C round 2 complete).
+Blockers: none. (Round-1 flag-parity blocker RESOLVED.)
+Next: founder reviews/merges the integration→develop founder-gate PR. On merge: pricing row → Phase 2 DONE;
+  strangler-fig cutover (Traefik flip) remains a SEPARATE future founder gate.
+Hand-offs:
+  - FOUNDER (in the founder-gate PR body): (a) BACKEND_ARCHITECTURE.md §12 LOCKED "Extracted to svc-pricing V1.5"
+    amendment — NOT self-applied per §7.3; (b) dev-pricing-db-password SM secret at deploy; (c) cross-wave finding
+    — sibling svc-image/svc-export IngressRoutes reference nonexistent TLS secret api-mesell-xyz-tls (live=api-tls),
+    fix before THEIR cutover; (d) 2 new shim-contract items for Sub-Plans F (category commission) + H (catalog
+    ownership-check widen).
+  - INFRA (handoff_msD_infra): dev-pricing-db-password SM secret population at deploy (no action this session).
+=========
+```
+
+```
 === UPDATE: 2026-06-13 (mesell-ms-pricing-routes-session-1) — MS-D Phase B api-routes-builder COMPLETE ===
 Phase: Microservices Sub-Plan D (pricing extraction) — Phase B api-routes-builder slice
 Session: meesell-api-routes-builder, worktree /tmp/mesell-wt/msD-backend, branch feature/microservices-pricing/backend, tip 366eed2 (services-builder)
