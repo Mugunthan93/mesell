@@ -1,0 +1,54 @@
+# k8s/svc-customer/service.yaml
+# ---------------------------------------------------------------------------
+# svc-customer — Sub-Plan E (customer extraction), INFRA deliverable I3.
+#
+# ClusterIP Service `customer-svc` on port 8001 → the customer-svc-api pod's :8001.
+# Authority: handoff_msE_infra.md §1 I3 ("ClusterIP customer-svc:8001") +
+# MASTER_PLAN §2.C (gateway target) + SUB_PLAN_0E §3 (export/dashboard/monolith
+# customer_client base URLs re-point to `customer-svc:8001` at cutover).
+#
+# *** SERVICE NAME = customer-svc *** (NOT svc-customer). The sibling services use
+# the `svc-<name>` form (svc-export, svc-dashboard), but the customer work-package
+# (handoff §1 I3/I4/I7) AND SUB_PLAN_0E (§3, lines 246-249) AND spec_msE_backend.md
+# consistently name the in-cluster DNS target `customer-svc:8001`. The CALLERS'
+# shim base URLs (export-svc + dashboard-svc + monolith customer_client) are spec'd
+# against `customer-svc:8001`, so the Service metadata.name MUST be `customer-svc`
+# for `customer-svc.dev.svc.cluster.local` to resolve. (Naming authority = the
+# consumers' contract, not the sibling-folder convention.)
+#
+# The Service selects the api component (app=customer-svc, component=api). There is
+# NO worker component for customer (no Celery — SUB_PLAN_0E §2), so the selector is
+# simpler than svc-export's (no worker pod to exclude); the explicit component=api
+# label is kept for symmetry.
+#
+# Traffic paths into this Service:
+#   - North-south (external): Traefik IngressRoute (I4) → customer-svc:8001 for the
+#     5 public routes under /api/v1/seller-profile/* (see ingressroute.yaml).
+#   - East-west (internal): YES — customer is a CALLEE for 3 /internal/* shims
+#     (SUB_PLAN_0E §4 / spec_msE_backend.md). At/after cutover, in-cluster callers
+#     dial customer-svc.dev.svc.cluster.local:8001 for:
+#       /internal/seller-profile/{user_id}/compliance-block      (export-svc, monolith-catalog)
+#       /internal/seller-profile/{user_id}/onboarding-completeness (dashboard-svc) [FROZEN-0B]
+#       /internal/seller-profile/{user_id}/eligibility/{super_id} (monolith-catalog) [FROZEN-0H]
+#     These /internal/* routes are served on the SAME :8001 port but are NOT Traefik-
+#     exposed (cluster-DNS only — see ingressroute.yaml).
+#
+# Port note: like the sibling services, customer-svc uses 8001 on BOTH the Service
+# port and the targetPort, matching the gateway map's `customer-svc:8001` literal.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: customer-svc
+  namespace: dev
+  labels:
+    app: customer-svc
+spec:
+  type: ClusterIP
+  selector:
+    app: customer-svc
+    component: api
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001
