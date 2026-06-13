@@ -1,6 +1,108 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-13 (mesell-ms-pricing-backend-session-1) — MS-D Phase C ROUND 2: MERGE-GATE PASS, FOUNDER GATE OPEN ===
+Phase: Microservices Sub-Plan D (pricing extraction) — Phase C lead merge-gate, round 2 (post round-1 reject fix)
+Session: mesell-ms-pricing-backend-session-1 (meesell-backend-coordinator), worktree /tmp/mesell-wt/msD-backend
+Board sweep: pricing row → PHASE 2 FOUNDER-GATE-OPEN (additive; round-1 REJECT history preserved). No rows untouched
+  7+ days (MS-3 wave is current; MS-E customer parallel row active). Inter-lead requests open: handoff_msD_infra
+  (dev-pricing-db-password SM secret — carried to founder gate, deploy-time).
+Done:
+  - RE-RAN THE FULL MERGE GATE on backend tip 014a5a7 (parent cab21a9 = round-1 integration-test commit, undisturbed).
+    Round-1 REJECT (flag-parity) FIXED: services-builder added FEATURE_PRICE_CALCULATOR_ENABLED: bool = True at
+    svc-pricing config.py:133 (NOT in REQUIRED_FIELDS — bool-with-default). git diff cab21a9..014a5a7 --
+    backend/services/svc-pricing/ = 1 file, +11 insertions (comment+field only). Nothing else regressed.
+  - LEAD integration test backend/services/svc-pricing/tests/test_pricing_extraction.py RE-RUN = 14/14 PASS
+    (was 13P/1F). T6 cross-schema audit round-trip ran LIVE (conftest setdefault DATABASE_URL → local PG meesell
+    connectable; NOT skipped). Previously-failing test_feature_flag_exists_on_trimmed_settings now PASS.
+  - RE-CONFIRMED all round-1 PASSED items on tip 014a5a7: §16.G AST parity (only §0.6 ProductORM-elimination
+    delta + import rewires); ProductORM/products AST-empty in service.py+repository.py (Name+Attribute scan);
+    1 mounted route POST /api/v1/products/{id}/price-calc with {id} param, zero /internal/*; Decimal contract;
+    wire-shape ×3; T3/T4 shims; infra I5 audit-grant PRESENT + I9 products-grant ABSENT + Traefik tight regex
+    ^/api/v1/products/[^/]+/price-calc$ (+ svc-pricing TLS secret = live api-tls); monolith UNTOUCHED
+    (git diff origin/develop...HEAD -- backend/app backend/tests EMPTY; 698 def test_ monotonic); ruff clean.
+  - Authored 5 Phase-C docs: SHIM_CONTRACT_pricing_callees.md (FROZEN — 2 endpoints; Sub-Plan F + H obligations);
+    CI_HYBRID_MODE_pricing.md; docs/runbooks/svc-pricing-rollback.md; MASTER_PLAN §4 row-D flip + Rev v1.5;
+    recipe_ms_extraction.md MS-D session entry + §8 row-D variation-confirmed.
+  - Opened + SQUASH-MERGED (--admin) both group PRs into feature/microservices-pricing/integration; posted the
+    PASS merge-gate verdict as a PR comment on each; deleted merged group branch refs via gh api.
+  - Merged origin/develop into integration (develop advanced past round-1 base — MS-C image landed).
+  - Opened the FOUNDER GATE PR (integration→develop) — LEFT OPEN per D1 (founder owns this gate).
+In progress: none (Phase C round 2 complete).
+Blockers: none. (Round-1 flag-parity blocker RESOLVED.)
+Next: founder reviews/merges the integration→develop founder-gate PR. On merge: pricing row → Phase 2 DONE;
+  strangler-fig cutover (Traefik flip) remains a SEPARATE future founder gate.
+Hand-offs:
+  - FOUNDER (in the founder-gate PR body): (a) BACKEND_ARCHITECTURE.md §12 LOCKED "Extracted to svc-pricing V1.5"
+    amendment — NOT self-applied per §7.3; (b) dev-pricing-db-password SM secret at deploy; (c) cross-wave finding
+    — sibling svc-image/svc-export IngressRoutes reference nonexistent TLS secret api-mesell-xyz-tls (live=api-tls),
+    fix before THEIR cutover; (d) 2 new shim-contract items for Sub-Plans F (category commission) + H (catalog
+    ownership-check widen).
+  - INFRA (handoff_msD_infra): dev-pricing-db-password SM secret population at deploy (no action this session).
+=========
+```
+
+```
+=== UPDATE: 2026-06-13 (mesell-ms-pricing-routes-session-1) — MS-D Phase B api-routes-builder COMPLETE ===
+Phase: Microservices Sub-Plan D (pricing extraction) — Phase B api-routes-builder slice
+Session: meesell-api-routes-builder, worktree /tmp/mesell-wt/msD-backend, branch feature/microservices-pricing/backend, tip 366eed2 (services-builder)
+Done:
+  - backend/services/svc-pricing/app/schemas.py — 3 Pydantic v2 models verbatim from monolith: PriceCalcRequest
+    (extra="forbid"; input_cost Decimal gt=0; target_margin_pct Decimal ge=0 le=500 default=30; 2 V1.5 overrides
+    as Optional); PriceCalcAlert (code Literal LOW_MARGIN/HIGH_MRP_MULTIPLIER/THIN_PROFIT; severity Literal
+    warning/info); PriceCalcResponse (9 bare Decimal fields — zero json_encoders, zero model_config drift —
+    THE FROZEN CONTRACT §1).
+  - backend/services/svc-pricing/app/router.py — 1 route: POST /api/v1/products/{id}/price-calc (200 synchronous);
+    @rate_limit(scope="price_calc", limit=600, window=3600) + @audit_event("pricing.calculated") decorators
+    preserved verbatim; Depends(get_current_user) + Depends(get_db); NO business logic; NO /internal/* (leaf
+    consumer per §0.4); feature flag guard (FEATURE_PRICE_CALCULATOR_ENABLED) before service call; path param
+    {id} NOT {product_id} (monolith router.py:69 verified).
+  - backend/services/svc-pricing/app/main.py — router already import-tolerant (services-builder); landing
+    router.py triggers "svc-pricing: pricing router mounted" log with no change to main.py.
+  - backend/services/svc-pricing/openapi.json — regenerated: 1 business endpoint
+    POST /api/v1/products/{id}/price-calc; 3 business schemas (PriceCalcRequest, PriceCalcAlert,
+    PriceCalcResponse) + 2 FastAPI standard schemas (HTTPValidationError, ValidationError) = 5 total components.
+  - MOUNTED-ROUTE VERIFICATION (row-26 lesson): `[POST] /api/v1/products/{id}/price-calc` appears exactly once in
+    app.routes as a fastapi.routing.APIRoute. Total /api/v1 business APIRoutes = 1. Log line "svc-pricing:
+    pricing router mounted" emitted at import. Route count passed independently via Python app.routes enumeration.
+  - DECIMAL-STRING CONTRACT VERIFICATION (spec §1): PriceCalcResponse.model_dump_json() on sample fixture
+    emits "mrp":"157.96" (string, not number). All 9 Decimal fields: `isinstance(parsed[k], str) == True` for
+    mrp, meesho_price, seller_price, commission_pct, commission_amount, gst_pct, gst_amount, profit, profit_pct.
+  - ruff check app/schemas.py app/router.py: All checks passed.
+Endpoints added: POST /api/v1/products/{id}/price-calc (svc-pricing; 200; synchronous P&L calculator)
+Tests: 0 authored (per spec §3.B — Phase-C lead deliverable test_pricing_extraction.py; no specialist test suite)
+In progress: none — Phase B api-routes-builder slice complete.
+Blockers: none.
+Next: meesell-backend-coordinator Phase C — hybrid CI + test_pricing_extraction.py (T1 Decimal golden + T6 audit-row
+  + T3/T4 shim round-trips) + merge gate + board MERGED flip.
+Hand-offs: POST /api/v1/products/{id}/price-calc contract live in svc-pricing (200, Decimal-string JSON, frozen
+  §1 contract). Phase C test_pricing_extraction.py can now import schemas directly for T1 byte-compare golden.
+=========
+```
+
+```
+=== UPDATE: 2026-06-13 (mesell-ms-pricing-db-session-1) — MS-D Phase A COMPLETE ===
+Phase: Microservices Sub-Plan D (pricing extraction) — Phase A database-builder schema-split
+Session: meesell-database-builder, worktree /tmp/mesell-wt/msD-backend, branch feature/microservices-pricing/backend
+Done:
+  - Standalone Alembic chain created at backend/services/svc-pricing/alembic/ (4 files: alembic.ini, env.py, script.py.mako, versions/97c9dd63f587_move_pricing_calcs_to_pricing_schema.py).
+  - version_table_schema="pricing" — alembic_version row lives in pricing schema, isolated from monolith public.alembic_version.
+  - Revision 97c9dd63f587 (root of chain, down_revision=None).
+  - upgrade(): Risk#5 pre-scan (pricing_calcs.product_id orphan count, abort + up to 20 detail rows on non-zero), CREATE SCHEMA IF NOT EXISTS pricing, ALTER TABLE public.pricing_calcs SET SCHEMA pricing.
+  - downgrade(): ALTER TABLE pricing.pricing_calcs SET SCHEMA public. Clean round-trip.
+  - CRITICAL FK preserved: pricing_calcs.product_id → public.products.id (FK name: pricing_calcs_product_id_fkey). NOT dropped — catalog is MS-5; FK drops at MS-H. Verified via information_schema post-upgrade.
+  - Source citations: __tablename__ = "pricing_calcs" (pricing_calc.py:33); ForeignKey("products.id", ondelete="CASCADE") (pricing_calc.py:42-44).
+  - Round-trip validated LIVE on local Homebrew PG 16.11 (dev tunnel down — PG-gate substitution per recipe §7). Risk#5 abort tested (orphan row injected, RuntimeError raised, rollback clean).
+  - ruff clean on all svc-pricing alembic files.
+  - Monolith head f31c75438e61 UNCHANGED. Committed f14c7d5, pushed origin feature/microservices-pricing/backend.
+In progress: none — Phase A complete.
+Blockers: none.
+Next: Phase B — meesell-services-builder (service/repo/domain/exceptions + 2 HTTP shims + §0.6 shared-ORM resolution) + meesell-api-routes-builder (1 route POST /products/{id}/price-calc, Decimal verbatim).
+Hand-offs: Schema ready for Phase B specialists. pricing_calcs is in pricing schema. Cross-schema FK to public.products VALID. No new infra dependency beyond handoff_msD_infra.md.
+=========
+```
+
+```
 === UPDATE: 2026-06-13 (mesell-ms3-wave-open-session-1) — MS-2 WAVE COMPLETE; MS-3 (D pricing ‖ E customer) OPEN ===
 Phase: Microservices migration — MS-2 wave close-out + MS-3 wave OPEN (FAST-MODE docs/status chore, CLAUDE.md hybrid rule 7, lead-direct, no specialist)
 Session: mesell-ms3-wave-open-session-1 (worktree /tmp/mesell-wt/ms3-open, branch chore/ms3-wave-open off origin/develop tip 84424e0)
@@ -5919,4 +6021,134 @@ Hand-offs (in the founder-gate PR body, NOT inter-lead memos — these are found
   - INFRA/FOUNDER deploy item 2: cross-service TLS latent defect — svc-image/svc-export/svc-dashboard ingressroutes
     reference non-existent `api-mesell-xyz-tls`; correct to `api-tls` before THEIR cutover. svc-customer is already correct.
   - FOUNDER approval (§7.3): BACKEND_ARCHITECTURE §8.B "Extracted to customer-svc V1.5" note — LOCKED, NOT self-amended.
+=== UPDATE: 2026-06-13 — MS-D Phase B (svc-pricing service layer) — meesell-services-builder ===
+Phase: MS-3 Sub-Plan D (pricing extraction) — Phase B heavy lift (service/repository/domain/exceptions
+  + 2 outbound HTTP shims + §0.6 shared-ORM elimination + trimmed Settings + 6-mw vendored + standalone main.py).
+Done (worktree /tmp/mesell-wt/msD-backend, branch feature/microservices-pricing/backend):
+  - app/service.py — calculate / get_last_calc / _compute_pnl / _generate_alerts / _q byte-for-byte from monolith
+    app/modules/pricing/service.py under §16.G. EXACTLY 2 import rewires (catalog→catalog_client, category→
+    category_client, re-exported as catalog_service/category_service) + §0.6 resolution. The 3 protected cross-
+    module call sites textually UNCHANGED (assert_product_ownership ×2 at :151/:241 [monolith :134/:241];
+    get_commission at :165). §16.G AST recursive-strip diff vs monolith = a SINGLE block replacement (the §0.6
+    db.get(ProductORM) elimination) — proven by ast.dump compare (3 contiguous hunks, all the one block).
+  - §0.6 RESOLUTION = OPTION B (widen the catalog ownership shim). DELETED `from app.shared.models.product import
+    Product as ProductORM` + `db.get(ProductORM, product_id)` + the TOCTOU if-guard + `category_id =
+    product.category_id` (monolith service.py:151-162). REPLACED with ONE line:
+    `category_id = await catalog_service.get_category_id(product_id, user_id, db=db)` — a NEW shim method that
+    reads category_id from the WIDENED `GET /internal/products/{id}/ownership-check` 200 body. repository.py's
+    products-JOIN REWRITTEN OUT (find_latest_by_product is now a bare product_id read; user-scoping enforced
+    upstream at the ownership shim called in get_last_calc). Executable ProductORM/products refs in
+    service.py + repository.py = ZERO (AST-verified; only docstring mentions remain).
+  - app/repository.py — insert_calc + find_latest_by_product (products-JOIN gone). check_scope_to_user allowlist
+    entry `app.modules.pricing.repository.insert_calc` carried as a documented note (Phase-C lead wires the svc
+    lint context). app/domain.py (3 dataclasses verbatim, self-contained). app/exceptions.py (3 classes verbatim).
+  - core/extracted_clients/{_transport,catalog_client,category_client}.py — httpx.AsyncClient Timeout(5.0,connect=2.0),
+    EXACTLY ONE retry on {503,504}, JWT+X-Request-ID from contextvars (set_request_context). catalog_client:
+    assert_product_ownership (→None, parity) + get_category_id (§0.6) → 404 maps to ProductNotFoundError.
+    category_client: get_commission → Decimal NEVER None (`0.00`=unseeded; Decimal(str(...)), no float). Shim
+    round-trip + JWT-forward + 404-mapping SMOKE = PASS (httpx.MockTransport).
+  - shared/{config,database,valkey}.py — TRIMMED Settings: DATABASE_URL(@pricing schema), VALKEY_URL(DB0 only),
+    JWT_SECRET, AUDIT_PII_SALT, MONOLITH_INTERNAL_BASE_URL, APP_ENV. NO gemini/langfuse/msg91/razorpay/gcs.
+    Small pool (2/2). NO make_worker_session (no Celery).
+  - shared/models/{base,user,audit_event,pricing_calc}.py — pricing_calc bound `{"schema":"pricing"}` (moved
+    public→pricing in Phase A 97c9dd63f587); Product relationship + SQLAlchemy ForeignKey DROPPED (§0.6 — bare
+    UUID column; DB-level cross-schema FK to public.products stays valid). AuditEvent + User bound `{"schema":"public"}`.
+  - core/{errors,tenancy,auth,metrics}.py + core/middleware/{request_id,request_context_mw,auth_mw,tenancy_mw,
+    plan_guard_mw,rate_limit_mw,audit_mw}.py — vendored. 4 ACTIVE mw (auth,tenancy,rate_limit,audit)+request_id+CORS;
+    plan_guard_mw NO-OP for pricing (§0.9). audit_mw FIRES on the write POST → cross-schema public.audit_events
+    INSERT (recipe §5). Local JWT verify (shared JWT_SECRET).
+  - i18n/{__init__,messages_en,resolver}.py — 5 pricing keys VERBATIM (validation.price.invalid_input,
+    pricing.commission.missing, pricing.alert.{low_margin,high_mrp_multiplier,thin_profit}) + 3 cross-cutting.
+  - app/main.py — standalone FastAPI, NO Celery, 6-mw chain (deepest-first), import-tolerant router mount.
+    requirements.txt — fastapi/uvicorn/pydantic-settings/sqlalchemy/asyncpg/redis/pyjwt/httpx/prometheus. NO
+    celery/openpyxl/gemini/langfuse/msg91/razorpay/gcs/rembg.
+Tests: ruff clean (app/ — "All checks passed"). import-smoke `import app.main` OK (6 routes, 8 user_middleware,
+  router import-tolerant). service.py import + 2-rewire identity (catalog_service is catalog_client, category_service
+  is category_client) + §12-PRICING-D2 golden _compute_pnl mrp=157.96 VERBATIM = PASS (via throwaway schemas stub,
+  removed — schemas.py is api-routes-builder's deliverable). Shim transport round-trip PASS. Full module unit/
+  integration test authoring is Phase-C (lead-owned test_pricing_extraction.py incl. T1 Decimal golden).
+In progress: none — Phase B build complete.
+Blockers: none.
+Next: api-routes-builder builds router.py (1 route POST /products/{id}/price-calc 200, @rate_limit price_calc
+  600/3600 + @audit_event pricing.calculated, NO /internal/*) + schemas.py (bare Decimal verbatim, extra="forbid").
+  Lead wires Phase-C CI parity + merge gate.
+Hand-offs:
+  - api-routes-builder: main.py imports `from app.router import router as pricing_router` (import-tolerant).
+    Build app/router.py exporting `router` + schemas.py. service.calculate(user_id, product_id, request, *, db) →
+    PriceCalcResponse; service.PriceCalcRequest/PriceCalcAlert/PriceCalcResponse are imported FROM app.schemas
+    (your file) — the 9 bare-Decimal fields + alerts[] + calculated_at ISO must be VERBATIM (§1 frozen contract, T1).
+  - Sub-Plan H / catalog (CONTRACT ITEM, §0.6): widen `GET /internal/products/{id}/ownership-check` (params:
+    user_id) to return 200 `{"category_id":"<uuid>"}` on success; 404 (catalog.product.not_found) on
+    not-found/cross-tenant/soft-deleted (conflated). pricing's get_category_id reads category_id from this body.
+  - Sub-Plan F / category (CONTRACT ITEM, NEW vs MS-A): implement `GET /internal/categories/{id}/commission` →
+    200 `{"commission_pct":"<decimal-string>"}` NEVER null (`"0.00"`=unseeded); 404 (category.lookup.not_found).
+  - infra (A2) + database-builder (A1): cross-schema grant = GRANT INSERT ON public.audit_events TO pricing_user
+    (audit write FIRES on the POST). NO products SELECT grant (§0.6 Option B = HTTP, not SQL). svc-pricing ORM
+    targets schema `pricing` (pricing.pricing_calcs); DB-level FK pricing_calcs.product_id→public.products kept valid.
+  - LEAD (Phase C): §16.G CI AST parity on service.py (single §0.6 hunk is the ONLY allowed delta); §0.6
+    no-ProductORM/no-products executable-ref assertion; T1 Decimal byte-golden; T6 cross-schema audit round-trip;
+    T3/T4 shim 404/422 round-trips; carry check_scope_to_user allowlist `pricing.repository.insert_calc`.
+=========
+
+=== UPDATE: 2026-06-13 — MS-D Phase C — MERGE GATE: REJECT ===
+Phase: MS-3 / Sub-Plan D — svc-pricing extraction — Phase C (LEAD-owned test + merge gate)
+Session: mesell-ms-pricing-backend-session-1
+Board sweep: pricing row → "PHASE 2 BUILT — MERGE-GATE REJECTED (1 item)"; customer (MS-E) untouched
+  (parallel lane); SP01 export / dashboard / image rows all founder-gated/merged (no staleness — all
+  <14d). No inter-lead requests opened this session (the cross-wave TLS finding + the 2 new shim
+  contracts are carried to the founder-gate PR body when the fix lands, per spec §5).
+Done:
+  - DELIVERABLE 1 — LEAD integration test authored + committed to feature/microservices-pricing/backend:
+    `backend/services/svc-pricing/tests/test_pricing_extraction.py` (14 tests) + conftest.py + pytest.ini +
+    __init__.py. Result: 13 PASS, 1 FAIL. The 13 PASS: §16.G AST recursive-strip parity (the §0.6
+    ProductORM block normalised in BOTH twins — proven the ONLY executable delta is 3-stmt→1-stmt; a
+    companion sanity test proves the §0.6 delta is REAL so parity isn't vacuous); ProductORM/`products`
+    executable-ref AST scan (zero); import-rewire assertion; wire-shape JSON-schema parity (3 schemas);
+    T1 Decimal-string byte-golden (9 fields emit as JSON strings, verbatim values); T3 catalog
+    get_category_id shim (JWT+X-Request-ID forward, 5s/2s, real UUID deserialise); T3 404→ProductNotFoundError
+    (no retry on 4xx); T4 category commission Decimal-NEVER-null (seeded/unseeded/404); audit+pricing_calc
+    schema-binding; **T6 LIVE cross-schema audit INSERT→SELECT round-trip on PG16 localhost (ran, not
+    skipped)**. The 1 FAIL is the flag-parity regression guard — it caught the REJECT defect (below).
+  - DELIVERABLE 3 — MERGE GATE executed. VERDICT = **REJECT — DO NOT MERGE.** Group PRs NOT opened;
+    founder gate NOT opened (per HYBRID rule-7 the gate is real and rejects to the specialist).
+Blockers:
+  - **MERGE-GATE REJECT (P1, owner = meesell-services-builder):** svc-pricing `app/router.py:99` carries the
+    monolith flag guard `if not settings.FEATURE_PRICE_CALCULATOR_ENABLED:` verbatim (flag-parity discipline,
+    correct), BUT the trimmed `app/shared/config.py` OMITS the `FEATURE_PRICE_CALCULATOR_ENABLED` field that the
+    monolith defines at config.py:223 (`bool = True`). `model_config` is `extra="ignore"`, so the attr does NOT
+    exist → `AttributeError: 'Settings' object has no attribute 'FEATURE_PRICE_CALCULATOR_ENABLED'` on EVERY
+    request, BEFORE the service runs → the single mounted route 500s 100% of the time. PROVEN: (1) settings probe
+    raised the AttributeError; (2) replicated router.py:99 guard raised it; (3) LEAD test FAIL. FIX: add
+    `FEATURE_PRICE_CALCULATOR_ENABLED: bool = True` to svc-pricing `app/shared/config.py` (mirror monolith
+    config.py:218-223 dev-default-True / staging-default-False comment), re-run Phase C — the LEAD test
+    `test_feature_flag_exists_on_trimmed_settings` will go green and validate the fix.
+Verified-PASS gate items (independent, not trusting self-reports):
+  - §16.G: service.py executable AST identical to monolith save the §0.6 block (3 monolith stmts
+    `db.get(ProductORM)` + soft-delete `if` + `category_id=product.category_id` → 1 svc stmt
+    `category_id=await catalog_service.get_category_id(...)`); _compute_pnl/_generate_alerts/_q/get_last_calc verbatim.
+  - §0.6 RD1: NO executable ProductORM/`products` ref in extracted service.py + repository.py (AST scan; the
+    grep matches are docstrings/comments only). repository find_latest_by_product JOIN→bare WHERE; user_id param
+    retained for call-site parity. pricing_calc ORM = bare UUID product_id, no FK/relationship to catalog ORM.
+  - Route: exactly 1 mounted (`POST /api/v1/products/{id}/price-calc`, `{id}` not `{product_id}`), zero
+    `/internal/*`; `@rate_limit price_calc 600/3600` + `@audit_event pricing.calculated` + get_current_user+get_db
+    preserved; app boots clean. OpenAPI = 1 business path + /health, 3 pricing schemas.
+  - Decimal contract: 9 bare-Decimal fields, extra="forbid", NO json_encoders, NO float (schemas verbatim).
+  - DB: migration 97c9dd63f587 (root, down_rev None), version_table_schema="pricing", Risk#5 orphan pre-scan
+    with abort, tested downgrade SET SCHEMA public, cross-schema FK kept valid, audit bound public / calc bound pricing.
+  - Infra: I5 `GRANT INSERT ON public.audit_events TO pricing_user` PRESENT; I9 `GRANT SELECT ON public.products`
+    DELIBERATELY OMITTED (Option B); Traefik tight regex `^/api/v1/products/[^/]+/price-calc$` outranks catalog
+    catch-all on specificity, no numeric priority; TLS `api-tls` (correct live name).
+  - Monolith UNTOUCHED: `git diff --stat origin/develop...HEAD -- backend/app backend/tests` = EMPTY. Branch
+    adds only `backend/services/svc-pricing/**` + STATUS doc. NO pyc/cache tracked (43 source files).
+  - Counts: monolith 698 `def test_` (≥649 monotonic). ruff clean on svc tree + tests.
+Cross-wave finding (carried, NOT a pricing reject): svc-image + svc-export ingressroutes reference nonexistent
+  TLS secret `api-mesell-xyz-tls` (live name = `api-tls`); their cutover would fall back to Traefik default cert.
+  svc-pricing uses the correct `api-tls`. To be raised to infra + master at the founder gate (informational).
+Pending founder asks (to carry to the founder-gate PR body AFTER the fix lands):
+  - §12 BACKEND_ARCHITECTURE.md "Extracted to svc-pricing V1.5" amendment — §12 LOCKED, NOT self-applied (§7.3).
+  - `dev-pricing-db-password` GCP Secret Manager secret at deploy time (new infra dep).
+Next: re-dispatch meesell-services-builder with the 1-field config fix; on its return, re-run the LEAD test
+  (expect 14/14 with live PG), then proceed to DELIVERABLE 2 (5 docs) + DELIVERABLE 3 (open group PRs → squash to
+  integration → open founder gate left OPEN). Docs were NOT authored this pass (premature before the code is green).
+Hand-offs: none opened (memo'd at the founder gate per spec §5 once green). Infra TLS finding noted above.
 =========
