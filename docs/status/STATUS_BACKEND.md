@@ -1,6 +1,46 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-13 13:00 ===
+Phase: MS-C image extraction — A1 schema-split migration (database-builder)
+Session: meesell-database-builder (A1, feature/microservices-image/db)
+Done:
+- Authored standalone svc-image Alembic chain at backend/services/svc-image/alembic/:
+  alembic.ini, env.py (version_table_schema="image", async, NullPool, no configparser),
+  script.py.mako, revision c2a4e8f1d7b3.
+- Migration c2a4e8f1d7b3: public.product_images → image.product_images.
+  Step 1: Risk#5 pre-scan — all product_images.product_id rows must resolve to
+    public.products; raises RuntimeError on orphans (logs up to 20 detail rows).
+  Step 2 (OPTION B, founder-RULED 2026-06-13): DROP FK product_images_product_id_fkey
+    (auto-named, references public.products.id ON DELETE CASCADE, created in
+    baseline migration 935e55b4852c without explicit name= arg). product_id becomes
+    a plain indexed column; ownership enforced at runtime via catalog
+    assert_product_ownership HTTP shim (service.py:162/:248 unchanged).
+    image_user granted NO SELECT on public.products.
+  Step 3: CREATE SCHEMA IF NOT EXISTS image (idempotent).
+  Step 4: ALTER TABLE public.product_images SET SCHEMA image.
+  Downgrade: SET SCHEMA public + op.create_foreign_key() restores the FK.
+- FK drop rationale: moving a table with FK to a different schema creates a
+  cross-schema FK — disallowed by MASTER_PLAN §2.D + Option B ruling.
+  Drop first, then move is the correct sequence.
+- Chain isolation: c2a4e8f1d7b3 down_revision=None (root); monolith head stays
+  f31c75438e61; image.alembic_version ≠ public.alembic_version — no collision.
+- ruff clean + Python AST parse verified on all 4 files.
+- Committed c821559 on feature/microservices-image/db, pushed to origin.
+- PR #200 opened: feature/microservices-image/db → feature/microservices-image/integration
+  (title: feat(ms): MS-C A1 — svc-image schema-split migration). NOT merged.
+- F3 protection applied to feature/microservices-image/db branch.
+In progress: none — A1 complete; awaiting A2 infra lane (meesell-infra-builder).
+Blockers: B19.1 (dev SSH tunnel down) — live alembic upgrade head validation SKIPPED.
+  Revision chain and import correctness confirmed offline.
+Next: services-builder (B1) can now target schema image for the repository rewrite.
+  Infra-builder (A2) should create the image schema/role + audit grant in parallel.
+Hand-offs: Schema c2a4e8f1d7b3 ready. services-builder reads this migration's FK-drop
+  rationale before writing the Option-B repository. Merge gate: backend-coordinator.
+=========
+```
+
+```
 === UPDATE: 2026-06-13 (mesell-ms2-wave-confirm-session-1) ===
 Phase: Microservices — MS-2 wave DISPATCH CONFIRMATION (B dashboard ‖ C image)
 Session: mesell-ms2-wave-confirm-session-1 (FAST-MODE docs chore, rule-7 docs class, lead-direct, no specialist)
