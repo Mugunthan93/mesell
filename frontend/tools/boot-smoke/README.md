@@ -43,6 +43,17 @@ curl -s -o /dev/null -w '%{http_code}' http://localhost:4200/login
 # Must print: 200   (NOT 404)
 ```
 
+## CORS requirement
+
+`serve.js` sets `Access-Control-Allow-Origin: *` on ALL responses. This is required
+because the shell (port 4200) fetches `remoteEntry.json` from the remote ports (4201-4206)
+via cross-origin `fetch()`. Without CORS headers, the browser blocks those fetches and
+the federation runtime falls back to `RemoteFailureComponent` for every remote — which
+would cause the gate to FAIL even on a clean build (false negative).
+
+In production (Traefik ingress), CORS is handled at the ingress level. In CI, the
+static server must handle it explicitly.
+
 ## How to run locally
 
 Prerequisites: Node 22, pnpm 11.5.2, Playwright chromium installed.
