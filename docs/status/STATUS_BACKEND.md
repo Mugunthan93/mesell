@@ -1,6 +1,44 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-13 (mesell-ms-pricing-routes-session-1) — MS-D Phase B api-routes-builder COMPLETE ===
+Phase: Microservices Sub-Plan D (pricing extraction) — Phase B api-routes-builder slice
+Session: meesell-api-routes-builder, worktree /tmp/mesell-wt/msD-backend, branch feature/microservices-pricing/backend, tip 366eed2 (services-builder)
+Done:
+  - backend/services/svc-pricing/app/schemas.py — 3 Pydantic v2 models verbatim from monolith: PriceCalcRequest
+    (extra="forbid"; input_cost Decimal gt=0; target_margin_pct Decimal ge=0 le=500 default=30; 2 V1.5 overrides
+    as Optional); PriceCalcAlert (code Literal LOW_MARGIN/HIGH_MRP_MULTIPLIER/THIN_PROFIT; severity Literal
+    warning/info); PriceCalcResponse (9 bare Decimal fields — zero json_encoders, zero model_config drift —
+    THE FROZEN CONTRACT §1).
+  - backend/services/svc-pricing/app/router.py — 1 route: POST /api/v1/products/{id}/price-calc (200 synchronous);
+    @rate_limit(scope="price_calc", limit=600, window=3600) + @audit_event("pricing.calculated") decorators
+    preserved verbatim; Depends(get_current_user) + Depends(get_db); NO business logic; NO /internal/* (leaf
+    consumer per §0.4); feature flag guard (FEATURE_PRICE_CALCULATOR_ENABLED) before service call; path param
+    {id} NOT {product_id} (monolith router.py:69 verified).
+  - backend/services/svc-pricing/app/main.py — router already import-tolerant (services-builder); landing
+    router.py triggers "svc-pricing: pricing router mounted" log with no change to main.py.
+  - backend/services/svc-pricing/openapi.json — regenerated: 1 business endpoint
+    POST /api/v1/products/{id}/price-calc; 3 business schemas (PriceCalcRequest, PriceCalcAlert,
+    PriceCalcResponse) + 2 FastAPI standard schemas (HTTPValidationError, ValidationError) = 5 total components.
+  - MOUNTED-ROUTE VERIFICATION (row-26 lesson): `[POST] /api/v1/products/{id}/price-calc` appears exactly once in
+    app.routes as a fastapi.routing.APIRoute. Total /api/v1 business APIRoutes = 1. Log line "svc-pricing:
+    pricing router mounted" emitted at import. Route count passed independently via Python app.routes enumeration.
+  - DECIMAL-STRING CONTRACT VERIFICATION (spec §1): PriceCalcResponse.model_dump_json() on sample fixture
+    emits "mrp":"157.96" (string, not number). All 9 Decimal fields: `isinstance(parsed[k], str) == True` for
+    mrp, meesho_price, seller_price, commission_pct, commission_amount, gst_pct, gst_amount, profit, profit_pct.
+  - ruff check app/schemas.py app/router.py: All checks passed.
+Endpoints added: POST /api/v1/products/{id}/price-calc (svc-pricing; 200; synchronous P&L calculator)
+Tests: 0 authored (per spec §3.B — Phase-C lead deliverable test_pricing_extraction.py; no specialist test suite)
+In progress: none — Phase B api-routes-builder slice complete.
+Blockers: none.
+Next: meesell-backend-coordinator Phase C — hybrid CI + test_pricing_extraction.py (T1 Decimal golden + T6 audit-row
+  + T3/T4 shim round-trips) + merge gate + board MERGED flip.
+Hand-offs: POST /api/v1/products/{id}/price-calc contract live in svc-pricing (200, Decimal-string JSON, frozen
+  §1 contract). Phase C test_pricing_extraction.py can now import schemas directly for T1 byte-compare golden.
+=========
+```
+
+```
 === UPDATE: 2026-06-13 (mesell-ms-pricing-db-session-1) — MS-D Phase A COMPLETE ===
 Phase: Microservices Sub-Plan D (pricing extraction) — Phase A database-builder schema-split
 Session: meesell-database-builder, worktree /tmp/mesell-wt/msD-backend, branch feature/microservices-pricing/backend
