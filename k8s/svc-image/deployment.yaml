@@ -1,0 +1,180 @@
+# k8s/svc-image/deployment.yaml
+# ---------------------------------------------------------------------------
+# svc-image — Sub-Plan C (image extraction), INFRA deliverable I2.
+#
+# TWO Deployments from ONE image (asia-south1-docker.pkg.dev/.../svc-image):
+#   - svc-image-api    1 replica, FastAPI HTTP server on :8001
+#   - svc-image-worker 1 replica, DEDICATED Celery worker (no HTTP port), queue `svc-image`
+#
+# Mirrors the PROVEN MS-A svc-export deployment recipe; svc-image is the recipe-copy
+# with the HEAVIER worker sizing + the AI-consuming secret set.
+#
+# Sizing authority — handoff_msC_infra.md §1 I2:
+#   api    req  50m CPU / 128Mi  ·  lim 200m CPU / 512Mi  (api is LIGHT — routes +
+#                                                           list/poll + signed-URL gen)
+#   worker req 500m CPU /   1Gi  ·  lim 1000m CPU /  2Gi  (Pillow decode + ai_ops
+#                                                           watermark composite; the
+#                                                           HEAVIEST early-wave worker.
+#                                                           lim = 2× req per the R-MS-9
+#                                                           OOM-cascade rule.)
+#   Numbers are PROVISIONAL per handoff §1 I2 — validate against a real precheck
+#   memory profile at the MS-2 deploy; right-size down if the profile is lighter.
+#
+# ── D3 VM-FIT (handoff §3 — THE LOUD FLAG) ─────────────────────────────────────
+#   svc-image is the heaviest container in the early waves. The §3 capacity math
+#   (recorded in the infra group PR body + STATUS_INFRA) projects the MS-2 node
+#   load (monolith api+worker + svc-export api+worker + svc-dashboard api +
+#   svc-image api+worker + infra pods) against the e2-standard-2 2000m allocatable.
+#   VERDICT (see PR body): with rembg DEFERRED, svc-image's 50m+500m = 550m CPU
+#   request brings the projected total to ~1675m + 550m + svc-export 250m +
+#   svc-dashboard ~50m ≈ ~2375m  >  2000m allocatable → the node OVERFLOWS at the
+#   MS-2 deploy. This is a STOP-AND-ASK: the founder re-asks the D3 spend
+#   (e2-standard-4, ~₹2,600/mo) FRESH at deploy time. These manifests are
+#   AUTHORED + VALIDATED here (dev-only, ₹0) but DEPLOY is gated on that founder
+#   decision. Do NOT silently provision a node upgrade (constraint §4).
+#
+# Namespace: dev ONLY (constraint §4 — no staging/prod manifests in Sub-Plan C).
+#
+# Rolling-update strategy mirrors svc-export + k8s/api.yaml/worker.yaml: the dev
+# node is CPU-tight, so kill-before-surge (maxSurge:0 / maxUnavailable:1) avoids
+# the "new pod Pending: Insufficient cpu" deadlock.
+#
+# Secrets/config (I7): both containers consume the svc-image Secret
+# (svc-image-secrets) + the shared ConfigMap (meesell-config) via envFrom.
+# svc-image is AI-consuming (watermark.v1) so — UNLIKE svc-export — it DOES receive
+# GEMINI_API_KEY + LANGFUSE_* + AI_OPS_* (see k8s/svc-image/secrets.yaml.example).
+# It does NOT receive MSG91/RAZORPAY (no SMS/payment).
+#
+# GCS auth (I6): KEYLESS via the GCE metadata server (the K3s node's VM SA, which
+# already holds roles/storage.objectAdmin on gs://meesell-images — verified
+# 2026-06-13). GOOGLE_APPLICATION_CREDENTIALS is deliberately ABSENT — the org
+# policy constraints/iam.disableServiceAccountKeyCreation forbids SA JSON keys.
+# Product-image objects: meesell-images/{user_id}/{product_id}/{idx}.jpg (the
+# GCS_BUCKET_IMAGES bucket, NOT the GCS_BUCKET export bucket).
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: svc-image-api
+  namespace: dev
+  labels:
+    app: svc-image
+    component: api
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Kill-before-surge: dev node is CPU-saturated; a surge pod cannot schedule.
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: svc-image
+      component: api
+  template:
+    metadata:
+      labels:
+        app: svc-image
+        component: api
+    spec:
+      containers:
+        - name: svc-image-api
+          image: asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-prod-images/svc-image:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8001
+          envFrom:
+            - configMapRef:
+                name: meesell-config
+            - secretRef:
+                name: svc-image-secrets
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: svc-image-worker
+  namespace: dev
+  labels:
+    app: svc-image
+    component: worker
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: svc-image
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: svc-image
+        component: worker
+    spec:
+      containers:
+        - name: svc-image-worker
+          image: asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-prod-images/svc-image:latest
+          imagePullPolicy: Always
+          command: ["celery"]
+          args:
+            - "-A"
+            # The Celery instance `celery_app` lives in `app/celery_app.py` (spec
+            # §0.4 / §1.B1 — svc-image's single-task celery app; NO `app/workers/`
+            # package, that was the monolith layout). Use `app.celery_app`.
+            - "app.celery_app"
+            - "worker"
+            - "--loglevel=info"
+            # svc-image's celery_app sets task_default_queue="svc-image" and routes
+            # the single image.precheck task to the DEDICATED `svc-image` queue
+            # (spec §0.4 — NOT `image-tasks` which is monolith-only post-PR-#143, and
+            # NOT the default `celery` queue). The worker therefore consumes
+            # `-Q svc-image`. Broker keys carry the `svc-image:` global_keyprefix so
+            # this queue cannot collide with the monolith `image-tasks` keyspace.
+            - "-Q"
+            - "svc-image"
+            # Image precheck (Pillow decode + ai_ops watermark) is CPU+mem-heavy and
+            # runs one job at a time per worker slot. worker_prefetch_multiplier=1 is
+            # set in celery_app (locked invariant); concurrency=2 is sufficient for
+            # dev zero-traffic. Keep low — each slot can hold a decoded image in RAM,
+            # which is what drives the 1Gi request / 2Gi limit.
+            - "--concurrency=2"
+            - "--max-tasks-per-child=100"
+          envFrom:
+            - configMapRef:
+                name: meesell-config
+            - secretRef:
+                name: svc-image-secrets
+          # No HTTP port and no readiness/liveness probe — Celery health is governed
+          # by --max-tasks-per-child + the pod restartPolicy. GCS auth: keyless via
+          # GCE metadata server (VM SA). GOOGLE_APPLICATION_CREDENTIALS ABSENT (I6).
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "1000m"
+              memory: "2Gi"
