@@ -162,19 +162,7 @@ The shell fails to bootstrap in the browser (blank white screen, all routes). Ze
 
 All four were squash-merged to develop and **deleted from origin BEFORE the F-001 fix** (#203). The F-001 fix now sits on TOP of their content as develop HEAD, so they cannot re-introduce F-001. Any stale `/tmp` worktrees pointing at them are leftover refs only — not a risk.
 
-**The one in-flight branch that WILL re-introduce F-001 if merged: `feature/mfe-cutover/frontend`** (tip `0c17aa0`).
-
-- It predates F-001, is **114 commits behind / 2 ahead** of develop, and has **no open PR**.
-- It carries the FULL original F-001 breakage — all 12 deep `@mesell/ui-kit/<subpath>` imports across shell `app.config.ts` + the mfe-auth (login/signup/otp-verify) and mfe-onboarding (profile) components.
-- Its 2 commits modify `shell/app.config.ts` + `shell/federation.config.js`.
-- Merged as-is it **re-introduces F-001** (build green, browser dead).
-
-Required before ANY merge of `feature/mfe-cutover/frontend`:
-1. **rebase onto develop ≥ `1ae5939`** (the F-001 fix);
-2. **grep guard** — `grep -rn "@mesell/ui-kit/" apps libs --include='*.ts'` MUST be **EMPTY** (no subpath imports of the shared kit);
-3. **confirm** every `federation.config.js` keeps `@primeuix/themes` in `skip:`.
-
-If the branch is **superseded** by the completed MFE structure already on develop, it should be **retired/deleted rather than merged**. **Flag for founder decision.**
+**`feature/mfe-cutover/frontend` (tip `0c17aa0`) — RETIRED, deleted from origin 2026-06-13 (founder decision).** No longer an at-risk in-flight branch; the rebase-guard warning that previously lived here is now moot. It was the SP07 shell-cutover sub-branch; its 2 commits (D43 shell relocation `src/`→`apps/shell/src/`; D44 version-pinned prod/staging manifest templates + CSP smoke harness) already reached develop via the `feature/mfe-cutover/integration` path → **PR #105** (SP07 cutover close-out). Its only divergent content was the stale pre-F-001 versions of `app.config.ts` + auth/onboarding components (the broken `@mesell/ui-kit/<subpath>` imports) — strictly worse than develop, zero unique unmerged value. Retired, not rebased. **There is no longer any in-flight frontend branch carrying the F-001 regression.**
 
 **General rule (retained):** any in-flight frontend branch predating #203 must pass the rebase + grep + `skip:` guard before merge — the build stays green and tests pass, but the shell goes blank in the browser if F-001 is re-introduced. The frontend lead enforces this at the merge gate.
 
