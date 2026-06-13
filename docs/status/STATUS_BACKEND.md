@@ -5878,3 +5878,72 @@ Hand-offs:
   - infra (A2) + database-builder (A1): the SOLE cross-schema grant is GRANT INSERT ON public.audit_events TO
     image_user — NO products SELECT (Option B). svc-image ORM targets schema `image` (image.product_images).
 =========
+
+=== UPDATE: 2026-06-13 — MS-D Phase B (svc-pricing service layer) — meesell-services-builder ===
+Phase: MS-3 Sub-Plan D (pricing extraction) — Phase B heavy lift (service/repository/domain/exceptions
+  + 2 outbound HTTP shims + §0.6 shared-ORM elimination + trimmed Settings + 6-mw vendored + standalone main.py).
+Done (worktree /tmp/mesell-wt/msD-backend, branch feature/microservices-pricing/backend):
+  - app/service.py — calculate / get_last_calc / _compute_pnl / _generate_alerts / _q byte-for-byte from monolith
+    app/modules/pricing/service.py under §16.G. EXACTLY 2 import rewires (catalog→catalog_client, category→
+    category_client, re-exported as catalog_service/category_service) + §0.6 resolution. The 3 protected cross-
+    module call sites textually UNCHANGED (assert_product_ownership ×2 at :151/:241 [monolith :134/:241];
+    get_commission at :165). §16.G AST recursive-strip diff vs monolith = a SINGLE block replacement (the §0.6
+    db.get(ProductORM) elimination) — proven by ast.dump compare (3 contiguous hunks, all the one block).
+  - §0.6 RESOLUTION = OPTION B (widen the catalog ownership shim). DELETED `from app.shared.models.product import
+    Product as ProductORM` + `db.get(ProductORM, product_id)` + the TOCTOU if-guard + `category_id =
+    product.category_id` (monolith service.py:151-162). REPLACED with ONE line:
+    `category_id = await catalog_service.get_category_id(product_id, user_id, db=db)` — a NEW shim method that
+    reads category_id from the WIDENED `GET /internal/products/{id}/ownership-check` 200 body. repository.py's
+    products-JOIN REWRITTEN OUT (find_latest_by_product is now a bare product_id read; user-scoping enforced
+    upstream at the ownership shim called in get_last_calc). Executable ProductORM/products refs in
+    service.py + repository.py = ZERO (AST-verified; only docstring mentions remain).
+  - app/repository.py — insert_calc + find_latest_by_product (products-JOIN gone). check_scope_to_user allowlist
+    entry `app.modules.pricing.repository.insert_calc` carried as a documented note (Phase-C lead wires the svc
+    lint context). app/domain.py (3 dataclasses verbatim, self-contained). app/exceptions.py (3 classes verbatim).
+  - core/extracted_clients/{_transport,catalog_client,category_client}.py — httpx.AsyncClient Timeout(5.0,connect=2.0),
+    EXACTLY ONE retry on {503,504}, JWT+X-Request-ID from contextvars (set_request_context). catalog_client:
+    assert_product_ownership (→None, parity) + get_category_id (§0.6) → 404 maps to ProductNotFoundError.
+    category_client: get_commission → Decimal NEVER None (`0.00`=unseeded; Decimal(str(...)), no float). Shim
+    round-trip + JWT-forward + 404-mapping SMOKE = PASS (httpx.MockTransport).
+  - shared/{config,database,valkey}.py — TRIMMED Settings: DATABASE_URL(@pricing schema), VALKEY_URL(DB0 only),
+    JWT_SECRET, AUDIT_PII_SALT, MONOLITH_INTERNAL_BASE_URL, APP_ENV. NO gemini/langfuse/msg91/razorpay/gcs.
+    Small pool (2/2). NO make_worker_session (no Celery).
+  - shared/models/{base,user,audit_event,pricing_calc}.py — pricing_calc bound `{"schema":"pricing"}` (moved
+    public→pricing in Phase A 97c9dd63f587); Product relationship + SQLAlchemy ForeignKey DROPPED (§0.6 — bare
+    UUID column; DB-level cross-schema FK to public.products stays valid). AuditEvent + User bound `{"schema":"public"}`.
+  - core/{errors,tenancy,auth,metrics}.py + core/middleware/{request_id,request_context_mw,auth_mw,tenancy_mw,
+    plan_guard_mw,rate_limit_mw,audit_mw}.py — vendored. 4 ACTIVE mw (auth,tenancy,rate_limit,audit)+request_id+CORS;
+    plan_guard_mw NO-OP for pricing (§0.9). audit_mw FIRES on the write POST → cross-schema public.audit_events
+    INSERT (recipe §5). Local JWT verify (shared JWT_SECRET).
+  - i18n/{__init__,messages_en,resolver}.py — 5 pricing keys VERBATIM (validation.price.invalid_input,
+    pricing.commission.missing, pricing.alert.{low_margin,high_mrp_multiplier,thin_profit}) + 3 cross-cutting.
+  - app/main.py — standalone FastAPI, NO Celery, 6-mw chain (deepest-first), import-tolerant router mount.
+    requirements.txt — fastapi/uvicorn/pydantic-settings/sqlalchemy/asyncpg/redis/pyjwt/httpx/prometheus. NO
+    celery/openpyxl/gemini/langfuse/msg91/razorpay/gcs/rembg.
+Tests: ruff clean (app/ — "All checks passed"). import-smoke `import app.main` OK (6 routes, 8 user_middleware,
+  router import-tolerant). service.py import + 2-rewire identity (catalog_service is catalog_client, category_service
+  is category_client) + §12-PRICING-D2 golden _compute_pnl mrp=157.96 VERBATIM = PASS (via throwaway schemas stub,
+  removed — schemas.py is api-routes-builder's deliverable). Shim transport round-trip PASS. Full module unit/
+  integration test authoring is Phase-C (lead-owned test_pricing_extraction.py incl. T1 Decimal golden).
+In progress: none — Phase B build complete.
+Blockers: none.
+Next: api-routes-builder builds router.py (1 route POST /products/{id}/price-calc 200, @rate_limit price_calc
+  600/3600 + @audit_event pricing.calculated, NO /internal/*) + schemas.py (bare Decimal verbatim, extra="forbid").
+  Lead wires Phase-C CI parity + merge gate.
+Hand-offs:
+  - api-routes-builder: main.py imports `from app.router import router as pricing_router` (import-tolerant).
+    Build app/router.py exporting `router` + schemas.py. service.calculate(user_id, product_id, request, *, db) →
+    PriceCalcResponse; service.PriceCalcRequest/PriceCalcAlert/PriceCalcResponse are imported FROM app.schemas
+    (your file) — the 9 bare-Decimal fields + alerts[] + calculated_at ISO must be VERBATIM (§1 frozen contract, T1).
+  - Sub-Plan H / catalog (CONTRACT ITEM, §0.6): widen `GET /internal/products/{id}/ownership-check` (params:
+    user_id) to return 200 `{"category_id":"<uuid>"}` on success; 404 (catalog.product.not_found) on
+    not-found/cross-tenant/soft-deleted (conflated). pricing's get_category_id reads category_id from this body.
+  - Sub-Plan F / category (CONTRACT ITEM, NEW vs MS-A): implement `GET /internal/categories/{id}/commission` →
+    200 `{"commission_pct":"<decimal-string>"}` NEVER null (`"0.00"`=unseeded); 404 (category.lookup.not_found).
+  - infra (A2) + database-builder (A1): cross-schema grant = GRANT INSERT ON public.audit_events TO pricing_user
+    (audit write FIRES on the POST). NO products SELECT grant (§0.6 Option B = HTTP, not SQL). svc-pricing ORM
+    targets schema `pricing` (pricing.pricing_calcs); DB-level FK pricing_calcs.product_id→public.products kept valid.
+  - LEAD (Phase C): §16.G CI AST parity on service.py (single §0.6 hunk is the ONLY allowed delta); §0.6
+    no-ProductORM/no-products executable-ref assertion; T1 Decimal byte-golden; T6 cross-schema audit round-trip;
+    T3/T4 shim 404/422 round-trips; carry check_scope_to_user allowlist `pricing.repository.insert_calc`.
+=========
