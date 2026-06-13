@@ -149,21 +149,34 @@ The shell fails to bootstrap in the browser (blank white screen, all routes). Ze
 
 ---
 
-### Wave 6 rebase guard (added 2026-06-13 — post-#203)
+### F-001 rebase guard (added 2026-06-13 — post-#203; CORRECTED 2026-06-13)
 
-Four in-flight frontend branches predate the F-001 fix and were branched off pre-#203 develop:
+**Correction note:** an earlier version of this section claimed the four `feature/wave6-*/frontend` branches were the at-risk in-flight branches needing a rebase. That was factually wrong. A regression assessment found the truth below.
 
-- `feature/wave6-dashboard/frontend`
-- `feature/wave6-onboarding/frontend`
-- `feature/wave6-catalog-form/frontend`
-- `feature/wave6-export/frontend`
+**The four `feature/wave6-*/frontend` branches are already merged and SAFE — no action needed.**
 
-Each MUST, before its merge gate:
-1. **rebase onto post-#203 develop**;
-2. **pass the grep guard** — `grep -rn "@mesell/ui-kit/" apps libs --include='*.ts'` MUST be **EMPTY** (no subpath imports of the shared kit);
-3. **confirm** its `federation.config.js` files carry `@primeuix/themes` in `skip:`.
+- `feature/wave6-dashboard/frontend` → merged via PR #153
+- `feature/wave6-onboarding/frontend` → merged via PR #161
+- `feature/wave6-catalog-form/frontend` → merged via PR #164
+- `feature/wave6-export/frontend` → merged via PR #167
 
-Skipping any of these **re-introduces F-001 on merge** — the build stays green and the tests pass, but the shell goes blank in the browser again. The frontend lead enforces this at the wave6 merge gates.
+All four were squash-merged to develop and **deleted from origin BEFORE the F-001 fix** (#203). The F-001 fix now sits on TOP of their content as develop HEAD, so they cannot re-introduce F-001. Any stale `/tmp` worktrees pointing at them are leftover refs only — not a risk.
+
+**The one in-flight branch that WILL re-introduce F-001 if merged: `feature/mfe-cutover/frontend`** (tip `0c17aa0`).
+
+- It predates F-001, is **114 commits behind / 2 ahead** of develop, and has **no open PR**.
+- It carries the FULL original F-001 breakage — all 12 deep `@mesell/ui-kit/<subpath>` imports across shell `app.config.ts` + the mfe-auth (login/signup/otp-verify) and mfe-onboarding (profile) components.
+- Its 2 commits modify `shell/app.config.ts` + `shell/federation.config.js`.
+- Merged as-is it **re-introduces F-001** (build green, browser dead).
+
+Required before ANY merge of `feature/mfe-cutover/frontend`:
+1. **rebase onto develop ≥ `1ae5939`** (the F-001 fix);
+2. **grep guard** — `grep -rn "@mesell/ui-kit/" apps libs --include='*.ts'` MUST be **EMPTY** (no subpath imports of the shared kit);
+3. **confirm** every `federation.config.js` keeps `@primeuix/themes` in `skip:`.
+
+If the branch is **superseded** by the completed MFE structure already on develop, it should be **retired/deleted rather than merged**. **Flag for founder decision.**
+
+**General rule (retained):** any in-flight frontend branch predating #203 must pass the rebase + grep + `skip:` guard before merge — the build stays green and tests pass, but the shell goes blank in the browser if F-001 is re-introduced. The frontend lead enforces this at the merge gate.
 
 ### Two follow-ups carried to session-2 (tracked in `docs/status/STATUS_FRONTEND.md`)
 

@@ -28,16 +28,34 @@ VERIFICATION (lead, on merged tip 1ae5939 = origin/develop):
 GATE 5 STATUS: visual review remains PAUSED pending mesell-ui-review-session-2. The shell now BOOTS,
   so the review is UNBLOCKED to schedule (0/14 routes reviewed; scope = 6 remotes / 7 dev servers, ports 4200-4206).
 
-WAVE 6 REBASE GUARD (must enforce before merging any of these):
-  Four in-flight frontend branches predate the F-001 fix and MUST each:
-    - feature/wave6-dashboard/frontend
-    - feature/wave6-onboarding/frontend
-    - feature/wave6-catalog-form/frontend
-    - feature/wave6-export/frontend
-  (1) rebase onto post-#203 develop;
-  (2) pass the grep guard: `grep -rn "@mesell/ui-kit/" apps libs --include='*.ts'` MUST be EMPTY;
-  (3) confirm each app's federation.config.js carries @primeuix/themes in skip:.
-  Skipping any of these re-introduces F-001 on merge (build stays green, the browser dies).
+F-001 REBASE GUARD (CORRECTED 2026-06-13):
+  CORRECTION — an earlier version of this block named the four feature/wave6-*/frontend branches
+  as the at-risk rebase targets. That was FACTUALLY WRONG. A regression assessment found:
+
+  The four feature/wave6-*/frontend branches are ALREADY MERGED and SAFE — no action:
+    - feature/wave6-dashboard/frontend    → PR #153 (merged, deleted from origin)
+    - feature/wave6-onboarding/frontend   → PR #161 (merged, deleted from origin)
+    - feature/wave6-catalog-form/frontend → PR #164 (merged, deleted from origin)
+    - feature/wave6-export/frontend       → PR #167 (merged, deleted from origin)
+  All four squash-merged to develop and deleted from origin BEFORE the F-001 fix (#203). The
+  F-001 fix sits on TOP of their content (develop HEAD), so they CANNOT re-introduce F-001.
+  Any stale /tmp worktrees pointing at them are leftover refs only — not a risk.
+
+  The ONE in-flight branch that WILL re-introduce F-001 if merged: feature/mfe-cutover/frontend (tip 0c17aa0):
+    - predates F-001; 114 commits behind / 2 ahead of develop; NO open PR.
+    - carries the FULL original F-001 breakage — all 12 deep @mesell/ui-kit/<subpath> imports across
+      shell app.config.ts + the mfe-auth (login/signup/otp-verify) and mfe-onboarding (profile) components.
+    - its 2 commits modify shell/app.config.ts + shell/federation.config.js.
+    - merged as-is it RE-INTRODUCES F-001 (build green, browser dead).
+  Required before ANY merge of feature/mfe-cutover/frontend:
+    (1) rebase onto develop >= 1ae5939 (the F-001 fix);
+    (2) grep guard: `grep -rn "@mesell/ui-kit/" apps libs --include='*.ts'` MUST be EMPTY;
+    (3) confirm every federation.config.js keeps @primeuix/themes in skip:.
+  If superseded by the completed MFE structure already on develop, RETIRE/DELETE rather than merge.
+  FLAG FOR FOUNDER DECISION.
+
+  GENERAL RULE (retained): any in-flight frontend branch predating #203 must pass the
+  rebase + grep + skip: guard before merge (build stays green, the browser dies otherwise).
 
 FOLLOW-UPS TRACKED (not blockers):
   (a) CI BOOT-SMOKE GATE — promote the browser-boot smoke to a PERMANENT CI federation gate carrying
@@ -50,7 +68,7 @@ FOLLOW-UPS TRACKED (not blockers):
       needs a real session). Owner: founder + frontend lead (session-2).
 
 Blockers: none.
-Next: schedule mesell-ui-review-session-2 (Gate 5 visual review, now unblocked); enforce the Wave 6 rebase guard on the 4 in-flight branches at their merge gates.
+Next: schedule mesell-ui-review-session-2 (Gate 5 visual review, now unblocked); enforce the F-001 rebase guard on feature/mfe-cutover/frontend (the one real at-risk in-flight branch — rebase+grep+skip before any merge, or retire it; flag for founder decision). The four feature/wave6-*/frontend branches are already merged (#153/#161/#164/#167) and need no action.
 Hand-offs: follow-up (a) touches infra/CI — to be filed as an inter-lead request when session-2 is scheduled (the permanent CI gate is infra-owned mechanism + frontend-owned assertions).
 =========
 
