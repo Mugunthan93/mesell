@@ -5404,4 +5404,30 @@ Next: founder/master opens Wave MS-4 when MS-3 merges; then hybrid STEP 2 (dispa
 Hand-offs: meesell-infra-builder (handoff_msG_infra.md + board inter-lead row, Phase-2 gated). MS-F
   (category, parallel partner) coordinates via shared-file discipline (decentralized — reads this STATUS
   + my memory per CLAUDE.md rule 3).
+=== UPDATE: 2026-06-12 — Gate-4 LOOP-CONTAMINATION — PASS-1 REJECTION RECORD (arc since CLOSED: rejected→repaired→merged) ===
+Phase: CI Gate-4 (integration) — post-#150 unmasking follow-up
+Session: mesell-gate4-loop-backend-session-1
+NOTE (record correction, this docs PR): this block preserves the FIRST merge-gate attempt's rejection detail (the D1/D2/D3 defect classification — the valuable lesson). That rejection is NOT the final state: repair loop 1 (commits 0059272 + b9d1557) fixed all three defects, the re-gate CI run `27394517680` came back 180p/17s/0f/0e, and PR #159 was MERGED HONESTLY (squash `fdfef68` → develop, no `--admin`-over-red). See the two UPDATE blocks above ("repair loop 1 (PR #159)" and "repair loop 1 COMPLETE — CI GREEN") for the resolution, and the develop run `27395272576` (first fully-green develop run) for the close. The text below is retained verbatim as the pass-1 rejection lesson.
+Board sweep: 1 active row added (ci-gate4-loop-contamination = BLOCKED at pass 1, since CLOSED/merged); microservices-export unchanged (no stale 7d+ rows beyond it; it is a POST-V1 holding row, not a worked branch). Inter-lead requests: none new.
+
+Verdict: REJECT (STEP 3 merge-gate). PR #159 (`fix/gate4-loop-contamination` → develop), implemented by meesell-api-routes-builder from spec `spec_ci_gate4_loop_contamination.md`. Gate 4 RED on the PR's own CI run `27393519389`: `5 failed / 162 passed / 17 skipped / 723 deselected / 13 errors in 23.92s`. Develop baseline was `6 failed / 13 errors` — net ~zero improvement; the fix traded the cross-loop error for an FK-violation error and left the teardown errors + the catalog assertion untouched. NO --admin used (the #150 override is spent; this saga must merge honestly).
+
+Done:
+- Full diff review against spec §4 fence: PASS. Only `tests/integration/conftest.py`, `tests/test_shared_database.py`, `tests/test_customer_routes.py`, `tests/modules/export/test_router.py`, `STATUS_BACKEND.md` + specialist's own MEMORY.md. ZERO app/, pytest.ini, alembic/, ci.yml, root-conftest LOCKED-block diff. PR template fully filled (no placeholders).
+- CI watched to completion: Gates 1/2/3 GREEN, 8 frontend units GREEN, Gate 4 RED. Gate-4 job log tail read; actual counts + per-node failure shapes captured.
+- Rejection comment posted on PR #159 with 3 precise defects + KEEP list + fix options + required-for-re-review bar.
+
+Defects (rejection detail):
+- D1 — `iam_client` SAVEPOINT override broke SPLIT-ENGINE integration tests. Those tests create the user via the real route (`iam_client`, now inside an uncommitted savepoint outer-txn) but read profile state via a SEPARATE `_make_session_factory()` engine on `os.environ["DATABASE_URL"]` (independent committed-read connection). The user no longer commits durably → `asyncpg.ForeignKeyViolationError: ... seller_profile violates fk_seller_profile_user_id` (×4 eligibility + 1 onboarding). On develop, `iam_client` wrote to the app-global engine which COMMITTED, so the second engine could see the user. FIX: drop SAVEPOINT on `iam_client`; give it a function-loop NullPool engine that commits for real + keep `_cleanup_users_by_phone_prefix` teardown (cross-loop is fixed by the function-loop engine ALONE; savepoint is what broke it).
+- D2 — 13 `Event loop is closed` teardown errors UNCHANGED (export ×4 + customer ×9). The lifespan explicit-dispose did not target the leaking pool. FIX: capture full traceback of one error, identify which engine/pool the dangling asyncpg connection-lost callback belongs to, dispose THAT (likely the request-override NullPool engine or a Valkey client, possibly after draining pending callbacks). Verify zero errors in isolation.
+- D3 — catalog `test_full_lifecycle` `assert False is True` (L80 `autofill_result.applied.get("product_name") is True`) UNCHANGED. The PR claimed H1 (loop cascade) without proof; H1 is now DISPROVEN. Per spec §2.C the H1/H2 fork is LIVE: run in isolation; if it fails alone → H2 = genuine G7 app-drift (catalog-form G7 removed auto-apply → `applied` always False, but the test asserts True). If H2: STOP, do NOT flip the assertion to mask it; escalate as a SEPARATE three-step (services-builder + founder G7-scope confirmation) per spec §6 escalation trigger. BE-CATALOG-G7-AUTOAPPLY-1 may materialize.
+
+KEEP (do not revert in repair):
+- `test_shared_database.py::test_get_db_yields_async_session` fix (patch `AsyncSessionLocal` → function-loop NullPool sessionmaker via `with _patch(...)`). It is no longer in the failure list. Spec §3.B "Preferred" path, sound.
+- The `iam_client` function-loop engine + get_db override MECHANISM (it cleared `test_iam_replay_attack`, a pure-iam_client test). Only the SAVEPOINT layer is defective.
+
+In progress (at the time of this pass-1 rejection): PR #159 BLOCKED awaiting specialist repair (loop 1 of 2). RESOLVED SAME DAY — see the two blocks above.
+Blockers (at the time): Gate-4 lane not re-fireable until PR #159 (or a successor) merges Gate-4-green. CLEARED — PR #159 itself cleared repair loop 1 and merged Gate-4-green (`fdfef68`); develop run `27395272576` is fully green (Build + Deploy both green). develop is UNBLOCKED.
+Next (as taken): master session re-dispatched meesell-api-routes-builder with the 3-defect repair brief (repair loop 1 of 2); the repair cleared all three; coordinator re-gated and merged honestly (no override).
+Hand-offs: meesell-infra-builder — Gate-4 develop→main re-fire is GREEN (the post-#110 "READY TO RE-FIRE" expectation is genuinely satisfied via #159, not invalidated). No FE/AI/data memo (test-only). GATE-4 SAGA 2 CLOSED.
 =========
