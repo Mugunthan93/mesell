@@ -1,0 +1,362 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MeeSell svc-export",
+    "description": "Standalone Meesho XLSX export microservice (MS Sub-Plan A)",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/products/{product_id}/export-xlsx": {
+      "post": {
+        "tags": [
+          "export"
+        ],
+        "summary": "Initiate Meesho XLSX export for a product (Feature 9)",
+        "description": "Validates product ownership + readiness + front-image availability, inserts an exports row with status='pending', and enqueues the 9-step Celery pipeline (task name 'export.xlsx'). Poll GET /exports/{export_id} until status='ready' or 'failed'. Rate limit: 10 requests/hour per user.",
+        "operationId": "initiate_export_api_v1_products__product_id__export_xlsx_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Product Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportInitiatedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/exports/{export_id}": {
+      "get": {
+        "tags": [
+          "export"
+        ],
+        "summary": "Poll export status and retrieve download URLs (Feature 9)",
+        "description": "Returns the current status of the export pipeline. When status='ready', ``xlsx_signed_url`` (and ``zip_signed_url`` for xlsx_with_images format) are populated with fresh GCS signed URLs valid for 1 hour \u2014 re-poll to refresh expired URLs. When status='failed', ``error_code`` and ``error_message`` are set. No audit event (read-only polling \u2014 \u00a714.J).",
+        "operationId": "get_export_api_v1_exports__export_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "export_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Export Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "description": "Liveness probe.  DB / Valkey deep checks are deferred to the\nreadiness probe wired by the infra lane.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ExportInitiatedResponse": {
+        "properties": {
+          "export_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Export Id"
+          },
+          "status": {
+            "type": "string",
+            "const": "pending",
+            "title": "Status"
+          },
+          "enqueued_task_id": {
+            "type": "string",
+            "title": "Enqueued Task Id"
+          },
+          "initiated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Initiated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "export_id",
+          "status",
+          "enqueued_task_id",
+          "initiated_at"
+        ],
+        "title": "ExportInitiatedResponse",
+        "description": "POST /products/{product_id}/export-xlsx 202 response per \u00a714.B.1."
+      },
+      "ExportRequest": {
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": [
+              "xlsx_only",
+              "xlsx_with_images"
+            ],
+            "title": "Format",
+            "default": "xlsx_with_images"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ExportRequest",
+        "description": "POST /products/{product_id}/export-xlsx body.\n\n``format`` defaults to ``\"xlsx_with_images\"`` \u2014 the primary Feature 9 UX\n(seller downloads sheet + image ZIP in one go).  ``\"xlsx_only\"`` is the\nV1.5+ bulk-export use case."
+      },
+      "ExportResponse": {
+        "properties": {
+          "export_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Export Id"
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Product Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "ready",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "xlsx_only",
+              "xlsx_with_images"
+            ],
+            "title": "Format"
+          },
+          "xlsx_signed_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xlsx Signed Url"
+          },
+          "zip_signed_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zip Signed Url"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "initiated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Initiated At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "round_trip_validated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Round Trip Validated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "export_id",
+          "product_id",
+          "status",
+          "format",
+          "initiated_at"
+        ],
+        "title": "ExportResponse",
+        "description": "GET /exports/{export_id} 200 response per \u00a714.B.2.\n\nField population rules:\n- ``xlsx_signed_url``: populated when ``status=\"ready\"``.\n- ``zip_signed_url``: populated when ``status=\"ready\"`` AND\n  ``format=\"xlsx_with_images\"``.\n- ``error_message`` / ``error_code``: populated when ``status=\"failed\"``.\n- ``completed_at``: always ``None`` in V1 (DDL has no column \u2014 set at\n  service layer when status=\"ready\"/\"failed\").\n- ``round_trip_validated``: ``True`` when ``status=\"ready\"`` (MVP_ARCH \u00a75.7\n  invariant); ``None`` otherwise.  Derived from status at service layer."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "OAuth2PasswordBearer": {
+        "type": "oauth2",
+        "flows": {
+          "password": {
+            "scopes": {},
+            "tokenUrl": "/api/v1/auth/otp/verify"
+          }
+        }
+      }
+    }
+  }
+}
