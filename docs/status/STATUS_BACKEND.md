@@ -1,6 +1,51 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-13 (mesell-msC-mergegate-session-1) — B2-FIX RE-GATE + FOUNDER GATE OPENED ===
+Phase: Microservices Sub-Plan C (image extraction) — Phase 2, MERGE GATE re-pass (HYBRID step 3, B2 fix)
+Session: mesell-msC-mergegate-session-1 (meesell-backend-coordinator, lead gate)
+Board sweep: MS-C row IN REVIEW → FOUNDER GATE OPEN; Blocking cleared. No rows untouched 7+ days
+  (high-velocity program). No new inter-lead requests (deploy-time founder asks ride the founder-gate PR body).
+Done:
+  - RE-GATED B2 fix PR #205 (feature/microservices-image/routes-fix tip e8f44bb → integration). Single-file
+    change to backend/services/svc-image/app/router.py: top-level `router` now PREFIXLESS, composing
+    `_public_router` (/api/v1) + `_internal_router` (/internal) as SIBLINGS. Exported symbol `router` at
+    `app.router` unchanged → B1 main.py needs no edit. Scope clean (only router.py, +47/-10).
+  - INDEPENDENT re-verification (row-26 lesson — did NOT trust the builder): py3.11/fastapi 0.115 venv,
+    mounted the real svc-image app. Route table is EXACTLY:
+      POST /api/v1/products/{id}/images
+      GET  /api/v1/products/{id}/images
+      GET  /internal/products/{product_id}/images
+    NO /api/v1/internal route exists. Phase-C test_image_extraction.py 8/8 GREEN incl. previously-RED
+    test_internal_shim_path_frozen. Ruff clean on router.py.
+  - SQUASH-MERGED #205 into integration → squash `cddacc8`. PR state MERGED 2026-06-13T07:38:16Z. routes-fix
+    branch ref-delete blocked by wildcard branch protection (cosmetic; non-blocking).
+  - Merged origin/develop into integration (shared-file discipline). Union keep-both resolved on
+    docs/status/STATUS_BACKEND.md + .claude/agent-memory/meesell-services-builder/MEMORY.md (both append-only;
+    kept both sides). feature_board_backend.md auto-merged (both MS-B + MS-C rows present). Merge commit
+    `4445abd`. Re-ran Phase-C on the merged tip: still 8/8 GREEN.
+  - Opened the FOUNDER-GATE PR (integration → develop, [FOUNDER GATE — DO NOT MERGE]) and LEFT IT OPEN.
+    Posted the final lead-gate verdict (all 4 lanes PASS) as a PR comment.
+Validation (reported faithfully — run vs documented-blocked):
+  - RUN GREEN: route-table mount assertion (3 exact routes, no /api/v1/internal); Phase-C 8/8 (both pre- and
+    post-develop-merge); ruff clean; Option-B AST (no products read); §16.G service+tasks AST parity hooks.
+  - Monolith floor MONOTONIC: `def test_` = 698 (excl. services/; zero monolith touch). services/ subtotal 68
+    (svc-export 32 + svc-image 8 + svc-dashboard 28 post develop-merge); total backend 766.
+  - BLOCKED-honestly (NOT claimed green; CI/deploy-gated): (a) live `alembic upgrade head` — dev SSH tunnel
+    DOWN (localhost:5433 closed); (b) full svc-image py3.12 suite — no py3.12 interpreter present (gate ran on
+    py3.11, which supports PEP-604 + future-annotations so mount + AST checks are valid).
+  - NON-BLOCKING obs: python-multipart missing from svc-image requirements.txt (transitive runtime dep for the
+    Form-based upload route; app boot fails without it). Flagged for a follow-up chore — NOT a merge blocker.
+Blockers: none. Founder gate is OPEN — founder/master merges integration → develop (D1, NOT the lead's gate).
+Next: founder reviews/merges the founder-gate PR. Strangler-fig: monolith image module STAYS LIVE; the Traefik
+  cutover to svc-image is a SEPARATE future founder gate, NOT taken at this merge. MS-3 (pricing ‖ customer)
+  opens only when BOTH MS-B + MS-C founder gates are merged to develop.
+Hand-offs / founder-gate flags (carried in the PR body, NOT inter-lead memos):
+  - Two DEPLOY-TIME founder asks (NOT merge blockers): (1) D3 VM overflow — MS-2 deploy projects ~126% of
+    e2-standard-2 → needs e2-standard-4 (~₹2,600/mo), re-asked FRESH at deploy; (2) new bootstrap secret
+    `dev-image-db-password` (infra / Secret Manager).
+=========
+
 === UPDATE: 2026-06-13 (mesell-msC-mergegate-session-1) ===
 Phase: Microservices Sub-Plan C (image extraction) — Phase 2, MERGE GATE (HYBRID step 3)
 Session: mesell-msC-mergegate-session-1 (meesell-backend-coordinator, lead gate)
