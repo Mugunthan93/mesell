@@ -1,8 +1,166 @@
 # STATUS — INFRASTRUCTURE
 
 **Owner:** `meesell-infra-builder`
-**Last update:** 2026-06-12 (**FINAL DEV REDEPLOY @ develop tip `80cda29` (#177) — VERIFIED via hands-free CI lane. DEV-COMPLETE: yes for the deployable V1 dev surface (api+worker).** Prior: Gate-4 RED inter-lead → backend (since RESOLVED — develop runs GREEN through Gate-4 by ~11:50Z); GEMINI_API_KEY_CI SET + founder-verified DONE. ₹0/mo.)
+**Last update:** 2026-06-12 (**MS-0 / D5 step 1 MERGED (#181, develop 29ed457) + APPLIED LIVE to dev — founder-authorized.** Runbook steps 1–2: Postgres `max_connections=200` LIVE + PgBouncer transaction-pool LIVE (`pgbouncer.dev.svc.cluster.local:6432`). Step 3 (DATABASE_URL flip) NOT applied — separate founder gate, blocked on backend R-MS-8. Dev-only, ₹0. Two apply-time manifest fixes (image tag, scram auth). See APPLY UPDATE below.)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
+
+## UPDATE — 2026-06-12 — mesell-ms-pgbouncer-session-1 (APPLY) — MS-0 / D5 step 1 APPLIED LIVE to dev
+
+=== STEP: apply runbook steps 1–2 — Postgres max_connections=200 + PgBouncer (transaction-pool) ===
+Phase: Playbook §5 (PostgreSQL — TF `module.postgres_dev`), §10 (Secret discipline — userlist),
+       §15 (Safe deployment — server dry-run [MANDATORY GATE], RE-RUN immediately before apply).
+       Executing `docs/runbooks/pgbouncer-cutover.md` steps 0/1/2 ONLY. Step 3 NOT authorized.
+Session: mesell-ms-pgbouncer-session-1 (APPLY phase)
+Authorization: founder "run the apply per the runbook" after PR #181 reviewed/APPROVED/squash-merged
+       to develop @ 29ed457. Dev namespace only, ₹0 new spend.
+
+**Session-start sweep:** feature_board_infra.md — all Active rows touched 2026-06-11/12 (current). No 7+ day stale row.
+
+**Pre-flight (runbook §0) — all pass:**
+- gcloud auth: vaishnaviramoorthy@gmail.com ACTIVE; project project-1f5cbf72-2820-4cdb-949.
+- `kubectl get nodes`: meesell-dev-master Ready (K3s API reachable — founder IP in firewall /32).
+- `SHOW max_connections` = **100** (pre, as expected). postgres-0 1/1 Running.
+- Snapshots: `/tmp/meesell-pre-ms0-state.txt` (instances — meesell-dev confirmed), `/tmp/meesell-pre-ms0-postgres-sts.yaml`.
+- Baseline: api 2/2, worker 2/2 Running (the zero-impact reference).
+
+**Step 1 — Postgres max_connections=200 (TF) APPLIED:**
+- `terraform init` in fresh worktree `/tmp/mesell-wt/ms0-apply/infra/terraform` (GCS backend `meesell-tfstate`, read-config, safe).
+- `terraform plan -target=module.postgres_dev` (dev.tfvars + 2 password vars from ~/.meesell-secrets, ADC token via GOOGLE_OAUTH_ACCESS_TOKEN workaround):
+  **`Plan: 0 to add, 1 to change, 0 to destroy`** (in-place update of `kubernetes_stateful_set.postgres`:
+  `args += ["-c","max_connections=200"]`, `resources.limits.memory "1Gi" -> "1536Mi"`) — matches the hard-limit gate exactly. Saved `.tflogs/ms0-postgres.tfplan`.
+- `terraform apply` saved plan: OK. `rollout status statefulset/postgres`: complete. postgres-0 1/1 Running (fresh, RESTARTS 0).
+- VERIFY: `pg_isready` → accepting connections; `SHOW max_connections` → **200** (expected 200, MATCH).
+
+**Step 2 — PgBouncer (transaction-pool) APPLIED:**
+- 2a. `pgbouncer-userlist` Secret populated from live `postgres-credentials` (password NEVER printed; temp file shredded). [see auth fix below]
+- 2b. **MANDATORY §15 server dry-run** `kubectl -n dev apply --dry-run=server -f k8s/pgbouncer.yaml` → clean (3 objects: configmap/deployment/service). Re-run clean after each manifest fix.
+- 2c. `kubectl apply -f k8s/pgbouncer.yaml` → applied; `rollout status deployment/pgbouncer` → successfully rolled out; pod **1/1 Running**.
+- VERIFY: end-to-end **SELECT 1 through `:6432` → `1`** (app→pgbouncer→postgres); `SHOW POOLS` → `meesell` pool `pool_mode=transaction` (sv_idle=1, real backend opened+returned). Endpoint `pgbouncer.dev.svc.cluster.local:6432` LIVE.
+
+**TWO apply-time manifest defects found + fixed forward (folded into k8s/pgbouncer.yaml; ride the docs-record PR):**
+1. **Image tag `1.23.1`→`v1.23.1-p3`.** `edoburu/pgbouncer:1.23.1` 404s on Docker Hub (`not found` → ErrImagePull); edoburu uses a `vMAJOR.MINOR.PATCH-pN` convention. `v1.23.1-p3` is the latest patch of the 1.23.1 line. Verified the real tag via the Docker Hub tags API before applying.
+2. **`auth_type` `md5`→`scram-sha-256` + PLAINTEXT userlist.** Postgres runs `password_encryption=scram-sha-256` (the `meesell` rolpassword is `SCRA...`); pgbouncer with an md5 userlist failed server-side auth: `cannot do SCRAM authentication: wrong password type`. Fix: `auth_type=scram-sha-256` with the plaintext password in userlist.txt (pgbouncer forwards SCRAM to the server). Also corrected the runbook §2a procedure + verify queries (the `user:pw@host` DSN form breaks on `@`-containing base64 passwords — switched to `env PGPASSWORD=` + discrete `-h/-p/-U/-d` flags, per MEMORY).
+
+**Post-apply health sweep — zero impact confirmed:**
+- api 2/2 + worker 2/2 still Running, AGE preserved (NOT restarted — nothing routes through pgbouncer; api/worker untouched as required). api `/health` → {postgres:ok,valkey:ok}.
+- postgres mem **limit = 1536Mi** live; live usage postgres 37Mi (<<limit), pgbouncer 1Mi/10m CPU.
+- Node meesell-dev-master post-apply: CPU req **1675m/2000m (83%)** (pgbouncer's 25m fit the ~325m free), mem req 44% — headroom OK, no breach.
+
+**Step 3 (DATABASE_URL flip to :6432):** NOT applied — separate founder gate, blocked on backend R-MS-8 (asyncpg/SQLAlchemy transaction-pool compat). Inter-lead request to backend remains OPEN. D5 step-1 PREREQUISITE is now LIVE; the flip is the next (separately gated) step.
+
+**Records:** docs-only PR to develop from worktree `/tmp/mesell-wt/ms0-apply` branch `chore/ms0-apply-record` (NOT a founder gate). Board MS-0 row → Recently merged (MERGED+APPLIED). Cost ₹0/mo.
+
+
+## UPDATE — 2026-06-12 — mesell-ms-pgbouncer-session-1 — MS-0 / D5 step 1 (PgBouncer + max_connections=200)
+
+=== STEP: author + validate PgBouncer (transaction-pool) + Postgres max_connections=200 ===
+Phase: Playbook §5 (PostgreSQL — TF-managed `module.postgres_dev`), §10 (Secret discipline — userlist),
+       §15 (Safe deployment template — server dry-run [MANDATORY GATE]). Infra plan §3.3 (MS-DB-3 + MS-DB-4),
+       MASTER_PLAN D5. Rule followed: postgres changes go through the TF module, NOT k8s/postgres.yaml
+       (doc-only mirror); server dry-run is mandatory and was RUN (cluster reachable this session).
+Session: mesell-ms-pgbouncer-session-1
+Scope: DEV namespace only. Current hardware (e2-standard-2). ₹0 new spend. NO live mutation this session.
+
+**Session-start sweep:** feature_board_infra.md Active features — all rows touched 2026-06-11/12 (current).
+No row untouched 7+ days. No stale flag needed.
+
+**Live pre-state (verified, cluster reachable — founder IP currently in firewall /32):**
+- postgres-0 `SHOW max_connections` = 100; baseline ~10 conns. Resources req 200m/500Mi lim 1/1Gi, no args.
+- Node meesell-dev-master: CPU 1650m/2000m requested (82% — BINDING constraint, ~350m free);
+  memory 3528Mi/8129Mi (44% — ample headroom). Confirms: raise memory limit (cheap), do NOT add CPU.
+
+**What changed (authoring only):**
+1. `infra/terraform/modules/postgres/{main.tf,variables.tf}` — container `args=["-c","max_connections=${var.max_connections}"]`
+   (new var, default 200); memory **limit** 1Gi→1536Mi (request UNCHANGED 500Mi — idle conn slots cost little,
+   no scheduler pressure; CPU untouched). `terraform fmt` clean.
+2. `k8s/postgres.yaml` — doc-mirror updated to match (args + 1.5Gi limit), DO-NOT-APPLY header intact.
+3. `k8s/pgbouncer.yaml` (NEW) — ConfigMap `pgbouncer-config` (`pool_mode=transaction`, default_pool_size=20,
+   reserve=5, max_db_connections=25, max_client_conn=1000, max_prepared_statements=0, server_reset_query=DISCARD ALL,
+   per-db `meesell` entry designed additive for per-service entries) + Deployment `pgbouncer` (**1 replica** —
+   JUSTIFIED: e2-standard-2 CPU-bound, pgbouncer single-threaded epoll, HA is prod-only; 25m/32Mi req,
+   image `edoburu/pgbouncer:1.23.1`, tcp readiness/liveness) + Service ClusterIP :6432.
+4. `k8s/pgbouncer-userlist.secret.yaml.example` (NEW) — userlist Secret template + md5 populate procedure
+   sourcing the live password from `postgres-credentials` (§10 — NO creds committed).
+5. `docs/runbooks/pgbouncer-cutover.md` (NEW) — apply order, verify queries (`SHOW max_connections`, `SHOW POOLS`),
+   smoke, rollback, founder-gated DATABASE_URL flip note.
+
+**Validation (NO live mutation):**
+- `terraform plan -target=module.postgres_dev` (var-file dev.tfvars + pg/valkey passwords, GOOGLE_OAUTH_ACCESS_TOKEN
+  workaround, ADC=vaishnaviramoorthy) = **`Plan: 0 to add, 1 to change, 0 to destroy`** — in-place StatefulSet update
+  (args += max_connections=200; memory limit 1Gi→1536Mi); no destroy, no PVC churn. Saved `.tflogs/ms0-postgres-maxconn-plan.txt`.
+- `kubectl -n dev apply --dry-run=client -f k8s/pgbouncer.yaml` → 3 objects created (dry run), clean.
+- **`kubectl -n dev apply --dry-run=server -f k8s/pgbouncer.yaml` → 3 objects (server dry run), CLEAN.**
+  §15 [MANDATORY GATE] MET this session (cluster reachable) — NOT deferred.
+- userlist `.example` structurally parsed (yaml) — Secret/pgbouncer-userlist, key userlist.txt. NOT applied (has REPLACE-ME).
+
+**Board sweep (session-end):** added MS-0 Active-features row (IN REVIEW on PR open) + backend inter-lead row (R-MS-8).
+No stale rows. No other writer touched the board between session-start read and these edits (worktree off origin/develop).
+
+**HANDOFF — meesell-backend-coordinator (FLAGGED):** R-MS-8 asyncpg/SQLAlchemy transaction-pool compatibility
+(`statement_cache_size=0`, `pool_pre_ping=False`, `executemany_mode='values_only'`, no SET LOCAL/LISTEN) is BACKEND
+CODE, required before any `DATABASE_URL`→pgbouncer:6432 flip. Memo:
+`.claude/agent-memory/meesell-infra-builder/handoff_d5_pgbouncer_backend.md`. Inter-lead row OPEN. NOT a blocker for
+the MS-0 PR (pgbouncer is additive; nothing routes through it until the founder-gated flip).
+
+Validation: PASS. Board sweep: 2 rows added (MS-0 + inter-lead), 0 stale, 1 inter-lead open.
+Next action: open founder-gate PR (LEFT OPEN — feature→develop is the founder's gate per D1).
+Cost: ₹0/month. PgBouncer = 1 tiny pod; postgres memory request unchanged (limit-only raise).
+=========
+
+## UPDATE — 2026-06-12 — mesell-ms-export-infra-session-1 — Sub-Plan A INFRA GATE on PR #190 (APPROVE + in-gate fix)
+
+=== STEP: merge-gate review of PR #190 (feature/microservices-export/infra → /integration) ===
+Phase: INFRASTRUCTURE_PLAYBOOK.md §15 ([MANDATORY GATE] dry-run, offline branch when cluster unreachable) + §10 (secret discipline). Merge-gate criteria per `.github/PULL_REQUEST_TEMPLATE/infra.md` + board Acceptance gate.
+Session: mesell-ms-export-infra-session-1
+Reviewed tip: aafcc30 (at open) → **234e4d2** (after in-gate fix).
+
+**VERDICT: APPROVE.** PR comment https://github.com/Mugunthan93/mesell/pull/190#issuecomment-4693636063
+
+- I1–I8 verified IN THE DIFF at handoff-specified values (sizing 50m/128Mi + 200m/512Mi; ClusterIP 8001; 2 Traefik paths with exact `[^/]+/export-xlsx$` regex + `/api/v1/exports` prefix; `/internal/*` absent; schema-role.sql `GRANT INSERT ON public.audit_events TO export_user`; secrets.yaml.example NO AI/SMS/payment vars; TF `max_connections=200` minimal additive, prevent_destroy intact). Field-assertion pass ALL PASS.
+- Dev-namespace-only; secret scan on diff CLEAN (REPLACE-ME placeholders only); file-list scoped (12 files in-lane).
+- **§5 ADVERSARIAL CHECK vs landed backend tree (e23080c)** — 3 would-not-run defects found + FIXED in `234e4d2` (Dockerfile + deployment only, backend sole-writer files untouched): (1) gunicorn missing from landed requirements.txt → `pip install gunicorn==22.0.0` in image; (2) worker `-A app.workers.celery_app`→`app.celery_app` (no app/workers/ pkg); (3) worker `-Q celery`→`-Q svc-export` (landed `task_default_queue="svc-export"`). `app.main:app` confirmed.
+- Server-dry-run + dev smoke DEFERRED to deploy time (cluster unreachable; default ctx 34.180.58.185 dead, real VM 35.234.223.66 firewall-scoped) — playbook §15 F3 branch, honestly documented; NOT a Sub-Plan-A blocker (dev, zero-traffic).
+- D3: 250m CPU fits e2-standard-2, no D3 ask, ₹0/mo.
+- **Deploy-time bootstrap (founder):** create SM container `dev-export-db-password` (export_user Postgres pw) — used in I5 ALTER ROLE + I7 DATABASE_URL. Per-service DB pw, not a new IAM grant (within §4 ceiling).
+Validation: APPROVE. Squash executed by the session window after verdict (NOT this lane). Board row → IN REVIEW.
+
+---
+
+## UPDATE — 2026-06-12 — mesell-ms-export-infra-session-1 — Sub-Plan A (export extraction) INFRA lane I1–I8
+
+=== STEP: author + offline-validate the svc-export infra surfaces (Sub-Plan A, first microservices extraction) ===
+Phase: INFRASTRUCTURE_PLAYBOOK.md §5 (PostgreSQL) + §7 (Ingress/TLS) + §15 ([MANDATORY GATE] dry-run; offline-only branch when cluster unreachable). Authorities: docs/plans/microservices_migration/MASTER_PLAN.md §2.B/§2.C/§2.D/§2.E/§5.A/§5.B/§5.D, docs/plans/infra/microservices_infra_plan.md §2.4/§3.2/§3.3/§6.3, handoff_msA_infra.md (work-package I1–I8), backend/app/modules/export/router.py (exact route paths).
+Session: mesell-ms-export-infra-session-1
+Branch: feature/microservices-export/infra (cut from origin/develop `c859955`) → PR to feature/microservices-export/integration (infra-lead-reviewed; founder gates integration→develop).
+
+**Constraints honored:** dev namespace ONLY · current `e2-standard-2` hardware (NO D3 ask) · ₹0 spend · NO terraform/gcloud APPLY (founder applies; my ADC is not vaishnaviramoorthy and no live GCP mutation is in scope for this lane) · no `git add -A` (exact paths only).
+
+**Deliverables landed (paths):**
+- I1 `backend/services/svc-export/Dockerfile` — python:3.12-slim, ONE image (api default CMD = gunicorn on :8001; worker overrides command in deployment.yaml). Authored against the spec'd tree shape (app/ + alembic/ + requirements.txt authored by the parallel backend lane; validated at integration).
+- I2 `k8s/svc-export/deployment.yaml` — svc-export-api 1 replica req 50m/128Mi lim 200m/512Mi; svc-export-worker 1 replica req 200m/512Mi lim 400m/1Gi (lim=2×req per R-MS-9). kill-before-surge strategy (dev CPU-tight). Worker consumes ONLY `-Q celery` (export.xlsx has no task_route → default queue; image-tasks belongs to a different service, NOT consumed here).
+- I3 `k8s/svc-export/service.yaml` — ClusterIP `svc-export` :8001→:8001, selects component=api only.
+- I4 `k8s/svc-export/ingressroute.yaml` — Traefik IngressRoute (traefik.io/v1alpha1, websecure, api.mesell.xyz TLS reused). Route 1 `PathRegexp(^/api/v1/products/[^/]+/export-xlsx$)` (tight — does NOT hijack catalog's /products/*); Route 2 `PathPrefix(/api/v1/exports)`. `/internal/*` deliberately NOT routed (cluster-DNS-only isolation, MASTER_PLAN §2.C). Param name `product_id` per router.py:91.
+- I5 `k8s/svc-export/schema-role.sql` — idempotent: CREATE SCHEMA export; CREATE ROLE export_user (LOGIN, least-priv); ALTER SCHEMA OWNER; USAGE+DML on export schema (+default privileges); **`GRANT USAGE ON SCHEMA public` + `GRANT INSERT ON public.audit_events TO export_user` (R3 — the backend merge gate's audit-row test depends on this)**. INSERT-only on audit_events (least privilege). Password set out-of-band from SM (not in git).
+- I6 `k8s/svc-export/gcs-sa.yaml.example` — GCS SA SPEC (reference, not appliable). DECISION for Sub-Plan A: option A (inherit node VM SA `888244156264-compute@`, which already has storage.objectAdmin on gs://meesell-prod-assets; app-layer prefix tenancy under `exports/{user_id}/...`; ₹0; ZERO new IAM). Dedicated export SA + Workload Identity + prefix-scoped IAM Condition (MASTER_PLAN §2.E target, option B) deferred to MS-K8S-4 when WI lands on K3s. Keyless (org policy forbids SA JSON keys). Within the §4 one-SA ceiling (actually zero new SAs).
+- I7 `k8s/svc-export/secrets.yaml.example` — svc-export-secrets template: DATABASE_URL (role export_user, `?options=-csearch_path%3Dexport,public`), VALKEY_URL + CELERY_BROKER/RESULT, JWT_SECRET (SM jwt-secret; LOCAL verify per D7/A2), APP_ENV="development", GCS_BUCKET/GCS_PROJECT_ID (keyless). **DELIBERATELY ABSENT: GEMINI/LANGFUSE/MSG91/RAZORPAY/REFRESH_TOKEN_PEPPER*/AUDIT_PII_SALT** (export is deterministic). All values REPLACE-ME placeholders — no secret committed (verified by secret-scan: 0 real key material).
+- I8 `infra/terraform/modules/postgres/main.tf` — minimal additive `args = ["-c", "max_connections=200"]` on the postgres StatefulSet container. **I8 OVERLAP CHECK CLEAN:** no MS-0 / pgbouncer / max_connections PR or branch exists in origin (`gh pr list --search pgbouncer` → only doc PRs; `git log origin/develop` → none; `git ls-remote --heads origin | grep -iE 'pgbouncer|ms-0|pool|ms-db'` → none; only the 3 microservices-export branches exist). Genuinely absent → I made the minimal change. PgBouncer (MS-DB-4) NOT in Sub-Plan A (deferred; dev-only zero-traffic).
+
+**Validation evidence (offline-only — cluster UNREACHABLE):**
+- Cluster: `34.180.58.185:6443` connection refused (K3s API /32-firewalled to founder IP per the memory IP-rotation pattern; the VM endpoint also differs from the memory's `35.234.223.66`). `kubectl --dry-run=client/server` BOTH require the API server (RESTMapper/OpenAPI fetch) → impossible offline. This is the playbook §15 "offline-only / deferred-to-deploy-time" branch (same posture as the mfe-cutover SP07 session). Server dry-run + dev smoke are DEFERRED to deploy time (the integration→develop deploy job runs `kubectl apply` on the VM + gates on rollout-status + health smoke + auto-rollback).
+- Offline validation performed: (a) `yaml.safe_load_all` PARSE OK on all 4 manifests (Deployment×2, Service, IngressRoute, Secret); (b) field-level assertions PASS — api req 50m/128Mi lim 200m/512Mi, worker req 200m/512Mi lim 400m/1Gi, both port/targetPort 8001, worker `-Q celery` (no image-tasks), IngressRoute both routes → :8001, `/internal` not present, export-xlsx regex anchored; (c) `terraform fmt -check infra/terraform/modules/postgres/` exit 0 (no diff); (d) SQL structural sanity PASS (balanced `$$`, all 7 key statements incl the audit_events grant present); (e) secret-scan clean (5 REPLACE-ME placeholders, 0 real key material).
+- `terraform plan` NOT run: requires GCS state backend + K8s provider (unreachable cluster) + ADC=vaishnaviramoorthy (active ADC is not). Plan/apply is the founder step per constraint §4. Documented honestly — not faked.
+
+**Acceptance items the backend merge gate needs (handoff §5):**
+1. I5 audit_events INSERT grant — PRESENT (`GRANT INSERT ON public.audit_events TO export_user` at schema-role.sql:79; verified by grep + SQL sanity). ✅
+2. I8 max_connections=200 — DONE here (not deferred to MS-0; overlap check clean — no MS-0 PR exists). Shipped as the minimal additive TF arg; founder applies the targeted `terraform apply -target=module.postgres_dev`. ✅
+3. I2 sizing — svc-export at api 50m + worker 200m = **250m CPU request fits the current e2-standard-2 (2000m) node** alongside the monolith → "fits current node, no D3 ask" holds for §4 row-A. ✅
+
+**D3 capacity statement:** svc-export adds 250m CPU request (50m api + 200m worker). Current node app+infra request was ~1700m/2000m (infra plan §6.1); +250m = ~1950m < 2000m — fits with thin headroom on `e2-standard-2`. NO D3 VM-upgrade ask for Sub-Plan A (D3 e2-standard-4 is plan-pre-approved but gets a fresh founder cost-ask only when services genuinely outgrow the node). No provisioning/upgrade performed.
+
+**One inter-lead note surfaced (recorded on my board, incoming row):** svc-export needs ONE new SM secret — the export_user DB password (`dev-export-db-password`, suggested ID) — created by the founder at bootstrap and composed into DATABASE_URL (I7) + used in the I5 `ALTER ROLE export_user WITH PASSWORD`. This is a per-service DB password, NOT a new IAM grant → within the §4 ceiling.
+
+Board sweep (session-start + session-end): no rows untouched 7+ days (all Active rows ≥ 2026-06-11; today 2026-06-12). Added microservices-export IN PROGRESS row + the backend-coordinator incoming inter-lead row. Inter-lead requests still OPEN that are NOT mine to close: frontend/mfe-cutover, backend/catalog-form (Gate-1), backend/gate4-integration.
+Next action: commit exact paths + push to origin/feature/microservices-export/infra; open the infra group PR to feature/microservices-export/integration (sets row IN REVIEW at PR-open). Server dry-run + dev smoke at deploy time.
 
 ## UPDATE — 2026-06-12 — mesell-dev-final-redeploy-session-1 — FINAL DEV REDEPLOY @ `80cda29` (VERIFY, not redeploy)
 

@@ -1,5 +1,32 @@
 # STATUS — BACKEND
 
+```
+=== UPDATE: 2026-06-12 (mesell-ms-export-session-1) ===
+Phase: Microservices Sub-Plan A (export extraction) — HYBRID STEP 3 MERGE-GATE REVIEW
+Session: mesell-ms-export-session-1
+Board sweep: microservices-export row flipped READY-FOR-GATE → IN REVIEW (gate APPROVE). No rows untouched 7+ days (all 3 active rows touched 2026-06-12). No new inter-lead requests opened by this gate.
+Done:
+  - Reviewed PR #189 (feature/microservices-export/backend → …/integration) FRESH against the DIFF + my own gate-run commands, NOT builder reports. My own Phase-C participation scrutinized at equal severity.
+  - GATE VERDICT: APPROVE. All 11 checklist items + §6 validation PASS.
+    1. §16.G byte-identical call sites (filtered diff = ZERO executable-line drift; CI AST-dump re-proof present).
+    2. 4 shims/6 methods — httpx Timeout(5.0,connect=2.0), 1 retry on {503,504} only, JWT+X-Request-ID forward, image=list_images (NOT get_image_bytes), frozen /internal paths exact.
+    3. Trimmed Settings — NO GEMINI/LANGFUSE/MSG91/RAZORPAY Field (only docstring "absent" list).
+    4. Celery — queue svc-export, broker DB1/results DB2, global_keyprefix svc-export:, include=[app.tasks], task export.xlsx; _emit_export_terminal_audit cross-schema to public.audit_events (AuditEvent→public / Export→export verified).
+    5. Router — exactly 2 /api/v1 routes, product_id/export_id, @rate_limit on POST only, no business logic in handlers, NO /internal/*.
+    6. Alembic — standalone chain (down_revision=None), version_table_schema="export", root migration up/down + Risk#5 orphan abort; monolith chain f31c75438e61 untouched.
+    7. Monolith ZERO-touch — no backend/app/**, backend/alembic/**, backend/tests/** changes. Strangler intact.
+    8. Tests non-tautological — test_extracted_clients / test_export_routes / test_export_extraction all assert real behavior/shape; no assert-True echoes.
+    9. Gate-run BY ME — svc-export pytest 37 passed exit 0; ruff "All checks passed!".
+    10. Doc deliverables present — SHIM_CONTRACT (FROZEN, 6 endpoints cited), CI_HYBRID_MODE note, svc-export-rollback runbook, MASTER_PLAN §4 row-A flip, recipe_ms_extraction. BACKEND_ARCHITECTURE.md §14 NOT touched (LOCKED; carried to founder gate).
+    11. True tip 5b63d35; full file list scoped (zero stray files outside backend/services/svc-export, docs/, .claude/agent-memory/).
+  - Verdict posted as PR comment: https://github.com/Mugunthan93/mesell/pull/189#issuecomment-4693528600
+In progress: Squash-merge of PR #189 executed by the session window post-verdict (lead does NOT self-merge).
+Blockers: none.
+Next: On merge — flip board row to MERGED, move to Recently merged. integration→develop is the FOUNDER gate (D1) — §14 amendment carried to that PR's notes (NOT self-applied per §7.3). Sub-Plan B (dashboard) is the next extraction.
+Hand-offs: none new this gate (the program-level SHIM_CONTRACT already freezes the /internal/* interface for Sub-Plans C/E/F/H; infra lane tracked via handoff_msA_infra.md).
+=========
+```
+
 **Owner:** BACKEND sub-session (mesell-backend-session-* lineage)
 **Last update:** 2026-06-09 (**Wave 10 §22 AUDITED — V1 NO-GO** — CRITICAL-1: AI eval sets 0/3 populated; CRITICAL-2: 2/3 SM secrets unpopulated [razorpay + langfuse]; MEDIUM-1/2: F6 @audit_event + F7 read-flood gate unresolved. F1/F3/F6-F9 PASS; F2/F4/F5 FAIL [AI track not dispatched]. §22 attempt #2 after: AI coordinator dispatch + 2 founder secret actions + F6+F7 fixes + F-15-1/F-15-2 rulings. — **Wave 9 COMPLETE** — **§22A Risk Register = PASS** (12/12; 1 non-blocking V1.5 advisory A-1 R9) — **§21 Extraction Path = PARTIAL** (3/5 PASS: sigs stable / landing-zone absent / §21.B==§16.H exact; 2 PARTIAL: F-21-1 MEDIUM §7.K+§10.K stale extraction orders contradict §21.B [amendment pending founder] / F-21-2/F-21-3 LOW V1.5 serializer wiring gaps; zero V1 blockers) — **§16 Inter-Module Rules = PASS** (9/9 checks; 27/0 re-run; 4 non-blocking OBS: OBS-16-1 LOW export→image method drift needs §16.B.1 8d amendment, OBS-16-2/-3/-4 INFO accepted as-is) — **§15 Cross-Cutting = PARTIAL** (7 PASS · 3 PARTIAL · 0 FAIL · 0 CRITICAL; import-linter 27/0 re-run): tenancy/AI-single-import/CSRF/refresh-allowlist all intact; NEW F-15-1 export worker emits no audit rows [corroborates Wave 8 §17 F6] · F-15-2 Prometheus metrics unimplemented · F-15-3 customer direct DB-3 invalidation · F-15-4 `core/audit_helpers` helper absent — founder build-vs-V1.5-defer ruling requested on F-15-1/F-15-2 before §22. — Wave 8 COMPLETE — **§0 PASS · §1 PARTIAL (pre-Phase-D EXPECTED) · §2 PASS · §3 PARTIAL (V0-remnants) · §17 PARTIAL** — §17: 28/28 routes mounted + auth posture correct on all; PARTIAL = doc drift (F1 row-25 path / F2 counts 29→28/35→34 / F3 six rate-limit values / F5 ten audit-event names — escalated to founder for §17/§18/§22 amendment ruling) + 3 code defects (F6 customer/export missing @audit_event; F7 audit_mw no read-flood gate; F8 create_product_hourly plan-guard unenforced) — F6+F7 must fix before §22; F4/F9 accepted; §3 PARTIAL = 6 V0-era app/ artifacts, dead from V1; §2 PASS 8 modules + 27/0 linter; §1 PARTIAL pre-Phase-D; §0 PASS; Wave 9 audits next; D4 ruling pending; 2 founder SM secrets pending)
 **SSOT:** `docs/BACKEND_ARCHITECTURE.md` (read first — the construction contract)
@@ -62,6 +89,29 @@ Sequential: iam → customer → category → catalog DONE. Parallel-eligible fr
 - **meesell-image-precheck-builder**: §11.E 5-step pipeline + §6A.F informational watermark + §22A.B R1 Layer 1+2+3 guardrail integration.
 
 ## Updates Log
+
+=== UPDATE: 2026-06-12 — Microservices Sub-Plan A (`export`) Phase A/B/C BUILT — READY FOR GATE ===
+Phase: Microservices migration — Sub-Plan A `export` extraction (first extraction, §16.H order #1)
+Session: mesell-ms-export-backend-session-1 (Phase C, LEAD-owned integration)
+Board sweep: 1 row touched (microservices-export READY-TO-EXECUTE → READY FOR GATE); stale-row sweep — see "Stale-row flag" below; inter-lead requests open: 2 (xlsx-export flag + flag-parity flags to infra; both pre-existing, unchanged; the msA infra handoff is a memo+row already open on the infra side).
+V1 feature(s)/specialist mapping: V1 Feature 9 (XLSX Export) module, now being extracted to svc-export. Specialists: database-builder (Phase A schema-split), services-builder (Phase B heavy lift), api-routes-builder (Phase B routes) — all complete; this block is the LEAD Phase C (integration test + docs + board/STATUS), NOT a specialist dispatch.
+Done:
+ - `backend/services/svc-export/tests/test_export_extraction.py` — 11 tests, ALL GREEN (incl. LIVE cross-schema audit round-trip on local PG 16). Three classes, all NON-TAUTOLOGICAL:
+   (1) §16.G AST parity — both service.py twins parsed, docstring + ALL imports (incl. lazy/nested) recursively stripped, ast.dump compared → identical executable body. Re-proves §16.G on every CI run, not the one-time services-builder report.
+   (2) Wire-shape parity — model_json_schema() of all 4 export Pydantic models vs the monolith twins, prose `description` stripped (the `{id}`→`{product_id}` §0.6 doc rename is not a wire-contract diff). ForwardRef resolution via sys.modules registration + model_rebuild.
+   (3) HTTP-shim mode — mocked httpx transport; `catalog_service.get_product_for_export` (the real pipeline symbol) forwards JWT + X-Request-ID to monolith ClusterIP and deserializes the REAL ExportSnapshotInternal shape (asserts `snapshot.validation_summary.status`); 404 → typed ProductNotFoundError, no retry on 4xx.
+   (4) Cross-schema audit — model binds to public.audit_events (export.exports coexists) UNCONDITIONAL; live INSERT-then-SELECT round-trip PG-gated (auth-otp no-tunnel pattern; SQLite rejected — cannot honour schema-qualified DDL). Round-trip RAN and PASSED against PG 16 (`svc_export`/`meesell_test` created with the I5-equivalent public-schema grant).
+ - 5 doc deliverables: SHIM_CONTRACT_export_callees.md (FROZEN 2026-06-12, program-level — the 6 `/internal/*` endpoints for Sub-Plans C/E/F/H, each cited from callee source + shim impl + transport contract), CI_HYBRID_MODE_export.md (callees docker-composed: NONE — still in-process; shim → monolith ClusterIP), docs/runbooks/svc-export-rollback.md (5 steps + Rollback Log), MASTER_PLAN.md §4 row-A "IN EXECUTION 2026-06-12" annotation + status note, recipe_ms_extraction.md (validated SP01 pilot for waves MS-2..5).
+Validation (real output):
+ - svc-export full suite: 37 passed (was 26; +11 new). ruff: clean (homebrew ruff 0.15.11).
+ - full monolith `def test_`: 698 (≥ 649 spec baseline → MONOTONIC; the +49 are from the newer develop tip the branch cut from, NOT this branch).
+ - monolith unit suite: 634 passed / 4 failed / 282 deselected. The 4 = known local-macOS-Py3.11-vs-CI-Linux-Py3.12 teardown artifacts (`got 500` flag-guard ×3 + `Event loop is closed` ×1 — MEMORY gotcha #1). PROVEN not ours: `git diff --stat origin/develop...HEAD -- backend/app backend/tests` = EMPTY (zero monolith code on this branch). Green on CI Linux Py3.12.
+ - import-linter Contract 2 (no domain→adapters.gemini) + M10 (no meesho_* symbols in schemas.py) verified by direct grep — hold.
+In progress: none (build complete).
+Blockers: none. Stale-row flag: no Active-features row is >7 days untouched (all touched 2026-06-12). MERGED rows >14 days: none past the housekeeping-v1 2026-06-10 entry (still within window).
+Next: group PR `feature/microservices-export/backend` → `feature/microservices-export/integration` (set row IN REVIEW on PR open per D2); merge-gate review is a SEPARATE later dispatch (NOT pre-approved here). Founder gates integration → develop (D1).
+Hand-offs: SHIM_CONTRACT_export_callees.md is the program-level handoff to the future Sub-Plan C/E/F/H sessions. Infra handoff (handoff_msA_infra.md) acceptance items I5/I8/I2 still tracked. **§14 LOCKED amendment owed to founder** ("Extracted to svc-export V1.5" note) — NOT self-applied (§7.3); carried to the integration→develop founder-gate PR notes.
+=========
 
 === UPDATE: 2026-06-12 — Gate-4 cross-loop contamination fix (Rule 7 STEP 2) ===
 Phase: CI Gate-4 integration test regression — cross-loop Future contamination
@@ -5139,6 +5189,45 @@ Next: PR chore/ms-rekey-ruling → develop; lead-gate comment; squash --admin; r
 Hand-offs: none new. NOTE for infra: when Sub-Plan A executes, D5 pool right-size + PgBouncer is the ₹0 first step; the D3 VM upgrade (e2-standard-4) is a fresh founder ask at the moment services outgrow the current node — do NOT pre-provision on the strength of the plan-level pre-approval.
 =========
 
+=== UPDATE: 2026-06-12 21:30 ===
+Phase: Microservices Sub-Plan A (export extraction) — PHASE B, services-builder lane (the heavy lift)
+Done: Extracted export into backend/services/svc-export/app/ (32 files):
+  - service.py / tasks.py / repository.py / domain.py / exceptions.py — pipeline logic BYTE-FOR-BYTE.
+    DIFF PROOF: monolith service.py vs extracted = ZERO non-import diffs (7 import-line blocks only:
+    4 cross-module → extracted_clients shims + 3 intra-module path rewrites). The 7 call sites
+    (:174/:177/:185/:314/:452/:503/:659) are byte-identical (§16.G ABSOLUTE CONTRACT satisfied).
+  - 4 HTTP-shim clients (core/extracted_clients/{catalog,category,customer,image}_client.py) + _transport.py:
+    httpx.AsyncClient, 5s read / 2s connect timeout, EXACTLY 1 retry on 503/504 only (no retry 500/4xx),
+    forward JWT (Authorization) + X-Request-ID, base URL = settings.MONOLITH_INTERNAL_BASE_URL (R4 hybrid →
+    http://monolith-svc:8001). 6 methods → frozen /internal/* paths. image shim = list_images (NOT
+    get_image_bytes — §0.4). customer shim hydrates the VENDORED app.domain.ComplianceBlock.
+  - Trimmed Settings (shared/config.py): DATABASE_URL@export-schema, VALKEY_URL, JWT_SECRET, GCS_*, AUDIT_PII_SALT,
+    MONOLITH_INTERNAL_BASE_URL, APP_ENV. NO gemini/langfuse/msg91/razorpay (asserted by test).
+  - celery_app.py: single task (include=["app.tasks"]), queue svc-export, broker Valkey DB1 / results DB2,
+    keys prefixed svc-export: (global_keyprefix on broker+result transport options).
+  - main.py: standalone FastAPI; 6-mw chain (plan_guard NO-OP) + request_context_mw (shim ctx feed);
+    error handlers; /health + /metrics. Export router import is tolerant (api-routes-builder delivers
+    app/router.py AFTER me — Phase B near-parallel).
+  - Vendored: core/{errors,tenancy,metrics,auth}, 6 middleware, adapters/gcs, shared/{database,valkey},
+    3 ORM models (Export@export-schema, AuditEvent@public, User@public), i18n subset, requirements.txt
+    (openpyxl==3.1.5 pinned R5; NO gemini/langfuse).
+  - tasks.py keeps name="export.xlsx", asyncio.run internals, cross-schema public.audit_events writes.
+Tests: 19 passed / 0 failed (tests/test_extracted_clients.py 14 + tests/test_import_sanity.py 5).
+  Non-tautological: assert JWT+X-Request-ID forwarded, 5s/2s timeout, 1-retry-on-503/504 + no-retry-on-500/4xx,
+  real-shape deserialization (ComplianceBlock/ExportSnapshotInternal/ImagesListResponse). ruff clean.
+In progress: none.
+Blockers: app.schemas / app.router are api-routes-builder's deliverable (spec §3.B). I shipped a PLACEHOLDER
+  schemas.py (verbatim monolith wire shapes) so service.py imports + unit-tests run; api-routes-builder owns the
+  authoritative router.py + may re-author schemas.py (MUST keep the 2 response shapes identical).
+Next: api-routes-builder Phase B (router.py + schemas.py); then lead Phase C (hybrid CI + merge-gate review).
+Hand-offs:
+  - api-routes-builder: service methods FROZEN — initiate_export(user_id, product_id, request, db) and
+    get_export(user_id, export_id, db); router imports `from app.service import ...`. schemas placeholder in place.
+  - callee sub-plans (C image / E customer / F category / H catalog): the 6 /internal/* contract paths are
+    frozen in the 4 shim modules — implement them server-side when those services extract (base URL is the only
+    change at that point).
+  - infra: svc-export needs DATABASE_URL@export-schema role, VALKEY_URL, JWT_SECRET, GCS_*, AUDIT_PII_SALT,
+    MONOLITH_INTERNAL_BASE_URL injected as pod env.
 === UPDATE: 2026-06-12 — mesell-ms-category-session-1 (Session MS-F, PHASE 1) ===
 Phase: Microservices Migration — Sub-Plan F (category-service extraction) AUTHORING
 Session: mesell-ms-category-session-1 (PHASE 1, hybrid step 1, docs-only)
@@ -5280,6 +5369,67 @@ In progress: none (single-shot HYBRID STEP 1 docs authoring).
 Blockers: none. EXECUTION GATED — Phase 2 (specialist dispatch) opens at MS-2 only when Sub-Plan A founder gate merged to develop AND MS-A recipe in lead memory. NO contradictions found with MS-A artifacts or MASTER_PLAN (the only delta is the §1.C method-name correction, which is plan-prose not a LOCKED section).
 Next: at MS-2 open, the master session dispatches the specialists per spec_msB_backend.md (database-builder VERIFY-ONLY + services-builder heavy lift + api-routes-builder), opens the infra inter-lead row (handoff_msB_infra.md), runs the lead merge-gate, leaves the integration->develop founder PR OPEN. Phase 1 docs PR (this worktree branch docs/msB-subplan-0B) -> the session handles git (NOT this agent).
 Hand-offs: meesell-infra-builder — handoff_msB_infra.md FROZEN for MS-2 (lighter than MS-A: NO Postgres schema, NO GCS SA, NO worker pod; only audit-grant + Traefik method-aware route + ConfigMap flag + small pool). NOT opened as an inter-lead row yet (gated). meesell-services-builder + meesell-api-routes-builder + meesell-database-builder — specs frozen, dispatch at MS-2.
+
+=== UPDATE: 2026-06-12 — MS-G iam extraction Sub-Plan (PHASE 1, docs-only) ===
+Phase: Microservices migration — Sub-Plan G (iam) authoring per MS-PAR-1 Wave MS-4
+Session: mesell-ms-iam-session-1
+Board sweep: 1 row added (microservices-iam, PENDING/GATED). Stale-flag scan — microservices-export
+  row last-touched 2026-06-10 (>1d, <7d; not yet 7d-stale, NOT flagged). 1 inter-lead request opened
+  (→ infra, microservices-iam, Phase-2 gated). No MERGED rows aged >14d to evict.
+Done (Phase 1 — docs-only, NO code, NO specialist dispatch):
+  - docs/plans/microservices_migration/SUB_PLAN_0G_iam_extraction.md authored (canonical SUB_PLAN_01 shape).
+    Filename alias note: MASTER_PLAN row calls it SUB_PLAN_07; MS-PAR-1 names it SUB_PLAN_0G (used).
+  - spec_msG_backend.md (hybrid STEP-2 spec — 4 paste-able specialist prompts: auth-builder heavy lift,
+    api-routes, services, database-builder; sequenced; iteration cap 3).
+  - handoff_msG_infra.md (infra work-package, mirrors handoff_msA_infra; Traefik path-preserve as the
+    highest-blast-radius constraint; 2-replica+HPA Risk#2; no GCS SA; shared JWT_SECRET ownership note).
+  - feature_board_backend.md MS-G row (PENDING/GATED, additive F2) + infra inter-lead request row.
+GROUND-TRUTH verified (file:line, Wave-6 law):
+  - 6 MOUNTED iam routes confirmed in main.py:114 + router.py (otp/send :105, otp/verify :124,
+    refresh :152, logout :194, me :220, webhooks/razorpay :247). Not schema existence — APIRoute count.
+  - iam is ALL-✗ in the cross-module matrix → ZERO outbound shims, ZERO inbound /internal/*. iam's
+    contract = vendored core/auth.py + shared JWT_SECRET (A2/D7). MS-A froze nothing against iam.
+  - 6 cross-schema FKs to users.id flagged for DROP: audit_events(audit_event.py:54),
+    seller_profile(:123), catalogs(catalog.py:42), products(product.py:55), exports(export.py:48),
+    product_drafts(:76). All cross-checked against baseline migration 935e55b4852c (:66/:105/:118/:149/:168/:194).
+  - FE-D5 LIVE/FROZEN: cookie Path=/api/v1/auth (router.py:64), dual-pepper allowlist key
+    cache:refresh:v{N}:{hmac} (auth.py:370), Lua rotation verbatim (auth.py:435-443).
+Contradictions found: NONE between MASTER_PLAN §2.D prose and as-built FK set. Source REFINES prose:
+  the FK drop set is 6 FKs across 5 schemas, not just the single `products` example §2.D names.
+In progress: none (Phase 1 complete).
+Blockers: none. Phase 2 (specialist dispatch) GATED on Wave MS-3 complete (D pricing + E customer
+  founder gates merged) per MS-PAR-1 wave table — NOT a blocker, a gate.
+Next: founder/master opens Wave MS-4 when MS-3 merges; then hybrid STEP 2 (dispatch specialists per
+  spec_msG_backend.md) → STEP 3 (lead merge gate) → founder integration→develop gate.
+Hand-offs: meesell-infra-builder (handoff_msG_infra.md + board inter-lead row, Phase-2 gated). MS-F
+  (category, parallel partner) coordinates via shared-file discipline (decentralized — reads this STATUS
+  + my memory per CLAUDE.md rule 3).
+=== UPDATE: 2026-06-12 — Gate-4 LOOP-CONTAMINATION — PASS-1 REJECTION RECORD (arc since CLOSED: rejected→repaired→merged) ===
+Phase: CI Gate-4 (integration) — post-#150 unmasking follow-up
+Session: mesell-gate4-loop-backend-session-1
+NOTE (record correction, this docs PR): this block preserves the FIRST merge-gate attempt's rejection detail (the D1/D2/D3 defect classification — the valuable lesson). That rejection is NOT the final state: repair loop 1 (commits 0059272 + b9d1557) fixed all three defects, the re-gate CI run `27394517680` came back 180p/17s/0f/0e, and PR #159 was MERGED HONESTLY (squash `fdfef68` → develop, no `--admin`-over-red). See the two UPDATE blocks above ("repair loop 1 (PR #159)" and "repair loop 1 COMPLETE — CI GREEN") for the resolution, and the develop run `27395272576` (first fully-green develop run) for the close. The text below is retained verbatim as the pass-1 rejection lesson.
+Board sweep: 1 active row added (ci-gate4-loop-contamination = BLOCKED at pass 1, since CLOSED/merged); microservices-export unchanged (no stale 7d+ rows beyond it; it is a POST-V1 holding row, not a worked branch). Inter-lead requests: none new.
+
+Verdict: REJECT (STEP 3 merge-gate). PR #159 (`fix/gate4-loop-contamination` → develop), implemented by meesell-api-routes-builder from spec `spec_ci_gate4_loop_contamination.md`. Gate 4 RED on the PR's own CI run `27393519389`: `5 failed / 162 passed / 17 skipped / 723 deselected / 13 errors in 23.92s`. Develop baseline was `6 failed / 13 errors` — net ~zero improvement; the fix traded the cross-loop error for an FK-violation error and left the teardown errors + the catalog assertion untouched. NO --admin used (the #150 override is spent; this saga must merge honestly).
+
+Done:
+- Full diff review against spec §4 fence: PASS. Only `tests/integration/conftest.py`, `tests/test_shared_database.py`, `tests/test_customer_routes.py`, `tests/modules/export/test_router.py`, `STATUS_BACKEND.md` + specialist's own MEMORY.md. ZERO app/, pytest.ini, alembic/, ci.yml, root-conftest LOCKED-block diff. PR template fully filled (no placeholders).
+- CI watched to completion: Gates 1/2/3 GREEN, 8 frontend units GREEN, Gate 4 RED. Gate-4 job log tail read; actual counts + per-node failure shapes captured.
+- Rejection comment posted on PR #159 with 3 precise defects + KEEP list + fix options + required-for-re-review bar.
+
+Defects (rejection detail):
+- D1 — `iam_client` SAVEPOINT override broke SPLIT-ENGINE integration tests. Those tests create the user via the real route (`iam_client`, now inside an uncommitted savepoint outer-txn) but read profile state via a SEPARATE `_make_session_factory()` engine on `os.environ["DATABASE_URL"]` (independent committed-read connection). The user no longer commits durably → `asyncpg.ForeignKeyViolationError: ... seller_profile violates fk_seller_profile_user_id` (×4 eligibility + 1 onboarding). On develop, `iam_client` wrote to the app-global engine which COMMITTED, so the second engine could see the user. FIX: drop SAVEPOINT on `iam_client`; give it a function-loop NullPool engine that commits for real + keep `_cleanup_users_by_phone_prefix` teardown (cross-loop is fixed by the function-loop engine ALONE; savepoint is what broke it).
+- D2 — 13 `Event loop is closed` teardown errors UNCHANGED (export ×4 + customer ×9). The lifespan explicit-dispose did not target the leaking pool. FIX: capture full traceback of one error, identify which engine/pool the dangling asyncpg connection-lost callback belongs to, dispose THAT (likely the request-override NullPool engine or a Valkey client, possibly after draining pending callbacks). Verify zero errors in isolation.
+- D3 — catalog `test_full_lifecycle` `assert False is True` (L80 `autofill_result.applied.get("product_name") is True`) UNCHANGED. The PR claimed H1 (loop cascade) without proof; H1 is now DISPROVEN. Per spec §2.C the H1/H2 fork is LIVE: run in isolation; if it fails alone → H2 = genuine G7 app-drift (catalog-form G7 removed auto-apply → `applied` always False, but the test asserts True). If H2: STOP, do NOT flip the assertion to mask it; escalate as a SEPARATE three-step (services-builder + founder G7-scope confirmation) per spec §6 escalation trigger. BE-CATALOG-G7-AUTOAPPLY-1 may materialize.
+
+KEEP (do not revert in repair):
+- `test_shared_database.py::test_get_db_yields_async_session` fix (patch `AsyncSessionLocal` → function-loop NullPool sessionmaker via `with _patch(...)`). It is no longer in the failure list. Spec §3.B "Preferred" path, sound.
+- The `iam_client` function-loop engine + get_db override MECHANISM (it cleared `test_iam_replay_attack`, a pure-iam_client test). Only the SAVEPOINT layer is defective.
+
+In progress (at the time of this pass-1 rejection): PR #159 BLOCKED awaiting specialist repair (loop 1 of 2). RESOLVED SAME DAY — see the two blocks above.
+Blockers (at the time): Gate-4 lane not re-fireable until PR #159 (or a successor) merges Gate-4-green. CLEARED — PR #159 itself cleared repair loop 1 and merged Gate-4-green (`fdfef68`); develop run `27395272576` is fully green (Build + Deploy both green). develop is UNBLOCKED.
+Next (as taken): master session re-dispatched meesell-api-routes-builder with the 3-defect repair brief (repair loop 1 of 2); the repair cleared all three; coordinator re-gated and merged honestly (no override).
+Hand-offs: meesell-infra-builder — Gate-4 develop→main re-fire is GREEN (the post-#110 "READY TO RE-FIRE" expectation is genuinely satisfied via #159, not invalidated). No FE/AI/data memo (test-only). GATE-4 SAGA 2 CLOSED.
 =========
 
 === UPDATE: 2026-06-12 22:40 ===
