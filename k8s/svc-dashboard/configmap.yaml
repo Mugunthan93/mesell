@@ -1,0 +1,64 @@
+# k8s/svc-dashboard/configmap.yaml
+# ===========================================================================
+# svc-dashboard — Sub-Plan B (dashboard extraction), INFRA deliverable I8.
+#
+# TRIMMED non-secret ConfigMap for svc-dashboard, named `svc-dashboard-config`
+# in the `dev` namespace. The svc-dashboard-api Deployment consumes it via
+# `envFrom: configMapRef: { name: svc-dashboard-config }` (see deployment.yaml).
+#
+# Authority: handoff_msB_infra.md §1 I8 + SUB_PLAN_0B §0.4-FLAG (the D3 kill-switch
+# guard, router.py:118) + MASTER_PLAN §5.D (per-service trimmed Settings).
+#
+# ── WHY A DEDICATED ConfigMap (not the shared meesell-config) ───────────────
+#   The shared `meesell-config` (k8s/config.yaml) already carries
+#   FEATURE_TRACKING_DASHBOARD_ENABLED="true" for the MONOLITH (landed via the
+#   flag-parity sweep). The extracted svc-dashboard carries the SAME flag, but in
+#   its OWN trimmed ConfigMap so the pod does not inherit the monolith's full
+#   config surface (GEMINI_MODEL, GCS_*, LANGFUSE_*, the other 6 feature flags,
+#   CORS for other origins, etc.). This mirrors the trimmed-SECRET discipline
+#   (§5.D blast-radius): svc-dashboard's env surface = ONLY what dashboard reads.
+#   svc-dashboard's vendored Settings reads exactly: APP_ENV + the one flag
+#   (+ DATABASE_URL/VALKEY_URL/JWT_SECRET from the Secret).
+#
+# ── THE FLAG — same value semantics as the monolith (§0.4-FLAG) ─────────────
+#   dev=true / staging=false. router.py:118 gates the handler:
+#     if not settings.FEATURE_TRACKING_DASHBOARD_ENABLED:
+#         raise HTTPException(404, "Tracking Dashboard is disabled in this environment")
+#   The 404-on-read is INTENTIONAL (the D3 kill-switch). The extracted service
+#   MUST behave identically — so the flag is injected here. (handoff §5 acceptance
+#   item: "I8 confirmed — dev=true / staging=false.")
+#
+#   *** dev value = "true" *** (this file is the dev-namespace surface). A staging
+#   namespace would carry "false" — but Sub-Plan B is dev ONLY (constraint §4), so
+#   there is NO staging overlay in this Sub-Plan. When staging lights for the
+#   dashboard service, the staging overlay patches this to "false" (mirrors the
+#   k8s/config.yaml staging-overlay pattern for the monolith flags).
+#
+# ── CORS NOTE ────────────────────────────────────────────────────────────────
+#   CORS_ALLOWED_ORIGINS is NOT duplicated here. CORS is owned by the FastAPI app's
+#   vendored CORSMiddleware (MASTER_PLAN §5.A); if the vendored Settings needs a
+#   CORS origin var it reads the value the backend lane bakes into the trimmed
+#   Settings default. Traefik does NOT inject CORS (R-SP7-1 ADD-ONLY). If the
+#   backend lane's Settings DOES require CORS_ALLOWED_ORIGINS at env-level, add it
+#   here scoped to https://dev.mesell.xyz (the dev frontend origin) — coordinate
+#   via the merge gate; left out until the landed Settings shape confirms the need.
+#
+# Namespace: dev ONLY (Sub-Plan B constraint §4).
+# NEVER put a secret value in this ConfigMap (playbook §0 / k8s/config.yaml header).
+# ===========================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: svc-dashboard-config
+  namespace: dev
+  labels:
+    app: svc-dashboard
+data:
+  # App env — Pydantic Settings Literal {development|staging|production}.
+  # dev namespace ⇒ "development" (MEMORY: NEVER "dev"; the Literal type rejects it.
+  # Founder ruling 2026-06-11 F1).
+  APP_ENV: "development"
+
+  # The D3 kill-switch flag (§0.4-FLAG, router.py:118). dev=true / staging=false.
+  # 404-on-read when false is intentional.
+  FEATURE_TRACKING_DASHBOARD_ENABLED: "true"
