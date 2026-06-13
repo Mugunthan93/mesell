@@ -41,18 +41,14 @@ F-001 REBASE GUARD (CORRECTED 2026-06-13):
   F-001 fix sits on TOP of their content (develop HEAD), so they CANNOT re-introduce F-001.
   Any stale /tmp worktrees pointing at them are leftover refs only — not a risk.
 
-  The ONE in-flight branch that WILL re-introduce F-001 if merged: feature/mfe-cutover/frontend (tip 0c17aa0):
-    - predates F-001; 114 commits behind / 2 ahead of develop; NO open PR.
-    - carries the FULL original F-001 breakage — all 12 deep @mesell/ui-kit/<subpath> imports across
-      shell app.config.ts + the mfe-auth (login/signup/otp-verify) and mfe-onboarding (profile) components.
-    - its 2 commits modify shell/app.config.ts + shell/federation.config.js.
-    - merged as-is it RE-INTRODUCES F-001 (build green, browser dead).
-  Required before ANY merge of feature/mfe-cutover/frontend:
-    (1) rebase onto develop >= 1ae5939 (the F-001 fix);
-    (2) grep guard: `grep -rn "@mesell/ui-kit/" apps libs --include='*.ts'` MUST be EMPTY;
-    (3) confirm every federation.config.js keeps @primeuix/themes in skip:.
-  If superseded by the completed MFE structure already on develop, RETIRE/DELETE rather than merge.
-  FLAG FOR FOUNDER DECISION.
+  feature/mfe-cutover/frontend (tip 0c17aa0) — RETIRED, deleted from origin 2026-06-13 (founder decision).
+    No longer an at-risk in-flight branch; the rebase-guard warning previously here is now moot. It was the
+    SP07 shell-cutover sub-branch; its 2 commits (D43 shell relocation src/->apps/shell/src/; D44
+    version-pinned prod/staging manifest templates + CSP smoke harness) already reached develop via the
+    feature/mfe-cutover/integration path -> PR #105 (SP07 cutover close-out). Its only divergent content was
+    the stale pre-F-001 versions of app.config.ts + auth/onboarding components (the broken
+    @mesell/ui-kit/<subpath> imports) — strictly worse than develop, zero unique unmerged value. Retired,
+    not rebased. There is no longer any in-flight frontend branch carrying the F-001 regression.
 
   GENERAL RULE (retained): any in-flight frontend branch predating #203 must pass the
   rebase + grep + skip: guard before merge (build stays green, the browser dies otherwise).
@@ -68,7 +64,7 @@ FOLLOW-UPS TRACKED (not blockers):
       needs a real session). Owner: founder + frontend lead (session-2).
 
 Blockers: none.
-Next: schedule mesell-ui-review-session-2 (Gate 5 visual review, now unblocked); enforce the F-001 rebase guard on feature/mfe-cutover/frontend (the one real at-risk in-flight branch — rebase+grep+skip before any merge, or retire it; flag for founder decision). The four feature/wave6-*/frontend branches are already merged (#153/#161/#164/#167) and need no action.
+Next: schedule mesell-ui-review-session-2 (Gate 5 visual review, now unblocked). F-001 rebase-guard target feature/mfe-cutover/frontend is RETIRED (deleted from origin 2026-06-13, superseded by SP07 #105 — see RETIRED note above); no in-flight frontend branch now carries the F-001 regression. The GENERAL rebase+grep+skip guard still applies to any FUTURE branch predating #203. The four feature/wave6-*/frontend branches are already merged (#153/#161/#164/#167) and need no action.
 Hand-offs: follow-up (a) touches infra/CI — to be filed as an inter-lead request when session-2 is scheduled (the permanent CI gate is infra-owned mechanism + frontend-owned assertions).
 =========
 
