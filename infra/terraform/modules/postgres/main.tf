@@ -73,17 +73,15 @@ resource "kubernetes_stateful_set" "postgres" {
           name  = "postgres"
           image = "postgres:${var.image_tag}"
 
-          # I8 / MS-DB-3 (microservices-export Sub-Plan A) — minimal additive pool
-          # right-size. Default postgres:16 max_connections=100 is insufficient once
-          # the monolith + svc-export both hold pools during the strangler window
-          # (infra plan §3.3 / R-MS-1). Bump to 200 BEFORE any service moves.
-          # Memory cost ~+500MB worst case (~5MB/conn × +100) — fits the 1Gi limit
-          # headroom at dev idle. This ships ahead of the service per founder ruling
-          # D5 (MS-DB-3 first). PgBouncer (MS-DB-4) is NOT in Sub-Plan A.
-          # `-c max_connections=200` is passed as a server arg (postgres entrypoint
-          # appends `args` to the `postgres` command), the least-intrusive way to set
-          # a GUC without a custom postgresql.conf ConfigMap mount.
-          args = ["-c", "max_connections=200"]
+          # MS-0 / D5 step 1 (MS-DB-3): raise max_connections 100 -> 200 to give the
+          # connection-pool headroom the microservices migration (infra plan §3.3)
+          # requires. The postgres entrypoint forwards extra args to the `postgres`
+          # binary, so `-c max_connections=200` overrides the compiled default at boot.
+          # Memory cost ~= 5MB/conn * 100 extra conns ~= +500MB worst case -> the
+          # memory LIMIT is raised 1Gi -> 1.5Gi below (request stays 500Mi: idle
+          # connection slots cost little until used, so scheduler pressure is unchanged
+          # and CPU — the binding constraint on the e2-standard-2 node — is untouched).
+          args = ["-c", "max_connections=${var.max_connections}"]
 
           port {
             container_port = 5432
@@ -130,8 +128,12 @@ resource "kubernetes_stateful_set" "postgres" {
               memory = "500Mi"
             }
             limits = {
+              # MS-0 / D5 step 1: memory limit raised 1Gi -> 1.5Gi to cover the
+              # ~+500MB worst-case from max_connections=200 (~5MB/conn * 100 extra).
+              # Node has ~4.6Gi free RAM (44% requested of 8GB), so this is well
+              # within budget. CPU limit unchanged.
               cpu    = "1000m"
-              memory = "1Gi"
+              memory = "1536Mi"
             }
           }
 
