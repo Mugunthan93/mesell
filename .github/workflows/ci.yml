@@ -730,8 +730,10 @@ jobs:
     # 2. The F-001 class failure (import-map subpath resolution) reproduces identically
     #    in development builds — the federation.manifest.json and remoteEntry.json are
     #    generated from the federation config, not from production optimisation.
-    # Development builds complete in ~3-5 min each (no tree-shaking, no minification).
-    timeout-minutes: 30
+    # Development builds complete in ~25-30 min total (NF cold-start is slow regardless
+    # of dev/prod; the key benefit is dev builds DO NOT HANG the way production builds
+    # do — they complete and move to the next step). 60 min leaves generous headroom.
+    timeout-minutes: 60
 
     steps:
       - name: Checkout source
