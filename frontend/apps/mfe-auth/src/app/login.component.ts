@@ -10,8 +10,11 @@ import { Router, RouterLink } from '@angular/router';
 import { catchError, EMPTY } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
 import { AuthLayoutComponent, MeeAlertBannerComponent } from '@mesell/composites';
-// F-001: barrel import — subpaths are not in the federation import map at runtime
-import { MeeInputComponent, MeeButtonComponent } from '@mesell/ui-kit';
+// NEGATIVE TEST (tmp/boot-smoke-negtest): F-001-class regression reintroduced —
+// deep subpath imports compile via tsconfig wildcard alias but are NOT in the
+// federation import map → "Unable to resolve specifier" at runtime in /login.
+import { MeeInputComponent } from '@mesell/ui-kit/input/input.component';
+import { MeeButtonComponent } from '@mesell/ui-kit/button/button.component';
 import { AuthApiService } from '@mesell/core';
 
 @Component({
