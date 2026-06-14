@@ -6152,3 +6152,46 @@ Next: re-dispatch meesell-services-builder with the 1-field config fix; on its r
   integration → open founder gate left OPEN). Docs were NOT authored this pass (premature before the code is green).
 Hand-offs: none opened (memo'd at the founder gate per spec §5 once green). Infra TLS finding noted above.
 =========
+
+=== UPDATE: 2026-06-14 — §5.G PROGRAM-COMPLETION COMPLIANCE AUDIT (MS-PAR-1 Phase E, T1) ===
+Phase: Microservices Migration program close — §5.G post-extraction repo-management compliance audit (T1).
+Session: mesell-microservices-programclose-session-1
+Board sweep: Active microservices rows — A/B/C/D/E MERGED to develop; F/G/H founder gates OPEN (#220/#221/#223).
+  No rows stale 7+ days (program executed 06-12 → 06-14). No new inter-lead requests opened. Recently-merged
+  rows current. (Dispatch-question resolved: PR #207 image is MERGED, not open.)
+Done:
+  - Authored docs/plans/microservices_migration/PROGRAM_COMPLIANCE_AUDIT_5G.md (structured per-area pass/fail report).
+  - Executed the §5.G checklist across ALL 8 extractions (A export · B dashboard · C image · D pricing ·
+    E customer · F category · G iam · H catalog) against the LIVE tree (develop tip 0846940 + the 3 open
+    integration branches), file:line / branch:sha cited.
+  - VERDICT: **PROGRAM-COMPLETE-READY — pending founder ratification (D1).** All 8 areas PASS:
+      (1) Strangler intact — 8 modules mounted in develop main.py, none deleted, monolith def test_=705 monotonic,
+          3 open-gate branches EMPTY monolith diff vs develop (zero premature cutover).
+      (2) Model C governance — 3 open gates [FOUNDER GATE — DO NOT MERGE] + reviews:[] (no lead self-approval),
+          5 merged gates founder-merged reviews=0, --admin group squashes legitimate, no force-push, naming consistent.
+      (3) Schema-split — version_table_schema per table-owning svc; audit_events {"schema":"public"} everywhere
+          + cross-schema GRANT INSERT; tested downgrades.
+      (4) Shim freezes compose end-to-end — pricing↔catalog §0.6 GET ownership-check+category_id; pricing↔category
+          commission NEVER-NULL; customer↔category super-categories list[str]; catalog→category /exists
+          RESOLVED-via-/schema (no dangling shim); export↔catalog export-snapshot; dashboard↔catalog list_products.
+      (5) Shared invariants — ai:* budget keyspace un-prefixed/global (₹500 cap intact); JWT local-validation D7
+          shared JWT_SECRET no iam callback; verify-core byte-identical md5 56e21d5c across 6 consumer twins;
+          FE-D5 /api/v1/auth cookie path preserved (iam).
+      (6) Secrets — no literal secrets in git (secretKeyRef only); minimal per-svc sets; dev-<svc>-db-password enumerated.
+      (7) Merge-ordering — safe founder order #220 iam → #221 category → #223 catalog coherent; catalog composes under it.
+      (8) D3 footprint — e2-standard-4 spend recorded as a FRESH founder ask, NOT auto-provisioned.
+  - ONE non-blocking observation: svc-category over-vendored the FULL 535-line canonical core/auth.py
+    (byte-identical to iam) instead of the 162-line verifier trim. Harmless superset (refresh code dead in
+    category; verification correct). Recorded for V2 hygiene; NO remediation needed for completion.
+  - Updated feature_board_backend.md (Last updated line → §5.G verdict; demoted prior to Prior).
+In progress: none — the §5.G lead obligation is discharged by the audit doc.
+Blockers: none (zero blockers to program completion).
+Next (FOUNDER action, D1 — lead does NOT do these): merge #220 iam → #221 category → #223 catalog;
+  populate the SM secret set per service; approve the 8 LOCKED §7.3 BACKEND_ARCHITECTURE amendments;
+  fresh D3 e2-standard-4 spend ask when the node tightens; then T2 — lead DRAFTS the MASTER_PLAN COMPLETE
+  stamp, founder/master-session RATIFIES (lead does not self-declare program completion).
+CONFIRMED: NO founder gate merged this session; program NOT self-declared COMPLETE.
+Hand-offs: none opened. Founder action queue carried in §3 of the audit doc.
+Audit doc + board/STATUS landed on docs-only chore branch `chore/microservices-5g-compliance-audit`
+  (docs-only PR, --admin merge — develop has no PR-review rule + enforce_admins=false; NOT a founder gate).
+=========
