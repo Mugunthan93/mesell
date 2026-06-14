@@ -6152,3 +6152,20 @@ Next: re-dispatch meesell-services-builder with the 1-field config fix; on its r
   integration → open founder gate left OPEN). Docs were NOT authored this pass (premature before the code is green).
 Hand-offs: none opened (memo'd at the founder gate per spec §5 once green). Infra TLS finding noted above.
 =========
+
+=== UPDATE: 2026-06-14 ===
+Phase: MS-4 Sub-Plan F (`category`) extraction — Phase C ROUND-2 MERGE GATE (PASS) + assembly + founder gate
+Session: mesell-microservices-category-lead-session-2
+Board sweep: category row flipped to PHASE 2 FOUNDER-GATE-OPEN; no rows 7+ days stale (all 2026-06-12/13/14); no MERGED rows aged out of Recently-merged; 1 inter-lead row OPEN (infra microservices-category, gated→now in-execution). Runs PARALLEL with MS-G iam — union keep-both on shared STATUS/board/MASTER_PLAN.
+Done:
+  - ROUND-2 GATE VERDICT: PASS. Round-1 super-categories envelope REJECT CLOSED — svc `5a1dee5`: shim #4 `response_model=list[str]` returns bare `[info.super_id for info in infos]`; `SuperCategoryListResponse` deleted (schemas.py + __all__ + import); test rewritten to assert `isinstance(body, list)`. Re-verified vs merged consumer `svc-customer/.../category_client.py:50-51` (`[str(x) for x in payload]`).
+  - Fix scope verified surgical: touched ONLY internal_router.py + schemas.py + 1 test → regression-impossible on §16.G/picker/budget files (all re-confirmed intact).
+  - Re-proofs (Py3.11 .venv, NOT host 3.9.6): §16.G service.py AST IDENTICAL (dump 40649==40649, ZERO call-site, pure callee NO §0.6 delta); picker.py BYTE-IDENTICAL; budget_cap+cost_tracker BYTE-IDENTICAL → `ai:*` keyspace un-prefixed/global (R1/P0 carve-out), `category:` confined to DB-3 cache; PRIMITIVE_VALUES pinned 11/7/9/8/2/3; commission #3 never-null Decimal-string; schema #1 + field-enum #2 object envelopes; db migration `c4f1e7a9d302` down_rev None + version_table_schema="category" + 4 tables SET SCHEMA (GIN preserved); infra schema-role.sql + rollback runbook verified.
+  - Route count: 5 public + 4 internal + /health.
+  - Phase-C deliverables authored: `backend/services/svc-category/tests/test_category_extraction.py` (11 lead cases, all green; ruff clean) — committed to svc (`a42c17a`); `CI_HYBRID_MODE_category.md` (callees composed: NONE); MASTER_PLAN §4 row-F EXECUTED flip + Rev v1.6; board MERGED flip; this STATUS block. Rollback runbook authored+verified on infra branch (NOT duplicated).
+  - Assembly: develop merged into integration (1 frontend-only commit `ebb700e`); db→svc→infra LEAD squash-merged into `feature/microservices-category/integration`; founder-gate PR opened + LEFT OPEN (D1).
+In progress: none — gate complete.
+Blockers: none.
+Next: founder reviews/merges integration→develop (NOT my gate per D1). On founder merge: monolith category module deletion after ≥7 days hybrid-CI green (strangler §3.C); category cutover (Traefik flip) is a SEPARATE founder gate.
+Hand-offs / founder action items (carried to the integration→develop PR body): (1) `BACKEND_ARCHITECTURE.md §9` "Extracted to svc-category V1.5" amendment — LOCKED, NOT self-applied (§7.3); (2) NEW SM secret `dev-category-db-password`; (3) `JWT_SECRET` SHARED with iam-svc (D7 local-JWT, parallel MS-G safe); (4) D3 VM footprint — MS-4 (8 services + monolith) likely outgrows e2-standard-2 → FRESH founder spend-ask BEFORE provisioning e2-standard-4.
+=========
