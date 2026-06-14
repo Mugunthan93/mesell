@@ -12,10 +12,20 @@ from httpx import ASGITransport, AsyncClient
 os.environ.setdefault("APP_ENV", "development")
 os.environ["DATABASE_URL"] = os.environ.get(
     "TEST_DATABASE_URL",
-    "postgresql+asyncpg://meesell:password@localhost:5432/meesell",
+    "postgresql+asyncpg://meesell:password@localhost:5432/meesell_test",
 )
 os.environ.setdefault("VALKEY_URL", "redis://localhost:6381/15")
 os.environ.setdefault("JWT_SECRET", "test-secret-do-not-use")
+
+# SAFETY GUARD (test-isolation): fixtures DROP/CREATE tables, so an accidental
+# dev-DB target wipes local dev data. Refuse any DB whose name does not end in
+# '_test'. Run via `make test` or set TEST_DATABASE_URL to a *_test database.
+_resolved_db = os.environ["DATABASE_URL"].rsplit("/", 1)[-1].split("?")[0]
+if not _resolved_db.endswith("_test"):
+    raise RuntimeError(
+        f"Refusing to run tests against non-test database {_resolved_db!r}. "
+        "Set TEST_DATABASE_URL to a *_test database (e.g. `make test`)."
+    )
 # NOTE (§18 sub-session 2026-06-08): the previous ``CELERY_BROKER_URL``
 # + ``CELERY_RESULT_BACKEND`` env-var defaults were removed.  Per §18.E
 # the worker derives both URLs from ``settings.VALKEY_URL`` via the
