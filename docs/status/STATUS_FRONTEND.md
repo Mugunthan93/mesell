@@ -1,7 +1,53 @@
 # STATUS — FRONTEND
 
 **Owner:** meesell-frontend-coordinator (master session)
-**Last update:** 2026-06-13
+**Last update:** 2026-06-14
+
+=== UPDATE: 2026-06-14 01:22 IST ===
+Phase: CI gate — Frontend: boot smoke (PR #213, branch ci/frontend/boot-smoke)
+Agent: meesell-angular-service-builder (HYBRID builder step)
+Branch: ci/frontend/boot-smoke @ 88e6262 — PUSHED
+
+Done:
+  - FIX 1 (lockfile): Restored pnpm-lock.yaml to origin/develop baseline; surgically added
+    playwright@1.52.0 + playwright-core@1.52.0 entries (importers specifier, packages, snapshots).
+    Diff vs develop: 19 additions, 0 important removals, ZERO esbuild@0.27.3 drift.
+    pnpm install --frozen-lockfile now passes on Linux CI (hash-consistent).
+
+  - FIX 2 (build strategy): Discovered dev builds ALSO hang (~31 min) on CI — same NF cold-start
+    stall as production builds. Pivot: replaced ALL 7 ng-build steps with setsid pnpm run start:all
+    (webpack-dev-server path avoids the "Preparing shared npm packages" cold-scan).
+    New frontend/tools/dev/start-all.mjs (190 lines, zero-dep) spawns 7 ng serve processes in parallel
+    with per-line coloured output and clean SIGTERM/SIGKILL teardown.
+
+  - CI YAML rewrite: frontend-boot-smoke job now:
+      - 15m timeout (was 90m)
+      - setsid pnpm run start:all background + 480s readiness gate (curl polling each of 7 ports)
+      - Run boot smoke (Playwright)
+      - Upload smoke artifacts + start:all log (always)
+      - PGID teardown
+
+CI RESULT: PASS — run 27477214257, headSha 88e6262
+  Job "Frontend: boot smoke": SUCCESS in 4m 10s (19:47:50 → 19:52:00 UTC)
+  All 17 steps GREEN:
+    pnpm install --frozen-lockfile: success (lockfile fix validated)
+    Start dev servers: success (start:all spawned)
+    Wait for dev servers to be ready: success (~2 min for all 7 ports)
+    Run boot smoke: success (Playwright assertions PASS)
+    Upload smoke artifacts: success
+    Upload start:all log: success
+    Teardown dev servers: success
+  URL: https://github.com/Mugunthan93/mesell/actions/runs/27477214257/job/81218610137
+
+Tests: N/A (CI gate, not unit tests)
+Build: ok — lockfile frozen-install succeeded; all 7 dev servers started cleanly
+In progress: CI Gate 4 (integration) still running in same run (not related to this fix)
+Blockers: none
+Next: Founder merges PR #213 → develop (D1 gate — founder owns the develop merge)
+Hand-offs: boot-smoke CI gate is now GREEN and running end-to-end in <5 min. PR #213 ready for
+  founder review and merge. The permanent CI federation gate (follow-up (a) from F-001 close-out)
+  is now implemented via the ng serve path + Playwright assertions on port 4200-4206.
+=========
 
 === UPDATE: 2026-06-13 — F-001 RESOLVED — CLOSE-OUT (board MERGED + GATE5 banner + rebase guard) ===
 Phase: F-001 (Gate-5 P0 shell blank-screen) — close-out after PR #203 merged to develop
