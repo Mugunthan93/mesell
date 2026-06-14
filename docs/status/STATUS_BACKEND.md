@@ -6152,3 +6152,52 @@ Next: re-dispatch meesell-services-builder with the 1-field config fix; on its r
   integration → open founder gate left OPEN). Docs were NOT authored this pass (premature before the code is green).
 Hand-offs: none opened (memo'd at the founder gate per spec §5 once green). Infra TLS finding noted above.
 =========
+
+=== UPDATE: 2026-06-14 — MS-4 Sub-Plan G (iam) Phase B — services-builder SCAFFOLD ===
+Session: mesell-microservices-iam-backend-session-1 (HYBRID step 2, services-builder specialist).
+Branch: feature/microservices-iam/backend (cut from origin/feature/microservices-iam/integration @39b6bbd).
+Phase: MS-4 / Sub-Plan G (iam extraction) — Phase B scaffolding (lands so auth-builder's main.py imports resolve).
+Done: Created backend/services/svc-iam/ scaffolding (33 files) —
+  - app/repository.py + app/domain.py + app/exceptions.py = BYTE-IDENTICAL vendors of the monolith
+    app/modules/iam/{repository,domain,exceptions}.py (path-stable imports: app.shared.models.user + app.core.errors).
+    DPDP no-op (repository.py:91-99) preserved VERBATIM; 8 frozen domain dataclasses; 9-class IamError hierarchy
+    (all 3-segment validation_message_id).
+  - Trimmed shared/config.py (Settings): HAS DATABASE_URL@iam, VALKEY_URL, JWT_SECRET+JWT_ALGORITHM,
+    ACCESS/REFRESH_TOKEN_TTL_SECONDS, REFRESH_TOKEN_PEPPER + _PREVIOUS + _VERSION (FE-D5 dual-pepper),
+    MSG91_AUTH_KEY/MSG91_TEMPLATE_ID, RAZORPAY_KEY_ID/KEY_SECRET/WEBHOOK_SECRET, AUDIT_PII_SALT, CORS_*, APP_ENV.
+    EXPLICITLY ABSENT: GEMINI/LANGFUSE/GCS/CACHE_VERSION + MONOLITH_INTERNAL_BASE_URL (iam is all-✗ — no shim).
+    12-entry REQUIRED_FIELDS.
+  - shared/valkey.py: DB 0 factory (get_valkey_otp) + load_lua_script/eval_lua_script (used by vendored core/auth.py
+    refresh rotation). NO broker/results/cache factories (no Celery, no DB 3).
+  - shared/database.py (iam pool sizing 2/2), shared/models/{user,audit_event,base,__init__}.py
+    (User@iam relationship-free per db-branch byte; AuditEvent@public cross-schema write target).
+  - Vendored core: errors.py, tenancy.py, metrics.py (HTTP_* + AUTH_TOKEN_REFRESH_FAILED — used by service.py),
+    6-mw chain (request_id/auth_mw/tenancy_mw/rate_limit_mw/plan_guard_mw[NO-OP]/audit_mw). NO request_context_mw
+    (iam makes no outbound calls). i18n subset (8 iam IDs + 3 auth.token.* + 3 cross-cutting = 14, resolver).
+  - main.py SCAFFOLD: 6-mw chain (deepest-first), import-tolerant router mount, /health + /metrics, NO /internal/*.
+    Imports NEITHER app.service NOR app.core.auth (auth-builder's files) — clean forward-reference seam.
+  - requirements.txt (fastapi/uvicorn/pydantic-settings/sqlalchemy/asyncpg/redis/pyjwt/httpx/prometheus;
+    NO gemini/langfuse/gcs/celery/openpyxl/rembg). pytest.ini + tests/conftest.py + tests/test_scaffolding.py (15 tests).
+Files INTENTIONALLY LEFT for auth-builder (NOT created — hard constraint): app/service.py, app/core/auth.py.
+Files left for api-routes-builder: app/router.py, app/schemas.py. (alembic/ + user.py model = database-builder, on db branch.)
+Tests: 15/15 PASS (tests/test_scaffolding.py — Settings field presence+absence, valkey surface, i18n subset,
+  ORM schema binding, metrics, repository/domain/exceptions shape + byte-identity, no-shim/no-celery/no-auth-files,
+  core importable without core/auth.py). ruff clean (app/ + tests/).
+Import seam VERIFIED: `import app.main` fails ONLY at `from app.core.auth import CurrentUser` (auth_mw) —
+  i.e. it resolves cleanly ONCE the auth-builder lands core/auth.py on this SAME branch. Clean seam, not a bug.
+Monolith UNTOUCHED (zero changes to backend/app/modules/iam or backend/app/core/auth.py — strangler coexist).
+In progress: none. Blockers: none.
+Next (auth-builder, same branch): service.py (6 methods byte-for-byte) + core/auth.py (byte-identical vendor)
+  + MSG91/razorpay adapters; then api-routes-builder router.py+schemas.py; then LEAD Phase C test_iam_extraction.py.
+Hand-offs:
+  - meesell-auth-builder: scaffolding ready. service.py imports app.{repository,domain,exceptions} (present),
+    app.core.metrics.AUTH_TOKEN_REFRESH_FAILED (present), app.shared.{config,database,valkey} (present, with Lua
+    helpers). core/auth.py must vendor byte-for-byte from monolith app/core/auth.py; auth_mw already imports
+    `from app.core.auth import CurrentUser` (the seam). main.py scaffold is import-tolerant — auth-builder may
+    extend its lifespan (SCRIPT LOAD of REFRESH_ROTATE_LUA) or replace it; it owns that surface.
+  - meesell-api-routes-builder: router.py (6 routes, cookie helpers Path=/api/v1/auth, rate-limit decorators
+    otp_send 3/3600 + otp_verify 10/3600 + auth_refresh 60/3600) + schemas.py (7 models). main.py mounts
+    `from app.router import router as iam_router` import-tolerantly. NO /internal/* (§0.4).
+  - meesell-database-builder: user.py model written byte-identical to the db-branch copy (clean union merge);
+    alembic chain stays on the db branch.
+=========
