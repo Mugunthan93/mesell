@@ -936,3 +936,7 @@ Sum of CPU REQUESTS at MS-2 on the e2-standard-2 (2 vCPU = 2000m) node:
 **Files authored (8):** backend/services/svc-dashboard/Dockerfile (I1); k8s/svc-dashboard/{deployment,service,ingressroute,configmap}.yaml + secrets.yaml.example + audit-grant.sql (I2/I3/I4/I8/I7/I5); docs/runbooks/svc-dashboard-rollback.md. I6 skipped (no GCS — noted). I9 = doc-only note (max_connections=200 + PgBouncer already live MS-0 #181/#192; dashboard pool 2-3 conns in backend-lane shared/database.py).
 
 **One new SM secret needed (inter-lead, founder):** `dev-dashboard-db-password` (per-service DB password for dashboard_user; NOT a new IAM grant; within §4 ceiling). Mirrors svc-export's `dev-export-db-password`. Founder creates SM container+version at bootstrap; infra composes into DATABASE_URL.
+
+---
+
+## Authored docs/DISPATCH_PLAYBOOK.md — 2026-06-14 (Director fast-mode write; verbatim content: dispatch decision tree, 18-agent roster, 4 prompt templates A-D, mandatory blocks, git/worktree rules, decentralized memory model).
