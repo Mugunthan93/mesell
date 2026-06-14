@@ -1,5 +1,14 @@
 # tools/dev — One-command dev boot
 
+Two boot paths live here:
+
+- **`start:all`** — 7 live `ng serve` dev servers with HMR. Needs 3–5 GB RAM. Best on
+  16 GB+ machines while actively editing.
+- **static dev** (`dev:build-static` / `dev:serve-static` / `dev:check-routes` /
+  `dev:static`) — build once, serve the static bundles (~129 MB total). The memory-safe
+  path for **low-RAM machines (≤ 8 GB)**, where `start:all` hangs. Full diagnosis,
+  numbers, and the verified 11/11 route-check result: **[`STATIC_DEV.md`](STATIC_DEV.md)**.
+
 ## start:all
 
 ```
@@ -54,3 +63,34 @@ requires:
 3. **Real `MSG91_AUTH_KEY` in `backend/.env`** — OTP flows go live to MSG91.
    There is no test/sandbox mode for V1; a missing or placeholder key causes
    all OTP requests to fail with a 5xx from the backend.
+
+## static dev (low-RAM machines)
+
+For machines that cannot afford 7 concurrent `ng serve` watchers. Build each app once,
+then serve the static `dist/<app>/browser` output with the zero-dep `serve.js`. Full write-up
+(8 GB hang diagnosis, 129 MB vs 3–5 GB numbers, the `dev:true` watchdog finding, the
+EventSource-noise note, and the verified 11/11 result) is in **[`STATIC_DEV.md`](STATIC_DEV.md)**.
+
+| Script | File | Does |
+|--------|------|------|
+| `pnpm run dev:build-static [apps...]` | `build-static.mjs` | Watchdog-build all 7 apps (dev config), one at a time. Optional app subset. |
+| `pnpm run dev:serve-static` | `serve-static.mjs` | Serve the built apps on 4200–4206 (7 × `serve.js`). Fails fast if an app is not built. |
+| `pnpm run dev:check-routes [engine]` | `route-check.mjs` | Drive the 11 shell routes through federation; assert 11/11 clean. `chromium` (default) or `webkit`. |
+| `pnpm run dev:static <cmd>` | `dev-static.mjs` | Orchestrator: `build` / `serve` / `check` / `up` / `all`. |
+
+Fast loop:
+
+```bash
+pnpm run dev:build-static     # build all 7 once
+pnpm run dev:serve-static     # leave running (Ctrl-C stops all 7)
+pnpm run dev:check-routes     # in another terminal — expect 11/11
+```
+
+One-shot (build → serve in background → check → report → stop):
+
+```bash
+pnpm run dev:static all       # exit 0 only if route-check is 11/11
+```
+
+All four scripts are zero-dep Node built-ins, except `route-check.mjs` which uses the
+already-present `playwright` devDependency. Nothing new was added to `package.json` deps.

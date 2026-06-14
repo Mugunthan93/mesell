@@ -15,6 +15,10 @@
     "start:mfe-dashboard": "ng serve mfe-dashboard",
     "start:mfe-auth": "ng serve mfe-auth",
     "start:all": "node tools/dev/start-all.mjs",
+    "dev:build-static": "node tools/dev/build-static.mjs",
+    "dev:serve-static": "node tools/dev/serve-static.mjs",
+    "dev:check-routes": "node tools/dev/route-check.mjs",
+    "dev:static": "node tools/dev/dev-static.mjs",
     "smoke:boot": "node tools/boot-smoke/boot-smoke.js"
   },
   "private": true,
