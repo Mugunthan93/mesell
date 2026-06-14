@@ -1,0 +1,98 @@
+# k8s/svc-iam/configmap.yaml
+# ===========================================================================
+# svc-iam — Sub-Plan G (iam extraction), INFRA deliverable I6 (config half).
+#
+# TRIMMED non-secret ConfigMap for svc-iam, named `iam-svc-config` in the `dev`
+# namespace. The iam-svc-api Deployment consumes it via
+# `envFrom: configMapRef: { name: iam-svc-config }` (see deployment.yaml).
+#
+# Authority: handoff_msG_infra.md §1 I6 + SUB_PLAN_0G "Code surfaces" (trimmed
+# Settings) + MASTER_PLAN §5.D (per-service trimmed config surface).
+#
+# ── WHY A DEDICATED ConfigMap (not the shared meesell-config) ───────────────
+#   The extracted iam-svc carries ONLY the non-secret env it reads, in its OWN
+#   trimmed ConfigMap, so the pod does not inherit the monolith's full config surface
+#   (GEMINI_MODEL, GCS_*, LANGFUSE_*, other-feature flags). This mirrors the trimmed-
+#   SECRET discipline (§5.D blast-radius): iam's non-secret env surface = ONLY the
+#   FE-D5 TTL/CORS knobs + APP_ENV.
+#
+# ── WHAT LIVES HERE (non-secret) vs IN THE SECRET ───────────────────────────
+#   ConfigMap (here, non-secret):
+#     - APP_ENV
+#     - ACCESS_TOKEN_TTL_SECONDS   (FE-D5 access-JWT lifetime)
+#     - REFRESH_TOKEN_TTL_SECONDS  (FE-D5 refresh-cookie/allowlist lifetime)
+#     - REFRESH_TOKEN_PEPPER_VERSION (dual-pepper version SEGMENT — NOT a secret; it
+#       is the `v{N}` key-namespace selector, not the pepper VALUE. The pepper VALUES
+#       REFRESH_TOKEN_PEPPER / REFRESH_TOKEN_PEPPER_PREVIOUS are SECRETS and live in
+#       iam-svc-secrets. The version integer is safe in the ConfigMap — it only
+#       chooses which keyspace `cache:refresh:v{N}:` to read/write.)
+#     - CORS_ALLOWED_ORIGINS / CORS_ALLOW_CREDENTIALS (the dev frontend origin +
+#       credentials flag — non-secret; CORSMiddleware reads them)
+#     - JWT_ALGORITHM (HS256 — the ALGORITHM NAME is non-secret; the JWT_SECRET VALUE
+#       is the secret and lives in iam-svc-secrets)
+#   Secret (iam-svc-secrets): DATABASE_URL, VALKEY_URL, JWT_SECRET, REFRESH_TOKEN_PEPPER,
+#     REFRESH_TOKEN_PEPPER_PREVIOUS, MSG91_*, RAZORPAY_* (incl webhook secret),
+#     AUDIT_PII_SALT.
+#
+# ── FE-D5 TTL VALUES — DEV namespace values (the auth-otp F1 lesson) ─────────
+#   The dev ConfigMap carries DEV-tier TTLs, NOT prod-tier (the auth-otp PR #45 lesson:
+#   dev config.yaml had held PROD values 900/604800 — corrected to dev). For dev:
+#     ACCESS_TOKEN_TTL_SECONDS  = 1800  (30 min — dev access token; short enough to
+#                                        exercise refresh during a dev session, long
+#                                        enough not to thrash; matches the auth-otp
+#                                        dev overlay intent). Confirm against the live
+#                                        monolith dev k8s/config.yaml at deploy time.
+#     REFRESH_TOKEN_TTL_SECONDS = 1209600 (14 days — dev refresh window). Confirm
+#                                        against live monolith dev config at deploy.
+#   *** CONFIRM-AT-DEPLOY: these MUST match the values the live monolith dev ConfigMap
+#   currently serves for /api/v1/auth, so the strangler window (monolith + iam-svc
+#   both able to issue/refresh) does not produce two different TTL regimes. The values
+#   below are the dev-tier placeholders; reconcile with the live monolith dev config
+#   (`kubectl get configmap meesell-config -n dev -o yaml`) at cutover. ***
+#
+# ── CORS — MUST allow the dev frontend origin (refresh cookie is cross-origin) ──
+#   The FE-D5 refresh flow is cross-origin (frontend dev.mesell.xyz → api.mesell.xyz)
+#   WITH credentials (the cookie). So CORS_ALLOW_CREDENTIALS MUST be true AND
+#   CORS_ALLOWED_ORIGINS MUST be the exact dev frontend origin (NEVER `*` — CORS-with-
+#   credentials forbids the wildcard; the §4.G lock + my own ci.yml CORS lesson). The
+#   iam app's vendored CORSMiddleware reads these. Single real-shaped origin below.
+#
+# ── NO FEATURE FLAG ──────────────────────────────────────────────────────────
+#   iam's 6 routes are always-on (they back the LIVE auth flow). No kill-switch flag.
+#
+# Namespace: dev ONLY (Sub-Plan G constraint §4).
+# NEVER put a secret value in this ConfigMap (playbook §0 / k8s/config.yaml header) —
+# the JWT_SECRET VALUE, the pepper VALUES, MSG91/RAZORPAY keys all live in the Secret.
+# ===========================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: iam-svc-config
+  namespace: dev
+  labels:
+    app: iam-svc
+data:
+  # App env — Pydantic Settings Literal {development|staging|production}.
+  # dev namespace ⇒ "development" (MEMORY: NEVER "dev"; the Literal type rejects it.
+  # Founder ruling 2026-06-11 F1).
+  APP_ENV: "development"
+
+  # JWT algorithm NAME (non-secret). iam OWNS issuance with this HS256 algorithm; the
+  # JWT_SECRET VALUE is in iam-svc-secrets. Every other service vendors the SAME
+  # algorithm + secret for LOCAL verification (G1/A2/D7).
+  JWT_ALGORITHM: "HS256"
+
+  # FE-D5 token lifetimes — DEV-tier values (confirm vs live monolith dev config at
+  # deploy; the auth-otp F1 lesson: dev MUST NOT carry prod TTLs).
+  ACCESS_TOKEN_TTL_SECONDS: "1800"
+  REFRESH_TOKEN_TTL_SECONDS: "1209600"
+
+  # Dual-pepper version SEGMENT (non-secret — selects the `cache:refresh:v{N}:`
+  # keyspace; the pepper VALUES are secrets). Match the live monolith's current
+  # version at the strangler window so reads/writes share the keyspace.
+  REFRESH_TOKEN_PEPPER_VERSION: "1"
+
+  # CORS — the FE-D5 refresh flow is cross-origin WITH credentials. NEVER `*`
+  # (credentials forbid the wildcard — §4.G). Single dev frontend origin.
+  CORS_ALLOWED_ORIGINS: "https://dev.mesell.xyz"
+  CORS_ALLOW_CREDENTIALS: "true"

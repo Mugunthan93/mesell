@@ -1,0 +1,186 @@
+# k8s/svc-iam/deployment.yaml
+# ---------------------------------------------------------------------------
+# svc-iam — Sub-Plan G (iam extraction, THE AUTH AUTHORITY), INFRA deliverable I2.
+#
+# ONE Deployment from ONE image (asia-south1-docker.pkg.dev/.../svc-iam):
+#   - iam-svc-api   2 replicas MINIMUM, FastAPI HTTP server on :8001
+#
+# *** NO WORKER DEPLOYMENT *** (contrast k8s/svc-export/deployment.yaml which has
+# two). iam has NO Celery — it ships NO tasks.py (SUB_PLAN_0G §0.2 "iam has NO
+# tasks.py (no Celery — confirmed by MASTER_PLAN §1.A 'Celery? no' for iam)";
+# handoff_msG_infra.md §1 I1). This file therefore declares exactly ONE Deployment.
+#
+# *** 2 REPLICAS MINIMUM — RISK #2 (the defining sizing constraint for iam) ***
+#   iam is THE auth authority. A single replica is a SPOF for login/refresh/logout:
+#   if the one pod dies, no seller can log in or refresh a session. MASTER_PLAN §6
+#   Risk #2 mandates a 2-replica floor for iam-svc (handoff §1 I2; SUB_PLAN_0G R1).
+#   This is UNLIKE svc-customer / svc-dashboard (api-light, 1 replica acceptable) —
+#   iam's blast radius forces the floor. The HPA below bursts to 4 on OTP-send spikes.
+#   NOTE: existing valid ACCESS tokens keep working for their TTL even if iam is fully
+#   down (JWT validation is LOCAL in every service per G1/A2/D7 — NO callback to iam).
+#   So iam downtime affects ONLY login/refresh/logout, never already-authenticated
+#   requests. The 2-replica floor protects the login/refresh path specifically.
+#
+# Sizing authority — handoff_msG_infra.md §1 I2 (iam is SMALL — api-light, no XLSX/
+# rembg/AI; it carries no heavy in-memory cache like category-svc):
+#   api  req  50m CPU / 128Mi  ·  lim 200m CPU / 512Mi   (handoff §1 I2 exact)
+#   The mem lim 512Mi mirrors svc-customer's I2 (api-light upper bound); iam holds
+#   only the small OTP/allowlist working set + the user-row lookup path in memory.
+#
+# D3 capacity (handoff §3 / infra plan §6.3): iam-svc adds 2×50m = 100m CPU request
+# (api-only, no worker). At Wave MS-4 the node hosts: monolith remnant + export-svc
+# (MS-1) + dashboard-svc + image-svc (MS-2) + customer-svc + pricing-svc (MS-3) +
+# THIS iam (MS-4) + category-svc (MS-F, parallel). category-svc is the HEAVY cache
+# consumer (full-tree pre-warm + top-100 schemas + 291 brand-pattern single-flight)
+# and is the likely node-capacity TIPPING POINT — NOT iam. Per the handoff §3 standing
+# rule (MASTER_PLAN §3.A.1 / MS-PAR-1 D3 checkpoint): iam itself commits NO money. If
+# the MASTER-SESSION capacity math at MS-4 deploy shows monolith + 6 small services +
+# iam (100m) + category-svc OVERFLOWS the e2-standard-2 node, STOP and ask the founder
+# for D3 (e2-standard-4, ~₹2,600/mo) — do NOT silently upgrade. iam's 100m by itself
+# fits; the Wave-4 SUM (esp. category-svc) is the master-session watch.
+#
+# Namespace: dev ONLY (constraint §4 — no staging/prod manifests in Sub-Plan G).
+#
+# Rolling-update strategy mirrors the sibling services: the dev node is CPU-tight,
+# so kill-before-surge (maxSurge:0 / maxUnavailable:1) avoids the "new pod Pending:
+# Insufficient cpu" deadlock (the CI run 27360475090 lesson). BUT iam runs 2 replicas:
+# maxUnavailable:1 means a rolling update keeps 1 of 2 pods serving login/refresh
+# throughout the roll (never zero auth capacity) — the 2-replica floor is preserved
+# DURING deploys, not just at steady state.
+#
+# STRANGLER POSTURE (handoff "KEY CONSTRAINTS"): this Deployment PROVISIONS the pods
+# but svc-iam is NOT cut over. The monolith keeps serving /api/v1/auth/* +
+# /api/v1/webhooks/razorpay until the founder-gated cutover flip. This manifest +
+# the IngressRoute (I4) stand up the service; the cutover (re-pointing Traefik) is a
+# SEPARATE founder gate — NOT wired live here.
+#
+# Secrets/config (deliverables I6): the container consumes the trimmed iam-svc Secret
+# (iam-svc-secrets, I6) + the trimmed iam-svc ConfigMap (iam-svc-config) via envFrom.
+# svc-iam needs: DATABASE_URL (@schema iam search_path), VALKEY_URL (DB 0 — OTP +
+# refresh allowlist), JWT_SECRET + JWT_ALGORITHM (iam OWNS issuance; shared HS256),
+# REFRESH_TOKEN_PEPPER* (dual-pepper), MSG91_* (OTP send), RAZORPAY_* incl
+# RAZORPAY_WEBHOOK_SECRET (webhook HMAC), AUDIT_PII_SALT, CORS_*, APP_ENV. It does
+# NOT receive GEMINI/LANGFUSE/GCS (no AI/storage — handoff §1 I6/I7;
+# SUB_PLAN_0G code-surfaces). This is the §5.D blast-radius trim.
+#
+# *** NO GCS auth block *** (handoff §1 I7 "GCS service account: NONE"): iam touches
+# NO object storage — no images, no exports. GOOGLE_APPLICATION_CREDENTIALS is absent
+# because iam never calls GCS at all (not merely "keyless"). UNLIKE svc-image.
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iam-svc-api
+  namespace: dev
+  labels:
+    app: iam-svc
+    component: api
+spec:
+  # 2 REPLICAS MINIMUM — Risk #2 (auth authority must not be a SPOF). The HPA below
+  # may scale this UP (to 4) on OTP-send spikes, but never below 2.
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Kill-before-surge: dev node is CPU-saturated; a surge pod cannot schedule.
+      # With replicas:2, maxUnavailable:1 keeps 1 pod serving login/refresh through
+      # the entire roll (never zero auth capacity).
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: iam-svc
+      component: api
+  template:
+    metadata:
+      labels:
+        app: iam-svc
+        component: api
+    spec:
+      containers:
+        - name: iam-svc-api
+          image: asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-prod-images/svc-iam:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8001
+          envFrom:
+            # Trimmed config: APP_ENV + the FE-D5 TTL/CORS non-secret fields. NOT the
+            # monolith's full meesell-config (no GEMINI_MODEL/GCS_*/LangFuse — §5.D trim).
+            - configMapRef:
+                name: iam-svc-config
+            # Trimmed secret (I6): DATABASE_URL, VALKEY_URL (DB 0), JWT_SECRET +
+            # JWT_ALGORITHM, REFRESH_TOKEN_PEPPER*, MSG91_*, RAZORPAY_* (incl webhook
+            # secret), AUDIT_PII_SALT. NO GEMINI/LANGFUSE/GCS.
+            - secretRef:
+                name: iam-svc-secrets
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+---
+# ---------------------------------------------------------------------------
+# HorizontalPodAutoscaler — iam-svc-api — INFRA deliverable I2 (burst half).
+#
+# Authority: handoff_msG_infra.md §1 I2 ("HPA: 4-replica burst on OTP-send traffic
+# spikes, per MASTER_PLAN §6 Risk #2 mitigation"); SUB_PLAN_0G R1.
+#
+# WHY an HPA for iam (and not for the api-light siblings): OTP-send is the one iam
+# route with a spiky, externally-driven load profile (a marketing push or a sign-up
+# wave drives a burst of POST /api/v1/auth/otp/send). The 2-replica floor handles
+# steady login/refresh; the HPA bursts to 4 so an OTP spike does not queue/throttle
+# logins. Scale signal = CPU utilization (the simplest signal available without a
+# custom-metrics adapter; OTP-send is CPU-cheap but the burst VOLUME drives aggregate
+# CPU up — a coarse but adequate V1 proxy). minReplicas pins the Risk #2 floor at 2.
+#
+# *** D3 CAPACITY CAVEAT — the HPA can request UP TO 4×50m = 200m on burst ***
+#   At burst the iam request footprint quadruples (200m vs the steady 100m). On the
+#   current e2-standard-2 node this burst headroom is part of the MS-4 capacity math
+#   the master session watches (handoff §3). The HPA is AUTHORED here but, like the
+#   whole manifest set, is NOT applied to any cluster in this Phase-2 lane (founder
+#   gate). At cutover, if the node cannot host the 4-replica burst alongside
+#   category-svc, that is a D3 (e2-standard-4) trigger — flag, do NOT silently upgrade.
+#
+# Uses autoscaling/v2 (the stable HPA API on K3s v1.35.5).
+# ---------------------------------------------------------------------------
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: iam-svc-api
+  namespace: dev
+  labels:
+    app: iam-svc
+    component: api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: iam-svc-api
+  # Risk #2 floor = 2 (never a SPOF on the auth authority). Burst ceiling = 4 on
+  # OTP-send spikes (handoff §1 I2).
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          # 75% of the 50m request → burst when sustained CPU crosses ~37m/pod
+          # (an OTP-send wave). Coarse V1 proxy for OTP burst volume.
+          averageUtilization: 75
