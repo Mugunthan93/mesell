@@ -1,6 +1,48 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-13 (mesell-ms-category-backend-session-1) — MS-F Phase A: svc-category schema-split Alembic chain COMPLETE ===
+Phase: Microservices Sub-Plan F (category extraction) — Phase A, database lane (meesell-database-builder)
+Session: mesell-microservices-category-backend-session-1
+Worktrees: integration=/tmp/mesell-wt/msF-integration, db branch=feature/microservices-category/db
+Done:
+  - Standalone Alembic chain at backend/services/svc-category/alembic/ authored and validated.
+  - 4 files: alembic.ini (blank sqlalchemy.url, URL via env var), alembic/env.py
+    (version_table_schema="category", CREATE SCHEMA + commit() before context.configure() per
+    MS-A gotcha, transaction_per_migration=True), alembic/script.py.mako (standard template),
+    alembic/versions/c4f1e7a9d302_move_category_tables_to_category_schema.py (root revision,
+    down_revision=None).
+  - Revision c4f1e7a9d302: moves categories, templates, field_enum_values, field_aliases from
+    public → category schema via ALTER TABLE ... SET SCHEMA category (4 tables, sub-plan §as-built
+    DB tables confirmed from repository.py:42-44 + field_aliases docstring at repository.py:14).
+  - Risk#5 orphan pre-scan on field_enum_values.category_id: aborts with full detail log on
+    non-zero orphan count; TESTED both the PASS path (0 orphans) and ABORT path (1 synthetic orphan).
+  - GIN trgm indexes (idx_categories_path_trgm, idx_categories_leaf_name_trgm,
+    idx_categories_super_name_trgm from migration a1b2c3d4e5f6) confirmed PRESERVED by PostgreSQL
+    ALTER TABLE ... SET SCHEMA; post-upgrade pg_indexes shows all 3 GIN indexes in category schema.
+  - version_table_schema="category": category.alembic_version tracks c4f1e7a9d302; public.alembic_version
+    remains f31c75438e61 (monolith head UNCHANGED, chain independence proven).
+  - Downgrade (base): field_aliases → field_enum_values → templates → categories all returned
+    to public; row counts preserved (2/2/2/2 in test DB).
+  - Validated: local Homebrew PG 16.11 test DB meesell_msf_test, full upgrade/downgrade round-trip.
+  - ruff clean on all 4 authored files.
+  - git diff --stat origin/develop...HEAD -- backend/app backend/tests = EMPTY (zero monolith code).
+  - Monolith def test_ count: 698 (monotonic baseline ≥649; all additions pre-exist on branch).
+  - Both branches pushed to origin: feature/microservices-category/integration (off origin/develop),
+    feature/microservices-category/db (off integration, commit 43ac10c).
+In progress: Phase A infra lane (meesell-infra-builder, handoff_msF_infra.md — not this lane).
+Blockers: none.
+Next: Phase B — meesell-services-builder (service/repository/domain/exceptions + ai_ops vendoring +
+  6-mw chain + main.py) + meesell-api-routes-builder (router.py + internal_router.py), both targeting
+  feature/microservices-category/db (or their own group branch off integration).
+Hand-offs: svc-category schema-split (revision c4f1e7a9d302) ready. Services-builder/api-routes-builder
+  can build on feature/microservices-category/integration knowing: (1) tables are in category schema in
+  the extracted service's runtime PG; (2) repository.py must bind schema="category" explicitly;
+  (3) seed pipeline (scripts/build_template_schemas.py) must target category schema post-migration;
+  (4) cross-schema FKs public.catalogs→category.categories remain valid until catalog extracts (MS-H);
+  (5) monolith chain head f31c75438e61 is UNCHANGED — no action needed by api-routes-builder.
+=========
+
 === UPDATE: 2026-06-13 (mesell-ms-pricing-backend-session-1) — MS-D Phase C ROUND 2: MERGE-GATE PASS, FOUNDER GATE OPEN ===
 Phase: Microservices Sub-Plan D (pricing extraction) — Phase C lead merge-gate, round 2 (post round-1 reject fix)
 Session: mesell-ms-pricing-backend-session-1 (meesell-backend-coordinator), worktree /tmp/mesell-wt/msD-backend
