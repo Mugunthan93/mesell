@@ -146,7 +146,7 @@ env vars — the app exits at boot if any is empty. So `.env` keeps **dummy non-
 all the GCP / third-party secrets (MSG91, Gemini, GCS, Razorpay, LangFuse). Those code paths are
 simply **not exercised** in everyday local (LITE) work:
 
-- **OTP login** uses the **fixed dev code `1234`** — no real MSG91 SMS is sent.
+- **OTP login** generates a **random 6-digit code** (there is NO fixed `1234` bypass). No real SMS is needed locally — the code is emitted to the backend log; read it with `grep -oE 'otp=[0-9]{6}' <backend-log> | tail -1`. Only the OTP **hash** is stored in Valkey, never the plaintext. Enter that code to complete login.
 - **Gemini** is only hit on AI suggest / autofill / watermark; a placeholder key yields a graceful
   fallback envelope, not a crash.
 - **GCS** is only hit on image up/download (the precheck path).
