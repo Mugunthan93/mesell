@@ -18,10 +18,8 @@ live DB or Valkey (import-only or dependency-override pattern).
 
 from __future__ import annotations
 
-import importlib
 import inspect
-import sys
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.routing import APIRoute
@@ -170,7 +168,6 @@ def test_refresh_cookie_domain_constant():
 
 def test_set_refresh_cookie_attributes():
     """_set_refresh_cookie sets HttpOnly, Secure, SameSite=strict (FE-D5 FROZEN)."""
-    from unittest.mock import MagicMock
 
     from app.router import _set_refresh_cookie
 
@@ -189,7 +186,6 @@ def test_set_refresh_cookie_attributes():
 
 def test_clear_refresh_cookie_attributes():
     """_clear_refresh_cookie sets Max-Age=0 with empty value (§7.B.3/4 FROZEN)."""
-    from unittest.mock import MagicMock
 
     from app.router import _clear_refresh_cookie
 
@@ -229,8 +225,7 @@ def test_otp_send_has_rate_limit_decorator(svc_iam_app):
     meta = getattr(handler, "_rate_limit_scope", None) or getattr(
         getattr(handler, "__wrapped__", None), "_rate_limit_scope", None
     )
-    # If _rate_limit_scope is not present, verify via source inspection
-    src = inspect.getsource(handler) if meta is None else None
+    # If _rate_limit_scope is not present, verify via router-source inspection.
     if meta is not None:
         assert meta == "otp_send"
     else:

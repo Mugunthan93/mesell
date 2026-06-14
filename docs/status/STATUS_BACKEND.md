@@ -1,6 +1,60 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-14 (mesell-microservices-iam-lead-session-1) — MS-4 / Sub-Plan G (iam) Phase C: MERGE-GATE PASS, FOUNDER GATE OPEN ===
+Phase: Microservices Sub-Plan G (`iam` extraction) — Wave MS-4 (parallel with MS-F category)
+Session: mesell-microservices-iam-lead-session-1 (HYBRID rule-7 STEP 3 — the LEAD MERGE GATE)
+Board sweep: iam Active row (PENDING) → moved to Recently merged (MERGED-TO-INTEGRATION / FOUNDER GATE OPEN);
+  iam infra inter-lead request CLOSED (infra branch merged); header flipped to MS-4 iam gate. No stale 7+ day rows
+  flagged for iam scope (the iam Active row was the only iam row; it is now resolved). Ran parallel with the
+  MS-F category gate — touched ONLY iam-scoped rows + shared files via union keep-both.
+
+GATE VERDICT: **PASS** (round 1 — no REJECT). Every merge-gate criterion verified on the assembled tree:
+  - core/auth.py BYTE-IDENTICAL vendor (svc vs monolith) — `diff` EMPTY (535 lines each). R5/A2/D7 invariant holds.
+  - service.py §16.G: ast.dump identical after RECURSIVE import+docstring strip (iam imports NO other module →
+    ZERO call-site rewrites; the +16 raw-line delta is the vendor-note docstring + multi-line import reformat only).
+    Companion test proves the RAW twins DIFFER (parity not vacuous).
+  - router.py: import-only delta (3 hunks, all app.modules.iam.* → app.* flattening incl. the lazy import).
+  - FE-D5 cookie helpers byte-identical: Path=/api/v1/auth, Domain=.mesell.xyz, Secure+HttpOnly+SameSite=Strict.
+  - allowlist key `cache:refresh:v{N}:{hmac_sha256(token,pepper)}` (HMAC-with-pepper, NOT bare SHA-256, versioned);
+    dual-pepper read fallback; REFRESH_ROTATE_LUA verbatim.
+  - 6 mounted iam APIRoute contract objects (booted the app, counted APIRoute — row-26 lesson): otp/send, otp/verify,
+    refresh, logout, me, webhooks/razorpay. ZERO /internal/* (iam all-✗). +1 /health (infra utility, not a contract route).
+  - NO Celery (no tasks.py, no celery in requirements, celery NOT in sys.modules after boot).
+  - Trimmed Settings: all FE-D5 + MSG91_* + RAZORPAY_* (incl WEBHOOK_SECRET) + AUDIT_PII_SALT + CORS + APP_ENV present;
+    NO GEMINI/LANGFUSE/GCS. FLAG-PARITY (the MS-D regression guard): all 20 distinct `settings.<X>` reads resolve.
+  - DPDP no-op (repository.py WARNING + no-op, signature intact) + webhook audit_event_id=0 placeholder — both PRESERVED verbatim.
+  - DB migration b1c2d3e4f5a6: ALTER users SET SCHEMA iam; version_table_schema=iam; 6-FK DROP via LIVE pg_constraint
+    cross-check (IF EXISTS — sibling-dropped #2 customer/#5 export safe); Risk#5 orphan pre-scan (aborts on orphan);
+    tested downgrade (SET SCHEMA public + RESTORE 6 FKs).
+  - Infra: Traefik PathPrefix /api/v1/auth + /api/v1/webhooks/razorpay, NO strip/rewrite (FE-D5 cookie Path);
+    TLS secretName: api-tls (NOT the stale api-mesell-xyz-tls — MS-D cross-wave finding heeded).
+
+Done:
+  - Assembled feature/microservices-iam/integration: merged origin/develop pre-gate (ebb700e — frontend-only commit,
+    zero backend conflict), then LEAD-squash-merged db `b8a09fb` → backend `dcff9ed` → infra `3ba99aa`.
+  - Authored the LEAD Phase-C integration test `backend/services/svc-iam/tests/test_iam_extraction.py` (16 cases) —
+    REAL behaviour, NON-tautological (the MS-D pricing lesson): FE-D5 LIVE round-trip on real Valkey DB 0
+    (issue→validate→rotate→old-key-GONE/new-PRESENT→replay-returns-0→revoke), dual-pepper grace-window fallback,
+    local-JWT cross-service validation (iam-issued JWT decodes with shared secret + vendored auth — proves zero
+    callback to iam, Risk #2), LIVE cross-schema audit round-trip on real PG (public.audit_events keyed to iam.users).
+  - svc-iam suite: 71 passed (55 specialist + 16 lead) on Py 3.11.14. ruff clean (app + tests; fixed 9 pre-existing
+    test-file lint nits in test_iam_routes.py as a lead-scoped cleanup + 2 in my own test).
+  - monolith UNTOUCHED: `git diff --stat ebb700e HEAD -- backend/app backend/tests` = EMPTY; 705 `def test_` monotonic.
+  - 5 Phase-C docs: this STATUS block, board (MERGED row + infra request CLOSED + header), recipe MS-G entry,
+    MASTER_PLAN §4 row-G + Rev v1.6, CI_HYBRID_MODE_iam.md, svc-iam-rollback.md.
+
+In progress: none.
+Blockers: none.
+Next: founder reviews/merges the integration→develop FOUNDER-GATE PR (D1 — I do NOT approve it). After founder merge,
+  the 7-day hybrid-mode green window opens; cutover (Traefik flip + monolith iam delete, core/auth.py SURVIVES) is a
+  SEPARATE founder gate.
+Hand-offs (founder action items carried in the founder-gate PR body):
+  - infra/founder: create SM secret `dev-iam-db-password`; `JWT_SECRET` shared with category-svc (D7 local-JWT);
+    MSG91 dev-IP whitelist precondition for svc-iam egress; JWT dual-secret grace window (V1.5).
+  - founder: `BACKEND_ARCHITECTURE.md §7` "Extracted to svc-iam V1.5" amendment — LOCKED → §7.3, NOT self-applied.
+=========
+
 === UPDATE: 2026-06-13 (mesell-ms-pricing-backend-session-1) — MS-D Phase C ROUND 2: MERGE-GATE PASS, FOUNDER GATE OPEN ===
 Phase: Microservices Sub-Plan D (pricing extraction) — Phase C lead merge-gate, round 2 (post round-1 reject fix)
 Session: mesell-ms-pricing-backend-session-1 (meesell-backend-coordinator), worktree /tmp/mesell-wt/msD-backend
