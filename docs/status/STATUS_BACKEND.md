@@ -1,6 +1,46 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-13 (mesell-ms-category-backend-session-1) — MS-F Phase A: svc-category schema-split Alembic chain COMPLETE ===
+Phase: Microservices Sub-Plan F (category extraction) — Phase A, database lane (meesell-database-builder)
+Session: mesell-microservices-category-backend-session-1
+Worktrees: integration=/tmp/mesell-wt/msF-integration, db branch=feature/microservices-category/db
+Done:
+  - Standalone Alembic chain at backend/services/svc-category/alembic/ authored and validated.
+  - 4 files: alembic.ini (blank sqlalchemy.url, URL via env var), alembic/env.py
+    (version_table_schema="category", CREATE SCHEMA + commit() before context.configure() per
+    MS-A gotcha, transaction_per_migration=True), alembic/script.py.mako (standard template),
+    alembic/versions/c4f1e7a9d302_move_category_tables_to_category_schema.py (root revision,
+    down_revision=None).
+  - Revision c4f1e7a9d302: moves categories, templates, field_enum_values, field_aliases from
+    public → category schema via ALTER TABLE ... SET SCHEMA category (4 tables, sub-plan §as-built
+    DB tables confirmed from repository.py:42-44 + field_aliases docstring at repository.py:14).
+  - Risk#5 orphan pre-scan on field_enum_values.category_id: aborts with full detail log on
+    non-zero orphan count; TESTED both the PASS path (0 orphans) and ABORT path (1 synthetic orphan).
+  - GIN trgm indexes (idx_categories_path_trgm, idx_categories_leaf_name_trgm,
+    idx_categories_super_name_trgm from migration a1b2c3d4e5f6) confirmed PRESERVED by PostgreSQL
+    ALTER TABLE ... SET SCHEMA; post-upgrade pg_indexes shows all 3 GIN indexes in category schema.
+  - version_table_schema="category": category.alembic_version tracks c4f1e7a9d302; public.alembic_version
+    remains f31c75438e61 (monolith head UNCHANGED, chain independence proven).
+  - Downgrade (base): field_aliases → field_enum_values → templates → categories all returned
+    to public; row counts preserved (2/2/2/2 in test DB).
+  - Validated: local Homebrew PG 16.11 test DB meesell_msf_test, full upgrade/downgrade round-trip.
+  - ruff clean on all 4 authored files.
+  - git diff --stat origin/develop...HEAD -- backend/app backend/tests = EMPTY (zero monolith code).
+  - Monolith def test_ count: 698 (monotonic baseline ≥649; all additions pre-exist on branch).
+  - Both branches pushed to origin: feature/microservices-category/integration (off origin/develop),
+    feature/microservices-category/db (off integration, commit 43ac10c).
+In progress: Phase A infra lane (meesell-infra-builder, handoff_msF_infra.md — not this lane).
+Blockers: none.
+Next: Phase B — meesell-services-builder (service/repository/domain/exceptions + ai_ops vendoring +
+  6-mw chain + main.py) + meesell-api-routes-builder (router.py + internal_router.py), both targeting
+  feature/microservices-category/db (or their own group branch off integration).
+Hand-offs: svc-category schema-split (revision c4f1e7a9d302) ready. Services-builder/api-routes-builder
+  can build on feature/microservices-category/integration knowing: (1) tables are in category schema in
+  the extracted service's runtime PG; (2) repository.py must bind schema="category" explicitly;
+  (3) seed pipeline (scripts/build_template_schemas.py) must target category schema post-migration;
+  (4) cross-schema FKs public.catalogs→category.categories remain valid until catalog extracts (MS-H);
+  (5) monolith chain head f31c75438e61 is UNCHANGED — no action needed by api-routes-builder.
 === UPDATE: 2026-06-14 (mesell-microservices-iam-lead-session-1) — MS-4 / Sub-Plan G (iam) Phase C: MERGE-GATE PASS, FOUNDER GATE OPEN ===
 Phase: Microservices Sub-Plan G (`iam` extraction) — Wave MS-4 (parallel with MS-F category)
 Session: mesell-microservices-iam-lead-session-1 (HYBRID rule-7 STEP 3 — the LEAD MERGE GATE)
@@ -6207,6 +6247,65 @@ Next: re-dispatch meesell-services-builder with the 1-field config fix; on its r
 Hand-offs: none opened (memo'd at the founder gate per spec §5 once green). Infra TLS finding noted above.
 =========
 
+=== UPDATE: 2026-06-14 ===
+Phase: MS-4 Sub-Plan F (`category`) extraction — Phase C ROUND-2 MERGE GATE (PASS) + assembly + founder gate
+Session: mesell-microservices-category-lead-session-2
+Board sweep: category row flipped to PHASE 2 FOUNDER-GATE-OPEN; no rows 7+ days stale (all 2026-06-12/13/14); no MERGED rows aged out of Recently-merged; 1 inter-lead row OPEN (infra microservices-category, gated→now in-execution). Runs PARALLEL with MS-G iam — union keep-both on shared STATUS/board/MASTER_PLAN.
+Done:
+  - ROUND-2 GATE VERDICT: PASS. Round-1 super-categories envelope REJECT CLOSED — svc `5a1dee5`: shim #4 `response_model=list[str]` returns bare `[info.super_id for info in infos]`; `SuperCategoryListResponse` deleted (schemas.py + __all__ + import); test rewritten to assert `isinstance(body, list)`. Re-verified vs merged consumer `svc-customer/.../category_client.py:50-51` (`[str(x) for x in payload]`).
+  - Fix scope verified surgical: touched ONLY internal_router.py + schemas.py + 1 test → regression-impossible on §16.G/picker/budget files (all re-confirmed intact).
+  - Re-proofs (Py3.11 .venv, NOT host 3.9.6): §16.G service.py AST IDENTICAL (dump 40649==40649, ZERO call-site, pure callee NO §0.6 delta); picker.py BYTE-IDENTICAL; budget_cap+cost_tracker BYTE-IDENTICAL → `ai:*` keyspace un-prefixed/global (R1/P0 carve-out), `category:` confined to DB-3 cache; PRIMITIVE_VALUES pinned 11/7/9/8/2/3; commission #3 never-null Decimal-string; schema #1 + field-enum #2 object envelopes; db migration `c4f1e7a9d302` down_rev None + version_table_schema="category" + 4 tables SET SCHEMA (GIN preserved); infra schema-role.sql + rollback runbook verified.
+  - Route count: 5 public + 4 internal + /health.
+  - Phase-C deliverables authored: `backend/services/svc-category/tests/test_category_extraction.py` (11 lead cases, all green; ruff clean) — committed to svc (`a42c17a`); `CI_HYBRID_MODE_category.md` (callees composed: NONE); MASTER_PLAN §4 row-F EXECUTED flip + Rev v1.6; board MERGED flip; this STATUS block. Rollback runbook authored+verified on infra branch (NOT duplicated).
+  - Assembly: develop merged into integration (1 frontend-only commit `ebb700e`); db→svc→infra LEAD squash-merged into `feature/microservices-category/integration`; founder-gate PR opened + LEFT OPEN (D1).
+In progress: none — gate complete.
+Blockers: none.
+Next: founder reviews/merges integration→develop (NOT my gate per D1). On founder merge: monolith category module deletion after ≥7 days hybrid-CI green (strangler §3.C); category cutover (Traefik flip) is a SEPARATE founder gate.
+Hand-offs / founder action items (carried to the integration→develop PR body): (1) `BACKEND_ARCHITECTURE.md §9` "Extracted to svc-category V1.5" amendment — LOCKED, NOT self-applied (§7.3); (2) NEW SM secret `dev-category-db-password`; (3) `JWT_SECRET` SHARED with iam-svc (D7 local-JWT, parallel MS-G safe); (4) D3 VM footprint — MS-4 (8 services + monolith) likely outgrows e2-standard-2 → FRESH founder spend-ask BEFORE provisioning e2-standard-4.
+=========
+
+=== UPDATE: 2026-06-14 — MS-F Phase B (services-builder) ===
+Phase: MS-4 / Sub-Plan F — category extraction (HYBRID step 2, services-builder specialist)
+Branch: feature/microservices-category/svc (sibling off .../integration tip 39b6bbd); tip 24b1c2e; PUSHED.
+Done: extracted backend/services/svc-category/ (56 tracked files). Strangler — monolith app/modules/category/ UNTOUCHED.
+  - Pipeline §16.G: service.py diff vs monolith = EXACTLY 3 import-line rewires (app.modules.category.{picker,
+    repository,domain,exceptions} → app.X); ZERO call-site changes (AST recursive-strip parity PASS). picker.py +
+    domain.py + exceptions.py BYTE-IDENTICAL. repository.py = 2 import lines; NO scope_to_user (GLOBAL §9.D).
+    call_gemini(ctx,"smart_picker.v1",...) + `from app.ai_ops import client as ai_client` byte-identical.
+  - ai_ops VENDORED TRIMMED: client/budget_cap/cost_tracker/guardrail/prompt_registry/eval byte-identical to
+    monolith; ONLY prompts/smart_picker_v1.py (NOT autofill/watermark — trim guard test green).
+  - BUDGET CARVE-OUT (F3.c/R1): `ai:*` keys (DB 0) UN-prefixed/global; category cache keys (DB 3) `category:`-
+    prefixed in core/cache._versioned_key (`meesell:v1:category:{key}`). Proven by test. budget_cap.py +
+    cost_tracker.py byte-identical; _RESERVE_LUA/_RELEASE_LUA byte-identical.
+  - core (6-mw chain + local JWT D7) + i18n (schema_contract read-only, PRIMITIVE_VALUES 11/7/9/8/2/3 byte-
+    identical) + adapters (gemini, langfuse) + shared vendored. Trimmed Settings RETAINS
+    FEATURE_SMART_PICKER_ENABLED (router 404 guard — MS-D flag-parity regression guard applied).
+  - 5 ORM models: Category/Template/FieldEnumValue → schema `category` (cross-schema Product/Catalog
+    relationships DROPPED, intra-schema kept); AuditEvent/User → `public`. configure_mappers() clean.
+  - main.py: 6-mw chain (CORS→request_id→auth→tenancy→rate_limit→plan_guard→audit) deepest-first; import-tolerant
+    router + internal_router mounts; /health + /metrics; lifespan cache pre-warm (full-tree + top-100, §6.7).
+  - requirements.txt: NO celery/openpyxl/pillow/GCS/msg91/razorpay; YES google-generativeai + httpx (langfuse).
+Tests: 14/14 services-builder invariant suite green (tests/test_svc_category_invariants.py). ruff clean (app+tests).
+  50 vendored modules import-clean. app.main boots (7 user middleware, exact §4.H order).
+In progress: none (services-builder deliverable complete).
+Blockers: none.
+Next: api-routes-builder authors router.py (5 public routes verbatim) + internal_router.py (2-3 /internal/* shims:
+  schema, field-enum, +commission per MS-D Option-B obligation) + schemas.py. LEAD (Phase C) authors
+  test_category_extraction.py (hybrid-mode + PRIMITIVE_VALUES-vs-migrated-rows + budget-brake 2-service round trip +
+  frozen shim shapes) and runs the merge gate.
+Hand-offs:
+  - api-routes-builder: main.py mounts `from app.router import router as category_router` + `from app.internal_router
+    import router as internal_router` (both import-tolerant). service.py exposes 8 public methods (suggest_categories,
+    browse_categories, get_category_tree, fetch_schema, get_field_enum, get_commission, list_super_categories,
+    assert_category_exists). /suggest needs @rate_limit(scope="smart_picker",limit=100,window=3600) +
+    FEATURE_SMART_PICKER_ENABLED 404 guard. commission shim: GET /internal/categories/{id}/commission →
+    {"commission_pct":"<decimal-string>"} NEVER null (pricing MS-D obligation; service.get_commission returns
+    Decimal("0.00") for unseeded). schema/field-enum frozen shims (§F4).
+  - database-builder: alembic chain (c4f1e7a9d302) is on the db branch — coordinator merges db→integration in Phase C.
+    svc-side ORM models bound to schema `category` match that migration's SET SCHEMA target.
+  - infra: GRANT INSERT ON public.audit_events TO category_user (SHARED budget ledger cross-schema write);
+    Valkey DB 3 cache mount (heaviest consumer, pre-warm); SM secrets JWT_SECRET (same as iam) + GEMINI_API_KEY +
+    LANGFUSE_*; `dev-category-db-password`.
 === UPDATE: 2026-06-14 — MS-4 Sub-Plan G (iam) Phase B — services-builder SCAFFOLD ===
 Session: mesell-microservices-iam-backend-session-1 (HYBRID step 2, services-builder specialist).
 Branch: feature/microservices-iam/backend (cut from origin/feature/microservices-iam/integration @39b6bbd).
