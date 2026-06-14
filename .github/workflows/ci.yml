@@ -960,6 +960,24 @@ jobs:
         # IAP-tunneled SSH — no public port 6443, OIDC WIF for the SA, scoped IAM
         # (roles/iap.tunnelResourceAccessor + roles/compute.instanceAdmin.v1 on the VM).
         run: |
+          # OUTER (runner-side) retry wrapper around the gcloud SSH connect.
+          # DIAGNOSIS (run 27490730981): the connect layer intermittently fails with
+          # 'Permission denied (publickey)' / exit 255 BEFORE the remote --command runs.
+          # Root cause is the OS-Login ephemeral-key propagation race — gcloud pushes a
+          # short-lived SSH key, but the VM's sshd has not yet picked it up when the
+          # connect is attempted. It is a benign transient (proven by 4 same-window
+          # successes); a short retry clears it. The remote --command payload below is
+          # idempotent (kubectl apply + rollout status + set image + health-check-with-
+          # rollback), so re-invoking it is safe.
+          # NOTE: these counter variables run on the GitHub RUNNER (bare $, not \$). The
+          # --command="..." payload's \$-escaped constructs remain byte-identical so they
+          # still evaluate REMOTELY. Self-contained counter — no $(seq), which expands on
+          # the runner and malforms the remote script (lesson from run 27364056936).
+          MAX_ATTEMPTS=3
+          ATTEMPT=1
+          while true; do
+            echo "Deploy SSH attempt ${ATTEMPT}/${MAX_ATTEMPTS}..."
+            if \
           gcloud compute ssh ${{ env.VM_NAME }} \
             --zone=${{ env.VM_ZONE }} \
             --tunnel-through-iap \
@@ -1052,7 +1070,20 @@ jobs:
                 exit 1
               fi
               echo \"Deploy complete: \${IMAGE_TAG}\"
-            "
+            "; then
+              echo "Deploy SSH attempt ${ATTEMPT} succeeded."
+              break
+            fi
+            # gcloud returned non-zero (255 publickey flake, or a genuine remote failure
+            # — the idempotent payload makes a re-run safe either way).
+            if [ "${ATTEMPT}" -ge "${MAX_ATTEMPTS}" ]; then
+              echo "Deploy SSH failed after ${MAX_ATTEMPTS} attempts. Failing the build."
+              exit 1
+            fi
+            echo "Deploy SSH attempt ${ATTEMPT} failed; retrying in 15s (OS-Login key-propagation race)."
+            sleep 15
+            ATTEMPT=$((ATTEMPT + 1))
+          done
 
   # =============================================================================
   # NIGHTLY — slow/perf + ai_eval, schedule-only
