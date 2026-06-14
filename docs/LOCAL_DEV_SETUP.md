@@ -30,6 +30,48 @@ native processes.
 
 ---
 
+## Quick reference — services & commands
+
+### Local services (live map)
+
+| Service | URL / Port | Run as | What it is |
+|---|---|---|---|
+| Shell (MF host) | http://localhost:4200 | static `serve.js` | federation host |
+| mfe-pricing | http://localhost:4201 | static `serve.js` | remote |
+| mfe-export | http://localhost:4202 | static `serve.js` | remote |
+| mfe-onboarding | http://localhost:4203 | static `serve.js` | remote |
+| mfe-dashboard | http://localhost:4204 | static `serve.js` | remote |
+| mfe-catalog | http://localhost:4205 | static `serve.js` | remote |
+| mfe-auth | http://localhost:4206 | static `serve.js` | remote |
+| Backend API | http://localhost:8000 | native `.venv` uvicorn | FastAPI — `/health`, `/docs` |
+| PostgreSQL 16 | localhost:5432 | brew `postgresql@16` | DB `meesell` (13 tables); data dir `/opt/homebrew/var/postgresql@16` |
+| Valkey 8 | localhost:6379 | brew `valkey` | cache / Celery broker |
+
+Connection strings: `postgresql://meesell:password@localhost:5432/meesell` · `redis://localhost:6379`.
+Note: `http://localhost:8000/` returns **404 by design** — use `/health` or `/docs`.
+
+### Commands
+
+| Action | Command |
+|---|---|
+| Data services up | `brew services start postgresql@16 && brew services start valkey` |
+| Migrate DB | `cd backend && source .venv/bin/activate && alembic upgrade head` |
+| Stale-stamp recovery (drift) | `psql -U mugunthansrinivasan -d meesell -c "DROP TABLE IF EXISTS alembic_version;"` then `alembic upgrade head` |
+| Start backend | `cd backend && source .venv/bin/activate && uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload` |
+| Build frontend (once) | `cd frontend && pnpm run dev:build-static` |
+| Serve frontend (7 static) | `cd frontend && pnpm run dev:serve-static` |
+| Verify routes (11/11) | `cd frontend && pnpm run dev:check-routes` |
+| Frontend one-shot | `cd frontend && pnpm run dev:static all` |
+| Live-API frontend (proxy /api -> :8000) | `cd frontend && pnpm --filter shell exec ng serve` |
+| Health check | `curl -s localhost:8000/health` |
+| Stop backend | `lsof -ti tcp:8000 \| xargs kill` |
+| Stop frontend | Ctrl-C the `dev:serve-static` process (kills all 7) |
+| Stop data services | `brew services stop postgresql@16 && brew services stop valkey` |
+
+> ⚠️ **Never** run `pnpm run start:all` (7× `ng serve` ≈ 3–5 GB → hangs an 8 GB machine). Use `dev:static`; for a page that needs live API, run the shell alone under `ng serve`.
+
+---
+
 ## Prerequisites
 
 - **No Docker.** Docker Desktop is not running and not required — it would add ~1–2 GB of VM
