@@ -3,6 +3,50 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-14
 
+=== UPDATE: 2026-06-14 — ✅ LOCALHOST UI RUNNING + BOOT-SMOKE FINISHED (record + RUNBOOK) ===
+Phase: Founder verification — "Localhost UI running + boot-smoke finished" → record FINISHED in plan/status + land RUNBOOK
+Session: mesell-frontend-bootsmoke-statusland-1 (FAST-MODE docs, HYBRID Rule 7 single-agent coordinator-direct — no specialist ceremony)
+Board sweep: feature_board_frontend.md header refreshed to the boot-smoke-FINISHED milestone; new Recently-merged row added for PR #213 (`ebb700e`). STALENESS SWEEP — no Active rows untouched 7+ days (plan-PENDING + image-precheck founder-gate rows, both 2026-06-11 = 3 days). No new inter-lead requests.
+V1 routes/specialists touched: ALL 14 federated routes (the shell+6-remote localhost boot path exercised by the CI boot-smoke); NO specialist dispatched (docs-only fast mode).
+
+GROUND TRUTH RECORDED (verified by master, re-confirmed by lead against origin/develop):
+  - boot-smoke CI gate MERGED to develop: commit `ebb700e`, PR #213 "ci(frontend): add browser-boot smoke gate".
+    origin/develop tip == ebb700e (confirmed). RUNBOOK.md was MISSING on develop (confirmed) — now added this session.
+  - Latest develop run 27487357896 (sha ebb700e) = SUCCESS; job "Frontend: boot smoke" = success.
+  - The job boots the FULL localhost UI: `pnpm run start:all` → all 7 Native-Federation ng-serve servers
+    (shell :4200 + 6 remotes :4201–:4206); polls localhost:4200/ and /login (both HTTP 200); runs Playwright
+    chromium boot-smoke.js; uploads artifact boot-smoke-27487357896 (screenshots + smoke-results.json, if: always()).
+  - smoke-results.json: routes / , /login , /profile ALL passed at 360px + 1280px — assertions docStatus200,
+    not404Body, hasAppRoot, realSelectorMounted (app-landing non-empty), zeroHardConsoleErrors, zeroPageErrors all true.
+    Landing + Login render fully; /profile redirects to /login when unauthenticated (expected).
+  - Localhost mechanism IS on develop: frontend/tools/dev/start-all.mjs + frontend/proxy.conf.json (/api→:8000)
+    + package.json "start:all".
+
+VERIFIED PORT→REMOTE MAP (from frontend/tools/dev/start-all.mjs banner + angular.json serve.options.port):
+  4200 shell (frontend host; port via start:shell `ng serve frontend --port 4200`)
+  4201 mfe-pricing | 4202 mfe-export | 4203 mfe-onboarding | 4204 mfe-dashboard | 4205 mfe-catalog | 4206 mfe-auth
+  (NOTE: the master prompt's draft list had catalog/dashboard swapped — the verified angular.json mapping above is authoritative:
+   mfe-dashboard=4204, mfe-catalog=4205. RUNBOOK uses the verified mapping.)
+
+Done:
+  - frontend/RUNBOOK.md LANDED on develop — 2-command founder boot guide (Terminal 1 `make dev` →
+    `curl localhost:8000/health`; Terminal 2 `cd frontend && pnpm install && pnpm run start:all` → open http://localhost:4200),
+    verified port map, proxy/CORS/OTP/cold-start/IGNORED_BUILDS gotchas, "what works" matching smoke-results.json.
+  - feature_board_frontend.md: header milestone flipped to "✅ LOCALHOST UI RUNNING + BOOT-SMOKE FINISHED"; new
+    Recently-merged row for boot-smoke-gate / PR #213.
+  - DISCHARGED F-001 follow-up (a): the permanent CI federation boot-smoke gate (with anti-false-pass selector
+    assertions: realSelectorMounted on a non-empty app-* selector) is now MERGED + green on every push. This is the
+    gate that "would have caught F-001 pre-merge."
+
+Tests: N/A (docs-only; no code changed).
+Build: N/A.
+In progress: none.
+Blockers: none.
+Next: Gate 5 visual review remains PAUSED pending mesell-ui-review-session-2 (shell boots → review unblocked to schedule;
+  0/14 routes reviewed). F-001 follow-up (b) — authenticated /profile card capture via founder-Safari OTP — carried to session-2.
+Hand-offs: none cross-lead. The "Localhost UI running + boot-smoke" item now reads ✅ FINISHED in the frontend plan/status.
+=========
+
 === UPDATE: 2026-06-14 01:22 IST ===
 Phase: CI gate — Frontend: boot smoke (PR #213, branch ci/frontend/boot-smoke)
 Agent: meesell-angular-service-builder (HYBRID builder step)
