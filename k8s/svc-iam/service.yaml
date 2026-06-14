@@ -1,0 +1,50 @@
+# k8s/svc-iam/service.yaml
+# ---------------------------------------------------------------------------
+# svc-iam — Sub-Plan G (iam extraction), INFRA deliverable I3.
+#
+# ClusterIP Service `iam-svc` on port 8001 → the iam-svc-api pods' :8001.
+# Authority: handoff_msG_infra.md §1 I3 ("ClusterIP iam-svc:8001") + MASTER_PLAN
+# §2.C (gateway target) + SUB_PLAN_0G "Code surfaces" (Traefik → iam-svc:8001).
+#
+# *** SERVICE NAME = iam-svc *** (NOT svc-iam). The in-cluster DNS target the
+# Traefik IngressRoute (I4) points at is `iam-svc:8001` (handoff §1 I3/I4;
+# SUB_PLAN_0G). So metadata.name MUST be `iam-svc` for
+# `iam-svc.dev.svc.cluster.local` to resolve. (Naming authority = the gateway map's
+# `iam-svc:8001` literal + the handoff, NOT the sibling-folder `svc-<name>`
+# convention.) This matches the customer-svc / pricing-svc naming decision.
+#
+# The Service selects the api component (app=iam-svc, component=api). iam has NO
+# worker component (no Celery — SUB_PLAN_0G §0.2), so the selector is simple (no
+# worker pod to exclude). The 2 api replicas (Risk #2) sit behind this one ClusterIP
+# — kube-proxy load-balances login/refresh across both pods.
+#
+# Traffic paths into this Service:
+#   - North-south (external): Traefik IngressRoute (I4) → iam-svc:8001 for the 6
+#     public routes — /api/v1/auth/* (otp/send, otp/verify, refresh, logout, me) +
+#     /api/v1/webhooks/razorpay (see ingressroute.yaml).
+#   - East-west (internal): *** NONE ***. iam is ALL-✗ in the cross-module call
+#     matrix (SUB_PLAN_0G §0.4 / G2). It exposes NO /internal/* routes and NO other
+#     service ever calls iam (every service validates JWTs LOCALLY via vendored
+#     core/auth.py + shared JWT_SECRET — G1/A2/D7, NO per-request callback to iam,
+#     EVER). So unlike customer-svc (which is a callee for 3 /internal shims), iam-svc
+#     has zero east-west callers. This Service exists SOLELY as the Traefik upstream.
+#
+# Port note: like the sibling services, iam-svc uses 8001 on BOTH the Service port
+# and the targetPort, matching the gateway map's `iam-svc:8001` literal.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: iam-svc
+  namespace: dev
+  labels:
+    app: iam-svc
+spec:
+  type: ClusterIP
+  selector:
+    app: iam-svc
+    component: api
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001
