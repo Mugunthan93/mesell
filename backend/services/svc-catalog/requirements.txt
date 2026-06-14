@@ -1,0 +1,42 @@
+# svc-catalog runtime dependencies (MS Sub-Plan H — THE SPINE).
+#
+# Versions PINNED to the monolith's exact pins (backend/requirements.txt) so
+# the extracted service behaves identically.
+#
+# catalog is AI-CONSUMING (the autofill.v1 workload) so it carries
+# google-generativeai (the VENDORED ai_ops Gemini text step).  LangFuse egress
+# uses httpx (no separate SDK dep).
+#
+# NO celery (catalog has NO worker — autosave is synchronous).
+# NO openpyxl (export-only) / google-cloud-storage (no storage surface —
+# autofill is TEXT not vision; image_refs is the dead-branch empty tuple) /
+# pillow / rembg (image-only) / msg91 / razorpay (no SMS/payment).
+# The 5 cross-module lookups (category exists/schema/field-enum + customer
+# eligibility/compliance-block) go over HTTP shims (httpx); the user JWT is
+# verified locally (pyjwt).
+
+# ── Web framework ────────────────────────────────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+pydantic-settings>=2.5,<3
+
+# ── Database (async) — catalogs/products/product_drafts (schema catalog) ──
+sqlalchemy[asyncio]==2.0.32
+asyncpg==0.29.0
+
+# ── Cache (rate-limit windows + audit-coalesce + plan_guard COUNT + the
+#    SHARED ai:* budget brake, Valkey DB 0) ─────────────────────────────────
+redis==5.0.8
+
+# ── Auth (local JWT verification — A2 / D7) ──────────────────────────────
+pyjwt==2.9.0
+
+# ── AI (vendored ai_ops autofill.v1 step — A1/D6) ────────────────────────
+google-generativeai==0.8.0
+
+# ── HTTP shim transport (extracted_clients: category + customer) + LangFuse
+#    egress ─────────────────────────────────────────────────────────────────
+httpx==0.27.0
+
+# ── Observability ────────────────────────────────────────────────────────
+prometheus-client>=0.20,<1

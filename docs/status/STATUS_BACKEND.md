@@ -6152,3 +6152,70 @@ Next: re-dispatch meesell-services-builder with the 1-field config fix; on its r
   integration → open founder gate left OPEN). Docs were NOT authored this pass (premature before the code is green).
 Hand-offs: none opened (memo'd at the founder gate per spec §5 once green). Infra TLS finding noted above.
 =========
+
+=== UPDATE: 2026-06-14 — MS-H Sub-Plan H (catalog — THE SPINE) Phase B services-builder ===
+Phase: MS-5 Wave 2 Phase B — catalog extraction (the LAST + RISKIEST; the spine).
+Branch: feature/microservices-catalog/svc (off origin/feature/microservices-catalog/integration @ ebb700e).
+Done (services-builder heavy lift — backend/services/svc-catalog/, 69 source files):
+  - service.py / repository.py / domain.py / exceptions.py VENDORED. §16.G AST recursive-strip parity PASS
+    (stripped ast.dump byte-identical, 88099 chars each — ZERO call-site drift). Raw diff = EXACTLY 10 lines
+    (5 import rewires): 2 LOAD-BEARING cross-module (category/customer → extracted_clients re-exported as the SAME
+    category_service/customer_service symbols) + 3 catalog module-flatten (app.modules.catalog.{repository,domain,
+    exceptions} → app.{...}). The 8 outbound call sites byte-identical. repository.py + domain.py + exceptions.py
+    BYTE-IDENTICAL to monolith.
+  - ai_ops VENDORED TRIMMED: client/budget_cap/cost_tracker/eval/guardrail/prompt_registry byte-identical from
+    monolith; prompts = autofill_v1.py + __init__ ONLY (smart_picker/watermark NOT vendored — trim guard test asserts).
+    adapters = gemini + langfuse only (NO gcs/msg91/razorpay). budget_cap.py + cost_tracker.py Lua BYTE-IDENTICAL.
+  - SHARED budget brake: ai:* keyspace UN-prefixed/GLOBAL (literal "ai:cost:daily:{date}" etc.) — the ₹500 cap stays
+    shared across category+catalog+image (R4 carve-out). catalog's OWN cache keys would get catalog: prefix (catalog
+    is NOT a DB-3 cache consumer — fetch_schema caching lives in category-svc, so no cache.py vendored).
+  - 5 OUTBOUND shims (the spine's caller side, targeting REAL sibling pods — FIRST extraction with live callees):
+    category_client (assert_category_exists→/exists, fetch_schema→/schema [hot path], get_field_enum→/field-enum/{f})
+    → settings.CATEGORY_SVC_BASE_URL; customer_client (assert_eligible_for_super_id→/eligibility?super_id=,
+    get_compliance_block→/compliance-block) → settings.CUSTOMER_SVC_BASE_URL. _transport: httpx.AsyncClient
+    Timeout(5.0,connect=2.0), 1 retry ONLY on {503,504}, JWT+X-Request-ID forwarded, per-callee base_url. 404→typed
+    exception. NO image_client (dead branch — R8).
+  - 3 ORM models (catalogs/products/product_drafts) bound {"schema":"catalog"}; INTRA-schema FK+relationship KEPT
+    (products.catalog_id→catalog.catalogs, product_drafts.product_id→catalog.products); cross-schema user_id/
+    category_id/images/pricing_calcs/exports DROPPED → bare UUID cols (DB FK preserved). User+AuditEvent bound public.
+    shared/models/__init__ EXPORTS Product (plan_guard's lazy product_count COUNT FIRES for catalog — unlike category).
+  - scope_to_user PRESERVED (13 anchors, count == monolith). §10 leak rule intact (find_by_id collapses
+    not-found/wrong-owner/soft-deleted → None).
+  - main.py: 6-mw chain + RequestContextMiddleware (outbound-shim ctx); FEATURE_CATALOG_FORM_ENABLED MOUNT GUARD
+    preserved on the PUBLIC router (R9 — conditional route count); internal_router mount NOT flag-gated; NO Celery;
+    /health + /metrics. Trimmed Settings retains the 3 FEATURE flags (MS-D flag-parity guard) + GEMINI/LANGFUSE/AI/
+    CACHE_VERSION + per-callee base URLs; LARGEST pool (DB_POOL_SIZE=10). i18n + core/metrics vendored FULL from
+    monolith (catalog needs full catalog.*/validation.* IDs + I18N_MISSING_KEY/AI_OPS_* metrics).
+Tests: tests/test_catalog_svc_invariants.py 19/19 PASS (boot+mw order, §16.G AST parity, 5-rewire, 8 call-site
+  symbols, ai:* un-prefixed, Lua byte-identity, scope_to_user==monolith, ORM schema bindings, mappers clean, trim
+  guard, dead-image-branch verbatim + no image_client, flag-parity every settings.X resolves, NO celery, 5 shim
+  round-trips + JWT/X-Request-ID forward + 503-only-1-retry + 404→typed). ruff clean (app+tests). 53 modules import
+  clean. Monolith UNTOUCHED (git diff vs integration on backend/app+backend/tests = EMPTY).
+Blockers: none.
+CROSS-WAVE / Open-Question resolutions (carry to LEAD Phase C + founder gate):
+  - Open Q #1: category-svc internal_router (feature/microservices-category/svc) serves /schema,/field-enum,
+    /commission,/super-categories but NOT /categories/{id}/exists. category-svc MUST ADD the /exists server shim at
+    MS-5 (my assert_category_exists client targets it). FLAGGED — cross-wave coordination, NOT a catalog-side defect.
+  - Open Q #2: RESOLVED — svc-customer/app/internal_routes.py serves BOTH /compliance-block AND
+    /eligibility?super_id= (query param, NOT /{super_id} path param — matched to as-built). customer_client matches.
+  - INBOUND ownership-check WIDENED BODY (verified vs merged svc-pricing catalog_client): the consumers call
+    GET /internal/products/{id}/ownership-check?user_id= and pricing reads {"category_id":"<uuid>"} from the 200 body
+    (NOT POST/204 as the spec sketch said — the merged consumers WIN, recipe step 0). export reads the
+    ExportSnapshotInternal JSON; dashboard reads {"items":[...],"total","page","limit"}. THESE ARE
+    api-routes-builder's internal_router surface; my service methods (assert_product_ownership/get_product_for_export/
+    list_products) BACK them unchanged. The widened body shape for api-routes-builder: ownership-check 200 =
+    {"owned":true,"category_id":"<uuid>"} (+ 404 conflating not-found/cross-tenant/soft-deleted).
+Hand-offs:
+  - api-routes-builder: service signatures FROZEN (the 11 public methods incl. the 3 LIVE inbound shim backers +
+    get_validation_summary). internal_router.py must serve ownership-check (GET ?user_id=, 200 {"owned",..,
+    "category_id"} / 404), export-snapshot (GET ?user_id=, ExportSnapshotInternal JSON), list_products (GET
+    ?page=&limit=, PaginatedProductsInternal JSON) + defensive validation-summary. router.py mounts 6 public routes
+    behind the FEATURE_CATALOG_FORM_ENABLED guard (main.py already gates the mount import-tolerantly).
+  - infra: GRANT INSERT ON public.audit_events TO catalog_user (BOTH the AI cost ledger AND 4 write-route audit rows);
+    SM JWT_SECRET (= iam's) + GEMINI_API_KEY + LANGFUSE_*; CATEGORY_SVC_BASE_URL + CUSTOMER_SVC_BASE_URL ClusterIPs;
+    dev-catalog-db-password; LARGEST pool. category-svc MUST add /internal/categories/{id}/exists (Open Q #1).
+  - LEAD Phase C: test_catalog_extraction.py (3-source budget-brake-shared, frozen ownership/export-snapshot shapes,
+    2-hop export→catalog→category chain, scope_to_user cross-tenant 404, autosave P95, autofill graceful fallback).
+    Alembic a8f3b2e9c1d5 on db branch — coordinator merges db→integration.
+Next: api-routes-builder authors router.py + internal_router.py against the frozen service signatures; LEAD Phase C.
+=========
