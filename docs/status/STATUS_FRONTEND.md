@@ -3,6 +3,63 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-14
 
+=== UPDATE: 2026-06-14 17:00 IST ===
+Phase: V1 environment files — @mesell/env shared lib (session mesell-env-files-frontend-session-1)
+Agent: meesell-angular-service-builder (HYBRID builder step)
+Branch: develop @ 90c6760 — PUSHED
+
+Done:
+  - Created libs/env/ shared lib: environment.ts (dev default), environment.prod.ts (prod
+    swap), environment.interface.ts (separate interface to avoid fileReplacements
+    circular-import trap), index.ts barrel, environment.spec.ts, README.md.
+  - Added @mesell/env path alias to frontend/tsconfig.json (paths block, no wildcard).
+  - Added fileReplacements to esbuild:production config for ALL 7 projects in angular.json
+    (frontend, mfe-pricing, mfe-export, mfe-onboarding, mfe-catalog, mfe-dashboard, mfe-auth).
+    development config: NO fileReplacements (uses environment.ts as-is).
+  - Updated ApiClient (libs/core/services/api-client.service.ts): added withBase() private
+    method; wrapped path arg in all 4 verbs (get/post/patch/delete). Retry logic untouched.
+  - Updated AuthApiService (libs/core/services/auth-api.service.ts): imported environment;
+    replaced 5 /api/v1/auth/... literals with module-level path constants that prepend
+    environment.apiBase. withCredentials:true preserved on verify/refresh/logout.
+  - Updated CategoryService (apps/mfe-catalog/.../category.service.ts): imported environment;
+    prepended environment.apiBase to the 2 raw HttpClient literal paths (suggest + selectCategory).
+    This is the ONLY remote service that uses raw HttpClient — all others route through ApiClient.
+
+Remote services audit:
+  - catalog-form-api.service.ts: uses ApiClient — COVERED by withBase, no direct edit needed
+  - image.service.ts: uses ApiClient — COVERED by withBase, no direct edit needed
+  - category.service.ts: uses raw HttpClient — DIRECT EDIT required (2 literals patched)
+  - dashboard-api.service.ts: uses ApiClient — COVERED by withBase, no direct edit needed
+  - export.service.ts: uses ApiClient — COVERED by withBase, no direct edit needed
+  - seller-profile.service.ts: uses ApiClient — COVERED by withBase, no direct edit needed
+  - pricing.service.ts: uses ApiClient — COVERED by withBase, no direct edit needed
+
+Validation:
+  1. tsc --noEmit: CLEAN (0 errors)
+  2. pnpm run dev:check-routes: 11/11 PASS (relative paths + proxy unaffected at apiBase='')
+  3. ng build frontend --configuration production: OK
+     - _mesell_env-DPW3I7LQ.js = 105 bytes (well under budget)
+     - Bundle contains production:!0, name:"production", apiBase:""
+     - Swap PROVEN: production:!0 is the prod marker absent in dev default
+  4. ng build mfe-pricing --configuration production: OK
+     - Same _mesell_env chunk hash confirms identical swap across remotes
+  5. grep proof: all /api/v1/... in prod bundles are relative (no absolute origin prefix);
+     zero http://localhost or https://api.* references in production bundle
+
+Tests: environment.spec.ts (4 assertions: production===false, name==='development',
+  apiBase==='', prepend idempotent). ApiClient.withBase suite (5 assertions: get/post/
+  patch/delete all pass path byte-identical; query string preserved).
+Build: ok (both frontend + mfe-pricing production builds clean, <3s each)
+In progress: none
+Blockers: none
+Next: meesell-frontend-coordinator merge-gate review (HYBRID step 3)
+Hand-offs:
+  - @mesell/env lib ready; components/services may import `environment` from '@mesell/env'
+  - CategoryService.suggest() + selectCategory() now environment-aware (apiBase-prefixed)
+  - ApiClient: all 4 verbs wrap path with withBase() — zero-churn for apiBase=''
+  - AuthApiService: all 5 auth literals now use path constants with environment.apiBase prefix
+=========
+
 === UPDATE: 2026-06-14 — ✅ LOCALHOST UI RUNNING + BOOT-SMOKE FINISHED (record + RUNBOOK) ===
 Phase: Founder verification — "Localhost UI running + boot-smoke finished" → record FINISHED in plan/status + land RUNBOOK
 Session: mesell-frontend-bootsmoke-statusland-1 (FAST-MODE docs, HYBRID Rule 7 single-agent coordinator-direct — no specialist ceremony)
