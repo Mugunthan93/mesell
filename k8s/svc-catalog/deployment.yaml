@@ -1,0 +1,174 @@
+# k8s/svc-catalog/deployment.yaml
+# ---------------------------------------------------------------------------
+# svc-catalog — Sub-Plan H (catalog extraction, MS-5), INFRA deliverable I2.
+#
+# THE SPINE. The LAST extraction — this Deployment completes the 8-service fan-out
+# on the dev node (see the D3 VM-FIT block below).
+#
+# ONE Deployment from ONE image:
+#   - svc-catalog-api  *** 2 replicas *** (the LARGEST pool — MASTER_PLAN §2.E
+#     line 207 "catalog gets the largest pool"; handoff_msH_infra.md §2 "API
+#     replicas (autosave WRITE-heavy — size the LARGEST pool)").
+#
+# *** NO worker Deployment. *** svc-catalog has NO Celery task (verified —
+# handoff §1: "catalog has zero background tasks — autosave draft upsert is
+# SYNCHRONOUS inside patch_product; verified no shared_task/Celery in
+# modules/catalog/"). The autofill Gemini call is SYNCHRONOUS in-request (vendored
+# ai_ops), NOT enqueued. (Contrast svc-image/svc-export which DO carry a Celery
+# worker. Same api-only shape as svc-category/svc-pricing/svc-customer/svc-iam.)
+#
+# Mirrors the PROVEN AI-bearing svc-category api Deployment recipe (MS-F)
+# (AI-bearing envFrom set, api-only) — the closest template — with catalog's
+# LARGEST-pool sizing (2 replicas vs category's 1).
+#
+# ── SIZING — handoff_msH_infra.md §2 (largest pool) + infra plan §6.3 ──────────
+#   api  replicas: 2  ·  req 150m CPU / 256Mi  ·  lim 400m CPU / 512Mi  (PER POD)
+#     - replicas: 2 — the LARGEST pool. catalog is the autosave WRITE-heavy spine
+#       (every keystroke-debounced PATCH /products/{id} autosaves the draft
+#       synchronously); 2 replicas spread the write load + give HA on the hottest
+#       write path in the product. (Every other extracted service runs 1 replica
+#       in dev; catalog is the exception per §2.E line 207.)
+#     - CPU req 150m (HIGHER than category's 100m and the 50m of
+#       pricing/customer/image-api): catalog does real per-request work on the
+#       write path — the autosave upsert + the synchronous autofill Gemini call +
+#       the live-preview render. 150m gives the write+AI path headroom; lim 400m
+#       allows burst on concurrent autosave + autofill. lim = ~2.7× req
+#       (R-MS-9 OOM-cascade rule, ≤ ~3× req).
+#     - mem req 256Mi / lim 512Mi: catalog holds the draft + product domain
+#       objects + the AI SDK footprint in process. 512Mi lim matches
+#       svc-category-api / svc-image-api. lim = 2× req.
+#   Numbers are PROVISIONAL — validate against a real autosave + autofill memory
+#   profile at the MS-5 deploy; right-size if the profile is lighter/heavier.
+#
+# ── D3 VM-FIT (handoff §3 / SUB_PLAN_0H R7 / MS-PAR-1) — THE UPGRADE MOMENT ────
+#   *** MS-5 is the FULL 8-service fan-out — the most likely wave to exceed the
+#   e2-standard-2 node. *** The deploy is monolith (now nearly empty) + export +
+#   dashboard + image + pricing + customer + category + iam + catalog. svc-catalog
+#   adds 2×150m = 300m CPU request (the LARGEST single-service contribution —
+#   2 replicas). The COMBINED 8-service footprint is what could overflow the
+#   2000m-allocatable node. Per the prior-wave finding (svc-image MS-2 already
+#   projected ~2525m > 2000m → e2-standard-4 ask raised), MS-4 (iam+category) +
+#   MS-5 (catalog) only push it further over.
+#
+#   *** D3 FOOTPRINT FLAG (dispatch CRITICAL requirement) — 8 services total ***
+#   The e2-standard-4 upgrade (~₹2,600/mo) is PLAN-pre-approved (D3) BUT the SPEND
+#   gets a FRESH founder ask at the moment the 8-service deploy doesn't fit. *** STOP
+#   and ask the founder before provisioning *** — NEVER on the plan-level
+#   pre-approval alone (constraint §4; master-session standing rule). These
+#   manifests are AUTHORED + VALIDATED here (dev-only, ₹0); the DEPLOY + any node
+#   upgrade is the founder-gated cutover, not this lane. NEW SM secret
+#   `dev-catalog-db-password` is the ONE new founder-created secret this wave needs.
+#
+# Namespace: dev ONLY (constraint — no staging/prod manifests in Sub-Plan H).
+#
+# Rolling-update strategy mirrors svc-category/svc-image/svc-pricing + k8s/api.yaml:
+# the dev node is CPU-tight, so kill-before-surge (maxSurge:0 / maxUnavailable:1)
+# avoids the "new pod Pending: Insufficient cpu" deadlock. With 2 replicas this
+# keeps 1 pod serving during a rollout (maxUnavailable:1 of 2) — a smoother rollout
+# than the single-replica services. The live cutover ordering + monolith-fallback
+# is the founder-gated deploy (MASTER_PLAN §3.C / the svc-catalog runbook).
+#
+# Secrets/config (I7): the api container consumes THREE env sources via envFrom:
+#   1. meesell-config        (shared ConfigMap — GEMINI_MODEL, LANGFUSE_PUBLIC_KEY,
+#                             LANGFUSE_HOST, AI_DAILY_BUDGET_INR — the AI non-secret
+#                             config catalog shares with the monolith + svc-image +
+#                             svc-category)
+#   2. svc-catalog-config    (trimmed dedicated ConfigMap — APP_ENV, CACHE_VERSION,
+#                             FEATURE_CATALOG_FORM_ENABLED, FEATURE_AI_AUTOFILL_ENABLED,
+#                             FEATURE_LIVE_PREVIEW_ENABLED; see configmap.yaml)
+#   3. svc-catalog-secrets   (the trimmed Secret — DATABASE_URL@catalog, VALKEY_URL,
+#                             JWT_SECRET, GEMINI_API_KEY, LANGFUSE_SECRET_KEY; see
+#                             secrets.yaml.example)
+# Later sources override earlier on key collision — meesell-config provides the AI
+# non-secret block; svc-catalog-config overrides APP_ENV/CACHE_VERSION to the
+# catalog-trimmed values + adds the 3 catalog feature flags; the Secret provides the
+# secret values last.
+#
+# GCS auth (I6): NONE. catalog touches no GCS — no SA, no
+# GOOGLE_APPLICATION_CREDENTIALS, no GCS_* env. (Verified against handoff §5 +
+# SUB_PLAN_0H §596 trimmed Settings + spec_msH_backend.md: ZERO GCS refs. The
+# product images catalog references are GCS URLs WRITTEN by image-svc; the
+# export-snapshot shim returns a JSON envelope, export-svc owns the XLSX/GCS write.
+# catalog itself reads/writes NO GCS object — like svc-category/svc-pricing/svc-iam;
+# unlike svc-image/svc-export.)
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: svc-catalog-api
+  namespace: dev
+  labels:
+    app: svc-catalog
+    component: api
+spec:
+  # *** LARGEST pool — 2 replicas (MASTER_PLAN §2.E line 207; handoff §2). ***
+  # catalog is the autosave WRITE-heavy spine; 2 replicas spread the write load.
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Kill-before-surge: dev node is CPU-saturated; a surge pod cannot schedule.
+      # With 2 replicas, maxUnavailable:1 keeps 1 pod serving through the rollout.
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: svc-catalog
+      component: api
+  template:
+    metadata:
+      labels:
+        app: svc-catalog
+        component: api
+    spec:
+      containers:
+        - name: svc-catalog-api
+          image: asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-prod-images/svc-catalog:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8001
+          envFrom:
+            # Shared AI non-secret config (GEMINI_MODEL, LANGFUSE_PUBLIC_KEY,
+            # LANGFUSE_HOST, AI_DAILY_BUDGET_INR). Same source svc-image +
+            # svc-category use. AI_DAILY_BUDGET_INR MUST be identical across all AI
+            # services so the ₹500 global brake math agrees — so it stays shared.
+            - configMapRef:
+                name: meesell-config
+            # Trimmed dedicated ConfigMap (APP_ENV, CACHE_VERSION, + the 3 catalog
+            # feature flags). Overrides meesell-config's APP_ENV/CACHE_VERSION with
+            # catalog-trimmed values (later envFrom source wins on key collision).
+            - configMapRef:
+                name: svc-catalog-config
+            # Trimmed Secret (DATABASE_URL@catalog, VALKEY_URL, JWT_SECRET,
+            # GEMINI_API_KEY, LANGFUSE_SECRET_KEY).
+            - secretRef:
+                name: svc-catalog-secrets
+          resources:
+            requests:
+              cpu: "150m"
+              memory: "256Mi"
+            limits:
+              cpu: "400m"
+              memory: "512Mi"
+          # Readiness gated on /health (200 only after lifespan startup completes).
+          # catalog has NO heavy cache pre-warm (its hot path fetch_schema is served
+          # by CATEGORY-svc's pre-warm cache, not catalog's own — handoff §2). So the
+          # readiness initialDelaySeconds is the standard 15s (like pricing/image-api,
+          # NOT category's 30s pre-warm budget). catalog mounts Valkey DB 3 only for
+          # its own small `catalog:`-prefixed cache keys.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+          # Liveness slacker than readiness — restarts only on a true process wedge.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+# *** NO svc-catalog-worker Deployment — catalog has no Celery task (I1/I2). ***

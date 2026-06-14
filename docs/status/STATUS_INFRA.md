@@ -2580,3 +2580,38 @@ defect in the change. LESSON: when two background sessions both `kubectl apply` 
 cluster, the last writer wins per-resource; live `-Q` is only durable once the manifest carrying it
 lands on develop and deploys.
 =========
+
+=== UPDATE 2026-06-14 — mesell-microservices-catalog-infra-session-1 — MS-5 / Sub-Plan H (catalog, THE SPINE) INFRA lane ===
+Phase: Playbook §5 (PostgreSQL schema/role/grant bootstrap) + §6 (Valkey shared instance / DB-0 brake carve-out) + §7 (Traefik IngressRoute + TLS) + §10 (Secret Management — no secret in git) + §0 (live state SSOT — TLS name `api-tls`). DEV-ONLY, author-only, NOT applied.
+Session: mesell-microservices-catalog-infra-session-1
+Rule stated: schema-per-service (MASTER_PLAN §2.D) with least-priv role + shared public.audit_events INSERT grant (§5.B); catalog is READ-WRITE (3 spine tables mutated) UNLIKE category (read-only); ingress is ADD-ONLY (no CORS/Set-Cookie strip, R-SP7-1); Valkey ai:* budget keyspace stays GLOBAL/un-prefixed (the ₹500 cap carve-out).
+
+Pre-flight check: pass. Worktree `/tmp/mesell-wt/msH-infra` on `feature/microservices-catalog/infra` cut from origin/feature/microservices-catalog/integration @ ebb700e. Template read from MS-F svc-category (the closest proven: AI-bearing + owns-schema + audit-grant + api-only). catalog db branch (c5eaad5) schema-move migration a8f3b2e9c1d5 confirms 3 spine tables (catalogs/products/product_drafts) + version_table_schema="catalog". GCS requirement resolved to NONE (handoff §5 + SUB_PLAN_0H §596 trimmed Settings + spec_msH_backend: 0 GCS refs).
+
+Files authored (7):
+  - backend/services/svc-catalog/Dockerfile        (I1; py3.12-slim, single api, google-genai+langfuse, gunicorn==22.0.0 image-layer, NO openpyxl/Pillow/celery, NO worker)
+  - k8s/svc-catalog/deployment.yaml                (I2; api 2 replicas = LARGEST pool §2.E:207, req 150m/256Mi lim 400m/512Mi, kill-before-surge, NO worker)
+  - k8s/svc-catalog/service.yaml                   (I3; ClusterIP svc-catalog:8001, selects api only)
+  - k8s/svc-catalog/ingressroute.yaml              (I4; METHOD-SPLIT POST /api/v1/products→catalog [GET stays dashboard] + 5 leaf-anchored {id} PathRegexp + /internal/products + 3 internal {id} shims; TLS api-tls)
+  - k8s/svc-catalog/schema-role.sql                (I5; catalog_user OWNS catalog schema + READ-WRITE DML + audit INSERT covering TWO writers + guarded cross-schema USAGE iam/category for FK Risk#5)
+  - k8s/svc-catalog/configmap.yaml                 (I8 config half; APP_ENV=development, CACHE_VERSION=v1, 3 catalog flags CATALOG_FORM/AI_AUTOFILL=true LIVE_PREVIEW=false)
+  - k8s/svc-catalog/secrets.yaml.example           (I7; 5 keys DATABASE_URL@catalog/VALKEY_URL@0/JWT/GEMINI/LANGFUSE — NO GCS/razorpay/msg91/celery)
+  - docs/runbooks/svc-catalog-rollback.md          (the 4-surface internal flip + the riskiest data step: REVERSE schema move on READ-WRITE live tenant data, do NOT drop)
+
+Validation (offline — cluster 6443 firewall-blocked to founder IP, §15 F3 branch):
+  - yaml.safe_load_all on the 5 manifests: ALL PARSE OK.
+  - 27 field assertions (replicas=2, kill-before-surge, port 8001, envFrom order [meesell-config,svc-catalog-config,svc-catalog-secrets], resources, NO worker doc, NO command override, ClusterIP selectors, method-split present, NO broad PathPrefix, $-anchored bare {id}, leaf rules autofill/preview/draft, internal exact + alternation, no sibling sub-route captured, configmap 3 flags + no secret keys, secret exactly 5 keys + search_path + /0 + no forbidden keys): ALL PASS.
+  - SQL executable-line grant checks (CREATE SCHEMA/ROLE, ownership, full DML READ-WRITE, USAGE public, audit INSERT, NO cross-schema data read-grant, audit INSERT-only, no literal password): ALL PASS.
+  - secret-scan (AIza/rzp_/sk-lf/pk-lf/PEM/64-hex across all 7 files): CLEAN — only REPLACE-ME placeholders.
+  - kubectl --dry-run=server + dev smoke: DEFERRED to founder-gated cutover deploy (playbook §15 F3).
+
+D3 8-SERVICE FOOTPRINT FLAG (dispatch CRITICAL): MS-5 = the FULL 8-service fan-out (monolith + export + dashboard + image + pricing + customer + category + iam + catalog). catalog is the LARGEST pool (2×150m=300m, the largest single-service contribution). The prior svc-image (MS-2) finding already projected ~2525m > 2000m allocatable; MS-4 (iam+category) + MS-5 (catalog) push further over. e2-standard-4 (~₹2,600/mo) is D3 plan-pre-approved BUT the SPEND gets a FRESH founder ask at the moment the 8-service deploy doesn't fit. STOP and ask founder before provisioning — NEVER on the plan-level pre-approval alone (constraint §4). Manifests authored+validated here ₹0; deploy+upgrade is the founder-gated cutover, not this lane.
+
+New SM secret needed (founder to create): dev-catalog-db-password (per-service DB password for catalog_user; mirrors dev-{export,image,pricing,customer,category,iam}-db-password). Within the §4 ceiling — not a new IAM grant.
+
+Board sweep (session-start + session-end): no infra Active row untouched 7+ days (all 2026-06-11/12/13/14; today 2026-06-14). New Active row `microservices-catalog (MS-5, THE SPINE)` = IN PROGRESS, session `mesell-microservices-catalog-infra-session-1`. New inter-lead row → backend-coordinator (8 acceptance items) = OPEN. Backend inter-lead rows still OPEN (not mine): catalog-form Gate-1 event-loop; gate4-integration; R-MS-8 pgbouncer transaction-pool.
+
+Cost: ₹0/month (manifests + docs only; no GCP resource, no new IAM grant; the one new SM secret is founder-created, not me).
+Branch: feature/microservices-catalog/infra — pushed; push only, NO PR, NO merge (backend-coordinator runs the infra→integration merge gate per dispatch + HYBRID rule).
+Next action: backend-coordinator runs the merge gate against the LANDED svc-catalog backend tree (deferred-validation: re-derive COPY targets + entrypoint from the landed app/ once the svc branch pushes); founder D3 spend decision + dev-catalog-db-password before any deploy.
+=========

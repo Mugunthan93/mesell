@@ -1,0 +1,52 @@
+# k8s/svc-catalog/service.yaml
+# ---------------------------------------------------------------------------
+# svc-catalog — Sub-Plan H (catalog extraction, MS-5), INFRA deliverable I3.
+#
+# ClusterIP Service `svc-catalog` on port 8001 → the svc-catalog-api pods' :8001.
+# Authority: handoff_msH_infra.md §2 (ClusterIP :8001) + MASTER_PLAN §2.C
+# (gateway targets `svc-catalog:8001`).
+#
+# The Service selects ONLY the api component (app=svc-catalog, component=api).
+# There is NO worker (catalog has no Celery task) — so no second selector is needed.
+# The 2 api replicas (the LARGEST pool, §2.E line 207) sit behind this one Service;
+# kube-proxy load-balances across both pods.
+#
+# Traffic paths into this Service:
+#   - North-south (external): Traefik IngressRoute (I4) → svc-catalog:8001 for the
+#     6 catalog routes under /api/v1/products/* (POST create + the 5 {id} sub-routes)
+#     PLUS the method-split POST /api/v1/products (see ingressroute.yaml METHOD-SPLIT).
+#   - East-west (internal): svc-catalog EXPOSES the 3-4 frozen /internal/products/*
+#     shims (ownership-check, export-snapshot, list-products, + defensive
+#     validation-summary). These are reached by sibling pods (image-svc, pricing-svc,
+#     export-svc → ownership-check + export-snapshot; dashboard-svc → list-products)
+#     over cluster DNS via the SAME Service (svc-catalog:8001). The Service backs BOTH
+#     the public and internal surfaces (one FastAPI app, two route families).
+#
+# *** catalog is THE SPINE — a CALLEE that exposes /internal/* to the 4 ALREADY-
+# extracted callers (image/pricing/export/dashboard), AND a CALLER that dials
+# category-svc (×3) + customer-svc (×2) outbound. At MS-5 cutover the
+# /internal/products/* routes flip from monolith-svc → svc-catalog in ONE
+# IngressRoute change, transparent to the 4 callers' call sites (§16.G). This is the
+# 4-SURFACE route flip (handoff §3). ***
+#
+# Port note: like svc-category/svc-image/svc-pricing/svc-customer/svc-iam (and unlike
+# the monolith `api` Service which is port 80 → 8000), svc-catalog uses 8001 on BOTH
+# the Service port and the targetPort, matching the gateway map's `svc-catalog:8001`
+# literal.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-catalog
+  namespace: dev
+  labels:
+    app: svc-catalog
+spec:
+  type: ClusterIP
+  selector:
+    app: svc-catalog
+    component: api
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001
