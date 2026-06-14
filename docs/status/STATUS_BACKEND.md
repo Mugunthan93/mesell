@@ -6211,3 +6211,47 @@ Blockers: none.
 Next: founder reviews/merges integration→develop (NOT my gate per D1). On founder merge: monolith category module deletion after ≥7 days hybrid-CI green (strangler §3.C); category cutover (Traefik flip) is a SEPARATE founder gate.
 Hand-offs / founder action items (carried to the integration→develop PR body): (1) `BACKEND_ARCHITECTURE.md §9` "Extracted to svc-category V1.5" amendment — LOCKED, NOT self-applied (§7.3); (2) NEW SM secret `dev-category-db-password`; (3) `JWT_SECRET` SHARED with iam-svc (D7 local-JWT, parallel MS-G safe); (4) D3 VM footprint — MS-4 (8 services + monolith) likely outgrows e2-standard-2 → FRESH founder spend-ask BEFORE provisioning e2-standard-4.
 =========
+
+=== UPDATE: 2026-06-14 — MS-F Phase B (services-builder) ===
+Phase: MS-4 / Sub-Plan F — category extraction (HYBRID step 2, services-builder specialist)
+Branch: feature/microservices-category/svc (sibling off .../integration tip 39b6bbd); tip 24b1c2e; PUSHED.
+Done: extracted backend/services/svc-category/ (56 tracked files). Strangler — monolith app/modules/category/ UNTOUCHED.
+  - Pipeline §16.G: service.py diff vs monolith = EXACTLY 3 import-line rewires (app.modules.category.{picker,
+    repository,domain,exceptions} → app.X); ZERO call-site changes (AST recursive-strip parity PASS). picker.py +
+    domain.py + exceptions.py BYTE-IDENTICAL. repository.py = 2 import lines; NO scope_to_user (GLOBAL §9.D).
+    call_gemini(ctx,"smart_picker.v1",...) + `from app.ai_ops import client as ai_client` byte-identical.
+  - ai_ops VENDORED TRIMMED: client/budget_cap/cost_tracker/guardrail/prompt_registry/eval byte-identical to
+    monolith; ONLY prompts/smart_picker_v1.py (NOT autofill/watermark — trim guard test green).
+  - BUDGET CARVE-OUT (F3.c/R1): `ai:*` keys (DB 0) UN-prefixed/global; category cache keys (DB 3) `category:`-
+    prefixed in core/cache._versioned_key (`meesell:v1:category:{key}`). Proven by test. budget_cap.py +
+    cost_tracker.py byte-identical; _RESERVE_LUA/_RELEASE_LUA byte-identical.
+  - core (6-mw chain + local JWT D7) + i18n (schema_contract read-only, PRIMITIVE_VALUES 11/7/9/8/2/3 byte-
+    identical) + adapters (gemini, langfuse) + shared vendored. Trimmed Settings RETAINS
+    FEATURE_SMART_PICKER_ENABLED (router 404 guard — MS-D flag-parity regression guard applied).
+  - 5 ORM models: Category/Template/FieldEnumValue → schema `category` (cross-schema Product/Catalog
+    relationships DROPPED, intra-schema kept); AuditEvent/User → `public`. configure_mappers() clean.
+  - main.py: 6-mw chain (CORS→request_id→auth→tenancy→rate_limit→plan_guard→audit) deepest-first; import-tolerant
+    router + internal_router mounts; /health + /metrics; lifespan cache pre-warm (full-tree + top-100, §6.7).
+  - requirements.txt: NO celery/openpyxl/pillow/GCS/msg91/razorpay; YES google-generativeai + httpx (langfuse).
+Tests: 14/14 services-builder invariant suite green (tests/test_svc_category_invariants.py). ruff clean (app+tests).
+  50 vendored modules import-clean. app.main boots (7 user middleware, exact §4.H order).
+In progress: none (services-builder deliverable complete).
+Blockers: none.
+Next: api-routes-builder authors router.py (5 public routes verbatim) + internal_router.py (2-3 /internal/* shims:
+  schema, field-enum, +commission per MS-D Option-B obligation) + schemas.py. LEAD (Phase C) authors
+  test_category_extraction.py (hybrid-mode + PRIMITIVE_VALUES-vs-migrated-rows + budget-brake 2-service round trip +
+  frozen shim shapes) and runs the merge gate.
+Hand-offs:
+  - api-routes-builder: main.py mounts `from app.router import router as category_router` + `from app.internal_router
+    import router as internal_router` (both import-tolerant). service.py exposes 8 public methods (suggest_categories,
+    browse_categories, get_category_tree, fetch_schema, get_field_enum, get_commission, list_super_categories,
+    assert_category_exists). /suggest needs @rate_limit(scope="smart_picker",limit=100,window=3600) +
+    FEATURE_SMART_PICKER_ENABLED 404 guard. commission shim: GET /internal/categories/{id}/commission →
+    {"commission_pct":"<decimal-string>"} NEVER null (pricing MS-D obligation; service.get_commission returns
+    Decimal("0.00") for unseeded). schema/field-enum frozen shims (§F4).
+  - database-builder: alembic chain (c4f1e7a9d302) is on the db branch — coordinator merges db→integration in Phase C.
+    svc-side ORM models bound to schema `category` match that migration's SET SCHEMA target.
+  - infra: GRANT INSERT ON public.audit_events TO category_user (SHARED budget ledger cross-schema write);
+    Valkey DB 3 cache mount (heaviest consumer, pre-warm); SM secrets JWT_SECRET (same as iam) + GEMINI_API_KEY +
+    LANGFUSE_*; `dev-category-db-password`.
+=========
