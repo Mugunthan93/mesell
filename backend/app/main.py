@@ -61,6 +61,19 @@ async def lifespan(app: FastAPI):
     is logged and swallowed so a cold cache does not block boot.
     """
     logger.info(f"MeeSell API starting (env={settings.APP_ENV})")
+    if settings.DEV_OTP_BYPASS_CODE:
+        if settings.APP_ENV == "production":
+            logger.critical(
+                "DEV_OTP_BYPASS_CODE is SET in PRODUCTION — it is code-force-disabled "
+                "by the APP_ENV guard and will NOT be honored, but this is a serious "
+                "misconfiguration. Unset it."
+            )
+        else:
+            logger.warning(
+                "DEV OTP BYPASS ACTIVE (env=%s) — ANY phone logs in with code '%s' after "
+                "a normal /otp/send. NEVER use in production.",
+                settings.APP_ENV, settings.DEV_OTP_BYPASS_CODE,
+            )
     app.state.db_engine = create_async_engine(settings.DATABASE_URL, pool_pre_ping=True)
     app.state.valkey = redis.from_url(settings.VALKEY_URL, decode_responses=True)
 

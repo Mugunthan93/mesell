@@ -244,6 +244,14 @@ class Settings(BaseSettings):
     # Set FEATURE_LIVE_PREVIEW_ENABLED=true in .env to enable in development.
     FEATURE_LIVE_PREVIEW_ENABLED: bool = False
 
+    # ── Dev-only OTP bypass (dev-otp-bypass feature) ───────────────────────────
+    # OFF by default ("" == disabled). When NON-EMPTY *and* APP_ENV != "production",
+    # the OTP-verify path treats a submitted code equal to this value as a match
+    # (a real /otp/send must still have seeded the Valkey record — only the code
+    # comparison is relaxed). FORCE-DISABLED in production by the APP_ENV guard in
+    # service.py regardless of this value. Dev sets "000000"; PROD MUST leave empty.
+    DEV_OTP_BYPASS_CODE: str = ""
+
     # ── Validators ─────────────────────────────────────────────────────────
     @field_validator("CORS_ALLOWED_ORIGINS", mode="before")
     @classmethod
