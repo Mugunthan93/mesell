@@ -1,0 +1,135 @@
+# k8s/svc-iam/ingressroute.yaml
+# ===========================================================================
+# svc-iam — Sub-Plan G (iam extraction), INFRA deliverable I4.
+#
+# *** THE HIGHEST-BLAST-RADIUS INFRA FILE IN THE ENTIRE MICROSERVICES MIGRATION ***
+#
+# Traefik IngressRoute (D4 path-prefix gateway, MASTER_PLAN §2.C / infra plan §2.4)
+# routing the PUBLIC auth routes + the Razorpay webhook on api.mesell.xyz to
+# iam-svc:8001.
+#
+# Public routes — cited from SUB_PLAN_0G §0.3 (router.py SSOT, the 6 mounted routes):
+#   1. POST /api/v1/auth/otp/send        (router.py:105  PUBLIC, per-IP, otp_send 3/h)
+#   2. POST /api/v1/auth/otp/verify      (router.py:124  PUBLIC, otp_verify 10/h, Set-Cookie)
+#   3. POST /api/v1/auth/refresh         (router.py:152  COOKIE refresh_token, auth_refresh 60/h, Set-Cookie)
+#   4. POST /api/v1/auth/logout          (router.py:194  COOKIE refresh_token, clear-cookie)
+#   5. GET  /api/v1/auth/me              (router.py:220  JWT Depends(get_current_user))
+#   6. POST /api/v1/webhooks/razorpay    (router.py:247  HMAC X-Razorpay-Signature)
+#
+# ══════════════════════════════════════════════════════════════════════════════
+# ── I4 CRITICAL — PATH-PRESERVING ROUTE — NO StripPrefix / NO path rewrite ─────
+# ══════════════════════════════════════════════════════════════════════════════
+#   The FE-D5 refresh cookie is scoped `Set-Cookie: refresh_token=...; Path=/api/v1/auth`
+#   (SUB_PLAN_0G §0.6; router.py:64 `_REFRESH_COOKIE_PATH = "/api/v1/auth"`). The
+#   browser sends the refresh cookie back ONLY on requests whose path is under
+#   `/api/v1/auth`. If Traefik STRIPS or REWRITES the `/api/v1/auth` prefix before
+#   forwarding to iam-svc, the path the browser sees (and the path iam-svc emits
+#   Set-Cookie on) drifts — and EVERY live frontend session silently stops sending
+#   the refresh cookie on POST /api/v1/auth/refresh and POST /api/v1/auth/logout.
+#   The seller appears logged out the moment their access token expires. This is the
+#   single highest-blast-radius infra constraint in the whole migration (handoff §I4;
+#   SUB_PLAN_0G §0.6; R2; the acceptance gate asserts a live issue→refresh→logout
+#   round-trip through Traefik preserves the cookie Path).
+#
+#   ENFORCEMENT IN THIS MANIFEST:
+#     - The routes use `PathPrefix(\`/api/v1/auth\`)` and `PathPrefix(\`/api/v1/webhooks/razorpay\`)`
+#       matchers that FORWARD THE FULL PATH UNCHANGED to iam-svc:8001.
+#     - There is NO `middlewares:` block on either route. Specifically NO
+#       `traefik.io/v1alpha1 Middleware` of kind StripPrefix / StripPrefixRegex /
+#       ReplacePath / ReplacePathRegex is attached. Traefik's DEFAULT behavior with a
+#       bare PathPrefix match (no middleware) is to forward the path verbatim — that
+#       is exactly what is required here. The ABSENCE of a strip/rewrite middleware IS
+#       the cookie-Path-preservation primitive.
+#     - DO NOT add a StripPrefix middleware to this route under any future change. iam
+#       services its OWN `/api/v1/auth/*` paths internally (router.py prefix
+#       `/api/v1`); the prefix must reach the app unstripped.
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# ── ROUTING DISCIPLINE — two exclusive PathPrefixes ────────────────────────────
+#   iam owns the ENTIRE /api/v1/auth namespace (routes 1-5: otp/send, otp/verify,
+#   refresh, logout, me) AND the single /api/v1/webhooks/razorpay path (route 6). NO
+#   other service owns any /api/v1/auth* path or /api/v1/webhooks/razorpay — both
+#   prefixes are iam-exclusive. So:
+#     - `PathPrefix(/api/v1/auth)` captures all 5 auth routes (every verb) without
+#       hijacking any sibling — no Method() split needed (all verbs on this prefix
+#       belong to iam).
+#     - `PathPrefix(/api/v1/webhooks/razorpay)` captures the webhook. Kept as a
+#       SEPARATE Rule (not folded into the auth prefix) because the webhook path is
+#       NOT under /api/v1/auth — it is a distinct iam-owned prefix. Razorpay POSTs
+#       here server-to-server (HMAC-verified in the app); no cookie/CORS concern, but
+#       it must still reach iam-svc verbatim (no strip).
+#
+# ── /internal/* IS NOT ROUTED — iam HAS NONE (SUB_PLAN_0G §0.4 / G2) ───────────
+#   iam is all-✗ in the cross-module call matrix: it exposes NO /internal/* routes at
+#   all, and no service ever calls iam (local JWT validation everywhere — G1). UNLIKE
+#   customer-svc / image-svc / export-svc (which serve /internal/* shims on the same
+#   :8001 but cluster-DNS-only), iam-svc has NOTHING internal to NOT-route. There is
+#   simply no /internal surface. Inventing an iam /internal/* route (e.g. a token-
+#   validation endpoint) is a reject-class offense (G1/G2 — Traefik-JWT was REJECTED;
+#   validation is LOCAL).
+#
+# ── TLS + CORS + Set-Cookie ────────────────────────────────────────────────────
+#   - TLS: reuse the LIVE api.mesell.xyz LE certificate. *** secretName: api-tls ***
+#     — the REAL live name (verified live 2026-06-13 by the svc-customer lane:
+#     `kubectl get certificate -n dev` → `api-tls` READY=True for api.mesell.xyz).
+#     The stale name `api-mesell-xyz-tls` does NOT exist in dev (the
+#     svc-image/svc-export/svc-dashboard sibling ingressroutes reference that
+#     non-existent name — a latent defect to correct before their cutover; svc-iam
+#     and svc-customer use the correct `api-tls`). Playbook §0 — live state is SSOT.
+#     entryPoint: websecure.
+#   - CORS / Set-Cookie: NO `headers` Middleware is attached. CORS is owned by the
+#     iam FastAPI app (vendored CORSMiddleware, MASTER_PLAN §5.A); Traefik does
+#     routing + TLS ONLY and MUST NOT strip/rewrite CORS or Set-Cookie. This is
+#     DOUBLY critical for iam: the refresh cookie's Set-Cookie header (with its
+#     Path=/api/v1/auth, Domain=.mesell.xyz, Secure, HttpOnly, SameSite=Strict
+#     attributes) MUST pass through Traefik byte-for-byte. A headers middleware that
+#     touched Set-Cookie would corrupt the FE-D5 contract exactly like a path strip.
+#     The clean rule: Traefik for iam-svc = route + TLS terminate, nothing else.
+#
+# Namespace: dev ONLY (Sub-Plan G constraint §4).
+#
+# STRANGLER NOTE (handoff "KEY CONSTRAINTS"): the live host-based `api` Ingress
+# (k8s/ingress.yaml) currently routes ALL of api.mesell.xyz → api:80 (the monolith),
+# which still serves /api/v1/auth/* + /api/v1/webhooks/razorpay. iam is NOT cut over
+# at MS-4 — the monolith keeps serving auth until the founder-gated cutover flip.
+# This IngressRoute is the PLACEHOLDER that, when applied at cutover, becomes
+# HIGHER-precedence for the two iam prefixes (a Host+PathPrefix match outscores a
+# host-only Ingress on Traefik specificity). Rollback (svc-iam-rollback.md Step 1)
+# re-points the prefixes at the monolith by deleting this IngressRoute so the host-
+# only Ingress reclaims them; the dual-pepper allowlist in shared Valkey DB 0 is
+# untouched by the rollback (shared instance — live sessions survive). *** Per the
+# handoff, this manifest provisions the route OBJECT; applying it live is the SEPARATE
+# founder cutover gate. ***
+# ===========================================================================
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: iam-svc
+  namespace: dev
+  labels:
+    app: iam-svc
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    # Routes 1-5: the entire /api/v1/auth namespace (otp/send, otp/verify, refresh,
+    # logout, me). iam owns this prefix exclusively → a single PathPrefix captures all
+    # verbs without a Method() split. *** NO StripPrefix / NO middleware — the full
+    # /api/v1/auth prefix MUST reach iam-svc unaltered so the Set-Cookie Path scoping
+    # survives (I4 critical constraint above). ***
+    - kind: Rule
+      match: Host(`api.mesell.xyz`) && PathPrefix(`/api/v1/auth`)
+      services:
+        - name: iam-svc
+          port: 8001
+    # Route 6: the Razorpay webhook. Separate iam-owned prefix (not under /api/v1/auth).
+    # HMAC-verified in the app. *** NO StripPrefix — forwarded verbatim. ***
+    - kind: Rule
+      match: Host(`api.mesell.xyz`) && PathPrefix(`/api/v1/webhooks/razorpay`)
+      services:
+        - name: iam-svc
+          port: 8001
+  tls:
+    # Reuse the existing api.mesell.xyz LE cert. LIVE name is `api-tls` (verified
+    # 2026-06-13) — NOT `api-mesell-xyz-tls` (which does not exist in dev).
+    secretName: api-tls

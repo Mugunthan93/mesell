@@ -1,8 +1,127 @@
 # STATUS — INFRASTRUCTURE
 
 **Owner:** `meesell-infra-builder`
-**Last update:** 2026-06-13 (**MS-C A2 — svc-image INFRA lane AUTHORED + offline-VALIDATED (₹0, dev-only).** 7 files on `feature/microservices-image/infra` (recipe-copy of MS-A svc-export). §0.10 OPTION B grant surface (NO products read-grant). rembg DEFERRED. **D3 VM-FIT VERDICT: node OVERFLOWS (~2525m > 2000m allocatable) → FRESH founder e2-standard-4 ask needed BEFORE deploy — NOT silently provisioned.** Cluster unreachable → offline yaml-validated; server dry-run + dev smoke deferred (§15 F3). PR → integration. See MS-C A2 UPDATE below.)
+**Last update:** 2026-06-14 (**MS-4 Sub-Plan F — svc-category INFRA lane AUTHORED + offline-VALIDATED (₹0, dev-only).** 8 files on `feature/microservices-category/infra` (tip `e1b890a`). Recipe blend: AI-bearing (svc-image: GEMINI + LANGFUSE_SECRET) + api-only (svc-pricing/customer — NO worker). **CRITICAL grants in schema-role.sql:** `CREATE SCHEMA category` + `category_user` owns schema (for the c4f1e7a9d302 schema-move + Alembic) + the cross-schema `GRANT INSERT ON public.audit_events` (AI cost ledger F3.c). Valkey budget-keyspace carve-out HONORED (`ai:*` global/un-prefixed DB 0; category cache `category:`-prefixed DB 3). TLS `api-tls`. NO razorpay/msg91. New SM secret `dev-category-db-password` (→founder). Cluster /32-firewalled → 27 yaml assertions + SQL grant check + secret-scan PASS; server dry-run + dev smoke deferred (§15 F3). **I push + report; backend-coordinator runs the infra→integration merge gate.** See MS-4 Sub-Plan F UPDATE below.)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
+
+## UPDATE — 2026-06-14 — mesell-microservices-category-infra-session-1 — MS-4 Sub-Plan F svc-category INFRA lane (authored + offline-validated)
+
+=== STEP F: svc-category infra surfaces (8 files) — Sub-Plan F category extraction (MS-4) ===
+Phase: Playbook §5 (Postgres schema/role/grants), §6 (Valkey — DB-3 cache mount + DB-0 global
+       budget brake), §7 (Traefik ingress + TLS), §10 (Secret Management Discipline), §0 (live
+       state is SSOT — TLS secret name `api-tls`), §15 (Safe deployment — server dry-run
+       [MANDATORY GATE], F3 deferral branch when cluster unreachable).
+       Recipe authority: the PROVEN AI-bearing svc-image manifests + the api-only svc-pricing/
+       svc-customer manifests (copy pattern). Task authority: handoff_msF_infra.md +
+       SUB_PLAN_0F_category_extraction.md (§F-infra, §F3.b/c, §F4).
+Session: mesell-microservices-category-infra-session-1
+Authorization: master-session MS-4 Wave 2 Phase A dispatch (MS-3 merged, GO). Standalone lead —
+       executes directly. Dev namespace ONLY, ₹0, additive scaffolding behind a founder gate.
+Pre-flight check: PASS — backend `db` branch has the schema-move migration c4f1e7a9d302 (4× ALTER
+       TABLE ... SET SCHEMA category for categories/templates/field_enum_values/field_aliases);
+       `svc` branch app/ tree not yet pushed → Dockerfile COPY targets authored against the spec'd
+       shape, validated at the backend merge gate (same deferred posture as MS-A/MS-D).
+
+Files authored (8):
+  I1  backend/services/svc-category/Dockerfile        — python:3.12-slim, SINGLE api CMD (gunicorn
+                                                         -w2 uvicorn worker), google-genai+langfuse
+                                                         deps, alembic schema-move chain copied,
+                                                         gunicorn==22.0.0 pinned in image layer
+                                                         (backend sole-writes requirements.txt). NO
+                                                         Celery worker (category has no tasks). Cache
+                                                         pre-warm = app lifespan (no Dockerfile change).
+  I2  k8s/svc-category/deployment.yaml                — ONE Deployment svc-category-api 1×, req
+                                                         100m/256Mi → lim 300m/512Mi, kill-before-surge
+                                                         (maxSurge0/maxUnavailable1), readiness
+                                                         initialDelay 30s (gates the lifespan full-tree
+                                                         + top-100-schema + 291-brand-enum pre-warm),
+                                                         liveness initialDelay 45s (no pre-warm restart
+                                                         loop). envFrom: meesell-config +
+                                                         svc-category-config + svc-category-secrets.
+  I3  k8s/svc-category/service.yaml                   — ClusterIP svc-category:8001 (port==targetPort),
+                                                         selects component=api; backs public + /internal.
+  I4  k8s/svc-category/ingressroute.yaml              — Traefik IngressRoute traefik.io/v1alpha1.
+                                                         PathPrefix(/api/v1/categories) [5 public GET]
+                                                         + PathPrefix(/internal/categories) [2-3 frozen
+                                                         shims] → svc-category:8001. categories prefix
+                                                         is category-EXCLUSIVE → PathPrefix SAFE (no
+                                                         /products contention vs image/export/pricing/
+                                                         dashboard). TLS secretName `api-tls` (LIVE
+                                                         name per §0/svc-pricing precedent, NOT stale
+                                                         `api-mesell-xyz-tls`). NO CORS Middleware
+                                                         (app-owned CORSMiddleware; R-SP7-1 ADD-ONLY).
+  I5  k8s/svc-category/schema-role.sql                — CREATE SCHEMA category (idempotent) + ROLE
+                                                         category_user (LOGIN NOSUPERUSER, guarded) +
+                                                         ALTER SCHEMA OWNER + USAGE/DML/sequences/
+                                                         default-privileges on `category` (role owns
+                                                         schema for the schema-move + Alembic;
+                                                         tables read-only at RUNTIME, not via revoked
+                                                         grant). *** THE CRITICAL CROSS-SCHEMA GRANT:
+                                                         GRANT USAGE ON SCHEMA public + GRANT INSERT
+                                                         ON public.audit_events TO category_user ***
+                                                         (AI cost ledger F3.c; INSERT-only least-priv).
+                                                         NEGATIVE assertion: NO products/catalog
+                                                         read-grant (category is a callee, zero
+                                                         outbound DB reads).
+  I8  k8s/svc-category/configmap.yaml                 — trimmed svc-category-config (APP_ENV=development
+                                                         [NEVER "dev" — Literal], CACHE_VERSION=v1
+                                                         [matches monolith; does NOT version the global
+                                                         ai:* brake keys], FEATURE_SMART_PICKER_ENABLED
+                                                         =true). AI non-secret config (GEMINI_MODEL,
+                                                         LANGFUSE_PUBLIC_KEY, LANGFUSE_HOST,
+                                                         AI_DAILY_BUDGET_INR) from shared meesell-config.
+  I7  k8s/svc-category/secrets.yaml.example           — svc-category-secrets template: DATABASE_URL
+                                                         @category (search_path category,public),
+                                                         VALKEY_URL (ONE URL → DB-0 global brake +
+                                                         DB-3 cache via the DB-agnostic shared/valkey.py
+                                                         factory — verified _build_url_for_db rewrites
+                                                         the path per-factory: get_valkey_otp→0,
+                                                         get_valkey_cache→3), JWT_SECRET (SAME jwt-secret
+                                                         iam-svc signs with — F2/D7 local-JWT),
+                                                         GEMINI_API_KEY + LANGFUSE_SECRET_KEY (category
+                                                         IS AI-consuming). DELIBERATELY ABSENT: razorpay
+                                                         (×3), msg91 (×2), celery (×2), GCS, refresh-
+                                                         pepper, pii-salt. REPLACE-ME placeholders only.
+  --  docs/runbooks/svc-category-rollback.md          — schema-move REVERSE (alembic downgrade, NOT
+                                                         DROP — the 4 tables hold seed data + cross-
+                                                         schema FKs from public.catalogs/products);
+                                                         /internal route flip-back for export-svc +
+                                                         pricing-svc callers (§16.G); budget-brake
+                                                         carve-out verification (ai:* un-prefixed,
+                                                         no category:ai:* split-cap key); cache
+                                                         pre-warm reattach.
+
+Validation (offline — cluster /32-firewalled, expected; §15 F3 branch):
+  - python3 yaml.safe_load_all on the 5 manifests: 27 field assertions PASS (kind/ns/ports/envFrom
+    order/kill-before-surge/readiness-30s/no-command/100m-cpu/TLS-api-tls/5-secret-keys/NO razorpay-
+    msg91-celery/search_path category,public).
+  - SQL: the two critical grants present + executable (anchored grep, not comment):
+    `GRANT INSERT ON public.audit_events TO category_user` + `GRANT USAGE ON SCHEMA public`;
+    `CREATE SCHEMA IF NOT EXISTS category` + guarded `CREATE ROLE category_user`; NEGATIVE assert —
+    no products/catalogs/catalog-schema GRANT line.
+  - Secret scan (added lines, real-secret patterns): clean — only REPLACE-ME / EXAMPLE placeholders.
+  - kubectl --dry-run=server DEFERRED to deploy time (the cluster API is unreachable + the dry-run
+    needs cluster discovery; playbook §15 [MANDATORY GATE] is satisfied at the founder-gated cutover
+    deploy on the VM, not the laptop).
+
+D3 VM-FIT: svc-category adds 100m CPU request (api-only, no worker). The COMBINED MS-4 footprint
+  (monolith + export + dashboard + image + pricing + customer + category + iam) — NOT category's own
+  100m — is the overflow risk on the e2-standard-2 (2000m allocatable). Per MASTER_PLAN D3 the
+  e2-standard-4 (~₹2,600/mo) is plan-pre-approved BUT the SPEND gets a FRESH founder ask at the moment
+  the wave's deploy doesn't fit. STOP-AND-ASK at deploy — NOT silently provisioned (constraint §4).
+  Manifests authored+validated here ₹0; deploy + any node upgrade is the founder-gated cutover.
+
+Branch / handoff: `feature/microservices-category/infra` (cut from origin/feature/microservices-
+  category/integration `39b6bbd`), tip `e1b890a`. I PUSH + REPORT; backend-coordinator runs the
+  infra→integration merge gate — I do NOT open the PR or merge. Inter-lead row → backend opened
+  (the 6 merge-gate acceptance items + the new SM secret `dev-category-db-password`).
+Board sweep: session-start + session-end — NO Active row untouched 7+ days (oldest active 2026-06-11,
+  3 days). Added the microservices-category IN PROGRESS row + the backend inter-lead row.
+Cost: ₹0/month (dev-namespace manifest authoring; no cloud resource provisioned, nothing applied).
+Next action: backend-coordinator merge gate on the infra→integration PR (re-derive Dockerfile COPY
+  targets / app entrypoint against the LANDED svc-category app tree once the `svc` branch pushes it —
+  per the MS-A merge-gate lesson). Founder creates SM `dev-category-db-password` at bootstrap.
+=========
 
 ## UPDATE — 2026-06-13 — mesell-microservices-image-infra-session-1 — MS-C A2 svc-image INFRA lane (authored + offline-validated)
 

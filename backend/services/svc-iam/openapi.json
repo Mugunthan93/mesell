@@ -1,0 +1,485 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MeeSell svc-iam",
+    "description": "Standalone identity / OTP / token-issuance microservice (MS Sub-Plan G)",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/auth/otp/send": {
+      "post": {
+        "tags": [
+          "iam"
+        ],
+        "summary": "Send a 6-digit OTP to a phone number",
+        "description": "\u00a77.B.1 contract.  Per-IP rate limit 3/h (decorator key=\"phone\" is a \u00a7V1.5 ask).",
+        "operationId": "otp_send_api_v1_auth_otp_send_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendOtpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendOtpResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/otp/verify": {
+      "post": {
+        "tags": [
+          "iam"
+        ],
+        "summary": "Verify OTP, mint access JWT, set refresh cookie",
+        "description": "\u00a77.B.2 contract \u2014 issues access JWT (body) + refresh cookie (Set-Cookie).",
+        "operationId": "otp_verify_api_v1_auth_otp_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyOtpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifyOtpResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "tags": [
+          "iam"
+        ],
+        "summary": "Atomically rotate refresh cookie and issue a new access JWT",
+        "description": "\u00a77.B.3 contract.  On any 401 path the failure handler ALSO clears the cookie.\n\nThe 401-path clear-cookie behaviour is implemented via a try/except so\nthe \u00a77.B.3 \"clear cookie on 401\" requirement is honoured without relying\non the global error handler (which has no view of this route's\n``response`` instance).",
+        "operationId": "auth_refresh_api_v1_auth_refresh_post",
+        "parameters": [
+          {
+            "name": "refresh_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Refresh Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "iam"
+        ],
+        "summary": "Revoke the refresh cookie (idempotent)",
+        "description": "\u00a77.B.4 contract.  No rate limit (idempotent, no abuse vector).\n\nAlways returns 204 + clear-cookie, regardless of whether a cookie was\npresent.  The audit row is emitted by the service ONLY when a cookie\nwas actually present (so calling logout twice does not double-log).",
+        "operationId": "auth_logout_api_v1_auth_logout_post",
+        "parameters": [
+          {
+            "name": "refresh_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Refresh Token"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": [
+          "iam"
+        ],
+        "summary": "Return the authenticated user's profile",
+        "description": "\u00a77.B.5 contract.  No rate limit (per-IP DDoS guard is the floor).\n\nNo audit event per documented absence \u2014 the JWT itself proves the user\nis active; logging every ``/me`` would flood the table.",
+        "operationId": "me_api_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/webhooks/razorpay": {
+      "post": {
+        "tags": [
+          "iam"
+        ],
+        "summary": "Capture a Razorpay webhook (V1: signature-verify + log)",
+        "description": "\u00a77.B.6 contract.\n\nThe body is read as RAW bytes (NOT JSON-parsed at the FastAPI dependency\nlayer) \u2014 Pydantic parsing happens only AFTER HMAC signature verification\nsucceeds, per the V1 capture-only posture.",
+        "operationId": "razorpay_webhook_api_v1_webhooks_razorpay_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookCaptureResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "description": "Liveness probe.  DB / Valkey deep checks are deferred to the\nreadiness probe wired by the infra lane.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "MeResponse": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "User Id"
+          },
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "plan": {
+            "type": "string",
+            "const": "free",
+            "title": "Plan"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "phone",
+          "plan",
+          "created_at"
+        ],
+        "title": "MeResponse",
+        "description": "``GET /api/v1/auth/me`` 200 body."
+      },
+      "RefreshResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In"
+          },
+          "token_type": {
+            "type": "string",
+            "const": "bearer",
+            "title": "Token Type",
+            "default": "bearer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "expires_in"
+        ],
+        "title": "RefreshResponse",
+        "description": "``POST /api/v1/auth/refresh`` 200 body.\n\nIdentical SHAPE to :class:`VerifyOtpResponse` but locked as a distinct\nmodel so the OpenAPI surface differentiates them (per \u00a77.E note)."
+      },
+      "SendOtpRequest": {
+        "properties": {
+          "phone": {
+            "type": "string",
+            "pattern": "^\\+[1-9]\\d{1,14}$",
+            "title": "Phone",
+            "examples": [
+              "+919876543210"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "phone"
+        ],
+        "title": "SendOtpRequest",
+        "description": "``POST /api/v1/auth/otp/send`` body."
+      },
+      "SendOtpResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "description": "MSG91 correlation ID \u2014 opaque to the client"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id"
+        ],
+        "title": "SendOtpResponse",
+        "description": "``POST /api/v1/auth/otp/send`` 202 body."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "VerifyOtpRequest": {
+        "properties": {
+          "phone": {
+            "type": "string",
+            "pattern": "^\\+[1-9]\\d{1,14}$",
+            "title": "Phone",
+            "examples": [
+              "+919876543210"
+            ]
+          },
+          "otp": {
+            "type": "string",
+            "pattern": "^\\d{6}$",
+            "title": "Otp",
+            "examples": [
+              "123456"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "phone",
+          "otp"
+        ],
+        "title": "VerifyOtpRequest",
+        "description": "``POST /api/v1/auth/otp/verify`` body."
+      },
+      "VerifyOtpResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In",
+            "description": "Seconds \u2014 matches ACCESS_TOKEN_TTL_SECONDS"
+          },
+          "token_type": {
+            "type": "string",
+            "const": "bearer",
+            "title": "Token Type",
+            "default": "bearer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "expires_in"
+        ],
+        "title": "VerifyOtpResponse",
+        "description": "``POST /api/v1/auth/otp/verify`` 200 body.\n\nThe refresh token is NOT in the body \u2014 it ships in the ``Set-Cookie``\nresponse header per \u00a74.B FE-D5 amendment."
+      },
+      "WebhookCaptureResponse": {
+        "properties": {
+          "captured": {
+            "type": "boolean",
+            "title": "Captured",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "WebhookCaptureResponse",
+        "description": "``POST /api/v1/webhooks/razorpay`` 200 body."
+      }
+    },
+    "securitySchemes": {
+      "OAuth2PasswordBearer": {
+        "type": "oauth2",
+        "flows": {
+          "password": {
+            "scopes": {},
+            "tokenUrl": "/api/v1/auth/otp/verify"
+          }
+        }
+      }
+    }
+  }
+}
