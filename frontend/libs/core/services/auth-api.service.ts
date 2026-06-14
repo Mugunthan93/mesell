@@ -2,6 +2,8 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
+import { environment } from '@mesell/env';
+
 /**
  * Auth IAM response shapes — transcribed from backend/app/modules/iam/schemas.py L31-83.
  * MeResponse is exported (consumed by bootstrap + dashboard greeting + onboarding).
@@ -47,6 +49,15 @@ export interface MeResponse {
   last_login_at: string | null;
 }
 
+// ── Endpoint path constants (single source of truth) ─────────────────────────
+// environment.apiBase is prepended so cross-origin deployments only need
+// environment.prod.ts changed — zero churn in this file.
+const AUTH_OTP_SEND    = `${environment.apiBase}/api/v1/auth/otp/send`;
+const AUTH_OTP_VERIFY  = `${environment.apiBase}/api/v1/auth/otp/verify`;
+const AUTH_REFRESH     = `${environment.apiBase}/api/v1/auth/refresh`;
+const AUTH_LOGOUT      = `${environment.apiBase}/api/v1/auth/logout`;
+const AUTH_ME          = `${environment.apiBase}/api/v1/auth/me`;
+
 /**
  * AuthApiService — typed HTTP wrapper for the IAM endpoints.
  *
@@ -58,7 +69,8 @@ export interface MeResponse {
  *   ONLY on verifyOtp / refresh / logout — the refresh-cookie path.
  *   NOT on sendOtp (public, no cookie) or me (Bearer-auth, no cookie needed).
  *
- * Base: requests use FULL /api/v1/auth/... paths to match the proxy/dev-serve config.
+ * Base: path constants above include environment.apiBase prefix.
+ * At apiBase='' (dev + prod V1), paths are byte-identical to previous literals.
  */
 @Injectable({ providedIn: 'root' })
 export class AuthApiService {
@@ -71,7 +83,7 @@ export class AuthApiService {
    * Rate-limited 3/h/phone (backend Valkey sliding window).
    */
   sendOtp(phone: string): Observable<SendOtpResponse> {
-    return this.http.post<SendOtpResponse>('/api/v1/auth/otp/send', { phone });
+    return this.http.post<SendOtpResponse>(AUTH_OTP_SEND, { phone });
   }
 
   /**
@@ -81,7 +93,7 @@ export class AuthApiService {
    */
   verifyOtp(phone: string, otp: string): Observable<VerifyOtpResponse> {
     return this.http.post<VerifyOtpResponse>(
-      '/api/v1/auth/otp/verify',
+      AUTH_OTP_VERIFY,
       { phone, otp },
       { withCredentials: true },
     );
@@ -95,7 +107,7 @@ export class AuthApiService {
    */
   refresh(): Observable<RefreshResponse> {
     return this.http.post<RefreshResponse>(
-      '/api/v1/auth/refresh',
+      AUTH_REFRESH,
       {},
       { withCredentials: true },
     );
@@ -108,7 +120,7 @@ export class AuthApiService {
    */
   logout(): Observable<void> {
     return this.http.post<void>(
-      '/api/v1/auth/logout',
+      AUTH_LOGOUT,
       {},
       { withCredentials: true },
     );
@@ -121,6 +133,6 @@ export class AuthApiService {
    * Hydrates AuthUser with real backend fields (user_id, plan, created_at, etc.).
    */
   me(): Observable<MeResponse> {
-    return this.http.get<MeResponse>('/api/v1/auth/me');
+    return this.http.get<MeResponse>(AUTH_ME);
   }
 }

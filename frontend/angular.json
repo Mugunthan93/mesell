@@ -68,6 +68,12 @@
           },
           "configurations": {
             "production": {
+              "fileReplacements": [
+                {
+                  "replace": "libs/env/environment.ts",
+                  "with": "libs/env/environment.prod.ts"
+                }
+              ],
               "budgets": [
                 {
                   "type": "initial",
@@ -154,6 +160,12 @@
           },
           "configurations": {
             "production": {
+              "fileReplacements": [
+                {
+                  "replace": "libs/env/environment.ts",
+                  "with": "libs/env/environment.prod.ts"
+                }
+              ],
               "budgets": [
                 {
                   "type": "initial",
@@ -239,6 +251,12 @@
           },
           "configurations": {
             "production": {
+              "fileReplacements": [
+                {
+                  "replace": "libs/env/environment.ts",
+                  "with": "libs/env/environment.prod.ts"
+                }
+              ],
               "budgets": [
                 {
                   "type": "initial",
@@ -324,6 +342,12 @@
           },
           "configurations": {
             "production": {
+              "fileReplacements": [
+                {
+                  "replace": "libs/env/environment.ts",
+                  "with": "libs/env/environment.prod.ts"
+                }
+              ],
               "budgets": [
                 {
                   "type": "initial",
@@ -409,6 +433,12 @@
           },
           "configurations": {
             "production": {
+              "fileReplacements": [
+                {
+                  "replace": "libs/env/environment.ts",
+                  "with": "libs/env/environment.prod.ts"
+                }
+              ],
               "budgets": [
                 {
                   "type": "initial",
@@ -494,6 +524,12 @@
           },
           "configurations": {
             "production": {
+              "fileReplacements": [
+                {
+                  "replace": "libs/env/environment.ts",
+                  "with": "libs/env/environment.prod.ts"
+                }
+              ],
               "budgets": [
                 {
                   "type": "initial",
@@ -544,8 +580,13 @@
           "builder": "@angular-architects/native-federation:build",
           "options": {},
           "configurations": {
-            "production": { "target": "mfe-auth:esbuild:production" },
-            "development": { "target": "mfe-auth:esbuild:development", "dev": true }
+            "production": {
+              "target": "mfe-auth:esbuild:production"
+            },
+            "development": {
+              "target": "mfe-auth:esbuild:development",
+              "dev": true
+            }
           },
           "defaultConfiguration": "production"
         },
@@ -565,29 +606,57 @@
             "browser": "apps/mfe-auth/src/main.ts",
             "index": "apps/mfe-auth/src/index.html",
             "tsConfig": "apps/mfe-auth/tsconfig.app.json",
-            "styles": ["apps/shell/src/styles.css"],
-            "polyfills": ["es-module-shims"]
+            "styles": [
+              "apps/shell/src/styles.css"
+            ],
+            "polyfills": [
+              "es-module-shims"
+            ]
           },
           "configurations": {
             "production": {
+              "fileReplacements": [
+                {
+                  "replace": "libs/env/environment.ts",
+                  "with": "libs/env/environment.prod.ts"
+                }
+              ],
               "budgets": [
-                { "type": "initial", "maximumWarning": "500kB", "maximumError": "1MB" },
-                { "type": "anyComponentStyle", "maximumWarning": "4kB", "maximumError": "8kB" }
+                {
+                  "type": "initial",
+                  "maximumWarning": "500kB",
+                  "maximumError": "1MB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "4kB",
+                  "maximumError": "8kB"
+                }
               ],
               "outputHashing": "all"
             },
-            "development": { "optimization": false, "extractLicenses": false, "sourceMap": true }
+            "development": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true
+            }
           },
           "defaultConfiguration": "production"
         },
         "serve-original": {
           "builder": "@angular/build:dev-server",
           "configurations": {
-            "production": { "buildTarget": "mfe-auth:esbuild:production" },
-            "development": { "buildTarget": "mfe-auth:esbuild:development" }
+            "production": {
+              "buildTarget": "mfe-auth:esbuild:production"
+            },
+            "development": {
+              "buildTarget": "mfe-auth:esbuild:development"
+            }
           },
           "defaultConfiguration": "development",
-          "options": { "port": 4206 }
+          "options": {
+            "port": 4206
+          }
         }
       }
     }

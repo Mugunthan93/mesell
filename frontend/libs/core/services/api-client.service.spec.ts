@@ -235,3 +235,67 @@ describe('ApiClient (retry filter)', () => {
     httpMock.expectNone('/api/v1/widgets');
   });
 });
+
+/**
+ * ApiClient.withBase() contract suite — environment.apiBase='' safety.
+ *
+ * Asserts that at apiBase='' (the dev and prod V1 default), every path passed to
+ * ApiClient.get/post/patch/delete reaches HttpClient with the EXACT same string
+ * that was passed in. This pins the zero-diff guarantee — existing relative paths
+ * remain byte-identical after the environment lib was introduced.
+ *
+ * The environment module is imported at module level; in the test environment it
+ * resolves to the dev environment.ts (apiBase=''), which is the correct default.
+ */
+describe('ApiClient.withBase (apiBase="" safety)', () => {
+  let api: ApiClient;
+  let httpMock: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        ApiClient,
+        provideHttpClient(withFetch()),
+        provideHttpClientTesting(),
+      ],
+    });
+    api = TestBed.inject(ApiClient);
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    httpMock.verify();
+  });
+
+  it('GET with apiBase="" passes path byte-identical to HttpClient', () => {
+    const path = '/api/v1/x';
+    api.get(path).subscribe();
+    // If withBase prepends '' correctly, HttpClient receives exactly '/api/v1/x'
+    httpMock.expectOne(path).flush({});
+  });
+
+  it('POST with apiBase="" passes path byte-identical to HttpClient', () => {
+    const path = '/api/v1/products';
+    api.post(path, { name: 'test' }).subscribe();
+    httpMock.expectOne(path).flush({ id: '1' });
+  });
+
+  it('PATCH with apiBase="" passes path byte-identical to HttpClient', () => {
+    const path = '/api/v1/products/abc-123';
+    api.patch(path, { status: 'active' }).subscribe();
+    httpMock.expectOne(path).flush({ id: 'abc-123' });
+  });
+
+  it('DELETE with apiBase="" passes path byte-identical to HttpClient', () => {
+    const path = '/api/v1/products/abc-123';
+    api.delete(path).subscribe();
+    httpMock.expectOne(path).flush(null);
+  });
+
+  it('path with query string is preserved byte-identical', () => {
+    const path = '/api/v1/categories/suggest';
+    api.get(path, { params: { q: 'saree' } }).subscribe();
+    // HttpTestingController matches on path only; params are separate
+    httpMock.expectOne((req) => req.url === path && req.params.get('q') === 'saree').flush({ suggestions: [] });
+  });
+});

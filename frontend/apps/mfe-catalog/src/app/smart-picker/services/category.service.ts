@@ -5,6 +5,7 @@ import { catchError, tap } from 'rxjs/operators';
 import { Router } from '@angular/router';
 
 import { AuthService } from '@mesell/core';
+import { environment } from '@mesell/env';
 import type { SuggestResponse } from '../smart-picker.model';
 
 /**
@@ -81,7 +82,7 @@ export class CategoryService {
    */
   suggest(description: string): Observable<SuggestResponse> {
     return this.http
-      .get<SuggestResponse>('/api/v1/categories/suggest', {
+      .get<SuggestResponse>(`${environment.apiBase}/api/v1/categories/suggest`, {
         params: { q: description },
         // Authorization header is now attached globally by jwtInterceptor — no manual headers needed.
       })
@@ -107,7 +108,7 @@ export class CategoryService {
    */
   selectCategory(categoryId: string): Observable<{ id: string }> {
     return this.http
-      .post<{ id: string }>('/api/v1/products', { category_id: categoryId })
+      .post<{ id: string }>(`${environment.apiBase}/api/v1/products`, { category_id: categoryId })
       .pipe(
         tap((product) => {
           void this.router.navigate(['/catalogs', product.id, 'edit']);

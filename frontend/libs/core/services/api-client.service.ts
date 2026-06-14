@@ -2,6 +2,8 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpContext, HttpErrorResponse, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable, retry, throwError, timer } from 'rxjs';
 
+import { environment } from '@mesell/env';
+
 /**
  * Per-request options for ApiClient calls.
  * Pass retryOn503: true to opt-in to bounded retry (2× with exponential backoff).
@@ -55,6 +57,22 @@ function isRetryable(err: unknown): boolean {
 export class ApiClient {
   private readonly http = inject(HttpClient);
 
+  /**
+   * Prepend environment.apiBase to the given path.
+   *
+   * In dev and prod V1, apiBase is '' (empty string), so paths are returned
+   * byte-identical to what was passed in. This method exists so that a future
+   * cross-origin deployment only needs to change environment.prod.ts — zero
+   * service-level churn.
+   *
+   * CONTRACT: path MUST start with '/' (e.g. '/api/v1/products').
+   * apiBase MUST NOT end with '/'. Both invariants are ensured by the environment
+   * shape (apiBase is '' or 'https://api.example.com').
+   */
+  private withBase(path: string): string {
+    return `${environment.apiBase}${path}`;
+  }
+
   private applyRetry<T>(
     obs: Observable<T>,
     retryOn503?: boolean,
@@ -75,7 +93,7 @@ export class ApiClient {
   get<T>(path: string, options?: ApiClientOptions): Observable<T> {
     const { retryOn503, ...httpOpts } = options ?? {};
     return this.applyRetry(
-      this.http.get<T>(path, httpOpts),
+      this.http.get<T>(this.withBase(path), httpOpts),
       retryOn503,
     );
   }
@@ -83,7 +101,7 @@ export class ApiClient {
   post<T>(path: string, body: unknown, options?: ApiClientOptions): Observable<T> {
     const { retryOn503, ...httpOpts } = options ?? {};
     return this.applyRetry(
-      this.http.post<T>(path, body, httpOpts),
+      this.http.post<T>(this.withBase(path), body, httpOpts),
       retryOn503,
     );
   }
@@ -91,7 +109,7 @@ export class ApiClient {
   patch<T>(path: string, body: unknown, options?: ApiClientOptions): Observable<T> {
     const { retryOn503, ...httpOpts } = options ?? {};
     return this.applyRetry(
-      this.http.patch<T>(path, body, httpOpts),
+      this.http.patch<T>(this.withBase(path), body, httpOpts),
       retryOn503,
     );
   }
@@ -99,7 +117,7 @@ export class ApiClient {
   delete<T>(path: string, options?: ApiClientOptions): Observable<T> {
     const { retryOn503, ...httpOpts } = options ?? {};
     return this.applyRetry(
-      this.http.delete<T>(path, httpOpts),
+      this.http.delete<T>(this.withBase(path), httpOpts),
       retryOn503,
     );
   }
