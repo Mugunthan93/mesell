@@ -1,0 +1,174 @@
+# k8s/svc-catalog/ingressroute.yaml
+# ---------------------------------------------------------------------------
+# svc-catalog — Sub-Plan H (catalog extraction, MS-5), INFRA deliverable I4.
+#
+# THE SPINE's gateway. The MOST nuanced IngressRoute in the migration: catalog
+# owns the ROOT of the `/api/v1/products/*` family but that family is SHARED with
+# 4 already-extracted sibling services (image/pricing/export under `…/{id}/…`
+# sub-routes, dashboard under the GET on the bare path key). So catalog uses
+# TIGHT, ANCHORED PathRegexp + Method() rules per route — NOT a broad PathPrefix
+# (a PathPrefix would HIJACK the siblings' sub-routes). This is the routing-
+# discipline INVERSE of svc-category (whose `/api/v1/categories` is service-
+# exclusive → PathPrefix was safe there); catalog owns only SPECIFIC routes under
+# a shared family, so each rule is leaf-anchored.
+#
+# ── THE ⚠️ METHOD-SPLIT (handoff §3 / SUB_PLAN_0H §3.4 + lines 112-114) ────────
+#   `POST /api/v1/products`  is catalog's (create_product, router.py:`POST /products`).
+#   `GET  /api/v1/products`  is DASHBOARD's (list — svc-dashboard, MS-2 — already a pod).
+#   FastAPI registered them as 2 distinct APIRoute objects on ONE path key
+#   (main.py:138-140). At catalog's cutover Traefik MUST route `/api/v1/products`
+#   BY METHOD: POST → svc-catalog, GET → svc-dashboard. This IngressRoute claims
+#   ONLY the POST half with `Method(\`POST\`) && Path(\`/api/v1/products\`)` (EXACT
+#   Path, not PathPrefix — the bare collection path). The GET half stays on
+#   svc-dashboard's existing IngressRoute (svc-dashboard owns `GET /api/v1/products`
+#   via its own rule — k8s/svc-dashboard/ingressroute.yaml, MS-B). Traefik evaluates
+#   both rules; the Method() guard disjoins them cleanly — no overlap.
+#
+# ── PUBLIC routes — cited from backend/app/modules/catalog/router.py (SSOT) ────
+#   1. POST   /api/v1/products                 create_product   (router.py POST /products)
+#   2. PATCH  /api/v1/products/{id}            patch_product    (:autosave, write)
+#   3. POST   /api/v1/products/{id}/autofill   autofill_product (AI seam, §H3)
+#   4. GET    /api/v1/products/{id}/preview    get_preview      (live-preview, read)
+#   5. DELETE /api/v1/products/{id}            delete_product   (:329, write)
+#   6. GET    /api/v1/products/{id}/draft      get_product_draft(:352, read)
+#
+#   ── SIBLING SUB-ROUTES UNDER /api/v1/products/{id}/ THAT ARE NOT CATALOG'S ──
+#   (these MUST keep flowing to their own services — catalog's rules must NOT match):
+#     • /api/v1/products/{id}/images      → svc-image   (MS-C, PathRegexp …/images)
+#     • /api/v1/products/{id}/price-calc  → svc-pricing (MS-D, PathRegexp …/price-calc)
+#     • /api/v1/products/{id}/export-xlsx → svc-export  (MS-A, PathRegexp …/export-xlsx)
+#   catalog's `{id}` rules are anchored to EXACTLY its own leaf suffixes
+#   (autofill / preview / draft) OR the BARE `{id}` (PATCH/DELETE with NO trailing
+#   segment, anchored with `$`). So catalog's rules are DISJOINT from every sibling
+#   sub-route. The bare-`{id}` rule uses `^/api/v1/products/[^/]+$` ($-anchored, no
+#   further `/segment`) so it claims ONLY `PATCH|DELETE /products/{id}` and never
+#   `/products/{id}/images` etc.
+#
+# ── /internal routes (the FROZEN shims catalog EXPOSES — SUB_PLAN_0H §H4) ──────
+#   GET /internal/products/{id}/ownership-check   ← shim #1 (callers: image, pricing, export)
+#   GET /internal/products/{id}/export-snapshot   ← shim #2 (caller: export; 2-hop → category)
+#   GET /internal/products                        ← shim #3 (caller: dashboard; list, ?page=&limit=)
+#   GET /internal/products/{id}/validation-summary← shim #4 (defensive, §H4)
+#   `/internal/products` is catalog-EXCLUSIVE (no other service owns any
+#   `/internal/products*` route — image's internal is `/internal/products/{id}/images`
+#   which DOES exist BUT image-svc's IngressRoute does NOT expose /internal per its
+#   MS-C carve-out "/internal/products/{product_id}/images NOT exposed"; and that path
+#   is a /images sub-route anyway, distinct from catalog's shim suffixes). To stay
+#   disjoint from any future image /internal exposure, catalog anchors its internal
+#   rules to its OWN leaf suffixes + the bare collection path, same discipline as the
+#   public side. ALL internal shims are GET.
+#
+#   *** 4-SURFACE ROUTE FLIP at cutover (handoff §3): the /internal/products/*
+#   routes move from monolith-svc → svc-catalog. The 4 callers (image+pricing+export
+#   on ownership-check+export-snapshot; dashboard on list-products) reach them
+#   transparently — zero call-site diff (§16.G). Rollback = flip all 4 back to
+#   monolith-svc in one IngressRoute revert (delete this IngressRoute → the host
+#   api Ingress reclaims the paths). ***
+#
+# ── FEATURE_CATALOG_FORM_ENABLED MOUNT GUARD (handoff §3 / R9) ─────────────────
+#   catalog's monolith mount is behind FEATURE_CATALOG_FORM_ENABLED. The extracted
+#   svc-catalog app PRESERVES the guard INTERNALLY (backend handles it per
+#   spec_msH_backend.md — the app 404s the catalog routes when the flag is off). So
+#   this Traefik route can stay unconditional; the app-layer guard is the enforcing
+#   layer. (No Traefik-level flag gate needed — confirmed the backend owns it.)
+#
+# ── ROUTING PRECEDENCE vs the monolith host-Ingress ───────────────────────────
+#   The live api.mesell.xyz Ingress (TF-managed, k8s/ingress.yaml doc) routes ALL of
+#   api.mesell.xyz → api:80 (monolith). A Path/PathRegexp + Method match outscores a
+#   host-only Ingress on specificity in Traefik, so these rules peel catalog's
+#   specific routes off the monolith onto svc-catalog while leaving every other
+#   /api/v1/products/* path (image/pricing/export/dashboard sub-routes + the GET
+#   collection) on their own services / the monolith. Cutover ordering +
+#   monolith-fallback is the founder-gated deploy (MASTER_PLAN §3.C / svc-catalog
+#   runbook). For Sub-Plan H (dev, zero-traffic) these rules simply route catalog's
+#   paths to the new pod.
+#
+# ── TLS + CORS (TLS NAME = LIVE `api-tls`, per the svc-pricing/svc-category finding) ─
+#   - TLS: the api.mesell.xyz LE certificate (cert-manager, Ready since Phase B) is
+#     reused. *** The LIVE dev secret name is `api-tls` *** (verified against the live
+#     cluster 2026-06-13 by the svc-pricing lane; re-confirmed by svc-category MS-F).
+#     svc-catalog uses `api-tls` (NOT the stale `api-mesell-xyz-tls` the
+#     svc-image/svc-export precedents reference — that name does NOT exist in dev,
+#     a latent defect in those still-IN-REVIEW precedents). Per playbook §0 (live
+#     state is SSOT), svc-catalog serves a valid LE cert at cutover.
+#     entryPoint `websecure`.
+#   - CORS / Set-Cookie: NO `headers` Middleware is attached here. CORS is owned by
+#     the FastAPI app (CORSMiddleware, vendored per service per MASTER_PLAN §5.A);
+#     Traefik does routing + TLS ONLY and MUST NOT strip/rewrite CORS or Set-Cookie
+#     (the R-SP7-1 P0 ADD-ONLY rule, same as the api Ingress + every sibling).
+#
+# Namespace: dev ONLY (Sub-Plan H constraint).
+# ---------------------------------------------------------------------------
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: svc-catalog
+  namespace: dev
+  labels:
+    app: svc-catalog
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    # ── PUBLIC route 1 — METHOD-SPLIT: POST /api/v1/products (create) → catalog.
+    #    GET /api/v1/products (list) stays on svc-dashboard (its own IngressRoute).
+    #    EXACT Path + Method(POST) — claims ONLY the POST half of the shared key.
+    - kind: Rule
+      match: Host(`api.mesell.xyz`) && Path(`/api/v1/products`) && Method(`POST`)
+      services:
+        - name: svc-catalog
+          port: 8001
+    # ── PUBLIC routes 2 + 5 — bare /api/v1/products/{id} (PATCH autosave, DELETE).
+    #    $-anchored PathRegexp `^/api/v1/products/[^/]+$` claims ONLY the bare {id}
+    #    (NO trailing /segment) so it NEVER matches the sibling sub-routes
+    #    /{id}/images, /{id}/price-calc, /{id}/export-xlsx. Method-scoped to the 2
+    #    catalog verbs on the bare path; GET/POST on a bare {id} are not catalog's.
+    - kind: Rule
+      match: Host(`api.mesell.xyz`) && PathRegexp(`^/api/v1/products/[^/]+$`) && (Method(`PATCH`) || Method(`DELETE`))
+      services:
+        - name: svc-catalog
+          port: 8001
+    # ── PUBLIC route 3 — POST /api/v1/products/{id}/autofill (AI seam, §H3).
+    #    Leaf-anchored to the catalog-exclusive `/autofill` suffix.
+    - kind: Rule
+      match: Host(`api.mesell.xyz`) && PathRegexp(`^/api/v1/products/[^/]+/autofill$`)
+      services:
+        - name: svc-catalog
+          port: 8001
+    # ── PUBLIC route 4 — GET /api/v1/products/{id}/preview (live-preview, read).
+    #    Leaf-anchored to the catalog-exclusive `/preview` suffix.
+    - kind: Rule
+      match: Host(`api.mesell.xyz`) && PathRegexp(`^/api/v1/products/[^/]+/preview$`)
+      services:
+        - name: svc-catalog
+          port: 8001
+    # ── PUBLIC route 6 — GET /api/v1/products/{id}/draft (autosave draft read).
+    #    Leaf-anchored to the catalog-exclusive `/draft` suffix.
+    - kind: Rule
+      match: Host(`api.mesell.xyz`) && PathRegexp(`^/api/v1/products/[^/]+/draft$`)
+      services:
+        - name: svc-catalog
+          port: 8001
+    # ── INTERNAL shim #3 — GET /internal/products (list-products, dashboard caller;
+    #    ?page=&limit= are QUERY params, not path segments). EXACT Path so it claims
+    #    only the bare collection, disjoint from the /{id}/... internal shims below.
+    - kind: Rule
+      match: Host(`api.mesell.xyz`) && Path(`/internal/products`)
+      services:
+        - name: svc-catalog
+          port: 8001
+    # ── INTERNAL shims #1/#2/#4 — /internal/products/{id}/{ownership-check
+    #    |export-snapshot|validation-summary}. Leaf-anchored alternation so these
+    #    claim ONLY catalog's 3 internal {id} suffixes and never a future
+    #    image /internal/products/{id}/images (a /images suffix, not in this set).
+    #    At cutover these flip from monolith → svc-catalog (4-surface flip, §16.G).
+    - kind: Rule
+      match: Host(`api.mesell.xyz`) && PathRegexp(`^/internal/products/[^/]+/(ownership-check|export-snapshot|validation-summary)$`)
+      services:
+        - name: svc-catalog
+          port: 8001
+  tls:
+    # Reuse the existing api.mesell.xyz LE cert (cert-manager, Ready since Phase B).
+    # LIVE dev secret name is `api-tls` (verified 2026-06-13) — NOT `api-mesell-xyz-tls`
+    # (the stale name in the svc-image/svc-export precedents, absent in dev).
+    secretName: api-tls

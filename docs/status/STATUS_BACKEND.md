@@ -6247,6 +6247,94 @@ Next: re-dispatch meesell-services-builder with the 1-field config fix; on its r
 Hand-offs: none opened (memo'd at the founder gate per spec §5 once green). Infra TLS finding noted above.
 =========
 
+=== UPDATE: 2026-06-14 — MS-H Sub-Plan H (catalog — THE SPINE) Phase B services-builder ===
+Phase: MS-5 Wave 2 Phase B — catalog extraction (the LAST + RISKIEST; the spine).
+Branch: feature/microservices-catalog/svc (off origin/feature/microservices-catalog/integration @ ebb700e).
+Done (services-builder heavy lift — backend/services/svc-catalog/, 69 source files):
+  - service.py / repository.py / domain.py / exceptions.py VENDORED. §16.G AST recursive-strip parity PASS
+    (stripped ast.dump byte-identical, 88099 chars each — ZERO call-site drift). Raw diff = EXACTLY 10 lines
+    (5 import rewires): 2 LOAD-BEARING cross-module (category/customer → extracted_clients re-exported as the SAME
+    category_service/customer_service symbols) + 3 catalog module-flatten (app.modules.catalog.{repository,domain,
+    exceptions} → app.{...}). The 8 outbound call sites byte-identical. repository.py + domain.py + exceptions.py
+    BYTE-IDENTICAL to monolith.
+  - ai_ops VENDORED TRIMMED: client/budget_cap/cost_tracker/eval/guardrail/prompt_registry byte-identical from
+    monolith; prompts = autofill_v1.py + __init__ ONLY (smart_picker/watermark NOT vendored — trim guard test asserts).
+    adapters = gemini + langfuse only (NO gcs/msg91/razorpay). budget_cap.py + cost_tracker.py Lua BYTE-IDENTICAL.
+  - SHARED budget brake: ai:* keyspace UN-prefixed/GLOBAL (literal "ai:cost:daily:{date}" etc.) — the ₹500 cap stays
+    shared across category+catalog+image (R4 carve-out). catalog's OWN cache keys would get catalog: prefix (catalog
+    is NOT a DB-3 cache consumer — fetch_schema caching lives in category-svc, so no cache.py vendored).
+  - 5 OUTBOUND shims (the spine's caller side, targeting REAL sibling pods — FIRST extraction with live callees):
+    category_client (assert_category_exists→/exists, fetch_schema→/schema [hot path], get_field_enum→/field-enum/{f})
+    → settings.CATEGORY_SVC_BASE_URL; customer_client (assert_eligible_for_super_id→/eligibility?super_id=,
+    get_compliance_block→/compliance-block) → settings.CUSTOMER_SVC_BASE_URL. _transport: httpx.AsyncClient
+    Timeout(5.0,connect=2.0), 1 retry ONLY on {503,504}, JWT+X-Request-ID forwarded, per-callee base_url. 404→typed
+    exception. NO image_client (dead branch — R8).
+  - 3 ORM models (catalogs/products/product_drafts) bound {"schema":"catalog"}; INTRA-schema FK+relationship KEPT
+    (products.catalog_id→catalog.catalogs, product_drafts.product_id→catalog.products); cross-schema user_id/
+    category_id/images/pricing_calcs/exports DROPPED → bare UUID cols (DB FK preserved). User+AuditEvent bound public.
+    shared/models/__init__ EXPORTS Product (plan_guard's lazy product_count COUNT FIRES for catalog — unlike category).
+  - scope_to_user PRESERVED (13 anchors, count == monolith). §10 leak rule intact (find_by_id collapses
+    not-found/wrong-owner/soft-deleted → None).
+  - main.py: 6-mw chain + RequestContextMiddleware (outbound-shim ctx); FEATURE_CATALOG_FORM_ENABLED MOUNT GUARD
+    preserved on the PUBLIC router (R9 — conditional route count); internal_router mount NOT flag-gated; NO Celery;
+    /health + /metrics. Trimmed Settings retains the 3 FEATURE flags (MS-D flag-parity guard) + GEMINI/LANGFUSE/AI/
+    CACHE_VERSION + per-callee base URLs; LARGEST pool (DB_POOL_SIZE=10). i18n + core/metrics vendored FULL from
+    monolith (catalog needs full catalog.*/validation.* IDs + I18N_MISSING_KEY/AI_OPS_* metrics).
+Tests: tests/test_catalog_svc_invariants.py 19/19 PASS (boot+mw order, §16.G AST parity, 5-rewire, 8 call-site
+  symbols, ai:* un-prefixed, Lua byte-identity, scope_to_user==monolith, ORM schema bindings, mappers clean, trim
+  guard, dead-image-branch verbatim + no image_client, flag-parity every settings.X resolves, NO celery, 5 shim
+  round-trips + JWT/X-Request-ID forward + 503-only-1-retry + 404→typed). ruff clean (app+tests). 53 modules import
+  clean. Monolith UNTOUCHED (git diff vs integration on backend/app+backend/tests = EMPTY).
+Blockers: none.
+CROSS-WAVE / Open-Question resolutions (carry to LEAD Phase C + founder gate):
+  - Open Q #1: category-svc internal_router (feature/microservices-category/svc) serves /schema,/field-enum,
+    /commission,/super-categories but NOT /categories/{id}/exists. category-svc MUST ADD the /exists server shim at
+    MS-5 (my assert_category_exists client targets it). FLAGGED — cross-wave coordination, NOT a catalog-side defect.
+  - Open Q #2: RESOLVED — svc-customer/app/internal_routes.py serves BOTH /compliance-block AND
+    /eligibility?super_id= (query param, NOT /{super_id} path param — matched to as-built). customer_client matches.
+  - INBOUND ownership-check WIDENED BODY (verified vs merged svc-pricing catalog_client): the consumers call
+    GET /internal/products/{id}/ownership-check?user_id= and pricing reads {"category_id":"<uuid>"} from the 200 body
+    (NOT POST/204 as the spec sketch said — the merged consumers WIN, recipe step 0). export reads the
+    ExportSnapshotInternal JSON; dashboard reads {"items":[...],"total","page","limit"}. THESE ARE
+    api-routes-builder's internal_router surface; my service methods (assert_product_ownership/get_product_for_export/
+    list_products) BACK them unchanged. The widened body shape for api-routes-builder: ownership-check 200 =
+    {"owned":true,"category_id":"<uuid>"} (+ 404 conflating not-found/cross-tenant/soft-deleted).
+Hand-offs:
+  - api-routes-builder: service signatures FROZEN (the 11 public methods incl. the 3 LIVE inbound shim backers +
+    get_validation_summary). internal_router.py must serve ownership-check (GET ?user_id=, 200 {"owned",..,
+    "category_id"} / 404), export-snapshot (GET ?user_id=, ExportSnapshotInternal JSON), list_products (GET
+    ?page=&limit=, PaginatedProductsInternal JSON) + defensive validation-summary. router.py mounts 6 public routes
+    behind the FEATURE_CATALOG_FORM_ENABLED guard (main.py already gates the mount import-tolerantly).
+  - infra: GRANT INSERT ON public.audit_events TO catalog_user (BOTH the AI cost ledger AND 4 write-route audit rows);
+    SM JWT_SECRET (= iam's) + GEMINI_API_KEY + LANGFUSE_*; CATEGORY_SVC_BASE_URL + CUSTOMER_SVC_BASE_URL ClusterIPs;
+    dev-catalog-db-password; LARGEST pool. category-svc MUST add /internal/categories/{id}/exists (Open Q #1).
+  - LEAD Phase C: test_catalog_extraction.py (3-source budget-brake-shared, frozen ownership/export-snapshot shapes,
+    2-hop export→catalog→category chain, scope_to_user cross-tenant 404, autosave P95, autofill graceful fallback).
+    Alembic a8f3b2e9c1d5 on db branch — coordinator merges db→integration.
+Next: api-routes-builder authors router.py + internal_router.py against the frozen service signatures; LEAD Phase C.
+=========
+
+=== UPDATE: 2026-06-14 11:30 ===
+Phase: MS-5 Sub-Plan H (catalog — THE SPINE, the LAST extraction) — Phase C LEAD MERGE GATE (hybrid step 3)
+Session: mesell-microservices-catalog-lead-session-1
+Board sweep: catalog Active row → moved to Recently merged (MERGED-to-integration / founder-gate OPEN); infra inter-lead request CLOSED (surfaces delivered + verified at gate); no rows untouched 7+ days (all prior MS rows are founder-gate-open, actively tracked). MS-H is the LAST extraction — program now EXTRACTION-COMPLETE (A–H).
+Done:
+  - MERGE-GATE VERDICT: PASS (after the LEAD Open-Q #1 remediation). All three group branches gated and squash-merged into feature/microservices-catalog/integration (LEAD gate, D1): db c5eaad5 → svc d7cf28b (post-fix) → infra 4148483. Integration tip after assembly = e449c9f (develop 0846940 merged pre-gate, trivial frontend-docs fast-forward; one add/add Dockerfile conflict resolved IN FAVOUR of infra's real Dockerfile — svc's was an explicit placeholder).
+  - §16.G AST parity RE-PROVEN byte-identical (88099 chars, recursive import-strip + docstring-strip, ZERO call-site changes, NO normalisation hunk — the cleanest of the program after iam). Only the 2 outbound import rewires (category_client/customer_client re-export the monolith symbols) + vendoring-path import lines differ; every NON-import line identical.
+  - 5 OUTBOUND shims verified (category ×3, customer ×2) re-export the monolith symbols; transport 5s/2s + 1-retry-503/504 + JWT+X-Request-ID; NO image_client (R8 dead branch verbatim, never fires).
+  - 4 INBOUND /internal/* shims verified against the MERGED consumers (consumers WIN): ownership-check {owned,category_id} §0.6-WIDENED (svc-pricing get_category_id reads category_id, ?user_id= query param + JWT fallback), export-snapshot 6-field (svc-export), list-products {items,total,page,limit} ?page=&limit= (svc-dashboard), validation-summary defensive.
+  - ai_ops vendored TRIMMED (autofill_v1 ONLY — no smart_picker/watermark); SHARED ai:* budget brake UN-prefixed (global ₹500 cap; budget_cap _RESERVE_LUA/_RELEASE_LUA byte-identical to monolith); catalog cache decision = DB 0 only (no DB-3 factory needed — fetch_schema hot path is served by category-svc's cache, not catalog's; the valkey.py docstring's "pricing" wording is cosmetic copy-paste residue, functionally correct).
+  - scope_to_user preserved (12==12 sites); FEATURE_CATALOG_FORM_ENABLED mount guard preserved (R9); NO Celery; flag-parity PASS first pass (all 25 settings.<X> reads resolve on trimmed Settings — the MS-D lesson held).
+  - DB migration a8f3b2e9c1d5: drops NO FKs (SET SCHEMA only), dynamic users-schema detection (public/iam), Risk#5 orphan pre-scan aborts on orphans, tested downgrade, version_table_schema=catalog. Composes under merge order iam #220 → category #221 → catalog.
+  - Infra: catalog_user RW on schema catalog + GRANT INSERT public.audit_events (cross-schema, 2 writers); method-split IngressRoute (POST→catalog/GET→dashboard, anchored PathRegexp avoids hijacking image/pricing/export sub-routes); TLS api-tls (heeds the MS-D stale-secret finding); 4-surface rollback runbook (2-hop chain + budget carve-out P0 + dead-image).
+  - LEAD Phase-C test backend/services/svc-catalog/tests/test_catalog_extraction.py authored (13 cases) — §16.G re-proof, outbound re-export symbols, Open-Q #1 /schema-not-/exists probe, 3 inbound shapes vs merged consumers, 2-hop export→category /schema, budget_cap Lua byte-identity, global ai:* keyspace, model-binding + LIVE cross-schema audit round-trip (ran LIVE on local PG meesell, not skipped). Full svc-catalog suite = 62 passed (49 specialist + 13 lead), Py3.11.14 venv; ruff clean. Monolith UNTOUCHED (705 def test_ monotonic; git diff origin/develop...HEAD -- backend/app backend/tests EMPTY).
+  - 4 Phase-C docs: test_catalog_extraction.py, CI_HYBRID_MODE_catalog.md (FIRST extraction with both-directions live wiring), MASTER_PLAN §4 row-H flip + program EXTRACTION-COMPLETE stamp + Rev v1.7, this STATUS update + board flip. Infra's docs/runbooks/svc-catalog-rollback.md verified.
+OPEN-Q #1 RESOLUTION (the LEAD ruling): assert_category_exists is reached on EVERY public POST /api/v1/products (create_product step 2, service.py:401) — it is NOT dead. category-svc (#221) serves /schema, /field-enum, /commission, /super-categories but NOT a dedicated /exists. Applied Option (a): re-routed the category_client.assert_category_exists shim to probe GET /internal/categories/{id}/schema (200⇒exists⇒return None; 404⇒CategoryNotFoundError). ZERO category-svc amendment; cache-served (~10ms). service.py UNTOUCHED → §16.G AST parity remains byte-identical. Committed to the svc branch (d7cf28b) as the gate remediation; test_category_client_shims_roundtrip + the lead test assert the probe hits /schema and NEVER /exists (regression guards). The previously-flagged "category-svc MUST ADD /exists at MS-5" cross-wave obligation is DROPPED.
+Blockers: none.
+Next: FOUNDER GATE — open the integration→develop PR titled "[FOUNDER GATE — DO NOT MERGE] svc-catalog: Sub-Plan H — catalog extraction (MS-5)", base develop, head feature/microservices-catalog/integration, LEFT OPEN (D1, lead does NOT approve/merge). PHASE E (program close-out, master dispatches): T1 §5.G repo-management compliance audit + T2 founder-ratified MASTER_PLAN completion stamp — the lead does NOT self-declare program completion.
+Hand-offs:
+  - founder (via the founder-gate PR body): SM secret dev-catalog-db-password; shared JWT_SECRET; D3 e2-standard-4 FRESH spend-ask BEFORE the 8-service node deploy; BACKEND_ARCHITECTURE.md §10 "Extracted to svc-catalog V1.5" amendment (LOCKED → NOT self-applied per §7.3); the documented merge order #220→#221→#this; the Open-Q #1 resolution.
+  - master session: dispatch Phase E (T1 §5.G compliance audit) now that catalog — the LAST service — is extracted.
 === UPDATE: 2026-06-14 ===
 Phase: MS-4 Sub-Plan F (`category`) extraction — Phase C ROUND-2 MERGE GATE (PASS) + assembly + founder gate
 Session: mesell-microservices-category-lead-session-2
