@@ -124,6 +124,14 @@ class Settings(BaseSettings):
     # keys.  Plain integer (not a secret) — deliberately NOT in REQUIRED_FIELDS.
     REFRESH_TOKEN_PEPPER_VERSION: int = 1
 
+    # ── Refresh-cookie environment attributes (cookie-env-config feature) ──
+    # FE-D5 security-critical attrs (HttpOnly, SameSite=Strict) are ALWAYS on and
+    # NOT configurable. Only env-dependent attrs come from config:
+    #   COOKIE_DOMAIN: prod=".mesell.xyz"; dev/local="" (empty → no Domain attr → binds to request host)
+    #   COOKIE_SECURE: prod=True; local-http dev=False
+    COOKIE_DOMAIN: str = ""        # empty == omit Domain attribute
+    COOKIE_SECURE: bool = True     # prod/staging True; local-http dev False
+
     # NOTE: ``JWT_EXPIRY_DAYS`` was DEPRECATED per the FE-D5 + FE-D6 amendments
     # and REMOVED during the §7 (`iam`) construction dispatch (2026-06-06).
     # Use ``ACCESS_TOKEN_TTL_SECONDS`` (access JWT lifetime) +
