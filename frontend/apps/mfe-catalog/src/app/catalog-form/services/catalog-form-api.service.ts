@@ -69,6 +69,7 @@ import {
   FieldEnumResponseDTO,
   EnumEntryDTO,
   ProductResponse,
+  ProductDetailResponse,
   ProductDraftResponse,
   AutofillResponse,
   FieldGroup,
@@ -138,6 +139,37 @@ export class CatalogFormApiService {
           // 404: feature flag OFF or product not found → graceful null
           // 5xx / 0 (network): non-fatal for draft recovery → graceful null
           return of(null);
+        }),
+      );
+  }
+
+  // ── GET /products/{id} (Wave 2B — GAP-1 fix) ──────────────────────────────
+
+  /**
+   * getProduct — fetches the product record to read category_id on form init.
+   *
+   * Called by CatalogFormComponent.ngOnInit() to resolve GAP-1: category_id is
+   * read from the product record instead of router navigation state, making the
+   * form safe on hard-reload, direct URL, and browser-back navigation.
+   *
+   * @param productId - UUID of the product
+   * @returns Observable<ProductDetailResponse | null>
+   *   null  → 404 (product not found or FEATURE_CATALOG_FORM_ENABLED=false)
+   *   rethrow → 401 (auth failure — component shows auth error)
+   *   rethrow → 5xx (server error — component shows retry banner)
+   *
+   * Error matrix:
+   *   404 → of(null)   — graceful; component will set categoryIdMissing=true
+   *   401 → rethrow    — auth failure; component renders error state
+   *   5xx → rethrow    — server error; component renders retry banner
+   */
+  getProduct(productId: string): Observable<ProductDetailResponse | null> {
+    return this.api
+      .get<ProductDetailResponse>(`${PRODUCTS_PATH}/${productId}`)
+      .pipe(
+        catchError((err: HttpErrorResponse) => {
+          if (err.status === 404) return of(null);
+          throw err;
         }),
       );
   }
@@ -225,13 +257,14 @@ export class CatalogFormApiService {
   }
 }
 
-// Re-export DTOs and adapters for consumers that import from this service path.
+// Re-export DTOs, types and adapters for consumers that import from this service path.
 export type {
   SchemaResponseDTO,
   SchemaFieldDTO,
   FieldEnumResponseDTO,
   EnumEntryDTO,
   ProductResponse,
+  ProductDetailResponse,
   ProductDraftResponse,
   AutofillResponse,
   AutofillSuggestion,

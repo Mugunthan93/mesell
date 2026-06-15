@@ -1,4 +1,5 @@
-"""``catalog`` router — 6 endpoint handlers per §10.B (LOCKED 2026-06-05).
+"""``catalog`` router — 7 endpoint handlers per §10.B (LOCKED 2026-06-05) +
+section-3 Wave 1 GAP-1 addition.
 
 Endpoints
 ---------
@@ -8,6 +9,7 @@ Endpoints
 4. ``GET    /api/v1/products/{id}/preview``          — Live Product Preview (§10.B.4)
 5. ``DELETE /api/v1/products/{id}``                  — soft delete (§10.B.5)
 6. ``GET    /api/v1/products/{id}/draft``            — draft recovery (§10.B.6)
+7. ``GET    /api/v1/products/{id}``                  — Get single product (GAP-1 reload fix, section-3 Wave 1)
 
 Route invariants (§10.B + §4.B)
 -------------------------------
@@ -30,11 +32,12 @@ Audit posture (§10.B + §4.G)
   * POST   /products/{id}/autofill    → ``catalog.autofill.invoked``
   * DELETE /products/{id}             → ``catalog.product.deleted``
 
-2 read endpoints get NO audit decorator (per `MVP_ARCH §11.3`
+3 read endpoints get NO audit decorator (per `MVP_ARCH §11.3`
 read-flood rule):
 
   * GET    /products/{id}/preview
   * GET    /products/{id}/draft
+  * GET    /products/{id}
 
 Rate-limit decorators (§4.G + §4.E)
 -----------------------------------
@@ -44,6 +47,7 @@ Rate-limit decorators (§4.G + §4.E)
 * GET    /products/{id}/preview    — 600/h per-IP only.
 * DELETE /products/{id}            — 60/h/user.
 * GET    /products/{id}/draft      — 600/h per-IP only.
+* GET    /products/{id}            — 600/h per-IP (``product_detail``).
 
 DECISION FLAG §10-CATALOG-D2
 ----------------------------
@@ -186,6 +190,31 @@ async def patch_product(
     product = await catalog_service.patch_product(
         user.user_id, id, payload, is_autosave=is_autosave, db=db
     )
+    return _product_to_response(product)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. GET /products/{id}  — §10.B.7 (GAP-1 reload fix — section-3 Wave 1)
+# ─────────────────────────────────────────────────────────────────────────────
+@router.get(
+    "/products/{id}",
+    response_model=ProductResponse,
+    summary="Get a single product — returns category_id for CatalogForm reload (GAP-1 fix)",
+)
+@rate_limit(scope="product_detail", limit=600, window=3600)
+async def get_product(
+    id: UUID,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ProductResponse:
+    """§10.B.7 — GET /products/{id}.
+
+    No audit event (read-only per MVP_ARCH §11.3).
+    No feature flag — GAP-1 fix is unconditional.
+
+    Status codes: 200, 401, 404.
+    """
+    product = await catalog_service.get_product_detail(user.user_id, id, db=db)
     return _product_to_response(product)
 
 

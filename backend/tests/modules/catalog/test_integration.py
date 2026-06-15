@@ -219,3 +219,100 @@ class TestCrossModuleOwnershipAssertion:
         await catalog_service.assert_product_ownership(
             product.id, user.id, db=db
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# §10.B.7 — GET /products/{id} (GAP-1 reload fix — section-3 Wave 1)
+# ─────────────────────────────────────────────────────────────────────────────
+class TestGetProductDetail:
+    """Integration tests for :func:`catalog.service.get_product_detail` and
+    the ``GET /api/v1/products/{id}`` route handler (GAP-1 regression guard).
+
+    Test 1 — :func:`test_get_product_returns_category_id_for_reload` — is the
+    named regression guard.  If it ever breaks, the CatalogForm hard-reload
+    fix (section-3 Wave 1) has regressed.
+    """
+
+    async def test_get_product_returns_category_id_for_reload(
+        self,
+        db,
+        user,
+        beauty_category,
+        beauty_profile,
+    ):
+        """GAP-1 regression guard: GET /products/{id} returns ``category_id``
+        matching the value used at create time so the CatalogForm can reload
+        the correct schema on page reload / direct-URL navigation.
+        """
+        create_req = CreateProductRequest(
+            category_id=beauty_category.id, name="Reload Test Product"
+        )
+        product = await catalog_service.create_product(
+            user.id, "free", create_req, db=db
+        )
+
+        # The read path — the new service method added in section-3 Wave 1.
+        fetched = await catalog_service.get_product_detail(
+            user.id, product.id, db=db
+        )
+
+        assert fetched.id == product.id
+        assert fetched.category_id == beauty_category.id, (
+            "GAP-1 guard: category_id must be returned so CatalogForm can "
+            "reload the correct schema after a hard reload or direct-URL navigation."
+        )
+        assert fetched.name == "Reload Test Product"
+        assert fetched.status == "draft"
+
+    async def test_get_product_unauthenticated(self, client, use_live_valkey):
+        """GET /api/v1/products/{id} with no/invalid bearer token → 401.
+
+        Uses the bare test client (no auth token) to exercise the auth
+        middleware rejection path.  The product UUID is random — the 401
+        fires before any ownership check or DB query.
+        """
+        import uuid
+
+        random_id = uuid.uuid4()
+        resp = await client.get(
+            f"/api/v1/products/{random_id}",
+            headers={"Authorization": "Bearer invalid.token.value"},
+        )
+        assert resp.status_code == 401
+
+    async def test_get_product_wrong_owner_returns_404(
+        self,
+        db,
+        user,
+        other_user,
+        beauty_category,
+        beauty_profile,
+    ):
+        """Seller A creates a product; seller B calls get_product_detail → 404.
+
+        Ownership assertion collapses "not found / wrong owner / soft-deleted"
+        to the same 404 envelope (leak-protection per §10.C + §2.D).
+        """
+        create_req = CreateProductRequest(
+            category_id=beauty_category.id, name="Tenant A Product"
+        )
+        product = await catalog_service.create_product(
+            user.id, "free", create_req, db=db
+        )
+
+        # Seller B (other_user) tries to fetch — must raise ProductNotFoundError
+        # with code == "catalog.product_not_found" (the locked error code).
+        with pytest.raises(ProductNotFoundError) as exc_info:
+            await catalog_service.get_product_detail(
+                other_user.id, product.id, db=db
+            )
+
+        assert exc_info.value.code == "catalog.product_not_found"
+
+    async def test_get_product_not_found(self, db, user, beauty_profile):
+        """GET with a random UUID that has no product row → 404."""
+        import uuid
+
+        random_id = uuid.uuid4()
+        with pytest.raises(ProductNotFoundError):
+            await catalog_service.get_product_detail(user.id, random_id, db=db)

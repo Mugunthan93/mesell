@@ -21,11 +21,14 @@ import { CatalogListComponent } from './app/catalog-list.component';
 import { CATALOG_ROUTES } from './app/catalog.routes';
 
 import { jwtInterceptor, refreshInterceptor, errorInterceptor } from '@mesell/core';
+import { provideMeeUi } from '@mesell/ui-kit';
 
 bootstrapApplication(CatalogListComponent, {
   providers: [
     provideRouter(CATALOG_ROUTES),
     provideAnimationsAsync(),
+    // PrimeNG theme + services — mirrors shell app.config.ts (dev-serve parity)
+    ...provideMeeUi(),
     // HttpClient for standalone dev-serve (pnpm start:mfe-catalog).
     // In federation the shell injector (app.config.ts) provides HttpClient;
     // this entry is the fallback for the remote's own bootstrap context.

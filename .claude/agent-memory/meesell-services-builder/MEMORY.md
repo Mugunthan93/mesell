@@ -1934,3 +1934,97 @@ request_id → request_context (extraction-support, NOT in 6-count) → auth →
 - api-routes-builder (Phase B next): service sig FROZEN `await list_products_for_dashboard(user_id, query, db)`; author app/router.py (1 route) + app/schemas.py (4 classes). main.py wiring ready.
 - lead Phase C: re-run §16.G AST proof in CI; wire-shape parity once schemas land.
 - infra-builder: Dockerfile/k8s/Traefik/ConfigMap/audit-grant = infra lane (handoff_msB_infra.md), api-only 1 replica no worker.
+
+---
+
+## Section-2 (smart-picker) Plan 2-W1 — i18n error message contract (2026-06-15, branch feature/section-2/backend)
+
+### Scope
+HYBRID Step-2 specialist dispatch (mesell-section-2-backend-session-1). Worktree
+`/tmp/mesell-wt/section-2-backend` (separate checkout — NOT the same tree as
+/Users/.../Project/mesell; ALWAYS edit the worktree path for section work).
+
+### What I did
+- Change A: `validation_message_id` 2-segment `"rate_limit.exceeded"` → 3-segment
+  `"rate_limit.window.exceeded"` in `RateLimitExceededError` class attr + the
+  `_build_rate_limit_response` envelope, in BOTH the monolith
+  `backend/app/core/middleware/rate_limit_mw.py` AND `backend/services/svc-category/app/core/middleware/rate_limit_mw.py`.
+  The `code = "rate_limit.exceeded"` machine slug is NOT touched (not governed by the 3-segment regex).
+- Change B: added `"rate_limit.window.exceeded"` to `VALIDATION_MESSAGES` near the plan_guard/rate_limit
+  cross-cutting section; fixed `validation.suggest_q.too_short_or_long` copy "2 and 60" → "1 and 500"
+  (matches the enforced 1–500 code bound), in BOTH `backend/app/i18n/messages_en.py` +
+  `backend/services/svc-category/app/i18n/messages_en.py`.
+- Change C honoured: did NOT register `smart_picker.ai.unavailable` / `smart_picker.budget.exceeded`
+  (those are HTTP 200 + fallback_offered=true paths, not error envelopes).
+- New test `backend/tests/test_section2_i18n_contract.py` (5 funcs / 10 cases) — 10/10 PASS.
+- Collateral: `backend/tests/test_core_rate_limit_mw.py:66` assertion updated to the new 3-segment value
+  (the middleware it tests no longer emits the old value). 3/3 PASS against local Valkey 6379.
+
+### Reusable learnings
+- **Section worktrees are SEPARATE checkouts.** The dispatch gives a worktree path under /tmp/mesell-wt/.
+  Files read from /Users/.../Project/mesell may DIFFER from the worktree. Edit the worktree only.
+- **Test env to import `app.shared.config.settings`**: it SystemExits at import unless ~14 env vars are set
+  (REFRESH_TOKEN_PEPPER, MSG91_AUTH_KEY, MSG91_TEMPLATE_ID, RAZORPAY_KEY_ID/SECRET/WEBHOOK_SECRET,
+  GEMINI_API_KEY, GCS_BUCKET, GCS_PROJECT_ID, LANGFUSE_PUBLIC_KEY/SECRET_KEY, AUDIT_PII_SALT,
+  CORS_ALLOWED_ORIGINS, JWT_SECRET). Export dummies before pytest.
+- **Use the PROJECT venv python (3.11) not system python3 (3.9).** System 3.9 chokes on `Mapped[str | None]`
+  declarative annotations at model import (MappedAnnotationError). Path: /Users/.../mesell/backend/.venv/bin/python.
+  It resolves `app` via PYTHONPATH=<worktree>/backend.
+- **conftest defaults VALKEY_URL to :6381** (an SSH tunnel). Local Valkey is :6379. The use_live_valkey
+  fixture precedence is TEST_VALKEY_URL > VALKEY_URL > CORE_TEST_VALKEY_URL > bare 6379. To run rate-limit
+  tests locally: export VALKEY_URL=redis://localhost:6379/15 TEST_VALKEY_URL=redis://localhost:6379/0.
+  Without a reachable Valkey the rate-limit mw fails OPEN (200), so 429-expecting tests fail spuriously.
+
+### DISCREPANCY flagged to coordinator (Step-3 gate)
+Spec Check-1 wants ZERO tree-wide hits of `validation_message_id.*rate_limit.exceeded`, but Change A scoped
+ONLY main + svc-category. 7 OTHER svc trees (svc-catalog/customer/dashboard/export/iam/image/pricing) still
+carry the old 2-segment value. Left untouched per "no more, no less". Flagged in STATUS_BACKEND for a possible
+follow-up sweep wave.
+
+### Committed
+`960ed70 sec2: add/verify i18n message contract (Plan 2-W1)` on feature/section-2/backend (pushed, no PR —
+coordinator gates Step 3).
+
+---
+
+## section-3 Wave 1.1 — catalog.service.get_product_detail (2026-06-15, branch feature/section-3/backend)
+
+### Scope
+Single new PUBLIC read method on `app/modules/catalog/service.py` (GAP-1: catalog-form FE
+recovers `category_id` on hard reload / direct-URL nav without router state). The 11th public
+catalog surface. Commits 71960c4 (code+tests) + 5f19111 (STATUS) on feature/section-3/backend.
+
+### Method (mirrors existing get_validation_summary / get_preview shape exactly)
+```
+async def get_product_detail(user_id, product_id, db) -> Product:
+    await assert_product_ownership(product_id, user_id, db=db)   # leak-collapse gate
+    row = await catalog_repo.find_by_id(db, user_id, product_id)  # canonical scoped accessor
+    if row is None: raise ProductNotFoundError()                  # TOCTOU None-guard
+    return _orm_to_domain(row)
+```
+- Returns `catalog.domain.Product` (frozen dataclass, carries category_id). NOT "ProductDomain"
+  (no such name). Raises `ProductNotFoundError` (404 / catalog.product.not_found) collapsing
+  missing/cross-tenant/soft-deleted — identical to assert_product_ownership semantics.
+- `catalog_repo.find_by_id(db, user_id, product_id)` is POSITIONAL (db FIRST). Filters
+  deleted_at IS NULL + scope_to_user, returns None on any of the 3 miss cases.
+- Zero new imports — Product, assert_product_ownership, catalog_repo, ProductNotFoundError,
+  _orm_to_domain all already in service.py. Edits: __all__ (alpha after get_draft) + docstring
+  inventory line only.
+
+### Tests (tests/modules/catalog/test_service_unit.py — class TestGetProductDetail, 4 fns)
+Reused existing `_seed_product`/`_seed_catalog` helpers + fixtures `db,user,other_user,
+beauty_category,use_live_valkey`. _seed_product takes `deleted=True` for soft-delete case.
+Tests are marked integration (need Postgres on localhost:5432 — reachable; NOT the 5433 tunnel).
+
+### Infra gotcha confirmed AGAIN (carried from §19 memory)
+`TestAutofillGracefulFallback::test_budget_exceeded_*` in the SAME file fails locally with
+redis ConnectionError to localhost:6381 (the `use_live_valkey` tunnel port, not running on
+laptop). PRE-EXISTING — proven via `git stash` baseline run. My 4 tests pass independently
+(autofill is the only Valkey-touching test in that file). When running this file locally,
+filter `-k "not Autofill"` or stand up the 6381 tunnel.
+
+### Branch/worktree note
+The repo root checkout was on `develop`; `feature/section-3/integration` was checked out in a
+SEPARATE worktree (git showed `+` prefix). Target `feature/section-3/backend` existed already.
+Committed by: stash my 2 files → checkout target → stash pop → add ONLY my files → commit.
+Other unrelated dirty files (memory MDs, STATUS_FRONTEND, smart-picker.ts) were left untouched.
