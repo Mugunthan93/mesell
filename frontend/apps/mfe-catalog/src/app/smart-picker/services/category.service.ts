@@ -1,12 +1,12 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { Observable, EMPTY, of } from 'rxjs';
 import { catchError, tap } from 'rxjs/operators';
 import { Router } from '@angular/router';
 
 import { AuthService } from '@mesell/core';
 import { environment } from '@mesell/env';
-import type { SuggestResponse } from '../smart-picker.model';
+import type { BrowseResponse, SuggestResponse } from '../smart-picker.model';
 
 /**
  * CategoryService — feature-scoped (no providedIn).
@@ -89,6 +89,42 @@ export class CategoryService {
       .pipe(
         catchError((err: HttpErrorResponse) => this.handleSuggestError(err)),
       );
+  }
+
+  /**
+   * Shared error handler for CategoryService.browse().
+   * Maps HTTP error codes to the contract fallback shapes.
+   * - 401 → AuthService.logout() + return EMPTY (session invalidated)
+   * - 4xx/5xx → return empty results fallback shape
+   */
+  private handleBrowseError(err: HttpErrorResponse): Observable<BrowseResponse> {
+    if (err.status === 401) {
+      this.auth.logout();
+      return EMPTY;
+    }
+    return of({ results: [], total: 0 });
+  }
+
+  /**
+   * GET /api/v1/categories/browse?q=<query>[&super_id=<uuid>]&limit=<n>&offset=<n>
+   *
+   * Returns paginated BrowseResultRow items matching the query string.
+   * Supports optional super_id filter to restrict results to one top-level group.
+   *
+   * @param q       — search string
+   * @param superId — optional super-category UUID filter
+   * @param limit   — page size (default 20)
+   * @param offset  — pagination offset (default 0)
+   */
+  browse(q: string, superId?: string, limit = 20, offset = 0): Observable<BrowseResponse> {
+    let params = new HttpParams()
+      .set('q', q)
+      .set('limit', String(limit))
+      .set('offset', String(offset));
+    if (superId) params = params.set('super_id', superId);
+    return this.http
+      .get<BrowseResponse>(`${environment.apiBase}/api/v1/categories/browse`, { params })
+      .pipe(catchError((err: HttpErrorResponse) => this.handleBrowseError(err)));
   }
 
   /**

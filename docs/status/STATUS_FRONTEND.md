@@ -6940,3 +6940,29 @@ Hand-offs:
   - i18n: PriceCalcAlert.message_id rendered via a static FE map (transloco dropped Wave-2B); transloco-enable chore separate (post-Wave-D).
   - Screenshots (360/1280): native-fed headless caveat → founder Gate-5 UI-review (states: input form / calculating / result-table-with-alerts / 404-unavailable / 422-no-commission / 5xx-retry-banner).
 =========
+
+=== UPDATE: 2026-06-15 — Section-2 Plan 1-B — BrowseComponent + shell route ===
+Phase: Section-2 Plan 1-B — /categories/browse page and route
+Session: mesell-section-2-frontend-session-1 (HYBRID Step 2 — Task B)
+Done:
+  - Created BrowseComponent at frontend/apps/mfe-catalog/src/app/categories/browse/browse.component.ts
+    standalone, OnPush, ReactiveFormsModule, debounce-400ms search, offset pagination,
+    CategoryService.browse() + selectCategory() wired, mee-* only (zero PrimeNG imports)
+  - Added shell-level route { path: 'categories/browse' } to frontend/apps/shell/src/app/app.routes.ts
+    inside the authGuard-protected children block, using loadRemoteWithFallback('mfe-catalog','./BrowseComponent')
+    so CategoryService.browseRedirect() absolute nav /categories/browse resolves correctly
+Tests: no spec file (deferred per spec — keeping PR scope minimal)
+Build: not verified locally (shell ts build succeeds — loadRemoteWithFallback is runtime-string-only, no static import)
+In progress: none
+Blockers:
+  - DEVIATION: shell app.routes.ts edited instead of mfe-catalog/catalog.routes.ts (correct per architecture —
+    browseRedirect() targets absolute /categories/browse, not /catalogs/categories/browse)
+  - FOLLOW-UP REQUIRED: mfe-catalog/federation.config.js must add exposes['./BrowseComponent'] pointing to
+    apps/mfe-catalog/src/app/categories/browse/browse.component.ts for the shell route to resolve at runtime.
+    This is a coordinator-scope concern (one-line federation config change).
+Next: coordinator to add ./BrowseComponent expose to mfe-catalog/federation.config.js
+Hand-offs:
+  - BrowseComponent ready; shell route registered at /categories/browse via loadRemoteWithFallback.
+  - mfe-catalog/federation.config.js: add exposes['./BrowseComponent'] = './apps/mfe-catalog/src/app/categories/browse/browse.component.ts' (coordinator/infra scope).
+  - CategoryService.browse() + selectCategory() from Plan 1-A consumed correctly.
+=========

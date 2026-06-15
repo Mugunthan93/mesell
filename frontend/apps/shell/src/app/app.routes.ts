@@ -80,6 +80,15 @@ export const routes: Routes = [
         loadComponent: loadRemoteWithFallback('mfe-onboarding', './OnboardingComponent'),
       },
       {
+        // Section-2 Plan 1-B — manual category browse page. BrowseComponent lives in
+        // mfe-catalog (apps/mfe-catalog/src/app/categories/browse/) and is exposed via
+        // ./BrowseComponent. Mounted at shell-level so CategoryService.browseRedirect()
+        // (which navigates absolute /categories/browse) resolves correctly without any
+        // path change to the service.
+        path: 'categories/browse',
+        loadComponent: loadRemoteWithFallback('mfe-catalog', './BrowseComponent'),
+      },
+      {
         // MF Sub-Plan 01 — first federated remote. Pricing now lives in the
         // `mfe-pricing` Native-Federation remote (apps/mfe-pricing/), loaded at
         // runtime via the manifest. The :id param flows through the shell router
