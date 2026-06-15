@@ -75,6 +75,8 @@ Where:
 - `feature-slug` is **kebab-case**, **short** (≤ 30 chars), derived from the V1 feature name or epic ticket. The slug is the **stable identifier** for the feature across all groups, all status docs, and all session names. Never rename a slug mid-feature.
 - `group` ∈ `{backend, frontend, ai, data, infra}`. No other values permitted.
 
+> **2026-06-15 amendment (F4) — Section-Parallel 2-group collapse.** For the Section-Parallel V1 feature flow (per `docs/plans/repo_management/SECTION_PARALLEL_MODEL.md`, founder ruling 3, APPROVED 2026-06-15), a section's group set is collapsed to `{frontend, backend}`, where the `backend` group **ABSORBS** the ai + data + infra contributions onto the one `feature/section-N/backend` branch (the backend stream is multi-disciplinary — the backend-coordinator pulls in ai-coordinator / data-engineer / infra-builder specialists as the feature needs them, and all of their output lands on that single branch). This is a **per-flow scoping amendment**: it applies ONLY to the Section-Parallel feature flow. It does **NOT** relax the canonical 5-group set `{backend, frontend, ai, data, infra}` above for any non-section-parallel feature work — that group set remains in force everywhere else.
+
 | Branch | Created when | Created by | Merges into | Deleted when |
 |---|---|---|---|---|
 | `feature/{name}/integration` | First group is about to start the feature. | Founder (or the lead whose group starts first). | `develop` (via PR — see §2) | After PR to `develop` merges. |
@@ -927,3 +929,4 @@ If any of the three preconditions slips (e.g., microservices plan rejected and r
 | 0.1 | 2026-06-10 | meesell-backend-coordinator | Initial DRAFT authored. Awaiting founder review. |
 | 1.0 | 2026-06-10 | founder + meesell-backend-coordinator | Ratified DRAFT → APPROVED. Decisions D1/D2/D3 locked. Status: executable. |
 | 1.1 | 2026-06-10 | founder + master Director session | Pilot (housekeeping-v1, PRs #27–#29) findings F1–F3 ruled: integration branch renamed feature/{slug}/integration (git ref conflict), §6.5 direct board-flip mechanism, §9.5 integration-branch protection standard (review-count 0). |
+| 1.2 | 2026-06-15 | founder + master Director | §1.2 F4 amendment — Section-Parallel 2-group collapse {frontend,backend}; backend absorbs ai/data/infra. |

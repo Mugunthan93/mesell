@@ -2,7 +2,7 @@
 
 ## MeeSell Agent Ecosystem Rules (NON-NEGOTIABLE)
 
-MeeSell uses a **dedicated agent fleet** of 18 `meesell-*` agents. These rules govern every Claude session, sub-session, and dispatch in this project:
+MeeSell uses a **dedicated agent fleet** of 19 `meesell-*` agents. These rules govern every Claude session, sub-session, and dispatch in this project:
 
 1. **Only `meesell-*` agents handle MeeSell work.** NEVER dispatch `nexus:level-*`, `general-purpose`, `Explore`, `Plan`, or any other non-MeeSell agent for MeeSell tasks. If a task touches MeeSell, only an agent whose name starts with `meesell-` may execute it.
 2. **Decentralized memory.** Each agent has its own persistent memory at `.claude/agent-memory/meesell-<role>/MEMORY.md`. Every agent reads its own memory at the start of every task and appends learnings at the end.
@@ -15,16 +15,19 @@ MeeSell uses a **dedicated agent fleet** of 18 `meesell-*` agents. These rules g
    - **Docs, status flips, rulings landings, chores**: single-agent fast mode — the coordinator/lead executes directly. No ceremony.
    - Standalone agents (`meesell-infra-builder`, `meesell-legal-writer`) have no specialists — they always execute directly.
 
-### The 18-agent roster
+### The 19-agent roster
 
 | Coordinator / Standalone | Specialists |
 |---|---|
+| `meesell-section-coordinator` (opus) | — (Tier-1 master; dispatches the frontend + backend discipline coordinators) |
 | `meesell-infra-builder` (opus) | — |
 | `meesell-backend-coordinator` (opus) | `meesell-database-builder` (sonnet), `meesell-api-routes-builder` (sonnet), `meesell-services-builder` (opus), `meesell-auth-builder` (opus) |
 | `meesell-frontend-coordinator` (opus) | `meesell-angular-component-builder` (sonnet), `meesell-angular-service-builder` (sonnet), `meesell-angular-ui-styler` (sonnet) |
 | `meesell-ai-coordinator` (opus) | `meesell-prompt-engineer` (opus), `meesell-category-picker-builder` (opus), `meesell-image-precheck-builder` (opus) |
 | `meesell-legal-writer` (opus, no Bash) | — |
 | `meesell-data-engineer` (opus) | `meesell-xlsx-parser` (sonnet), `meesell-scraper-maintainer` (sonnet) |
+
+**Tier-1:** `meesell-section-coordinator` (opus) masters ONE V1 feature vertical slice — owns its wave plan + the integration→develop PR; dispatches the frontend + backend discipline coordinators beneath it. See SECTION_PARALLEL_MODEL.md / SECTION_DISPATCH_PROTOCOL.md.
 
 **Deferred to V1.5:** `meesell-brand-master-builder` (brand whitelist parsed inline by `meesell-xlsx-parser` for V1). `meesell-test-writer` and `meesell-deployer` are not created at this stage.
 
