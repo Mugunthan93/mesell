@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.meesell.localhost-nightly</string>
+
+    <!-- Runs the guarded nightly updater. The script itself is a strict no-op
+         unless the master tree is on a clean `develop`. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/mugunthansrinivasan/Project/mesell/scripts/nightly-localhost-update.sh</string>
+    </array>
+
+    <!-- 01:00 local time, every day. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>1</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!-- Do NOT run when the agent is (re)loaded — only on the 01:00 schedule. -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <!-- launchd provides a minimal PATH; give git/node/pnpm a fighting chance.
+         The script also re-exports PATH defensively. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <!-- Both stdout and stderr append to the same log the script writes to. -->
+    <key>StandardOutPath</key>
+    <string>/Users/mugunthansrinivasan/Project/mesell/logs/nightly-localhost-update.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/mugunthansrinivasan/Project/mesell/logs/nightly-localhost-update.log</string>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/mugunthansrinivasan/Project/mesell</string>
+
+    <!-- Low priority — this is a background convenience job. -->
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>
