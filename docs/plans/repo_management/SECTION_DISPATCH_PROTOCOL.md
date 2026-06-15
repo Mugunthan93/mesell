@@ -33,6 +33,22 @@
 
 ---
 
+## §0. PREVENTION — Worktree Discipline (MANDATORY — learned 2026-06-15)
+
+**Root-cause incident (2026-06-15):** a section ran in the shared master tree (`/Users/mugunthansrinivasan/Project/mesell`) instead of its isolated worktree. Two faults combined: (1) a Tier-3 specialist wrote files to the **master-tree absolute path** (`/Users/.../Project/mesell/...`) instead of its worktree-scoped path, and (2) a section coordinator used `git checkout` of a group branch **inside the master tree**, which flipped the founder's live editor branch and cross-contaminated a second section. The five rules below exist so this can NEVER recur. They are non-negotiable and apply to every Tier-1, Tier-2, and Tier-3 session.
+
+**R1 — BOOT-LOCATION.** Every session's **FIRST action** (before reading, before any git command) is `git rev-parse --show-toplevel`. The result MUST equal the session's OWN worktree path (`/tmp/mesell-wt/section-N-integration`, `/tmp/mesell-wt/section-N-frontend`, or `/tmp/mesell-wt/section-N-backend`). If it returns the master tree `/Users/mugunthansrinivasan/Project/mesell` (or anything else), **STOP immediately**, do NOT proceed, and tell the founder you were opened in the wrong directory.
+
+**R2 — GROUP BRANCHES.** Create group branches ONLY with `git worktree add /tmp/mesell-wt/section-N-{frontend,backend} feature/section-N/{frontend,backend}`. **NEVER `git checkout` a group branch** — `git checkout` switches the CURRENT tree's branch in place, and if the current tree is the master tree, it corrupts the founder's checkout. Worktree-add creates an isolated checkout without touching the current tree's branch.
+
+**R3 — SPECIALIST PATHS.** Every Tier-3 specialist prompt MUST instruct file edits via the **worktree-scoped absolute path** (`/tmp/mesell-wt/section-N-frontend/...` or `/tmp/mesell-wt/section-N-backend/...`). NEVER the master-tree path `/Users/mugunthansrinivasan/Project/mesell/...`. State this explicitly in each specialist spec — a specialist that edits the master-tree path is the exact fault that caused the incident.
+
+**R4 — STAGING.** NEVER `git add -A`, `git add .`, or `git commit -a`. Stage explicit file paths only (`git add <path1> <path2>`). Blanket staging can sweep stray files written to the wrong tree into a branch and mask a path violation.
+
+**R5 — NO BRANCH-SWITCH.** NEVER `git checkout <branch>` or otherwise branch-switch the tree you are operating in. One worktree = one branch for its whole life. To work on a different branch, use a different worktree.
+
+---
+
 ## §1. Purpose + relationship to the model
 
 ### 1.1 What this document is
@@ -151,6 +167,16 @@ SESSION IDENTITY
 - Rename this session now: `/rename mesell-section-{{N}}-coordinator-session-{{M}}`
 
 ═══════════════════════════════════════════════════════════════
+MANDATORY WORKTREE CHECK (FIRST ACTION — do this before anything else)
+═══════════════════════════════════════════════════════════════
+
+Your VERY FIRST action, before reading anything or running any other git command, is:
+
+    git rev-parse --show-toplevel
+
+The result MUST be exactly `/tmp/mesell-wt/section-{{N}}-integration`. If it returns the master tree `/Users/mugunthansrinivasan/Project/mesell` (or any other path), STOP IMMEDIATELY — do NOT proceed, do NOT read, do NOT git-operate — and tell the founder you were opened in the wrong directory. Running in the master tree corrupts the founder's live editor branch (root-cause incident 2026-06-15). See §0 R1.
+
+═══════════════════════════════════════════════════════════════
 PROJECT BOUNDARY (NON-NEGOTIABLE)
 ═══════════════════════════════════════════════════════════════
 
@@ -226,6 +252,7 @@ Once the founder has discussed the feature AND your wave plan passed the check-i
    git branch feature/section-{{N}}/backend  feature/section-{{N}}/integration
    git worktree add /tmp/mesell-wt/section-{{N}}-frontend feature/section-{{N}}/frontend
    git worktree add /tmp/mesell-wt/section-{{N}}-backend  feature/section-{{N}}/backend
+   **WARNING (§0 R2): group branches are materialized ONLY via `git worktree add` into a NEW /tmp/mesell-wt/section-{{N}}-{frontend,backend} path. NEVER `git checkout feature/section-{{N}}/frontend` (or /backend) in this integration tree — `git checkout` switches THIS tree's branch in place and is the exact fault that corrupted the master tree on 2026-06-15. One worktree = one branch for its whole life.**
 2. Per the approved wave plan order (honoring hard barriers), launch the Tier-2 sub-sessions by pasting Template B (frontend) and/or Template C (backend) from SECTION_DISPATCH_PROTOCOL.md §4/§5, with {{WAVE_NUMBER}}/{{WAVE_TASKS}} filled from the plan.
 3. As each group branch completes, confirm its discipline coordinator ran the §2.1 squash gate into `…/integration`.
 4. When BOTH groups are merged + integration tests pass + all 5 CI gates green + acceptance criteria met: open the `…/integration → develop` PR (merge-commit type), fill evidence, and HAND IT TO THE FOUNDER. Do not merge it yourself.
@@ -242,8 +269,11 @@ CONSTRAINTS (cannot be violated)
 - NEVER amend a LOCKED doc (BACKEND/FRONTEND_ARCHITECTURE LOCKED sections, APPROVED MASTER_PLAN, V1_FEATURE_SPEC). Escalate per SUB_SESSION_PROTOCOL §5.0.
 - NEVER substitute `section-{{N}}` for the canonical slug `{{SLUG}}` outside branch refs and worktree paths.
 - NEVER write to another agent's memory directory.
+- §0 R3 — when you dispatch (via Templates B/C) the Tier-2 sub-sessions, EVERY downstream specialist spec MUST give the worktree-scoped absolute path (`/tmp/mesell-wt/section-{{N}}-frontend/...` or `/tmp/mesell-wt/section-{{N}}-backend/...`) for all edits — NEVER the master-tree path `/Users/.../Project/mesell/...`.
+- §0 R4 — never `git add -A` / `git add .` / `git commit -a`; stage explicit file paths only.
+- §0 R5 — never `git checkout <branch>` / branch-switch the tree you are operating in; one worktree = one branch.
 
-Begin now: rename the session, read the REQUIRED READING in order, then report "Context loaded. Ready." and WAIT.
+Begin now: confirm your worktree per the MANDATORY WORKTREE CHECK, rename the session, read the REQUIRED READING in order, then report "Context loaded. Ready." and WAIT.
 ```
 
 ---
@@ -263,6 +293,16 @@ SESSION IDENTITY
 - Project: MeeSell ONLY. Project root: /Users/mugunthansrinivasan/Project/mesell/
 - Section: section-{{N}}  ·  Canonical slug: {{SLUG}}  ·  V1 feature: {{FEATURE_NAME}}
 - Rename this session now: `/rename mesell-section-{{N}}-frontend-session-{{M}}`
+
+═══════════════════════════════════════════════════════════════
+MANDATORY WORKTREE CHECK (FIRST ACTION — do this before anything else)
+═══════════════════════════════════════════════════════════════
+
+Your VERY FIRST action, before reading anything or running any other git command, is:
+
+    git rev-parse --show-toplevel
+
+The result MUST be exactly `/tmp/mesell-wt/section-{{N}}-frontend`. If it returns the master tree `/Users/mugunthansrinivasan/Project/mesell` (or any other path), STOP IMMEDIATELY — do NOT proceed — and report to the section-coordinator that you were opened in the wrong directory (root-cause incident 2026-06-15, §0 R1).
 
 ═══════════════════════════════════════════════════════════════
 PRECONDITION (the section-coordinator confirms this before pasting)
@@ -321,8 +361,12 @@ CONSTRAINTS
 - Dispatch ONLY the three frontend meesell-* specialists. NEVER non-meesell agents; NEVER backend/AI/data/infra specialists (those land on the backend branch).
 - NEVER touch another section's branch/worktree/memory. NEVER amend a LOCKED doc — escalate to the section-coordinator.
 - `section-{{N}}` is a branch/worktree token only; use slug {{SLUG}} in board rows, memory headers, and commit-footer session names.
+- §0 R5 — never `git checkout <branch>` / branch-switch this frontend worktree; one worktree = one branch.
+- §0 R4 — never `git add -A` / `git add .` / `git commit -a`; stage explicit file paths only.
 
-Begin: rename the session, read the REQUIRED READING, confirm {{WAVE_TASKS}} is non-empty, then build the wave.
+**§0 R3 — WORKTREE-SCOPED SPECIALIST PATHS (read before dispatching):** when you dispatch the three Angular specialists, EVERY spec you give them MUST instruct all file edits via the worktree-scoped absolute path `/tmp/mesell-wt/section-{{N}}-frontend/...` — NEVER the master-tree path `/Users/mugunthansrinivasan/Project/mesell/...`. A specialist that writes to the master-tree path is the exact fault that caused the 2026-06-15 incident. State the worktree path explicitly in each specialist spec.
+
+Begin: confirm your worktree per the MANDATORY WORKTREE CHECK, rename the session, read the REQUIRED READING, confirm {{WAVE_TASKS}} is non-empty, then build the wave.
 ```
 
 ---
@@ -343,6 +387,16 @@ SESSION IDENTITY
 - Section: section-{{N}}  ·  Canonical slug: {{SLUG}}  ·  V1 feature: {{FEATURE_NAME}}
 - This stream is MULTI-DISCIPLINARY (ruling 3): it absorbs AI + data + infra contributions for this feature. All of them land on the ONE feature/section-{{N}}/backend branch.
 - Rename this session now: `/rename mesell-section-{{N}}-backend-session-{{M}}`
+
+═══════════════════════════════════════════════════════════════
+MANDATORY WORKTREE CHECK (FIRST ACTION — do this before anything else)
+═══════════════════════════════════════════════════════════════
+
+Your VERY FIRST action, before reading anything or running any other git command, is:
+
+    git rev-parse --show-toplevel
+
+The result MUST be exactly `/tmp/mesell-wt/section-{{N}}-backend`. If it returns the master tree `/Users/mugunthansrinivasan/Project/mesell` (or any other path), STOP IMMEDIATELY — do NOT proceed — and report to the section-coordinator that you were opened in the wrong directory (root-cause incident 2026-06-15, §0 R1).
 
 ═══════════════════════════════════════════════════════════════
 PRECONDITION (the section-coordinator confirms this before pasting)
@@ -407,8 +461,12 @@ CONSTRAINTS
 - Dispatch ONLY the meesell-* specialists listed above. NEVER non-meesell agents.
 - NEVER touch another section's branch/worktree/memory. NEVER amend a LOCKED architecture section — escalate to the section-coordinator per SUB_SESSION_PROTOCOL §5.0.
 - `section-{{N}}` is a branch/worktree token only; use slug {{SLUG}} in board rows, memory headers, and commit-footer session names.
+- §0 R5 — never `git checkout <branch>` / branch-switch this backend worktree; one worktree = one branch.
+- §0 R4 — never `git add -A` / `git add .` / `git commit -a`; stage explicit file paths only.
 
-Begin: rename the session, read the REQUIRED READING, confirm {{WAVE_TASKS}} is non-empty, then build the wave.
+**§0 R3 — WORKTREE-SCOPED SPECIALIST PATHS (read before dispatching):** when you dispatch ANY of the multi-disciplinary specialists above (backend / AI / data / infra), EVERY spec you give them MUST instruct all file edits via the worktree-scoped absolute path `/tmp/mesell-wt/section-{{N}}-backend/...` — NEVER the master-tree path `/Users/mugunthansrinivasan/Project/mesell/...`. A specialist that writes to the master-tree path is the exact fault that caused the 2026-06-15 incident. State the worktree path explicitly in each specialist spec.
+
+Begin: confirm your worktree per the MANDATORY WORKTREE CHECK, rename the session, read the REQUIRED READING, confirm {{WAVE_TASKS}} is non-empty, then build the wave.
 ```
 
 ---
@@ -482,3 +540,4 @@ Cleanup timing follows `_WORKTREE_PROTOCOL.md §5`: leave worktrees in place whi
 |---|---|---|---|
 | 0.1 | 2026-06-15 | meesell-backend-coordinator | Initial DRAFT. Launch/dispatch companion to `SECTION_PARALLEL_MODEL.md` (DRAFT 0.1). Three boot templates (A/B/C) with empty `{{PLACEHOLDER}}` fills; Template A hard-stops at the check-in gate per founder ruling 2026-06-15. Awaiting founder ratification. |
 | 1.0 | 2026-06-15 | founder ratification | Protocol executable. Self-gate satisfied (`SECTION_PARALLEL_MODEL.md` flipped to APPROVED 2026-06-15). STATUS DRAFT → APPROVED. |
+| 1.1 | 2026-06-15 | founder + master Director | §0 prevention + worktree-discipline hardening across Templates A/B/C (post-incident). |
