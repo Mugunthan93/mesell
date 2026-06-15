@@ -63,4 +63,44 @@ describe('MeeButtonComponent', () => {
     comp.clicked.emit();
     expect(emitted).toBe(true);
   });
+
+  it('pgIcon should return undefined when no icon is provided', () => {
+    const comp = makeComp('Test');
+    expect(comp.pgIcon()).toBeUndefined();
+  });
+
+  it('pgIcon should map auto_awesome to pi pi-sparkles', () => {
+    const comp = makeComp('Test', { icon: 'auto_awesome' });
+    expect(comp.pgIcon()).toBe('pi pi-sparkles');
+  });
+
+  it('pgIcon should map arrow_forward to pi pi-arrow-right', () => {
+    const comp = makeComp('Test', { icon: 'arrow_forward' });
+    expect(comp.pgIcon()).toBe('pi pi-arrow-right');
+  });
+
+  it('pgIcon should map arrow_back to pi pi-arrow-left', () => {
+    const comp = makeComp('Test', { icon: 'arrow_back' });
+    expect(comp.pgIcon()).toBe('pi pi-arrow-left');
+  });
+
+  it('pgIcon should map check to pi pi-check', () => {
+    const comp = makeComp('Test', { icon: 'check' });
+    expect(comp.pgIcon()).toBe('pi pi-check');
+  });
+
+  it('pgIcon should map close to pi pi-times', () => {
+    const comp = makeComp('Test', { icon: 'close' });
+    expect(comp.pgIcon()).toBe('pi pi-times');
+  });
+
+  it('pgIcon should map delete to pi pi-trash', () => {
+    const comp = makeComp('Test', { icon: 'delete' });
+    expect(comp.pgIcon()).toBe('pi pi-trash');
+  });
+
+  it('pgIcon should pass through unmapped icon names unchanged', () => {
+    const comp = makeComp('Test', { icon: 'pi pi-user' });
+    expect(comp.pgIcon()).toBe('pi pi-user');
+  });
 });

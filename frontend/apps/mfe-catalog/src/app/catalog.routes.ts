@@ -6,12 +6,14 @@
 // service preserved EXACTLY from the subsumed catalog-form.routes.ts (D32/D34).
 import { Routes } from '@angular/router';
 import { CatalogFormApiService } from './catalog-form/services/catalog-form-api.service';
+import { CatalogListApiService } from './catalog-list-api.service';
 
 export const CATALOG_ROUTES: Routes = [
   {
     path: '',
     loadComponent: () =>
       import('./catalog-list.component').then(m => m.CatalogListComponent),
+    providers: [CatalogListApiService],
   },
   {
     // /catalogs/new -> SmartPickerComponent (renamed from CatalogNewComponent per D4)

@@ -9,6 +9,15 @@ import {
 import { Button } from 'primeng/button';
 import type { MeeButtonVariant, MeeButtonSize } from './button.types';
 
+const MATERIAL_TO_PI: Record<string, string> = {
+  'auto_awesome':  'pi pi-sparkles',
+  'arrow_forward': 'pi pi-arrow-right',
+  'arrow_back':    'pi pi-arrow-left',
+  'check':         'pi pi-check',
+  'close':         'pi pi-times',
+  'delete':        'pi pi-trash',
+};
+
 @Component({
   selector: 'mee-button',
   standalone: true,
@@ -67,7 +76,6 @@ export class MeeButtonComponent {
   readonly pgIcon = computed(() => {
     const i = this.icon();
     if (!i) return undefined;
-    // Accept Material Symbol names as-is — PrimeNG icon string passthrough
-    return i;
+    return MATERIAL_TO_PI[i] ?? i;
   });
 }

@@ -469,6 +469,66 @@ Build: ZERO errors, 1.649s. Tests: 17/17 PASS. Screenshots: 3 auth pages clean.
 
 ---
 
+## project: section3_wave2a_uikit_blur_icon (2026-06-15)
+
+Task: Section-3 Wave 2A Units 2A.2 + 2A.3 — ui-kit blur output + PrimeNG icon mapping.
+Branch: feature/section-3/frontend @ c9486a4
+Session: mesell-section-3-frontend-session-1
+
+### Unit 2A.2 — blur output
+
+Root cause: CatalogFormComponent `(blur)="onFieldBlur(field.canonical_name, $event)"` bound to
+`<mee-input>` and `<mee-textarea>`. Without a declared `blur` output, Angular fell back to the
+host element's native FocusEvent. `$event` was a FocusEvent object written to `fields_jsonb`.
+
+Fix pattern applied to both MeeInputComponent and MeeTextareaComponent:
+  1. Added `output` to `@angular/core` import destructure.
+  2. Added `readonly blur = output<string>();` after `innerValue` signal.
+  3. Changed template `(blur)="onTouched()"` to `(blur)="onBlur()"`.
+  4. Added `onBlur()` method: calls `this._onTouched()` + `this.blur.emit(this.innerValue())`.
+  5. Original `onTouched()` preserved (still used by tests and ControlValueAccessor contract).
+
+LEARNING: When a component implements ControlValueAccessor and uses `(blur)="onTouched()"` in
+the template, adding an Angular `output()` named `blur` causes the output to shadow the native
+FocusEvent binding. The parent gets the emitted string value instead of the DOM event.
+This is the correct pattern for typed blur outputs from CVA components.
+
+Files: frontend/libs/ui-kit/input/input.component.ts, frontend/libs/ui-kit/textarea/textarea.component.ts
+Spec files: 2 new tests each — blur emits string payload, blur invokes onTouched.
+
+### Unit 2A.3 — PrimeNG icon mapping
+
+Root cause: MeeButtonComponent.pgIcon() passed Material icon names (auto_awesome, arrow_forward,
+etc.) directly to `<p-button [icon]>`. PrimeNG expects `pi pi-*` CSS class strings. Icons silent-
+ly disappeared in the rendered UI.
+
+Fix: Added module-level constant MATERIAL_TO_PI above the @Component decorator:
+  'auto_awesome'  → 'pi pi-sparkles'
+  'arrow_forward' → 'pi pi-arrow-right'
+  'arrow_back'    → 'pi pi-arrow-left'
+  'check'         → 'pi pi-check'
+  'close'         → 'pi pi-times'
+  'delete'        → 'pi pi-trash'
+pgIcon() updated to `return MATERIAL_TO_PI[i] ?? i;` (passthrough for already-mapped or
+unknown icon names).
+
+LEARNING: PrimeNG `<p-button [icon]>` does NOT accept Material Symbol names. It requires
+PrimeIcons CSS class strings in the form `pi pi-<name>`. When consuming an abstraction layer
+(like MeeButtonComponent) that accepts Material icon names from feature components, a lookup
+table at the wrapper boundary is the correct fix — zero changes to feature templates required.
+
+File: frontend/libs/ui-kit/button/button.component.ts
+Spec file: 8 new tests — undefined guard, 6 mapping assertions, 1 passthrough.
+
+### Build + test results
+
+Build: ng build frontend --configuration development — CLEAN (zero errors, 3.864s)
+Tests: 1067/1067 PASS (65 spec files, Vitest via @angular/build:unit-test)
+tsc --noEmit: CLEAN
+Lint: no eslint config in workspace (tsc satisfies type-check requirement)
+
+---
+
 ## breakpoint notes (2026-06-06)
 
 - All changes are cosmetic (colors, border-radius, font-family).
