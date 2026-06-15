@@ -1,7 +1,7 @@
 # STATUS — FRONTEND
 
 **Owner:** meesell-frontend-coordinator (master session)
-**Last update:** 2026-06-15
+**Last update:** 2026-06-16
 
 === UPDATE: 2026-06-15 ===
 Phase: section-2 smart-picker / Plan 3-B (PrimeNG abstraction wall correctness)
@@ -25,6 +25,155 @@ Next: meesell-frontend-coordinator merge-gate review (HYBRID step 3)
 Hand-offs:
   - SmartPickerComponent Plan 3-B fix committed to feature/section-2/frontend @ 2a290b0
   - MeeButtonComponent (selector: mee-button, variant: ghost, size: sm, event: clicked) confirmed from ui-kit barrel
+=== UPDATE: 2026-06-16 ===
+Phase: section-3 / Wave 3.3 — CatalogListComponent a11y polish + token audit
+Agent: meesell-angular-ui-styler
+Branch: feature/section-3/frontend
+
+Done:
+  - frontend/apps/mfe-catalog/src/app/catalog-list.component.ts (3 fixes)
+    (A) Added [title]="product.name" to <h2 class="mee-catalog-card__name"> so the full
+        product name is accessible when -webkit-line-clamp truncates to 2 lines.
+        AT reads unclipped text; hover tooltip reveals full title for sighted users.
+    (B) Replaced hardcoded border-radius: 16px with var(--mee-radius-md) on .mee-catalog-card.
+        Token value is identical (16px) — eliminates token divergence risk.
+    (C) Replaced raw box-shadow: 0 8px 24px rgba(0,0,0,0.12) with var(--mee-shadow-lg)
+        on .mee-catalog-card:hover. Token value is identical — eliminates divergence risk.
+
+Build: tsc --noEmit CLEAN (zero errors, apps/mfe-catalog/tsconfig.app.json)
+A11y: All WCAG 2.1 AA structural items verified PASS. Color contrast requires BROWSER_VERIFY (see report).
+Mobile (360px): Single-column grid confirmed (no min-width guard on base grid). Side padding 16px (--mee-space-4). No overflow.
+In progress: none
+Blockers: none
+Next: merge-gate review by meesell-frontend-coordinator or next Wave 3 unit
+Hand-offs:
+  - CatalogListComponent a11y + token polish complete.
+    Components building on this page may reference --mee-radius-md (16px) and --mee-shadow-lg
+    for card-level elevation and radius consistency.
+=========
+
+=== UPDATE: 2026-06-15 ===
+Phase: section-3 / Wave 3 / Unit 3.2 — CatalogListComponent full page (Wave 3.2)
+Agent: meesell-angular-component-builder
+Branch: feature/section-3/frontend @ 35fcf11
+
+Done:
+  - frontend/apps/mfe-catalog/src/app/catalog-list-util.ts (NEW)
+      Pure utility: formatRelativeTime(isoString) — relative/absolute human-readable timestamp.
+      No Angular deps — testable without TestBed.
+  - frontend/apps/mfe-catalog/src/app/catalog-list.component.ts (REPLACED stub)
+      Full CatalogListComponent: loading/error/empty/grid states.
+      Signals: loading, products, error. CatalogListApiService injected via route providers.
+      PageHeaderComponent used for title + "Create New Catalog" CTA (replaces manual div).
+      MeeCardComponent (selector mee-card) with content projection — no <p-card> directly.
+      StatusBadgeComponent [status] input confirmed (input.required<ProductStatus>()).
+      3 LoadingSkeletonComponent(variant="card") on load, MeeAlertBannerComponent + retry on error.
+      EmptyStateComponent with CTA on empty. Responsive 1→2→3-col grid.
+      Keyboard-accessible cards: role="button", tabindex="0", (keydown.enter), (keydown.space).
+  - frontend/apps/mfe-catalog/src/app/catalog.routes.ts (UPDATED)
+      Added CatalogListApiService import.
+      Added providers:[CatalogListApiService] to path:'' route entry.
+
+Template adjustments vs task spec:
+  - <p-card><ng-template #content> replaced with <mee-card> + direct content projection.
+    MeeCardComponent uses <ng-content /> — callers project plain HTML, not named slots.
+  - Manual header div replaced with <mee-page-header> (title, cta_label, cta_icon, cta_click output).
+
+Tests: tsc --noEmit CLEAN (zero errors, apps/mfe-catalog/tsconfig.app.json)
+Build: TypeScript-clean; ng build not run (pre-existing smart-picker uncommitted changes
+  in worktree would emit NG errors unrelated to this task — confirmed pre-existing pattern)
+Commit: 35fcf11 on feature/section-3/frontend
+Blockers: none
+Next: Wave 3.3 or merge-gate review by meesell-frontend-coordinator
+Hand-offs:
+  - CatalogListComponent is the /catalogs root route; navigates to /catalogs/new (SmartPicker)
+    and /catalogs/:id/edit (CatalogForm) on user actions. CatalogListApiService is route-scoped.
+  - formatRelativeTime() exported from catalog-list-util.ts — available for spec import.
+=========
+
+=== UPDATE: 2026-06-15 14:00 ===
+Phase: section-3 / Wave 2B / Unit 2B.1 — getProduct() + ProductDetailResponse (GAP-1 fix)
+Agent: meesell-angular-service-builder
+Branch: feature/section-3/frontend @ 2264fed
+
+Done:
+  - field-schema.model.ts: added `ProductDetailResponse = ProductResponse` type alias after
+    SchemaResponse legacy alias. No other changes to the file.
+  - catalog-form-api.service.ts: 3 changes —
+    (A) Added ProductDetailResponse to the import block from ../models/field-schema.model
+    (B) Added getProduct(productId: string): Observable<ProductDetailResponse | null> method
+        after getDraft(), before autosave(), with full JSDoc + error matrix comment block.
+        Error matrix: 404 → of(null), 401 → rethrow, 5xx → rethrow.
+    (C) Added ProductDetailResponse to the re-export type block at the bottom;
+        updated comment from "DTOs and adapters" to "DTOs, types and adapters".
+
+Tests: tsc --noEmit CLEAN (zero errors, apps/mfe-catalog/tsconfig.app.json)
+Build: tsc --noEmit only (no ng build run — type check sufficient for a type alias + method add)
+Commit: 2264fed on feature/section-3/frontend
+Blockers: none
+Next: Wave 2B.2 — CatalogFormComponent.ngOnInit() wired to call getProduct() (component builder)
+Hand-offs:
+  - getProduct(productId) is ready on CatalogFormApiService.
+    Signature: getProduct(productId: string): Observable<ProductDetailResponse | null>
+    Error contract: 404 → null (component sets categoryIdMissing=true), 401/5xx → rethrow.
+    CatalogFormComponent.ngOnInit() may now call this instead of reading router navigation state.
+  - ProductDetailResponse re-exported from the service barrel — consumers can import from
+    the service path if preferred.
+=========
+
+=== UPDATE: 2026-06-15 ===
+Phase: section-3 / Wave 2A / Units 2A.2 + 2A.3 — ui-kit blur output + PrimeNG icon mapping (GAP-2, GAP-4)
+Agent: meesell-angular-ui-styler (SESSION mesell-section-3-frontend-session-1)
+Branch: feature/section-3/frontend @ c9486a4
+
+Done:
+  - MeeInputComponent: added `output` import + `blur = output<string>()` + `onBlur()` method;
+    template `(blur)` binding changed from `onTouched()` to `onBlur()`. Original `onTouched()` preserved.
+  - MeeTextareaComponent: identical pattern applied.
+  - MeeButtonComponent: added module-level MATERIAL_TO_PI constant (6 entries);
+    `pgIcon()` computed now returns `MATERIAL_TO_PI[i] ?? i` instead of bare `i`.
+  - input.component.spec.ts: 2 new tests — onBlur emits string payload, onBlur calls registered onTouched.
+  - textarea.component.spec.ts: 2 new tests — identical pattern.
+  - button.component.spec.ts: 8 new tests — undefined guard, 6 mapping assertions, 1 passthrough assertion.
+
+Build: ng build frontend --configuration development — CLEAN (zero errors, 3.864s)
+Tests: 1067/1067 PASS (65 spec files, Vitest via @angular/build:unit-test)
+Lint: no eslint config in workspace; tsc --noEmit CLEAN
+Commit: c9486a4 on feature/section-3/frontend
+
+A11y: no UI changes — blur output is a behaviour fix only, no visual impact
+Mobile (360px): not applicable — no template or layout changes
+Blockers: none
+Next: meesell-frontend-coordinator merge-gate review (HYBRID step 3)
+Hand-offs:
+  - `(blur)` on `<mee-input>` and `<mee-textarea>` now delivers a string value (the current field
+    value) — CatalogFormComponent autosave will receive the correct string, not a FocusEvent.
+  - `icon="auto_awesome"` (and 5 other Material names) on `<mee-button>` now renders correctly
+    as the corresponding `pi pi-*` PrimeNG icon class.
+=========
+
+=== UPDATE: 2026-06-15 ===
+Phase: section-3 / Wave 2A / Unit 2A.1 — mfe-catalog dev-serve bootstrap (GAP-3)
+Agent: meesell-angular-component-builder (SESSION mesell-section-3-frontend-session-1)
+Branch: feature/section-3/frontend
+
+Done: Added `provideMeeUi()` to frontend/apps/mfe-catalog/src/main.ts.
+  - Import: `import { provideMeeUi } from '@mesell/ui-kit'` after @mesell/core interceptors import
+  - Spread: `...provideMeeUi()` after `provideAnimationsAsync()` in providers array
+  - R-SP3-1 comment block (lines 4-14) untouched; CATALOG_ROUTES import untouched
+  - provideHttpClient/interceptor chain untouched; existing comments preserved
+Tests: n/a (bootstrap entry — no spec file; pre-existing build errors in
+  smart-picker.component.ts are pre-existing uncommitted changes unrelated to this task)
+Build: Pre-existing NG8001/NG8002 errors in smart-picker.component.ts confirmed
+  pre-existing (file was already modified before this task ran). My change adds zero
+  new TypeScript errors — provideMeeUi import resolves via tsconfig @mesell/ui-kit alias.
+In progress: none
+Blockers: none (pre-existing smart-picker build errors are a separate concern)
+Next: meesell-frontend-coordinator merge-gate review
+Hand-offs:
+  - mfe-catalog dev-serve bootstrap now calls provideMeeUi() — PrimeNG Aura theme +
+    MessageService + ConfirmationService available in standalone dev-serve mode
+  - Matches shell app.config.ts provider chain (GAP-3 closed)
 =========
 
 === UPDATE: 2026-06-14 17:00 IST ===
@@ -6965,4 +7114,70 @@ Hand-offs:
   - BrowseComponent ready; shell route registered at /categories/browse via loadRemoteWithFallback.
   - mfe-catalog/federation.config.js: add exposes['./BrowseComponent'] = './apps/mfe-catalog/src/app/categories/browse/browse.component.ts' (coordinator/infra scope).
   - CategoryService.browse() + selectCategory() from Plan 1-A consumed correctly.
+=========
+
+=== UPDATE: 2026-06-15 (session start + spec produced) ===
+Phase: section-2 (smart-picker) — Plan 3 PrimeNG correctness redevelop
+Session: mesell-section-2-frontend-session-1
+Role: TIER-2 frontend coordinator under meesell-section-coordinator (section-2)
+Mapping: V1 routes touched = /catalogs/new (smart-picker). Specialists in scope = meesell-angular-component-builder (sole task this plan). meesell-angular-ui-styler NOT needed (no new mee-* wrapper required — see audit). meesell-angular-service-builder NOT touched (category.service.ts has no raw-element/PrimeNG violation; HTTP-only, contract-clean).
+Board sweep (start): feature_board_frontend.md scanned. No new IN PROGRESS row added — this dispatch is STEP-1 spec-only (no specialist live yet). Row added when component-builder is dispatched in STEP-2.
+Done:
+  - Audited smart-picker.component.ts, category-card.component.ts, category.service.ts against FRONTEND_ARCHITECTURE.md Layer-2/Layer-4 enforcement rules.
+  - KEY FINDING: dispatch premise partly outdated. Category cards ALREADY use mee-card + mee-button + mee-progress-bar correctly (category-card.component.ts compliant). The "hand-rolled card <div>" violation does NOT exist.
+  - SINGLE GENUINE VIOLATION: smart-picker.component.ts lines 129-138 — raw <button> with inline style for "Browse if none match" secondary link. Fix = existing mee-button variant="ghost" (maps to PrimeNG p-button variant="text"). NO new ui-kit component required.
+  - Inline style="color: var(--mee-color-*)" on plain <p>/<div> text is PERMITTED (Layer-1 tokens are public API; consistent with compliant category-card). Not a violation — LAYOUT-FREEZE leaves them.
+  - Produced spec (single specialist: meesell-angular-component-builder; meesell-angular-ui-styler dropped vs dispatch template).
+In progress: none (spec returned to master for STEP-2 specialist dispatch).
+Blockers: none.
+Next: master dispatches meesell-angular-component-builder with the spec → then STEP-3 lead merge-gate review.
+Hand-offs: none (no cross-track contract change; backend contract for /categories/suggest + /products unchanged).
+=========
+
+=== UPDATE: 2026-06-15 — Wave 3 Unit 3.1 catalog-list service + model (session start) ===
+Phase: Section-3 / Wave 3, Unit 3.1 — CatalogListApiService + model types (mfe-catalog)
+Session: meesell-angular-service-builder (section-3-integration worktree)
+Service touched: CatalogListApiService (NEW — frontend/apps/mfe-catalog/src/app/catalog-list-api.service.ts)
+Model touched: catalog-list.model.ts (NEW — frontend/apps/mfe-catalog/src/app/catalog-list.model.ts)
+Endpoint: GET /api/v1/products (dashboard-owned; catalog MFE is a consumer, defines own local types)
+Architecture rule: no cross-MFE type import — CatalogListWireItem/DashboardWireResponse defined locally, NOT imported from mfe-dashboard.
+Done:
+  - Created frontend/apps/mfe-catalog/src/app/catalog-list.model.ts
+      Interfaces: CatalogListWireItem, DashboardWireResponse, CatalogListItem, CatalogListResponse
+      Functions: adaptDashboardResponse() (pure adapter, drops onboarding_completeness), emptyListResponse()
+  - Created frontend/apps/mfe-catalog/src/app/catalog-list-api.service.ts
+      @Injectable() (feature-scoped, NOT providedIn:'root')
+      listProducts(params): Observable<CatalogListResponse>
+      Error matrix: 401/404 → of(emptyListResponse), 5xx/other → rethrow
+  - TypeScript type-check: zero errors (npx tsc --noEmit --project apps/mfe-catalog/tsconfig.app.json)
+  - Commit: e4b0bce — feat(catalog-list): add CatalogListApiService + model types (Wave 3.1)
+In progress: none (unit complete).
+Blockers: none.
+Next: Wave 3.2 — CatalogListComponent wiring + catalog.routes.ts providers injection (meesell-angular-component-builder domain for template; this service builder provides the providers[] entry).
+Hand-offs:
+  - CatalogListApiService.listProducts() ready — Observable<CatalogListResponse>
+  - Component builder (Wave 3.2) must add CatalogListApiService to catalog.routes.ts path:'' providers:[]
+  - Wire key: product_id (not id). name is nullable on wire — adapter returns 'Untitled product' fallback.
+  - 5xx rethrows for component retry banner (MeeAlertBanner). 401/404 graceful empty (no banner needed).
+
+=== UPDATE: 2026-06-15 — Wave 2B.2 — CatalogFormComponent GAP-1 fix (ngOnInit rewrite) ===
+Phase: Section-3 / Wave 2B, Unit 2 — CatalogFormComponent ngOnInit GAP-1 fix
+Component touched: CatalogFormComponent (/catalogs/:id/edit)
+  frontend/apps/mfe-catalog/src/app/catalog-form/catalog-form/catalog-form.component.ts
+Done:
+  - Change 1: Added ProductDetailResponse to type imports from catalog-form-api.service
+  - Change 2: Rewrote ngOnInit() to call apiSvc.getProduct(id) instead of getCurrentNavigation().extras.state
+      category_id now fetched from GET /products/{id} — form safe on hard-reload/direct-URL/browser-back
+      Error handling: 401 → "Session expired", other → "Failed to load product. Please retry."
+  - Change 3: Updated ngAfterViewInit() — comment documents focus management moved to getProduct callback
+  - Change 4: Fixed onRetry() — when categoryId() is null (getProduct failed), resets state and calls ngOnInit()
+  - Change 5: Added resolveInitOutcome() public pure helper — testable without TestBed
+      Signature: resolveInitOutcome(product: ProductDetailResponse | null): { categoryId: string | null; missing: boolean }
+  - TypeScript check: ZERO errors (npx tsc --noEmit --project apps/mfe-catalog/tsconfig.app.json)
+  - Commit: 4b7249f — "fix(catalog-form): rewrite ngOnInit to call getProduct() for category_id (Wave 2B.2)"
+Tests: no spec changes in this unit (resolveInitOutcome() testable via pure-function spec — Wave 2B.3 scope)
+Build: TypeScript zero errors (full ng build not run — type-check sufficient per task spec)
+Blockers: none.
+Next: Wave 2B.3 — spec file for resolveInitOutcome() pure helper
+Hand-offs: CatalogFormComponent now safe on hard-reload. Depends on getProduct() from CatalogFormApiService (commit 2264fed, Wave 2B.1).
 =========

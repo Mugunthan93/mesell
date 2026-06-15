@@ -3,6 +3,7 @@ import {
   Component,
   forwardRef,
   input,
+  output,
   signal,
 } from '@angular/core';
 import {
@@ -50,7 +51,7 @@ import type { MeeInputType } from './input.types';
         [invalid]="!!error()"
         [ngModel]="innerValue()"
         (ngModelChange)="onModelChange($event)"
-        (blur)="onTouched()"
+        (blur)="onBlur()"
         style="min-height: 44px;"
       />
     </div>
@@ -75,6 +76,8 @@ export class MeeInputComponent implements ControlValueAccessor {
   readonly disabled = input<boolean>(false);
   readonly required = input<boolean>(false);
 
+  readonly blur = output<string>();
+
   readonly inputId = `mee-input-${Math.random().toString(36).slice(2)}`;
   readonly innerValue = signal<string>('');
 
@@ -88,6 +91,11 @@ export class MeeInputComponent implements ControlValueAccessor {
 
   onTouched(): void {
     this._onTouched();
+  }
+
+  onBlur(): void {
+    this._onTouched();
+    this.blur.emit(this.innerValue());
   }
 
   writeValue(value: string | null): void {

@@ -45,6 +45,7 @@ import type {
   FieldSchema,
   EnumEntryDTO,
   AutofillResponse,
+  ProductDetailResponse,
 } from '../services/catalog-form-api.service';
 import { CatalogFormApiService } from '../services/catalog-form-api.service';
 
@@ -566,46 +567,77 @@ export class CatalogFormComponent implements OnInit, AfterViewInit {
   );
 
   ngAfterViewInit(): void {
-    // A11y: when categoryIdMissing is set on init, programmatically focus the error
-    // region so screen-readers announce it immediately. Deferred microtask avoids
-    // calling focus() during Angular's change detection cycle (Wave 6A pattern).
-    if (this.categoryIdMissing()) {
-      Promise.resolve().then(() => {
-        this.errorRegionRef?.nativeElement?.focus();
-      });
-    }
+    // Wave 2B: focus management moved to ngOnInit() getProduct() callback (async init).
+    // categoryIdMissing is now set asynchronously — ngAfterViewInit fires before
+    // the Observable resolves, so this check is always false at this lifecycle point.
+    // Focus is now triggered inside the getProduct subscribe callback after categoryIdMissing.set().
+  }
+
+  /**
+   * resolveInitOutcome — pure helper for ngOnInit() product-fetch resolution.
+   *
+   * Separates the "what do we do with the getProduct result?" logic from the
+   * Observable subscription so it can be unit-tested without TestBed.
+   *
+   * @param product - the result of getProduct() (null = 404 / flag OFF)
+   * @returns { categoryId: string | null; missing: boolean }
+   *   missing=true → show categoryIdMissing error state
+   *   missing=false + categoryId → proceed to loadSchema
+   */
+  resolveInitOutcome(product: ProductDetailResponse | null): { categoryId: string | null; missing: boolean } {
+    if (!product) return { categoryId: null, missing: true };
+    const catId = product.category_id;
+    if (!catId) return { categoryId: null, missing: true };
+    return { categoryId: catId, missing: false };
   }
 
   ngOnInit(): void {
     const id = (this.route.snapshot.params['id'] as string | undefined) ?? 'new';
     this.productId.set(id);
 
-    // GAP-1 (spec §4): category_id from Router navigation state; explicit error on hard-reload.
-    const navState = this.router.getCurrentNavigation()?.extras.state as
-      | { categoryId?: string } | null | undefined;
-    const catId = navState?.['categoryId'] as string | undefined;
-
-    if (!catId) {
-      this.categoryIdMissing.set(true);
-      this.loading.set(false);
-      return;
-    }
-
-    this.categoryId.set(catId);
-
-    this.autosaveTrigger$
-      .pipe(debounceTime(10_000), takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => this.performAutosave());
-
-    // #22 getDraft — pre-fill fieldValues on resume. Non-blocking: proceeds to loadSchema on success OR error.
-    this.apiSvc.getDraft(id).subscribe({
-      next: (draft) => {
-        if (draft?.fields && Object.keys(draft.fields).length > 0) {
-          this.fieldValues.set(draft.fields);
+    // Wave 2B GAP-1 fix: fetch category_id from the product record instead of
+    // router navigation state, making the form safe on hard-reload / direct URL / browser-back.
+    this.apiSvc.getProduct(id).subscribe({
+      next: (product) => {
+        const outcome = this.resolveInitOutcome(product);
+        if (outcome.missing) {
+          this.categoryIdMissing.set(true);
+          this.loading.set(false);
+          // Async focus: DOM must update before focus is callable (Wave 2B fix).
+          // ngAfterViewInit fires before this async callback resolves, so focus
+          // is triggered here rather than in ngAfterViewInit.
+          Promise.resolve().then(() => {
+            this.errorRegionRef?.nativeElement?.focus();
+          });
+          return;
         }
-        this.loadSchema(catId);
+
+        const catId = outcome.categoryId!;
+        this.categoryId.set(catId);
+
+        this.autosaveTrigger$
+          .pipe(debounceTime(10_000), takeUntilDestroyed(this.destroyRef))
+          .subscribe(() => this.performAutosave());
+
+        // #22 getDraft — pre-fill fieldValues on resume. Non-blocking.
+        this.apiSvc.getDraft(id).subscribe({
+          next: (draft) => {
+            if (draft?.fields && Object.keys(draft.fields).length > 0) {
+              this.fieldValues.set(draft.fields);
+            }
+            this.loadSchema(catId);
+          },
+          error: () => this.loadSchema(catId),
+        });
       },
-      error: () => this.loadSchema(catId),
+      error: (err: { status?: number }) => {
+        this.errorMessage.set(
+          err.status === 401
+            ? 'Session expired. Please log in again.'
+            : 'Failed to load product. Please retry.',
+        );
+        this.loading.set(false);
+      },
     });
   }
 
@@ -723,7 +755,15 @@ export class CatalogFormComponent implements OnInit, AfterViewInit {
 
   onRetry(): void {
     const catId = this.categoryId();
-    if (!catId) return;
+    if (!catId) {
+      // categoryId never resolved (getProduct returned null or server error).
+      // Re-run full init chain to give the user a fresh attempt.
+      this.categoryIdMissing.set(false);
+      this.errorMessage.set(null);
+      this.loading.set(true);
+      this.ngOnInit();
+      return;
+    }
     this.errorMessage.set(null);
     this.loading.set(true);
     this.loadSchema(catId);

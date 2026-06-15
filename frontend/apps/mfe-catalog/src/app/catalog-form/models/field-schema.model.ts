@@ -387,3 +387,10 @@ export function adaptSchemaResponse(dto: SchemaResponseDTO): FieldGroup[] {
  * The component template still refers to `schema: FieldGroup[]`.
  */
 export type SchemaResponse = FieldGroup[];
+
+/**
+ * ProductDetailResponse — wire shape from GET /api/v1/products/{id} (Wave 2B GAP-1 fix).
+ * Type alias of ProductResponse: same backend schema, same fields.
+ * The catalog-form uses it to read category_id on init (replaces router-state dependency).
+ */
+export type ProductDetailResponse = ProductResponse;

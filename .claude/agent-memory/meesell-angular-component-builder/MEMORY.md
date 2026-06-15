@@ -4,6 +4,7 @@
 Angular 18 component specialist for MeeSell. Owns 10 page components + shared UI components. Standalone, OnPush, Reactive Forms, Tailwind + Material. Decentralized memory ecosystem.
 
 ## MEMORY.md Index
+- [Session 2026-06-15 — Section-3 Wave 2A.1 — mfe-catalog provideMeeUi bootstrap (GAP-3)](#s3-w2a1-providemeeui)
 - [Session 2026-06-10 — Wave 5 F12 Export + F11 pricing route EXECUTED](#wave5-f12-export)
 - [Session 2026-06-10 — Wave 5 F11 Pricing EXECUTED](#wave5-f11-pricing)
 - [Session 2026-06-10 — Wave 5 F10 Preview EXECUTED](#wave5-f10-preview)
@@ -17,6 +18,43 @@ Angular 18 component specialist for MeeSell. Owns 10 page components + shared UI
 - [Session 2026-06-06 — Smart Picker Dispatch 1](#smart-picker-dispatch-1)
 - [Session 2026-06-06 — Auth Dispatch 1 — LandingComponent](#landing-dispatch-1)
 - [Session 2026-06-06 — Catalog Wave 2a — catalog-form service layer](#catalog-wave-2a)
+
+---
+
+## Session 2026-06-15 — Section-3 Wave 2A.1 — mfe-catalog provideMeeUi bootstrap (GAP-3) {#s3-w2a1-providemeeui}
+
+### Task
+Add `provideMeeUi()` from `@mesell/ui-kit` to `frontend/apps/mfe-catalog/src/main.ts` dev-serve bootstrap.
+This is a one-file, two-line addition to close GAP-3: PrimeNG Aura theme + MessageService +
+ConfirmationService now available in standalone (non-federated) dev mode.
+
+### Route touched
+`/catalogs/*` — mfe-catalog remote (all 5 catalog routes via CATALOG_ROUTES)
+
+### Pattern: provideMeeUi() spread placement in remote bootstrap
+- Import AFTER `@mesell/core` interceptors import: `import { provideMeeUi } from '@mesell/ui-kit'`
+- Place `...provideMeeUi()` immediately after `provideAnimationsAsync()` in providers array
+- MUST spread (`...`) — `provideMeeUi()` returns `(Provider | EnvironmentProviders)[]` not a single provider
+- This mirrors shell's `app.config.ts` which already calls `...provideMeeUi()` at line 41
+- In federated (production) mode: remote inherits shell injector → provideMeeUi in shell covers PrimeNG
+- In dev-serve mode (standalone bootstrap): remote has its OWN injector → must call provideMeeUi locally
+
+### Pattern: R-SP3-1 comment block (lines 4-14) is LOAD-BEARING — never touch
+- The large comment block at the top of main.ts explains Native Federation shared-mapping analysis
+- DO NOT remove, reorder, or trim anything in the comment block or the CATALOG_ROUTES reference
+- The FULL `provideRouter(CATALOG_ROUTES)` call must remain — Sheriff analyzes this for singleton graph
+
+### Pattern: Pre-existing build errors in mfe-catalog — do not conflate with your change
+- `smart-picker.component.ts` has pre-existing uncommitted NG8001/NG8002 errors (`mee-button` import missing)
+- These errors existed BEFORE this task (confirmed: `git status` shows the file already modified)
+- My change to `main.ts` adds zero new TypeScript errors
+- `@mesell/ui-kit` path alias is declared in `frontend/tsconfig.json` → `libs/ui-kit/index.ts`
+- `provideMeeUi` is exported from `libs/ui-kit/index.ts` → re-exports from `./providers`
+
+### Commit
+- Branch: feature/section-3/frontend
+- Commit: 0ef003b — "T-S3-W2A: add provideMeeUi to mfe-catalog dev-serve bootstrap (GAP-3)"
+- Files: `frontend/apps/mfe-catalog/src/main.ts` + `docs/status/STATUS_FRONTEND.md`
 
 ---
 
@@ -2397,3 +2435,52 @@ Route /catalogs/new correctly loads CatalogNewComponent — do NOT rename.
 - Total suite: 256/292 pass (33/38 spec files pass)
 - 5 pre-existing failures: images (16 fail), preview (12), catalog-form (6), pricing (1), loading-skeleton (1)
 - Boundary: CLEAN — zero primeng in features/catalog-new/
+
+---
+
+## Session 2026-06-15 — Section-2 Plan 3-B: SmartPickerComponent browse button fix {#sec2-plan3b}
+
+### Route touched
+`/catalogs/new` — apps/mfe-catalog/src/app/smart-picker/smart-picker.component.ts
+
+### Services consumed
+None changed. CategoryService.browseRedirect() handler (onBrowse) unchanged.
+
+### Task
+Single targeted fix: replace the raw `<button>` "Browse if none match" fallback element with
+`<mee-button variant="ghost" size="sm" [fullWidth]="false" (clicked)="onBrowse()" />`.
+
+### Pattern: Worktree file path vs main project file path
+- This project uses git worktrees: `feature/section-2/frontend` lives at `/tmp/mesell-wt/section-2-frontend/`
+- The main project at `/Users/mugunthansrinivasan/Project/mesell/` is on `develop`
+- ALWAYS edit the worktree file at `/tmp/mesell-wt/section-2-frontend/frontend/apps/...`, NOT the main project file
+- The task prompt says "Work in /tmp/mesell-wt/section-2-frontend" — trust that; find the file under that path first
+- Accidentally editing the develop branch file in the main project creates a partial/broken state in develop
+
+### Pattern: MeeButtonComponent (ui-kit barrel) — confirmed API
+- Selector: `mee-button`
+- Barrel: `@mesell/ui-kit` (libs/ui-kit/index.ts exports `MeeButtonComponent`)
+- Inputs: `label` (required), `variant` ('primary'|'secondary'|'ghost'|'danger', default 'primary'),
+  `size` ('sm'|'md'|'lg', default 'md'), `fullWidth` (boolean, default false),
+  `loading` (boolean), `disabled` (boolean), `icon` (string|undefined)
+- Output: `clicked` (void) — emits when p-button onClick fires
+- Path confirmed: `libs/ui-kit/button/button.component.ts` (NOT `libs/ui-kit/src/lib/button/...`)
+  The task prompt had the wrong path; actual path is one level up from what the coordinator described
+
+### Pattern: ui-kit barrel path in this codebase
+- Barrel: `/Users/mugunthansrinivasan/Project/mesell/frontend/libs/ui-kit/index.ts`
+- NOT `frontend/libs/ui-kit/src/index.ts` (that path does not exist)
+- Component files: `frontend/libs/ui-kit/<component-name>/<component-name>.component.ts`
+
+### Pattern: Adding to existing @mesell/ui-kit destructured import
+- When another mee-* component is already imported from @mesell/ui-kit, add to the existing destructured import
+- DO NOT add a second `import { X } from '@mesell/ui-kit'` line — merge into the existing destructure
+
+### Verification checks
+- `grep -n "<button" <file>` must return ZERO hits — absence of raw button confirmed
+- `grep -n "primeng" <file>` must return ZERO hits — no direct PrimeNG imports
+- Build in worktree fails due to missing node_modules (pnpm install not run in worktree) — not a code defect
+
+### Commit
+- Exact message: `sec2: replace hand-rolled browse button with mee-button ghost (Plan 3-B)`
+- Branch: feature/section-2/frontend @ 2a290b0 — PUSHED to origin

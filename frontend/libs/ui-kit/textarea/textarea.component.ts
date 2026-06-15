@@ -3,6 +3,7 @@ import {
   Component,
   forwardRef,
   input,
+  output,
   signal,
 } from '@angular/core';
 import {
@@ -43,7 +44,7 @@ import { Textarea } from 'primeng/textarea';
       [invalid]="!!error()"
       [ngModel]="innerValue()"
       (ngModelChange)="onModelChange($event)"
-      (blur)="onTouched()"
+      (blur)="onBlur()"
       class="w-full"
       style="min-height: 44px;"
     ></textarea>
@@ -68,6 +69,8 @@ export class MeeTextareaComponent implements ControlValueAccessor {
   readonly required = input<boolean>(false);
   readonly autoResize = input<boolean>(false);
 
+  readonly blur = output<string>();
+
   readonly textareaId = `mee-textarea-${Math.random().toString(36).slice(2)}`;
   readonly innerValue = signal<string>('');
 
@@ -81,6 +84,11 @@ export class MeeTextareaComponent implements ControlValueAccessor {
 
   onTouched(): void {
     this._onTouched();
+  }
+
+  onBlur(): void {
+    this._onTouched();
+    this.blur.emit(this.innerValue());
   }
 
   writeValue(value: string | null): void {

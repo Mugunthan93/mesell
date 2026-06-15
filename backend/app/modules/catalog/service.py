@@ -12,6 +12,7 @@ Route-internal (driven by §10.B.1 through §10.B.6):
 * :func:`get_preview`
 * :func:`soft_delete`
 * :func:`get_draft`
+* :func:`get_product_detail`
 
 Cross-module surfaces (consumed via ``from app.modules.catalog import
 service as catalog_service`` per §16):
@@ -916,6 +917,30 @@ async def get_draft(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Single-product fetch (catalog-form recovery — section-3 Wave 1)
+# ─────────────────────────────────────────────────────────────────────────────
+async def get_product_detail(
+    user_id: UUID,
+    product_id: UUID,
+    db: AsyncSession,
+) -> Product:
+    """Return a single product by id, scoped to the requesting user.
+
+    Used by the catalog-form frontend to recover ``category_id`` on hard
+    reload or direct-URL navigation (GAP-1 fix — section-3 Wave 1).
+
+    Raises:
+        ProductNotFoundError: if the product does not exist, belongs to
+            another user, or has been soft-deleted.
+    """
+    await assert_product_ownership(product_id, user_id, db=db)
+    row = await catalog_repo.find_by_id(db, user_id, product_id)
+    if row is None:
+        raise ProductNotFoundError()
+    return _orm_to_domain(row)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Cross-module surfaces (§10.C)
 # ─────────────────────────────────────────────────────────────────────────────
 async def assert_product_ownership(
@@ -1061,6 +1086,7 @@ __all__ = [
     "create_product",
     "description_sha256",
     "get_draft",
+    "get_product_detail",
     "get_preview",
     "get_product_for_export",
     "get_validation_summary",

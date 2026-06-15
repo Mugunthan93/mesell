@@ -940,3 +940,102 @@ Sum of CPU REQUESTS at MS-2 on the e2-standard-2 (2 vCPU = 2000m) node:
 ---
 
 ## Authored docs/DISPATCH_PLAYBOOK.md — 2026-06-14 (Director fast-mode write; verbatim content: dispatch decision tree, 18-agent roster, 4 prompt templates A-D, mandatory blocks, git/worktree rules, decentralized memory model).
+
+---
+
+## MS-PAR-1 worktree + stray-branch cleanup — 2026-06-14
+
+Post-migration housekeeping (develop @ 1baf6d0, main protected @ 9a2b25c, 0 open PRs).
+
+**Worktrees:** 26 in-scope under /private/tmp/mesell-wt/. Removed 22 CLEAN with `git worktree remove --force`. SKIPPED 4 DIRTY (never force past uncommitted work):
+- msC-integration → M .claude/agent-memory/meesell-backend-coordinator/MEMORY.md
+- msC-routes-fix → M meesell-api-routes-builder/MEMORY.md + docs/status/STATUS_BACKEND.md
+- msE-backend → M docs/status/STATUS_BACKEND.md
+- w6c-cat → M frontend/pnpm-workspace.yaml
+The dirty mods are mostly peer-agent MEMORY.md / STATUS files — NOT mine to commit or discard. Left for the owning agent/founder to resolve.
+
+**Out-of-task-scope worktrees left untouched:** the `.claude/worktrees/agent-*` set (and docs+session-close-dual-pepper, chore/frontend/start-all) — task scoped only to /private/tmp/mesell-wt/ prefixes. 2 are `locked`. Did not enumerate-remove these.
+
+**Stray remote branches — KEY SAFETY LESSON:** of 13 candidate origin/feature/microservices-{catalog,category,customer,iam}/* branches, only 3 were actually merged into origin/develop (the `/integration` tips for catalog, category, iam). The migration merged via the integration branches; the per-group leaf branches (db/infra/svc/backend) were NOT individually merged into develop (their content reached develop through the integration merge, but `git branch -r --merged` does not consider them merged because their tip commits aren't ancestors of develop). So `--merged origin/develop` is the correct, conservative gate — it deleted only the 3 truly-merged refs and protected the other 10. Deleted: catalog/integration, category/integration, iam/integration. Skipped 10 unmerged — left for founder decision.
+
+**Stash:** intentionally-kept stash@{0} ("pre-develop-switch") left untouched (not a worktree).
+
+Pattern to reuse: ALWAYS gate remote-branch deletion on `git branch -r --merged origin/develop` membership, re-confirm per-branch with `grep -qx`, never assume a feature's leaf branches are merged just because the feature is merged.
+
+---
+
+## Founder-authorized develop merge — PR #230 (2026-06-15)
+
+Founder explicitly authorized merging PR #230 (`docs/section-parallel-model` → `develop`, 3 DRAFT docs: SECTION_PARALLEL_MODEL.md, SECTION_DISPATCH_PROTOCOL.md, .claude/agents/meesell-section-coordinator.md). Normally `feature→develop` is the founder's gate (D1) — I do NOT approve those — but a direct in-prompt founder authorization to *execute* the merge is the exception.
+
+**Execution pattern (worked clean):**
+- Pre-check: `gh pr view 230 --json state,mergeable,mergeStateStatus,statusCheckRollup,baseRefName,headRefName`. All 5 CI gates SUCCESS, mergeStateStatus=CLEAN, mergeable=MERGEABLE. build/deploy/nightly SKIPPED (expected for non-push/non-schedule PR event).
+- `develop` is branch-protected (PR-only + lead approval). `gh pr merge 230 --merge --admin` satisfies the protected self-approval bypass since founder authorized. `--merge` (merge-commit) was allowed by repo settings — no fallback to `--squash` needed. Merge-commit method preserves history per MASTER_PLAN §2.2.
+- Merge SHA == new origin/develop tip: `e4a0ad6` (prev tip 1baf6d0).
+- Confirmation via `git fetch origin develop` + `git cat-file -e origin/develop:<path>` per file. Did NOT pull/checkout master tree — it stays behind until founder pulls.
+
+**Cleanup (_WORKTREE_PROTOCOL §5 reclaim):**
+- Worktree at `/private/tmp/mesell-wt/section-parallel-model` — checked `git -C <wt> status --porcelain` was empty FIRST (clean), then `git worktree remove` (no --force needed).
+- `git branch -d` gives a harmless warning "merged to origin/<branch> but not yet merged to HEAD" — that's because master HEAD is the pre-merge develop locally; the branch IS merged on the remote, so `-d` (not `-D`) still succeeds. Safe.
+- `git push origin --delete <branch>` + `git worktree prune` to finish.
+
+**Reusable cmd sequence** for future founder-authorized develop merges of doc/spec PRs is exactly the above. The key safety invariant: never mutate the master tree's checkout state — confirmation is always via `origin/<base>` after fetch.
+
+## Section-Parallel ratification + section-2 boot — 2026-06-15
+
+**PR #231 (chore/ratify-section-parallel → develop) MERGED, then section-2 (Smart Category Picker) integration branch booted. Founder-authorized.**
+
+- **mergeStateStatus=BLOCKED with mergeable=MERGEABLE means the protected-branch SELF-APPROVAL block** (develop requires reviews via the gate, founder can't self-approve their own PR), NOT a check failure. `--admin` is the correct founder-authorized bypass for that. Do NOT confuse BLOCKED with a failing check — always inspect `statusCheckRollup` to distinguish.
+- **Required checks on develop** (from `gh api .../branches/develop/protection`): 5 CI gates (unit→smoke→lint→integration→golden_roundtrip) + 8 frontend units (detect + shell + 6 mfe-*) + frontend detect. `strict=false` (not up-to-date-required), reviews=null in the reviews block but enforced via gate.
+- **The 5 CI gates run SEQUENTIALLY** (~30s each, gate N+1 starts only after N succeeds). On a fresh push they trickle in over ~4-5 min. Even with `--admin` available, I WAITED for all 5 to go green before merging — forcing through in-progress required gates risks landing broken code on develop. Polled `gh pr view 231 --json statusCheckRollup` filtered to `startswith("CI Gate")` every 30s until 5×SUCCESS or any FAILURE. This is the right discipline: `--admin` bypasses the self-approval block, not the duty to verify CI is actually green.
+- Merge method: `gh pr merge 231 --merge --admin` → merge-commit `8963a58`. origin/develop `e4a0ad6`→`8963a58`.
+- **Master-tree FF**: `git -C <repo> -c pull.rebase=false pull --ff-only origin develop` — the `-c pull.rebase=false` is REQUIRED because repo has `pull.rebase=true` and unstaged tracked agent-memory files would block a rebase. Clean FF `e4a0ad6`→`8963a58`. Never stash/reset/checkout.
+- **F1 ordering (section boot)**: integration branch FIRST, off develop (NOT main). `git branch feature/section-2/integration develop` → worktree `/tmp/mesell-wt/section-2-integration` → `git push -u origin`. Group branches (frontend/backend) are cut OFF integration ONLY AFTER the section coordinator's wave plan passes the check-in gate (SECTION_DISPATCH_PROTOCOL §2) — do NOT pre-create them.
+- **F3 integration-branch protection** (MASTER_PLAN §9.5): applied cleanly via `gh api -X PUT .../branches/feature%2Fsection-2%2Fintegration/protection` with `required_approving_review_count=0`, `allow_force_pushes=false`, `allow_deletions=false`, `required_status_checks=null`. URL-encode the slashes in the branch name (`feature%2Fsection-2%2Fintegration`). Verified in response body.
+- Ratify cleanup: worktree clean (empty porcelain) → `git worktree remove` (no --force) → `git branch -d chore/ratify-section-parallel` → `git push origin --delete` → `git worktree prune`. All exit 0.
+
+## Section 3-9 integration-branch scaffolding (batch boot) — 2026-06-15
+
+**Founder-authorized: pre-created the integration PARENT branch for sections 3-9 (7 V1 features) so each can be opened as a section-coordinator session later. Mirror of the section-2 boot (memory entry above). NO group branches, NO coordinators, NO development.**
+
+- Section ↔ slug alias: 3=catalog-form, 4=ai-autofill, 5=image-precheck, 6=live-preview, 7=price-calculator, 8=tracking-dashboard, 9=xlsx-export. **Branches use the section-N token, NOT the slug** (`feature/section-3/integration`, etc.). Section-1 (auth) is AS-BUILT (skipped); section-2 already existed (skipped, worktree untouched).
+- Baseline: master tree on `develop`; `git fetch origin`; develop tip = `8963a58` (the section-2 boot merge #231). All 7 integration branches cut OFF develop (`git branch feature/section-N/integration 8963a58`) — NOT main. Confirmed all 7 absent on local+origin BEFORE creating (`git ls-remote --heads origin "feature/section-*/integration"`).
+- Per-section recipe (exact, all 7 succeeded clean): (1) `git branch feature/section-N/integration 8963a58` (2) `git worktree add /tmp/mesell-wt/section-N-integration feature/section-N/integration` (3) `git push -u origin feature/section-N/integration`. `/tmp`→`/private/tmp` on this box so `git worktree list` shows `/private/tmp/mesell-wt/section-N-integration`.
+- **F3 protection applied to all 7** via `gh api -X PUT repos/Mugunthan93/mesell/branches/feature%2Fsection-N%2Fintegration/protection` (URL-encode slashes `%2F`) with payload `{required_status_checks:null, enforce_admins:false, required_pull_request_reviews:{required_approving_review_count:0}, restrictions:null, allow_force_pushes:false, allow_deletions:false}`. Verified each response: force_push=False, deletions=False, reviews_count=0, status_checks=None. **All 7 APPLIED — zero deferred.**
+- Group branches (frontend/backend) deliberately NOT created — they're cut OFF integration ONLY after each section coordinator's wave plan passes its check-in gate (SECTION_DISPATCH_PROTOCOL §2). Confirmed none exist post-run.
+- Master tree never switched branch (stayed `develop` throughout). No main/staging/section-1/section-2 touched. No force-push, no deletions, no cloud-spend, no secrets. ₹0/month.
+- **Batch pattern works clean in one shell loop** — branch+worktree+push in loop 1, F3 in loop 2 (separate so a push failure doesn't strand a protection call). GH_TOKEN="$(gh auth token)" exported once for the F3 loop. No 401, no protection failure on any of the 7.
+
+---
+
+## PR #232 merge + persist-worktree cleanup — 2026-06-15
+
+**Task:** Merge founder-authorized PR #232 (`docs/persist-section-2-3` → develop, 2 additive doc files persisting section-2/section-3 dispatch prompts), FF master tree, clean up temp worktree/branch.
+
+**Outcome (all green):**
+- Diff verified ONLY the 2 files: `docs/plans/features/{smart-picker,catalog-form}/SECTION_DISPATCH_PROMPT.md`.
+- Initial `mergeStateStatus=BLOCKED` was NOT a failure — it was `CI Gate 2: smoke` still QUEUED. develop branch protection requires all 5 CI Gates + 8 Frontend contexts. Waited for gates to settle (all 5 PASS), state went `CLEAN`.
+- Merged with `gh pr merge 232 --merge --admin` (merge-commit; --admin for protected self-approval, founder-authorized). Merge SHA `cf1d4a4ede9157641cc38787cd75d232a3510610`, now origin/develop tip.
+- Master tree FF `8963a58..cf1d4a4` (clean, -c pull.rebase=false --ff-only). Both files confirmed via `git cat-file -e origin/develop:...`.
+- Cleanup: removed worktree `/private/tmp/mesell-wt/persist-sec23` (clean, 0 dirty), deleted local + remote branch `docs/persist-section-2-3`, pruned.
+
+**Operational notes:**
+- `gh` CLI worked without the PATH export this session (was already resolvable). `git -C <abs>` used throughout — cwd resets between Bash calls.
+- macOS `/tmp` → `/private/tmp` symlink: `git worktree list` reports the physical `/private/tmp/...` path; `git worktree remove /private/tmp/...` works directly. Brief's `/tmp/...` path is the same target.
+- The section-2..9 integration worktrees (`/private/tmp/mesell-wt/section-N-integration`, N=2..9) are LONG-LIVED — do NOT touch during persist cleanup. Verified all 8 intact at original SHAs post-cleanup.
+- Discipline reaffirmed: BLOCKED merge state with an in-flight (QUEUED/in_progress) required check is NOT a "failing check" stop condition. Wait for settle, then confirm CLEAN before --admin. Only merge over green.
+
+## Centralize section 4-9 dispatch prompts onto develop (2026-06-15)
+
+**Task:** FAST MODE git consolidation. Copy the 6 `SECTION_DISPATCH_PROMPT.md` files (sections 4-9) from their integration branches onto develop, WITHOUT merging the integration branches. Sections 2 & 3 were already on develop at cf1d4a4.
+
+**Outcome:** PR #233 (`docs/centralize-dispatch-prompts` → develop) merged. Merge SHA `6e1f9ed`. All 6 copied: ai-autofill, image-precheck, live-preview, price-calculator, tracking-dashboard, xlsx-export (1838 insertions). All 5 CI gates green; deploy/build/nightly correctly skipped (docs-only, non-main push). Master tree FF cf1d4a4..6e1f9ed. All 8 section integration worktrees/branches untouched (verified at original SHAs).
+
+**Pattern (copy-doc-without-merging-branch):**
+- `git show origin/feature/section-N/integration:<path> > <path>` in a worktree branched off origin/develop. Pulls a single file out of a branch's tree without checking it out or merging. The dest feature dirs already existed on develop, so no mkdir needed.
+- Verify sources first with `git cat-file -e origin/feature/section-N/integration:<path>` before copying (brief said STOP+report if any missing — all 6 present).
+
+**git PATH gotcha (NEW — important):**
+- `git` is at `/usr/bin/git` (system) AND `/opt/homebrew/bin/git`. Even after `export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"`, a multiline `for ... done` loop intermittently hit `(eval):N: command not found: git` — the eval shell lost resolution mid-loop. FIX: use the ABSOLUTE binary path `/usr/bin/git` (and `/opt/homebrew/bin/gh`) for EVERY invocation. This is more reliable than relying on PATH export across the zsh-eval wrapper. Single explicit commands per line beat a bash for-loop for this.
+
+**Discipline reaffirmed:** waited for all 5 gates to settle green before `gh pr merge --admin`; BLOCKED+MERGEABLE with in-progress required checks is not a fail. FF pull --ff-only with pre-existing unstaged memory edits in working tree still succeeds cleanly (untracked/unstaged changes don't block a FF that doesn't touch those paths). Cleanup: removed temp worktree, deleted local+remote `docs/centralize-dispatch-prompts`, pruned. Never touched main/staging or any feature/section-* branch.
