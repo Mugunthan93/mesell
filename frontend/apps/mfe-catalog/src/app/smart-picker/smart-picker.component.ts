@@ -41,6 +41,7 @@ import {
 import {
   MeeTextareaComponent,
   MeeSkeletonComponent,
+  MeeButtonComponent,
 } from '@mesell/ui-kit';
 import {
   PageHeaderComponent,
@@ -59,6 +60,7 @@ import type { CategorySuggestion, SuggestResponse } from './smart-picker.model';
     ReactiveFormsModule,
     MeeTextareaComponent,
     MeeSkeletonComponent,
+    MeeButtonComponent,
     PageHeaderComponent,
     EmptyStateComponent,
     CategoryCardComponent,
@@ -126,15 +128,13 @@ import type { CategorySuggestion, SuggestResponse } from './smart-picker.model';
         <!-- Secondary fallback link (shown when fallback_offered=true and there ARE results) -->
         @if (fallbackOffered()) {
           <div class="mt-4 text-center">
-            <button
-              type="button"
-              class="text-sm underline min-h-[44px] px-2"
-              style="color: var(--mee-color-on-surface-muted); background: none; border: none; cursor: pointer;"
-              (click)="onBrowse()"
-              aria-label="Browse all categories if none of the suggestions match"
-            >
-              Browse if none match
-            </button>
+            <mee-button
+              label="Browse if none match"
+              variant="ghost"
+              size="sm"
+              [fullWidth]="false"
+              (clicked)="onBrowse()"
+            />
           </div>
         }
       }

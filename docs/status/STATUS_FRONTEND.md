@@ -1,7 +1,31 @@
 # STATUS — FRONTEND
 
 **Owner:** meesell-frontend-coordinator (master session)
-**Last update:** 2026-06-14
+**Last update:** 2026-06-15
+
+=== UPDATE: 2026-06-15 ===
+Phase: section-2 smart-picker / Plan 3-B (PrimeNG abstraction wall correctness)
+Agent: meesell-angular-component-builder (specialist dispatch)
+Session: mesell-section-2-frontend-session-1
+Branch: feature/section-2/frontend @ 2a290b0 — PUSHED
+
+Done:
+  - SmartPickerComponent: replaced raw <button> "Browse if none match" with <mee-button variant="ghost" size="sm">
+  - Added MeeButtonComponent to @Component imports[] (destructured into existing @mesell/ui-kit import)
+  - Zero raw <button> elements remain in smart-picker.component.ts
+  - Zero primeng/* direct imports in smart-picker.component.ts
+
+Tests: N/A (no test changes required — behavioural logic unchanged; onBrowse() untouched)
+Build: SKIPPED (node_modules absent in section-2-frontend worktree; build environment issue not code defect)
+  - Check 1 (grep "<button"): ZERO hits — PASS
+  - Check 2 (grep "primeng"): ZERO hits — PASS
+In progress: none
+Blockers: none
+Next: meesell-frontend-coordinator merge-gate review (HYBRID step 3)
+Hand-offs:
+  - SmartPickerComponent Plan 3-B fix committed to feature/section-2/frontend @ 2a290b0
+  - MeeButtonComponent (selector: mee-button, variant: ghost, size: sm, event: clicked) confirmed from ui-kit barrel
+=========
 
 === UPDATE: 2026-06-14 17:00 IST ===
 Phase: V1 environment files — @mesell/env shared lib (session mesell-env-files-frontend-session-1)
