@@ -31,11 +31,13 @@ import {
   Validators,
 } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { HttpErrorResponse } from '@angular/common/http';
 
 import {
   MeeTextareaComponent,
   MeeSkeletonComponent,
   MeeButtonComponent,
+  MeeToastService,
 } from '@mesell/ui-kit';
 import {
   PageHeaderComponent,
@@ -45,6 +47,14 @@ import {
 import { CategoryService } from './services/category.service';
 import { CategoryCardComponent } from './category-card.component';
 import type { CategorySuggestion, SuggestResponse } from './smart-picker.model';
+
+const SMART_PICKER_ERROR_COPY: Record<string, string> = {
+  'validation.suggest_q.too_short_or_long': 'Please enter between 1 and 500 characters to search categories.',
+  'category.lookup.not_found': "We couldn't find that category. Please pick another from the list.",
+  'category.field_enum.not_found': "We couldn't load the options for this field. Please refresh the page.",
+  'rate_limit.window.exceeded': "You've reached the category suggestion limit. Try again in an hour.",
+};
+const GENERIC_ERROR_COPY = 'Something went wrong. Please try again.';
 
 @Component({
   selector: 'app-smart-picker',
@@ -108,6 +118,13 @@ import type { CategorySuggestion, SuggestResponse } from './smart-picker.model';
         </form>
       </div>
 
+      <!-- Inline API error (400/404/422 responses) -->
+      @if (apiError()) {
+        <p class="mt-3 text-sm text-center" role="alert" style="color: var(--mee-color-error);">
+          {{ apiError() }}
+        </p>
+      }
+
       <!-- Results zone -->
       <div class="mt-6">
 
@@ -157,7 +174,7 @@ import type { CategorySuggestion, SuggestResponse } from './smart-picker.model';
         @if (!loading() && suggestions().length === 0 && fallbackOffered()) {
           <mee-empty-state
             icon="category"
-            message="No automatic suggestions found. Browse the full category list manually."
+            message="Smart suggestions are unavailable right now — browse categories manually instead."
             cta_label="Browse all categories"
             (cta_click)="onBrowse()"
           />
@@ -171,6 +188,7 @@ export class SmartPickerComponent {
   private readonly fb = inject(FormBuilder);
   private readonly categoryService = inject(CategoryService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly toastService = inject(MeeToastService);
 
   // ── Form ──────────────────────────────────────────────────────────
   readonly form = this.fb.group({
@@ -188,6 +206,7 @@ export class SmartPickerComponent {
   readonly loading          = signal(false);
   readonly suggestions      = signal<CategorySuggestion[]>([]);
   readonly fallbackOffered  = signal(false);
+  readonly apiError         = signal<string | null>(null);
 
   // ── Computed error for template binding ───────────────────────────
   readonly descError = computed<string | undefined>(() => {
@@ -210,6 +229,7 @@ export class SmartPickerComponent {
     this.loading.set(true);
     this.suggestions.set([]);
     this.fallbackOffered.set(false);
+    this.apiError.set(null);
     this.categoryService.suggest(q)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
@@ -218,9 +238,17 @@ export class SmartPickerComponent {
           this.fallbackOffered.set(response.fallback_offered);
           this.loading.set(false);
         },
-        error: () => {
+        error: (err: HttpErrorResponse) => {
           this.loading.set(false);
-          this.fallbackOffered.set(true);
+          const code = (err.error as { validation_message_id?: string })?.validation_message_id ?? '';
+          if (err.status === 429) {
+            this.toastService.error(SMART_PICKER_ERROR_COPY['rate_limit.window.exceeded']);
+          } else if (err.status >= 400 && err.status < 500) {
+            this.apiError.set(SMART_PICKER_ERROR_COPY[code] ?? GENERIC_ERROR_COPY);
+          } else {
+            // 5xx
+            this.toastService.error(GENERIC_ERROR_COPY);
+          }
         },
       });
   }

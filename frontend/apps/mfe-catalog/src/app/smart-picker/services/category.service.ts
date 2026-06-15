@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
-import { Observable, EMPTY, of } from 'rxjs';
+import { Observable, EMPTY, of, throwError } from 'rxjs';
 import { catchError, tap } from 'rxjs/operators';
 import { Router } from '@angular/router';
 
@@ -22,13 +22,10 @@ import type { BrowseResponse, SuggestResponse } from '../smart-picker.model';
  * @mesell/ui-kit but the service layer has no injected reference to it. Errors surface
  * through the returned fallback shape only (SOLID DIP).
  *
- * ## Error matrix
- * - 401 → AuthService.logout() + return EMPTY (session invalidated; refreshInterceptor
- *         handles the silent-refresh path; this only fires when refresh also failed)
+ * ## Error matrix (Plan 2-W2-A revised)
+ * - 401 → AuthService.logout() + return EMPTY (session invalidated)
  * - 402 → return of({ suggestions: [], fallback_offered: true }) (plan-guard quota exceeded)
- * - 400 → return EMPTY (invalid q param — caller's validation responsibility)
- * - 404 → return of({ suggestions: [], fallback_offered: true }) (FEATURE_SMART_PICKER_ENABLED=false)
- * - 5xx → return of({ suggestions: [], fallback_offered: true }) (server unavailable)
+ * - 400, 404, 422, 429, 5xx → throwError(() => err) — component decides toast vs inline
  */
 @Injectable()
 export class CategoryService {
@@ -51,15 +48,11 @@ export class CategoryService {
         this.auth.logout();
         return EMPTY;
       case 402:
-        return of({ suggestions: [], fallback_offered: true });
-      case 400:
-        return EMPTY;
-      case 404:
-        // Feature flag disabled (FEATURE_SMART_PICKER_ENABLED=false)
+        // Plan-guard quota exceeded → graceful fallback shape (not an error to display)
         return of({ suggestions: [], fallback_offered: true });
       default:
-        // 5xx and any other error → graceful fallback shape
-        return of({ suggestions: [], fallback_offered: true });
+        // 400, 404, 422, 429, 5xx → rethrow so the component can surface correct copy
+        return throwError(() => err);
     }
   }
 
@@ -102,6 +95,11 @@ export class CategoryService {
       this.auth.logout();
       return EMPTY;
     }
+    if (err.status === 400 || err.status === 422) {
+      // Validation errors → rethrow so browse.component.ts can show inline error
+      return throwError(() => err);
+    }
+    // 404, 429, 5xx → return empty results (browse degrades gracefully)
     return of({ results: [], total: 0 });
   }
 

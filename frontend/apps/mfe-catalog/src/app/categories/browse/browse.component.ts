@@ -26,6 +26,7 @@ import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { HttpErrorResponse } from '@angular/common/http';
 
 import {
   MeeButtonComponent,
@@ -42,6 +43,11 @@ import { CategoryService } from '../../smart-picker/services/category.service';
 import type { BrowseResultRow } from '../../smart-picker/smart-picker.model';
 
 const LIMIT = 20;
+
+const BROWSE_ERROR_COPY: Record<string, string> = {
+  'validation.browse.invalid_pagination': 'Page or limit is out of range. Please try a smaller page size.',
+};
+const GENERIC_BROWSE_ERROR_COPY = 'Something went wrong. Please try again.';
 
 @Component({
   selector: 'app-browse',
@@ -72,6 +78,12 @@ const LIMIT = 20;
           placeholder="e.g. cotton kurti, steel bowl..."
         />
       </form>
+
+      @if (browseError()) {
+        <p class="mb-4 text-sm" role="alert" style="color: var(--mee-color-error);">
+          {{ browseError() }}
+        </p>
+      }
 
       @if (loading()) {
         <div class="grid grid-cols-1 gap-3" aria-busy="true" aria-label="Loading categories">
@@ -138,10 +150,11 @@ export class BrowseComponent implements OnInit {
   readonly form = this.fb.group({ search: [''] });
 
   // ── Signals ───────────────────────────────────────────────────────────────
-  readonly results = signal<BrowseResultRow[]>([]);
-  readonly total   = signal(0);
-  readonly loading = signal(false);
-  readonly offset  = signal(0);
+  readonly results     = signal<BrowseResultRow[]>([]);
+  readonly total       = signal(0);
+  readonly loading     = signal(false);
+  readonly offset      = signal(0);
+  readonly browseError = signal<string | null>(null);
 
   // ── Computed ──────────────────────────────────────────────────────────────
   readonly hasPrev = computed(() => this.offset() > 0);
@@ -174,6 +187,7 @@ export class BrowseComponent implements OnInit {
   private doSearch(): void {
     const q = this.form.get('search')!.value ?? '';
     this.loading.set(true);
+    this.browseError.set(null);
     this.categoryService
       .browse(q, undefined, LIMIT, this.offset())
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -183,7 +197,14 @@ export class BrowseComponent implements OnInit {
           this.total.set(res.total);
           this.loading.set(false);
         },
-        error: () => this.loading.set(false),
+        error: (err: HttpErrorResponse) => {
+          this.loading.set(false);
+          const code = (err.error as { validation_message_id?: string })?.validation_message_id ?? '';
+          if (err.status === 400 || err.status === 422) {
+            this.browseError.set(BROWSE_ERROR_COPY[code] ?? GENERIC_BROWSE_ERROR_COPY);
+          }
+          // 404/429/5xx → degrade silently (results stay empty, handled by empty-state)
+        },
       });
   }
 
