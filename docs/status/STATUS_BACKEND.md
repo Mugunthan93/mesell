@@ -6485,3 +6485,48 @@ Hand-offs: none opened. Founder action queue carried in §3 of the audit doc.
 Audit doc + board/STATUS landed on docs-only chore branch `chore/microservices-5g-compliance-audit`
   (docs-only PR, --admin merge — develop has no PR-review rule + enforce_admins=false; NOT a founder gate).
 =========
+
+=== UPDATE: 2026-06-15 ===
+Phase: section-3 catalog-form — Wave 1, Unit 1.1 (GAP-1 category_id recovery)
+Done: added `catalog.service.get_product_detail(user_id, product_id, db) -> Product`
+  — ownership gate via assert_product_ownership, then catalog_repo.find_by_id with
+  TOCTOU None-guard, mapped through _orm_to_domain. Added to __all__ (alpha) + module
+  docstring inventory. 4 unit tests appended to tests/modules/catalog/test_service_unit.py
+  (success/wrong-owner/not-found/soft-deleted) via existing _seed_product/_seed_catalog
+  helpers + user/other_user/beauty_category fixtures.
+Tests: 4 new PASS (GetProductDetail); 16/17 file PASS — the 1 fail
+  (TestAutofillGracefulFallback) is a PRE-EXISTING Valkey-tunnel infra gap (port 6381 not
+  running locally), confirmed failing on baseline via git stash; NOT a regression.
+  ruff check service.py clean. __all__ diff additive-only; no cross-module imports added;
+  no existing signature touched.
+In progress: none
+Blockers: none
+Next: api-routes-builder wires GET /api/v1/products/{id} to catalog_service.get_product_detail.
+Hand-offs: get_product_detail(user_id, product_id, db) ready on feature/section-3/backend
+  @ 71960c4; returns catalog.domain.Product (carries category_id); raises ProductNotFoundError
+  (404 / catalog.product.not_found) for missing/cross-tenant/soft-deleted — same leak-collapse
+  as assert_product_ownership. api-routes-builder can wire GET /products/{id} read route.
+=========
+
+=== UPDATE: 2026-06-15 ===
+Phase: section-3 catalog-form — Wave 1, Unit 1.2 (GAP-1 GET /products/{id} route)
+Done:
+  GET /api/v1/products/{id} — added to backend/app/modules/catalog/router.py
+    §10.B.7; calls catalog_service.get_product_detail(user_id, product_id, db=db);
+    @rate_limit(scope="product_detail", limit=600, window=3600); no @audit_event (read-only);
+    no feature flag (GAP-1 fix is unconditional); response_model=ProductResponse.
+    Module docstring updated (endpoint 7 added; rate-limit list updated; read-only count 2→3).
+Tests: 25 passed / 0 failed (full tests/modules/catalog/ suite)
+  New: TestGetProductDetail (4 tests in test_integration.py):
+    test_get_product_returns_category_id_for_reload — GAP-1 regression guard; 200 + category_id match
+    test_get_product_unauthenticated — client fixture + invalid bearer → 401
+    test_get_product_wrong_owner_returns_404 — seller B on seller A product → ProductNotFoundError (catalog.product_not_found)
+    test_get_product_not_found — random UUID → ProductNotFoundError
+  ruff check: clean on both router.py and test_integration.py.
+In progress: none
+Blockers: none
+Next: section-3-integration coordinator collects backend + frontend PRs for integration → develop.
+Hand-offs: GET /api/v1/products/{id} live on feature/section-3/backend.
+  Returns ProductResponse (includes category_id). Frontend CatalogForm can call GET /products/{id}
+  on hard reload to recover category_id and populate form. GAP-1 fix complete.
+=========
