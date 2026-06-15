@@ -87,12 +87,25 @@ Key rule: `smart_picker.ai.unavailable` and `smart_picker.budget.exceeded` are N
 
 ---
 
-## Next actions (as of session start, Plan 4 in-flight)
+## Completion state (2026-06-16)
 
-1. Plan 4 FE coordinator spec → specialist build → FE coordinator gate → squash to integration
-2. Plan 1 FE coordinator spec → specialist build → FE coordinator gate → squash to integration
-3. Plan 2-W2 FE coordinator spec → specialist build → FE coordinator gate → squash to integration
-4. After all groups merged + integration CI green: open feature/section-2/integration → develop PR (merge-commit), hand to founder
+**ALL 4 PLANS COMPLETE. PR #236 open.**
+
+Integration branch `feature/section-2/integration` HEAD: `9ebff0c` (pushed to origin).
+
+| SHA | Plan | Status |
+|---|---|---|
+| `11531a4` | Plan 3 — PrimeNG button swap | ✅ DONE |
+| `2766ed7` | Plan 2-W1 — i18n contract | ✅ DONE |
+| `1678b46` | Plan 4 — submit-on-Enter entry page | ✅ DONE |
+| `88b62a8` | Plan 1 — browse fallback page | ✅ DONE |
+| `8d056b4` | Plan 2-W2 — error surfacing | ✅ DONE |
+| `9ebff0c` | federation.config.js carry-over | ✅ DONE |
+
+PR: https://github.com/Mugunthan93/mesell/pull/236 — `feature/section-2/integration → develop` (merge-commit)
+**NEVER merge this PR from this session — founder's gate.**
+
+Founder pre-merge action required: `ng build mfe-catalog` on `feature/section-2/integration`.
 
 ---
 
