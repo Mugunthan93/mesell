@@ -1,12 +1,12 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpErrorResponse } from '@angular/common/http';
-import { Observable, EMPTY, of } from 'rxjs';
+import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
+import { Observable, EMPTY, of, throwError } from 'rxjs';
 import { catchError, tap } from 'rxjs/operators';
 import { Router } from '@angular/router';
 
 import { AuthService } from '@mesell/core';
 import { environment } from '@mesell/env';
-import type { SuggestResponse } from '../smart-picker.model';
+import type { BrowseResponse, SuggestResponse } from '../smart-picker.model';
 
 /**
  * CategoryService — feature-scoped (no providedIn).
@@ -22,13 +22,10 @@ import type { SuggestResponse } from '../smart-picker.model';
  * @mesell/ui-kit but the service layer has no injected reference to it. Errors surface
  * through the returned fallback shape only (SOLID DIP).
  *
- * ## Error matrix
- * - 401 → AuthService.logout() + return EMPTY (session invalidated; refreshInterceptor
- *         handles the silent-refresh path; this only fires when refresh also failed)
+ * ## Error matrix (Plan 2-W2-A revised)
+ * - 401 → AuthService.logout() + return EMPTY (session invalidated)
  * - 402 → return of({ suggestions: [], fallback_offered: true }) (plan-guard quota exceeded)
- * - 400 → return EMPTY (invalid q param — caller's validation responsibility)
- * - 404 → return of({ suggestions: [], fallback_offered: true }) (FEATURE_SMART_PICKER_ENABLED=false)
- * - 5xx → return of({ suggestions: [], fallback_offered: true }) (server unavailable)
+ * - 400, 404, 422, 429, 5xx → throwError(() => err) — component decides toast vs inline
  */
 @Injectable()
 export class CategoryService {
@@ -51,15 +48,11 @@ export class CategoryService {
         this.auth.logout();
         return EMPTY;
       case 402:
-        return of({ suggestions: [], fallback_offered: true });
-      case 400:
-        return EMPTY;
-      case 404:
-        // Feature flag disabled (FEATURE_SMART_PICKER_ENABLED=false)
+        // Plan-guard quota exceeded → graceful fallback shape (not an error to display)
         return of({ suggestions: [], fallback_offered: true });
       default:
-        // 5xx and any other error → graceful fallback shape
-        return of({ suggestions: [], fallback_offered: true });
+        // 400, 404, 422, 429, 5xx → rethrow so the component can surface correct copy
+        return throwError(() => err);
     }
   }
 
@@ -89,6 +82,47 @@ export class CategoryService {
       .pipe(
         catchError((err: HttpErrorResponse) => this.handleSuggestError(err)),
       );
+  }
+
+  /**
+   * Shared error handler for CategoryService.browse().
+   * Maps HTTP error codes to the contract fallback shapes.
+   * - 401 → AuthService.logout() + return EMPTY (session invalidated)
+   * - 4xx/5xx → return empty results fallback shape
+   */
+  private handleBrowseError(err: HttpErrorResponse): Observable<BrowseResponse> {
+    if (err.status === 401) {
+      this.auth.logout();
+      return EMPTY;
+    }
+    if (err.status === 400 || err.status === 422) {
+      // Validation errors → rethrow so browse.component.ts can show inline error
+      return throwError(() => err);
+    }
+    // 404, 429, 5xx → return empty results (browse degrades gracefully)
+    return of({ results: [], total: 0 });
+  }
+
+  /**
+   * GET /api/v1/categories/browse?q=<query>[&super_id=<uuid>]&limit=<n>&offset=<n>
+   *
+   * Returns paginated BrowseResultRow items matching the query string.
+   * Supports optional super_id filter to restrict results to one top-level group.
+   *
+   * @param q       — search string
+   * @param superId — optional super-category UUID filter
+   * @param limit   — page size (default 20)
+   * @param offset  — pagination offset (default 0)
+   */
+  browse(q: string, superId?: string, limit = 20, offset = 0): Observable<BrowseResponse> {
+    let params = new HttpParams()
+      .set('q', q)
+      .set('limit', String(limit))
+      .set('offset', String(offset));
+    if (superId) params = params.set('super_id', superId);
+    return this.http
+      .get<BrowseResponse>(`${environment.apiBase}/api/v1/categories/browse`, { params })
+      .pipe(catchError((err: HttpErrorResponse) => this.handleBrowseError(err)));
   }
 
   /**

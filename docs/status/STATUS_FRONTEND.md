@@ -3,6 +3,28 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-16
 
+=== UPDATE: 2026-06-15 ===
+Phase: section-2 smart-picker / Plan 3-B (PrimeNG abstraction wall correctness)
+Agent: meesell-angular-component-builder (specialist dispatch)
+Session: mesell-section-2-frontend-session-1
+Branch: feature/section-2/frontend @ 2a290b0 — PUSHED
+
+Done:
+  - SmartPickerComponent: replaced raw <button> "Browse if none match" with <mee-button variant="ghost" size="sm">
+  - Added MeeButtonComponent to @Component imports[] (destructured into existing @mesell/ui-kit import)
+  - Zero raw <button> elements remain in smart-picker.component.ts
+  - Zero primeng/* direct imports in smart-picker.component.ts
+
+Tests: N/A (no test changes required — behavioural logic unchanged; onBrowse() untouched)
+Build: SKIPPED (node_modules absent in section-2-frontend worktree; build environment issue not code defect)
+  - Check 1 (grep "<button"): ZERO hits — PASS
+  - Check 2 (grep "primeng"): ZERO hits — PASS
+In progress: none
+Blockers: none
+Next: meesell-frontend-coordinator merge-gate review (HYBRID step 3)
+Hand-offs:
+  - SmartPickerComponent Plan 3-B fix committed to feature/section-2/frontend @ 2a290b0
+  - MeeButtonComponent (selector: mee-button, variant: ghost, size: sm, event: clicked) confirmed from ui-kit barrel
 === UPDATE: 2026-06-16 ===
 Phase: section-3 / Wave 3.3 — CatalogListComponent a11y polish + token audit
 Agent: meesell-angular-ui-styler
@@ -7068,6 +7090,32 @@ Hand-offs:
   - Screenshots (360/1280): native-fed headless caveat → founder Gate-5 UI-review (states: input form / calculating / result-table-with-alerts / 404-unavailable / 422-no-commission / 5xx-retry-banner).
 =========
 
+=== UPDATE: 2026-06-15 — Section-2 Plan 1-B — BrowseComponent + shell route ===
+Phase: Section-2 Plan 1-B — /categories/browse page and route
+Session: mesell-section-2-frontend-session-1 (HYBRID Step 2 — Task B)
+Done:
+  - Created BrowseComponent at frontend/apps/mfe-catalog/src/app/categories/browse/browse.component.ts
+    standalone, OnPush, ReactiveFormsModule, debounce-400ms search, offset pagination,
+    CategoryService.browse() + selectCategory() wired, mee-* only (zero PrimeNG imports)
+  - Added shell-level route { path: 'categories/browse' } to frontend/apps/shell/src/app/app.routes.ts
+    inside the authGuard-protected children block, using loadRemoteWithFallback('mfe-catalog','./BrowseComponent')
+    so CategoryService.browseRedirect() absolute nav /categories/browse resolves correctly
+Tests: no spec file (deferred per spec — keeping PR scope minimal)
+Build: not verified locally (shell ts build succeeds — loadRemoteWithFallback is runtime-string-only, no static import)
+In progress: none
+Blockers:
+  - DEVIATION: shell app.routes.ts edited instead of mfe-catalog/catalog.routes.ts (correct per architecture —
+    browseRedirect() targets absolute /categories/browse, not /catalogs/categories/browse)
+  - FOLLOW-UP REQUIRED: mfe-catalog/federation.config.js must add exposes['./BrowseComponent'] pointing to
+    apps/mfe-catalog/src/app/categories/browse/browse.component.ts for the shell route to resolve at runtime.
+    This is a coordinator-scope concern (one-line federation config change).
+Next: coordinator to add ./BrowseComponent expose to mfe-catalog/federation.config.js
+Hand-offs:
+  - BrowseComponent ready; shell route registered at /categories/browse via loadRemoteWithFallback.
+  - mfe-catalog/federation.config.js: add exposes['./BrowseComponent'] = './apps/mfe-catalog/src/app/categories/browse/browse.component.ts' (coordinator/infra scope).
+  - CategoryService.browse() + selectCategory() from Plan 1-A consumed correctly.
+=========
+
 === UPDATE: 2026-06-15 (session start + spec produced) ===
 Phase: section-2 (smart-picker) — Plan 3 PrimeNG correctness redevelop
 Session: mesell-section-2-frontend-session-1
@@ -7132,5 +7180,4 @@ Build: TypeScript zero errors (full ng build not run — type-check sufficient p
 Blockers: none.
 Next: Wave 2B.3 — spec file for resolveInitOutcome() pure helper
 Hand-offs: CatalogFormComponent now safe on hard-reload. Depends on getProduct() from CatalogFormApiService (commit 2264fed, Wave 2B.1).
-=========
 =========

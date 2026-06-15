@@ -123,3 +123,27 @@ export function buildEditRoute(catalogId: string): [string, string, string] {
 export function topN(suggestions: CategorySuggestion[], n = 3): CategorySuggestion[] {
   return suggestions.slice(0, n);
 }
+
+// ── Browse interfaces (added Plan 1-A 2026-06-15) ─────────────────────────────
+
+/**
+ * A single row returned by GET /api/v1/categories/browse.
+ * Field-for-field match with backend BrowseResultRow schema.
+ */
+export interface BrowseResultRow {
+  category_id: string;
+  super_id: string;
+  super_name: string;
+  path: string;
+  leaf_name: string;
+  similarity: number;
+}
+
+/**
+ * Full response from GET /api/v1/categories/browse.
+ * results.length is bounded by the requested limit parameter.
+ */
+export interface BrowseResponse {
+  results: BrowseResultRow[];
+  total: number;
+}

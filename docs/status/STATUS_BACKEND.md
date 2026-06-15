@@ -3,6 +3,38 @@
 > **MS-PAR-1 MICROSERVICES MIGRATION — PROGRAM COMPLETE (founder-ratified 2026-06-14).** All 8 services (A–H) extracted and merged to develop: svc-{export, dashboard, image, pricing, customer, category, iam, catalog}. The founder merged the three final founder gates — #220 iam → #221 category → #223 catalog — develop tip `5f8e2e1`. **Strangler INTACT** — `backend/app/main.py` still mounts all 8 monolith routers; ZERO cutover taken (each per-service Traefik cutover is a SEPARATE future founder gate). The §5.G compliance audit (`docs/plans/microservices_migration/PROGRAM_COMPLIANCE_AUDIT_5G.md`) PASSED (verdict PROGRAM-COMPLETE-READY, now ratified); the T2 completion stamp is APPLIED in `MASTER_PLAN.md` (header + §4 status block flipped EXTRACTION-COMPLETE → PROGRAM COMPLETE; Rev v1.8). **Remaining items are NOT migration-program scope — they are deploy-time founder actions:** SM `dev-<svc>-db-password` + shared `JWT_SECRET`; the 8 §7.3-LOCKED `BACKEND_ARCHITECTURE.md` "Extracted to svc-<x> V1.5" amendments; the D3 e2-standard-4 FRESH spend-ask before the 8-service node deploy. — `mesell-microservices-programclose-session-2` (Phase E, T2)
 
 ```
+=== UPDATE: 2026-06-15 (mesell-section-2-backend-session-1) — Plan 2-W1: section-2 i18n error message contract ===
+Phase: Section-2 (smart-picker) — Wave 2-W1 (i18n error message contract)
+Session: mesell-section-2-backend-session-1 (HYBRID Step 2 specialist dispatch — meesell-services-builder)
+Worktree: /tmp/mesell-wt/section-2-backend, branch feature/section-2/backend
+Done:
+  - Change A: 2-segment validation_message_id "rate_limit.exceeded" → 3-segment "rate_limit.window.exceeded"
+    in RateLimitExceededError class attr + _build_rate_limit_response envelope, in BOTH trees:
+    backend/app/core/middleware/rate_limit_mw.py + backend/services/svc-category/app/core/middleware/rate_limit_mw.py.
+    The `code = "rate_limit.exceeded"` machine slug left UNCHANGED (not governed by the 3-segment regex).
+  - Change B: registered new key "rate_limit.window.exceeded" in VALIDATION_MESSAGES (near plan_guard section) +
+    fixed "validation.suggest_q.too_short_or_long" copy "2 and 60" → "1 and 500" (matches enforced 1–500 code bound),
+    in BOTH trees: backend/app/i18n/messages_en.py + backend/services/svc-category/app/i18n/messages_en.py.
+  - Change C honoured: smart_picker.ai.unavailable / smart_picker.budget.exceeded NOT added (200+fallback_offered paths).
+  - Created backend/tests/test_section2_i18n_contract.py (5 test functions; 10 cases w/ parametrization).
+  - Collateral: updated 1 assertion in backend/tests/test_core_rate_limit_mw.py:66 (was asserting the old
+    2-segment value the middleware no longer emits) — keeps the existing unit test green under Change A.
+Tests: test_section2_i18n_contract.py 10/10 PASS (Python 3.11 venv). test_core_rate_limit_mw.py 3/3 PASS
+  against a reachable local Valkey (6379); the 6381-tunnel-down env yields fail-open 200s unrelated to this change.
+In progress: none
+Blockers: none
+DISCREPANCY FLAGGED (for coordinator Step-3 gate): Change A spec scoped ONLY the main + svc-category rate_limit_mw
+  files, but the spec's own Check-1 ("grep validation_message_id.*rate_limit.exceeded over backend/ → ZERO hits")
+  cannot pass tree-wide: 8 OTHER svc-* trees (svc-dashboard, svc-export, svc-pricing, svc-customer, svc-iam,
+  svc-catalog, svc-image) still carry the old 2-segment validation_message_id "rate_limit.exceeded" (16 lines).
+  Those were NOT in scope ("no more, no less") so I did NOT touch them. If section-2 needs tree-wide 3-segment
+  parity, a follow-up wave should sweep the other 7 svc trees. Reported, not actioned.
+Next: backend coordinator runs Step-3 merge-gate review on the feature/section-2/backend PR.
+Hand-offs: api-routes-builder — svc-category 429 envelope now emits validation_message_id "rate_limit.window.exceeded";
+  any client/contract test asserting the rate-limit envelope must expect the 3-segment value.
+=========
+```
+
 === UPDATE: 2026-06-13 (mesell-ms-category-backend-session-1) — MS-F Phase A: svc-category schema-split Alembic chain COMPLETE ===
 Phase: Microservices Sub-Plan F (category extraction) — Phase A, database lane (meesell-database-builder)
 Session: mesell-microservices-category-backend-session-1
