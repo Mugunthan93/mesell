@@ -107,6 +107,17 @@ PR: https://github.com/Mugunthan93/mesell/pull/236 — `feature/section-2/integr
 
 Founder pre-merge action required: `ng build mfe-catalog` on `feature/section-2/integration`.
 
+## PR #236 conflict — HANDED TO MASTER SESSION (2026-06-16)
+
+PR #236 is `CONFLICTING / DIRTY`. develop advanced (section-3 `c450a46` + 4 docs PRs) after section-2 branched.
+
+- **Only conflicting file:** `docs/status/STATUS_FRONTEND.md` — append-log collision (section-2 + section-3 both inserted entries top & bottom).
+- `STATUS_BACKEND.md` touched by both but **merges clean**. **Zero code/source conflicts.**
+- merge-base: `8963a58`.
+- **Recommended resolution:** UNION — keep BOTH sections' status entries; take latest `Last update:` (2026-06-16).
+- **Founder ruling (2026-06-16):** section-2 coordinator does NOT resolve. Master session resolves this cross-section status-doc conflict.
+- Stray working-tree file in integration worktree: `.claude/agent-memory/meesell-angular-service-builder/MEMORY.md` (specialist's own memory write; uncommitted; left as-is per founder).
+
 ---
 
 ## Escalation items
