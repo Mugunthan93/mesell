@@ -1,8 +1,8 @@
 # MeeSell Section-Dispatch Protocol
 
-**STATUS: DRAFT — pending founder ratification.**
+**STATUS: APPROVED 2026-06-15.**
 
-> This document **operationalizes** the DRAFT `SECTION_PARALLEL_MODEL.md`. It is the launch/dispatch companion: the model defines the *what* (naming, branch model, 4-tier tree, wave protocol); this defines the *how to boot it* (worktree launch sequence + the three verbatim paste-block templates). It is itself DRAFT and inherits the model's gate: until the founder flips `SECTION_PARALLEL_MODEL.md` STATUS to `APPROVED YYYY-MM-DD`, **nothing in this document is executed**. No worktree is created, no section session is booted, no template is pasted.
+> This document **operationalizes** the APPROVED `SECTION_PARALLEL_MODEL.md`. It is the launch/dispatch companion: the model defines the *what* (naming, branch model, 4-tier tree, wave protocol); this defines the *how to boot it* (worktree launch sequence + the three verbatim paste-block templates). Its self-gate is now satisfied: the founder flipped `SECTION_PARALLEL_MODEL.md` STATUS to `APPROVED 2026-06-15`, so this protocol is **executable** — worktrees may be created, section sessions booted, and templates pasted per the launch sequence below.
 
 | Field | Value |
 |---|---|
@@ -481,3 +481,4 @@ Cleanup timing follows `_WORKTREE_PROTOCOL.md §5`: leave worktrees in place whi
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-06-15 | meesell-backend-coordinator | Initial DRAFT. Launch/dispatch companion to `SECTION_PARALLEL_MODEL.md` (DRAFT 0.1). Three boot templates (A/B/C) with empty `{{PLACEHOLDER}}` fills; Template A hard-stops at the check-in gate per founder ruling 2026-06-15. Awaiting founder ratification. |
+| 1.0 | 2026-06-15 | founder ratification | Protocol executable. Self-gate satisfied (`SECTION_PARALLEL_MODEL.md` flipped to APPROVED 2026-06-15). STATUS DRAFT → APPROVED. |

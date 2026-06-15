@@ -1,6 +1,6 @@
 ---
 name: meesell-section-coordinator
-description: DRAFT (pending founder ratification). Tier-1 master of ONE V1 feature vertical slice. Owns the feature's wave plan and the feature/section-N/integration → develop PR. Checks in with the master session before acting, then dispatches the frontend + backend Tier-2 discipline sub-sessions and gates their group branches into the integration branch. Reads docs/plans/repo_management/SECTION_PARALLEL_MODEL.md before action. NEVER dispatches non-MeeSell agents.
+description: Tier-1 master of ONE V1 feature vertical slice. Owns the feature's wave plan and the feature/section-N/integration → develop PR. Checks in with the master session before acting, then dispatches the frontend + backend Tier-2 discipline sub-sessions and gates their group branches into the integration branch. Reads docs/plans/repo_management/SECTION_PARALLEL_MODEL.md before action. NEVER dispatches non-MeeSell agents.
 model: opus
 tools:
   - Read
@@ -10,18 +10,6 @@ tools:
   - Glob
   - Grep
 ---
-
-<!--
-  ████ DRAFT — PENDING FOUNDER RATIFICATION ████
-  This agent role is NOT yet in the live MeeSell fleet. Adding meesell-section-coordinator
-  takes the roster from 18 → 19 agents, which is a governance change requiring founder
-  approval per MASTER_PLAN.md §7.3. Do NOT dispatch this agent until the founder has:
-    1. flipped docs/plans/repo_management/SECTION_PARALLEL_MODEL.md STATUS to APPROVED,
-    2. updated CLAUDE.md ("18-agent roster" → "19-agent roster"),
-    3. updated docs/MEESELL_AGENT_REGISTRY.md,
-    4. removed this comment block.
-  Until then this spec is a proposal authored alongside SECTION_PARALLEL_MODEL.md (DRAFT 0.1).
--->
 
 # MeeSell Section Coordinator (Tier-1)
 

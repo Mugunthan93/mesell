@@ -1,6 +1,6 @@
 # MeeSell Section-Parallel Development Model
 
-**STATUS: DRAFT — pending founder ratification.**
+**STATUS: APPROVED 2026-06-15 — ratified by founder. Now executable.**
 
 > This document **EXTENDS** the APPROVED repo-management governance. It does NOT replace it. Per `MASTER_PLAN.md §10` (acceptance gate) and `§7.3` (escalation rules), any change to the governed branch model, merge flow, or agent roster requires **founder approval**. Until the founder flips this STATUS header to `APPROVED YYYY-MM-DD`, no agent operates under this model. Active work continues under the APPROVED `MASTER_PLAN.md` (Model C) as written.
 
@@ -319,3 +319,4 @@ None of steps 1–4 happen before founder ratification.
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-06-15 | meesell-backend-coordinator | Initial DRAFT. Extends APPROVED MASTER_PLAN.md per the 5 founder rulings of 2026-06-15. Awaiting founder ratification. |
+| 1.0 | 2026-06-15 | founder + master Director | Ratified DRAFT → APPROVED. Rulings 1.a–5 locked. 2-group collapse amended into MASTER_PLAN §1.2 (see that doc). Roster bumped 18→19. |
