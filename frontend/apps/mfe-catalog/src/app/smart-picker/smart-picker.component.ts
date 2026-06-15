@@ -5,8 +5,8 @@
  *
  * Flow:
  *  - Seller types a product description (10-500 chars).
- *  - On valueChanges, after 400 ms debounce + distinctUntilChanged + valid filter,
- *    CategoryService.suggest(description) is called.
+ *  - Pressing Enter or clicking the Send button fires onSubmit().
+ *  - CategoryService.suggest(description) is called; results render in place.
  *  - Top-3 of the returned suggestions (max 5) are rendered via CategoryCardComponent.
  *  - fallback_offered=true and empty suggestions -> EmptyStateComponent + "Browse all categories".
  *  - fallback_offered=true and non-empty -> 3 cards + secondary "Browse if none match" link.
@@ -15,6 +15,7 @@
  * D4 rename: folder was catalog-new/, class was CatalogNewComponent. Renamed per FEATURE_PLAN §D4.
  * Contract fix: §9.E-locked interfaces (no commission_pct; confidence 0-1 float). Port from e97c4f5.
  * MeeTreeSelect/SIMULATED_TREE removed per D1 (browse routes to /categories/browse, not inline tree).
+ * Plan 4-B: auto-fire debounce pipeline removed; replaced with explicit onSubmit() handler.
  */
 import {
   ChangeDetectionStrategy,
@@ -22,7 +23,6 @@ import {
   DestroyRef,
   inject,
   signal,
-  OnInit,
   computed,
 } from '@angular/core';
 import {
@@ -31,12 +31,6 @@ import {
   Validators,
 } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import {
-  debounceTime,
-  distinctUntilChanged,
-  filter,
-  switchMap,
-} from 'rxjs/operators';
 
 import {
   MeeTextareaComponent,
@@ -67,94 +61,113 @@ import type { CategorySuggestion, SuggestResponse } from './smart-picker.model';
   ],
   providers: [CategoryService],
   template: `
-    <div class="p-4 sm:p-6 max-w-4xl mx-auto">
+    <div class="max-w-2xl mx-auto px-4 py-8">
 
       <!-- Page title -->
-      <mee-page-header
-        [title]="'New Catalog'"
-        [subtitle]="'Describe your product and we will suggest the best category.'"
-      />
-
-      <!-- Description form -->
-      <form
-        [formGroup]="form"
-        class="mt-6"
-        aria-label="Product description form"
-      >
-        <mee-textarea
-          formControlName="description"
-          [label]="'Describe your product'"
-          [placeholder]="'e.g. Blue cotton kurti with mirror work for women, size M to XXL'"
-          [rows]="4"
-          [required]="true"
-          [error]="descError()"
+      <div class="text-center mb-8">
+        <mee-page-header
+          [title]="'New Catalog'"
+          [subtitle]="'Describe your product and we will suggest the best category.'"
         />
-        <p
-          class="mt-1 text-xs"
-          style="color: var(--mee-color-on-surface-muted);"
-        >
-          Between 10 and 500 characters.
-        </p>
-      </form>
+      </div>
 
-      <!-- Loading skeletons while suggestion in flight -->
-      @if (loading()) {
-        <div
-          class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3"
-          aria-busy="true"
-          aria-label="Loading category suggestions"
+      <!-- ChatGPT-style centered input zone -->
+      <div class="rounded-2xl border border-gray-200 shadow-sm p-4">
+        <form
+          [formGroup]="form"
+          (ngSubmit)="onSubmit()"
+          (keydown.enter)="onSubmit(); $event.preventDefault()"
+          aria-label="Product description form"
         >
-          <mee-skeleton variant="card" />
-          <mee-skeleton variant="card" />
-          <mee-skeleton variant="card" />
-        </div>
-      }
+          <mee-textarea
+            formControlName="description"
+            [label]="'Describe your product'"
+            [placeholder]="'e.g. Blue cotton kurti with mirror work for women, size M to XXL'"
+            [rows]="4"
+            [required]="true"
+            [error]="descError()"
+          />
+          <p
+            class="mt-1 text-xs"
+            style="color: var(--mee-color-on-surface-muted);"
+          >
+            Between 10 and 500 characters.
+          </p>
 
-      <!-- Top-3 suggestion cards -->
-      @if (!loading() && suggestions().length > 0) {
-        <div
-          class="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3"
-          role="list"
-          aria-label="Category suggestions"
-        >
-          @for (s of suggestions().slice(0, 3); track s.category_id) {
-            <app-category-card
-              [suggestion]="s"
-              (picked)="onPicked($event)"
-            />
-          }
-        </div>
-
-        <!-- Secondary fallback link (shown when fallback_offered=true and there ARE results) -->
-        @if (fallbackOffered()) {
-          <div class="mt-4 text-center">
+          <!-- Send button — right-aligned inside the card -->
+          <div class="flex justify-end mt-3">
             <mee-button
-              label="Browse if none match"
-              variant="ghost"
-              size="sm"
-              [fullWidth]="false"
-              (clicked)="onBrowse()"
+              label="Send"
+              variant="primary"
+              icon="pi pi-send"
+              [loading]="loading()"
+              [disabled]="form.invalid || loading()"
+              (clicked)="onSubmit()"
             />
           </div>
-        }
-      }
+        </form>
+      </div>
 
-      <!-- Empty state: fallback_offered=true AND no suggestions -->
-      @if (!loading() && suggestions().length === 0 && fallbackOffered()) {
-        <div class="mt-6">
+      <!-- Results zone -->
+      <div class="mt-6">
+
+        <!-- Loading skeletons while suggestion in flight -->
+        @if (loading()) {
+          <div
+            class="grid grid-cols-1 gap-4 sm:grid-cols-3"
+            aria-busy="true"
+            aria-label="Loading category suggestions"
+          >
+            <mee-skeleton variant="card" />
+            <mee-skeleton variant="card" />
+            <mee-skeleton variant="card" />
+          </div>
+        }
+
+        <!-- Top-3 suggestion cards -->
+        @if (!loading() && suggestions().length > 0) {
+          <div
+            class="grid grid-cols-1 gap-4 sm:grid-cols-3"
+            role="list"
+            aria-label="Category suggestions"
+          >
+            @for (s of suggestions().slice(0, 3); track s.category_id) {
+              <app-category-card
+                [suggestion]="s"
+                (picked)="onPicked($event)"
+              />
+            }
+          </div>
+
+          <!-- Secondary fallback link (shown when fallback_offered=true and there ARE results) -->
+          @if (fallbackOffered()) {
+            <div class="mt-4 text-center">
+              <mee-button
+                label="Browse if none match"
+                variant="ghost"
+                size="sm"
+                [fullWidth]="false"
+                (clicked)="onBrowse()"
+              />
+            </div>
+          }
+        }
+
+        <!-- Empty state: fallback_offered=true AND no suggestions -->
+        @if (!loading() && suggestions().length === 0 && fallbackOffered()) {
           <mee-empty-state
             icon="category"
             message="No automatic suggestions found. Browse the full category list manually."
             cta_label="Browse all categories"
             (cta_click)="onBrowse()"
           />
-        </div>
-      }
+        }
 
+      </div>
     </div>
   `,
 })
-export class SmartPickerComponent implements OnInit {
+export class SmartPickerComponent {
   private readonly fb = inject(FormBuilder);
   private readonly categoryService = inject(CategoryService);
   private readonly destroyRef = inject(DestroyRef);
@@ -186,24 +199,19 @@ export class SmartPickerComponent implements OnInit {
     return undefined;
   });
 
-  // ── Lifecycle ──────────────────────────────────────────────────────
-  ngOnInit(): void {
-    const descCtrl = this.form.get('description')!;
+  // ── Handlers ───────────────────────────────────────────────────────
 
-    descCtrl.valueChanges
-      .pipe(
-        debounceTime(400),
-        distinctUntilChanged(),
-        filter(() => descCtrl.valid),
-        switchMap((value) => {
-          const q = value ?? '';
-          this.loading.set(true);
-          this.suggestions.set([]);
-          this.fallbackOffered.set(false);
-          return this.categoryService.suggest(q);
-        }),
-        takeUntilDestroyed(this.destroyRef),
-      )
+  /** Fires on Enter keypress or Send button click. */
+  onSubmit(): void {
+    const ctrl = this.form.get('description')!;
+    ctrl.markAsTouched();
+    if (ctrl.invalid || this.loading()) return;
+    const q = (ctrl.value ?? '').trim();
+    this.loading.set(true);
+    this.suggestions.set([]);
+    this.fallbackOffered.set(false);
+    this.categoryService.suggest(q)
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (response: SuggestResponse) => {
           this.suggestions.set(response.suggestions);
@@ -216,8 +224,6 @@ export class SmartPickerComponent implements OnInit {
         },
       });
   }
-
-  // ── Handlers ───────────────────────────────────────────────────────
 
   /** Called when a category card emits 'picked' with a category_id. */
   onPicked(categoryId: string): void {
