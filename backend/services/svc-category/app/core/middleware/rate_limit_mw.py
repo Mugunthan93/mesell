@@ -59,7 +59,7 @@ class RateLimitExceededError(MeesellError):
 
     code = "rate_limit.exceeded"
     status_code = 429
-    validation_message_id = "rate_limit.exceeded"
+    validation_message_id = "rate_limit.window.exceeded"
 
 
 # ── Per-route decorator ────────────────────────────────────────────────────
@@ -121,7 +121,7 @@ def _build_rate_limit_response(request: Request, detail: str) -> JSONResponse:
     body = {
         "detail": detail,
         "code": "rate_limit.exceeded",
-        "validation_message_id": "rate_limit.exceeded",
+        "validation_message_id": "rate_limit.window.exceeded",
         "request_id": request_id,
     }
     return JSONResponse(status_code=429, content=body)

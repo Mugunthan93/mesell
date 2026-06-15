@@ -63,7 +63,7 @@ async def test_per_ip_limit_triggers_429(use_live_valkey):
             assert r.status_code == 429
             body = r.json()
             assert body["code"] == "rate_limit.exceeded"
-            assert body["validation_message_id"] == "rate_limit.exceeded"
+            assert body["validation_message_id"] == "rate_limit.window.exceeded"
 
 
 @pytest.mark.asyncio

@@ -98,7 +98,7 @@ VALIDATION_MESSAGES: dict[str, str] = {
         "We couldn't load the options for this field. Please refresh the page."
     ),
     "validation.suggest_q.too_short_or_long": (
-        "Please type between 2 and 60 characters to search categories."
+        "Please enter between 1 and 500 characters to search categories."
     ),
     "validation.browse.invalid_pagination": (
         "Page or limit is out of range. Please try a smaller page size."
@@ -209,6 +209,10 @@ VALIDATION_MESSAGES: dict[str, str] = {
     # ── §4.E plan_guard (1 cross-cutting ID) ─────────────────────────────
     "plan.limit.exceeded": (
         "You've reached your plan's limit. Upgrade to continue."
+    ),
+    # ── §4.G rate_limit (1 cross-cutting ID — sliding-window hard-stop) ───
+    "rate_limit.window.exceeded": (
+        "You've reached the category suggestion limit. Try again in an hour."
     ),
     # ── §4.F server fallback (1 cross-cutting ID) ────────────────────────
     "server.internal.error": (
