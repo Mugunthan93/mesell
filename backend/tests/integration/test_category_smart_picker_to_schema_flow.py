@@ -2,11 +2,15 @@
 
 Per BACKEND_ARCHITECTURE.md §9.J integration 1:
 
-    "Smart Picker → schema → catalog wizard flow — ``/suggest?q=...``
-    returns top-5 → seller picks suggestion[0] → ``/{id}/schema`` →
-    catalog wizard PATCH → validation succeeds (cross-module
+    "Smart Picker → schema → catalog wizard flow — POST ``/suggest`` with JSON
+    body ``{"q": "..."}`` returns top-5 → seller picks suggestion[0] →
+    ``/{id}/schema`` → catalog wizard PATCH → validation succeeds (cross-module
     ``category.service.fetch_schema`` returns same payload that catalog
     validator consumes)."
+
+AMENDMENT 2026-06-16 (founder ruling, finding #4):
+``/suggest`` changed from GET+``?q=`` query param to POST+JSON body.
+``q`` max_length raised 500 → 5000.  This test now uses POST with ``json={"q": ...}``.
 
 This test drives the HTTP surface end-to-end.  The category router is
 owned by ``meesell-api-routes-builder`` (parallel dispatch); if the
@@ -16,8 +20,9 @@ gate.
 
 When the router lands, the test asserts:
 
-1. ``/suggest?q=kurti`` returns 200 with a non-empty ``suggestions``
-   list (mocked call_gemini returns a known-valid seeded category_id).
+1. POST ``/suggest`` with body ``{"q": "kurti"}`` returns 200 with a non-empty
+   ``suggestions`` list (mocked call_gemini returns a known-valid seeded
+   category_id).
 2. ``/api/v1/categories/{id}/schema`` (where ``id`` is suggestion[0])
    returns 200 with the §5A.B envelope.
 
@@ -130,10 +135,11 @@ async def test_smart_picker_to_schema_flow(iam_client, monkeypatch):
     access_token, _phone = await _create_user_via_otp_verify(iam_client)
     iam_client.headers["Authorization"] = f"Bearer {access_token}"
 
-    # Step 1 — Smart Picker.  Skip if route absent (api-routes-builder
-    # still in flight).
-    suggest_resp = await iam_client.get(
-        "/api/v1/categories/suggest", params={"q": "kurti"}
+    # Step 1 — Smart Picker.
+    # AMENDMENT 2026-06-16: POST + JSON body instead of GET + query param.
+    # Skip if route absent (api-routes-builder still in flight).
+    suggest_resp = await iam_client.post(
+        "/api/v1/categories/suggest", json={"q": "kurti"}
     )
     if suggest_resp.status_code == 404:
         pytest.skip(
