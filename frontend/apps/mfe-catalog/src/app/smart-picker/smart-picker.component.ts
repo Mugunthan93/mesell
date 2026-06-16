@@ -109,7 +109,7 @@ const GENERIC_ERROR_COPY = 'Something went wrong. Please try again.';
             <mee-button
               label="Send"
               variant="primary"
-              icon="pi pi-send"
+              icon="send"
               [loading]="loading()"
               [disabled]="form.invalid || loading()"
               (clicked)="onSubmit()"

@@ -1,40 +1,33 @@
 /**
  * fe2_no_raw_pi_icons.mjs — Contract FE-2
  *
- * Rule: no raw `pi pi-*` icon class outside the icon registry file.
+ * Rule: no raw icon class string (the `pi pi-*` PrimeIcons convention) outside the
+ * icon registry file.
  *
  * Scan set: .ts + .html under apps/**, libs/**, src/**.
  * INCLUDES *.spec.ts.
  *
- * Allow-list (Phase 0):
- *   - libs/ui-kit/icon/icon.registry.ts (the one permitted file; may not exist yet
- *     in Phase 0 — allow-listed so Phase 1 needs no scanner edit).
- *   - ANY file under libs/ui-kit/ (Phase 0 broad allow — covers mee-button's
- *     MATERIAL_TO_PI map and any future ui-kit internal use).
- *     ↳ Phase 1 NARROWS this to just libs/ui-kit/icon/icon.registry.ts.
- *     ↳ See README §Phase-1-tighten for the exact constant to update.
+ * Allow-list (Phase 1):
+ *   - EXACTLY libs/ui-kit/icon/icon.registry.ts (the sole permitted raw-icon file).
+ *     All other files must use MeeIconName semantic names + resolveIcon().
+ *   ↳ Phase 0 used a broad allow for the whole libs/ui-kit/ tree; Phase 1 narrows it.
  *
  * Match: the literal token sequence `pi pi-` followed by a word character.
  * Catches both TS template strings (icon: 'pi pi-home') and HTML class attrs
  * (<i class="pi pi-bars">). Regex: /pi\s+pi-[a-z]/
  *
- * Phase-0 expectation: 3 files warn (the known leaks committed before Phase 0):
- *   apps/shell/src/app/layouts/shell/shell.component.ts
- *   apps/shell/src/app/layouts/shell/shell.component.html
- *   apps/mfe-catalog/src/app/smart-picker/smart-picker.component.ts
- *
- * These are NOT fixed in Phase 0 — Phase 1 migrates them to MeeIconName semantics.
+ * Phase-1 expectation: 0 violations (icon registry is the sole raw-icon file;
+ * all former leaks migrated to MeeIconName in shell, smart-picker, and ui-kit).
  */
 
 import { join } from 'node:path';
 import { feRoot, walk, rel, readLines } from './_walk.mjs';
 
 const CONTRACT = 'FE-2';
-const DESCRIPTION = "No raw 'pi pi-*' icon class outside libs/ui-kit/";
+const DESCRIPTION = "No raw 'pi pi-*' icon class outside libs/ui-kit/icon/icon.registry.ts";
 
-// Phase-0 allow prefix (the whole ui-kit tree).
-// TODO(Phase 1): narrow to ALLOW_REGISTRY_FILE = 'libs/ui-kit/icon/icon.registry.ts'
-const ALLOW_PREFIX_PHASE0 = 'libs/ui-kit/';
+// Phase 1: allow ONLY the exact registry file (narrowed from Phase-0 broad ui-kit prefix).
+const ALLOW_REGISTRY_FILE = 'libs/ui-kit/icon/icon.registry.ts';
 
 // Match `pi pi-` followed by at least one word character (letter, digit, or dash via [a-z])
 const PI_RE = /pi\s+pi-[a-z]/;
@@ -59,8 +52,8 @@ export function scan(_opts = {}) {
     for (const absFile of files) {
       const relPath = rel(absFile);
 
-      // Phase-0 allow: entire libs/ui-kit/ tree
-      if (relPath.startsWith(ALLOW_PREFIX_PHASE0)) continue;
+      // Phase 1 allow: only the exact registry file
+      if (relPath === ALLOW_REGISTRY_FILE) continue;
 
       const lines = readLines(absFile);
       for (let i = 0; i < lines.length; i++) {
@@ -70,7 +63,7 @@ export function scan(_opts = {}) {
             file: relPath,
             line: i + 1,
             snippet: lineText.trim().slice(0, 120),
-            reason: `${CONTRACT}: raw 'pi pi-*' is only allowed in libs/ui-kit/icon/icon.registry.ts — use a MeeIconName semantic.`,
+            reason: `${CONTRACT}: raw icon class is only allowed in ${ALLOW_REGISTRY_FILE} — use a MeeIconName semantic.`,
           });
         }
       }

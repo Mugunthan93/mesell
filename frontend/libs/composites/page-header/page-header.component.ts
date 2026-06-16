@@ -6,6 +6,7 @@ import {
   output,
 } from '@angular/core';
 import { MeeButtonComponent } from '@mesell/ui-kit';
+import type { MeeIconName } from '@mesell/ui-kit';
 
 @Component({
   selector: 'mee-page-header',
@@ -48,7 +49,7 @@ export class PageHeaderComponent {
   readonly title     = input.required<string>();
   readonly subtitle  = input<string | undefined>(undefined);
   readonly cta_label = input<string | undefined>(undefined);
-  readonly cta_icon  = input<string | undefined>(undefined);
+  readonly cta_icon  = input<MeeIconName | undefined>(undefined);
 
   readonly cta_click = output<void>();
 

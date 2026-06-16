@@ -69,7 +69,7 @@ import { formatRelativeTime } from './catalog-list-util';
       <mee-page-header
         title="My Catalogs"
         cta_label="Create New Catalog"
-        cta_icon="auto_awesome"
+        cta_icon="sparkles"
         (cta_click)="onCreate()"
       />
 

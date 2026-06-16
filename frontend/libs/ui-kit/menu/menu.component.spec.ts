@@ -3,10 +3,11 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { MeeMenuComponent } from './menu.component';
 import type { MeeMenuItem } from './menu.types';
 
+// Uses MeeIconName semantic names instead of raw icon class strings (G10 requirement)
 const MOCK_ITEMS: MeeMenuItem[] = [
-  { label: 'Profile', icon: 'pi pi-user', routerLink: '/profile' },
+  { label: 'Profile', icon: 'user', routerLink: '/profile' },
   { separator: true },
-  { label: 'Log out', icon: 'pi pi-sign-out', command: () => {} },
+  { label: 'Log out', icon: 'logout', command: () => {} },
 ];
 
 describe('MeeMenuComponent', () => {

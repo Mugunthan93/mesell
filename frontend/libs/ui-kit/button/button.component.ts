@@ -4,19 +4,10 @@ import {
   computed,
   input,
   output,
-  signal,
 } from '@angular/core';
 import { Button } from 'primeng/button';
 import type { MeeButtonVariant, MeeButtonSize } from './button.types';
-
-const MATERIAL_TO_PI: Record<string, string> = {
-  'auto_awesome':  'pi pi-sparkles',
-  'arrow_forward': 'pi pi-arrow-right',
-  'arrow_back':    'pi pi-arrow-left',
-  'check':         'pi pi-check',
-  'close':         'pi pi-times',
-  'delete':        'pi pi-trash',
-};
+import { MEE_ICONS, MeeIconName } from '../icon/icon.registry';
 
 @Component({
   selector: 'mee-button',
@@ -45,7 +36,7 @@ export class MeeButtonComponent {
   readonly loading = input<boolean>(false);
   readonly disabled = input<boolean>(false);
   readonly fullWidth = input<boolean>(false);
-  readonly icon = input<string | undefined>(undefined);
+  readonly icon = input<MeeIconName | undefined>(undefined);
 
   readonly clicked = output<void>();
 
@@ -75,7 +66,6 @@ export class MeeButtonComponent {
 
   readonly pgIcon = computed(() => {
     const i = this.icon();
-    if (!i) return undefined;
-    return MATERIAL_TO_PI[i] ?? i;
+    return i ? MEE_ICONS[i] : undefined;
   });
 }
