@@ -88,6 +88,115 @@ Coordinator-implements fallback was used for all parsing (workspace agent regist
 
 ## Updates Log
 
+=== UPDATE: 2026-06-16 (Wave 1.5 commission — Re-Run, post-esignature, dispatch 5 COMPLETE) ===
+Phase: commission rate-card capture — Re-Run after founder reports completing e-signature (dispatch 5)
+Agent: meesell-scraper-maintainer (sonnet)
+Status: STOPPED — is_agreement_accepted STILL FALSE (5th consecutive run with same gate failure)
+
+PREREQUISITE CHECK (all passed):
+  - Creds file: /Users/mugunthansrinivasan/Project/mesell/.meesho_creds.env — PRESENT (54 bytes)
+  - Python env: /Users/mugunthansrinivasan/Project/mesell/backend/.venv — playwright OK, dotenv OK
+  - WebKit: webkit-2158 + webkit-2287 both present
+  - Script: backend/scripts/meesho_commission_rerun.py — SYNTAX OK
+  - No 401/403/463/429/captcha encountered
+
+LOGIN RESULT:
+  - LOGIN SUCCEEDED: WebKit → /root/login → POST creds → 302 to /growth/oinpw/home
+  - Akamai bypass confirmed (5th consecutive session)
+
+AGREEMENT GATE CHECK (Step 1 — prefetch-supply-data intercept from home page navigation):
+  Result: is_agreement_accepted = False (still — e-signature NOT registered)
+
+  Full agreement-field snapshot (THIS SESSION vs PRIOR — key delta noted):
+    supplier.is_agreement_accepted          = false  (UNCHANGED)
+    supplier.agreement_accepted             = "0"    (UNCHANGED)
+    supplier.agreement_accepted_ip          = "default"  (UNCHANGED — submission never completed)
+    supplier.agreement_accepted_time        = "default"  (UNCHANGED — submission never completed)
+    supplier.default_monetization_percent   = "4.0"  (UNCHANGED)
+    supplier.default_monetization_type      = "1"    (UNCHANGED)
+    supplier.enable_referral_v3             = true   (UNCHANGED)
+    supplier.enable_referral_desktop_v3     = true   (NEW field — not in Session 4 log)
+    supplier.enable_referral                = false  (UNCHANGED)
+    supplier.enable_supplier_signature_v2   = FALSE  *** KEY DELTA: was TRUE in Session 4 ***
+    supplier.mall_commission_rate           = 0      (UNCHANGED)
+    supplier.show_referral_banner           = false  (UNCHANGED)
+    supplier.referral_fraud_nonincremental_feature = true (UNCHANGED)
+    supplier.supplier_check_referral_abuse  = true   (UNCHANGED)
+    supplier.viewed_campaign_details_onboarding = false (UNCHANGED)
+    supplier.enable_share_referral_banner_on_app = true (NEW field)
+    supplier.enable_supplier_referral_invite = true  (NEW field)
+
+  KEY DIAGNOSTIC — enable_supplier_signature_v2 flipped from TRUE to FALSE:
+    Session 4 (prior run): enable_supplier_signature_v2 = TRUE
+    Session 5 (this run):  enable_supplier_signature_v2 = FALSE
+    
+    This field controls which e-signature flow is presented to the supplier.
+    When TRUE: the v2 signature flow was active (founder was shown the v2 modal).
+    When FALSE NOW: Meesho may have downgraded/removed the v2 flow for this account.
+    This could mean:
+      (a) The v2 flow is now complete from the backend's perspective but is_agreement_accepted
+          was not updated (a Meesho backend bug), OR
+      (b) Meesho disabled v2 for this account for another reason (edge case), OR
+      (c) The field being FALSE is the pre-signature state and TRUE is post-signature
+          (inverted meaning vs what was inferred in Session 4).
+    
+    If interpretation (c) is correct, the founder completing the v2 flow DISABLED
+    enable_supplier_signature_v2 (because the signature is no longer needed) but
+    is_agreement_accepted was not atomically updated. This would be a Meesho backend
+    inconsistency.
+
+  EXIT: Script halted cleanly at gate (exit code 2 = STOPPED_AGREEMENT_STILL_FALSE).
+  No navigation to referral-fee or pricing pages.
+  No commission XHR fired, no rate-card rows captured.
+
+RATE-CARD ROWS CAPTURED: 0
+
+ARTIFACTS:
+  - backend/app/data/category_commissions.json — updated with Session 5 status + field snapshot
+  - logs/scraper/commission_rerun_2026-06-16_17-59.log
+
+HARD STOPS: none. Clean stop at agreement gate.
+Rate limit: not exceeded (only 1 login + 1 home page nav).
+Robots.txt: UNKNOWN (WAF blocks — 5th session in a row).
+
+BLOCKER ANALYSIS (updated Session 5):
+  is_agreement_accepted remains false despite founder reporting e-signature completion.
+  
+  NEW FINDING: enable_supplier_signature_v2 flipped from true (Session 4) to false (Session 5).
+  This is the only field that changed between the two post-founder-action runs.
+  
+  Three possible interpretations:
+    A. enable_supplier_signature_v2=false means "v2 signature NO LONGER REQUIRED" (flow complete)
+       but Meesho's backend didn't update is_agreement_accepted — a backend inconsistency.
+       Action: founder should try refreshing the panel and checking if referral-fee content loads.
+    B. enable_supplier_signature_v2 was always irrelevant to is_agreement_accepted — the two
+       fields are independent, and the v2 flag just means "v2 flow is available" (not "needed").
+       Action: founder must use a different path to find and complete the agreement.
+    C. The agreement and referral-fee program are two separate onboarding steps. The
+       e-signature may be accepted but the referral enrollment has a separate flow.
+       Action: look for a "Join Referral Program" or "Enroll" step beyond the signature.
+
+RECOMMENDATION FOR FOUNDER:
+  1. Open browser: https://supplier.meesho.com/panel/v3/new/growth/oinpw/referral-fee
+  2. Note what you see: does the page show commission rates, or is it still blank/blocked?
+  3. If you see content: manually note category names and rates; scraper can structure it.
+  4. If still blocked: look for any banner/modal saying "Agreement", "Enroll", "Join program"
+     that is separate from the e-signature you already completed.
+  5. Report: did the referral-fee page change visually after completing e-signature?
+
+NEXT STEP: Founder checks referral-fee page directly in browser. If content visible:
+  Option A — Founder manually copies rates; scraper-maintainer structures category_commissions.json.
+  Option B — Schedule an interactive (headed, non-headless) Playwright session where the
+             scraper runs with headless=False and the founder can observe/interact live.
+
+Hand-offs:
+  - To founder: enable_supplier_signature_v2 flipped to false (new info). Is the referral-fee
+    page now showing content in your browser? If yes, manual copy is the fastest path.
+    If no, there may be a separate "enrollment" step beyond the e-signature.
+  - To data-engineer: 5th run, same gate failure. New diagnostic: v2 signature flag flipped.
+    Recommend asking founder to visually inspect referral-fee page in browser immediately.
+=========
+
 === UPDATE: 2026-06-16 (Wave 1.5 commission — Re-Run, post-esignature, dispatch 4 COMPLETE) ===
 Phase: commission rate-card capture — Re-Run after founder e-signature (meesell-scraper-maintainer, dispatch 4)
 Agent: meesell-scraper-maintainer (sonnet)

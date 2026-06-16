@@ -2,7 +2,7 @@
   "_meta": {
     "artifact_version": "0.3.0-RERUN",
     "status": "STOPPED: is_agreement_accepted=false — e-signature not registered",
-    "capture_date": "2026-06-16T12:24:24.787440+00:00",
+    "capture_date": "2026-06-16T12:30:14.887634+00:00",
     "capture_agent": "meesell-scraper-maintainer (sonnet)",
     "capture_session": "commission-rerun v0.3.0 (post-esignature re-run)",
     "agreement_status_at_capture": {
@@ -26,7 +26,7 @@
         "supplier.agreement_accepted_time": "default",
         "supplier.supplier_check_referral_abuse": true,
         "supplier.show_referral_banner": false,
-        "supplier.enable_supplier_signature_v2": true
+        "supplier.enable_supplier_signature_v2": false
       },
       "raw_body_keys": [
         "registrationStatus",
