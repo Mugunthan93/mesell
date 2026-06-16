@@ -1,5 +1,5 @@
 import { Injectable, signal, computed, inject, OnDestroy } from '@angular/core';
-import { switchMap, catchError, EMPTY } from 'rxjs';
+import { switchMap, map, catchError, EMPTY, type Observable } from 'rxjs';
 import { AuthApiService } from './auth-api.service';
 import type { MeResponse } from './auth-api.service';
 
@@ -27,6 +27,9 @@ export interface AuthUser {
   plan?: 'free';          // MeResponse.plan (V1 always free)
   created_at?: string;    // MeResponse.created_at (ISO-8601 TZ)
   last_login_at?: string | null;
+  // Onboarding gate (Stage-1 wire, Path B) — additive-optional. Drives the shell
+  // Onboarding nav-item visibility (hidden when true). Absent on legacy mock users.
+  onboarding_complete?: boolean;
 }
 
 /** Minimal AuthUser shape derived from MeResponse. */
@@ -37,6 +40,7 @@ function meToUser(me: MeResponse): AuthUser {
     plan: me.plan,
     created_at: me.created_at,
     last_login_at: me.last_login_at,
+    onboarding_complete: me.onboarding_complete,
   };
 }
 
@@ -151,6 +155,27 @@ export class AuthService implements OnDestroy {
         )
         .subscribe({ complete: () => resolve() });
     });
+  }
+
+  /**
+   * Re-hydrate the shared user from GET /auth/me WITHOUT touching the token or
+   * the refresh timer. Use after a backend mutation that changes user-scoped
+   * state already reflected by /me (e.g. onboarding submit flips
+   * `onboarding_complete`) so the shell's `currentUser()` updates immediately
+   * — without waiting for the next page reload or silent refresh.
+   *
+   * Bearer-auth via the existing in-memory token (jwtInterceptor attaches it).
+   * On any failure (401/5xx/offline) the existing user signal is left untouched
+   * and the observable completes — callers MUST NOT depend on it for navigation.
+   * Returns the void observable; subscribe to know when hydration settled.
+   */
+  refreshUser(): Observable<void> {
+    return this.authApi.me().pipe(
+      map((me) => {
+        this._user.set(meToUser(me));
+      }),
+      catchError(() => EMPTY),
+    );
   }
 
   // ── Private helpers ────────────────────────────────────────────────────────
