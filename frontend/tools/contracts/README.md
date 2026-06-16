@@ -8,13 +8,13 @@ and are dependency-free Node ESM (only `node:fs` + `node:path`).
 
 ## Contracts
 
-| ID | File | Rule | Phase-0 status |
-|----|------|------|---------------|
-| **FE-1** | `fe1_no_primeng_outside_uikit.mjs` | No `primeng`/`@primeuix` ES import outside `libs/ui-kit/` | CLEAN (0 violations) |
-| **FE-2** | `fe2_no_raw_pi_icons.mjs` | No raw `pi pi-*` class outside icon registry | WARN (3 known leaks) |
-| **FE-3** | `fe3_chrome_shell_only.mjs` | MFEs must not import `ShellComponent` or chrome primitives | CLEAN (0 violations) |
-| **FE-4** | `fe4_lib_dag.mjs` | Lib import DAG: `composites → layout → ui-kit` (no back-edges) | CLEAN (0 violations) |
-| **FE-5** | `fe5_public_barrels_only.mjs` | Apps import `@mesell/*` public barrels only; no cross-MFE imports | CLEAN (0 violations) |
+| ID | File | Rule | Status |
+|----|------|------|--------|
+| **FE-1** | `fe1_no_primeng_outside_uikit.mjs` | No `primeng`/`@primeuix` ES import outside `libs/ui-kit/` | CLEAN (0 violations) — warn-only |
+| **FE-2** | `fe2_no_raw_pi_icons.mjs` | No raw icon class string outside `libs/ui-kit/icon/icon.registry.ts` | **STRICT (Phase 1)** — CI exits 1 on violation |
+| **FE-3** | `fe3_chrome_shell_only.mjs` | MFEs must not import `ShellComponent` or chrome primitives | CLEAN (0 violations) — warn-only |
+| **FE-4** | `fe4_lib_dag.mjs` | Lib import DAG: `composites → layout → ui-kit` (no back-edges) | CLEAN (0 violations) — warn-only |
+| **FE-5** | `fe5_public_barrels_only.mjs` | Apps import `@mesell/*` public barrels only; no cross-MFE imports | CLEAN (0 violations) — warn-only |
 
 ---
 
@@ -23,14 +23,17 @@ and are dependency-free Node ESM (only `node:fs` + `node:path`).
 All commands from `frontend/`:
 
 ```sh
-# Run all 5 contracts (warn-only, always exits 0 in Phase 0):
-node tools/contracts/run-all.mjs
+# Run all 5 contracts (FE-2 strict, others warn-only):
+node tools/contracts/run-all.mjs --strict=fe2
 
-# Run strict mode (exits 1 if any violation):
+# Run all strict (exits 1 if ANY violation — Phase 5):
 node tools/contracts/run-all.mjs --strict
 
 # Run strict on specific contracts only (comma-list, no spaces):
 node tools/contracts/run-all.mjs --strict=fe2,fe3
+
+# Run warn-only (always exits 0):
+node tools/contracts/run-all.mjs
 
 # Run a single scanner standalone (same output format as backend check_*.py):
 node tools/contracts/fe1_no_primeng_outside_uikit.mjs
@@ -44,8 +47,8 @@ node tools/contracts/fe2_no_raw_pi_icons.mjs
 
 | Phase | CI action | Contracts flipped |
 |-------|-----------|------------------|
-| **Phase 0** (now) | warn-only, non-blocking | none (all warn) |
-| **Phase 1** | `--strict=fe2` after icon migration | FE-2 |
+| **Phase 0** (complete) | warn-only, non-blocking | none (all warn) |
+| **Phase 1** (current) | `--strict=fe2` — icon migration complete; `mee-icon` + registry shipped | **FE-2 strict** |
 | **Phase 4** | `--strict=fe2,fe3` after chrome primitives land | FE-3 |
 | **Phase 5** | `--strict` (all); job becomes a required status check (founder wires in branch protection, same as `frontend-boot-smoke` D1 gate) | FE-1, FE-4, FE-5 |
 
@@ -53,14 +56,25 @@ node tools/contracts/fe2_no_raw_pi_icons.mjs
 
 ## Allow-list notes
 
-### FE-2 — icon allow-list tightening (Phase 1)
+### FE-2 — icon allow-list (Phase 1 — ACTIVE)
 
-**Phase 0:** the entire `libs/ui-kit/` tree is allowed (broad prefix). This covers
-`mee-button`'s `MATERIAL_TO_PI` map and any other ui-kit internal `pi pi-*` usage.
+**Phase 0:** the entire `libs/ui-kit/` tree was allowed (broad prefix). This covered
+`mee-button`'s `MATERIAL_TO_PI` map and any other ui-kit internal icon class usage.
 
-**Phase 1 action:** narrow the constant `ALLOW_PREFIX_PHASE0` in `fe2_no_raw_pi_icons.mjs`
-to exactly `libs/ui-kit/icon/icon.registry.ts`. After that single constant change,
-`mee-button`'s map must also be migrated (or the button moved inside the registry file).
+**Phase 1 (current):** allow-list narrowed to **exactly** `libs/ui-kit/icon/icon.registry.ts`.
+This is the ONLY file permitted to contain raw icon class strings. All other files use
+`MeeIconName` semantic keys (`dashboard`, `user`, `sparkles`, etc.) resolved via
+`resolveIcon()` or `MEE_ICONS[name]`.
+
+What was migrated in Phase 1:
+- `mee-button/button.component.ts` — removed `MATERIAL_TO_PI` map; `icon` input retyped to `MeeIconName`
+- `confirm-dialog/confirm-dialog.component.ts` — `ConfirmationService.confirm({ icon })` now uses `MEE_ICONS['warning']`
+- `menu/menu.types.ts` — `MeeMenuItem.icon` retyped to `MeeIconName | undefined`
+- `menu/menu.component.ts` — `primeItems()` resolves `item.icon` through `MEE_ICONS[item.icon]`
+- `apps/shell/.../shell.component.ts` — nav group icons and user menu items now use `MeeIconName`
+- `apps/shell/.../shell.component.html` — hamburger + nav item icons use `<mee-icon>`
+- `apps/mfe-catalog/.../smart-picker.component.ts` — `icon="send"` (was `icon="pi pi-send"`)
+- `button.component.spec.ts` + `menu.component.spec.ts` — spec fixtures use `MeeIconName` keys
 
 ### FE-5 — lean-bundle deep imports (Phase 5)
 
@@ -90,7 +104,7 @@ tools/contracts/
 ├── _walk.mjs                          # shared recursive walker + utilities
 ├── run-all.mjs                        # orchestrator (run this from frontend/)
 ├── fe1_no_primeng_outside_uikit.mjs   # FE-1
-├── fe2_no_raw_pi_icons.mjs            # FE-2
+├── fe2_no_raw_pi_icons.mjs            # FE-2 (strict Phase 1)
 ├── fe3_chrome_shell_only.mjs          # FE-3
 ├── fe4_lib_dag.mjs                    # FE-4
 ├── fe5_public_barrels_only.mjs        # FE-5

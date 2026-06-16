@@ -320,7 +320,7 @@ interface SectionDef {
           <mee-button
             label="AI fill"
             variant="secondary"
-            icon="auto_awesome"
+            icon="sparkles"
             [loading]="autofilling()"
             [disabled]="loading() || autofillUnavailable()"
             (clicked)="onAutofill()"
@@ -475,7 +475,7 @@ interface SectionDef {
             </span>
             <div class="flex gap-2">
               <mee-button label="Back" variant="ghost" (clicked)="onBack()" />
-              <mee-button label="Images" icon="arrow_forward" (clicked)="onNext()" />
+              <mee-button label="Images" icon="forward" (clicked)="onNext()" />
             </div>
           </div>
         }

@@ -1,4 +1,5 @@
 // Components
+export { MeeIconComponent }            from './icon/icon.component';
 export { MeeButtonComponent }          from './button/button.component';
 export { MeeInputComponent }           from './input/input.component';
 export { MeeOtpInputComponent }        from './otp-input/otp-input.component';
@@ -37,3 +38,4 @@ export type { MeeSkeletonVariant }                                       from '.
 export type { MeeFileUploadEvent }                                       from './file-upload/file-upload.types';
 export type { MeeTreeNode }                                              from './tree-select/tree-select.component';
 export type { MeeConfirmConfig }                                         from './confirm-dialog/confirm-dialog.component';
+export type { MeeIconName }                                              from './icon/icon.registry';

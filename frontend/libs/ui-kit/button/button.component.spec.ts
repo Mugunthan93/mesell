@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { MeeButtonComponent } from './button.component';
+import { MEE_ICONS } from '../icon/icon.registry';
+import type { MeeIconName } from '../icon/icon.registry';
 
 describe('MeeButtonComponent', () => {
   beforeEach(async () => {
@@ -69,38 +71,38 @@ describe('MeeButtonComponent', () => {
     expect(comp.pgIcon()).toBeUndefined();
   });
 
-  it('pgIcon should map auto_awesome to pi pi-sparkles', () => {
-    const comp = makeComp('Test', { icon: 'auto_awesome' });
-    expect(comp.pgIcon()).toBe('pi pi-sparkles');
+  it('pgIcon "sparkles" resolves via registry to MEE_ICONS["sparkles"]', () => {
+    const comp = makeComp('Test', { icon: 'sparkles' satisfies MeeIconName });
+    expect(comp.pgIcon()).toBe(MEE_ICONS['sparkles']);
   });
 
-  it('pgIcon should map arrow_forward to pi pi-arrow-right', () => {
-    const comp = makeComp('Test', { icon: 'arrow_forward' });
-    expect(comp.pgIcon()).toBe('pi pi-arrow-right');
+  it('pgIcon "forward" resolves via registry to MEE_ICONS["forward"]', () => {
+    const comp = makeComp('Test', { icon: 'forward' satisfies MeeIconName });
+    expect(comp.pgIcon()).toBe(MEE_ICONS['forward']);
   });
 
-  it('pgIcon should map arrow_back to pi pi-arrow-left', () => {
-    const comp = makeComp('Test', { icon: 'arrow_back' });
-    expect(comp.pgIcon()).toBe('pi pi-arrow-left');
+  it('pgIcon "back" resolves via registry to MEE_ICONS["back"]', () => {
+    const comp = makeComp('Test', { icon: 'back' satisfies MeeIconName });
+    expect(comp.pgIcon()).toBe(MEE_ICONS['back']);
   });
 
-  it('pgIcon should map check to pi pi-check', () => {
-    const comp = makeComp('Test', { icon: 'check' });
-    expect(comp.pgIcon()).toBe('pi pi-check');
+  it('pgIcon "check" resolves via registry to MEE_ICONS["check"]', () => {
+    const comp = makeComp('Test', { icon: 'check' satisfies MeeIconName });
+    expect(comp.pgIcon()).toBe(MEE_ICONS['check']);
   });
 
-  it('pgIcon should map close to pi pi-times', () => {
-    const comp = makeComp('Test', { icon: 'close' });
-    expect(comp.pgIcon()).toBe('pi pi-times');
+  it('pgIcon "close" resolves via registry to MEE_ICONS["close"]', () => {
+    const comp = makeComp('Test', { icon: 'close' satisfies MeeIconName });
+    expect(comp.pgIcon()).toBe(MEE_ICONS['close']);
   });
 
-  it('pgIcon should map delete to pi pi-trash', () => {
-    const comp = makeComp('Test', { icon: 'delete' });
-    expect(comp.pgIcon()).toBe('pi pi-trash');
+  it('pgIcon "delete" resolves via registry to MEE_ICONS["delete"]', () => {
+    const comp = makeComp('Test', { icon: 'delete' satisfies MeeIconName });
+    expect(comp.pgIcon()).toBe(MEE_ICONS['delete']);
   });
 
-  it('pgIcon should pass through unmapped icon names unchanged', () => {
-    const comp = makeComp('Test', { icon: 'pi pi-user' });
-    expect(comp.pgIcon()).toBe('pi pi-user');
+  it('pgIcon "user" resolves via registry to MEE_ICONS["user"]', () => {
+    const comp = makeComp('Test', { icon: 'user' satisfies MeeIconName });
+    expect(comp.pgIcon()).toBe(MEE_ICONS['user']);
   });
 });
