@@ -6562,3 +6562,32 @@ Hand-offs: GET /api/v1/products/{id} live on feature/section-3/backend.
   Returns ProductResponse (includes category_id). Frontend CatalogForm can call GET /products/{id}
   on hard reload to recover category_id and populate form. GAP-1 fix complete.
 =========
+
+=== UPDATE: 2026-06-16 ===
+Phase: chore — finding #6 (Celery startup warning cleanup)
+Done:
+  PART A (Celery deprecation): backend/app/workers/celery_app.py — added
+    broker_connection_retry_on_startup=True to celery_app.conf.update(...). Celery 6
+    forward-compat setting; silences the CPendingDeprecationWarning at worker boot
+    (celery/worker/consumer/consumer.py:508). NO change to broker/result-backend URLs,
+    queues, or task_routes. Verified gone via live worker boot.
+  PART B (root SecurityWarning): IDENTIFIED — celery.platforms.py:829
+    SecurityWarning ROOT_DISCOURAGED ("running the worker with superuser privileges").
+    Gated purely on is_root (euid=0); NOT a serializer/pickle warning (json serializer →
+    pickle_or_serialize=False → warn-only, never raises; security posture intact).
+    DISPOSITION: FLAGGED for meesell-infra-builder, NOT suppressed in code — it is a
+    genuine "worker runs as root" signal. Proper fix = run the worker pod/process as a
+    non-root user (infra/dev-env), not a warnings.filterwarnings (which would mute a real
+    security signal, violating the no-posture-weakening constraint).
+Tests: 31 passed / 0 failed
+  (test_celery_app_include_list, test_celery_broker_db, test_celery_result_backend_db,
+   test_task_reject_on_worker_lost, test_worker_user_revalidation = 26; test_config = 5)
+  DB-dependent tests (test_worker_db_isolation) not run — no Postgres tunnel; unaffected
+  by a one-kwarg config change.
+In progress: none
+Blockers: none
+Next: Director reviews + merges PR chore/celery-deprecation-securitywarning → develop.
+Hand-offs: meesell-infra-builder — run the Celery worker as a NON-ROOT user (drop the
+  root SecurityWarning at the deployment layer; do not set C_FORCE_ROOT, do not suppress
+  the warning in code). Currently euid=0 in dev/container.
+=========
