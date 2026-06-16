@@ -558,10 +558,10 @@ def _map_field_to_dto(rich: dict[str, Any]) -> dict[str, Any]:
     if data_type != "dropdown":
         enum_resolver: str | None = None
     else:
-        enum_codes_map = rich.get("enum_codes_map")
-        if enum_codes_map:  # truthy inline map (won't fire on V1 seed)
+        inline_enum_map = rich.get("enum_codes_map")
+        if inline_enum_map:  # truthy inline map (won't fire on V1 seed)
             enum_resolver = "static"
-            enum_values = list(enum_codes_map.keys())
+            enum_values = list(inline_enum_map.keys())
         else:
             enum_resolver = "category"
 
