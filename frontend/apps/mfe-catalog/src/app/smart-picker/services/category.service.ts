@@ -22,10 +22,12 @@ import type { BrowseResponse, SuggestResponse } from '../smart-picker.model';
  * @mesell/ui-kit but the service layer has no injected reference to it. Errors surface
  * through the returned fallback shape only (SOLID DIP).
  *
- * ## Error matrix (Plan 2-W2-A revised)
+ * ## Error matrix (finding #4 aligned)
  * - 401 → AuthService.logout() + return EMPTY (session invalidated)
  * - 402 → return of({ suggestions: [], fallback_offered: true }) (plan-guard quota exceeded)
- * - 400, 404, 422, 429, 5xx → throwError(() => err) — component decides toast vs inline
+ * - 404 → return of({ suggestions: [], fallback_offered: true }) (feature flag off — silent degrade)
+ * - 5xx → return of({ suggestions: [], fallback_offered: true }) (AI unavailable — silent degrade)
+ * - 400, 422, 429 → throwError(() => err) — component decides toast vs inline
  */
 @Injectable()
 export class CategoryService {
@@ -39,46 +41,50 @@ export class CategoryService {
    * Shared error handler for CategoryService.suggest().
    * Maps HTTP error codes to the contract fallback shapes per the error matrix above.
    * Does NOT use MeeToastService — surfaces errors through observable shape only.
+   *
+   * Error matrix (finding #4 aligned):
+   * - 401 → logout + EMPTY
+   * - 402 → fallback shape (plan quota)
+   * - 404 → fallback shape (feature flag off — not surfaced to user as error)
+   * - 422, 400, 429 → throwError (validation / rate-limit — component surfaces inline copy or toast)
+   * - 5xx → fallback shape (AI unavailable — degrade gracefully, show browse CTA)
    */
   private handleSuggestError(
     err: HttpErrorResponse,
   ): Observable<SuggestResponse> {
-    switch (err.status) {
-      case 401:
-        this.auth.logout();
-        return EMPTY;
-      case 402:
-        // Plan-guard quota exceeded → graceful fallback shape (not an error to display)
-        return of({ suggestions: [], fallback_offered: true });
-      default:
-        // 400, 404, 422, 429, 5xx → rethrow so the component can surface correct copy
-        return throwError(() => err);
+    if (err.status === 401) {
+      this.auth.logout();
+      return EMPTY;
     }
+    if (err.status === 402 || err.status === 404 || err.status >= 500) {
+      // Plan quota exceeded, feature flag off, or server error → graceful fallback shape
+      return of({ suggestions: [], fallback_offered: true });
+    }
+    // 400, 422, 429 → rethrow so the component can surface correct inline copy or toast
+    return throwError(() => err);
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
   /**
-   * GET /api/v1/categories/suggest?q=<description>
+   * POST /api/v1/categories/suggest { q: description }
    *
    * Returns up to 5 CategorySuggestion items (§9.E — LOCKED).
    * Frontend renders top 3 (SmartPickerComponent.suggestions().slice(0, 3)).
    *
-   * Backend contract:
+   * Backend contract (finding #4 — POST migration):
+   * - Body: { "q": "<1 to 5000 characters>" }  — extra fields forbidden (extra="forbid")
    * - 200 always returned for AI failures (fallback_offered=true, suggestions=[]) — never 503
-   * - 400 when q is outside 1..500 chars
+   * - 422 when q is empty, > 5000 chars, or extra fields are present
    * - 401 auth-gated
    * - 402 plan-guard quota exceeded
    * - 404 when FEATURE_SMART_PICKER_ENABLED=false
    *
-   * @param description — product description string (1–500 chars). Validation is the caller's responsibility.
+   * @param description — product description string (1–5000 chars). Validation is the caller's responsibility.
    */
   suggest(description: string): Observable<SuggestResponse> {
     return this.http
-      .get<SuggestResponse>(`${environment.apiBase}/api/v1/categories/suggest`, {
-        params: { q: description },
-        // Authorization header is now attached globally by jwtInterceptor — no manual headers needed.
-      })
+      .post<SuggestResponse>(`${environment.apiBase}/api/v1/categories/suggest`, { q: description })
       .pipe(
         catchError((err: HttpErrorResponse) => this.handleSuggestError(err)),
       );

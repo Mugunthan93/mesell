@@ -71,9 +71,19 @@ describe('validateDescription', () => {
     expect(validateDescription('1234567890', true)).toBeUndefined();
   });
 
-  it('returns maxlength-error when touched + > 500 chars', () => {
-    const longValue = 'a'.repeat(501);
-    expect(validateDescription(longValue, true)).toBe('Description must be 500 characters or fewer.');
+  it('returns maxlength-error when touched + > 5000 chars', () => {
+    const longValue = 'a'.repeat(5001);
+    expect(validateDescription(longValue, true)).toBe('Description must be 5000 characters or fewer.');
+  });
+
+  it('returns undefined when touched + exactly 5000 chars (valid — new backend limit)', () => {
+    const maxValid = 'a'.repeat(5000);
+    expect(validateDescription(maxValid, true)).toBeUndefined();
+  });
+
+  it('returns undefined when touched + 501 chars (now valid — old 500 limit no longer applies)', () => {
+    const over500 = 'a'.repeat(501);
+    expect(validateDescription(over500, true)).toBeUndefined();
   });
 
   it('returns undefined when touched + valid description', () => {

@@ -18,7 +18,7 @@
  *  - 402: plan-guard quota → emits { suggestions: [], fallback_offered: true }
  *  - 404: feature flag disabled → emits { suggestions: [], fallback_offered: true }
  *  - 401: auth expired → AuthService.logout() called + EMPTY (no emission)
- *  - 400: invalid q → EMPTY (no emission)
+ *  - 422: invalid q (empty / >5000 / extra fields) → throwError (component handles inline)
  *  - 500: server error → { suggestions: [], fallback_offered: true }
  *  - 503: server unavailable → { suggestions: [], fallback_offered: true }
  *  - selectCategory: POST /api/v1/products (DISCREPANCY-1) with { category_id }
@@ -107,16 +107,15 @@ describe('CategoryService.suggest() — happy path', () => {
     TestBed.inject(HttpTestingController).verify();
   });
 
-  it('GETs /api/v1/categories/suggest with { q: description }', () => {
+  it('POSTs to /api/v1/categories/suggest with body { q: description } (finding #4 — POST migration)', () => {
     const { service, controller } = setup();
     const description = 'Blue cotton kurti with mirror work for women';
 
     service.suggest(description).subscribe();
 
-    const req = controller.expectOne(
-      (r) => r.url === '/api/v1/categories/suggest' && r.params.get('q') === description,
-    );
-    expect(req.request.method).toBe('GET');
+    const req = controller.expectOne('/api/v1/categories/suggest');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ q: description });
     req.flush(MOCK_SUGGEST_RESPONSE);
   });
 
@@ -126,7 +125,8 @@ describe('CategoryService.suggest() — happy path', () => {
 
     service.suggest('Blue kurti cotton women XL').subscribe((r) => emitted.push(r));
 
-    const req = controller.expectOne((r) => r.url === '/api/v1/categories/suggest');
+    const req = controller.expectOne('/api/v1/categories/suggest');
+    expect(req.request.method).toBe('POST');
     req.flush(MOCK_SUGGEST_RESPONSE);
 
     expect(emitted).toHaveLength(1);
@@ -145,7 +145,8 @@ describe('CategoryService.suggest() — happy path', () => {
 
     service.suggest('kurti').subscribe();
 
-    const req = controller.expectOne((r) => r.url === '/api/v1/categories/suggest');
+    const req = controller.expectOne('/api/v1/categories/suggest');
+    expect(req.request.method).toBe('POST');
     // Service itself sets no Authorization header (interceptor's responsibility)
     expect(req.request.headers.get('Authorization')).toBeNull();
     req.flush(MOCK_SUGGEST_RESPONSE);
@@ -169,7 +170,8 @@ describe('CategoryService.suggest() — error matrix', () => {
       complete: () => { completed = true; },
     });
 
-    const req = controller.expectOne((r) => r.url === '/api/v1/categories/suggest');
+    const req = controller.expectOne('/api/v1/categories/suggest');
+    expect(req.request.method).toBe('POST');
     req.flush({ detail: 'Quota exceeded' }, { status: 402, statusText: 'Payment Required' });
 
     expect(emitted).toHaveLength(1);
@@ -187,7 +189,8 @@ describe('CategoryService.suggest() — error matrix', () => {
       complete: () => { completed = true; },
     });
 
-    const req = controller.expectOne((r) => r.url === '/api/v1/categories/suggest');
+    const req = controller.expectOne('/api/v1/categories/suggest');
+    expect(req.request.method).toBe('POST');
     req.flush({ detail: 'Smart Picker is disabled' }, { status: 404, statusText: 'Not Found' });
 
     expect(emitted).toHaveLength(1);
@@ -205,7 +208,8 @@ describe('CategoryService.suggest() — error matrix', () => {
       complete: () => { completed = true; },
     });
 
-    const req = controller.expectOne((r) => r.url === '/api/v1/categories/suggest');
+    const req = controller.expectOne('/api/v1/categories/suggest');
+    expect(req.request.method).toBe('POST');
     req.flush({ detail: 'Unauthorized' }, { status: 401, statusText: 'Unauthorized' });
 
     expect(auth.logout).toHaveBeenCalledOnce();
@@ -213,24 +217,28 @@ describe('CategoryService.suggest() — error matrix', () => {
     expect(completed).toBe(true);
   });
 
-  it('400 → EMPTY (no emission, stream completes)', () => {
+  it('422 → throwError re-thrown (empty / >5000 / extra fields — component handles inline)', () => {
+    // Backend now returns 422 Unprocessable Entity (not 400) for validation failures.
+    // The service default branch re-throws so the component can surface copy.
     const { service, controller } = setup();
-    const emitted: SuggestResponse[] = [];
+    const errors: unknown[] = [];
     let completed = false;
 
     service.suggest('').subscribe({
-      next: (r) => emitted.push(r),
+      next: () => { /* should not emit */ },
+      error: (e) => errors.push(e),
       complete: () => { completed = true; },
     });
 
-    const req = controller.expectOne((r) => r.url === '/api/v1/categories/suggest');
+    const req = controller.expectOne('/api/v1/categories/suggest');
+    expect(req.request.method).toBe('POST');
     req.flush(
-      { detail: 'validation.suggest_q.too_short_or_long' },
-      { status: 400, statusText: 'Bad Request' },
+      { detail: [{ loc: ['body', 'q'], msg: 'Field required', type: 'missing' }] },
+      { status: 422, statusText: 'Unprocessable Entity' },
     );
 
-    expect(emitted).toHaveLength(0);
-    expect(completed).toBe(true);
+    expect(errors).toHaveLength(1);
+    expect(completed).toBe(false);
   });
 
   it('500 → emits fallback shape { suggestions: [], fallback_offered: true }', () => {
@@ -241,7 +249,8 @@ describe('CategoryService.suggest() — error matrix', () => {
       next: (r) => emitted.push(r),
     });
 
-    const req = controller.expectOne((r) => r.url === '/api/v1/categories/suggest');
+    const req = controller.expectOne('/api/v1/categories/suggest');
+    expect(req.request.method).toBe('POST');
     req.flush({ detail: 'Internal Server Error' }, { status: 500, statusText: 'Internal Server Error' });
 
     expect(emitted).toHaveLength(1);
@@ -256,7 +265,8 @@ describe('CategoryService.suggest() — error matrix', () => {
       next: (r) => emitted.push(r),
     });
 
-    const req = controller.expectOne((r) => r.url === '/api/v1/categories/suggest');
+    const req = controller.expectOne('/api/v1/categories/suggest');
+    expect(req.request.method).toBe('POST');
     req.flush({ detail: 'Service Unavailable' }, { status: 503, statusText: 'Service Unavailable' });
 
     expect(emitted).toHaveLength(1);
