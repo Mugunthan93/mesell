@@ -488,6 +488,132 @@ async def fetch_schema(category_id: UUID, db: AsyncSession) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# §5A.C read-time DTO projection (catalog-form-fix 2026-06-16)
+#
+# ``fetch_schema`` ships the RICH at-rest §5.6.1 field shape verbatim
+# (canonical / display / export layers — see DATABASE_ARCHITECTURE §4.2).
+# The wizard (GET /categories/{id}/schema) and ``catalog.validate_product``
+# consume the FLAT §5A.C 9-key WIRE shape instead.  The mapper below is a
+# PURE field-level projection (rename / pass-through / deterministic
+# derivation) — it introduces NO new semantic decisions: the 9 keys, the
+# 8 ``data_type`` values, the 11 ``primitive`` values, and the 3
+# ``enum_resolver`` values are all preserved from the LOCKED §5A.C contract.
+#
+# ``export.build_xlsx_sheet`` keeps calling the RICH ``fetch_schema`` — it
+# needs ``meesho_column_header`` / ``meesho_column_index`` / ``main_sheet_label``.
+# See BACKEND_ARCHITECTURE §5A amendment 2026-06-16.
+# ─────────────────────────────────────────────────────────────────────────────
+def _map_field_to_dto(rich: dict[str, Any]) -> dict[str, Any]:
+    """Project ONE rich §5.6.1 field dict → the flat §5A.C 9-key DTO.
+
+    Mapping (rich → flat §5A.C):
+        name            ← display_label["en"]  (fallback: title-cased
+                          canonical_name — NEVER empty)
+        canonical_name  ← pass-through
+        marker          ← pass-through (default "optional")
+        data_type       ← pass-through (default "text")
+        primitive       ← pass-through (default "text_short")
+        help_text       ← display_help["en"]  (fallback: f"Enter {name}." —
+                          GUARANTEED non-empty for every field)
+        is_advanced     ← pass-through (default False)
+        enum_resolver   ← derived (see below)
+        validation_message_ids ← []  (the rich ``validation_message`` is
+                          display text, not IDs — no ID source)
+
+    ``enum_resolver`` derivation:
+        - data_type != "dropdown"        → None
+        - dropdown + inline enum_codes_map (truthy) → "static"
+          (also surfaces ``enum_values`` = the map's canonical codes)
+        - dropdown + no inline map        → "category"
+          (FE lazy-loads via GET field-enum; validator hits get_field_enum)
+
+    Emits EXACTLY the 9 §5A.C keys + the conditional ``enum_values`` (only
+    when ``enum_resolver == "static"``).  All other rich keys are dropped.
+    """
+    canonical_name = str(rich.get("canonical_name", "") or "")
+
+    # name ← display_label["en"]; fallback title-cased canonical_name.
+    display_label = rich.get("display_label")
+    name = ""
+    if isinstance(display_label, dict):
+        name = str(display_label.get("en", "") or "")
+    if not name:
+        name = canonical_name.replace("_", " ").title()
+
+    data_type = rich.get("data_type", "text") or "text"
+    primitive = rich.get("primitive", "text_short") or "text_short"
+    marker = rich.get("marker", "optional") or "optional"
+    is_advanced = bool(rich.get("is_advanced", False))
+
+    # help_text ← display_help["en"]; deterministic non-empty fallback.
+    display_help = rich.get("display_help")
+    help_text = ""
+    if isinstance(display_help, dict):
+        help_text = str(display_help.get("en", "") or "")
+    if not help_text:
+        help_text = f"Enter {name}."
+
+    # enum_resolver derivation.
+    enum_values: list[str] | None = None
+    if data_type != "dropdown":
+        enum_resolver: str | None = None
+    else:
+        enum_codes_map = rich.get("enum_codes_map")
+        if enum_codes_map:  # truthy inline map (won't fire on V1 seed)
+            enum_resolver = "static"
+            enum_values = list(enum_codes_map.keys())
+        else:
+            enum_resolver = "category"
+
+    dto: dict[str, Any] = {
+        "name": name,
+        "canonical_name": canonical_name,
+        "marker": marker,
+        "data_type": data_type,
+        "primitive": primitive,
+        "help_text": help_text,
+        "is_advanced": is_advanced,
+        "enum_resolver": enum_resolver,
+        "validation_message_ids": [],
+    }
+    if enum_resolver == "static":
+        dto["enum_values"] = enum_values
+    return dto
+
+
+def _map_envelope_to_dto(envelope: dict[str, Any]) -> dict[str, Any]:
+    """Project the RICH §5A.B envelope → the flat §5A.C wire envelope.
+
+    Maps ``fields[]`` element-wise through :func:`_map_field_to_dto`; passes
+    the 6 other envelope keys (``compulsory_count``, ``optional_count``,
+    ``total_count``, ``wizard_step_count``, ``main_sheet_label``,
+    ``compliance_shape``) through UNCHANGED.  Counts are NEVER recomputed
+    (§5A.B — readers trust the seed-time envelope verbatim).
+    """
+    out = dict(envelope)
+    rich_fields = envelope.get("fields") or []
+    out["fields"] = [
+        _map_field_to_dto(f) for f in rich_fields if isinstance(f, dict)
+    ]
+    return out
+
+
+async def fetch_schema_dto(category_id: UUID, db: AsyncSession) -> dict:
+    """Compiled wizard schema in the FLAT §5A.C WIRE shape.
+
+    Wraps :func:`fetch_schema` (reusing the ``schema:{category_id}`` cache)
+    and applies the read-time §5A.C projection via
+    :func:`_map_envelope_to_dto`.  This is the shape served to the wizard
+    (GET /categories/{id}/schema) and read by ``catalog.validate_product``.
+
+    Raises:
+        CategoryNotFoundError: when ``category_id`` not in ``categories``.
+    """
+    rich_envelope = await fetch_schema(category_id, db=db)
+    return _map_envelope_to_dto(rich_envelope)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # §9.B.5 Field-Enum lookup
 # ─────────────────────────────────────────────────────────────────────────────
 async def get_field_enum(
@@ -618,6 +744,7 @@ __all__ = [
     "assert_category_exists",
     "browse_categories",
     "fetch_schema",
+    "fetch_schema_dto",
     "get_category_tree",
     "get_commission",
     "get_field_enum",

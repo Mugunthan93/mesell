@@ -260,7 +260,7 @@ async def get_category_schema(
 
     Status codes: 200; 401; 404 (``category.lookup.not_found``).
     """
-    payload = await category_service.fetch_schema(id, db=db)
+    payload = await category_service.fetch_schema_dto(id, db=db)
     etag_value = etag_for(json.dumps(payload, default=str).encode())
 
     if if_none_match and if_none_match == etag_value:

@@ -461,8 +461,8 @@ async def _resolve_super_id_for_category(
     which case the eligibility check is skipped per §10 forward-compat).
     """
     try:
-        schema = await category_service.fetch_schema(category_id, db=db)
-    except Exception as exc:  # noqa: BLE001 — fetch_schema raises CategoryNotFoundError when missing
+        schema = await category_service.fetch_schema_dto(category_id, db=db)
+    except Exception as exc:  # noqa: BLE001 — fetch_schema_dto raises CategoryNotFoundError when missing
         raise exc
     if isinstance(schema, dict):
         super_id = schema.get("super_id")
@@ -484,7 +484,7 @@ async def patch_product(
     """Implement the §10.B.2 9-step flow.
 
     1. assert_product_ownership.
-    2. category.service.fetch_schema (cached).
+    2. category.service.fetch_schema_dto (cached, flat §5A.C wire shape).
     3. Per-field validation (§5A.C) — raises ValidationFailedError on miss.
     4. (V1: no special is_advanced handling beyond honour-the-wizard.)
     5. Repository.update_fields_jsonb — JSONB merge.
@@ -504,7 +504,7 @@ async def patch_product(
     if product_row is None:
         raise ProductNotFoundError()
 
-    schema = await category_service.fetch_schema(product_row.category_id, db=db)
+    schema = await category_service.fetch_schema_dto(product_row.category_id, db=db)
 
     # Step 3 — per-field validation.
     patch_fields = request.fields or {}
@@ -618,7 +618,7 @@ async def autofill_product(
     product_row = await catalog_repo.find_by_id(db, user_id, product_id)
     if product_row is None:
         raise ProductNotFoundError()
-    schema = await category_service.fetch_schema(product_row.category_id, db=db)
+    schema = await category_service.fetch_schema_dto(product_row.category_id, db=db)
 
     # Step 4 — build allowed_enums for §6A.E Layer-2 guardrail.
     allowed_enums = await _resolve_allowed_enums(
@@ -798,7 +798,7 @@ async def get_preview(
     if product_row is None:
         raise ProductNotFoundError()
 
-    schema = await category_service.fetch_schema(product_row.category_id, db=db)
+    schema = await category_service.fetch_schema_dto(product_row.category_id, db=db)
 
     # Compose ordered preview fields with display labels per §5A.C.
     fields: list[PreviewField] = []
@@ -984,7 +984,7 @@ async def get_product_for_export(
     if row is None:
         raise ProductNotFoundError()
 
-    schema = await category_service.fetch_schema(row.category_id, db=db)
+    schema = await category_service.fetch_schema_dto(row.category_id, db=db)
 
     summary_internal = _compute_completeness(
         dict(row.fields_jsonb or {}), schema
@@ -1056,7 +1056,7 @@ async def get_validation_summary(
     row = await catalog_repo.find_by_id(db, user_id, product_id)
     if row is None:
         raise ProductNotFoundError()
-    schema = await category_service.fetch_schema(row.category_id, db=db)
+    schema = await category_service.fetch_schema_dto(row.category_id, db=db)
     summary = _compute_completeness(dict(row.fields_jsonb or {}), schema)
     return ValidationSummaryInternal(
         product_id=row.id,

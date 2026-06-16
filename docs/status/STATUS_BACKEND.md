@@ -1,6 +1,47 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-16 (meesell-services-builder) — catalog-form schema DTO mapper (read-time §5.6.1 → §5A.C) ===
+Phase: V1 catalog-form UI bug-fix (blank labels #1/#3, dead dropdowns #2)
+Session: mesell-catalog-form-fix-backend-session-1 (HYBRID step 2/BUILD)
+Worktree branch: feature/catalog-form-fix (worktree /tmp/mesell-wt/catalog-form-fix)
+Done:
+  - ROOT CAUSE: fetch_schema shipped the RICH §5.6.1 shape (no name/help_text/
+    enum_resolver/validation_message_ids) verbatim → FE adapter read dto.name /
+    dto.enum_resolver → blank labels + dead dropdowns; catalog.validate_product
+    read spec["enum_resolver"] (absent) → defaulted "static" + empty enum_values.
+  - NEW service surface category.service.fetch_schema_dto(category_id, db) — wraps
+    fetch_schema (reuses schema:{id} cache) + applies pure field-level projection.
+    Added to __all__. NO §5A.C LOCKED-shape amendment (9 keys / value enums byte-unchanged).
+  - Mapper _map_field_to_dto: name←display_label["en"] (fallback title-cased
+    canonical_name); help_text←display_help["en"] (fallback f"Enter {name}.");
+    enum_resolver derived (dropdown+no inline map→"category"; inline map→"static"
+    +enum_values; else None); validation_message_ids←[]; canonical_name/marker/
+    data_type/primitive/is_advanced pass-through. Emits exactly 9 keys + conditional
+    enum_values; all rich keys dropped.
+  - _map_envelope_to_dto: maps fields[] element-wise; 6 envelope keys pass through
+    UNCHANGED (counts NOT recomputed).
+  - Call-site swaps: category/router.py:263 (SchemaResponse model UNCHANGED) + ALL 6
+    catalog/service.py sites (464/507/621/801/987/1059) → fetch_schema_dto.
+  - export/service.py:452 UNCHANGED (keeps rich fetch_schema — needs meesho_column_*).
+    core/cache.py:232 prewarm UNCHANGED (warms underlying rich cache; discards return).
+  - Docs: BACKEND_ARCHITECTURE §5A append-only amendment 2026-06-16; DATABASE_ARCHITECTURE
+    §4.2 wizard note correction.
+  - NEW tests/test_schema_dto_mapper.py (pytest.mark.unit, mirror-fixture approach).
+Tests: 104 passed (test_schema_dto_mapper.py + test_per_field_shape_keys.py);
+  162 passed across related §5A unit suite. Ruff clean on all touched files.
+In progress: none
+Blockers: none
+Next: merge-gate review (step 3) by meesell-backend-coordinator.
+Hand-offs:
+  - api-routes-builder: GET /categories/{id}/schema now serves the flat §5A.C DTO
+    (fetch_schema_dto); SchemaResponse model untouched — FE field-schema.model.ts
+    adapter contract is now satisfied (name/help_text/enum_resolver populated).
+  - frontend: dropdowns with enum_resolver=="category" lazy-load via GET field-enum (#16).
+=========
+```
+
+```
 === UPDATE: 2026-06-16 (meesell-api-routes-builder) — fix validation.q.missing i18n key ===
 Phase: V1 Feature 2 (Smart Category Picker) — POST /suggest 422 path i18n gap
 Session: meesell-api-routes-builder fast-mode worktree /tmp/mesell-wt/fix-q-missing
