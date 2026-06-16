@@ -91,7 +91,11 @@ async def test_full_onboarding_flow_drives_flag_true(iam_client, use_live_valkey
         "/api/v1/auth/me", headers={"Authorization": f"Bearer {access_token}"}
     )
     assert me_resp.status_code == 200
-    user_id = UUID(me_resp.json()["user_id"])
+    me_body = me_resp.json()
+    user_id = UUID(me_body["user_id"])
+    # Path B: a brand-new seller with no profile row yet must surface the
+    # additive flag as False on /me — sourced from customer service, no raise.
+    assert me_body["onboarding_complete"] is False
 
     engine, Session = await _make_session_factory()
     try:
@@ -154,6 +158,15 @@ async def test_full_onboarding_flow_drives_flag_true(iam_client, use_live_valkey
         assert rf.completed["manufacturer_name"] is True
         assert rf.completed["country_of_origin"] is True
         assert rf.completed["ext.26.fssai_license_number"] is True
+
+        # ── Step 5 (Path B): /me now mirrors the completed flag as True ─────
+        # Same seller, onboarding finished → /me's additive field flips True.
+        me_after = await iam_client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        assert me_after.status_code == 200
+        assert me_after.json()["onboarding_complete"] is True
 
     finally:
         await engine.dispose()

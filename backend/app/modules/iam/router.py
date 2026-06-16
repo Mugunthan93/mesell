@@ -242,14 +242,30 @@ async def me(
 
     No audit event per documented absence — the JWT itself proves the user
     is active; logging every ``/me`` would flood the table.
+
+    ``onboarding_complete`` is a CUSTOMER-domain fact, sourced cleanly through
+    the customer module's public service surface
+    (:func:`customer.service.get_onboarding_completeness` — the same seam
+    ``dashboard.service`` uses).  No customer ORM model is imported into iam.
+    For a brand-new seller with no profile row yet, that surface returns
+    ``onboarding_complete=False`` without raising (per customer §8.F), so the
+    pre-onboarding case is handled by the callee, not here.
     """
+    # Function-level import: keeps the customer dependency off iam's
+    # module-load path (no circular import — customer does not import iam).
+    from app.modules.customer import service as customer_service
+
     profile = await iam_service.get_profile(user.user_id, db)
+    completeness = await customer_service.get_onboarding_completeness(
+        user.user_id, db
+    )
     return MeResponse(
         user_id=profile.user_id,
         phone=profile.phone,
         plan="free",  # V1 narrow per §4.B CurrentUser
         created_at=profile.created_at,
         last_login_at=profile.last_login_at,
+        onboarding_complete=completeness.onboarding_complete,
     )
 
 
