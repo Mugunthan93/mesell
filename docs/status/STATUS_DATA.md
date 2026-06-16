@@ -88,6 +88,37 @@ Coordinator-implements fallback was used for all parsing (workspace agent regist
 
 ## Updates Log
 
+=== UPDATE: 2026-06-16 (Wave 1.5 commission capture) ===
+Phase: commission rate-card capture (meesell-scraper-maintainer, Wave 1.5)
+Done:
+  - Read own MEMORY.md + CLAUDE.md + PLAYWRIGHT_MCP_REFERENCE + STATUS_DATA.md + CATEGORY_SEEDING_ARCHITECTURE.md
+  - Confirmed worktree: /private/tmp/mesell-wt/category-seeding (correct)
+  - Confirmed no prior commission data in repo (0 hits across all committed JSONs)
+  - Probed 17 Meesho URLs for commission/referral-fee rate-card — ALL BLOCKED
+    (Akamai WAF: HTTP 403 for authenticated paths; HTTP 200 SPA shell (2166 bytes) for public subdomains)
+  - Confirmed Playwright MCP NOT configured (claude_desktop_config.json has only 'pencil' server)
+  - robots.txt UNREADABLE (supplier.meesho.com/robots.txt returns HTTP 403 from WAF)
+Snapshot path: n/a (hard stop — no data captured)
+Diff vs last: n/a
+Selector version: n/a (no selectors authored)
+Coverage: 0 / 30 super-categories; 0 / 3772 leaves
+In progress: BLOCKED — hard stop on both Playwright availability + WAF
+Blockers:
+  1. Playwright MCP server not in claude_desktop_config.json (only 'pencil' present)
+  2. All Meesho public+supplier pages served as React SPA requiring JS execution
+  3. robots.txt for supplier.meesho.com unreadable (WAF blocks it)
+Next: two options per capture report §7:
+  Option A (RECOMMENDED now): Founder manually copies rate-card from supplier panel; data-lead/scraper structures it into category_commissions.json
+  Option B (quarterly refresh path): Add @playwright/mcp to claude_desktop_config.json; re-dispatch scraper-maintainer in interactive session with OTP
+Artifacts produced:
+  - backend/app/data/category_commissions.json (empty rate_card[], full _meta with hard-stop record) — CREATED, NOT COMMITTED
+  - docs/plans/architecture/CATEGORY_SEEDING_COMMISSION_CAPTURE.md (full capture report) — CREATED, NOT COMMITTED
+Hand-offs:
+  - To data-engineer: hard stop confirmed; recommend Option A (founder manual copy) as fastest path
+  - To founder: rate-card needed — manual copy from supplier panel or interactive Playwright session
+  - When rate-card available: scraper-maintainer can structure JSON + author scripts/seed_category_commissions.py
+=========
+
 === UPDATE: 2026-06-16 ===
 Session: mesell-category-seeding-architecture-data-session-1
 Phase: architecture authoring (FAST MODE — single agent, no code)

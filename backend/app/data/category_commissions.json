@@ -1,0 +1,60 @@
+{
+  "_meta": {
+    "artifact_version": "0.1.0-CAPTURE-BLOCKED",
+    "status": "HARD_STOP — no rate-card data captured",
+    "capture_attempted": "2026-06-16",
+    "capture_agent": "meesell-scraper-maintainer (sonnet)",
+    "capture_session": "mesell-category-seeding-session-1 / Wave 1.5",
+    "authorising_architecture": "docs/plans/architecture/CATEGORY_SEEDING_ARCHITECTURE.md §9 Q2 (D2 Phase 2)",
+    "target_output_column": "categories.commission_pct (NUMERIC(5,2) nullable)",
+    "intended_use": "Input to scripts/seed_category_commissions.py for idempotent backfill of categories.commission_pct after founder accuracy review",
+    "source_url": null,
+    "capture_method": "Playwright MCP headless browser (INTENDED) — blocked; see hard_stop block",
+    "hard_stop": {
+      "type": "PLAYWRIGHT_MCP_UNAVAILABLE",
+      "detail": "No Playwright MCP server is registered in the active Claude Desktop config (~/.../claude_desktop_config.json). Only the 'pencil' MCP server is present. The mcp__playwright__browser_* tool family is not available in this dispatch context.",
+      "secondary_block": "All Meesho supplier-panel and public-help pages (supplier.meesho.com, www.meesho.com, help.meesho.com, support.meesho.com, supplierhub.meesho.com, seller.meesho.com) return HTTP 403 (Akamai WAF) or serve a 2,166-byte React SPA shell that requires JavaScript execution to render actual content. Server-side curl with browser UA strings is universally blocked. The rate-card page content cannot be extracted without a real browser execution context.",
+      "urls_probed": [
+        {"url": "https://supplier.meesho.com/referral-fee", "result": "HTTP 403"},
+        {"url": "https://supplier.meesho.com/pricing", "result": "HTTP 403"},
+        {"url": "https://supplier.meesho.com/help", "result": "HTTP 403"},
+        {"url": "https://supplier.meesho.com/robots.txt", "result": "HTTP 403 (Akamai blocks even robots.txt)"},
+        {"url": "https://www.meesho.com/referral-fee", "result": "HTTP 403 (Akamai Access Denied)"},
+        {"url": "https://www.meesho.com/info/referral-fees", "result": "HTTP 403"},
+        {"url": "https://www.meesho.com/info/referral-fee", "result": "HTTP 403"},
+        {"url": "https://www.meesho.com/info/supplier-pricing", "result": "HTTP 403"},
+        {"url": "https://www.meesho.com/robots.txt", "result": "HTTP 403"},
+        {"url": "https://supplierhub.meesho.com/", "result": "HTTP 200 but SPA shell only (2166 bytes, no content without JS)"},
+        {"url": "https://supplierhub.meesho.com/referral-fee", "result": "HTTP 404"},
+        {"url": "https://seller.meesho.com/", "result": "HTTP 200 but SPA shell only (2166 bytes, no content without JS)"},
+        {"url": "https://seller.meesho.com/pricing", "result": "HTTP 404"},
+        {"url": "https://seller.meesho.com/fees", "result": "HTTP 404"},
+        {"url": "https://help.meesho.com/", "result": "HTTP 200 but same SPA shell (2166 bytes)"},
+        {"url": "https://support.meesho.com/", "result": "HTTP 200 but same SPA shell (2166 bytes)"},
+        {"url": "https://images.meesho.com/images/supplier-hub/referral-fee.pdf", "result": "HTTP 404"}
+      ],
+      "robots_txt_status": "UNREADABLE — supplier.meesho.com/robots.txt returns HTTP 403; robots.txt interpretation deferred to interactive session",
+      "captcha_encountered": false,
+      "rate_limit_hit": false,
+      "prior_session_confirmation": "STATUS_DATA.md entries 2026-06-06 10:30 and 11:00 both record 'Playwright MCP tools unavailable in this environment' — pattern consistent across dispatch contexts"
+    },
+    "coverage_pct": 0,
+    "rate_card_rows_captured": 0,
+    "leaf_rows_mappable": 0,
+    "total_leaves_in_tree": 3772,
+    "total_super_categories": 30,
+    "total_categories": 234,
+    "granularity_note": "Meesho publishes commission at super-category or category (Level 1/Level 2) granularity — NOT at leaf level. Rate-card has approximately 30-50 rows covering all 3,772 leaves via range-lookup. Exact granularity unknown without live capture.",
+    "parser_version": "meesell-scraper-maintainer v0.1.0-CAPTURE-BLOCKED",
+    "next_action_required": "Founder provides the rate-card (manual copy from supplier panel, PDF, or screenshot) OR a Playwright MCP server is added to the Claude Desktop config and the scraper-maintainer is re-dispatched in an interactive session.",
+    "backfill_script_when_ready": "scripts/seed_category_commissions.py (to be authored once this JSON is populated with real values)"
+  },
+  "rate_card": [],
+  "proposed_leaf_mapping": [],
+  "unmatched_leaves": [],
+  "ambiguity_notes": [
+    "Cannot produce mapping without rate-card data.",
+    "Mapping skeleton is available from meesho_category_tree.json (30 super-categories, 234 categories, 3,772 leaves) and is ready to be populated once rate-card values are supplied.",
+    "Known structural complexity for mapping: Meesho has overlapping super-category name groups (e.g. 'Personal Care & Wellness' super_id=14 vs 'Personal Care' super_id=37 vs 'Beauty & Personal Care' super_id=19) — rate-card disambiguation will require careful mapping review by the founder/data-engineer before backfill."
+  ]
+}
