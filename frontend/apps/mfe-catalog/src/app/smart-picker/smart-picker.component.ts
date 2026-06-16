@@ -4,7 +4,7 @@
  * Standalone, OnPush page component for the Smart Category Picker (V1 Feature 2).
  *
  * Flow:
- *  - Seller types a product description (10-500 chars).
+ *  - Seller types a product description (10-5000 chars).
  *  - Pressing Enter or clicking the Send button fires onSubmit().
  *  - CategoryService.suggest(description) is called; results render in place.
  *  - Top-3 of the returned suggestions (max 5) are rendered via CategoryCardComponent.
@@ -49,7 +49,7 @@ import { CategoryCardComponent } from './category-card.component';
 import type { CategorySuggestion, SuggestResponse } from './smart-picker.model';
 
 const SMART_PICKER_ERROR_COPY: Record<string, string> = {
-  'validation.suggest_q.too_short_or_long': 'Please enter between 1 and 500 characters to search categories.',
+  'validation.suggest_q.too_short_or_long': 'Please enter between 1 and 5000 characters to search categories.',
   'category.lookup.not_found': "We couldn't find that category. Please pick another from the list.",
   'category.field_enum.not_found': "We couldn't load the options for this field. Please refresh the page.",
   'rate_limit.window.exceeded': "You've reached the category suggestion limit. Try again in an hour.",
@@ -101,7 +101,7 @@ const GENERIC_ERROR_COPY = 'Something went wrong. Please try again.';
             class="mt-1 text-xs"
             style="color: var(--mee-color-on-surface-muted);"
           >
-            Between 10 and 500 characters.
+            Between 10 and 5000 characters.
           </p>
 
           <!-- Send button — right-aligned inside the card -->
@@ -197,7 +197,7 @@ export class SmartPickerComponent {
       [
         Validators.required,
         Validators.minLength(10),
-        Validators.maxLength(500),
+        Validators.maxLength(5000),
       ],
     ],
   });
@@ -214,7 +214,7 @@ export class SmartPickerComponent {
     if (!ctrl || !ctrl.touched || ctrl.valid) return undefined;
     if (ctrl.hasError('required')) return 'Please describe your product.';
     if (ctrl.hasError('minlength')) return 'Please enter at least 10 characters.';
-    if (ctrl.hasError('maxlength')) return 'Description must be 500 characters or fewer.';
+    if (ctrl.hasError('maxlength')) return 'Description must be 5000 characters or fewer.';
     return undefined;
   });
 
