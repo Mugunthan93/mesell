@@ -30,10 +30,31 @@
   letter-spacing: -0.3px;
 }
 
+/* Sidebar groups (Home / Catalogs / Categories / Account) */
+.nav-group {
+  padding: 4px 0;
+}
+
+.nav-group + .nav-group {
+  margin-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.nav-group__label {
+  margin: 0;
+  padding: 14px 20px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--mee-color-sidebar-text) 65%, transparent);
+}
+
 .sidebar-nav {
   list-style: none;
   margin: 0;
-  padding: 8px 0;
+  padding: 4px 0;
 }
 
 .nav-item {
@@ -64,6 +85,29 @@
   font-size: 16px;
   width: 20px;
   text-align: center;
+}
+
+/* Accent / primary call-to-action item (+ New Catalog) */
+.nav-item--accent {
+  margin: 6px 12px;
+  padding: 10px 12px;
+  color: var(--mee-color-on-primary);
+  background: var(--mee-color-primary);
+  border-left-color: transparent;
+  border-radius: var(--mee-radius-sm);
+  font-weight: 600;
+}
+
+.nav-item--accent:hover {
+  color: var(--mee-color-on-primary);
+  background: color-mix(in srgb, var(--mee-color-primary) 88%, #000);
+}
+
+/* When the accent CTA is the active route, keep the filled look (no left-border bleed) */
+.nav-item--accent.nav-item--active {
+  color: var(--mee-color-on-primary) !important;
+  background: color-mix(in srgb, var(--mee-color-primary) 88%, #000);
+  border-left-color: transparent;
 }
 
 /* Main content */
