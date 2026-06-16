@@ -44,6 +44,7 @@ from app.i18n.schema_contract import (
     FIELD_SHAPE_KEYS,
     PRIMITIVE_VALUES,
 )
+from app.i18n.step_assignment import STEP_ORDER
 from app.modules.category.service import (
     _map_envelope_to_dto,
     _map_field_to_dto,
@@ -66,6 +67,7 @@ def _rich_field(
     display_help: dict[str, str] | None = None,
     enum_codes_map: dict[str, Any] | None = None,
     meesho_column_index: int = 0,
+    step_id: str = "basics",
 ) -> dict[str, Any]:
     """Build a rich field dict with build_field_schema's EXACT key set.
 
@@ -82,7 +84,7 @@ def _rich_field(
         "is_advanced": is_advanced,
         "is_hidden": False,
         "compliance_role": None,
-        "step_id": "essentials",
+        "step_id": step_id,
         "max_length": None,
         "min_length": None,
         "regex": None,
@@ -147,6 +149,7 @@ RICH_CURRENCY = _rich_field(
     marker="compulsory",
     display_label={"en": "MRP"},
     display_help={"en": "Maximum retail price."},
+    step_id="pricing",
 )
 
 # An image field.
@@ -157,6 +160,7 @@ RICH_IMAGE = _rich_field(
     marker="compulsory",
     display_label={"en": "Main Image"},
     display_help={"en": "Upload the main product image."},
+    step_id="photos",
 )
 
 # Edge: rich field with MISSING display_label entirely → name fallback.
@@ -185,15 +189,15 @@ ALL_RICH = [
 @pytest.mark.parametrize("rich", ALL_RICH)
 def test_dto_has_exactly_the_nine_locked_keys(rich: dict[str, Any]) -> None:
     dto = _map_field_to_dto(rich)
-    # All 9 §5A.C keys present.
+    # All 9 §5A.C locked keys present.
     assert FIELD_SHAPE_KEYS.issubset(dto.keys())
-    # No rich-only keys leak through (only the 9 + conditional enum_values).
-    allowed = FIELD_SHAPE_KEYS | {"enum_values"}
+    # No rich-only keys leak through (only the 9 locked keys + the
+    # forward-compat ``step_id`` key + conditional ``enum_values``).
+    allowed = FIELD_SHAPE_KEYS | {"enum_values", "step_id"}
     assert set(dto.keys()).issubset(allowed)
     for leaked in (
         "is_hidden",
         "compliance_role",
-        "step_id",
         "meesho_column_header",
         "meesho_column_index",
         "display_label",
@@ -231,6 +235,42 @@ def test_validation_message_ids_is_empty_list(rich: dict[str, Any]) -> None:
     dto = _map_field_to_dto(rich)
     assert isinstance(dto["validation_message_ids"], list)
     assert dto["validation_message_ids"] == []
+
+
+@pytest.mark.parametrize("rich", ALL_RICH)
+def test_step_id_is_non_empty_str_in_step_order(rich: dict[str, Any]) -> None:
+    """Forward-compat ``step_id`` is surfaced, non-empty, and a STEP_ORDER member.
+
+    The wizard groups fields by ``step_id``; an unknown step would orphan the
+    field from every wizard step.  §5A.C permits this additional per-field key.
+    """
+    dto = _map_field_to_dto(rich)
+    assert isinstance(dto["step_id"], str)
+    assert dto["step_id"] != ""
+    assert dto["step_id"] in STEP_ORDER
+
+
+def test_step_id_passthrough_value() -> None:
+    """The seed-assigned step_id is passed through verbatim (not re-derived)."""
+    assert _map_field_to_dto(RICH_CURRENCY)["step_id"] == "pricing"
+    assert _map_field_to_dto(RICH_IMAGE)["step_id"] == "photos"
+
+
+def test_step_id_defensive_fallback_to_basics() -> None:
+    """A (defensively) absent rich step_id falls back to ``"basics"``.
+
+    Every real seed field carries a step_id, but the mapper must never emit an
+    empty/None step that would orphan the field from the wizard.
+    """
+    rich = dict(RICH_TEXT_NO_HELP)
+    rich.pop("step_id", None)
+    dto = _map_field_to_dto(rich)
+    assert dto["step_id"] == "basics"
+    assert dto["step_id"] in STEP_ORDER
+
+    rich_none = dict(RICH_TEXT_NO_HELP)
+    rich_none["step_id"] = None
+    assert _map_field_to_dto(rich_none)["step_id"] == "basics"
 
 
 @pytest.mark.parametrize("rich", ALL_RICH)
@@ -337,3 +377,4 @@ def test_envelope_fields_are_all_dto_shape() -> None:
         assert FIELD_SHAPE_KEYS.issubset(dto.keys())
         assert isinstance(dto["name"], str) and dto["name"] != ""
         assert isinstance(dto["help_text"], str) and dto["help_text"] != ""
+        assert isinstance(dto["step_id"], str) and dto["step_id"] in STEP_ORDER

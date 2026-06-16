@@ -1774,7 +1774,18 @@ The 9 keys, their value enums, and §5A.C/D/E/F invariants are UNCHANGED.
 export.build_xlsx_sheet continues to read the RICH shape via the unchanged
 category.service.fetch_schema (it needs meesho_column_header /
 meesho_column_index / main_sheet_label). Two service surfaces now exist:
-fetch_schema (rich) and fetch_schema_dto (flat §5A.C). (End amendment.)
+fetch_schema (rich) and fetch_schema_dto (flat §5A.C).
+
+SUB-NOTE 2026-06-16 (catalog-form-wizard — forward-compat step_id):
+step_id is surfaced on the wizard DTO via _map_field_to_dto as a forward-compat
+per-field key (§5A.C permits additional keys beyond the locked 9); it carries
+the seed-assigned wizard step grouping (a member of
+app.i18n.step_assignment.STEP_ORDER) consumed by the multi-step catalog-form
+wizard to group fields by step. Defensive fallback is "basics" (the rich field
+always carries one). The 9 locked keys, their value enums, and the §5A.C/D/E/F
+invariants are unchanged.
+
+(End amendment.)
 
 ---
 

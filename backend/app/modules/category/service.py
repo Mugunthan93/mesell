@@ -520,6 +520,15 @@ def _map_field_to_dto(rich: dict[str, Any]) -> dict[str, Any]:
         validation_message_ids ← []  (the rich ``validation_message`` is
                           display text, not IDs — no ID source)
 
+    Forward-compat per-field key (§5A.C permits additional keys beyond the
+    locked 9):
+        step_id         ← pass-through (the seed-assigned wizard step
+                          grouping, a member of
+                          ``app.i18n.step_assignment.STEP_ORDER``; defensive
+                          fallback ``"basics"`` — the rich field ALWAYS
+                          carries one).  Consumed by the multi-step
+                          catalog-form wizard to group fields by step.
+
     ``enum_resolver`` derivation:
         - data_type != "dropdown"        → None
         - dropdown + inline enum_codes_map (truthy) → "static"
@@ -527,8 +536,9 @@ def _map_field_to_dto(rich: dict[str, Any]) -> dict[str, Any]:
         - dropdown + no inline map        → "category"
           (FE lazy-loads via GET field-enum; validator hits get_field_enum)
 
-    Emits EXACTLY the 9 §5A.C keys + the conditional ``enum_values`` (only
-    when ``enum_resolver == "static"``).  All other rich keys are dropped.
+    Emits the 9 LOCKED §5A.C keys + the forward-compat ``step_id`` key + the
+    conditional ``enum_values`` (only when ``enum_resolver == "static"``).
+    All other rich keys are dropped.
     """
     canonical_name = str(rich.get("canonical_name", "") or "")
 
@@ -575,6 +585,11 @@ def _map_field_to_dto(rich: dict[str, Any]) -> dict[str, Any]:
         "is_advanced": is_advanced,
         "enum_resolver": enum_resolver,
         "validation_message_ids": [],
+        # Forward-compat per-field key (§5A.C permits additional keys): the
+        # seed-assigned wizard step grouping consumed by the multi-step
+        # catalog-form wizard.  Always present on the rich field; defensive
+        # fallback to "basics" (the STEP_ASSIGNMENT catch-all).
+        "step_id": str(rich.get("step_id") or "basics"),
     }
     if enum_resolver == "static":
         dto["enum_values"] = enum_values

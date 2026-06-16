@@ -6783,3 +6783,32 @@ Hand-offs:
     shape (would require seeding per-category field enums OR a lenient enum_resolver default
     in the mapper for the validator path).
 =========
+
+=== UPDATE: 2026-06-16 ===
+Phase: V1 Feature 3 — Fast Catalog Form (multi-step wizard support)
+Agent: meesell-services-builder (branch feature/catalog-form-wizard)
+Done:
+  - category.service._map_field_to_dto now surfaces a forward-compat `step_id` per-field key
+    (pass-through of rich["step_id"]; defensive fallback "basics"). The 9 LOCKED §5A.C keys +
+    conditional enum_values are byte-unchanged; schema_contract.py untouched. The DTO now emits
+    10 keys (9 locked + step_id) + conditional enum_values. §5A.C explicitly permits additional
+    per-field keys, so this is a forward-compat extension, NOT a locked-shape amendment.
+  - tests/test_schema_dto_mapper.py extended: step_id is non-empty str + STEP_ORDER member on
+    every mapped field; passthrough value; defensive "basics" fallback (absent + None). Existing
+    assertions kept green (step_id removed from the leak-list; added to the allowed-key set).
+  - docs/BACKEND_ARCHITECTURE.md §5A amendment: append-only SUB-NOTE 2026-06-16 documenting the
+    forward-compat step_id surface.
+Tests: 118 passed (test_schema_dto_mapper + test_per_field_shape_keys + lint/test_no_meesho_
+  symbols_outside_export) — all green. ruff clean on service.py + test file.
+In progress: none
+Blockers: none
+Next: backend-coordinator merge-gate review of this branch's backend slice.
+Hand-offs:
+  - frontend-coordinator: GET /categories/{id}/schema (fetch_schema_dto) now carries `step_id`
+    on each field DTO — the wizard can group fields by step_id (membership of
+    app.i18n.step_assignment.STEP_ORDER, ordered: basics, pricing, inventory, sizing, materials,
+    food, tech_specs, safety, warranty, compliance, photos, description, advanced). No FE/BE
+    contract break — additive key only.
+  - backend-coordinator: merge-gate — confirm the 9 locked keys + schema_contract.py are
+    unchanged (verified: not in diff).
+=========
