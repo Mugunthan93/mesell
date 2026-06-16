@@ -7,7 +7,7 @@
  * This file establishes the semantic contract for the 6 required dispatch-gate tests.
  */
 
-import type { FieldGroup, FieldSchema } from './models/field-schema.model';
+import type { FieldGroup, FieldSchema, WizardStep } from './models/field-schema.model';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -251,4 +251,63 @@ export function buildSections(
     { id: 'recommended', label: 'Recommended', open: !!openState['recommended'], fields: getRecommendedFields(schema) },
     { id: 'optional',    label: 'Optional',    open: !!openState['optional'],    fields: getOptionalFields(schema) },
   ];
+}
+
+// ── Wizard step helpers (Wizard Refactor) ──────────────────────────────────────
+
+/**
+ * canAdvanceFromStep — returns true when the current step allows advancing.
+ *
+ * Block advancing only when the current step has at least one required field
+ * that has no value. Steps with requiredCount===0 are always freely advanceable.
+ * The 'photos' step never blocks (warn-only per spec §F).
+ *
+ * Pure function — no Angular, no side effects.
+ */
+export function canAdvanceFromStep(
+  step: WizardStep | undefined,
+  fieldValues: FieldValuesMap,
+): boolean {
+  if (!step) return true;
+  // photos step: warn-only, never block
+  if (step.id === 'photos') return true;
+  // Steps with no required fields are freely skippable
+  if (step.requiredCount === 0) return true;
+  // Block when any required field is empty
+  return step.fields.every(f => !f.required || !!fieldValues[f.canonical_name]);
+}
+
+/**
+ * hasPhotosStepFrontMissing — returns true when the photos step is the current step
+ * AND the front image (slot 1) has not yet been uploaded.
+ *
+ * Used to render the non-blocking front-photo warning per spec §F.
+ *
+ * @param currentStepId - the id of the active wizard step
+ * @param hasFrontImage - whether slot 1 (is_front) has been uploaded
+ */
+export function hasPhotosStepFrontMissing(
+  currentStepId: string,
+  hasFrontImage: boolean,
+): boolean {
+  return currentStepId === 'photos' && !hasFrontImage;
+}
+
+/**
+ * stepRequiredFieldErrors — returns a map of canonicalName → error message
+ * for all required fields on the given step that have no value.
+ * Used by the Next button tooltip / validation summary.
+ */
+export function stepRequiredFieldErrors(
+  step: WizardStep | undefined,
+  fieldValues: FieldValuesMap,
+): Record<string, string> {
+  if (!step || step.id === 'photos') return {};
+  const errors: Record<string, string> = {};
+  for (const field of step.fields) {
+    if (field.required && !fieldValues[field.canonical_name]) {
+      errors[field.canonical_name] = `${field.display_name} is required`;
+    }
+  }
+  return errors;
 }

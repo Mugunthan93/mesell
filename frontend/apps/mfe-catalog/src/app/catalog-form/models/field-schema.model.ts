@@ -1,5 +1,5 @@
 /**
- * field-schema.model.ts — Wave 6 Wave C
+ * field-schema.model.ts — Wave 6 Wave C / Wizard Refactor
  *
  * Dual-layer types for the catalog-form field schema:
  *   Layer 1 — DTOs: exact wire shapes from the backend Pydantic schemas (source of truth).
@@ -7,6 +7,7 @@
  *
  * The adapter `adaptSchemaResponse` bridges Layer 1 → Layer 2.
  * `mapPrimitiveToWidget` maps the 11-value LOCKED primitive enum → widget hint.
+ * `groupIntoSteps` groups FieldSchema[] into ordered WizardStep[] by step_id.
  * Source of truth: backend/app/i18n/schema_contract.py:175 (PRIMITIVE_VALUES)
  * and backend/app/i18n/primitive_classifier.py (classify_primitive emitter).
  *
@@ -23,14 +24,18 @@
  *   marker==='optional' && !is_advanced          → group 'recommended'  (reuse "More details" section)
  *   marker==='optional' && is_advanced === true  → group 'optional'     (advanced, collapsible)
  *
+ * Step grouping (Wizard Refactor):
+ *   Fields are also grouped by step_id (from SchemaFieldDTO.step_id, default 'basics').
+ *   groupIntoSteps() produces WizardStep[] in STEP_ORDER, non-empty only, required-first.
+ *   The 'photos' step is special — rendered by ImageUploaderComponent, not field renderer.
+ *
  * This preserves the existing 3-section component template with zero structural churn.
  *
  * ETag note: V1 does NOT send If-None-Match. Backend returns 200+body every call.
  * 304 branch is unreachable in V1 — documented here to avoid confusion.
  *
- * GAP-1 note: No GET /products/{id} exists. category_id is obtained from navigation state
- * (Router.getCurrentNavigation().extras.state.categoryId). On hard-reload where nav-state is
- * absent, the form renders an explicit error state. This is the documented interim per spec §4.
+ * GAP-1 note: category_id is obtained from getProduct() (Wave 2B fix).
+ * On hard-reload where the product is not found, the form renders an explicit error state.
  */
 
 // ── Layer 1: DTOs (wire shape) ─────────────────────────────────────────────────
@@ -93,6 +98,14 @@ export interface SchemaFieldDTO {
   validation_message_ids?: string[];
   /** Forward-compat: static option list when enum_resolver==='static'. */
   enum_values?: string[];
+  /**
+   * Wizard step identifier — groups this field into a named step.
+   * Canonical values: 'basics' | 'pricing' | 'inventory' | 'sizing' | 'materials' |
+   *   'food' | 'tech_specs' | 'safety' | 'warranty' | 'compliance' |
+   *   'photos' | 'description' | 'advanced'.
+   * Defaults to 'basics' when absent (forward-compat — older backend versions omit this).
+   */
+  step_id?: string;
 }
 
 /**
@@ -229,6 +242,11 @@ export interface FieldSchema {
   needs_api_enum?: boolean;
   /** The SchemaFieldDTO.canonical_name used for the field-enum #16 lookup. */
   api_enum_field_name?: string;
+  /**
+   * Wizard step identifier — from SchemaFieldDTO.step_id, default 'basics'.
+   * Used by groupIntoSteps() to organise fields into wizard steps.
+   */
+  step_id: string;
 }
 
 /**
@@ -325,6 +343,8 @@ export function adaptSchemaField(dto: SchemaFieldDTO): FieldSchema {
     help_text:      dto.help_text,
     is_advanced:    dto.is_advanced,
     needs_api_enum,
+    // thread step_id — default 'basics' for backward compat with older backend versions
+    step_id:        dto.step_id ?? 'basics',
   };
 
   if (enum_options) {
@@ -378,6 +398,109 @@ export function adaptSchemaResponse(dto: SchemaResponseDTO): FieldGroup[] {
     { group: 'recommended', fields: recommended },
     { group: 'optional',    fields: optional },
   ];
+}
+
+// ── Wizard step grouping ──────────────────────────────────────────────────────
+
+/**
+ * Canonical ordered step list (Wizard Refactor spec §A).
+ * Order is the display order for the stepper; steps absent from a category are skipped.
+ * 'photos' is special — rendered by ImageUploaderComponent, not the generic field renderer.
+ */
+export const STEP_ORDER: readonly string[] = [
+  'basics', 'pricing', 'inventory', 'sizing', 'materials',
+  'food', 'tech_specs', 'safety', 'warranty', 'compliance',
+  'photos', 'description', 'advanced',
+] as const;
+
+/**
+ * Human-readable labels for each step_id.
+ */
+export const STEP_LABELS: Readonly<Record<string, string>> = {
+  basics:      'Basics',
+  pricing:     'Pricing',
+  inventory:   'Inventory & Variants',
+  sizing:      'Size & Fit',
+  materials:   'Material & Care',
+  food:        'Food Info',
+  tech_specs:  'Specifications',
+  safety:      'Safety',
+  warranty:    'Warranty',
+  compliance:  'Compliance',
+  photos:      'Photos',
+  description: 'Description',
+  advanced:    'Advanced',
+};
+
+/**
+ * WizardStep — a single step in the multi-step wizard.
+ *
+ * `id`           — step_id string (e.g. 'basics', 'pricing').
+ * `label`        — human-readable label for the stepper header.
+ * `fields`       — ordered list: required fields FIRST, then optional (within-step ordering).
+ * `requiredCount` — number of required fields in this step.
+ *                  Steps with requiredCount===0 are freely skippable (Next always enabled).
+ */
+export interface WizardStep {
+  id: string;
+  label: string;
+  fields: FieldSchema[];
+  requiredCount: number;
+}
+
+/**
+ * groupIntoSteps — groups a flat FieldSchema[] into ordered WizardStep[].
+ *
+ * Algorithm:
+ *   1. Bucket fields by step_id.
+ *   2. Sort buckets by STEP_ORDER index (unknown step_ids appended last).
+ *   3. Within each bucket: required fields FIRST, then optional (stable original order within each tier).
+ *   4. Skip empty buckets (non-empty steps only).
+ *   5. The 'photos' step is included only when there are image_upload fields (primitive==='skip')
+ *      OR when explicitly present in the step_id from the backend.
+ *      Its `fields` array is empty — the Photos step renders an uploader, not field widgets.
+ *
+ * Note: image_upload fields (primitive==='skip') are EXCLUDED from all field arrays;
+ * they are represented via the 'photos' step's uploader component.
+ *
+ * Pure function — no Angular, no side effects.
+ */
+export function groupIntoSteps(fields: FieldSchema[]): WizardStep[] {
+  const buckets = new Map<string, FieldSchema[]>();
+
+  for (const field of fields) {
+    // image_upload / address_group → primitive 'skip'; excluded from field lists
+    if (field.primitive === 'skip') continue;
+
+    const stepId = field.step_id ?? 'basics';
+    if (!buckets.has(stepId)) buckets.set(stepId, []);
+    buckets.get(stepId)!.push(field);
+  }
+
+  // Sort step_ids by STEP_ORDER; unknown IDs sorted after known ones (stable order)
+  const knownOrder = new Map(STEP_ORDER.map((id, i) => [id, i]));
+  const sortedStepIds = [...buckets.keys()].sort((a, b) => {
+    const ia = knownOrder.get(a) ?? STEP_ORDER.length;
+    const ib = knownOrder.get(b) ?? STEP_ORDER.length;
+    return ia - ib;
+  });
+
+  const steps: WizardStep[] = [];
+  for (const stepId of sortedStepIds) {
+    const raw = buckets.get(stepId)!;
+    // Required-first ordering within each step (stable sort: required then optional)
+    const required = raw.filter(f => f.required);
+    const optional = raw.filter(f => !f.required);
+    const ordered = [...required, ...optional];
+    steps.push({
+      id:            stepId,
+      label:         STEP_LABELS[stepId] ?? stepId,
+      fields:        ordered,
+      requiredCount: required.length,
+    });
+  }
+
+  return steps;
 }
 
 // ── Legacy alias ──────────────────────────────────────────────────────────────

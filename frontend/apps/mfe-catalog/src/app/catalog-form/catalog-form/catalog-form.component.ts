@@ -1,12 +1,15 @@
-// catalog-form.component.ts — Wave 6C builder-3 UI polish
-// Route: /catalogs/:id/edit — dynamic field form, real HTTP, autosave, autofill overlay.
-// Builder-3 changes (UI Styler):
-//   - loading skeletons: 3-section skeleton matching real form shape
-//   - error-state a11y: categoryIdMissing banner focus management + role="alert"
-//   - autofill overlay: token-based colours (no hardcoded hex), 44px touch targets
-//   - aria-live on autosave status + role="status" + aria-atomic="true"
-//   - 360px section spacing via :host CSS; 1280px two-column grid via md:grid layout
-//   - all interactive targets confirmed ≥44px (min-height in styles:[] + mee-button default)
+// catalog-form.component.ts — Wizard Refactor (multi-step wizard)
+// Route: /catalogs/:id/edit
+// Replaces 3-accordion layout with a step_id-driven multi-step wizard.
+//
+// Spec items implemented:
+//   A — groupIntoSteps() groups fields by step_id in STEP_ORDER, required-first within step
+//   B — Basics step: "Required" block + collapsible "More details" for optional fields
+//   C — mee-steps horizontal stepper, sticky bottom nav bar, 44px touch targets
+//   D — Next gating: blocks only when current step has unfilled required fields
+//   E — Dropdowns: lazy per-step enum load on stepEnter(); enumCache preserved
+//   F — Photos step: ImageUploaderComponent (reused), non-blocking front-photo warning
+//   G — Preserved: categoryIdMissing, GAP-1, getDraft, autosave (10s), autofill overlay, OnPush, a11y
 
 import {
   AfterViewInit,
@@ -30,8 +33,10 @@ import {
   MeeInputComponent,
   MeeSelectComponent,
   MeeTextareaComponent,
+  MeeStepsComponent,
   MeeToastService,
 } from '@mesell/ui-kit';
+import type { MeeStep } from '@mesell/ui-kit';
 import {
   LoadingSkeletonComponent,
   PageHeaderComponent,
@@ -40,22 +45,22 @@ import {
   MeeOfflineBannerComponent,
 } from '@mesell/composites';
 
+import { ImageUploaderComponent } from '../../images/image-uploader/image-uploader.component';
+
 import type {
-  FieldGroup,
   FieldSchema,
-  EnumEntryDTO,
   AutofillResponse,
   ProductDetailResponse,
+  WizardStep,
 } from '../services/catalog-form-api.service';
 import { CatalogFormApiService } from '../services/catalog-form-api.service';
-
-/** Section descriptor — drives @for over 3 sections without template repetition. */
-interface SectionDef {
-  id: string;
-  label: string;
-  open: boolean;
-  fields: FieldSchema[];
-}
+import type { EnumEntryDTO, FieldGroup } from '../services/catalog-form-api.service';
+import { groupIntoSteps } from '../models/field-schema.model';
+import {
+  canAdvanceFromStep,
+  hasPhotosStepFrontMissing,
+  stepRequiredFieldErrors,
+} from '../catalog-form.model';
 
 @Component({
   selector: 'app-catalog-form',
@@ -67,101 +72,125 @@ interface SectionDef {
     MeeInputComponent,
     MeeSelectComponent,
     MeeTextareaComponent,
+    MeeStepsComponent,
     LoadingSkeletonComponent,
     PageHeaderComponent,
     StatusBadgeComponent,
     MeeAlertBannerComponent,
     MeeOfflineBannerComponent,
+    ImageUploaderComponent,
   ],
   styles: [`
-    /* ── Host layout ────────────────────────────────────────────────── */
+    /* ── Host layout ──────────────────────────────────────────────────── */
     :host { display: block; }
 
-    /* ── Form page wrapper: 360px baseline → 1280px two-column ──────── */
-    .mee-form-page {
-      /* Mobile: single column, 16px side padding */
+    /* ── Wizard page wrapper: mobile-first 360px → desktop ────────────── */
+    .mee-wizard-page {
       max-width: 100%;
       margin: 0 auto;
-      padding: var(--mee-space-4);           /* 16px — fits 360px without overflow */
+      padding: var(--mee-space-4);
+      padding-bottom: 80px; /* reserve space for sticky bottom bar */
     }
 
-    /* Loading skeleton region */
-    .mee-skeleton-region {
+    /* ── Sticky bottom navigation bar ─────────────────────────────────── */
+    .mee-wizard-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--mee-space-3) var(--mee-space-4);
+      background: var(--mee-color-surface);
+      border-top: 1px solid var(--mee-color-outline);
+      min-height: 64px;
+    }
+    .mee-wizard-nav__step-label {
+      font-size: 0.8125rem;
+      color: var(--mee-color-on-surface-muted);
+    }
+    .mee-wizard-nav__actions {
+      display: flex;
+      gap: var(--mee-space-2);
+      align-items: center;
+    }
+
+    /* ── Stepper header region ─────────────────────────────────────────── */
+    .mee-stepper-region {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      margin-bottom: var(--mee-space-5);
+      /* Hide scrollbar but keep scroll functionality */
+      scrollbar-width: none;
+    }
+    .mee-stepper-region::-webkit-scrollbar { display: none; }
+
+    /* ── Step content card ─────────────────────────────────────────────── */
+    .mee-step-content {
+      background: var(--mee-color-surface);
+      border-radius: var(--mee-radius-md);
+      padding: var(--mee-space-5);
+    }
+    .mee-step-title {
+      font-size: 1.0625rem;
+      font-weight: 600;
+      color: var(--mee-color-on-surface);
+      margin-bottom: var(--mee-space-4);
+    }
+
+    /* ── Fields layout within a step ──────────────────────────────────── */
+    .mee-step-fields {
       display: flex;
       flex-direction: column;
-      gap: var(--mee-space-5);               /* 20px between skeleton blocks */
+      gap: var(--mee-space-4);
     }
 
-    /* Skeleton section block that mirrors the real 3-section layout */
-    .mee-skeleton-section {
-      display: flex;
-      flex-direction: column;
-      gap: var(--mee-space-3);               /* 12px between skeleton rows */
-    }
-    .mee-skeleton-heading {
-      height: 44px;                          /* mirrors section-toggle min-height */
-      border-radius: var(--mee-radius-sm);
-      background: var(--mee-color-outline);
-      width: 40%;
-      animation: mee-pulse 1.5s ease-in-out infinite;
-    }
-
-    /* ── Section accordion toggle ────────────────────────────────────── */
-    .section-toggle {
+    /* ── "More details" sub-section (Basics step B) ───────────────────── */
+    .mee-more-details-toggle {
       display: flex;
       width: 100%;
       align-items: center;
       justify-content: space-between;
       padding: 10px 0;
+      margin-top: var(--mee-space-3);
+      font-size: 0.875rem;
       font-weight: 500;
-      text-align: left;
+      color: var(--mee-color-on-surface-muted);
       background: none;
       border: none;
-      border-bottom: 1px solid var(--mee-color-outline);
+      border-top: 1px solid var(--mee-color-outline);
       cursor: pointer;
-      min-height: 44px;                      /* WCAG 2.5.8 — 44px touch target */
-      color: var(--mee-color-on-surface);
+      min-height: 44px;
+      text-align: left;
     }
-    .section-toggle:focus-visible {
+    .mee-more-details-toggle:focus-visible {
       outline: 2px solid var(--mee-color-primary);
       outline-offset: 2px;
     }
-    .section-toggle__label { font-size: 0.9375rem; }
-    .section-toggle__hint  {
-      font-size: 0.8125rem;
-      font-weight: 400;
-      color: var(--mee-color-on-surface-muted);
-    }
-
-    /* ── Field section spacing: 360px single-col ─────────────────────── */
-    .mee-form-sections {
+    .mee-more-details-fields {
       display: flex;
       flex-direction: column;
-      gap: var(--mee-space-2);               /* 8px between sections at 360px */
-    }
-    .mee-section-fields {
-      display: flex;
-      flex-direction: column;
-      gap: var(--mee-space-4);               /* 16px between fields at 360px */
-      padding-top: var(--mee-space-4);
+      gap: var(--mee-space-4);
+      padding-top: var(--mee-space-3);
     }
 
-    /* ── AI-suggested field highlight ───────────────────────────────── */
+    /* ── AI-suggested field highlight ─────────────────────────────────── */
     .field-wrapper {
       background-color: transparent;
       transition: background-color var(--mee-transition-fast);
     }
     .field-wrapper.mee-ai-suggested {
-      padding: var(--mee-space-2);           /* 8px */
+      padding: var(--mee-space-2);
       border-radius: var(--mee-radius-sm);
       outline: 1px solid var(--mee-color-warning);
       outline-offset: 2px;
       background-color: var(--mee-color-warning-light);
     }
 
-    /* ── Autofill suggestion overlay ────────────────────────────────── */
+    /* ── Autofill suggestion overlay ──────────────────────────────────── */
     .mee-autofill-overlay {
-      /* Token-based — no hardcoded hex (builder-3 fix). */
       background: var(--mee-color-warning-light);
       border: 1px solid var(--mee-color-warning);
       border-radius: var(--mee-radius-md);
@@ -177,10 +206,9 @@ interface SectionDef {
     .suggestion-row {
       display: flex;
       align-items: center;
-      gap: var(--mee-space-2);               /* 8px */
+      gap: var(--mee-space-2);
       padding: 6px 0;
       border-bottom: 1px solid var(--mee-color-outline);
-      /* 44px min-height — inherited from flex items (buttons ≥44px by mee-button) */
       min-height: 44px;
     }
     .suggestion-row:last-child { border-bottom: none; }
@@ -204,25 +232,19 @@ interface SectionDef {
       flex-shrink: 0;
     }
 
-    /* ── Autosave status indicator ───────────────────────────────────── */
+    /* ── Autosave status indicator ─────────────────────────────────────── */
     .mee-autosave-status {
       font-size: 0.8125rem;
       color: var(--mee-color-on-surface-muted);
     }
     .mee-autosave-status--error { color: var(--mee-color-error); }
 
-    /* ── Footer bar ──────────────────────────────────────────────────── */
-    .mee-form-footer {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding-top: var(--mee-space-3);
-      padding-bottom: var(--mee-space-4);
-      border-top: 1px solid var(--mee-color-outline);
-      margin-top: var(--mee-space-4);
+    /* ── Photos warning banner ─────────────────────────────────────────── */
+    .mee-photos-warning {
+      margin-bottom: var(--mee-space-3);
     }
 
-    /* ── Error/missing-category banner wrapper ───────────────────────── */
+    /* ── Error/missing-category banner ────────────────────────────────── */
     .mee-error-region {
       margin-top: var(--mee-space-4);
     }
@@ -232,41 +254,53 @@ interface SectionDef {
       margin-top: var(--mee-space-4);
     }
 
-    /* ── Skeleton pulse animation ────────────────────────────────────── */
+    /* ── Loading skeleton region ───────────────────────────────────────── */
+    .mee-skeleton-region {
+      display: flex;
+      flex-direction: column;
+      gap: var(--mee-space-5);
+    }
+    .mee-skeleton-section {
+      display: flex;
+      flex-direction: column;
+      gap: var(--mee-space-3);
+    }
+    .mee-skeleton-heading {
+      height: 44px;
+      border-radius: var(--mee-radius-sm);
+      background: var(--mee-color-outline);
+      width: 40%;
+      animation: mee-pulse 1.5s ease-in-out infinite;
+    }
+
     @keyframes mee-pulse {
       0%, 100% { opacity: 1; }
       50%       { opacity: 0.45; }
     }
 
-    /* ── 768px+ (tablet): increase form width, more breathing room ───── */
+    /* ── Tablet+ ───────────────────────────────────────────────────────── */
     @media (min-width: 768px) {
-      .mee-form-page {
-        max-width: 42rem;                    /* ~672px — md:max-w-2xl equivalent */
+      .mee-wizard-page {
+        max-width: 42rem;
         padding: var(--mee-space-6) var(--mee-space-8);
-      }
-      .mee-form-sections {
-        gap: var(--mee-space-3);             /* 12px between sections */
-      }
-      .mee-section-fields {
-        gap: var(--mee-space-5);             /* 20px between fields */
+        padding-bottom: 88px;
       }
     }
 
-    /* ── 1280px+ (desktop): two-column layout per spec ───────────────── */
+    /* ── Desktop ───────────────────────────────────────────────────────── */
     @media (min-width: 1280px) {
-      .mee-form-page {
-        max-width: 64rem;                    /* ~1024px max on xl screens */
+      .mee-wizard-page {
+        max-width: 64rem;
         padding: var(--mee-space-8) var(--mee-space-10);
+        padding-bottom: 88px;
       }
-      /* Two-column grid: form sections on left, overlay/status on right */
-      .mee-form-layout {
+      .mee-wizard-layout {
         display: grid;
-        grid-template-columns: 1fr 20rem;  /* main form | sidebar */
+        grid-template-columns: 1fr 20rem;
         gap: var(--mee-space-8);
         align-items: start;
       }
-      /* Sidebar column: autofill overlay + autosave status pinned to top */
-      .mee-form-sidebar {
+      .mee-wizard-sidebar {
         position: sticky;
         top: var(--mee-space-4);
       }
@@ -276,10 +310,10 @@ interface SectionDef {
     <!-- a11y: categoryIdMissing error banner ref for programmatic focus -->
     <div #errorRegionRef>
 
-    <div class="mee-form-page">
+    <div class="mee-wizard-page">
       <mee-offline-banner />
 
-      <!-- categoryIdMissing: critical error state — GAP-1 (spec §4) hard-reload path -->
+      <!-- categoryIdMissing: critical error state — GAP-1 hard-reload path -->
       @if (categoryIdMissing()) {
         <div class="mee-error-region"
              role="alert"
@@ -296,10 +330,10 @@ interface SectionDef {
       }
 
       @if (!categoryIdMissing()) {
-        <!-- Page header: product name + category breadcrumb -->
+        <!-- Page header -->
         <mee-page-header [title]="productName()" [subtitle]="categoryPath()" />
 
-        <!-- Inline error banner: schema load failure / flag-OFF -->
+        <!-- Inline error banner -->
         @if (errorMessage()) {
           <div class="mb-4"
                role="alert"
@@ -315,7 +349,7 @@ interface SectionDef {
         }
 
         <!-- Status bar + AI fill button -->
-        <div class="flex items-center justify-between mt-3 mb-5">
+        <div class="flex items-center justify-between mt-3 mb-4">
           <mee-status-badge [status]="'draft'" />
           <mee-button
             label="AI fill"
@@ -327,53 +361,125 @@ interface SectionDef {
             aria-label="Fill fields with AI suggestions" />
         </div>
 
-        <!-- ── 1280px two-column layout wrapper ──────────────────────── -->
-        <div class="mee-form-layout">
+        <!-- Loading skeleton -->
+        @if (loading()) {
+          <div class="mee-skeleton-region"
+               role="status"
+               aria-live="polite"
+               aria-label="Loading product form fields, please wait">
+            <div class="mee-skeleton-section">
+              <div class="mee-skeleton-heading" aria-hidden="true"></div>
+              <mee-loading-skeleton variant="text" [lines]="4" />
+            </div>
+            <div class="mee-skeleton-section">
+              <div class="mee-skeleton-heading" aria-hidden="true"></div>
+              <mee-loading-skeleton variant="text" [lines]="3" />
+            </div>
+          </div>
+        }
 
-          <!-- Left: form sections -->
-          <div>
-            <!-- Loading skeleton: mirrors 3-section real form layout -->
-            @if (loading()) {
-              <div class="mee-skeleton-region"
-                   role="status"
-                   aria-live="polite"
-                   aria-label="Loading product form fields, please wait">
-                <!-- Skeleton section 1: Compulsory (5 fields) -->
-                <div class="mee-skeleton-section">
-                  <div class="mee-skeleton-heading" aria-hidden="true"></div>
-                  <mee-loading-skeleton variant="text" [lines]="4" />
-                </div>
-                <!-- Skeleton section 2: Recommended (3 fields) -->
-                <div class="mee-skeleton-section">
-                  <div class="mee-skeleton-heading" aria-hidden="true"></div>
-                  <mee-loading-skeleton variant="text" [lines]="3" />
-                </div>
-                <!-- Skeleton section 3: Optional / Advanced (2 fields) -->
-                <div class="mee-skeleton-section">
-                  <div class="mee-skeleton-heading" aria-hidden="true"></div>
-                  <mee-loading-skeleton variant="text" [lines]="2" />
-                </div>
-              </div>
-            }
+        @if (!loading()) {
+          <!-- ── Stepper header (horizontally scrollable on mobile) ──── -->
+          <div class="mee-stepper-region" aria-label="Form progress">
+            <mee-steps
+              [steps]="meeStepItems()"
+              [active_index]="activeStepIndex()"
+              (active_index_change)="onStepChange($event)"
+            />
+          </div>
 
-            @if (!loading()) {
-              <div class="mee-form-sections">
-                @for (sec of sections(); track sec.id) {
-                  <section [attr.aria-labelledby]="sec.id + '-heading'">
+          <!-- ── Desktop 2-col layout wrapper ──────────────────────────── -->
+          <div class="mee-wizard-layout">
+
+            <!-- Left: active step content -->
+            <div>
+              <!-- Photos step — special: render ImageUploaderComponent -->
+              @if (isPhotosStep()) {
+                <div class="mee-step-content">
+                  <h2 class="mee-step-title">Photos</h2>
+                  <!-- Non-blocking front-photo warning (spec §F) -->
+                  @if (showPhotosWarning()) {
+                    <div class="mee-photos-warning"
+                         role="alert"
+                         aria-live="polite">
+                      <mee-alert-banner
+                        variant="warning"
+                        message="Add your main photo before exporting — the front image (slot 1) is required for export." />
+                    </div>
+                  }
+                  <!-- Reuse the existing ImageUploaderComponent from /images page -->
+                  <app-image-uploader />
+                </div>
+              }
+
+              <!-- Generic field-renderer step -->
+              @if (!isPhotosStep()) {
+                <div class="mee-step-content"
+                     [attr.aria-label]="activeStep()?.label + ' fields'"
+                     role="region">
+                  <h2 class="mee-step-title">{{ activeStep()?.label }}</h2>
+
+                  <!-- enum loading state for this step -->
+                  @if (stepEnumsLoading()) {
+                    <div role="status" aria-live="polite" aria-label="Loading dropdown options" class="mb-4">
+                      <mee-loading-skeleton variant="text" [lines]="2" />
+                    </div>
+                  }
+
+                  <!-- Required fields block -->
+                  @let requiredFields = activeStepRequiredFields();
+                  @if (requiredFields.length > 0) {
+                    <div class="mee-step-fields" aria-label="Required fields">
+                      @for (field of requiredFields; track field.canonical_name) {
+                        <div class="field-wrapper"
+                             [class.mee-ai-suggested]="isAiSuggested(field.canonical_name)">
+                          @switch (field.primitive) {
+                            @case ('text_long') {
+                              <mee-textarea
+                                [label]="field.display_name"
+                                [required]="field.required"
+                                [error]="getFieldError(field.canonical_name)"
+                                [hint]="field.help_text"
+                                [rows]="4"
+                                (blur)="onFieldBlur(field.canonical_name, $any($event))" />
+                            }
+                            @case ('select') {
+                              <mee-select
+                                [label]="field.display_name"
+                                [options]="getFieldOptions(field)"
+                                [error]="getFieldError(field.canonical_name)"
+                                (value_change)="onFieldChange(field.canonical_name, $event)" />
+                            }
+                            @default {
+                              <mee-input
+                                [label]="field.display_name"
+                                [required]="field.required"
+                                [error]="getFieldError(field.canonical_name)"
+                                [hint]="field.help_text"
+                                [type]="field.primitive === 'number' ? 'number' : 'text'"
+                                (blur)="onFieldBlur(field.canonical_name, $any($event))" />
+                            }
+                          }
+                        </div>
+                      }
+                    </div>
+                  }
+
+                  <!-- "More details" collapsible section (spec §B): optional fields -->
+                  @let optionalFields = activeStepOptionalFields();
+                  @if (optionalFields.length > 0) {
                     <button
                       type="button"
-                      [id]="sec.id + '-heading'"
-                      class="section-toggle"
-                      (click)="toggleSection(sec.id)"
-                      [attr.aria-expanded]="sec.open">
-                      <span class="section-toggle__label">{{ sec.label }} ({{ sec.fields.length }})</span>
-                      <span class="section-toggle__hint" aria-hidden="true">
-                        {{ sec.open ? 'Collapse' : 'Expand' }}
-                      </span>
+                      class="mee-more-details-toggle"
+                      (click)="toggleMoreDetails()"
+                      [attr.aria-expanded]="moreDetailsOpen()"
+                      aria-controls="more-details-panel">
+                      <span>{{ moreDetailsOpen() ? 'Hide' : 'More details' }} ({{ optionalFields.length }})</span>
+                      <span aria-hidden="true">{{ moreDetailsOpen() ? '▲' : '▼' }}</span>
                     </button>
-                    @if (sec.open) {
-                      <div class="mee-section-fields">
-                        @for (field of sec.fields; track field.canonical_name) {
+                    @if (moreDetailsOpen()) {
+                      <div id="more-details-panel" class="mee-more-details-fields">
+                        @for (field of optionalFields; track field.canonical_name) {
                           <div class="field-wrapper"
                                [class.mee-ai-suggested]="isAiSuggested(field.canonical_name)">
                             @switch (field.primitive) {
@@ -407,81 +513,111 @@ interface SectionDef {
                         }
                       </div>
                     }
-                  </section>
-                }
-              </div>
-            }
-          </div><!-- /Left column -->
-
-          <!-- Right: autofill overlay + AI fallback (sidebar at 1280px; stacked below at <1280px) -->
-          <div class="mee-form-sidebar">
-            <!-- Autofill suggestion overlay — token-based colours, 44px touch targets -->
-            @if (!loading() && hasSuggestions()) {
-              <div class="mee-autofill-overlay"
-                   role="region"
-                   aria-label="AI suggestions — review and apply or dismiss each field">
-                <p class="mee-autofill-overlay__heading">AI suggestions — review and apply</p>
-                @for (entry of suggestionEntries(); track entry.canonical) {
-                  <div class="suggestion-row">
-                    <span class="suggestion-row__canonical">{{ entry.canonical }}</span>
-                    <span class="suggestion-row__value">{{ entry.value }}</span>
-                    <div class="suggestion-row__actions">
-                      <mee-button
-                        label="Apply"
-                        variant="secondary"
-                        [attr.aria-label]="'Apply AI suggestion for ' + entry.canonical"
-                        (clicked)="applySuggestion(entry.canonical)" />
-                      <mee-button
-                        label="Dismiss"
-                        variant="ghost"
-                        [attr.aria-label]="'Dismiss AI suggestion for ' + entry.canonical"
-                        (clicked)="dismissSuggestion(entry.canonical)" />
-                    </div>
-                  </div>
-                }
-                <div class="flex justify-end mt-2">
-                  <mee-button
-                    label="Dismiss all"
-                    variant="ghost"
-                    aria-label="Dismiss all AI suggestions"
-                    (clicked)="dismissAllSuggestions()" />
+                  }
                 </div>
-              </div>
-            }
-
-            <!-- AI autofill fallback: shown when AI ran but returned no suggestions -->
-            @if (fallbackOffered()) {
-              <div class="mb-3">
-                <mee-alert-banner
-                  variant="warning"
-                  message="AI couldn't fill — try adding more product details before using AI fill." />
-              </div>
-            }
-          </div><!-- /Right column / sidebar -->
-
-        </div><!-- /mee-form-layout -->
-
-        <!-- Footer: autosave status + navigation — below both columns -->
-        @if (!loading()) {
-          <div class="mee-form-footer">
-            <!-- Autosave status: aria-live="polite" + role="status" + aria-atomic="true"
-                 so screen readers announce status changes without interrupting editing. -->
-            <span
-              role="status"
-              aria-live="polite"
-              aria-atomic="true"
-              [class]="autosaveStatusClass()">
-              {{ autosaveStatusLabel() }}
-            </span>
-            <div class="flex gap-2">
-              <mee-button label="Back" variant="ghost" (clicked)="onBack()" />
-              <mee-button label="Images" icon="forward" (clicked)="onNext()" />
+              }
             </div>
-          </div>
+
+            <!-- Right: autofill overlay + sidebar (desktop) -->
+            <div class="mee-wizard-sidebar">
+              <!-- Autofill suggestion overlay -->
+              @if (!loading() && hasSuggestions()) {
+                <div class="mee-autofill-overlay"
+                     role="region"
+                     aria-label="AI suggestions — review and apply or dismiss each field">
+                  <p class="mee-autofill-overlay__heading">AI suggestions — review and apply</p>
+                  @for (entry of suggestionEntries(); track entry.canonical) {
+                    <div class="suggestion-row">
+                      <span class="suggestion-row__canonical">{{ entry.canonical }}</span>
+                      <span class="suggestion-row__value">{{ entry.value }}</span>
+                      <div class="suggestion-row__actions">
+                        <mee-button
+                          label="Apply"
+                          variant="secondary"
+                          [attr.aria-label]="'Apply AI suggestion for ' + entry.canonical"
+                          (clicked)="applySuggestion(entry.canonical)" />
+                        <mee-button
+                          label="Dismiss"
+                          variant="ghost"
+                          [attr.aria-label]="'Dismiss AI suggestion for ' + entry.canonical"
+                          (clicked)="dismissSuggestion(entry.canonical)" />
+                      </div>
+                    </div>
+                  }
+                  <div class="flex justify-end mt-2">
+                    <mee-button
+                      label="Dismiss all"
+                      variant="ghost"
+                      aria-label="Dismiss all AI suggestions"
+                      (clicked)="dismissAllSuggestions()" />
+                  </div>
+                </div>
+              }
+
+              <!-- AI autofill fallback -->
+              @if (fallbackOffered()) {
+                <div class="mb-3">
+                  <mee-alert-banner
+                    variant="warning"
+                    message="AI couldn't fill — try adding more product details before using AI fill." />
+                </div>
+              }
+            </div>
+
+          </div><!-- /mee-wizard-layout -->
         }
       }
-    </div><!-- /mee-form-page -->
+    </div><!-- /mee-wizard-page -->
     </div><!-- /#errorRegionRef -->
+
+    <!-- ── Sticky bottom nav bar (spec §C) ───────────────────────────────── -->
+    @if (!categoryIdMissing() && !loading()) {
+      <nav class="mee-wizard-nav" aria-label="Step navigation">
+        <!-- Step indicator + autosave status -->
+        <div>
+          <div class="mee-wizard-nav__step-label">
+            Step {{ activeStepIndex() + 1 }} of {{ wizardSteps().length }}
+          </div>
+          <span
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            [class]="autosaveStatusClass()">
+            {{ autosaveStatusLabel() }}
+          </span>
+        </div>
+        <!-- Back / Next / Save & Finish actions -->
+        <div class="mee-wizard-nav__actions">
+          @if (activeStepIndex() > 0) {
+            <mee-button
+              label="Back"
+              variant="ghost"
+              (clicked)="onBack()"
+              aria-label="Go to previous step" />
+          } @else {
+            <mee-button
+              label="Dashboard"
+              variant="ghost"
+              (clicked)="onDashboard()"
+              aria-label="Return to dashboard" />
+          }
+          @if (isLastStep()) {
+            <mee-button
+              label="Save & finish"
+              variant="primary"
+              (clicked)="onNext()"
+              aria-label="Save and finish — navigate to images" />
+          } @else {
+            <mee-button
+              label="Next"
+              variant="primary"
+              [disabled]="!canAdvance()"
+              (clicked)="onNextStep()"
+              [attr.aria-label]="canAdvance() ? 'Next step' : 'Fill required fields to continue'" />
+          }
+        </div>
+      </nav>
+    }
   `,
 })
 export class CatalogFormComponent implements OnInit, AfterViewInit {
@@ -494,7 +630,7 @@ export class CatalogFormComponent implements OnInit, AfterViewInit {
   /** Template ref for the error region — focused on mount when categoryIdMissing. */
   @ViewChild('errorRegionRef') private readonly errorRegionRef?: ElementRef<HTMLElement>;
 
-  // Signals
+  // ── State signals ──────────────────────────────────────────────────────────────
   readonly loading             = signal(true);
   readonly schema              = signal<FieldGroup[]>([]);
   readonly fieldValues         = signal<Record<string, unknown>>({});
@@ -508,45 +644,87 @@ export class CatalogFormComponent implements OnInit, AfterViewInit {
   readonly categoryIdMissing   = signal(false);
   readonly errorMessage        = signal<string | null>(null);
   readonly enumCache           = signal<Record<string, Array<{ label: string; value: string }>>>({});
-  private readonly sectionOpen = signal<Record<string, boolean>>({ compulsory: true, recommended: false, optional: false });
+  readonly stepEnumsLoading    = signal(false);
+  /** Active wizard step index (0-based). */
+  readonly activeStepIndex     = signal(0);
+  /** Whether the "More details" collapsible section is open in the current step. */
+  readonly moreDetailsOpen     = signal(false);
+  /** Whether the front image (slot 1) has been uploaded — for photos warning. */
+  readonly hasFrontImage       = signal(false);
+
   private readonly autosaveTrigger$ = new Subject<void>();
 
-  // Computed
+  // ── Computed ───────────────────────────────────────────────────────────────────
+
   readonly productName = computed<string>(() => {
     const v = this.fieldValues()['product_title'];
     return (typeof v === 'string' && v) ? v : 'New Product';
   });
+
   readonly categoryPath = computed<string>(() => 'Fashion > Women > Ethnic > Kurti');
-  readonly compulsoryFields = computed<FieldSchema[]>(() =>
-    this.schema().find(g => g.group === 'compulsory')?.fields ?? []
-  );
-  readonly recommendedFields = computed<FieldSchema[]>(() =>
-    this.schema().find(g => g.group === 'recommended')?.fields ?? []
-  );
-  readonly optionalFields = computed<FieldSchema[]>(() =>
-    this.schema().find(g => g.group === 'optional')?.fields ?? []
-  );
-  readonly isFormComplete = computed<boolean>(() =>
-    this.compulsoryFields().every(f => !!this.fieldValues()[f.canonical_name])
-  );
-  readonly sections = computed<SectionDef[]>(() => {
-    const open = this.sectionOpen();
-    return [
-      { id: 'compulsory',  label: 'Compulsory',  open: !!open['compulsory'],  fields: this.compulsoryFields() },
-      { id: 'recommended', label: 'Recommended', open: !!open['recommended'], fields: this.recommendedFields() },
-      { id: 'optional',    label: 'Optional',    open: !!open['optional'],    fields: this.optionalFields() },
-    ];
-  });
-  readonly suggestionEntries = computed<Array<{ canonical: string; value: unknown }>>(() =>
-    Object.entries(this.aiSuggestions()).map(([canonical, s]) => ({ canonical, value: s.value }))
-  );
-  readonly hasSuggestions = computed<boolean>(() => this.suggestionEntries().length > 0);
 
   /**
-   * autosaveStatusLabel — human-readable autosave status for the footer indicator.
-   * The aria-live="polite" span announces this via screen-readers on change.
-   * Empty string on 'idle' so screen readers don't announce a meaningless initial state.
+   * wizardSteps — all fields from the schema grouped by step_id into WizardStep[].
+   * The 'photos' step is synthesised by ImageUploaderComponent (fields array is empty).
+   * Only non-empty steps (or the photos step when it should appear) are included.
    */
+  readonly wizardSteps = computed<WizardStep[]>(() => {
+    const allFields: FieldSchema[] = this.schema().flatMap(g => g.fields);
+    return groupIntoSteps(allFields);
+  });
+
+  /** Steps as MeeStep[] for the mee-steps component. */
+  readonly meeStepItems = computed<MeeStep[]>(() =>
+    this.wizardSteps().map(s => ({ label: s.label })),
+  );
+
+  /** The active WizardStep object. */
+  readonly activeStep = computed<WizardStep | undefined>(() =>
+    this.wizardSteps()[this.activeStepIndex()],
+  );
+
+  /** True when the current step is the 'photos' step (renders ImageUploaderComponent). */
+  readonly isPhotosStep = computed<boolean>(() =>
+    this.activeStep()?.id === 'photos',
+  );
+
+  /** True when the active step is the last step in the wizard. */
+  readonly isLastStep = computed<boolean>(() =>
+    this.activeStepIndex() === this.wizardSteps().length - 1,
+  );
+
+  /** Required fields for the active step. */
+  readonly activeStepRequiredFields = computed<FieldSchema[]>(() =>
+    (this.activeStep()?.fields ?? []).filter(f => f.required),
+  );
+
+  /** Optional fields for the active step. */
+  readonly activeStepOptionalFields = computed<FieldSchema[]>(() =>
+    (this.activeStep()?.fields ?? []).filter(f => !f.required),
+  );
+
+  /**
+   * canAdvance — whether the Next button is enabled.
+   * Blocks only when current step has unfilled required fields.
+   * Photos step never blocks (warn-only). Steps with requiredCount===0 are freely skippable.
+   */
+  readonly canAdvance = computed<boolean>(() =>
+    canAdvanceFromStep(this.activeStep(), this.fieldValues()),
+  );
+
+  /**
+   * showPhotosWarning — non-blocking warning when on photos step without front image.
+   */
+  readonly showPhotosWarning = computed<boolean>(() =>
+    hasPhotosStepFrontMissing(this.activeStep()?.id ?? '', this.hasFrontImage()),
+  );
+
+  readonly suggestionEntries = computed<Array<{ canonical: string; value: unknown }>>(() =>
+    Object.entries(this.aiSuggestions()).map(([canonical, s]) => ({ canonical, value: s.value })),
+  );
+
+  readonly hasSuggestions = computed<boolean>(() => this.suggestionEntries().length > 0);
+
   readonly autosaveStatusLabel = computed<string>(() => {
     switch (this.saveStatus()) {
       case 'saving': return 'Saving...';
@@ -556,33 +734,21 @@ export class CatalogFormComponent implements OnInit, AfterViewInit {
     }
   });
 
-  /**
-   * autosaveStatusClass — CSS class driving the colour of the autosave status span.
-   * Uses :host-scoped BEM class names defined in styles:[].
-   */
   readonly autosaveStatusClass = computed<string>(() =>
     this.saveStatus() === 'error'
       ? 'mee-autosave-status mee-autosave-status--error'
-      : 'mee-autosave-status'
+      : 'mee-autosave-status',
   );
 
+  // ── Lifecycle ──────────────────────────────────────────────────────────────────
+
   ngAfterViewInit(): void {
-    // Wave 2B: focus management moved to ngOnInit() getProduct() callback (async init).
-    // categoryIdMissing is now set asynchronously — ngAfterViewInit fires before
-    // the Observable resolves, so this check is always false at this lifecycle point.
-    // Focus is now triggered inside the getProduct subscribe callback after categoryIdMissing.set().
+    // Focus management handled in ngOnInit callback (async — see Wave 2B notes).
   }
 
   /**
    * resolveInitOutcome — pure helper for ngOnInit() product-fetch resolution.
-   *
-   * Separates the "what do we do with the getProduct result?" logic from the
-   * Observable subscription so it can be unit-tested without TestBed.
-   *
-   * @param product - the result of getProduct() (null = 404 / flag OFF)
-   * @returns { categoryId: string | null; missing: boolean }
-   *   missing=true → show categoryIdMissing error state
-   *   missing=false + categoryId → proceed to loadSchema
+   * GAP-1: reads category_id from GET /products/{id} (not router nav state).
    */
   resolveInitOutcome(product: ProductDetailResponse | null): { categoryId: string | null; missing: boolean } {
     if (!product) return { categoryId: null, missing: true };
@@ -595,17 +761,12 @@ export class CatalogFormComponent implements OnInit, AfterViewInit {
     const id = (this.route.snapshot.params['id'] as string | undefined) ?? 'new';
     this.productId.set(id);
 
-    // Wave 2B GAP-1 fix: fetch category_id from the product record instead of
-    // router navigation state, making the form safe on hard-reload / direct URL / browser-back.
     this.apiSvc.getProduct(id).subscribe({
       next: (product) => {
         const outcome = this.resolveInitOutcome(product);
         if (outcome.missing) {
           this.categoryIdMissing.set(true);
           this.loading.set(false);
-          // Async focus: DOM must update before focus is callable (Wave 2B fix).
-          // ngAfterViewInit fires before this async callback resolves, so focus
-          // is triggered here rather than in ngAfterViewInit.
           Promise.resolve().then(() => {
             this.errorRegionRef?.nativeElement?.focus();
           });
@@ -619,7 +780,6 @@ export class CatalogFormComponent implements OnInit, AfterViewInit {
           .pipe(debounceTime(10_000), takeUntilDestroyed(this.destroyRef))
           .subscribe(() => this.performAutosave());
 
-        // #22 getDraft — pre-fill fieldValues on resume. Non-blocking.
         this.apiSvc.getDraft(id).subscribe({
           next: (draft) => {
             if (draft?.fields && Object.keys(draft.fields).length > 0) {
@@ -649,9 +809,8 @@ export class CatalogFormComponent implements OnInit, AfterViewInit {
         }
         this.schema.set(groups);
         this.loading.set(false);
-        // Pre-load enum options for needs_api_enum fields (#16) at schema-load time.
-        // V1 strategy: MeeSelectComponent has no dropdown-open event — pre-load eagerly.
-        this.preloadApiEnums(categoryId, groups);
+        // Spec §E: load enums for the first step lazily on schema load
+        this.loadStepEnums(categoryId, 0);
       },
       error: () => {
         this.errorMessage.set('Failed to load product fields. Please retry.');
@@ -660,27 +819,71 @@ export class CatalogFormComponent implements OnInit, AfterViewInit {
     });
   }
 
-  private preloadApiEnums(categoryId: string, groups: FieldGroup[]): void {
-    groups.flatMap(g => g.fields)
-      .filter(f => f.needs_api_enum && f.api_enum_field_name)
-      .forEach(field => {
-        this.apiSvc
-          .getFieldEnum(categoryId, field.api_enum_field_name!)
-          .pipe(takeUntilDestroyed(this.destroyRef))
-          .subscribe(entries => {
-            const opts = entries.map((e: EnumEntryDTO) => ({ label: e.meesho || e.canonical, value: e.canonical }));
-            this.enumCache.update(cache => ({ ...cache, [field.canonical_name]: opts }));
-          });
-      });
+  /**
+   * loadStepEnums — lazily loads API enum options for all needs_api_enum fields
+   * in the given step. Called when a step becomes active.
+   * Spec §E: lazy per-step loading; enumCache deduplicates repeat visits.
+   */
+  private loadStepEnums(categoryId: string, stepIndex: number): void {
+    const steps = this.wizardSteps();
+    const step = steps[stepIndex];
+    if (!step) return;
+
+    const fieldsNeedingEnum = step.fields.filter(
+      f => f.needs_api_enum && f.api_enum_field_name && !this.enumCache()[f.canonical_name],
+    );
+
+    if (fieldsNeedingEnum.length === 0) return;
+
+    this.stepEnumsLoading.set(true);
+    let pending = fieldsNeedingEnum.length;
+
+    for (const field of fieldsNeedingEnum) {
+      this.apiSvc
+        .getFieldEnum(categoryId, field.api_enum_field_name!)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(entries => {
+          const opts = entries.map((e: EnumEntryDTO) => ({
+            label: e.meesho || e.canonical,
+            value: e.canonical,
+          }));
+          this.enumCache.update(cache => ({ ...cache, [field.canonical_name]: opts }));
+          pending--;
+          if (pending === 0) this.stepEnumsLoading.set(false);
+        });
+    }
   }
 
-  // Public helpers
-  toggleSection(id: string): void {
-    this.sectionOpen.update(s => ({ ...s, [id]: !s[id] }));
+  // ── Step navigation ───────────────────────────────────────────────────────────
+
+  /**
+   * onStepChange — called when the user clicks a stepper header item.
+   * Allows free navigation (clicking any step header); canAdvance is only
+   * enforced by the Next button.
+   */
+  onStepChange(index: number): void {
+    const catId = this.categoryId();
+    this.activeStepIndex.set(index);
+    this.moreDetailsOpen.set(false);
+    if (catId) this.loadStepEnums(catId, index);
   }
+
+  onNextStep(): void {
+    const nextIndex = this.activeStepIndex() + 1;
+    if (nextIndex >= this.wizardSteps().length) return;
+    this.onStepChange(nextIndex);
+  }
+
+  toggleMoreDetails(): void {
+    this.moreDetailsOpen.update(v => !v);
+  }
+
+  // ── Public helpers ────────────────────────────────────────────────────────────
 
   getFieldOptions(field: FieldSchema): Array<{ label: string; value: string }> {
-    return field.needs_api_enum ? (this.enumCache()[field.canonical_name] ?? []) : (field.enum_options ?? []);
+    return field.needs_api_enum
+      ? (this.enumCache()[field.canonical_name] ?? [])
+      : (field.enum_options ?? []);
   }
 
   isAiSuggested(canonicalName: string): boolean {
@@ -688,13 +891,14 @@ export class CatalogFormComponent implements OnInit, AfterViewInit {
   }
 
   getFieldError(canonicalName: string): string | undefined {
-    const allFields = [...this.compulsoryFields(), ...this.recommendedFields(), ...this.optionalFields()];
+    const allFields: FieldSchema[] = this.schema().flatMap(g => g.fields);
     const field = allFields.find(f => f.canonical_name === canonicalName);
     if (!field?.required) return undefined;
     return !this.fieldValues()[canonicalName] ? `${field.display_name} is required` : undefined;
   }
 
-  // Autofill overlay handlers
+  // ── Autofill overlay handlers ─────────────────────────────────────────────────
+
   applySuggestion(canonical: string): void {
     const suggestion = this.aiSuggestions()[canonical];
     if (suggestion) this.fieldValues.update(cur => ({ ...cur, [canonical]: suggestion.value }));
@@ -709,7 +913,9 @@ export class CatalogFormComponent implements OnInit, AfterViewInit {
     this.aiSuggestions.set({});
     this.fallbackOffered.set(false);
   }
-  // Event handlers
+
+  // ── Event handlers ────────────────────────────────────────────────────────────
+
   onFieldBlur(canonicalName: string, value: string): void {
     this.fieldValues.update(cur => ({ ...cur, [canonicalName]: value }));
     if (canonicalName in this.aiSuggestions()) this.dismissSuggestion(canonicalName);
@@ -756,8 +962,6 @@ export class CatalogFormComponent implements OnInit, AfterViewInit {
   onRetry(): void {
     const catId = this.categoryId();
     if (!catId) {
-      // categoryId never resolved (getProduct returned null or server error).
-      // Re-run full init chain to give the user a fresh attempt.
       this.categoryIdMissing.set(false);
       this.errorMessage.set(null);
       this.loading.set(true);
@@ -770,18 +974,32 @@ export class CatalogFormComponent implements OnInit, AfterViewInit {
   }
 
   onBack(): void {
+    const prevIndex = this.activeStepIndex() - 1;
+    if (prevIndex >= 0) {
+      this.onStepChange(prevIndex);
+    }
+  }
+
+  onDashboard(): void {
     void this.router.navigate(['/dashboard']);
   }
 
+  /** Last step primary action: navigate to /images (existing behaviour). */
   onNext(): void {
     void this.router.navigate(['/catalogs', this.productId(), 'images']);
   }
 
-  // Private
+  // ── Private ───────────────────────────────────────────────────────────────────
+
   private performAutosave(): void {
     this.saveStatus.set('saving');
     this.apiSvc.autosave(this.productId(), this.fieldValues()).subscribe({
-      next: () => this.saveStatus.set('saved'),
+      next: () => {
+        this.saveStatus.set('saved');
+        setTimeout(() => {
+          if (this.saveStatus() === 'saved') this.saveStatus.set('idle');
+        }, 3000);
+      },
       error: () => {
         this.saveStatus.set('error');
         this.toast.error('Autosave failed. Check your connection.');
