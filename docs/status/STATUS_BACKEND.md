@@ -1,6 +1,33 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-16 (meesell-api-routes-builder) — fix validation.q.missing i18n key ===
+Phase: V1 Feature 2 (Smart Category Picker) — POST /suggest 422 path i18n gap
+Session: meesell-api-routes-builder fast-mode worktree /tmp/mesell-wt/fix-q-missing
+Worktree branch: fix/suggest-validation-q-missing (off origin/develop)
+Done:
+  - ROOT CAUSE CONFIRMED: POST /api/v1/categories/suggest with empty body {} emits
+    Pydantic loc=("body","q") type="missing" → §4.F handler builds "validation.q.missing"
+    → resolver fell through to verbatim-id tier (key absent) → WARNING logged each 422.
+  - FIX: added "validation.q.missing" to backend/app/i18n/messages_en.py §9 block.
+    Message: "Please enter a product description to search categories."
+  - VERIFIED: key matches §5A.H 3-segment regex; resolver returns human string (no WARNING).
+  - test_messages_en_id_regex.py: 62/62 PASS.
+  - Pre-existing failure (not caused by this fix): test_suggest_rejects_out_of_bounds_query[x*501]
+    is a stale test from before PR #246 (500→5000 char migration). Fails on develop tip too.
+  - PR #250 open (fix/suggest-validation-q-missing → develop).
+Tests: 62 passed (test_messages_en_id_regex.py)
+Blockers: none
+BROADER PATTERN FLAG: §4.F _pydantic_validation_handler constructs message ids DYNAMICALLY
+  for every field+constraint combo across all Pydantic models. Any unregistered combo produces
+  a resolver WARNING at runtime. The current catalog covers known paths but is not exhaustive.
+  Director may want to commission a catalog-completeness audit across all request schemas.
+Next: Director reviews + merges PR #250.
+Hand-offs: none (i18n catalog only; no API contract change).
+=========
+```
+
+```
 === UPDATE: 2026-06-16 (meesell-api-routes-builder) — Finding #4: POST /categories/suggest + 5000-char ===
 Phase: V1 Feature 2 (Smart Category Picker) — founder ruling finding #4
 Session: meesell-api-routes-builder fast-mode worktree /tmp/mesell-wt/fix-suggest-post
