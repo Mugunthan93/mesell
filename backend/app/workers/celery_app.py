@@ -113,6 +113,14 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
     task_acks_late=True,
+    # Celery 6 forward-compat: opt in to broker-connection retry on startup.
+    # Silences the CPendingDeprecationWarning emitted at worker boot
+    # (celery/worker/consumer/consumer.py) when broker_connection_retry_on_startup
+    # is left unset. We keep the (Celery-5-default) retry-on-startup behaviour
+    # explicitly so the warning is resolved without any runtime behaviour change.
+    # See finding #6 (local-host-monitoring 2026-06-16). Does NOT alter broker/
+    # result-backend URLs, queues, or task routing.
+    broker_connection_retry_on_startup=True,
     # SESSION 2 G3 CLEANUP LOCK — §18.G — DO NOT REMOVE.
     task_reject_on_worker_lost=True,
     worker_prefetch_multiplier=1,
