@@ -157,6 +157,11 @@ class Settings(BaseSettings):
     GCS_SIGNED_URL_TTL_SECONDS: int = 3600  # 1 h per MVP_ARCH §10.8
 
     # ── LangFuse (§5.D table 8) ────────────────────────────────────────────
+    # Tracing is OPT-IN. Default OFF so dev (which carries placeholder
+    # LANGFUSE_PUBLIC_KEY/SECRET to satisfy REQUIRED_FIELDS) never attempts a
+    # network flush — those placeholders would otherwise 401 on every AI call.
+    # Staging/prod set LANGFUSE_ENABLED=true alongside real credentials.
+    LANGFUSE_ENABLED: bool = False
     LANGFUSE_PUBLIC_KEY: str = ""
     LANGFUSE_SECRET_KEY: str = ""  # NEW — populated during §6A dispatch
     LANGFUSE_HOST: str = "https://cloud.langfuse.com"
