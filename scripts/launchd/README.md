@@ -19,7 +19,7 @@ Once a night, **only if** the master working tree
 2. Rebuilds the frontend with the **memory-safe static path**
    (`pnpm run dev:build-static` — watchdog, one app at a time)
 3. Restarts the 7 static preview servers on ports **4200–4206**
-   (`pnpm run dev:serve-static`, launched detached in its own process group)
+   (`pnpm run dev:serve-static`, launched **detached via `nohup` + `disown`**)
 
 Open **http://localhost:4200** in the morning to see the latest merged work.
 
@@ -30,6 +30,35 @@ Open **http://localhost:4200** in the morning to see the latest merged work.
 The backend is **not** started by this job: the static preview mocks auth at the route
 level, and keeping it frontend-only is what keeps it memory-safe. Start `make dev` yourself
 if you need live API/OTP flows.
+
+---
+
+## macOS detach mechanics (why the preview survives the job exiting)
+
+> **macOS has no `setsid`.** An earlier version of the script used `setsid` to put the
+> preview servers in their own process group; on macOS that command does not exist, so the
+> server-restart step silently failed and only a hand-substituted `nohup … & disown` kept
+> the morning preview alive.
+
+The script now detaches the preview servers with **`nohup` + fully-redirected stdio
+(`>> serve-static.out 2>&1 < /dev/null`) + `disown`**, and stops a prior run by killing the
+recorded launcher **PID plus its descendant tree** (via `pgrep -P`) — never by a
+negative-PID process-group kill, which on macOS could hit the backend `uvicorn` or unrelated
+processes.
+
+Because `nohup`/`disown` leave the servers in **this job's process group**, the plist sets
+**`AbandonProcessGroup = true`** so launchd does **not** reap them when the script's main
+process exits. Without that key the preview would die the moment the nightly job finishes.
+
+> **If you change `com.meesell.localhost-nightly.plist`, the founder must re-install it**
+> — the loaded copy lives in `~/Library/LaunchAgents` (outside the repo), so editing the
+> repo file alone has no effect. Re-install with:
+>
+> ```bash
+> launchctl unload ~/Library/LaunchAgents/com.meesell.localhost-nightly.plist
+> cp /Users/mugunthansrinivasan/Project/mesell/scripts/launchd/com.meesell.localhost-nightly.plist ~/Library/LaunchAgents/
+> launchctl load ~/Library/LaunchAgents/com.meesell.localhost-nightly.plist
+> ```
 
 ---
 
