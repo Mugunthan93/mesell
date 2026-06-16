@@ -6562,3 +6562,34 @@ Hand-offs: GET /api/v1/products/{id} live on feature/section-3/backend.
   Returns ProductResponse (includes category_id). Frontend CatalogForm can call GET /products/{id}
   on hard reload to recover category_id and populate form. GAP-1 fix complete.
 =========
+
+=== UPDATE: 2026-06-16 12:35 ===
+Phase: category-seeding Wave 1 — LOCAL-ONLY seed (D1)
+Done:
+  - Import-path corrections applied to 5 seed scripts: app.config → app.shared.config;
+    app.models.* → app.shared.models.* (module-path only; zero logic change; commission line 137 = NULL).
+  - Makefile `seed` target added: PYTHONPATH=backend backend/.venv/bin/python scripts/seed_all.py
+  - First seed run (make seed): exit 0, 19.4s wall time.
+    field_aliases=67 (exact), templates=3566 (in [3539,3575]), categories=3772 (exact),
+    field_enum_values=49259 (in [49048,49542])
+  - Second seed run (idempotency proof): exit 0, 21.1s. IDENTICAL counts. Zero errors.
+  - Acceptance proof:
+    (a) prewarm: 100 schema entries warmed (after clearing stale pre-seed empty-list cache in Valkey DB 3)
+    (b) /browse trgm: q='kurti' → 5 matches (sim-ranked); q='saree' → 8 matches. GIN indexes confirmed live.
+  - Alembic head: f31c75438e61 (single head; chain 935e55b4852c → a1b2c3d4e5f6 → f31c75438e61)
+  - pg_trgm extension + 3 GIN indexes (idx_categories_path_trgm, _leaf_name_trgm, _super_name_trgm) confirmed.
+  - Run-log: docs/plans/architecture/CATEGORY_SEEDING_WAVE1_RUNLOG.md
+  - PR opened: feature/category-seeding → develop (LEFT OPEN for founder merge).
+In progress: none (Wave 1 complete; Wave 2 K8s Job deferred to infra-builder)
+Blockers: none
+Next:
+  - meesell-backend-coordinator + meesell-data-engineer merge-gate review of the PR.
+  - After merge: meesell-infra-builder to wire K8s post-migrate seed Job for dev/staging (Wave 2).
+  - Commission backfill: Wave 1.5 — meesell-scraper-maintainer captures Meesho rate-card →
+    category_commissions.json → seed_category_commissions.py.
+Hand-offs:
+  - SEED READY: categories=3772, templates=3566, field_aliases=67, field_enum_values=49259.
+    Head f31c75438e61. PR feature/category-seeding → develop OPEN for founder merge.
+  - Smart-picker visual gate unblocked (categories table no longer 0 rows).
+  - meesell-infra-builder: K8s seed Job for dev/staging (Wave 2, separate dispatch).
+=========

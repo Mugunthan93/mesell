@@ -41,8 +41,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from app.config import settings
-from app.models.field_alias import FieldAlias
+from app.shared.config import settings
+from app.shared.models.field_alias import FieldAlias
 
 logging.basicConfig(
     level=logging.INFO,
