@@ -88,6 +88,93 @@ Coordinator-implements fallback was used for all parsing (workspace agent regist
 
 ## Updates Log
 
+=== UPDATE: 2026-06-16 (Wave 1.5 commission — Re-Run, post-esignature, dispatch 4 COMPLETE) ===
+Phase: commission rate-card capture — Re-Run after founder e-signature (meesell-scraper-maintainer, dispatch 4)
+Agent: meesell-scraper-maintainer (sonnet)
+Status: STOPPED — is_agreement_accepted STILL FALSE
+
+PREREQUISITE CHECK (all passed):
+  - Creds file: /Users/mugunthansrinivasan/Project/mesell/.meesho_creds.env — PRESENT (54 bytes)
+  - Python env: /Users/mugunthansrinivasan/Project/mesell/backend/.venv — playwright 1.60.0, dotenv OK
+  - WebKit: webkit-2158 (slightly different path slot than webkit-2287 from session 3, same machine)
+  - Script: backend/scripts/meesho_commission_rerun.py — authored this session, SYNTAX OK
+  - No 401/403/463/429/captcha encountered
+
+LOGIN RESULT:
+  - LOGIN SUCCEEDED: WebKit → /root/login → POST creds → 302 to /growth/oinpw/home
+  - Akamai bypass confirmed again (WebKit TLS fingerprint)
+
+AGREEMENT GATE CHECK (Step 1 of protocol):
+  Method: page navigation to /growth/oinpw/home → intercept prefetch-supply-data response
+  Result: is_agreement_accepted = False (still — e-signature NOT registered)
+
+  Full agreement-field snapshot from prefetch-supply-data (supplier object):
+    supplier.is_agreement_accepted          = false  ← BLOCKING GATE
+    supplier.agreement_accepted             = "0"    ← confirming not accepted
+    supplier.agreement_accepted_ip          = "default"  ← not set by real completion
+    supplier.agreement_accepted_time        = "default"  ← not set by real completion
+    supplier.default_monetization_percent   = "4.0"  ← generic only, not category-wise
+    supplier.default_monetization_type      = "1"
+    supplier.enable_referral_v3             = true   ← feature enabled, gated by agreement
+    supplier.enable_referral_desktop_v3     = true
+    supplier.enable_referral                = false  ← blocked until agreement accepted
+    supplier.enable_supplier_signature_v2   = true   ← signature flow is v2
+    supplier.mall_commission_rate           = 0
+    supplier.show_referral_banner           = false
+    supplier.referral_fraud_nonincremental_feature = true
+    supplier.supplier_check_referral_abuse  = true
+    supplier.viewed_campaign_details_onboarding = false
+
+  EXIT: Script halted cleanly at gate (exit code 2 = STOPPED_AGREEMENT_STILL_FALSE).
+  No navigation to referral-fee or pricing pages (per protocol: STOP if still false).
+  No commission XHR fired, no rate-card rows captured.
+
+NEW DIAGNOSTIC: agreement_accepted_ip="default" and agreement_accepted_time="default"
+  These sentinel values confirm the e-signature was NEVER fully submitted.
+  A successful e-signature submission would overwrite these with a real IP and timestamp.
+  "Default" indicates the flow was viewed but NOT completed.
+
+RATE-CARD ROWS CAPTURED: 0
+
+ARTIFACTS:
+  - backend/scripts/meesho_commission_rerun.py — CREATED this session (NOT committed)
+  - backend/app/data/category_commissions.json — updated with v0.3.0-RERUN status + full agreement field snapshot
+  - logs/scraper/commission_rerun_2026-06-16_17-53.log
+
+HARD STOPS: none encountered. Clean stop at agreement gate.
+Rate limit: not exceeded (only 1 login + 1 home page nav before stopping).
+Robots.txt: UNKNOWN (WAF blocks — 4th session in a row).
+
+BLOCKER (persists from Run 1):
+  Meesho e-signature has NOT been completed/submitted. The founder reports completing
+  it, but agreement_accepted_ip="default" and agreement_accepted_time="default" indicate
+  the submission did not POST to Meesho's backend.
+
+  This is almost certainly because the e-signature flow uses:
+    - enable_supplier_signature_v2 = true (the v2 flow is active)
+    - show_referral_banner = false (referral content still hidden)
+  
+  The v2 signature flow may have a multi-step modal where the founder may have
+  viewed it but not reached the final "Submit / Confirm" step that triggers the
+  backend POST to update agreement_accepted=1, agreement_accepted_ip, and
+  agreement_accepted_time.
+
+NEXT STEP FOR FOUNDER:
+  1. Open browser: https://supplier.meesho.com/panel/v3/new/growth/oinpw/home
+  2. Look for "E-Signature" or "Seller Agreement" banner/modal/notification
+  3. Click "Add Signature" or equivalent
+  4. Complete ALL steps in the flow — there may be 2-3 steps including: preview, agree checkbox, sign
+  5. Click the FINAL "Submit" / "Confirm" / "I Agree" button that completes the form
+  6. Confirm you see a SUCCESS message or the banner disappears
+  7. After that, re-run this scraper
+
+Hand-offs:
+  - To founder: e-signature not yet fully submitted. agreement_accepted_ip/time = "default"
+    confirms submission never completed. See NEXT STEP above. Re-run scraper after successful submit.
+  - To data-engineer: gate check working correctly. Script exits with code 2 on this condition.
+    No data churn; no rate-limit risk. Commission capture remains blocked on founder completing e-signature.
+=========
+
 === UPDATE: 2026-06-16 (Wave 1.5 commission — Run 1, DISCOVERY COMPLETE) ===
 Phase: commission rate-card capture — Run 1 discovery mode (meesell-scraper-maintainer, dispatch 3)
 Status: COMPLETE — login succeeded, discovery run completed, endpoint NOT found among candidate routes

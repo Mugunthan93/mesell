@@ -1,293 +1,47 @@
 {
   "_meta": {
-    "artifact_version": "0.2.1-NO-DATA",
-    "status": "NO DATA CAPTURED — discovery run found 0 commission rows. Blocked: no commission XHR fired on the referral-fee/pricing pages (hypothesis: Meesho e-signature gate, is_agreement_accepted=false — to be confirmed on re-run after the founder completes the e-signature).",
-    "capture_date": "2026-06-16T08:58:44.294060+00:00",
+    "artifact_version": "0.3.0-RERUN",
+    "status": "STOPPED: is_agreement_accepted=false — e-signature not registered",
+    "capture_date": "2026-06-16T12:24:24.787440+00:00",
     "capture_agent": "meesell-scraper-maintainer (sonnet)",
-    "capture_session": "commission-scraper v0.2.0",
-    "authorising_architecture": "docs/plans/architecture/CATEGORY_SEEDING_ARCHITECTURE.md §9 Q2 (D2 Phase 2)",
-    "target_output_column": "categories.commission_pct (NUMERIC(5,2) nullable)",
-    "intended_use": "Input to scripts/seed_category_commissions.py for idempotent backfill of categories.commission_pct after founder accuracy review",
-    "source_url": null,
-    "capture_method": "Authenticated WebKit BrowserContext (Playwright) — ctx.request.get() riding browser TLS fingerprint + auth cookies (proven Akamai bypass, identical to meesho_batch_scraper.py). Login SUCCEEDED; Akamai passed (ctx.request->404 not 403). But NO commission endpoint was discovered — the 44 intercepted requests were SPA page-document loads + Google/Facebook tracking pixels only; 0 JSON responses captured. The /root/{referral-fee,pricing,commission} routes redirected to /root/login; only /growth/oinpw/{referral-fee,pricing} loaded, and fired no commission XHR.",
-    "coverage_pct": 0,
+    "capture_session": "commission-rerun v0.3.0 (post-esignature re-run)",
+    "agreement_status_at_capture": {
+      "is_agreement_accepted": false,
+      "default_monetization_percent": "4.0",
+      "enable_referral_v3": true,
+      "all_agreement_fields": {
+        "supplier.default_monetization_percent": "4.0",
+        "supplier.default_monetization_type": "1",
+        "supplier.is_agreement_accepted": false,
+        "supplier.enable_referral_v3": true,
+        "supplier.enable_referral_desktop_v3": true,
+        "supplier.agreement_accepted_ip": "default",
+        "supplier.enable_referral": false,
+        "supplier.mall_commission_rate": 0,
+        "supplier.viewed_campaign_details_onboarding": false,
+        "supplier.enable_share_referral_banner_on_app": true,
+        "supplier.agreement_accepted": "0",
+        "supplier.enable_supplier_referral_invite": true,
+        "supplier.referral_fraud_nonincremental_feature": true,
+        "supplier.agreement_accepted_time": "default",
+        "supplier.supplier_check_referral_abuse": true,
+        "supplier.show_referral_banner": false,
+        "supplier.enable_supplier_signature_v2": true
+      },
+      "raw_body_keys": [
+        "registrationStatus",
+        "supplier",
+        "user"
+      ]
+    },
+    "source_url": "not_reached",
     "rate_card_rows_captured": 0,
-    "leaf_rows_mappable": 0,
     "total_leaves_in_tree": 3772,
     "total_super_categories": 30,
-    "total_categories": 234,
-    "granularity_note": "ASSUMPTION (NOT confirmed from data — 0 rows captured): Meesho is expected to publish commission at super-category/category granularity, not per-leaf. To be verified once the rate-card is actually captured.",
-    "parser_version": "meesell-scraper-maintainer v0.2.0",
-    "disambiguation_required": "5 overlapping super-category clusters need founder confirmation: (1) Personal Care [super_ids 14,37,88,39,19,36], (2) Home [12,24,30], (3) Kids [13,25], (4) Automotive [18,73], (5) Office/Craft [66,76]. See CATEGORY_SEEDING_COMMISSION_CAPTURE.md §5.3.",
-    "next_action_required": "Data-lead reviews rate_card + proposed_leaf_mapping. Founder confirms disambiguation_required clusters. Then: author scripts/seed_category_commissions.py for idempotent backfill.",
-    "backfill_script_when_ready": "scripts/seed_category_commissions.py (not yet authored)",
-    "discovery_candidates_log": [
-      {
-        "url": "https://supplier.meesho.com/panel/v3/new/root/referral-fee",
-        "method": "GET",
-        "resource_type": "document",
-        "timestamp": "2026-06-16T08:57:59.182725+00:00"
-      },
-      {
-        "url": "https://supplier.meesho.com/panel/v3/new/root/login",
-        "method": "GET",
-        "resource_type": "document",
-        "timestamp": "2026-06-16T08:57:59.853900+00:00"
-      },
-      {
-        "url": "https://www.facebook.com/tr/",
-        "method": "GET",
-        "resource_type": "image",
-        "timestamp": "2026-06-16T08:58:01.546178+00:00"
-      },
-      {
-        "url": "https://googleads.g.doubleclick.net/pagead/viewthroughconversion/686025714/",
-        "method": "GET",
-        "resource_type": "script",
-        "timestamp": "2026-06-16T08:58:01.625489+00:00"
-      },
-      {
-        "url": "https://www.google.com/rmkt/collect/686025714/",
-        "method": "POST",
-        "resource_type": "fetch",
-        "timestamp": "2026-06-16T08:58:01.626818+00:00"
-      },
-      {
-        "url": "https://googleads.g.doubleclick.net/pagead/viewthroughconversion/686025714/",
-        "method": "GET",
-        "resource_type": "script",
-        "timestamp": "2026-06-16T08:58:01.634242+00:00"
-      },
-      {
-        "url": "https://www.google.com/rmkt/collect/686025714/",
-        "method": "POST",
-        "resource_type": "fetch",
-        "timestamp": "2026-06-16T08:58:01.634863+00:00"
-      },
-      {
-        "url": "https://www.google-analytics.com/g/collect",
-        "method": "POST",
-        "resource_type": "fetch",
-        "timestamp": "2026-06-16T08:58:01.751852+00:00"
-      },
-      {
-        "url": "https://www.google.com/pagead/1p-user-list/686025714/",
-        "method": "GET",
-        "resource_type": "image",
-        "timestamp": "2026-06-16T08:58:01.801119+00:00"
-      },
-      {
-        "url": "https://www.google.co.in/pagead/1p-user-list/686025714/",
-        "method": "GET",
-        "resource_type": "image",
-        "timestamp": "2026-06-16T08:58:01.801727+00:00"
-      },
-      {
-        "url": "https://www.google.com/pagead/1p-user-list/686025714/",
-        "method": "GET",
-        "resource_type": "image",
-        "timestamp": "2026-06-16T08:58:01.802095+00:00"
-      },
-      {
-        "url": "https://www.google.co.in/pagead/1p-user-list/686025714/",
-        "method": "GET",
-        "resource_type": "image",
-        "timestamp": "2026-06-16T08:58:01.802291+00:00"
-      },
-      {
-        "url": "https://supplier.meesho.com/panel/v3/new/growth/oinpw/referral-fee",
-        "method": "GET",
-        "resource_type": "document",
-        "timestamp": "2026-06-16T08:58:05.127045+00:00"
-      },
-      {
-        "url": "https://www.google-analytics.com/g/collect",
-        "method": "POST",
-        "resource_type": "fetch",
-        "timestamp": "2026-06-16T08:58:05.290320+00:00"
-      },
-      {
-        "url": "https://www.google-analytics.com/g/collect",
-        "method": "POST",
-        "resource_type": "fetch",
-        "timestamp": "2026-06-16T08:58:05.290641+00:00"
-      },
-      {
-        "url": "https://supplier.meesho.com/panel/v3/new/root/pricing",
-        "method": "GET",
-        "resource_type": "document",
-        "timestamp": "2026-06-16T08:58:13.015595+00:00"
-      },
-      {
-        "url": "https://supplier.meesho.com/panel/v3/new/root/login",
-        "method": "GET",
-        "resource_type": "document",
-        "timestamp": "2026-06-16T08:58:13.443977+00:00"
-      },
-      {
-        "url": "https://googleads.g.doubleclick.net/pagead/viewthroughconversion/686025714/",
-        "method": "GET",
-        "resource_type": "script",
-        "timestamp": "2026-06-16T08:58:14.575472+00:00"
-      },
-      {
-        "url": "https://www.google.com/rmkt/collect/686025714/",
-        "method": "POST",
-        "resource_type": "fetch",
-        "timestamp": "2026-06-16T08:58:14.576070+00:00"
-      },
-      {
-        "url": "https://googleads.g.doubleclick.net/pagead/viewthroughconversion/686025714/",
-        "method": "GET",
-        "resource_type": "script",
-        "timestamp": "2026-06-16T08:58:14.582876+00:00"
-      },
-      {
-        "url": "https://www.google.com/rmkt/collect/686025714/",
-        "method": "POST",
-        "resource_type": "fetch",
-        "timestamp": "2026-06-16T08:58:14.583264+00:00"
-      },
-      {
-        "url": "https://www.facebook.com/tr/",
-        "method": "GET",
-        "resource_type": "image",
-        "timestamp": "2026-06-16T08:58:14.610265+00:00"
-      },
-      {
-        "url": "https://www.google-analytics.com/g/collect",
-        "method": "POST",
-        "resource_type": "fetch",
-        "timestamp": "2026-06-16T08:58:14.660706+00:00"
-      },
-      {
-        "url": "https://www.google.com/pagead/1p-user-list/686025714/",
-        "method": "GET",
-        "resource_type": "image",
-        "timestamp": "2026-06-16T08:58:14.662530+00:00"
-      },
-      {
-        "url": "https://www.google.co.in/pagead/1p-user-list/686025714/",
-        "method": "GET",
-        "resource_type": "image",
-        "timestamp": "2026-06-16T08:58:14.663167+00:00"
-      },
-      {
-        "url": "https://www.google.com/pagead/1p-user-list/686025714/",
-        "method": "GET",
-        "resource_type": "image",
-        "timestamp": "2026-06-16T08:58:14.663865+00:00"
-      },
-      {
-        "url": "https://www.google.co.in/pagead/1p-user-list/686025714/",
-        "method": "GET",
-        "resource_type": "image",
-        "timestamp": "2026-06-16T08:58:14.664554+00:00"
-      },
-      {
-        "url": "https://www.google-analytics.com/g/collect",
-        "method": "POST",
-        "resource_type": "fetch",
-        "timestamp": "2026-06-16T08:58:19.670444+00:00"
-      },
-      {
-        "url": "https://supplier.meesho.com/panel/v3/new/growth/oinpw/pricing",
-        "method": "GET",
-        "resource_type": "document",
-        "timestamp": "2026-06-16T08:58:20.905957+00:00"
-      },
-      {
-        "url": "https://www.google-analytics.com/g/collect",
-        "method": "POST",
-        "resource_type": "fetch",
-        "timestamp": "2026-06-16T08:58:21.112061+00:00"
-      },
-      {
-        "url": "https://supplier.meesho.com/panel/v3/new/root/commission",
-        "method": "GET",
-        "resource_type": "document",
-        "timestamp": "2026-06-16T08:58:27.879580+00:00"
-      },
-      {
-        "url": "https://supplier.meesho.com/panel/v3/new/root/login",
-        "method": "GET",
-        "resource_type": "document",
-        "timestamp": "2026-06-16T08:58:28.410001+00:00"
-      },
-      {
-        "url": "https://googleads.g.doubleclick.net/pagead/viewthroughconversion/686025714/",
-        "method": "GET",
-        "resource_type": "script",
-        "timestamp": "2026-06-16T08:58:29.610082+00:00"
-      },
-      {
-        "url": "https://www.google.com/rmkt/collect/686025714/",
-        "method": "POST",
-        "resource_type": "fetch",
-        "timestamp": "2026-06-16T08:58:29.610777+00:00"
-      },
-      {
-        "url": "https://googleads.g.doubleclick.net/pagead/viewthroughconversion/686025714/",
-        "method": "GET",
-        "resource_type": "script",
-        "timestamp": "2026-06-16T08:58:29.616125+00:00"
-      },
-      {
-        "url": "https://www.google.com/rmkt/collect/686025714/",
-        "method": "POST",
-        "resource_type": "fetch",
-        "timestamp": "2026-06-16T08:58:29.617129+00:00"
-      },
-      {
-        "url": "https://www.facebook.com/tr/",
-        "method": "GET",
-        "resource_type": "image",
-        "timestamp": "2026-06-16T08:58:29.625951+00:00"
-      },
-      {
-        "url": "https://www.google-analytics.com/g/collect",
-        "method": "POST",
-        "resource_type": "fetch",
-        "timestamp": "2026-06-16T08:58:29.686861+00:00"
-      },
-      {
-        "url": "https://www.google.com/pagead/1p-user-list/686025714/",
-        "method": "GET",
-        "resource_type": "image",
-        "timestamp": "2026-06-16T08:58:29.696143+00:00"
-      },
-      {
-        "url": "https://www.google.co.in/pagead/1p-user-list/686025714/",
-        "method": "GET",
-        "resource_type": "image",
-        "timestamp": "2026-06-16T08:58:29.696466+00:00"
-      },
-      {
-        "url": "https://www.google.com/pagead/1p-user-list/686025714/",
-        "method": "GET",
-        "resource_type": "image",
-        "timestamp": "2026-06-16T08:58:29.696635+00:00"
-      },
-      {
-        "url": "https://www.google.co.in/pagead/1p-user-list/686025714/",
-        "method": "GET",
-        "resource_type": "image",
-        "timestamp": "2026-06-16T08:58:29.696774+00:00"
-      },
-      {
-        "url": "https://www.google-analytics.com/g/collect",
-        "method": "POST",
-        "resource_type": "fetch",
-        "timestamp": "2026-06-16T08:58:34.656812+00:00"
-      },
-      {
-        "url": "https://www.google-analytics.com/g/collect",
-        "method": "POST",
-        "resource_type": "fetch",
-        "timestamp": "2026-06-16T08:58:34.657102+00:00"
-      }
-    ],
-    "discovery_responses_log": []
+    "all_api_requests_observed": [],
+    "commission_candidates_found": [],
+    "captured_responses": [],
+    "note": "Re-run after founder e-signature completion. is_agreement_accepted checked as Step 1. Broad intercept of ALL Meesho API calls logged."
   },
   "rate_card": [],
   "proposed_leaf_mapping": [],
