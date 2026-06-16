@@ -8,6 +8,9 @@ Frontend coordinator for MeeSell. Orchestrates the 3 frontend specialists (compo
 ### auth-otp (Feature 1 — active)
 - [auth_otp_feature.md](auth_otp_feature.md) — auth-otp: your role as frontend lead, 3-specialist dispatch order (service-builder → component-builder → ui-styler), branch ownership, FE-D5 contracts to enforce in PR review
 
+### UI Design-System Decoupling (workstream — I am the standalone LEAD from Phase 3)
+- [UI-DS Phase 3](ui_ds_phase3.md) — @mesell/layout page primitives (6) + MEE_LAYOUT shipped; **PR #265 OPEN** (founder merges). HYBRID SPEC→component-builder→ui-styler→merge-gate. ui-styler caught WCAG dup-`<main>` + grid responsive bugs. FE-1/FE-4 green by construction. Roadmap P4–P7 + per-phase-worktree discipline inside.
+
 ### Prior sessions
 - [Framework gate](framework_gate.md) — Angular 18 ratified 2026-06-05; React scaffold to be deleted
 - [Architecture doc authored](architecture_doc_authored.md) — FRONTEND_ARCHITECTURE.md SKELETON+§0 LOCKED+§1 DRAFT
