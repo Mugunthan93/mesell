@@ -1746,6 +1746,36 @@ The resolver is called by `core/errors.py` (`§4.F`) at the `MeesellError` → e
 
 A reviewer evaluating §5A asks: "is the `schema_jsonb` envelope locked, does the per-field shape compose with the 11 primitives, are the `is_advanced` and `compliance_shape` semantics traceable to founder rulings, is the `validation_message_id` convention enforceable, does the resolver fallback degrade safely?" — not "are these specific English messages correctly worded" (those land during module construction).
 
+AMENDMENT 2026-06-16 (founder-ratified, §7.3 clarification — read-time
+materialization of the §5A.C field shape):
+
+The §5A.C 9-key per-field shape (name, canonical_name, marker, data_type,
+primitive, help_text, is_advanced, enum_resolver, validation_message_ids)
+is the WIRE shape served to the wizard via GET /categories/{id}/schema
+(category.service.fetch_schema_dto). It is NOT the at-rest storage shape.
+catalog.validate_product (PATCH per-field validation) continues to read the
+RICH shape via the unchanged category.service.fetch_schema — aligning the
+validator to the §5A.C wire shape is a deferred, separately-tested change
+and is NOT part of this read-time materialization.
+templates.schema_jsonb.fields[] is stored in the RICH three-layer §5.6.1
+entity shape (canonical / display / export layers — see DATABASE_ARCHITECTURE
+§4.2). category.service.fetch_schema_dto materializes the §5A.C shape at read
+time via a pure field-level projection (_map_field_to_dto):
+  name ← display_label["en"] (fallback: title-cased canonical_name)
+  help_text ← display_help["en"] (fallback: non-empty derived string)
+  enum_resolver ← derived ("category" when data_type=="dropdown" and no
+    inline enum_codes_map; "static" when an inline map exists; null otherwise)
+  validation_message_ids ← [] (the rich validation_message is display text,
+    not IDs)
+  canonical_name / marker / data_type / primitive / is_advanced ← pass-through
+  enum_values ← surfaced only when enum_resolver=="static"
+
+The 9 keys, their value enums, and §5A.C/D/E/F invariants are UNCHANGED.
+export.build_xlsx_sheet continues to read the RICH shape via the unchanged
+category.service.fetch_schema (it needs meesho_column_header /
+meesho_column_index / main_sheet_label). Two service surfaces now exist:
+fetch_schema (rich) and fetch_schema_dto (flat §5A.C). (End amendment.)
+
 ---
 
 ## Section 6 — `adapters/` — Third-Party Vendor Clients
