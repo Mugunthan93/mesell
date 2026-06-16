@@ -88,6 +88,94 @@ Coordinator-implements fallback was used for all parsing (workspace agent regist
 
 ## Updates Log
 
+=== UPDATE: 2026-06-16 (Wave 1.5 commission — Run 1, DISCOVERY COMPLETE) ===
+Phase: commission rate-card capture — Run 1 discovery mode (meesell-scraper-maintainer, dispatch 3)
+Status: COMPLETE — login succeeded, discovery run completed, endpoint NOT found among candidate routes
+Duration: 68s (discovery run) + 2 deep probe passes
+
+PREREQUISITE CHECK (all passed):
+  - Creds file: /Users/mugunthansrinivasan/Project/mesell/.meesho_creds.env — PRESENT, both keys confirmed
+  - Python env: /Users/mugunthansrinivasan/Project/mesell/backend/.venv (playwright 1.60.0, dotenv OK, WebKit webkit-2287)
+  - Script: /private/tmp/mesell-wt/category-seeding/backend/scripts/meesho_commission_scraper.py — syntax OK
+  - Log dir: /private/tmp/mesell-wt/category-seeding/logs/scraper/ — CREATED
+  - robots.txt: UNKNOWN (WAF blocks — deferred again)
+  - No 401/403/429/captcha encountered in any run
+
+LOGIN RESULT:
+  - LOGIN SUCCEEDED: https://supplier.meesho.com/panel/v3/new/root/login → POST credential submit → redirected to https://supplier.meesho.com/panel/v3/new/growth/oinpw/home
+  - Session established with valid TLS fingerprint (Akamai bypass confirmed, WebKit pattern)
+  - 44 network requests intercepted across 6 candidate pages (discovery run)
+
+ENDPOINT DISCOVERY RESULT — KEY FINDING:
+  Commission/referral-fee API endpoint NOT found among any of the 6 candidate nav routes.
+  Root cause identified: Account has is_agreement_accepted=false
+    - /panel/v3/new/growth/oinpw/referral-fee — page loads, content area EMPTY (no commission XHR fired)
+    - /panel/v3/new/growth/oinpw/pricing — page loads, content area EMPTY (no commission XHR fired)
+    - /panel/v3/new/root/referral-fee — SPA router redirects to /root/login (route requires different context)
+    - /panel/v3/new/root/commission — same redirect to /root/login
+    - Content pages only render: full nav sidebar + "Your E-Signature is missing! Add Signature" modal overlay
+    - Only clickable element on the referral-fee page: "Add Signature" button
+    - No referral-fee specific XHR fired during page load or after 12s of waiting
+
+PAGES THAT LOADED (authenticated, no redirect):
+  - https://supplier.meesho.com/panel/v3/new/growth/oinpw/referral-fee — LOADED (empty content area)
+  - https://supplier.meesho.com/panel/v3/new/growth/oinpw/pricing — LOADED (empty content area)
+  - https://supplier.meesho.com/panel/v3/new/growth/oinpw/home — LOADED (dashboard content)
+
+XHR APIS OBSERVED ON ALL THREE PAGES (same pattern, no commission data):
+  - POST /api/container/supplier/prefetch-supply-data → {registrationStatus, supplier, user}
+  - POST /api/container/supplier/api/2.0/supplier/config → {ads config, feature flags}
+  - POST /api/container/notices/fetch-unread-count → {unread_count}
+  - POST /api/growth/registration/fetch-registration-status → {decodedToken}
+  - POST /api/container/supplier/fetch-total-count → {data}
+  - POST /api/promotions/promotions/live-optin-event → {results}
+  - (home page only) POST /api/growth/activation/fetch-stepper-journey
+  - (home page only) POST /api/growth/supplier/fetch-web-popup
+
+ACCOUNT STATUS (from prefetch-supply-data response):
+  - supplier_id: 4359160, identifier: oinpw
+  - is_agreement_accepted: false ← BLOCKS referral-fee/pricing content from rendering
+  - enable_referral_v3: true (the referral-fee feature IS enabled for this account)
+  - default_monetization_percent: 4.0 (generic 4% rate — but category-specific rates not exposed)
+  - login_enabled: true, logistic_fee_enabled: true
+
+API ENDPOINT PROBES (direct, 23 GET/POST candidates via ctx.request):
+  ALL returned HTTP 404. Confirmed not-found:
+  /api/cataloging/referral-fees, /api/supplier/referral-fee, /api/v2/supplier/referral-fee,
+  /api/pricing/commission-rates, /api/v1/referral-fee, /api/referral-fee,
+  /api/growth/referral-fee, /api/growth/commission, /api/growth/pricing,
+  /api/growth/supplier/commission, /api/growth/supplier/referral-fee,
+  /api/growth/supplier/api/v1/referral-fee, /api/commission/rate-card,
+  /api/container/supplier/api/v1/referral-fee, /api/cataloging/v1/referral-fees,
+  /api/growth/catalog/referral-fees, /api/growth/supplier/get-referral-fee,
+  /api/growth/supplier/fetch-referral-fee, /api/growth/supplier/referral-fee/rates, etc.
+
+NO HARD STOPS encountered. No 401/403/463/429. No captcha.
+
+HARD BLOCKER IDENTIFIED:
+  Meesho requires seller agreement acceptance before rendering referral-fee/pricing content.
+  The "Add Signature" / e-signature missing modal appears on ALL content pages.
+  Until is_agreement_accepted is set to true (founder completes the in-panel agreement flow),
+  the commission rate-card page content will not load and NO commission XHR will be fired.
+
+SAMPLE RESPONSE SHAPE: not captured (no commission API was reached)
+
+COVERAGE: 0 rate-card rows (endpoint not discovered)
+
+DISCOVERY ONLY confirmed: No harvest, no data written to category_commissions.json from this run.
+Log: /private/tmp/mesell-wt/category-seeding/logs/scraper/commission_2026-06-16_14-27.log
+
+Hand-offs:
+  - To founder: complete the Meesho seller agreement (e-signature) in the supplier panel.
+    After acceptance, re-run discovery — the referral-fee page will load its content XHR.
+  - To data-engineer: hard blocker is is_agreement_accepted=false, not Akamai or rate limits.
+    The login + navigation + authenticated session all work. Only content gating blocks commission data.
+  - To founder (interim alternative): manually note the referral-fee rates from the supplier panel
+    after signing the agreement; scraper-maintainer can structure into category_commissions.json.
+=========
+
+
+
 === UPDATE: 2026-06-16 (Wave 1.5 commission capture — Run 2, script authoring) ===
 Phase: commission rate-card capture prep (meesell-scraper-maintainer, Wave 1.5, dispatch 2)
 Done:
