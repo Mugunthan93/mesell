@@ -88,3 +88,55 @@ def test_unregistered_locale_falls_back_to_en() -> None:
     assert known in VALIDATION_MESSAGES
     # 'fr' is not registered in V1 _REGISTRIES; should still resolve via en.
     assert resolve(known, locale="fr") == VALIDATION_MESSAGES[known]
+
+
+# ── L_iam_1 known-deferred auth ids: DEBUG-not-WARNING noise suppression ─────
+@pytest.mark.parametrize(
+    "deferred_id",
+    ["auth.token_missing", "auth.token_expired", "auth.user_not_found"],
+)
+def test_deferred_auth_id_logs_debug_not_warning(
+    deferred_id: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """L_iam_1 2-segment auth ids log at DEBUG, not WARNING.
+
+    Behaviour (verbatim fallback) is UNCHANGED — the id is still returned —
+    only the log level changes so the per-401 noise is silenced while
+    L_iam_1 is deferred. These ids are intentionally absent from the
+    3-segment-locked catalog.
+    """
+    assert deferred_id not in VALIDATION_MESSAGES
+    with caplog.at_level(logging.DEBUG, logger="app.i18n.resolver"):
+        result = resolve(deferred_id, locale="en")
+    # Verbatim fallback unchanged.
+    assert result == deferred_id
+    # The missing_key line is present...
+    missing_records = [
+        r
+        for r in caplog.records
+        if "i18n.resolver.missing_key" in r.getMessage()
+        and deferred_id in r.getMessage()
+    ]
+    assert missing_records, "expected a missing_key log line for the deferred id"
+    # ...and every such line is at DEBUG, never WARNING.
+    assert all(r.levelno == logging.DEBUG for r in missing_records)
+
+
+def test_real_missing_key_still_warns(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A genuine (non-allowlisted) missing key still WARNs loudly."""
+    mid = "genuinely.unknown.message_id"
+    assert mid not in VALIDATION_MESSAGES
+    with caplog.at_level(logging.DEBUG, logger="app.i18n.resolver"):
+        result = resolve(mid, locale="en")
+    assert result == mid
+    warn_records = [
+        r
+        for r in caplog.records
+        if "i18n.resolver.missing_key" in r.getMessage()
+        and mid in r.getMessage()
+    ]
+    assert warn_records
+    assert all(r.levelno == logging.WARNING for r in warn_records)
