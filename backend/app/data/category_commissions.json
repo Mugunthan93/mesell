@@ -1,7 +1,7 @@
 {
   "_meta": {
-    "artifact_version": "0.3.0-RERUN",
-    "status": "STOPPED: is_agreement_accepted=false — e-signature not registered",
+    "artifact_version": "0.4.0-CLOSED",
+    "status": "CLOSED — won't-fix. DO NOT SEED FROM THIS FILE. Meesho commission is DYNAMIC (varies per product, per selling-price slab, and per time-bound promotion — confirmed by founder observation + internet cross-verification 2026-06-16). There is NO static category rate-card to capture; only an account-level flat default_monetization_percent=4.0 exists. Founder decision: keep categories.commission_pct = NULL. This file + the meesho_commission_scraper.py / meesho_commission_rerun.py scripts are retained as a record of the investigation only — NOT a seed input. If real commission is ever needed, capture it per-product at catalog-upload time on the product/pricing record.",
     "capture_date": "2026-06-16T12:30:14.887634+00:00",
     "capture_agent": "meesell-scraper-maintainer (sonnet)",
     "capture_session": "commission-rerun v0.3.0 (post-esignature re-run)",
