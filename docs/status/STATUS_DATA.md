@@ -105,6 +105,31 @@ Next: on founder GO → HYBRID 3-step (data SPEC hands off JSON+mapping → data
 Hand-offs: data → backend (JSON + §5 column mapping, seed run) and backend → infra (K8s Job) — both ANTICIPATED, NOT opened (work not started; awaits founder GO + scope ruling)
 =========
 
+=== UPDATE: 2026-06-16 (category-seeding discussion doc) ===
+Session: mesell-category-seeding-data-session-1
+Phase: discussion-doc authoring (FAST MODE — single agent, no specialist build)
+Done:
+  - Authored docs/plans/findings/CATEGORY_SEEDING_DISCUSSION.md (DRAFT — for founder discussion).
+  - Collected + summarised all 6 source docs (MEESHO_CATEGORY_INTELLIGENCE, V1_FEATURE_SPEC F2,
+    DATABASE_ARCHITECTURE §2.4, MVP_ARCHITECTURE §2.6/§6.7/§7.4, PLAYWRIGHT_MCP_REFERENCE,
+    smart-picker FEATURE_PLAN).
+  - Inspected 4 data files (real sizes/counts), the categories ORM model, baseline + pg_trgm migrations.
+Coverage: 3,772 leaves on disk (meesho_category_tree.json, 1.7MB) — 0 rows in local categories table.
+Root cause (verified): NOT a missing seeder — a COMPLETE idempotent seeder EXISTS
+  (scripts/seed_all.py + seed_categories.py + seed_field_aliases.py + seed_field_enum_values.py +
+  build_template_schemas.py). It was NEVER RUN against local dev; Makefile has `migrate` (Alembic) but
+  NO `seed` target, and no local-dev step invokes it. Migrated-but-unseeded table = 0 rows = visual gate blocked.
+Schema version: categories ORM unchanged; no parent_id / attributes_jsonb columns (legacy spec drift noted).
+Board sweep: board was empty (no active features). Added one inter-lead context row for the discussion
+  doc handoff to backend lead (deferred to founder GO). No stale rows.
+Recommendation: Option A — wire existing seed_all.py into a `make seed` target (zero new logic,
+  idempotent, reversible); layer Option C (infra-wired dev/staging auto-seed) later. Option B (Alembic
+  data migration) NOT recommended for bulk reference data.
+Blockers: none on doc; downstream seed run awaits founder GO + §6 Q1-Q5 rulings.
+Next: founder reviews CATEGORY_SEEDING_DISCUSSION.md; on GO → 3-step (data SPEC → database-builder BUILD `make seed` → merge-gate).
+Hand-offs: anticipated data → backend (JSON + mapping handoff) and backend → infra (only if Option C). None opened yet.
+=========
+
 === UPDATE: 2026-06-06 11:00 ===
 Phase: Metronic comprehensive theme extraction — COMPLETE
 Done:

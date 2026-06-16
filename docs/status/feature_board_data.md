@@ -11,7 +11,7 @@
 
 | Feature | Group branch | Status | Current session | Last touched | Blocking | Notes |
 |---|---|---|---|---|---|---|
-| category-seeding | plan/category-seeding-architecture | IN REVIEW | — | 2026-06-16 | founder — ratify DRAFT + §9 Q1–Q3 | Architecture doc `docs/plans/architecture/CATEGORY_SEEDING_ARCHITECTURE.md` (DRAFT). Formalises founder-approved 5-layer direction from discussion #239. PR open, left for founder. NOT yet started (no `make seed`, no K8s Job, no seed run). |
+| category-seeding | plan/category-seeding-architecture | IN REVIEW | — | 2026-06-16 | founder — ratify DRAFT + §9 Q1–Q3 | Architecture doc `docs/plans/architecture/CATEGORY_SEEDING_ARCHITECTURE.md` (DRAFT). Formalises founder-approved 5-layer direction from discussion #239 (root cause: complete seeder `scripts/seed_all.py` exists but never run locally → categories table 0 rows → visual gate blocked). PR open, left for founder. NOT yet started (no `make seed`, no K8s Job, no seed run). |
 
 ## Recently merged (last 14 days)
 
