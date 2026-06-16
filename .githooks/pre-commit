@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# ──────────────────────────────────────────────────────────────────────────────
+# pre-commit  —  refuse commits in the MeeSell MASTER working tree.
+#
+# Belt-and-suspenders for paths the Claude PreToolUse Bash guard cannot see:
+# the VS Code git UI, a raw terminal commit, another tool. The master checkout
+# must stay on develop/main and never receive commits — all session work commits
+# in a worktree. Activate once with: bash scripts/install-git-guards.sh
+#
+# Override (deliberate): MESELL_ALLOW_MASTER_GIT=1 git commit ...
+# ──────────────────────────────────────────────────────────────────────────────
+MASTER="/Users/mugunthansrinivasan/Project/mesell"
+
+[ "${MESELL_ALLOW_MASTER_GIT:-}" = "1" ] && exit 0
+
+top="$(git rev-parse --show-toplevel 2>/dev/null)"
+# macOS resolves /tmp → /private/tmp; the master path has no such alias, compare directly.
+if [ "$top" = "$MASTER" ]; then
+  {
+    echo "──────────────────────────────────────────────────────────────────────"
+    echo " BLOCKED: commit refused in the MeeSell MASTER checkout:"
+    echo "   $MASTER"
+    echo " The master tree must stay on develop/main and never take a commit —"
+    echo " that is what corrupted the founder editor on 2026-06-15 / 2026-06-16."
+    echo " Commit in a worktree instead:"
+    echo "   git worktree add -b <branch> /tmp/mesell-wt/<name> origin/develop"
+    echo "   cd /tmp/mesell-wt/<name>   # then commit here"
+    echo " Deliberate override:  MESELL_ALLOW_MASTER_GIT=1 git commit ..."
+    echo "──────────────────────────────────────────────────────────────────────"
+  } >&2
+  exit 1
+fi
+exit 0

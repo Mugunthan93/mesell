@@ -9,6 +9,15 @@
             "command": "agent_type=$(jq -r '.tool_input.subagent_type // \"general-purpose\"' 2>/dev/null); if echo \"$agent_type\" | grep -qE '^meesell-|^nexus:|^claude-code-guide$|^statusline-setup$'; then echo '{\"decision\": \"allow\"}'; else printf '{\"decision\": \"block\", \"reason\": \"In MeeSell context, use meesell-* agents or nexus:level-* fallback. %s is not allowed.\"}' \"$agent_type\"; fi"
           }
         ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-master-tree-git.sh\""
+          }
+        ]
       }
     ]
   }
