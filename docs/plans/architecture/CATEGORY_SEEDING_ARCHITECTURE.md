@@ -1,6 +1,6 @@
 # Category Seeding — Architecture
 
-**STATUS: DRAFT — pending founder ratification.**
+**STATUS: APPROVED — founder-ratified 2026-06-16.** The three §9 decisions are RESOLVED (see §9); execution proceeds per the resolved scope.
 
 | Field | Value |
 |---|---|
@@ -318,18 +318,20 @@ Per `MASTER_PLAN` HYBRID dispatch + the `FEATURE_PLAN` division (re-seeding `cat
 
 ---
 
-## §9 OPEN DECISIONS for the founder
+## §9 DECISIONS — RESOLVED (founder, 2026-06-16)
 
-These three remain **OPEN by design**. The approved architecture holds under any resolution of each — they are scope/policy choices layered on top of the fixed 5-layer structure.
+All three are **RESOLVED**. The approved architecture holds under each resolution — they were scope/policy choices layered on top of the fixed 5-layer structure. Rulings captured verbatim below; session `mesell-category-seeding-session-1`.
 
-1. **Build scope — local-only now, or local + dev/staging K8s Job in the same pass?**
-   Layer ④-local (`make seed`) unblocks the local visual gate immediately. Layer ④-envs (the post-migrate K8s Job for dev/staging) closes the gap on every environment but requires the infra handoff (§2 ④). Do both now, or land local first and layer the K8s Job as a follow-up? *(Determines whether the infra handoff opens in this pass.)*
+1. **Build scope — RESOLVED: LOCAL-ONLY this pass.**
+   Layer ④-local (`make seed`) is wired and run to unblock the local visual gate immediately. Layer ④-envs (the dev/staging post-migrate K8s Job, §2 ④) is **deferred to a follow-up** — the infra handoff does **not** open in this pass. Wave 2 is skipped; no namespace is touched and no spend-ask is raised.
 
-2. **`commission_pct` — seed NULL or source real values?**
-   Currently seeded NULL (spec-valid; `DATABASE_ARCHITECTURE §2.4` nullable). The smart-picker card shows a `commission_pct%` badge (`FEATURE_PLAN` line 60) and the pricing engine reads it (`V1_FEATURE_SPEC` line 276). Ship V1 with NULL badges, or source commission data — and from where (it is **not** in the parsed corpus; it would need a separate Meesho commission table)? *(Artifact-contract impact: sourcing real values changes layer ②'s artifact set and the §5.2 mapping.)*
+2. **`commission_pct` — RESOLVED: REAL VALUES, two-phase, scrape-sourced.**
+   Real commission values are wanted (not permanent NULL). Verified fact (`mesell-category-seeding-session-1`): commission is **absent from all committed repo data** — 0 hits across the 12 parsed batch JSONs, `meesho_category_tree.json`, and `canonical_field_aliases.json`; the gitignored raw `.xlsx` templates likewise carried none (their full-corpus parse produced zero commission content). Real values therefore cannot be seeded from existing data. Resolution = **two-phase**:
+   - **Phase 1 (this pass / Wave 1):** seed `categories.commission_pct = NULL` (as `seed_categories.py` already does). This unblocks the visual gate today — commission does not gate the catalog wizard; the pricing engine contracts a NULL-tolerant path (`commission_pct IS NULL` → `Decimal('0.00')` → `CommissionMissingError` 422, per `test_commission_missing.py`).
+   - **Phase 2 (Wave 1.5 backfill):** `meesell-scraper-maintainer` captures Meesho's published category commission **rate-card** → `backend/app/data/category_commissions.json` → idempotent backfill re-seed (`scripts/seed_category_commissions.py`, consuming that JSON; NOT a migration — the column exists). The upsert reconciles real values in place with zero re-architecture. **Source = scraped Meesho rate-card** (refresh-path style; robots/rate-limit care per `PLAYWRIGHT_MCP_REFERENCE §6.4`; founder accuracy review before it seeds). This extends layer ②'s artifact set (adds `category_commissions.json`) and the §5.2 mapping (`commission_pct` sourced from the rate-card map, NULL fallback when a leaf is unmatched).
 
-3. **Refresh idempotency posture — pure upsert, or upsert + prune-removed-leaves?**
-   The engine upserts on natural keys, so a quarterly refresh updates changed rows and inserts new leaves. It does **not** delete leaves that disappeared from the new tree (orphan rows remain, blocked from delete by `ON DELETE RESTRICT` if referenced). Pure-upsert (simpler, never deletes) vs upsert+prune (reconciles removals, must handle FK-referenced orphans)? *(Affects only the refresh path, §7 — not the initial seed.)*
+3. **Refresh idempotency posture — RESOLVED: PURE UPSERT.**
+   The quarterly refresh updates changed rows and inserts new leaves via upsert on natural keys; it does **not** prune leaves that disappear from a new tree (orphan rows remain, blocked from delete by `ON DELETE RESTRICT` if referenced). No prune logic is built. Affects only the refresh path (§7), not the initial seed.
 
 ---
 
@@ -350,7 +352,8 @@ These three remain **OPEN by design**. The approved architecture holds under any
 | Version | Date | Author | Change |
 |---|---|---|---|
 | 0.1 | 2026-06-16 | `meesell-data-engineer` | Initial DRAFT — formalises the founder-approved 5-layer direction from `CATEGORY_SEEDING_DISCUSSION.md` (#239). §9 keeps 3 items OPEN. Awaiting founder ratification. |
+| 1.0 | 2026-06-16 | `meesell-data-engineer` | **APPROVED.** Founder ratified (`mesell-category-seeding-session-1`) and resolved all 3 §9 decisions: D1 = local-only this pass (Wave 2/K8s deferred); D2 = real commission values, two-phase (NULL seed now + Wave-1.5 scrape-sourced backfill via `category_commissions.json` + `seed_category_commissions.py`); D3 = pure upsert. Execution (Wave 1) begins. |
 
 ---
 
-*End of document. DRAFT — pending founder ratification. No code, no DB writes, no seeding performed.*
+*End of document. APPROVED — founder-ratified 2026-06-16. Wave 1 (local seed) authorised; commission backfill is Wave 1.5 (scrape-sourced). No DB writes performed by this document.*
