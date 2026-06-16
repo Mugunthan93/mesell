@@ -1,4 +1,4 @@
-.PHONY: dev dev-local dev-down test lint migrate migrate-new build deploy frontend-dev
+.PHONY: dev dev-local dev-down test lint migrate migrate-new seed build deploy frontend-dev
 
 # Docker-based full stack (API + Postgres + Valkey in containers). Requires Docker Desktop.
 dev:
@@ -19,6 +19,8 @@ lint:
 	cd backend && python -m ruff check app/
 migrate:
 	cd backend && .venv/bin/alembic upgrade head
+seed:
+	PYTHONPATH=backend backend/.venv/bin/python scripts/seed_all.py
 migrate-new:
 	cd backend && .venv/bin/alembic revision --autogenerate -m "$(msg)"
 build:

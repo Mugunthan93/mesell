@@ -88,6 +88,370 @@ Coordinator-implements fallback was used for all parsing (workspace agent regist
 
 ## Updates Log
 
+=== UPDATE: 2026-06-16 (Wave 1.5 commission — Re-Run, post-esignature, dispatch 5 COMPLETE) ===
+Phase: commission rate-card capture — Re-Run after founder reports completing e-signature (dispatch 5)
+Agent: meesell-scraper-maintainer (sonnet)
+Status: STOPPED — is_agreement_accepted STILL FALSE (5th consecutive run with same gate failure)
+
+PREREQUISITE CHECK (all passed):
+  - Creds file: /Users/mugunthansrinivasan/Project/mesell/.meesho_creds.env — PRESENT (54 bytes)
+  - Python env: /Users/mugunthansrinivasan/Project/mesell/backend/.venv — playwright OK, dotenv OK
+  - WebKit: webkit-2158 + webkit-2287 both present
+  - Script: backend/scripts/meesho_commission_rerun.py — SYNTAX OK
+  - No 401/403/463/429/captcha encountered
+
+LOGIN RESULT:
+  - LOGIN SUCCEEDED: WebKit → /root/login → POST creds → 302 to /growth/oinpw/home
+  - Akamai bypass confirmed (5th consecutive session)
+
+AGREEMENT GATE CHECK (Step 1 — prefetch-supply-data intercept from home page navigation):
+  Result: is_agreement_accepted = False (still — e-signature NOT registered)
+
+  Full agreement-field snapshot (THIS SESSION vs PRIOR — key delta noted):
+    supplier.is_agreement_accepted          = false  (UNCHANGED)
+    supplier.agreement_accepted             = "0"    (UNCHANGED)
+    supplier.agreement_accepted_ip          = "default"  (UNCHANGED — submission never completed)
+    supplier.agreement_accepted_time        = "default"  (UNCHANGED — submission never completed)
+    supplier.default_monetization_percent   = "4.0"  (UNCHANGED)
+    supplier.default_monetization_type      = "1"    (UNCHANGED)
+    supplier.enable_referral_v3             = true   (UNCHANGED)
+    supplier.enable_referral_desktop_v3     = true   (NEW field — not in Session 4 log)
+    supplier.enable_referral                = false  (UNCHANGED)
+    supplier.enable_supplier_signature_v2   = FALSE  *** KEY DELTA: was TRUE in Session 4 ***
+    supplier.mall_commission_rate           = 0      (UNCHANGED)
+    supplier.show_referral_banner           = false  (UNCHANGED)
+    supplier.referral_fraud_nonincremental_feature = true (UNCHANGED)
+    supplier.supplier_check_referral_abuse  = true   (UNCHANGED)
+    supplier.viewed_campaign_details_onboarding = false (UNCHANGED)
+    supplier.enable_share_referral_banner_on_app = true (NEW field)
+    supplier.enable_supplier_referral_invite = true  (NEW field)
+
+  KEY DIAGNOSTIC — enable_supplier_signature_v2 flipped from TRUE to FALSE:
+    Session 4 (prior run): enable_supplier_signature_v2 = TRUE
+    Session 5 (this run):  enable_supplier_signature_v2 = FALSE
+    
+    This field controls which e-signature flow is presented to the supplier.
+    When TRUE: the v2 signature flow was active (founder was shown the v2 modal).
+    When FALSE NOW: Meesho may have downgraded/removed the v2 flow for this account.
+    This could mean:
+      (a) The v2 flow is now complete from the backend's perspective but is_agreement_accepted
+          was not updated (a Meesho backend bug), OR
+      (b) Meesho disabled v2 for this account for another reason (edge case), OR
+      (c) The field being FALSE is the pre-signature state and TRUE is post-signature
+          (inverted meaning vs what was inferred in Session 4).
+    
+    If interpretation (c) is correct, the founder completing the v2 flow DISABLED
+    enable_supplier_signature_v2 (because the signature is no longer needed) but
+    is_agreement_accepted was not atomically updated. This would be a Meesho backend
+    inconsistency.
+
+  EXIT: Script halted cleanly at gate (exit code 2 = STOPPED_AGREEMENT_STILL_FALSE).
+  No navigation to referral-fee or pricing pages.
+  No commission XHR fired, no rate-card rows captured.
+
+RATE-CARD ROWS CAPTURED: 0
+
+ARTIFACTS:
+  - backend/app/data/category_commissions.json — updated with Session 5 status + field snapshot
+  - logs/scraper/commission_rerun_2026-06-16_17-59.log
+
+HARD STOPS: none. Clean stop at agreement gate.
+Rate limit: not exceeded (only 1 login + 1 home page nav).
+Robots.txt: UNKNOWN (WAF blocks — 5th session in a row).
+
+BLOCKER ANALYSIS (updated Session 5):
+  is_agreement_accepted remains false despite founder reporting e-signature completion.
+  
+  NEW FINDING: enable_supplier_signature_v2 flipped from true (Session 4) to false (Session 5).
+  This is the only field that changed between the two post-founder-action runs.
+  
+  Three possible interpretations:
+    A. enable_supplier_signature_v2=false means "v2 signature NO LONGER REQUIRED" (flow complete)
+       but Meesho's backend didn't update is_agreement_accepted — a backend inconsistency.
+       Action: founder should try refreshing the panel and checking if referral-fee content loads.
+    B. enable_supplier_signature_v2 was always irrelevant to is_agreement_accepted — the two
+       fields are independent, and the v2 flag just means "v2 flow is available" (not "needed").
+       Action: founder must use a different path to find and complete the agreement.
+    C. The agreement and referral-fee program are two separate onboarding steps. The
+       e-signature may be accepted but the referral enrollment has a separate flow.
+       Action: look for a "Join Referral Program" or "Enroll" step beyond the signature.
+
+RECOMMENDATION FOR FOUNDER:
+  1. Open browser: https://supplier.meesho.com/panel/v3/new/growth/oinpw/referral-fee
+  2. Note what you see: does the page show commission rates, or is it still blank/blocked?
+  3. If you see content: manually note category names and rates; scraper can structure it.
+  4. If still blocked: look for any banner/modal saying "Agreement", "Enroll", "Join program"
+     that is separate from the e-signature you already completed.
+  5. Report: did the referral-fee page change visually after completing e-signature?
+
+NEXT STEP: Founder checks referral-fee page directly in browser. If content visible:
+  Option A — Founder manually copies rates; scraper-maintainer structures category_commissions.json.
+  Option B — Schedule an interactive (headed, non-headless) Playwright session where the
+             scraper runs with headless=False and the founder can observe/interact live.
+
+Hand-offs:
+  - To founder: enable_supplier_signature_v2 flipped to false (new info). Is the referral-fee
+    page now showing content in your browser? If yes, manual copy is the fastest path.
+    If no, there may be a separate "enrollment" step beyond the e-signature.
+  - To data-engineer: 5th run, same gate failure. New diagnostic: v2 signature flag flipped.
+    Recommend asking founder to visually inspect referral-fee page in browser immediately.
+=========
+
+=== UPDATE: 2026-06-16 (Wave 1.5 commission — Re-Run, post-esignature, dispatch 4 COMPLETE) ===
+Phase: commission rate-card capture — Re-Run after founder e-signature (meesell-scraper-maintainer, dispatch 4)
+Agent: meesell-scraper-maintainer (sonnet)
+Status: STOPPED — is_agreement_accepted STILL FALSE
+
+PREREQUISITE CHECK (all passed):
+  - Creds file: /Users/mugunthansrinivasan/Project/mesell/.meesho_creds.env — PRESENT (54 bytes)
+  - Python env: /Users/mugunthansrinivasan/Project/mesell/backend/.venv — playwright 1.60.0, dotenv OK
+  - WebKit: webkit-2158 (slightly different path slot than webkit-2287 from session 3, same machine)
+  - Script: backend/scripts/meesho_commission_rerun.py — authored this session, SYNTAX OK
+  - No 401/403/463/429/captcha encountered
+
+LOGIN RESULT:
+  - LOGIN SUCCEEDED: WebKit → /root/login → POST creds → 302 to /growth/oinpw/home
+  - Akamai bypass confirmed again (WebKit TLS fingerprint)
+
+AGREEMENT GATE CHECK (Step 1 of protocol):
+  Method: page navigation to /growth/oinpw/home → intercept prefetch-supply-data response
+  Result: is_agreement_accepted = False (still — e-signature NOT registered)
+
+  Full agreement-field snapshot from prefetch-supply-data (supplier object):
+    supplier.is_agreement_accepted          = false  ← BLOCKING GATE
+    supplier.agreement_accepted             = "0"    ← confirming not accepted
+    supplier.agreement_accepted_ip          = "default"  ← not set by real completion
+    supplier.agreement_accepted_time        = "default"  ← not set by real completion
+    supplier.default_monetization_percent   = "4.0"  ← generic only, not category-wise
+    supplier.default_monetization_type      = "1"
+    supplier.enable_referral_v3             = true   ← feature enabled, gated by agreement
+    supplier.enable_referral_desktop_v3     = true
+    supplier.enable_referral                = false  ← blocked until agreement accepted
+    supplier.enable_supplier_signature_v2   = true   ← signature flow is v2
+    supplier.mall_commission_rate           = 0
+    supplier.show_referral_banner           = false
+    supplier.referral_fraud_nonincremental_feature = true
+    supplier.supplier_check_referral_abuse  = true
+    supplier.viewed_campaign_details_onboarding = false
+
+  EXIT: Script halted cleanly at gate (exit code 2 = STOPPED_AGREEMENT_STILL_FALSE).
+  No navigation to referral-fee or pricing pages (per protocol: STOP if still false).
+  No commission XHR fired, no rate-card rows captured.
+
+NEW DIAGNOSTIC: agreement_accepted_ip="default" and agreement_accepted_time="default"
+  These sentinel values confirm the e-signature was NEVER fully submitted.
+  A successful e-signature submission would overwrite these with a real IP and timestamp.
+  "Default" indicates the flow was viewed but NOT completed.
+
+RATE-CARD ROWS CAPTURED: 0
+
+ARTIFACTS:
+  - backend/scripts/meesho_commission_rerun.py — CREATED this session (NOT committed)
+  - backend/app/data/category_commissions.json — updated with v0.3.0-RERUN status + full agreement field snapshot
+  - logs/scraper/commission_rerun_2026-06-16_17-53.log
+
+HARD STOPS: none encountered. Clean stop at agreement gate.
+Rate limit: not exceeded (only 1 login + 1 home page nav before stopping).
+Robots.txt: UNKNOWN (WAF blocks — 4th session in a row).
+
+BLOCKER (persists from Run 1):
+  Meesho e-signature has NOT been completed/submitted. The founder reports completing
+  it, but agreement_accepted_ip="default" and agreement_accepted_time="default" indicate
+  the submission did not POST to Meesho's backend.
+
+  This is almost certainly because the e-signature flow uses:
+    - enable_supplier_signature_v2 = true (the v2 flow is active)
+    - show_referral_banner = false (referral content still hidden)
+  
+  The v2 signature flow may have a multi-step modal where the founder may have
+  viewed it but not reached the final "Submit / Confirm" step that triggers the
+  backend POST to update agreement_accepted=1, agreement_accepted_ip, and
+  agreement_accepted_time.
+
+NEXT STEP FOR FOUNDER:
+  1. Open browser: https://supplier.meesho.com/panel/v3/new/growth/oinpw/home
+  2. Look for "E-Signature" or "Seller Agreement" banner/modal/notification
+  3. Click "Add Signature" or equivalent
+  4. Complete ALL steps in the flow — there may be 2-3 steps including: preview, agree checkbox, sign
+  5. Click the FINAL "Submit" / "Confirm" / "I Agree" button that completes the form
+  6. Confirm you see a SUCCESS message or the banner disappears
+  7. After that, re-run this scraper
+
+Hand-offs:
+  - To founder: e-signature not yet fully submitted. agreement_accepted_ip/time = "default"
+    confirms submission never completed. See NEXT STEP above. Re-run scraper after successful submit.
+  - To data-engineer: gate check working correctly. Script exits with code 2 on this condition.
+    No data churn; no rate-limit risk. Commission capture remains blocked on founder completing e-signature.
+=========
+
+=== UPDATE: 2026-06-16 (Wave 1.5 commission — Run 1, DISCOVERY COMPLETE) ===
+Phase: commission rate-card capture — Run 1 discovery mode (meesell-scraper-maintainer, dispatch 3)
+Status: COMPLETE — login succeeded, discovery run completed, endpoint NOT found among candidate routes
+Duration: 68s (discovery run) + 2 deep probe passes
+
+PREREQUISITE CHECK (all passed):
+  - Creds file: /Users/mugunthansrinivasan/Project/mesell/.meesho_creds.env — PRESENT, both keys confirmed
+  - Python env: /Users/mugunthansrinivasan/Project/mesell/backend/.venv (playwright 1.60.0, dotenv OK, WebKit webkit-2287)
+  - Script: /private/tmp/mesell-wt/category-seeding/backend/scripts/meesho_commission_scraper.py — syntax OK
+  - Log dir: /private/tmp/mesell-wt/category-seeding/logs/scraper/ — CREATED
+  - robots.txt: UNKNOWN (WAF blocks — deferred again)
+  - No 401/403/429/captcha encountered in any run
+
+LOGIN RESULT:
+  - LOGIN SUCCEEDED: https://supplier.meesho.com/panel/v3/new/root/login → POST credential submit → redirected to https://supplier.meesho.com/panel/v3/new/growth/oinpw/home
+  - Session established with valid TLS fingerprint (Akamai bypass confirmed, WebKit pattern)
+  - 44 network requests intercepted across 6 candidate pages (discovery run)
+
+ENDPOINT DISCOVERY RESULT — KEY FINDING:
+  Commission/referral-fee API endpoint NOT found among any of the 6 candidate nav routes.
+  Root cause identified: Account has is_agreement_accepted=false
+    - /panel/v3/new/growth/oinpw/referral-fee — page loads, content area EMPTY (no commission XHR fired)
+    - /panel/v3/new/growth/oinpw/pricing — page loads, content area EMPTY (no commission XHR fired)
+    - /panel/v3/new/root/referral-fee — SPA router redirects to /root/login (route requires different context)
+    - /panel/v3/new/root/commission — same redirect to /root/login
+    - Content pages only render: full nav sidebar + "Your E-Signature is missing! Add Signature" modal overlay
+    - Only clickable element on the referral-fee page: "Add Signature" button
+    - No referral-fee specific XHR fired during page load or after 12s of waiting
+
+PAGES THAT LOADED (authenticated, no redirect):
+  - https://supplier.meesho.com/panel/v3/new/growth/oinpw/referral-fee — LOADED (empty content area)
+  - https://supplier.meesho.com/panel/v3/new/growth/oinpw/pricing — LOADED (empty content area)
+  - https://supplier.meesho.com/panel/v3/new/growth/oinpw/home — LOADED (dashboard content)
+
+XHR APIS OBSERVED ON ALL THREE PAGES (same pattern, no commission data):
+  - POST /api/container/supplier/prefetch-supply-data → {registrationStatus, supplier, user}
+  - POST /api/container/supplier/api/2.0/supplier/config → {ads config, feature flags}
+  - POST /api/container/notices/fetch-unread-count → {unread_count}
+  - POST /api/growth/registration/fetch-registration-status → {decodedToken}
+  - POST /api/container/supplier/fetch-total-count → {data}
+  - POST /api/promotions/promotions/live-optin-event → {results}
+  - (home page only) POST /api/growth/activation/fetch-stepper-journey
+  - (home page only) POST /api/growth/supplier/fetch-web-popup
+
+ACCOUNT STATUS (from prefetch-supply-data response):
+  - supplier_id: 4359160, identifier: oinpw
+  - is_agreement_accepted: false ← BLOCKS referral-fee/pricing content from rendering
+  - enable_referral_v3: true (the referral-fee feature IS enabled for this account)
+  - default_monetization_percent: 4.0 (generic 4% rate — but category-specific rates not exposed)
+  - login_enabled: true, logistic_fee_enabled: true
+
+API ENDPOINT PROBES (direct, 23 GET/POST candidates via ctx.request):
+  ALL returned HTTP 404. Confirmed not-found:
+  /api/cataloging/referral-fees, /api/supplier/referral-fee, /api/v2/supplier/referral-fee,
+  /api/pricing/commission-rates, /api/v1/referral-fee, /api/referral-fee,
+  /api/growth/referral-fee, /api/growth/commission, /api/growth/pricing,
+  /api/growth/supplier/commission, /api/growth/supplier/referral-fee,
+  /api/growth/supplier/api/v1/referral-fee, /api/commission/rate-card,
+  /api/container/supplier/api/v1/referral-fee, /api/cataloging/v1/referral-fees,
+  /api/growth/catalog/referral-fees, /api/growth/supplier/get-referral-fee,
+  /api/growth/supplier/fetch-referral-fee, /api/growth/supplier/referral-fee/rates, etc.
+
+NO HARD STOPS encountered. No 401/403/463/429. No captcha.
+
+HARD BLOCKER IDENTIFIED:
+  Meesho requires seller agreement acceptance before rendering referral-fee/pricing content.
+  The "Add Signature" / e-signature missing modal appears on ALL content pages.
+  Until is_agreement_accepted is set to true (founder completes the in-panel agreement flow),
+  the commission rate-card page content will not load and NO commission XHR will be fired.
+
+SAMPLE RESPONSE SHAPE: not captured (no commission API was reached)
+
+COVERAGE: 0 rate-card rows (endpoint not discovered)
+
+DISCOVERY ONLY confirmed: No harvest, no data written to category_commissions.json from this run.
+Log: /private/tmp/mesell-wt/category-seeding/logs/scraper/commission_2026-06-16_14-27.log
+
+Hand-offs:
+  - To founder: complete the Meesho seller agreement (e-signature) in the supplier panel.
+    After acceptance, re-run discovery — the referral-fee page will load its content XHR.
+  - To data-engineer: hard blocker is is_agreement_accepted=false, not Akamai or rate limits.
+    The login + navigation + authenticated session all work. Only content gating blocks commission data.
+  - To founder (interim alternative): manually note the referral-fee rates from the supplier panel
+    after signing the agreement; scraper-maintainer can structure into category_commissions.json.
+=========
+
+
+
+=== UPDATE: 2026-06-16 (Wave 1.5 commission capture — Run 2, script authoring) ===
+Phase: commission rate-card capture prep (meesell-scraper-maintainer, Wave 1.5, dispatch 2)
+Done:
+  - Corrected prior dispatch misconception: meesho_batch_scraper.py + meesho_template_scraper.py DO EXIST and are proven Akamai-bypass tooling. Prior session incorrectly reported "no scraper tooling." Memory updated.
+  - Authored backend/scripts/meesho_commission_scraper.py (46KB) — modelled directly on meesho_batch_scraper.py:
+      * Reuses perform_login() + .meesho_creds.env load + WebKit headless=True + authenticated BrowserContext
+      * NetworkInterceptor class attaches ctx.on("request") + ctx.on("response") to capture commission API candidates
+      * Navigates 6 candidate panel URLs (referral-fee, pricing, commission routes under /panel/v3/new/...)
+      * URL match pattern: /(?:referral|commission|fee|charge|rate|pricing)/i (request URL) + looser API path pattern
+      * Direct mode (COMMISSION_API_ENDPOINT set): ctx.request.get() with _api_headers() riding browser fingerprint
+      * Discovery mode (default, first run): logs all [CANDIDATE] + [RESPONSE CAPTURED] for operator review
+      * parse_commission_body(): multi-key best-effort strategy covering 10 envelope keys + 13 rate keys + 13 category-name keys
+      * propose_leaf_mapping(): exact + partial name match against tree super-categories; emits UNMATCHED list
+      * write_commission_json(): writes worktree-scoped backend/app/data/category_commissions.json
+      * Hard stops: 401/403/463 → abort; 429 → abort; captcha detected → abort (NEVER solve); login failure → abort
+      * Throttle: 2-5s between navigations; 1-3s between requests; single sequential stream; no parallelism
+      * Credential safety: NEVER logged; creds file supports MEESHO_CREDS_FILE env override
+      * Output path ALWAYS worktree-scoped (/private/tmp/mesell-wt/category-seeding/...)
+  - Authored docs/plans/architecture/CATEGORY_SEEDING_COMMISSION_RUNBOOK.md (15KB):
+      * 11 sections covering prerequisites, two-run procedure, endpoint discovery step, throttle/hard-stop behaviour, mapping review (5 disambiguation clusters), post-capture handoff, quarterly refresh
+  - Validated syntax: python3 -m py_compile → SYNTAX OK
+  - Did NOT execute, did NOT login, did NOT make any Meesho request
+Snapshot path: n/a (no live run)
+Diff vs last: n/a
+Selector version: n/a (commission API, not HTML selectors)
+Candidate commission routes built into script:
+  - /panel/v3/new/root/referral-fee
+  - /panel/v3/new/growth/oinpw/referral-fee
+  - /panel/v3/new/root/pricing
+  - /panel/v3/new/growth/oinpw/pricing
+  - /panel/v3/new/root/commission
+  - /panel/v3/new/growth/oinpw/home (dashboard baseline)
+In progress: authoring complete; awaiting founder GO for live run
+Blockers: founder GO required before any execution (live Meesho session uses founder's supplier account)
+Next:
+  - Founder GO → operator runs Run 1 (discovery mode) to identify commission API endpoint
+  - Operator sets COMMISSION_API_ENDPOINT, runs Run 2 (direct mode)
+  - Data lead reviews category_commissions.json + proposed_leaf_mapping
+  - Founder resolves 5 disambiguation clusters
+  - Data lead authors scripts/seed_category_commissions.py
+  - Database-builder runs backfill
+Artifacts produced:
+  - backend/scripts/meesho_commission_scraper.py — CREATED, NOT COMMITTED
+  - docs/plans/architecture/CATEGORY_SEEDING_COMMISSION_RUNBOOK.md — CREATED, NOT COMMITTED
+Hand-offs:
+  - To data-engineer: script + runbook ready; awaiting founder GO for live run
+  - To founder: review runbook §2 (prerequisites) before authorising Run 1
+=========
+
+=== UPDATE: 2026-06-16 (Wave 1.5 commission capture) ===
+Phase: commission rate-card capture (meesell-scraper-maintainer, Wave 1.5)
+Done:
+  - Read own MEMORY.md + CLAUDE.md + PLAYWRIGHT_MCP_REFERENCE + STATUS_DATA.md + CATEGORY_SEEDING_ARCHITECTURE.md
+  - Confirmed worktree: /private/tmp/mesell-wt/category-seeding (correct)
+  - Confirmed no prior commission data in repo (0 hits across all committed JSONs)
+  - Probed 17 Meesho URLs for commission/referral-fee rate-card — ALL BLOCKED
+    (Akamai WAF: HTTP 403 for authenticated paths; HTTP 200 SPA shell (2166 bytes) for public subdomains)
+  - Confirmed Playwright MCP NOT configured (claude_desktop_config.json has only 'pencil' server)
+  - robots.txt UNREADABLE (supplier.meesho.com/robots.txt returns HTTP 403 from WAF)
+Snapshot path: n/a (hard stop — no data captured)
+Diff vs last: n/a
+Selector version: n/a (no selectors authored)
+Coverage: 0 / 30 super-categories; 0 / 3772 leaves
+In progress: BLOCKED — hard stop on both Playwright availability + WAF
+Blockers:
+  1. Playwright MCP server not in claude_desktop_config.json (only 'pencil' present)
+  2. All Meesho public+supplier pages served as React SPA requiring JS execution
+  3. robots.txt for supplier.meesho.com unreadable (WAF blocks it)
+Next: two options per capture report §7:
+  Option A (RECOMMENDED now): Founder manually copies rate-card from supplier panel; data-lead/scraper structures it into category_commissions.json
+  Option B (quarterly refresh path): Add @playwright/mcp to claude_desktop_config.json; re-dispatch scraper-maintainer in interactive session with OTP
+Artifacts produced:
+  - backend/app/data/category_commissions.json (empty rate_card[], full _meta with hard-stop record) — CREATED, NOT COMMITTED
+  - docs/plans/architecture/CATEGORY_SEEDING_COMMISSION_CAPTURE.md (full capture report) — CREATED, NOT COMMITTED
+Hand-offs:
+  - To data-engineer: hard stop confirmed; recommend Option A (founder manual copy) as fastest path
+  - To founder: rate-card needed — manual copy from supplier panel or interactive Playwright session
+  - When rate-card available: scraper-maintainer can structure JSON + author scripts/seed_category_commissions.py
+=========
+
 === UPDATE: 2026-06-16 ===
 Session: mesell-category-seeding-architecture-data-session-1
 Phase: architecture authoring (FAST MODE — single agent, no code)

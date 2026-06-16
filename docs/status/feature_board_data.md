@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-data-engineer`
 **Domain:** data
-**Last updated:** 2026-06-16 (category-seeding architecture doc authored)
+**Last updated:** 2026-06-16 (category-seeding Wave 0 ratified + Wave 1 local seed landed; Wave 3 verified)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -11,7 +11,8 @@
 
 | Feature | Group branch | Status | Current session | Last touched | Blocking | Notes |
 |---|---|---|---|---|---|---|
-| category-seeding | plan/category-seeding-architecture | IN REVIEW | — | 2026-06-16 | founder — ratify DRAFT + §9 Q1–Q3 | Architecture doc `docs/plans/architecture/CATEGORY_SEEDING_ARCHITECTURE.md` (DRAFT). Formalises founder-approved 5-layer direction from discussion #239 (root cause: complete seeder `scripts/seed_all.py` exists but never run locally → categories table 0 rows → visual gate blocked). PR open, left for founder. NOT yet started (no `make seed`, no K8s Job, no seed run). |
+| category-seeding | feature/category-seeding | RESOLVED (local) — PR #245 open for founder merge | mesell-category-seeding-session-1 | 2026-06-16 | founder — merge PR #245 | Architecture APPROVED (rev 1.0). D1=local-only, D2=real-commission-two-phase, D3=pure-upsert. Wave 1 DONE: `make seed` wired, ran 2× idempotent (categories 3772 / aliases 67 / templates 3566 / enum 49259), seed-script stale-import defect fixed (`app.shared.*`). Wave 3 verified: catalog→wizard chain proven end-to-end on localhost (0 FK orphans, 71-field /schema, seeded enums). Visual-gate blocker RESOLVED. Durable landing on PR #245 merge. |
+| category-seeding (commission backfill, Wave 1.5) | feature/category-seeding | CLOSED — won't-fix | mesell-category-seeding-session-1 | 2026-06-16 | — | D2 Phase 2 ABANDONED ON EVIDENCE. Scrape method proven (auth WebKit + Akamai bypass) but NO category rate-card exists — only account-level flat `default_monetization_percent=4.0`. Founder observed commission differs per-product/per-date at upload; internet cross-verification CONFIRMED Meesho commission is DYNAMIC (category × price-slab × time-bound promotions; no stable published rate-card). A static `commission_pct` is wrong by construction. DECISION (founder 2026-06-16): keep `commission_pct=NULL` (Wave-1 shipped state); pricing engine's NULL-tolerant 422 stands. Real commission, if needed, = per-product capture at upload time (pricing-feature item, NOT seeded reference data). Scrape scripts + `category_commissions.json` retained as record only, NOT a seed input. |
 
 ## Recently merged (last 14 days)
 
@@ -23,7 +24,7 @@
 
 | To lead | About feature | Request | Opened | Status |
 |---|---|---|---|---|
-| infra | category-seeding | Post-migrate K8s Job (alembic upgrade head → seed_all.py) for dev/staging, per §2 ④ / §8 | — | PENDING (opens only if founder selects §9 Q1 dev/staging scope) |
+| infra | category-seeding | Post-migrate K8s Job (alembic upgrade head → seed_all.py) for dev/staging, per §2 ④ / §8 | — | DEFERRED — founder ruled D1=LOCAL-ONLY (2026-06-16); handoff does NOT open this pass. Re-opens if/when dev/staging scope is later requested. |
 
 ---
 

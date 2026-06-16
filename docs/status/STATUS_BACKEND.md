@@ -38,6 +38,27 @@ Hand-offs:
 > **MS-PAR-1 MICROSERVICES MIGRATION — PROGRAM COMPLETE (founder-ratified 2026-06-14).** All 8 services (A–H) extracted and merged to develop: svc-{export, dashboard, image, pricing, customer, category, iam, catalog}. The founder merged the three final founder gates — #220 iam → #221 category → #223 catalog — develop tip `5f8e2e1`. **Strangler INTACT** — `backend/app/main.py` still mounts all 8 monolith routers; ZERO cutover taken (each per-service Traefik cutover is a SEPARATE future founder gate). The §5.G compliance audit (`docs/plans/microservices_migration/PROGRAM_COMPLIANCE_AUDIT_5G.md`) PASSED (verdict PROGRAM-COMPLETE-READY, now ratified); the T2 completion stamp is APPLIED in `MASTER_PLAN.md` (header + §4 status block flipped EXTRACTION-COMPLETE → PROGRAM COMPLETE; Rev v1.8). **Remaining items are NOT migration-program scope — they are deploy-time founder actions:** SM `dev-<svc>-db-password` + shared `JWT_SECRET`; the 8 §7.3-LOCKED `BACKEND_ARCHITECTURE.md` "Extracted to svc-<x> V1.5" amendments; the D3 e2-standard-4 FRESH spend-ask before the 8-service node deploy. — `mesell-microservices-programclose-session-2` (Phase E, T2)
 
 ```
+=== UPDATE: 2026-06-16 (mesell-category-seeding-session-1) — Wave 3: wizard-chain verification ===
+Phase: Category Seeding — Wave 3 (wizard-chain verification, meesell-database-builder)
+Session: mesell-category-seeding-session-1 (Wave-3 verification dispatch)
+Worktree: /private/tmp/mesell-wt/category-seeding, branch feature/category-seeding
+Done:
+  - FK integrity confirmed: 0 orphaned categories.template_id refs (3772/3772 resolve to templates.id)
+  - Enum coverage confirmed: 3772/3772 leaf categories have field_enum_values rows (0 without)
+  - Live API exercised: GET /browse?q=kurti → 8 results (HTTP 200); POST /suggest → 5 AI results (HTTP 200)
+  - Wizard schema endpoint: GET /categories/1227f77c-8b99-4c87-99b8-deb8835d1d2d/schema → 71 fields, 10 steps, 51 KB (HTTP 200)
+  - Enum values endpoint: GET /field-enum/brand → 50 entries (truncated); GET /field-enum/color → 31 entries (complete) (both HTTP 200)
+  - Category exercised: Couple watches (meesho_leaf_id=12400), path: Women Fashion > Accessories > Watches > Couple watches
+  - Evidence appended to docs/plans/architecture/CATEGORY_SEEDING_WAVE1_RUNLOG.md (Wave-3 section)
+In progress: none
+Blockers: none
+Next: Data lead (meesell-data-engineer) stages RUNLOG; founder reviews PR #245 for merge to develop
+Hand-offs: Seed confirmed to unblock catalog-create → wizard end-to-end on localhost. All 6 chain links PASS.
+  PR #245 (feature/category-seeding → develop) remains OPEN for founder merge gate.
+=========
+```
+
+```
 === UPDATE: 2026-06-15 (mesell-section-2-backend-session-1) — Plan 2-W1: section-2 i18n error message contract ===
 Phase: Section-2 (smart-picker) — Wave 2-W1 (i18n error message contract)
 Session: mesell-section-2-backend-session-1 (HYBRID Step 2 specialist dispatch — meesell-services-builder)
@@ -6598,6 +6619,36 @@ Hand-offs: GET /api/v1/products/{id} live on feature/section-3/backend.
   on hard reload to recover category_id and populate form. GAP-1 fix complete.
 =========
 
+=== UPDATE: 2026-06-16 12:35 ===
+Phase: category-seeding Wave 1 — LOCAL-ONLY seed (D1)
+Done:
+  - Import-path corrections applied to 5 seed scripts: app.config → app.shared.config;
+    app.models.* → app.shared.models.* (module-path only; zero logic change; commission line 137 = NULL).
+  - Makefile `seed` target added: PYTHONPATH=backend backend/.venv/bin/python scripts/seed_all.py
+  - First seed run (make seed): exit 0, 19.4s wall time.
+    field_aliases=67 (exact), templates=3566 (in [3539,3575]), categories=3772 (exact),
+    field_enum_values=49259 (in [49048,49542])
+  - Second seed run (idempotency proof): exit 0, 21.1s. IDENTICAL counts. Zero errors.
+  - Acceptance proof:
+    (a) prewarm: 100 schema entries warmed (after clearing stale pre-seed empty-list cache in Valkey DB 3)
+    (b) /browse trgm: q='kurti' → 5 matches (sim-ranked); q='saree' → 8 matches. GIN indexes confirmed live.
+  - Alembic head: f31c75438e61 (single head; chain 935e55b4852c → a1b2c3d4e5f6 → f31c75438e61)
+  - pg_trgm extension + 3 GIN indexes (idx_categories_path_trgm, _leaf_name_trgm, _super_name_trgm) confirmed.
+  - Run-log: docs/plans/architecture/CATEGORY_SEEDING_WAVE1_RUNLOG.md
+  - PR opened: feature/category-seeding → develop (LEFT OPEN for founder merge).
+In progress: none (Wave 1 complete; Wave 2 K8s Job deferred to infra-builder)
+Blockers: none
+Next:
+  - meesell-backend-coordinator + meesell-data-engineer merge-gate review of the PR.
+  - After merge: meesell-infra-builder to wire K8s post-migrate seed Job for dev/staging (Wave 2).
+  - Commission backfill: Wave 1.5 — meesell-scraper-maintainer captures Meesho rate-card →
+    category_commissions.json → seed_category_commissions.py.
+Hand-offs:
+  - SEED READY: categories=3772, templates=3566, field_aliases=67, field_enum_values=49259.
+    Head f31c75438e61. PR feature/category-seeding → develop OPEN for founder merge.
+  - Smart-picker visual gate unblocked (categories table no longer 0 rows).
+  - meesell-infra-builder: K8s seed Job for dev/staging (Wave 2, separate dispatch).
+=========
 === UPDATE: 2026-06-16 ===
 Phase: chore — finding #6 (Celery startup warning cleanup)
 Done:

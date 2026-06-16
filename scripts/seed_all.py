@@ -87,11 +87,11 @@ async def verify_db_counts() -> dict[str, int]:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
     from sqlalchemy.pool import NullPool
 
-    from app.config import settings
-    from app.models.field_alias import FieldAlias
-    from app.models.template import Template
-    from app.models.category import Category
-    from app.models.field_enum_value import FieldEnumValue
+    from app.shared.config import settings
+    from app.shared.models.field_alias import FieldAlias
+    from app.shared.models.template import Template
+    from app.shared.models.category import Category
+    from app.shared.models.field_enum_value import FieldEnumValue
 
     engine = create_async_engine(settings.DATABASE_URL, poolclass=NullPool)
     session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -119,11 +119,11 @@ async def run_verification_queries() -> None:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
     from sqlalchemy.pool import NullPool
 
-    from app.config import settings
-    from app.models.field_alias import FieldAlias
-    from app.models.template import Template
-    from app.models.category import Category
-    from app.models.field_enum_value import FieldEnumValue
+    from app.shared.config import settings
+    from app.shared.models.field_alias import FieldAlias
+    from app.shared.models.template import Template
+    from app.shared.models.category import Category
+    from app.shared.models.field_enum_value import FieldEnumValue
 
     engine = create_async_engine(settings.DATABASE_URL, poolclass=NullPool)
     session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
