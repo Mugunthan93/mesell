@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-data-engineer`
 **Domain:** data
-**Last updated:** 2026-06-10 (initial creation)
+**Last updated:** 2026-06-16 (category-seeding discussion doc)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -11,7 +11,7 @@
 
 | Feature | Group branch | Status | Current session | Last touched | Blocking | Notes |
 |---|---|---|---|---|---|---|
-| — | — | — | — | — | — | No active features yet. |
+| category-seeding | (discussion only — no branch) | PENDING | mesell-category-seeding-data-session-1 | 2026-06-16 | founder — review CATEGORY_SEEDING_DISCUSSION.md + rule §6 Q1-Q5 | DRAFT discussion doc at docs/plans/findings/CATEGORY_SEEDING_DISCUSSION.md. Root cause: seeder EXISTS (scripts/seed_all.py) but never run locally → categories table 0 rows → visual gate blocked. Recommend Option A (`make seed`). No seeding done; awaits GO. |
 
 ## Recently merged (last 14 days)
 
