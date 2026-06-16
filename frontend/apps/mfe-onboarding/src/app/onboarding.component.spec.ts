@@ -309,6 +309,16 @@ describe('OnboardingComponent', () => {
     req.flush(makeProfile({ manufacturer_name: 'Acme' }));
     fixture.detectChanges();
 
+    // onSubmit success re-hydrates the @mesell/core session via GET /auth/me
+    // (refreshUser) so the shell Onboarding nav item hides without a reload.
+    // Navigation happens after that re-hydration completes.
+    const meReq = httpMock.expectOne('/api/v1/auth/me');
+    meReq.flush({
+      user_id: 'u', phone: '+91x', plan: 'free', created_at: '', last_login_at: null,
+      onboarding_complete: true,
+    });
+    fixture.detectChanges();
+
     expect(navSpy).toHaveBeenCalledWith(['/dashboard']);
   });
 
@@ -329,6 +339,14 @@ describe('OnboardingComponent', () => {
     // Flush so httpMock.verify() is satisfied
     const req = httpMock.expectOne('/api/v1/seller-profile');
     req.flush(makeProfile());
+    fixture.detectChanges();
+
+    // loading clears only after the session re-hydration (refreshUser → /me) completes.
+    const meReq = httpMock.expectOne('/api/v1/auth/me');
+    meReq.flush({
+      user_id: 'u', phone: '+91x', plan: 'free', created_at: '', last_login_at: null,
+      onboarding_complete: true,
+    });
     fixture.detectChanges();
     expect(component.loading()).toBeFalsy();
   });
@@ -392,6 +410,14 @@ describe('OnboardingComponent', () => {
 
     const req = httpMock.expectOne('/api/v1/seller-profile');
     req.flush(makeProfile());
+    fixture.detectChanges();
+
+    // refreshUser() re-hydrates the core session via /me before navigation.
+    const meReq = httpMock.expectOne('/api/v1/auth/me');
+    meReq.flush({
+      user_id: 'u', phone: '+91x', plan: 'free', created_at: '', last_login_at: null,
+      onboarding_complete: true,
+    });
     fixture.detectChanges();
 
     // After HTTP flush — no timer needed, loading resolves immediately.

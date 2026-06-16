@@ -282,6 +282,7 @@ describe('AuthService.bootstrap()', () => {
       plan: 'free',
       created_at: '2026-01-01T00:00:00Z',
       last_login_at: null,
+      onboarding_complete: true,
     });
 
     await bootstrapPromise;
@@ -290,6 +291,8 @@ describe('AuthService.bootstrap()', () => {
     expect(service.isAuthenticated()).toBe(true);
     expect(service.currentUser()?.user_id).toBe('boot-uuid');
     expect(service.currentUser()?.plan).toBe('free');
+    // meToUser threads the Stage-1 onboarding flag onto AuthUser
+    expect(service.currentUser()?.onboarding_complete).toBe(true);
   });
 
   it('refresh-401 → stays logged-out and RESOLVES (never rejects)', async () => {
@@ -328,5 +331,58 @@ describe('AuthService.bootstrap()', () => {
 
     // Token is set even if /me fails (the catchError path in bootstrap)
     expect(service.getToken()).toBe('partial-tok');
+  });
+});
+
+// ── refreshUser() — re-hydrate user from /me without touching token/timer ──────
+
+describe('AuthService.refreshUser()', () => {
+  it('re-fetches /me and updates the user signal (incl. onboarding_complete) without changing the token', () => {
+    const { service, controller } = setup();
+
+    // Existing session: token + a user with onboarding_complete=false (pre-submit state).
+    service.setSession('keep-token', { phone: '+919876543210', onboarding_complete: false });
+
+    let completed = false;
+    service.refreshUser().subscribe({ complete: () => { completed = true; } });
+
+    const meReq = controller.expectOne('/api/v1/auth/me');
+    expect(meReq.request.method).toBe('GET');
+    meReq.flush({
+      user_id: 'uuid-xyz',
+      phone: '+919876543210',
+      plan: 'free',
+      created_at: '2026-01-01T00:00:00Z',
+      last_login_at: null,
+      onboarding_complete: true, // backend now reports onboarding done
+    });
+
+    expect(completed).toBe(true);
+    // Token untouched — refreshUser is a user re-hydration, not a token refresh.
+    expect(service.getToken()).toBe('keep-token');
+    // User signal updated — flag flipped, shell predicate will hide the nav item.
+    expect(service.currentUser()?.onboarding_complete).toBe(true);
+    expect(service.currentUser()?.user_id).toBe('uuid-xyz');
+  });
+
+  it('on /me failure leaves the existing user untouched and still completes', () => {
+    const { service, controller } = setup();
+
+    service.setSession('keep-token', { phone: '+91x', user_id: 'orig', onboarding_complete: false });
+
+    let completed = false;
+    service.refreshUser().subscribe({ complete: () => { completed = true; } });
+
+    const meReq = controller.expectOne('/api/v1/auth/me');
+    meReq.flush(
+      { detail: 'Internal Server Error', code: 'SERVER_ERROR', validation_message_id: '', request_id: '' },
+      { status: 500, statusText: 'Internal Server Error' },
+    );
+
+    // catchError(() => EMPTY) — observable completes, user signal preserved.
+    expect(completed).toBe(true);
+    expect(service.getToken()).toBe('keep-token');
+    expect(service.currentUser()?.user_id).toBe('orig');
+    expect(service.currentUser()?.onboarding_complete).toBe(false);
   });
 });

@@ -28,7 +28,7 @@ import {
   MeeSkeletonComponent,
 } from '@mesell/ui-kit';
 import type { MeeStep } from '@mesell/ui-kit';
-import { NetworkService } from '@mesell/core';
+import { NetworkService, AuthService } from '@mesell/core';
 import { SellerProfileService, ProfileValidationError } from './services/seller-profile.service';
 
 /** Validator for 6-digit Indian PIN code (backend pattern ^\d{6}$). */
@@ -252,6 +252,9 @@ export class OnboardingComponent implements OnInit, AfterViewInit {
   private readonly router = inject(Router);
   private readonly profileService = inject(SellerProfileService);
   protected readonly network = inject(NetworkService);
+  /** Shared @mesell/core singleton — re-hydrated after onboarding submit so the
+   *  shell's Onboarding nav item hides immediately (no reload needed). */
+  private readonly auth = inject(AuthService);
 
   @ViewChild('errorBannerRef') errorBannerRef?: ElementRef<HTMLDivElement>;
 
@@ -401,8 +404,16 @@ export class OnboardingComponent implements OnInit, AfterViewInit {
       country_of_origin:    val.country_of_origin    || 'India',
     }).subscribe({
       next: () => {
-        this.loading.set(false);
-        void this.router.navigate(['/dashboard']);
+        // Re-hydrate the shared @mesell/core session so currentUser().onboarding_complete
+        // updates immediately — the shell's Onboarding nav item hides without a reload.
+        // refreshUser() swallows /me failures (completes either way), so navigation
+        // happens in complete and is never blocked by a transient /me error.
+        this.auth.refreshUser().subscribe({
+          complete: () => {
+            this.loading.set(false);
+            void this.router.navigate(['/dashboard']);
+          },
+        });
       },
       error: (err: unknown) => {
         this.loading.set(false);

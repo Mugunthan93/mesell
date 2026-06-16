@@ -62,6 +62,7 @@ const FAKE_ME_RESP = {
   plan: 'free' as const,
   created_at: '2026-06-11T00:00:00Z',
   last_login_at: null,
+  onboarding_complete: false,
 };
 
 describe('SP06 D38 C4 — OtpVerifyComponent WRITE-path: setSession crosses the federation boundary into the shell singleton', () => {

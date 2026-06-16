@@ -54,27 +54,16 @@ export class ShellComponent {
    * Onboarding completion — founder DECISION #1 (2026-06-16): HIDE the Onboarding
    * sidebar item once the seller has finished onboarding.
    *
-   * GAP (reported to the Director): there is NO onboarding-completion flag on the
-   * shell-shared `@mesell/core` AuthService / AuthUser singleton. The real flag
-   * (`onboarding_complete: boolean`) lives on the `SellerProfile` model driven by
-   * `SellerProfileService`, which is REMOTE-PRIVATE and explicitly NON-root
-   * (mfe-onboarding, SP05 D32) — the shell cannot read it without breaching the
-   * remote boundary or inventing new cross-boundary state (both forbidden by the
-   * dispatch brief: "reuse, do NOT invent a new source of truth").
-   *
-   * So this is wired to the CLOSEST existing shell signal: derive from the shared
-   * AuthService user. Until an `onboarding_complete` flag is promoted onto the
-   * `@mesell/core` AuthUser (the documented integration seam below), we default to
-   * "not complete" => the Onboarding item stays visible. When the flag lands,
-   * change the body to `this.auth.currentUser()?.onboarding_complete === true`.
+   * INTEGRATION SEAM CLOSED (Path B, 2026-06-16): the `onboarding_complete` flag is
+   * now promoted onto the shared `@mesell/core` AuthUser, sourced from
+   * `GET /api/v1/auth/me` (backend reads it from the customer service). It hydrates
+   * on login, app boot, silent refresh, and on `AuthService.refreshUser()` after an
+   * onboarding submit — so this predicate reflects real state with no remote-boundary
+   * breach. Absent flag (legacy mock users) ⇒ false ⇒ item stays visible (safe default).
    */
-  protected readonly onboardingComplete = computed<boolean>(() => {
-    const user = this.auth.currentUser();
-    // INTEGRATION SEAM: replace with `user?.onboarding_complete === true` once
-    // the flag is promoted onto @mesell/core AuthUser. Today AuthUser has no such
-    // field, so this is always false (item visible) — the safe default per #1.
-    return (user as { onboarding_complete?: boolean } | null)?.onboarding_complete === true;
-  });
+  protected readonly onboardingComplete = computed<boolean>(
+    () => this.auth.currentUser()?.onboarding_complete === true,
+  );
 
   /**
    * Founder-approved 4-group sidebar (ratified 2026-06-16). Protected (post-auth)

@@ -42,11 +42,12 @@ export interface RefreshResponse {
  * Exported because bootstrap() + other services hydrate AuthUser from this shape.
  */
 export interface MeResponse {
-  user_id: string;        // UUID
-  phone: string;          // E.164
-  plan: 'free';           // V1 always free
-  created_at: string;     // ISO-8601 TZ
+  user_id: string;              // UUID
+  phone: string;                // E.164
+  plan: 'free';                 // V1 always free
+  created_at: string;           // ISO-8601 TZ
   last_login_at: string | null;
+  onboarding_complete: boolean; // Stage-1 wire (Path B): ALWAYS present, default false
 }
 
 // ── Endpoint path constants (single source of truth) ─────────────────────────

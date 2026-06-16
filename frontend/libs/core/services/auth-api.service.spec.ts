@@ -147,12 +147,14 @@ describe('AuthApiService.me()', () => {
       plan: 'free',
       created_at: '2026-01-01T00:00:00Z',
       last_login_at: null,
+      onboarding_complete: true,
     });
 
     expect(result[0].user_id).toBe('uuid-123');
     expect(result[0].phone).toBe('+919876543210');
     expect(result[0].plan).toBe('free');
     expect(result[0].last_login_at).toBeNull();
+    expect(result[0].onboarding_complete).toBe(true);
   });
 
   it('does NOT use withCredentials (Bearer-auth only — R-W6-5)', () => {
