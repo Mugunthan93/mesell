@@ -199,7 +199,25 @@ Read-only pipeline survey. Surprising/non-obvious findings only:
 
 6. **30 super-categories in the real tree** (tree meta: super_category_count=30, category_count=234, sub_category_count=1046), vs the 6 invented in the stub `meesho_categories.json`. 12 parse batches grouped these 30 supers thematically.
 
+### 2026-06-16 — Category seeding: Wave 0 ratified + Wave 1 (local seed) landed (mesell-category-seeding-session-1)
+
+**Effort:** unblock the local visual gate (categories table = 0 rows). Branch `feature/category-seeding` (worktree `/tmp/mesell-wt/category-seeding`), off `origin/develop`. Architecture doc `docs/plans/architecture/CATEGORY_SEEDING_ARCHITECTURE.md` flipped DRAFT→APPROVED (rev 1.0, commit 69e3d8b).
+
+**Founder decisions (D1/D2/D3), locked:**
+- **D1 = LOCAL-ONLY** this pass. dev/staging K8s seed Job deferred (Wave 2 SKIPPED) — no infra handoff opened, no namespace, no spend.
+- **D2 = commission_pct REAL values, two-phase.** Phase 1 (done) = seed NULL. Phase 2 (Wave 1.5, NOT yet done) = **scrape-sourced** backfill: `meesell-scraper-maintainer` captures Meesho's published commission **rate-card** → `backend/app/data/category_commissions.json` → idempotent re-seed via `scripts/seed_category_commissions.py` (NOT a migration; column exists). Founder will accuracy-review the scraped rate-card before it seeds.
+- **D3 = PURE UPSERT** for quarterly refresh (no prune of removed leaves).
+
+**VERIFIED DATA FACT (non-obvious — remember this):** `commission_pct` is **absent from ALL committed corpus data** — 0 hits across the 12 `data/parsed/batch_*.json`, `backend/app/data/meesho_category_tree.json`, and `canonical_field_aliases.json`. The gitignored raw `.xlsx` templates also carried none (their full-corpus parse produced zero commission). So the price-calculator FEATURE_PLAN §126 hypothesis ("extract commission from the per-category XLSX") is **UNSUPPORTED** — commission must be sourced externally (founder chose scrape). Pricing tolerates NULL: `commission_pct IS NULL` → `Decimal('0.00')` → `CommissionMissingError` 422 (`test_commission_missing.py`); the catalog wizard / visual gate never read commission, so NULL does not block the gate.
+
+**VERIFIED DEFECT (architecture docs missed it):** the 5 seed scripts (`scripts/seed_all.py` + 4 sub-seeders) imported **stale pre-rebuild paths** `app.config` / `app.models.*`. Live modular-monolith tree is `app.shared.config` / `app.shared.models.*` — so `seed_all.py` ModuleNotFound'd at import until fixed. Wave-1 build applied a **mechanical import-path-only** substitution (class names + `settings` symbol identical; zero logic change; commission NULL line 137 untouched). If you re-run or extend these scripts, expect `app.shared.*` paths. `app.i18n.*` imports were already correct.
+
+**Wave 1 result (HYBRID 3-step: SPEC→BUILD→MERGE-GATE all done):** `make seed` target added; seed ran twice against local Postgres (`:5432/meesell`); counts gate-clean + idempotent — field_aliases 67 (exact), templates 3566, categories 3772 (exact), field_enum_values 49259. Prewarm 100 schemas; `/browse` trgm live (kurti→5, saree→8); GIN indexes confirmed. Alembic head is now **`f31c75438e61`** (chain `935e55b4852c → a1b2c3d4e5f6 → f31c75438e61`), NOT the brief's `a1b2c3d4e5f6` (that's pg_trgm+GIN, still mid-chain). **PR #245** (`feature/category-seeding → develop`) OPEN + gate-APPROVED-for-founder — **founder merges** (never self-merge). Build commit d5e71a9; gate verdict 56a976c. Local-dev-only note: a stale Valkey empty-list cache entry had to be cleared before prewarm warmed >0; K8s migrate→seed→boot ordering is immune.
+
+**Still open:** founder merge of PR #245; Wave 1.5 (commission scrape-backfill); Wave 3 (CLOSE — confirm catalog-create→wizard on localhost, flip `CATEGORY_SEEDING_DISCUSSION.md` + `docs/status/feature_board_data.md` to RESOLVED).
+
 ## MEMORY.md
+- [Category seeding Wave 0+1 2026-06-16](#2026-06-16--category-seeding-wave-0-ratified--wave-1-local-seed-landed-mesell-category-seeding-session-1) — D1 local-only / D2 real-commission-via-scrape two-phase / D3 pure-upsert; commission ABSENT from all corpus+xlsx (must scrape); seed scripts had stale app.config/app.models imports (fixed to app.shared.*); PR #245 open for founder merge; alembic head now f31c75438e61
 - [Knowledge-sync survey 2026-06-10](#2026-06-10--knowledge-sync-survey-stale-stub--naming-drift-findings-mesell-knowledge-sync-data-session-1) — category_attributes.json + meesho_categories.json are stale hand-stubs; real corpus is meesho_category_tree.json + DB seed; no scraper exists yet; count tolerances locked in seed_all.py
 - [Session mesell-repo-management-session-1](#session-mesell-repo-management-session-1--step-5--data-engineer-spec-evolved-into-data-lead-spec-feature_board_datamd-initialised) — Data Lead spec rewrite + feature_board_data.md initialisation per MASTER_PLAN §6 + §7
 - [Founder's batch workflow preference](#2026-06-04--founders-batch-workflow-preference-locked) — full-corpus, batch-by-batch, discussion-gated
