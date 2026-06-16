@@ -1751,8 +1751,12 @@ materialization of the §5A.C field shape):
 
 The §5A.C 9-key per-field shape (name, canonical_name, marker, data_type,
 primitive, help_text, is_advanced, enum_resolver, validation_message_ids)
-is the WIRE shape served to the wizard (GET /categories/{id}/schema) and
-read by catalog.validate_product. It is NOT the at-rest storage shape.
+is the WIRE shape served to the wizard via GET /categories/{id}/schema
+(category.service.fetch_schema_dto). It is NOT the at-rest storage shape.
+catalog.validate_product (PATCH per-field validation) continues to read the
+RICH shape via the unchanged category.service.fetch_schema — aligning the
+validator to the §5A.C wire shape is a deferred, separately-tested change
+and is NOT part of this read-time materialization.
 templates.schema_jsonb.fields[] is stored in the RICH three-layer §5.6.1
 entity shape (canonical / display / export layers — see DATABASE_ARCHITECTURE
 §4.2). category.service.fetch_schema_dto materializes the §5A.C shape at read

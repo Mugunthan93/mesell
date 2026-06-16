@@ -6745,3 +6745,41 @@ Hand-offs: meesell-infra-builder — run the Celery worker as a NON-ROOT user (d
   root SecurityWarning at the deployment layer; do not set C_FORCE_ROOT, do not suppress
   the warning in code). Currently euid=0 in dev/container.
 =========
+=== UPDATE: 2026-06-16 ===
+Phase: catalog-form fix — CI Gate-4 (integration) RED scope reduction (PR #257)
+Done:
+  ROOT CAUSE: e6980c6 over-reached — rerouted ALL 6 catalog/service.py fetch_schema
+    call sites (incl. patch_product / validate_product) to fetch_schema_dto (flat §5A.C).
+    The mapper derives enum_resolver="category" for every dropdown → catalog validator
+    calls get_field_enum(category_id, "application_area") → FieldEnumNotFoundError (no
+    enum seeded for that field in the test beauty_category) → dropdown value REJECTED.
+    test_full_lifecycle raised ValidationFailedError: application_area: not in category enum.
+    On develop the validator read the RICH shape (enum_resolver ABSENT → lenient "static"
+    → accepted). Rerouting the VALIDATOR changed behavior.
+  FIX (scope the mapper to the /schema route ONLY):
+    - backend/app/modules/catalog/service.py: REVERTED all 6 fetch_schema_dto sites
+      (464/507/621/801/987/1059) + the 2 comment/docstring lines back to fetch_schema.
+      File is now BYTE-IDENTICAL to develop (validator behavior restored verbatim).
+    - KEPT category/router.py:263 /schema route on fetch_schema_dto (the FE wizard fix).
+    - KEPT mapper (_map_field_to_dto/_map_envelope_to_dto/fetch_schema_dto) +
+      tests/test_schema_dto_mapper.py. export/service.py + core/cache.py prewarm STAY rich.
+    - docs/BACKEND_ARCHITECTURE.md §5A amendment: removed the false "read by
+      catalog.validate_product" claim; now states the §5A.C flat shape is the WIRE shape
+      served via GET /categories/{id}/schema (fetch_schema_dto); validate_product
+      continues reading the RICH shape via fetch_schema (validator alignment = DEFERRED).
+    - docs/DATABASE_ARCHITECTURE.md §4.2 note (wizard-only) left as-is (accurate).
+Tests:
+  Integration: 36 passed / 0 failed (incl. TestFullProductLifecycle::test_full_lifecycle
+    PASS) — `pytest -m integration tests/modules/catalog/ tests/modules/category/`.
+  Unit: 110 passed / 0 failed — `pytest -m unit tests/test_schema_dto_mapper.py
+    tests/test_per_field_shape_keys.py tests/lint/test_no_meesho_symbols_outside_export.py`.
+  Ruff: clean on catalog/service.py.
+In progress: none
+Blockers: none
+Next: Director re-runs CI Gate 4 on PR #257 (now green); merge-gate review.
+Hand-offs:
+  - frontend-coordinator: /schema route (fetch_schema_dto) unchanged — FE wizard fix intact.
+  - DEFERRED (separate ticket + test): align catalog.validate_product to the §5A.C wire
+    shape (would require seeding per-category field enums OR a lenient enum_resolver default
+    in the mapper for the validator path).
+=========
