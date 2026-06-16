@@ -9,8 +9,7 @@
  *   @mesell/composites (rank 2, composed cross-lib patterns)
  *
  * Page primitives (`mee-page`, `mee-section`, `mee-toolbar`, `mee-grid`,
- * `mee-form-layout`) land in Phase 3 and are spread from this barrel into
- * standalone component `imports`.
+ * `mee-stack`, `mee-form-layout`) landed in Phase 3 — see below.
  *
  * Chrome primitives (`MeeAppBarComponent`, `MeeSideNavComponent`,
  * `MeeNavItemComponent`, `MeeUserMenuComponent`) land in Phase 4.
@@ -20,17 +19,29 @@
  * DO NOT add PrimeNG / @primeuix imports here directly — route through
  * @mesell/ui-kit wrappers so the PrimeNG seal (FE-1) is preserved.
  *
- * TODO(Phase 3): add mee-page, mee-section, mee-toolbar, mee-grid, mee-form-layout
+ * Phase 3: page primitives shipped — see Page primitives section below.
  * TODO(Phase 4): add chrome primitives (app-bar, side-nav, nav-item, user-menu)
  */
 
-/**
- * MEE_LAYOUT — aggregator array for the layout tier.
- *
- * Phase 0: empty placeholder (no components yet).
- * Phase 3+: spread into standalone `imports` alongside MEE_FORM, MEE_FEEDBACK etc.
- *
- * Usage (Phase 3+):
- *   @Component({ imports: [...MEE_LAYOUT, ...MEE_FORM] })
- */
-export const MEE_LAYOUT: readonly never[] = [] as const;
+// ---------------------------------------------------------------------------
+// MEE_LAYOUT aggregator — spread into standalone component imports
+// ---------------------------------------------------------------------------
+export { MEE_LAYOUT } from './aggregators';
+
+// ---------------------------------------------------------------------------
+// Page primitives (Phase 3)
+// ---------------------------------------------------------------------------
+export { MeePageComponent }       from './page/page.component';
+export { MeeSectionComponent }    from './section/section.component';
+export { MeeToolbarComponent }    from './toolbar/toolbar.component';
+export { MeeGridComponent }       from './grid/grid.component';
+export { MeeStackComponent }      from './stack/stack.component';
+export { MeeFormLayoutComponent } from './form-layout/form-layout.component';
+
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
+export type { MeeLayoutGap, MeePageMaxWidth, MeeFormMaxWidth } from './layout.types';
+export type { MeeToolbarAlign }   from './toolbar/toolbar.component';
+export type { MeeGridCols }       from './grid/grid.component';
+export type { MeeStackDirection, MeeStackAlign, MeeStackJustify } from './stack/stack.component';
