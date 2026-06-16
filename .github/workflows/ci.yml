@@ -880,6 +880,67 @@ jobs:
           fi
 
   # =============================================================================
+  # FE GATE: LINT (5 CONTRACTS) — Phase 0, warn-only / report-only
+  #
+  # Purpose: run the 5 FE design-system boundary scanners and print a report.
+  # This mirrors the backend Gate 3 (§16.E import-linter + 3 AST scanners) but
+  # for the frontend design-system decoupling contracts.
+  #
+  # Phase 0 = warn-only: run-all.mjs exits 0 regardless of violations, so this
+  # job is always green. The report tells the team about known leaks (FE-2: 3
+  # pi pi-* files) and confirms the seal (FE-1: 0 violations) on every PR.
+  #
+  # NON-BLOCKING by design:
+  #   - NOT in build.needs or deploy.needs (does not gate the build/deploy path).
+  #   - NOT a required status check (founder wires required-check in branch
+  #     protection at Phase 5, exactly as noted for frontend-boot-smoke D1 gate).
+  #
+  # Node-only (no pnpm install): the scanners are dependency-free Node ESM
+  # (node:fs + node:path only) — pnpm setup is dead weight here. Faster than
+  # frontend-build and cannot be broken by lockfile drift.
+  #
+  # Trigger scope: gated on frontend-changes (same paths-filter fan-out as
+  # frontend-boot-smoke) so it fires only on PRs that touch frontend libs, shell,
+  # or any MFE — backend-only PRs skip it cleanly.
+  #
+  # Phase 1: --strict=fe2 (after icon migration, founder wires)
+  # Phase 4: --strict=fe2,fe3 (after chrome primitives land)
+  # Phase 5: --strict (all); job becomes a required status check.
+  # =============================================================================
+  fe-lint-contracts:
+    name: "FE Gate: lint (5 contracts)"
+    runs-on: ubuntu-latest
+    needs: frontend-changes
+    if: |
+      github.event_name != 'schedule' &&
+      (
+        needs.frontend-changes.outputs.libs        == 'true' ||
+        needs.frontend-changes.outputs.shell       == 'true' ||
+        needs.frontend-changes.outputs.mfe_pricing == 'true' ||
+        needs.frontend-changes.outputs.mfe_export  == 'true' ||
+        needs.frontend-changes.outputs.mfe_onboarding == 'true' ||
+        needs.frontend-changes.outputs.mfe_dashboard  == 'true' ||
+        needs.frontend-changes.outputs.mfe_catalog    == 'true' ||
+        needs.frontend-changes.outputs.mfe_auth       == 'true'
+      )
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run FE contract scanners (warn-only)
+        working-directory: frontend
+        # Phase 0: exits 0 (warn-only). Phase 1+: add --strict=fe2 here.
+        # No pnpm install — scanners are dependency-free Node ESM (node:fs + node:path).
+        run: node tools/contracts/run-all.mjs
+
+  # =============================================================================
   # BUILD — Docker images via Cloud Build
   # FOUNDER RULING 2026-06-12: dev deploys fire from develop; main is reserved for staging/prod
   # promotion (founder-gated). Runs ONLY on push to develop, after all 5 backend CI gates + the
