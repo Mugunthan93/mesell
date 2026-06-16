@@ -50,6 +50,23 @@ _REGISTRIES: Final[dict[str, dict[str, str]]] = {
 # value as a stable contract.
 _VERBATIM_SENTINEL_LOG = "i18n.resolver.missing_key"
 
+# ----------------------------------------------------------------------------
+# L_iam_1 — known-deferred 2-segment auth ids (V1.5 §4-hygiene epic).
+# ``core/auth.py`` raises these 2-segment ids on every 401; they are not in the
+# 3-segment-locked ``messages_en`` catalog, so each 401 would otherwise emit a
+# WARNING here. That is benign-by-design (the verbatim-fallback tier still
+# returns the id and the 401 envelope is unchanged) but noisy. While L_iam_1 is
+# DEFERRED we log these at DEBUG instead of WARNING so real missing keys still
+# warn loudly. Remove this allowlist when L_iam_1 lands and the runtime ids
+# migrate to 3-segment. Exact-match only — never prefix/substring.
+_DEFERRED_DEBUG_MISSING_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "auth.token_missing",
+        "auth.token_expired",
+        "auth.user_not_found",
+    }
+)
+
 
 def resolve(message_id: str, locale: str = "en") -> str:
     """Resolve a ``validation_message_id`` to a localised display string.
@@ -92,10 +109,18 @@ def resolve(message_id: str, locale: str = "en") -> str:
     if en_hit is not None:
         return en_hit
 
-    # Step 3 — verbatim ID. Log at WARNING + bump the §15.J Prometheus counter
-    # so observability picks up the seed/registry gap.
+    # Step 3 — verbatim ID. Bump the §15.J Prometheus counter so observability
+    # picks up the seed/registry gap. The counter behaviour is unchanged for
+    # every id (including the L_iam_1 allowlist) — only the LOG LEVEL differs.
     I18N_MISSING_KEY.labels(message_id=message_id).inc()
-    logger.warning(
+    # L_iam_1 known-deferred auth ids: DEBUG (benign-by-design noise). Any other
+    # missing key: WARNING (a genuine seed/registry gap that must warn loudly).
+    log = (
+        logger.debug
+        if message_id in _DEFERRED_DEBUG_MISSING_KEYS
+        else logger.warning
+    )
+    log(
         "%s: message_id=%s locale=%s",
         _VERBATIM_SENTINEL_LOG,
         message_id,

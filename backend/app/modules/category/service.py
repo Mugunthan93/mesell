@@ -218,8 +218,10 @@ async def suggest_categories(
     never raises a 5xx for AI failures.
     """
     # Step 1 — validate.
+    # AMENDMENT 2026-06-16 (founder ruling, finding #4): limit raised 500 → 5000.
+    # Mirrors the SuggestQuery.q max_length change in schemas.py.
     trimmed = q.strip() if q is not None else ""
-    if not (1 <= len(trimmed) <= 500):
+    if not (1 <= len(trimmed) <= 5000):
         raise SuggestQueryInvalidError()
 
     # Step 2 — plan guard.  Raises PlanLimitExceededError (402) per §4.E.

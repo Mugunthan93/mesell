@@ -24,8 +24,14 @@ pytestmark = pytest.mark.unit
 
 # ── Fixtures ───────────────────────────────────────────────────────────────
 @pytest.fixture(autouse=True)
-def _reset_module():
+def _reset_module(monkeypatch):
     langfuse_mod._reset_for_testing()
+    # Tracing is opt-in (LANGFUSE_ENABLED default False). Egress tests below
+    # exercise the *active* path, so default the flag + placeholder creds ON;
+    # disabled-path tests override these explicitly.
+    monkeypatch.setattr(langfuse_mod.settings, "LANGFUSE_ENABLED", True)
+    monkeypatch.setattr(langfuse_mod.settings, "LANGFUSE_PUBLIC_KEY", "pk-test")
+    monkeypatch.setattr(langfuse_mod.settings, "LANGFUSE_SECRET_KEY", "sk-test")
     yield
     langfuse_mod._reset_for_testing()
 
@@ -173,16 +179,47 @@ async def test_score_drops_on_5xx_does_not_raise(caplog):
     assert result is None
 
 
-# ── Missing credentials → no-op with one-time warning ─────────────────────
-async def test_missing_credentials_degrades_to_noop(monkeypatch, caplog):
-    """No LANGFUSE_PUBLIC_KEY or LANGFUSE_SECRET_KEY → silent no-op + 1 warning."""
-    # Force creds missing
-    monkeypatch.setattr(
-        langfuse_mod.settings, "LANGFUSE_PUBLIC_KEY", ""
-    )
-    monkeypatch.setattr(
-        langfuse_mod.settings, "LANGFUSE_SECRET_KEY", ""
-    )
+# ── Disabled flag → clean no-op, no per-call WARNING (the dev case) ────────
+async def test_tracing_disabled_degrades_to_silent_noop(monkeypatch, caplog):
+    """LANGFUSE_ENABLED false → no egress, no WARNING (one DEBUG line only).
+
+    This is the dev posture (finding #5): placeholder creds present but the
+    flag off, so NO network flush and therefore NO per-call 401 WARNING.
+    """
+    monkeypatch.setattr(langfuse_mod.settings, "LANGFUSE_ENABLED", False)
+    # Placeholder creds are present — mimics dev .env satisfying REQUIRED_FIELDS.
+    monkeypatch.setattr(langfuse_mod.settings, "LANGFUSE_PUBLIC_KEY", "dev-langfuse-public")
+    monkeypatch.setattr(langfuse_mod.settings, "LANGFUSE_SECRET_KEY", "dev-langfuse-secret")
+
+    call_count = {"n": 0}
+
+    def _handler(_req):
+        call_count["n"] += 1
+        return httpx.Response(207)
+
+    _install_mock_client(_handler)
+    with caplog.at_level(logging.DEBUG, logger="app.adapters.langfuse"):
+        result_1 = await langfuse_mod.trace(name="x", input={}, output={})
+        result_2 = await langfuse_mod.score(trace_id="t", name="n", value=1.0)
+
+    assert result_1 is None
+    assert result_2 is None
+    assert call_count["n"] == 0  # NO network egress → no 401 possible
+
+    # No WARNING at all — the per-call 401 noise is gone.
+    warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert warnings == [], "disabled tracing must not emit any WARNING"
+    # Exactly one DEBUG line, on the first call only.
+    disabled_lines = [r for r in caplog.records if "tracing disabled" in r.message]
+    assert len(disabled_lines) == 1
+
+
+# ── Enabled but credentials missing → one-time WARNING (staging/prod misconfig)
+async def test_enabled_but_missing_credentials_degrades_to_noop(monkeypatch, caplog):
+    """LANGFUSE_ENABLED true but no keys → silent no-op + exactly 1 WARNING."""
+    monkeypatch.setattr(langfuse_mod.settings, "LANGFUSE_ENABLED", True)
+    monkeypatch.setattr(langfuse_mod.settings, "LANGFUSE_PUBLIC_KEY", "")
+    monkeypatch.setattr(langfuse_mod.settings, "LANGFUSE_SECRET_KEY", "")
 
     call_count = {"n": 0}
 
@@ -192,9 +229,7 @@ async def test_missing_credentials_degrades_to_noop(monkeypatch, caplog):
 
     _install_mock_client(_handler)
     with caplog.at_level(logging.WARNING, logger="app.adapters.langfuse"):
-        # First call: warning logged, no network egress
         result_1 = await langfuse_mod.trace(name="x", input={}, output={})
-        # Second call: same — no second warning
         result_2 = await langfuse_mod.score(trace_id="t", name="n", value=1.0)
 
     assert result_1 is None
