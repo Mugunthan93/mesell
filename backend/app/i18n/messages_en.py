@@ -98,7 +98,7 @@ VALIDATION_MESSAGES: dict[str, str] = {
         "We couldn't load the options for this field. Please refresh the page."
     ),
     "validation.suggest_q.too_short_or_long": (
-        "Please enter between 1 and 500 characters to search categories."
+        "Please enter between 1 and 5000 characters to search categories."
     ),
     "validation.browse.invalid_pagination": (
         "Page or limit is out of range. Please try a smaller page size."

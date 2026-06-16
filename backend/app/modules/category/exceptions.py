@@ -70,8 +70,11 @@ class FieldEnumNotFoundError(CategoryError):
 
 
 class SuggestQueryInvalidError(CategoryError):
-    """Raised when ``GET /api/v1/categories/suggest?q=`` violates the
-    1 ≤ len(q.strip()) ≤ 500 contract per §9.B.1 / §9.E ``SuggestQuery``.
+    """Raised when ``POST /api/v1/categories/suggest`` body field ``q`` violates
+    the 1 ≤ len(q.strip()) ≤ 5000 contract per §9.B.1 / §9.E ``SuggestQuery``.
+
+    AMENDMENT 2026-06-16 (founder ruling, finding #4): limit raised 500 → 5000.
+    Endpoint changed from GET+query-param to POST+JSON-body.
 
     Pydantic normally fires this at schema-construction time; the service-
     layer raise here is a defensive guard for callers that bypass the
@@ -84,7 +87,7 @@ class SuggestQueryInvalidError(CategoryError):
 
     def __init__(
         self,
-        detail: str = "Search query must be between 1 and 500 characters.",
+        detail: str = "Search query must be between 1 and 5000 characters.",
     ) -> None:
         super().__init__(detail=detail)
 

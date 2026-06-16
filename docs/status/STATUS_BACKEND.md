@@ -1,5 +1,40 @@
 # STATUS — BACKEND
 
+```
+=== UPDATE: 2026-06-16 (meesell-api-routes-builder) — Finding #4: POST /categories/suggest + 5000-char ===
+Phase: V1 Feature 2 (Smart Category Picker) — founder ruling finding #4
+Session: meesell-api-routes-builder fast-mode worktree /tmp/mesell-wt/fix-suggest-post
+Worktree branch: feature/suggest-post-maxlen (off origin/develop)
+Done:
+  - CHANGED method: GET /api/v1/categories/suggest → POST /api/v1/categories/suggest
+  - RAISED max_length: 500 → 5000 in SuggestQuery.q (schemas.py)
+  - Updated service.py defensive guard: <= 500 → <= 5000 (co-participant constraint)
+  - Updated exceptions.py SuggestQueryInvalidError default detail: "500 chars" → "5000 chars"
+  - Updated i18n messages_en.py key validation.suggest_q.too_short_or_long: "500" → "5000"
+  - Updated router.py: @router.get → @router.post, q Query param → body: SuggestQuery
+  - Updated test_suggest_flag_404.py: 5 tests → 9 tests (GET→POST, 2 boundary tests added)
+  - Updated test_category_smart_picker_to_schema_flow.py: iam_client.get→.post + JSON body
+  - Updated test_app_boot_integration.py: comment docstrings only (path key unchanged)
+Tests: 11/11 PASS (test_suggest_flag_404.py); 8/8 PASS (test_app_boot_integration.py)
+Blockers: none
+FLAGS (do NOT close until resolved):
+  1. AI-ops: meesell-ai-coordinator should sanity-check Gemini prompt budget for 5000-char inputs
+     (smart_picker.v1 prompt was calibrated for ≤500 chars). Token budget / truncation strategy
+     needed before staging cutover.
+  2. LOCKED DOC: docs/V1_FEATURE_SPEC.md Feature 2 still says "GET /suggest?q" — this is a LOCKED
+     doc; the Director will land the founder-approved amendment. DO NOT amend V1_FEATURE_SPEC.
+  3. service.py touched: service.py is owned by meesell-services-builder. The change is minimal
+     (one line: `<= 500` → `<= 5000`) and is a co-participant of the same constraint change.
+     Flagged so services-builder is aware.
+Next: Director reviews PR; FE dispatch consumes POST contract {"q": "<text>"} → SuggestResponse.
+Hand-offs:
+  - FRONTEND: POST /api/v1/categories/suggest now expects JSON body {"q": "<text>"} (1–5000 chars).
+    Response shape SuggestResponse{suggestions[], fallback_offered} is UNCHANGED.
+    SmartPickerComponent must change from GET+params to POST+JSON body.
+  - AI-COORDINATOR: see FLAG 1 above — Gemini prompt budget review needed.
+=========
+```
+
 > **MS-PAR-1 MICROSERVICES MIGRATION — PROGRAM COMPLETE (founder-ratified 2026-06-14).** All 8 services (A–H) extracted and merged to develop: svc-{export, dashboard, image, pricing, customer, category, iam, catalog}. The founder merged the three final founder gates — #220 iam → #221 category → #223 catalog — develop tip `5f8e2e1`. **Strangler INTACT** — `backend/app/main.py` still mounts all 8 monolith routers; ZERO cutover taken (each per-service Traefik cutover is a SEPARATE future founder gate). The §5.G compliance audit (`docs/plans/microservices_migration/PROGRAM_COMPLIANCE_AUDIT_5G.md`) PASSED (verdict PROGRAM-COMPLETE-READY, now ratified); the T2 completion stamp is APPLIED in `MASTER_PLAN.md` (header + §4 status block flipped EXTRACTION-COMPLETE → PROGRAM COMPLETE; Rev v1.8). **Remaining items are NOT migration-program scope — they are deploy-time founder actions:** SM `dev-<svc>-db-password` + shared `JWT_SECRET`; the 8 §7.3-LOCKED `BACKEND_ARCHITECTURE.md` "Extracted to svc-<x> V1.5" amendments; the D3 e2-standard-4 FRESH spend-ask before the 8-service node deploy. — `mesell-microservices-programclose-session-2` (Phase E, T2)
 
 ```

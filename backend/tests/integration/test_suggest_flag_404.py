@@ -3,6 +3,11 @@
 Session: mesell-smart-picker-backend-session-1
 Per FEATURE_PLAN.md D2 + Master Plan §3.2 backend feature-flag protocol.
 
+AMENDMENT 2026-06-16 (founder ruling, finding #4):
+``/api/v1/categories/suggest`` changed from GET (query param) → POST (JSON body).
+``q`` max_length raised 500 → 5000.  All tests updated accordingly.
+Field name ``q`` is preserved.
+
 Two test paths covered
 ----------------------
 1. **404-when-disabled** (``FEATURE_SMART_PICKER_ENABLED=False``):
@@ -19,14 +24,15 @@ Two test paths covered
    except the 404 the flag guard emits) so the gate is meaningful even
    in CI without a live DB.
 
+3. **Max-length boundary** (q exactly 5000 chars → 200/non-422, q 5001 chars → 422).
+   Added per finding #4 requirement.
+
 Fixture strategy
 ----------------
-- ``_stub_client`` creates an in-process ASGI client with TWO dependency
-  overrides:
+- ``stub_category_client`` creates an in-process ASGI client with stub auth
+  override:
     * ``get_current_user`` → a stub that returns a synthetic ``CurrentUser``
       so no valid JWT or DB user record is required.
-    * ``get_db`` → a NullPool direct connection to the configured
-      ``settings.DATABASE_URL`` (or skips if unreachable).
 - For the 404 path, ``get_db`` override is irrelevant — the flag guard fires
   before the service call, so the DB is never touched.
 - ``settings.FEATURE_SMART_PICKER_ENABLED`` is patched at the router import
@@ -43,6 +49,7 @@ user writes (none in this test — stub auth bypasses DB user lookup entirely).
 
 from __future__ import annotations
 
+import os
 import uuid
 from dataclasses import dataclass
 from unittest.mock import AsyncMock, patch
@@ -51,8 +58,25 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
+import app.shared.valkey as _valkey_module
 from app.core.auth import CurrentUser, get_current_user
 from app.main import app
+
+
+def _valkey_base_url() -> str:
+    """Derive the Valkey base URL (no db suffix) from environment, matching
+    the precedence chain in tests/conftest.py ``_valkey_base()``.
+    """
+    raw = (
+        os.environ.get("TEST_VALKEY_URL")
+        or os.environ.get("VALKEY_URL")
+        or os.environ.get("CORE_TEST_VALKEY_URL")
+        or "redis://localhost:6379"
+    )
+    # Strip trailing /<db> suffix to avoid double-suffix later.
+    if raw.rsplit("/", 1)[-1].isdigit():
+        raw = raw.rsplit("/", 1)[0]
+    return raw
 
 # ── Stub user injected into every request instead of a real JWT resolve ──────
 
@@ -77,6 +101,7 @@ async def _stub_get_current_user() -> CurrentUser:
 
 # ── Fixture — lightweight ASGI client with stub auth ─────────────────────────
 
+
 @pytest_asyncio.fixture(loop_scope="function")
 async def stub_category_client():
     """ASGI client with stub auth override; NO DB/Valkey required.
@@ -86,13 +111,55 @@ async def stub_category_client():
     URL (infra-gated tests skip on connection failure at the service layer).
     The flag-guard tests fire BEFORE any DB call, so DB access is irrelevant
     for those assertions.
+
+    Per the Gate-4 repair (meesell-api-routes-builder memory D2, 2026-06-12):
+    ``RateLimitMiddleware`` calls ``_check_window`` which calls
+    ``get_valkey_otp()`` directly (NOT via FastAPI DI).
+    ``dependency_overrides[get_valkey_otp]`` has no effect on middleware.
+    With ``loop_scope="function"`` each fixture gets its own event loop; if
+    the ``_otp_client`` singleton was bound to a prior loop it causes
+    ``RuntimeError: Event loop is closed`` inside the rate-limit pipeline.
+    Fix: patch ``_valkey_module._otp_client`` with a fresh per-test
+    connection so every test's middleware uses the current function loop.
     """
+    import redis.asyncio as _redis_lib
+
+    valkey_base = _valkey_base_url()
+    _original_otp_client = _valkey_module._otp_client
+
+    # Fresh connection bound to THIS function's event loop.
+    _valkey_module._otp_client = _redis_lib.from_url(
+        f"{valkey_base}/0", decode_responses=True
+    )
+
     app.dependency_overrides[get_current_user] = _stub_get_current_user
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
         async with app.router.lifespan_context(app):
+            lifespan_db_engine = getattr(app.state, "db_engine", None)
+            lifespan_valkey_client = getattr(app.state, "valkey", None)
             yield ac
+        # Drain lifespan-created engine + Valkey BEFORE the function loop tears down
+        # to prevent "Event loop is closed" teardown errors (per double-dispose pattern).
+        if lifespan_db_engine is not None:
+            try:
+                await lifespan_db_engine.dispose()
+            except Exception:
+                pass
+        if lifespan_valkey_client is not None:
+            try:
+                await lifespan_valkey_client.aclose()
+            except Exception:
+                pass
+
     app.dependency_overrides.pop(get_current_user, None)
+
+    # Restore original singleton.
+    try:
+        await _valkey_module._otp_client.aclose()
+    except Exception:
+        pass
+    _valkey_module._otp_client = _original_otp_client
 
 
 # ── Test 1: 404 when flag disabled ───────────────────────────────────────────
@@ -107,6 +174,9 @@ async def test_suggest_returns_404_when_flag_disabled(stub_category_client):
     evaluates True.  Auth is stubbed so the dependency chain resolves without
     a real JWT.
 
+    AMENDMENT 2026-06-16: uses POST + JSON body ``{"q": "..."}`` instead of
+    GET + query param.
+
     Acceptance criteria (FEATURE_PLAN.md D2 + Master Plan §3.2):
     - HTTP 404
     - body["detail"] == "Smart Picker is disabled in this environment"
@@ -115,9 +185,9 @@ async def test_suggest_returns_404_when_flag_disabled(stub_category_client):
         # Mirror real settings except for the flag.
         mock_settings.FEATURE_SMART_PICKER_ENABLED = False
 
-        response = await stub_category_client.get(
+        response = await stub_category_client.post(
             "/api/v1/categories/suggest",
-            params={"q": "cotton saree for wedding"},
+            json={"q": "cotton saree for wedding"},
         )
 
     assert response.status_code == 404, (
@@ -135,13 +205,15 @@ async def test_suggest_404_body_is_json(stub_category_client):
 
     Ensures the error handler produces the standard FastAPI HTTPException
     envelope (not a plain string or HTML error page).
+
+    AMENDMENT 2026-06-16: uses POST + JSON body.
     """
     with patch("app.modules.category.router.settings") as mock_settings:
         mock_settings.FEATURE_SMART_PICKER_ENABLED = False
 
-        response = await stub_category_client.get(
+        response = await stub_category_client.post(
             "/api/v1/categories/suggest",
-            params={"q": "test product"},
+            json={"q": "test product"},
         )
 
     assert response.status_code == 404
@@ -155,16 +227,18 @@ async def test_suggest_404_body_is_json(stub_category_client):
 async def test_suggest_flag_off_ignores_q_length(stub_category_client):
     """Flag guard fires before Pydantic validation; any q value yields 404.
 
-    Verifies the guard is at function entry, not gated by query-param validity.
-    Even a maximally long q (or empty q bypassing min_length) returns 404 from
-    the guard rather than 422 from Pydantic.
+    Verifies the guard is at function entry, not gated by body-param validity.
+    Even a maximally long q (5000 chars) returns 404 from the guard rather
+    than 422 from Pydantic.
+
+    AMENDMENT 2026-06-16: uses POST + JSON body; q max raised to 5000.
     """
-    long_q = "x" * 500  # max-length valid q
+    long_q = "x" * 5000  # max-length valid q
     with patch("app.modules.category.router.settings") as mock_settings:
         mock_settings.FEATURE_SMART_PICKER_ENABLED = False
-        response = await stub_category_client.get(
+        response = await stub_category_client.post(
             "/api/v1/categories/suggest",
-            params={"q": long_q},
+            json={"q": long_q},
         )
 
     assert response.status_code == 404
@@ -180,6 +254,8 @@ async def test_suggest_route_reachable_when_flag_enabled(stub_category_client, m
 
     The default value of ``settings.FEATURE_SMART_PICKER_ENABLED`` is True
     (per config.py); no patching needed for the flag.
+
+    AMENDMENT 2026-06-16: uses POST + JSON body ``{"q": "cotton kurti for women"}``.
 
     The response may be:
     - 200 if DB is seeded + AI is mocked (full happy path)
@@ -211,9 +287,9 @@ async def test_suggest_route_reachable_when_flag_enabled(stub_category_client, m
         )()
     )
     with patch("app.modules.category.service.ai_client.call_gemini", mock_ai_response):
-        response = await stub_category_client.get(
+        response = await stub_category_client.post(
             "/api/v1/categories/suggest",
-            params={"q": "cotton kurti for women"},
+            json={"q": "cotton kurti for women"},
         )
 
     # The flag guard 404 must NOT appear when the flag is enabled.
@@ -244,12 +320,16 @@ async def test_suggest_route_reachable_when_flag_enabled(stub_category_client, m
     )
 
 
-# ── Test 3: OpenAPI emits for the route ───────────────────────────────────────
+# ── Test 3: OpenAPI emits POST for the route ──────────────────────────────────
 
 
 @pytest.mark.asyncio
 async def test_openapi_includes_suggest_route(stub_category_client):
-    """OpenAPI JSON includes /api/v1/categories/suggest with the q param.
+    """OpenAPI JSON includes /api/v1/categories/suggest as a POST operation.
+
+    AMENDMENT 2026-06-16: verifies the route is now a POST (not GET) with a
+    JSON request body (not a query param).  The ``q`` field appears in the
+    requestBody schema with minLength=1 and maxLength=5000.
 
     Verifies the route is visible to API clients and tooling regardless of
     the feature flag state.  OpenAPI is generated from route metadata, not
@@ -265,26 +345,203 @@ async def test_openapi_includes_suggest_route(stub_category_client):
         f"OpenAPI paths missing {suggest_path!r}. Present paths: {list(paths.keys())}"
     )
 
-    get_op = paths[suggest_path].get("get", {})
-    assert get_op, f"No GET operation under {suggest_path!r} in OpenAPI"
-
-    # Verify q query parameter is present.
-    params = get_op.get("parameters", [])
-    q_params = [p for p in params if p.get("name") == "q"]
-    assert q_params, (
-        f"Query param 'q' missing from {suggest_path} GET operation. "
-        f"Parameters found: {[p.get('name') for p in params]}"
-    )
-    q_param = q_params[0]
-    assert q_param.get("in") == "query", (
-        f"'q' must be a query param, got in={q_param.get('in')!r}"
+    # AMENDMENT 2026-06-16: must be a POST, not a GET.
+    post_op = paths[suggest_path].get("post", {})
+    assert post_op, (
+        f"No POST operation under {suggest_path!r} in OpenAPI "
+        f"(operations present: {list(paths[suggest_path].keys())})"
     )
 
-    # Verify min/max length constraints are reflected.
-    schema = q_param.get("schema", {})
-    assert schema.get("minLength") == 1, (
-        f"q minLength expected 1, got {schema.get('minLength')}"
+    # Must NOT have a GET operation (method was changed).
+    assert "get" not in paths[suggest_path], (
+        f"Stale GET operation still present under {suggest_path!r} — "
+        "router was not updated from GET to POST"
     )
-    assert schema.get("maxLength") == 500, (
-        f"q maxLength expected 500, got {schema.get('maxLength')}"
+
+    # Verify the request body carries q.
+    request_body = post_op.get("requestBody", {})
+    assert request_body, f"POST {suggest_path!r} is missing a requestBody"
+    content = request_body.get("content", {})
+    assert "application/json" in content, (
+        f"requestBody.content missing 'application/json' for {suggest_path!r}"
+    )
+
+    # Walk the JSON schema for the body to find q's constraints.
+    body_schema = content["application/json"].get("schema", {})
+    # Schema may be a $ref — resolve via components/schemas if needed.
+    if "$ref" in body_schema:
+        ref_name = body_schema["$ref"].split("/")[-1]
+        body_schema = spec.get("components", {}).get("schemas", {}).get(ref_name, {})
+
+    props = body_schema.get("properties", {})
+    assert "q" in props, (
+        f"Field 'q' missing from requestBody schema for {suggest_path!r}. "
+        f"Properties found: {list(props.keys())}"
+    )
+    q_schema = props["q"]
+    assert q_schema.get("minLength") == 1, (
+        f"q minLength expected 1, got {q_schema.get('minLength')}"
+    )
+    assert q_schema.get("maxLength") == 5000, (
+        f"q maxLength expected 5000, got {q_schema.get('maxLength')} "
+        "(was 500 before 2026-06-16 amendment)"
+    )
+
+
+# ── Test 4: 5000-char body is accepted (finding #4 boundary gate) ─────────────
+
+
+@pytest.mark.asyncio
+async def test_suggest_accepts_5000_char_description(stub_category_client):
+    """A 5000-character description MUST NOT yield a 422 Pydantic validation error.
+
+    Finding #4 requirement: max_length was raised from 500 to 5000.  The
+    Pydantic ``SuggestQuery`` schema enforces this.  With the flag enabled,
+    the body passes Pydantic validation and reaches the service.
+    The service may fail (DB down → 500, plan_guard → 402) but it MUST NOT
+    produce a 422 for exactly 5000 chars.
+
+    AMENDMENT 2026-06-16: primary acceptance gate for the max_length=5000 change.
+    """
+    long_q = "A" * 5000  # exactly at the new max length
+
+    with patch("app.modules.category.router.settings") as mock_settings:
+        # Keep the flag enabled so we actually reach body validation.
+        mock_settings.FEATURE_SMART_PICKER_ENABLED = True
+
+        response = await stub_category_client.post(
+            "/api/v1/categories/suggest",
+            json={"q": long_q},
+        )
+
+    # 422 means Pydantic rejected the body — that would be a regression.
+    assert response.status_code != 422, (
+        f"5000-char q was rejected with 422 — max_length not raised correctly. "
+        f"Body: {response.text}"
+    )
+    # 200, 402, 404 (flag off), 500 (no DB) are all acceptable non-422 outcomes.
+    assert response.status_code in {200, 402, 404, 500}, (
+        f"Unexpected status {response.status_code} for 5000-char q: {response.text}"
+    )
+
+
+# ── Test 5: 5001-char body is rejected (>max_length) ─────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_suggest_rejects_5001_char_description(stub_category_client):
+    """A description exceeding 5000 chars MUST yield HTTP 422.
+
+    Finding #4 requirement: verifies the upper boundary is enforced at exactly
+    5000 chars (i.e., 5001 → 422).  This guards against accidentally removing
+    the max_length constraint.
+
+    AMENDMENT 2026-06-16: new boundary test.
+    """
+    too_long_q = "A" * 5001  # one over the max length
+
+    with patch("app.modules.category.router.settings") as mock_settings:
+        mock_settings.FEATURE_SMART_PICKER_ENABLED = True
+
+        response = await stub_category_client.post(
+            "/api/v1/categories/suggest",
+            json={"q": too_long_q},
+        )
+
+    assert response.status_code == 422, (
+        f"5001-char q should be rejected with 422 (max_length=5000), "
+        f"got {response.status_code}: {response.text}"
+    )
+
+
+# ── Test 6: empty q (min_length=1) is rejected ───────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_suggest_rejects_empty_q(stub_category_client):
+    """An empty string ``q`` must yield HTTP 422 (min_length=1 enforced).
+
+    Unchanged from pre-amendment behaviour — min_length=1 is preserved.
+    Uses POST + JSON body.
+    """
+    with patch("app.modules.category.router.settings") as mock_settings:
+        mock_settings.FEATURE_SMART_PICKER_ENABLED = True
+
+        response = await stub_category_client.post(
+            "/api/v1/categories/suggest",
+            json={"q": ""},
+        )
+
+    assert response.status_code == 422, (
+        f"Empty q should be rejected with 422, got {response.status_code}: {response.text}"
+    )
+
+
+# ── Test 7: missing body field returns 422 ───────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_suggest_missing_body_returns_422(stub_category_client):
+    """POST with empty JSON object yields 422 (q is required).
+
+    AMENDMENT 2026-06-16: since the endpoint is now POST, an empty body
+    object must be rejected by Pydantic's required-field validation.
+    """
+    with patch("app.modules.category.router.settings") as mock_settings:
+        mock_settings.FEATURE_SMART_PICKER_ENABLED = True
+
+        # Send empty JSON object — q is required, so this is missing.
+        response = await stub_category_client.post(
+            "/api/v1/categories/suggest",
+            json={},
+        )
+
+    assert response.status_code == 422, (
+        f"Missing q in body should yield 422, got {response.status_code}: {response.text}"
+    )
+
+
+# ── Test 8: extra body fields are rejected (extra='forbid') ──────────────────
+
+
+@pytest.mark.asyncio
+async def test_suggest_extra_body_fields_rejected(stub_category_client):
+    """Body with extra fields must be rejected with 422.
+
+    AMENDMENT 2026-06-16: SuggestQuery now has ``model_config = ConfigDict(extra='forbid')``.
+    """
+    with patch("app.modules.category.router.settings") as mock_settings:
+        mock_settings.FEATURE_SMART_PICKER_ENABLED = True
+
+        response = await stub_category_client.post(
+            "/api/v1/categories/suggest",
+            json={"q": "valid description", "unexpected_field": "should fail"},
+        )
+
+    assert response.status_code == 422, (
+        f"Extra body fields should yield 422 (extra='forbid'), "
+        f"got {response.status_code}: {response.text}"
+    )
+
+
+# ── Test 9: 401 on unauthenticated request ───────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_suggest_returns_401_without_auth():
+    """POST /categories/suggest without a Bearer token → 401.
+
+    No auth dependency override — verifies the route remains auth-protected.
+    Uses a bare ASGI client (no dependency_overrides).
+    """
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+        async with app.router.lifespan_context(app):
+            response = await ac.post(
+                "/api/v1/categories/suggest",
+                json={"q": "cotton saree"},
+            )
+
+    assert response.status_code == 401, (
+        f"Expected 401 without auth, got {response.status_code}: {response.text}"
     )

@@ -132,11 +132,11 @@ def test_no_stray_legacy_routes(meesell_app):
         PATCH /api/v1/seller-profile/compliance/{super_id}
         GET   /api/v1/seller-profile/required-fields
       §9 category routes:
-        GET /api/v1/categories/suggest
-        GET /api/v1/categories/browse
-        GET /api/v1/categories
-        GET /api/v1/categories/{id}/schema
-        GET /api/v1/categories/{id}/field-enum/{name}
+        POST /api/v1/categories/suggest        (AMENDED 2026-06-16: was GET, raised to 5000 chars)
+        GET  /api/v1/categories/browse
+        GET  /api/v1/categories
+        GET  /api/v1/categories/{id}/schema
+        GET  /api/v1/categories/{id}/field-enum/{name}
       §10 catalog + §13 dashboard share routes:
         POST   /api/v1/products                     (§10 catalog: create)
         GET    /api/v1/products                     (§13 dashboard: list — Feature 8)
@@ -206,7 +206,7 @@ def test_total_route_count(meesell_app):
                         /api/v1/seller-profile/active-categories (PATCH),
                         /api/v1/seller-profile/compliance/{super_id} (PATCH),
                         /api/v1/seller-profile/required-fields (GET)           (4 distinct paths)
-      §9 category:      /api/v1/categories/suggest (GET),
+      §9 category:      /api/v1/categories/suggest (POST, AMENDED 2026-06-16),
                         /api/v1/categories/browse (GET),
                         /api/v1/categories (GET),
                         /api/v1/categories/{id}/schema (GET),
