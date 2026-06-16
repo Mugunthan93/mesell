@@ -619,3 +619,281 @@ describe('catalog-form — 44px touch targets (builder-3 WCAG 2.5.8)', () => {
     expect(suggestionRowMinHeight).toBeGreaterThanOrEqual(44);
   });
 });
+
+// ── Wizard Refactor spec §A — groupIntoSteps ──────────────────────────────────
+
+import {
+  groupIntoSteps,
+  STEP_ORDER,
+  STEP_LABELS,
+} from '../models/field-schema.model';
+import type { FieldSchema } from '../models/field-schema.model';
+import {
+  canAdvanceFromStep,
+  hasPhotosStepFrontMissing,
+  stepRequiredFieldErrors,
+} from '../catalog-form.model';
+import type { WizardStep } from '../models/field-schema.model';
+
+/** Helper: minimal FieldSchema */
+function makeWizardField(
+  canonical: string,
+  required: boolean,
+  step_id = 'basics',
+  primitive: FieldSchema['primitive'] = 'text_short',
+): FieldSchema {
+  return { canonical_name: canonical, display_name: canonical, primitive, required, step_id };
+}
+
+describe('groupIntoSteps — spec §A: field grouping by step_id', () => {
+  it('groups fields by step_id and returns non-empty steps only', () => {
+    const fields: FieldSchema[] = [
+      makeWizardField('product_title', true,  'basics'),
+      makeWizardField('mrp',           true,  'pricing'),
+      makeWizardField('sleeve_length', false, 'sizing'),
+    ];
+    const steps = groupIntoSteps(fields);
+    expect(steps.length).toBe(3);
+    const ids = steps.map(s => s.id);
+    expect(ids).toContain('basics');
+    expect(ids).toContain('pricing');
+    expect(ids).toContain('sizing');
+  });
+
+  it('orders steps by STEP_ORDER canonical order', () => {
+    const fields: FieldSchema[] = [
+      makeWizardField('sleeve_length',  false, 'sizing'),
+      makeWizardField('material_care',  false, 'materials'),
+      makeWizardField('product_title',  true,  'basics'),
+      makeWizardField('mrp',            true,  'pricing'),
+    ];
+    const steps = groupIntoSteps(fields);
+    const ids = steps.map(s => s.id);
+    // basics(0) < pricing(1) < sizing(3) < materials(4)
+    expect(ids.indexOf('basics')).toBeLessThan(ids.indexOf('pricing'));
+    expect(ids.indexOf('pricing')).toBeLessThan(ids.indexOf('sizing'));
+    expect(ids.indexOf('sizing')).toBeLessThan(ids.indexOf('materials'));
+  });
+
+  it('places required fields BEFORE optional fields within each step', () => {
+    const fields: FieldSchema[] = [
+      makeWizardField('opt_field',   false, 'basics'),
+      makeWizardField('req_field_a', true,  'basics'),
+      makeWizardField('req_field_b', true,  'basics'),
+    ];
+    const steps = groupIntoSteps(fields);
+    const basicStep = steps.find(s => s.id === 'basics')!;
+    expect(basicStep).toBeDefined();
+    expect(basicStep.fields[0].required).toBe(true);
+    expect(basicStep.fields[1].required).toBe(true);
+    expect(basicStep.fields[2].required).toBe(false);
+  });
+
+  it('excludes skip-primitive fields (image_upload) from step field lists', () => {
+    const fields: FieldSchema[] = [
+      makeWizardField('product_title', true,  'basics'),
+      { canonical_name: 'hero_image', display_name: 'Hero Image', primitive: 'skip', required: false, step_id: 'photos' },
+    ];
+    const steps = groupIntoSteps(fields);
+    // basics step has 1 field; photos step has 0 fields (uploader renders it)
+    const basicStep = steps.find(s => s.id === 'basics')!;
+    expect(basicStep.fields).toHaveLength(1);
+    // photos step should NOT appear (no non-skip fields in it)
+    const photosStep = steps.find(s => s.id === 'photos');
+    expect(photosStep).toBeUndefined();
+  });
+
+  it('assigns correct requiredCount per step', () => {
+    const fields: FieldSchema[] = [
+      makeWizardField('req1', true,  'basics'),
+      makeWizardField('req2', true,  'basics'),
+      makeWizardField('opt1', false, 'basics'),
+    ];
+    const steps = groupIntoSteps(fields);
+    const basicStep = steps.find(s => s.id === 'basics')!;
+    expect(basicStep.requiredCount).toBe(2);
+  });
+
+  it('requiredCount===0 for a step with only optional fields', () => {
+    const fields: FieldSchema[] = [
+      makeWizardField('opt_a', false, 'description'),
+      makeWizardField('opt_b', false, 'description'),
+    ];
+    const steps = groupIntoSteps(fields);
+    const descStep = steps.find(s => s.id === 'description')!;
+    expect(descStep.requiredCount).toBe(0);
+  });
+
+  it('assigns labels from STEP_LABELS', () => {
+    const fields: FieldSchema[] = [makeWizardField('product_title', true, 'basics')];
+    const steps = groupIntoSteps(fields);
+    expect(steps[0].label).toBe(STEP_LABELS['basics']);
+    expect(steps[0].label).toBe('Basics');
+  });
+
+  it('STEP_ORDER has exactly 13 canonical steps', () => {
+    expect(STEP_ORDER.length).toBe(13);
+  });
+
+  it('STEP_ORDER includes photos as position 10 (0-based index)', () => {
+    expect(STEP_ORDER.indexOf('photos')).toBe(10);
+  });
+
+  it('returns empty array when fields list is empty', () => {
+    expect(groupIntoSteps([])).toHaveLength(0);
+  });
+
+  it('unknown step_id appended after all known steps', () => {
+    const fields: FieldSchema[] = [
+      makeWizardField('future_f', false, 'future_step'),
+      makeWizardField('basics_f', true,  'basics'),
+    ];
+    const steps = groupIntoSteps(fields);
+    const ids = steps.map(s => s.id);
+    expect(ids.indexOf('basics')).toBeLessThan(ids.indexOf('future_step'));
+  });
+});
+
+// ── Wizard Refactor spec §D — canAdvanceFromStep ───────────────────────────────
+
+describe('canAdvanceFromStep — spec §D: Next-button gating', () => {
+  it('returns true when step is undefined', () => {
+    expect(canAdvanceFromStep(undefined, {})).toBe(true);
+  });
+
+  it('returns true for a step with requiredCount===0 (all optional — freely skippable)', () => {
+    const step: WizardStep = {
+      id: 'description',
+      label: 'Description',
+      fields: [makeWizardField('keywords', false, 'description')],
+      requiredCount: 0,
+    };
+    expect(canAdvanceFromStep(step, {})).toBe(true);
+  });
+
+  it('returns false when step has required fields with no value', () => {
+    const step: WizardStep = {
+      id: 'basics',
+      label: 'Basics',
+      fields: [
+        makeWizardField('product_title', true,  'basics'),
+        makeWizardField('brand',         true,  'basics'),
+        makeWizardField('description',   false, 'basics'),
+      ],
+      requiredCount: 2,
+    };
+    expect(canAdvanceFromStep(step, {})).toBe(false);
+    expect(canAdvanceFromStep(step, { product_title: 'Kurti' })).toBe(false);
+  });
+
+  it('returns true when all required fields on the step are filled', () => {
+    const step: WizardStep = {
+      id: 'basics',
+      label: 'Basics',
+      fields: [
+        makeWizardField('product_title', true, 'basics'),
+        makeWizardField('brand',         true, 'basics'),
+      ],
+      requiredCount: 2,
+    };
+    const values = { product_title: 'Kurti', brand: 'Generic' };
+    expect(canAdvanceFromStep(step, values)).toBe(true);
+  });
+
+  it('returns true for photos step regardless of field values (warn-not-block, spec §F)', () => {
+    const step: WizardStep = {
+      id: 'photos',
+      label: 'Photos',
+      fields: [],
+      requiredCount: 0,
+    };
+    // Even if fieldValues is empty, photos step never blocks
+    expect(canAdvanceFromStep(step, {})).toBe(true);
+  });
+
+  it('optional-only step is skippable even with zero values', () => {
+    const step: WizardStep = {
+      id: 'advanced',
+      label: 'Advanced',
+      fields: [
+        makeWizardField('ean_code',    false, 'advanced'),
+        makeWizardField('hsn_code',    false, 'advanced'),
+      ],
+      requiredCount: 0,
+    };
+    expect(canAdvanceFromStep(step, {})).toBe(true);
+  });
+});
+
+// ── Wizard Refactor spec §F — Photos step warning ─────────────────────────────
+
+describe('hasPhotosStepFrontMissing — spec §F: non-blocking photo warning', () => {
+  it('returns true when on photos step and front image is absent', () => {
+    expect(hasPhotosStepFrontMissing('photos', false)).toBe(true);
+  });
+
+  it('returns false when on photos step and front image is present', () => {
+    expect(hasPhotosStepFrontMissing('photos', true)).toBe(false);
+  });
+
+  it('returns false when NOT on photos step (regardless of front image)', () => {
+    expect(hasPhotosStepFrontMissing('basics', false)).toBe(false);
+    expect(hasPhotosStepFrontMissing('pricing', false)).toBe(false);
+  });
+
+  it('returns false on empty step id', () => {
+    expect(hasPhotosStepFrontMissing('', false)).toBe(false);
+  });
+});
+
+// ── stepRequiredFieldErrors ────────────────────────────────────────────────────
+
+describe('stepRequiredFieldErrors — per-step error map for Next tooltip', () => {
+  it('returns empty map for undefined step', () => {
+    expect(stepRequiredFieldErrors(undefined, {})).toEqual({});
+  });
+
+  it('returns empty map for photos step (warn-only, never block)', () => {
+    const photosStep: WizardStep = { id: 'photos', label: 'Photos', fields: [], requiredCount: 0 };
+    expect(stepRequiredFieldErrors(photosStep, {})).toEqual({});
+  });
+
+  it('returns error messages for all empty required fields on the step', () => {
+    const step: WizardStep = {
+      id: 'basics',
+      label: 'Basics',
+      fields: [
+        makeWizardField('product_title', true, 'basics'),
+        makeWizardField('brand',         true, 'basics'),
+        makeWizardField('opt_field',     false, 'basics'),
+      ],
+      requiredCount: 2,
+    };
+    const errors = stepRequiredFieldErrors(step, {});
+    expect(Object.keys(errors)).toHaveLength(2);
+    expect(errors['product_title']).toContain('required');
+    expect(errors['brand']).toContain('required');
+    expect(errors['opt_field']).toBeUndefined();
+  });
+
+  it('returns empty map when all required fields are filled', () => {
+    const step: WizardStep = {
+      id: 'basics',
+      label: 'Basics',
+      fields: [makeWizardField('product_title', true, 'basics')],
+      requiredCount: 1,
+    };
+    const errors = stepRequiredFieldErrors(step, { product_title: 'Blue Kurti' });
+    expect(errors).toEqual({});
+  });
+
+  it('returns empty map when step has no required fields (requiredCount===0)', () => {
+    const step: WizardStep = {
+      id: 'description',
+      label: 'Description',
+      fields: [makeWizardField('keywords', false, 'description')],
+      requiredCount: 0,
+    };
+    expect(stepRequiredFieldErrors(step, {})).toEqual({});
+  });
+});

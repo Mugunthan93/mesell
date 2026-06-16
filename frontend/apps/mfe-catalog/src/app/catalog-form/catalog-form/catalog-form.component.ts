@@ -51,10 +51,10 @@ import type {
   FieldSchema,
   AutofillResponse,
   ProductDetailResponse,
-  WizardStep,
 } from '../services/catalog-form-api.service';
 import { CatalogFormApiService } from '../services/catalog-form-api.service';
 import type { EnumEntryDTO, FieldGroup } from '../services/catalog-form-api.service';
+import type { WizardStep } from '../models/field-schema.model';
 import { groupIntoSteps } from '../models/field-schema.model';
 import {
   canAdvanceFromStep,
@@ -695,12 +695,12 @@ export class CatalogFormComponent implements OnInit, AfterViewInit {
 
   /** Required fields for the active step. */
   readonly activeStepRequiredFields = computed<FieldSchema[]>(() =>
-    (this.activeStep()?.fields ?? []).filter(f => f.required),
+    (this.activeStep()?.fields ?? []).filter((f: FieldSchema) => f.required),
   );
 
   /** Optional fields for the active step. */
   readonly activeStepOptionalFields = computed<FieldSchema[]>(() =>
-    (this.activeStep()?.fields ?? []).filter(f => !f.required),
+    (this.activeStep()?.fields ?? []).filter((f: FieldSchema) => !f.required),
   );
 
   /**
@@ -830,7 +830,7 @@ export class CatalogFormComponent implements OnInit, AfterViewInit {
     if (!step) return;
 
     const fieldsNeedingEnum = step.fields.filter(
-      f => f.needs_api_enum && f.api_enum_field_name && !this.enumCache()[f.canonical_name],
+      (f: FieldSchema) => f.needs_api_enum && f.api_enum_field_name && !this.enumCache()[f.canonical_name],
     );
 
     if (fieldsNeedingEnum.length === 0) return;
