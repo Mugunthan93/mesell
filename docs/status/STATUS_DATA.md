@@ -88,6 +88,55 @@ Coordinator-implements fallback was used for all parsing (workspace agent regist
 
 ## Updates Log
 
+=== UPDATE: 2026-06-16 (Wave 1.5 commission capture — Run 2, script authoring) ===
+Phase: commission rate-card capture prep (meesell-scraper-maintainer, Wave 1.5, dispatch 2)
+Done:
+  - Corrected prior dispatch misconception: meesho_batch_scraper.py + meesho_template_scraper.py DO EXIST and are proven Akamai-bypass tooling. Prior session incorrectly reported "no scraper tooling." Memory updated.
+  - Authored backend/scripts/meesho_commission_scraper.py (46KB) — modelled directly on meesho_batch_scraper.py:
+      * Reuses perform_login() + .meesho_creds.env load + WebKit headless=True + authenticated BrowserContext
+      * NetworkInterceptor class attaches ctx.on("request") + ctx.on("response") to capture commission API candidates
+      * Navigates 6 candidate panel URLs (referral-fee, pricing, commission routes under /panel/v3/new/...)
+      * URL match pattern: /(?:referral|commission|fee|charge|rate|pricing)/i (request URL) + looser API path pattern
+      * Direct mode (COMMISSION_API_ENDPOINT set): ctx.request.get() with _api_headers() riding browser fingerprint
+      * Discovery mode (default, first run): logs all [CANDIDATE] + [RESPONSE CAPTURED] for operator review
+      * parse_commission_body(): multi-key best-effort strategy covering 10 envelope keys + 13 rate keys + 13 category-name keys
+      * propose_leaf_mapping(): exact + partial name match against tree super-categories; emits UNMATCHED list
+      * write_commission_json(): writes worktree-scoped backend/app/data/category_commissions.json
+      * Hard stops: 401/403/463 → abort; 429 → abort; captcha detected → abort (NEVER solve); login failure → abort
+      * Throttle: 2-5s between navigations; 1-3s between requests; single sequential stream; no parallelism
+      * Credential safety: NEVER logged; creds file supports MEESHO_CREDS_FILE env override
+      * Output path ALWAYS worktree-scoped (/private/tmp/mesell-wt/category-seeding/...)
+  - Authored docs/plans/architecture/CATEGORY_SEEDING_COMMISSION_RUNBOOK.md (15KB):
+      * 11 sections covering prerequisites, two-run procedure, endpoint discovery step, throttle/hard-stop behaviour, mapping review (5 disambiguation clusters), post-capture handoff, quarterly refresh
+  - Validated syntax: python3 -m py_compile → SYNTAX OK
+  - Did NOT execute, did NOT login, did NOT make any Meesho request
+Snapshot path: n/a (no live run)
+Diff vs last: n/a
+Selector version: n/a (commission API, not HTML selectors)
+Candidate commission routes built into script:
+  - /panel/v3/new/root/referral-fee
+  - /panel/v3/new/growth/oinpw/referral-fee
+  - /panel/v3/new/root/pricing
+  - /panel/v3/new/growth/oinpw/pricing
+  - /panel/v3/new/root/commission
+  - /panel/v3/new/growth/oinpw/home (dashboard baseline)
+In progress: authoring complete; awaiting founder GO for live run
+Blockers: founder GO required before any execution (live Meesho session uses founder's supplier account)
+Next:
+  - Founder GO → operator runs Run 1 (discovery mode) to identify commission API endpoint
+  - Operator sets COMMISSION_API_ENDPOINT, runs Run 2 (direct mode)
+  - Data lead reviews category_commissions.json + proposed_leaf_mapping
+  - Founder resolves 5 disambiguation clusters
+  - Data lead authors scripts/seed_category_commissions.py
+  - Database-builder runs backfill
+Artifacts produced:
+  - backend/scripts/meesho_commission_scraper.py — CREATED, NOT COMMITTED
+  - docs/plans/architecture/CATEGORY_SEEDING_COMMISSION_RUNBOOK.md — CREATED, NOT COMMITTED
+Hand-offs:
+  - To data-engineer: script + runbook ready; awaiting founder GO for live run
+  - To founder: review runbook §2 (prerequisites) before authorising Run 1
+=========
+
 === UPDATE: 2026-06-16 (Wave 1.5 commission capture) ===
 Phase: commission rate-card capture (meesell-scraper-maintainer, Wave 1.5)
 Done:
