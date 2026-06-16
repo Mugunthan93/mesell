@@ -22,7 +22,9 @@
       "@mesell/composites/*": ["libs/composites/*"],
       "@mesell/core": ["libs/core/index.ts"],
       "@mesell/design-tokens": ["libs/design-tokens"],
-      "@mesell/env": ["libs/env/index.ts"]
+      "@mesell/env": ["libs/env/index.ts"],
+      "@mesell/layout": ["libs/layout/index.ts"],
+      "@mesell/layout/*": ["libs/layout/*"]
     }
   },
   "angularCompilerOptions": {
