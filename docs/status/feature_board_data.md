@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-data-engineer`
 **Domain:** data
-**Last updated:** 2026-06-10 (initial creation)
+**Last updated:** 2026-06-16 (category-seeding architecture doc authored)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -11,7 +11,7 @@
 
 | Feature | Group branch | Status | Current session | Last touched | Blocking | Notes |
 |---|---|---|---|---|---|---|
-| — | — | — | — | — | — | No active features yet. |
+| category-seeding | plan/category-seeding-architecture | IN REVIEW | — | 2026-06-16 | founder — ratify DRAFT + §9 Q1–Q3 | Architecture doc `docs/plans/architecture/CATEGORY_SEEDING_ARCHITECTURE.md` (DRAFT). Formalises founder-approved 5-layer direction from discussion #239. PR open, left for founder. NOT yet started (no `make seed`, no K8s Job, no seed run). |
 
 ## Recently merged (last 14 days)
 
@@ -23,7 +23,7 @@
 
 | To lead | About feature | Request | Opened | Status |
 |---|---|---|---|---|
-| — | — | — | — | No open inter-lead requests. |
+| infra | category-seeding | Post-migrate K8s Job (alembic upgrade head → seed_all.py) for dev/staging, per §2 ④ / §8 | — | PENDING (opens only if founder selects §9 Q1 dev/staging scope) |
 
 ---
 
