@@ -133,10 +133,10 @@ describe('mapPrimitiveToWidget — 11 LOCKED values (schema_contract.py:175)', (
 describe('adaptSchemaField — DTO → view-model mapping', () => {
   it('maps canonical_name and name (display_name) correctly', () => {
     const field = adaptSchemaField(
-      makeField({ canonical_name: 'product_title', name: 'Product Title', primitive: 'text_short', marker: 'compulsory', is_advanced: false }),
+      makeField({ canonical_name: 'product_name', name: 'Product Name', primitive: 'text_short', marker: 'compulsory', is_advanced: false }),
     );
-    expect(field.canonical_name).toBe('product_title');
-    expect(field.display_name).toBe('Product Title');
+    expect(field.canonical_name).toBe('product_name');
+    expect(field.display_name).toBe('Product Name');
   });
 
   it('compulsory → required: true', () => {
@@ -224,11 +224,11 @@ describe('adaptSchemaResponse — flat → 3-section grouping', () => {
 
   it('compulsory marker → compulsory group', () => {
     const dto = makeDTO([
-      makeField({ canonical_name: 'product_title', marker: 'compulsory', is_advanced: false }),
+      makeField({ canonical_name: 'product_name', marker: 'compulsory', is_advanced: false }),
     ]);
     const groups = adaptSchemaResponse(dto);
     expect(groups[0].fields).toHaveLength(1);
-    expect(groups[0].fields[0].canonical_name).toBe('product_title');
+    expect(groups[0].fields[0].canonical_name).toBe('product_name');
     expect(groups[1].fields).toHaveLength(0);
     expect(groups[2].fields).toHaveLength(0);
   });
@@ -258,24 +258,24 @@ describe('adaptSchemaResponse — flat → 3-section grouping', () => {
   it('image_upload fields are excluded from all groups', () => {
     const dto = makeDTO([
       makeField({ canonical_name: 'hero_image', primitive: 'image_upload', marker: 'compulsory', is_advanced: false }),
-      makeField({ canonical_name: 'product_title', marker: 'compulsory', is_advanced: false }),
+      makeField({ canonical_name: 'product_name', marker: 'compulsory', is_advanced: false }),
     ]);
     const groups = adaptSchemaResponse(dto);
-    // hero_image excluded; only product_title in compulsory
+    // hero_image excluded; only product_name in compulsory
     expect(groups[0].fields).toHaveLength(1);
-    expect(groups[0].fields[0].canonical_name).toBe('product_title');
+    expect(groups[0].fields[0].canonical_name).toBe('product_name');
   });
 
   it('mixed field set: correct distribution across all 3 groups', () => {
     const dto = makeDTO([
-      makeField({ canonical_name: 'product_title', marker: 'compulsory', is_advanced: false }),
+      makeField({ canonical_name: 'product_name', marker: 'compulsory', is_advanced: false }),
       makeField({ canonical_name: 'brand', marker: 'compulsory', is_advanced: false }),
       makeField({ canonical_name: 'sleeve_length', marker: 'optional', is_advanced: false }),
       makeField({ canonical_name: 'ean_code', marker: 'optional', is_advanced: true }),
       makeField({ canonical_name: 'hero_image', primitive: 'image_upload', marker: 'compulsory', is_advanced: false }),
     ]);
     const groups = adaptSchemaResponse(dto);
-    expect(groups[0].fields).toHaveLength(2);  // product_title + brand (hero_image excluded)
+    expect(groups[0].fields).toHaveLength(2);  // product_name + brand (hero_image excluded)
     expect(groups[1].fields).toHaveLength(1);  // sleeve_length
     expect(groups[2].fields).toHaveLength(1);  // ean_code
   });
@@ -334,7 +334,7 @@ describe('adaptSchemaResponse — flat → 3-section grouping', () => {
 
 describe('adaptSchemaResponse — roundtrip integration', () => {
   const KURTI_FIELDS: SchemaFieldDTO[] = [
-    makeField({ canonical_name: 'product_title', name: 'Product Title', marker: 'compulsory', is_advanced: false, primitive: 'text_short', help_text: 'Enter the full product name' }),
+    makeField({ canonical_name: 'product_name', name: 'Product Name', marker: 'compulsory', is_advanced: false, primitive: 'text_short', help_text: 'Enter the full product name' }),
     makeField({ canonical_name: 'brand', name: 'Brand', marker: 'compulsory', is_advanced: false, primitive: 'dropdown_api_search', enum_resolver: 'category' }),
     makeField({ canonical_name: 'color', name: 'Color', marker: 'compulsory', is_advanced: false, primitive: 'dropdown_small', enum_resolver: 'static', enum_values: ['Blue', 'Red', 'Green'] }),
     makeField({ canonical_name: 'description', name: 'Description', marker: 'compulsory', is_advanced: false, primitive: 'text_long', help_text: 'Describe the product' }),

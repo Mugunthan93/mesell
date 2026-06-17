@@ -59,7 +59,7 @@ function makeFieldDTO(overrides: Partial<SchemaFieldDTO> & { canonical_name: str
 
 const SCHEMA_DTO: SchemaResponseDTO = {
   fields: [
-    makeFieldDTO({ canonical_name: 'product_title', marker: 'compulsory', primitive: 'text_short' }),
+    makeFieldDTO({ canonical_name: 'product_name', marker: 'compulsory', primitive: 'text_short' }),
     makeFieldDTO({ canonical_name: 'color', marker: 'optional', primitive: 'dropdown_small', enum_resolver: 'static', enum_values: ['Blue', 'Red'] }),
     makeFieldDTO({ canonical_name: 'hero_image', marker: 'compulsory', primitive: 'image_upload' }),
   ],
@@ -77,24 +77,24 @@ const PRODUCT_RESPONSE: ProductResponse = {
   category_id: CATEGORY_ID,
   name: 'Blue Kurti',
   status: 'draft',
-  fields: { product_title: 'Blue Kurti' },
+  fields: { product_name: 'Blue Kurti' },
   ai_suggestions: {},
   created_at: '2026-06-12T00:00:00Z',
   updated_at: '2026-06-12T01:00:00Z',
 };
 
 const DRAFT_RESPONSE: ProductDraftResponse = {
-  fields: { product_title: 'Saved Kurti' },
+  fields: { product_name: 'Saved Kurti' },
   last_updated: '2026-06-12T00:30:00Z',
   autosave_count: 3,
 };
 
 const AUTOFILL_RESPONSE: AutofillResponse = {
   suggestions: {
-    product_title: { value: 'AI Blue Kurti', confidence: 0.95, source: 'ai' },
-    color:         { value: 'Blue',          confidence: 0.90, source: 'ai' },
+    product_name: { value: 'AI Blue Kurti', confidence: 0.95, source: 'ai' },
+    color:        { value: 'Blue',          confidence: 0.90, source: 'ai' },
   },
-  applied: { product_title: false, color: false },
+  applied: { product_name: false, color: false },
   fallback_offered: false,
 };
 
@@ -244,7 +244,7 @@ describe('CatalogFormApiService', () => {
   // ── autosave ───────────────────────────────────────────────────────────────
 
   describe('autosave()', () => {
-    const FIELDS = { product_title: 'Blue Kurti', color: 'Blue' };
+    const FIELDS = { product_name: 'Blue Kurti', color: 'Blue' };
 
     it('PATCH /api/v1/products/{id} — URL and method', () => {
       svc.autosave(PRODUCT_ID, FIELDS).subscribe();
@@ -340,9 +340,9 @@ describe('CatalogFormApiService', () => {
       svc.autofill(PRODUCT_ID, DESCRIPTION).subscribe(r => (result = r));
       const req = controller.expectOne(`/api/v1/products/${PRODUCT_ID}/autofill`);
       req.flush(AUTOFILL_RESPONSE);
-      expect(result?.suggestions['product_title'].value).toBe('AI Blue Kurti');
-      expect(result?.suggestions['product_title'].confidence).toBe(0.95);
-      expect(result?.suggestions['product_title'].source).toBe('ai');
+      expect(result?.suggestions['product_name'].value).toBe('AI Blue Kurti');
+      expect(result?.suggestions['product_name'].confidence).toBe(0.95);
+      expect(result?.suggestions['product_name'].source).toBe('ai');
       expect(result?.fallback_offered).toBe(false);
     });
 
