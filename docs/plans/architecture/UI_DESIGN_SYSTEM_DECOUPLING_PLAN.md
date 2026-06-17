@@ -215,4 +215,42 @@ wholesale · visual redesign · components no MFE needs yet · moving `auth-layo
 
 ## 8. Appendix — swap procedure *(filled in Phase 7)*
 
-_TBD — the one-file theme swap and icon-set swap steps, demonstrated at Phase 7._
+Phase 7 (`feat/ui-ds-phase7`, commit `a979b6e`, PR #276) demonstrated both swaps.
+Full procedure: `frontend/libs/ui-kit/SWAP_GUIDE.md`. Summary below.
+
+### Theme swap (one file: `providers.ts`)
+
+```ts
+// Before (live default — do not change in production without a brand decision):
+import { MeeSellPreset } from '@mesell/ui-kit';
+// ...
+preset: MeeSellPreset,
+
+// After (alt brand — swap by changing import + preset reference):
+import { MeeSellAltPreset } from '@mesell/ui-kit';
+// ...
+preset: MeeSellAltPreset,
+```
+
+No MFE, no other `ui-kit` file, no contract scanner needs to change.
+
+### Icon-set swap (one file: `icon/icon.selector.ts`)
+
+```ts
+// Before (live default):
+import { MEE_ICONS } from './icon.registry';
+export const ActiveIcons = MEE_ICONS;
+
+// After (alt set — Material Icons demo):
+import { MEE_ICONS_ALT } from './icon.registry.alt';
+export const ActiveIcons = MEE_ICONS_ALT;
+```
+
+Every `<mee-icon>` instance in every MFE resolves through `ActiveIcons` — no MFE
+file needs to change. FE-2 stays clean because `icon.registry.alt.ts` contains no
+`pi pi-*` strings.
+
+### Verification after either swap
+1. `ng build mfe-dashboard` (or any MFE) — must pass
+2. `node tools/contracts/run-all.mjs --strict` — all 5 CLEAN
+3. Visual check at 360 / 768 / 1280px — expected: all icons/colors reflect the new set
