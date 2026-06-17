@@ -18,9 +18,9 @@
  *
  * Scan set: .ts files under libs/** (specs included — test files must not smuggle edges).
  *
- * Phase-0 expectation: 0 violations.
- *   @mesell/layout is empty; ui-kit imports no sibling UI lib;
- *   composites may import layout + ui-kit (allowed edges).
+ * Phase 5: enforced (strict; FE Gate is a required check on develop). Baseline
+ *   is 0 violations: ui-kit imports no sibling UI lib; composites may import
+ *   layout + ui-kit (allowed edges); no back-edges/cycles.
  */
 
 import { join } from 'node:path';
