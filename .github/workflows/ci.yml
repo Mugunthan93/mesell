@@ -678,8 +678,17 @@ jobs:
         if: matrix.run == 'true'
         working-directory: frontend
         # Per-project headless unit tests. `--browsers=ChromeHeadless --watch=false` keeps CI
-        # non-interactive. If a project defines no test target yet this is a fast no-op.
-        run: pnpm exec ng test ${{ matrix.project }} --browsers=ChromeHeadless --watch=false || echo "No test target for ${{ matrix.project }} (yet) — skipping."
+        # non-interactive.
+        #
+        # Shell (project=frontend) has a full Karma+Vitest suite — run it unmasked so a
+        # spec failure fails the job loud. The six mfe-* remotes do not define a test target
+        # yet, so fall through to the graceful no-op echo for those projects only.
+        run: |
+          if [ "${{ matrix.project }}" = "frontend" ]; then
+            pnpm exec ng test ${{ matrix.project }} --browsers=ChromeHeadless --watch=false
+          else
+            pnpm exec ng test ${{ matrix.project }} --browsers=ChromeHeadless --watch=false || echo "No test target for ${{ matrix.project }} (yet) — skipping."
+          fi
 
       - name: "Build: ${{ matrix.unit }}"
         if: matrix.run == 'true'
