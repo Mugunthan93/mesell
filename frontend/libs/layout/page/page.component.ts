@@ -4,7 +4,7 @@ import {
   computed,
   input,
 } from '@angular/core';
-import { MEE_GAP_TOKEN, type MeeLayoutGap, type MeePageMaxWidth } from '../layout.types';
+import { MEE_GAP_TOKEN, type MeeLayoutGap, type MeePageMaxWidth, type MeePagePadding } from '../layout.types';
 
 /** Tailwind max-width class map for `mee-page`. */
 const MAX_WIDTH_CLASS: Record<MeePageMaxWidth, string> = {
@@ -62,20 +62,32 @@ export class MeePageComponent {
   readonly maxWidth = input<MeePageMaxWidth>('lg');
 
   /**
-   * When true (default), applies responsive horizontal + vertical padding
-   * (`px-4 py-6 sm:px-6 lg:px-8`). Set false for edge-to-edge layouts.
+   * Page padding. Accepts a boolean (back-compat) or the `MeePagePadding`
+   * scale:
+   *   false / 'none'    → no padding (edge-to-edge)
+   *   'tight'           → 'px-4 py-6 sm:px-6'           (no lg:px-8 step)
+   *   true  / 'default' → 'px-4 py-6 sm:px-6 lg:px-8'   (design-system default)
+   * Default is `true` (≡ 'default') — unchanged from before.
    */
-  readonly padding = input<boolean>(true);
+  readonly padding = input<boolean | MeePagePadding>(true);
 
   /** Vertical gap between projected child blocks. Default: 'lg'. */
   readonly gap = input<MeeLayoutGap>('lg');
 
-  /** Derived Tailwind classes applied to the inner `<main>` wrapper. */
+  /** Resolve the boolean | MeePagePadding input → Tailwind padding class string. */
+  private readonly paddingClass = computed<string>(() => {
+    const p = this.padding();
+    // Boolean back-compat: true ≡ 'default', false ≡ 'none'. Handle boolean first.
+    if (p === false || p === 'none') return '';
+    if (p === 'tight') return 'px-4 py-6 sm:px-6';
+    // p === true || p === 'default'
+    return 'px-4 py-6 sm:px-6 lg:px-8';
+  });
+
+  /** Derived Tailwind classes applied to the inner `<div>` wrapper. */
   readonly hostClass = computed<string>(() => {
     const mw = MAX_WIDTH_CLASS[this.maxWidth()];
-    const pad = this.padding()
-      ? 'px-4 py-6 sm:px-6 lg:px-8'
-      : '';
+    const pad = this.paddingClass();
     return `flex flex-col w-full mx-auto ${mw} ${pad}`.trim();
   });
 
