@@ -60,6 +60,7 @@
               }
             ],
             "styles": [
+              "node_modules/primeicons/primeicons.css",
               "apps/shell/src/styles.css"
             ],
             "polyfills": [
@@ -152,6 +153,7 @@
             "index": "apps/mfe-pricing/src/index.html",
             "tsConfig": "apps/mfe-pricing/tsconfig.app.json",
             "styles": [
+              "node_modules/primeicons/primeicons.css",
               "apps/shell/src/styles.css"
             ],
             "polyfills": [
@@ -243,6 +245,7 @@
             "index": "apps/mfe-export/src/index.html",
             "tsConfig": "apps/mfe-export/tsconfig.app.json",
             "styles": [
+              "node_modules/primeicons/primeicons.css",
               "apps/shell/src/styles.css"
             ],
             "polyfills": [
@@ -334,6 +337,7 @@
             "index": "apps/mfe-onboarding/src/index.html",
             "tsConfig": "apps/mfe-onboarding/tsconfig.app.json",
             "styles": [
+              "node_modules/primeicons/primeicons.css",
               "apps/shell/src/styles.css"
             ],
             "polyfills": [
@@ -425,6 +429,7 @@
             "index": "apps/mfe-catalog/src/index.html",
             "tsConfig": "apps/mfe-catalog/tsconfig.app.json",
             "styles": [
+              "node_modules/primeicons/primeicons.css",
               "apps/shell/src/styles.css"
             ],
             "polyfills": [
@@ -516,6 +521,7 @@
             "index": "apps/mfe-dashboard/src/index.html",
             "tsConfig": "apps/mfe-dashboard/tsconfig.app.json",
             "styles": [
+              "node_modules/primeicons/primeicons.css",
               "apps/shell/src/styles.css"
             ],
             "polyfills": [
@@ -607,6 +613,7 @@
             "index": "apps/mfe-auth/src/index.html",
             "tsConfig": "apps/mfe-auth/tsconfig.app.json",
             "styles": [
+              "node_modules/primeicons/primeicons.css",
               "apps/shell/src/styles.css"
             ],
             "polyfills": [
