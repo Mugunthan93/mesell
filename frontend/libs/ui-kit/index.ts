@@ -44,3 +44,9 @@ export type { MeeIconName }                                              from '.
 // Use MEE_FORM / MEE_OVERLAY / etc. in a standalone component's imports:[].
 // MeeToastService + MeeConfirmService are providers — they live in provideMeeUi().
 export { MEE_FORM, MEE_OVERLAY, MEE_FEEDBACK, MEE_DATA, MEE_COMMON, MEE_FILE, MEE_UI_ALL } from './aggregators';
+
+// Phase 7 — swap-proof seam (alt preset + alt icon registry + selector)
+// These are additive exports — live defaults (MeeSellPreset, MEE_ICONS) remain unchanged.
+export { MeeSellAltPreset } from './theme.alt';
+export { MEE_ICONS_ALT }    from './icon/icon.registry.alt';
+export { ActiveIcons }      from './icon/icon.selector';

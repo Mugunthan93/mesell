@@ -4,7 +4,8 @@ import {
   computed,
   input,
 } from '@angular/core';
-import { MEE_ICONS, MeeIconName } from './icon.registry';
+import type { MeeIconName } from './icon.registry';
+import { ActiveIcons } from './icon.selector';
 
 /**
  * mee-icon — semantic icon component.
@@ -28,5 +29,5 @@ import { MEE_ICONS, MeeIconName } from './icon.registry';
 export class MeeIconComponent {
   readonly name = input.required<MeeIconName>();
 
-  readonly resolved = computed<string>(() => MEE_ICONS[this.name()]);
+  readonly resolved = computed<string>(() => ActiveIcons[this.name()]);
 }
