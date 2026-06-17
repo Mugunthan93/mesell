@@ -1,6 +1,43 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-17 (meesell-services-builder) — catalog enum 422 false-reject + i18n generic fallback ===
+Phase: V1 catalog-form bug-fix (PATCH/autofill 422 on valid category-enum value)
+Session: catalog-422-fix (HYBRID step 2/BUILD), branch fix/catalog-enum-422-i18n,
+  worktree /private/tmp/mesell-wt/catalog-422-fix
+Done:
+  - ROOT CAUSE: patch_product + autofill_product fed the RICH fetch_schema envelope
+    (no derived enum_resolver) to _resolve_allowed_enums → every dropdown defaulted
+    "static"+[] → get_field_enum never called → _validate_single_field saw [] →
+    rejected valid "3.5". Fix: validation reads the FLAT fetch_schema_dto.
+  - service.py: patch_product (~L507) + autofill_product (~L621) fetch_schema →
+    fetch_schema_dto. Rich callsites _resolve_super_id_for_category / get_preview /
+    get_product_for_export / get_validation_summary LEFT on rich fetch_schema (correct).
+  - service.py _validate_single_field category branch FAIL-OPEN: rejects only when the
+    resolved set is NON-EMPTY and value outside it. Static branch unchanged (authoritative).
+  - i18n/messages_en.py: +4 validation.generic.{invalid_enum_value,invalid_type,
+    too_long,invalid_url} (3-segment, Contract-10 clean). NOT auth.token_missing — see deviation.
+  - i18n/resolver.py: Step-2b per-field→generic-family fallback (validation.<field>.<rule>
+    → validation.generic.<rule>), resolved tier (no missing-key counter bump, no WARNING).
+  - tests/modules/catalog/conftest.py: application_area fixture +enum_codes_map so the DTO
+    mapper still derives enum_resolver="static" (else the swap reclassified it "category").
+Tests: 263 passed / 0 failed (regression 4/4 incl. valid "3.5" 200 + persisted +
+  fail-open + DTO-source guard; i18n fallback 13/13; catalog+category 58 pass/6 seed-skip;
+  catalog service_unit 17/17; named gates test_per_field_shape_keys / test_schema_dto_mapper /
+  test_schema_jsonb_envelope_keys / message-id regex all green; lint scanners 18/18; ruff clean).
+DEVIATION (flagged for merge-gate): spec asked to add "auth.token_missing" to
+  VALIDATION_MESSAGES — DROPPED. It is 2-segment → breaks §5A.H Contract 10 + the locked
+  test_resolver_fallback L_iam_1 design (resolver._DEFERRED_DEBUG_MISSING_KEYS keeps the
+  2-segment auth ids verbatim-at-DEBUG by design). Adding it / resolving it would have failed
+  existing locked tests. L_iam_1 (auth 2-seg → 3-seg migration) remains the correct fix and
+  is already a tracked V1.5 ticket. New test asserts auth.token_missing stays verbatim.
+In progress: none
+Blockers: none
+Next: backend-coordinator merge-gate review of PR.
+Hand-offs: validation now agrees with fetch_schema_dto + public /field-enum; FE catalog-form
+  PATCH of a category dropdown value no longer 422s. No endpoint shape / Alembic / DDL change.
+=========
+
 === UPDATE: 2026-06-16 (meesell-services-builder) — catalog-form schema DTO mapper (read-time §5.6.1 → §5A.C) ===
 Phase: V1 catalog-form UI bug-fix (blank labels #1/#3, dead dropdowns #2)
 Session: mesell-catalog-form-fix-backend-session-1 (HYBRID step 2/BUILD)

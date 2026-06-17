@@ -890,20 +890,25 @@ jobs:
           fi
 
   # =============================================================================
-  # FE GATE: LINT (5 CONTRACTS) — Phase 0, warn-only / report-only
+  # FE GATE: LINT (5 CONTRACTS) — Phase 5, strict (ALL 5) / BLOCKING
   #
-  # Purpose: run the 5 FE design-system boundary scanners and print a report.
-  # This mirrors the backend Gate 3 (§16.E import-linter + 3 AST scanners) but
-  # for the frontend design-system decoupling contracts.
+  # Purpose: run the 5 FE design-system boundary scanners and fail on ANY
+  # violation. This mirrors the backend Gate 3 (§16.E import-linter + 3 AST
+  # scanners) but for the frontend design-system decoupling contracts.
   #
-  # Phase 0 = warn-only: run-all.mjs exits 0 regardless of violations, so this
-  # job is always green. The report tells the team about known leaks (FE-2: 3
-  # pi pi-* files) and confirms the seal (FE-1: 0 violations) on every PR.
+  # Phase 5 = strict-all: run-all.mjs --strict exits 1 if ANY of the 5 contracts
+  # (FE-1..FE-5) report a violation. The decoupling work is already TRUE on
+  # develop (all 5 clean), so this job is green today and goes RED only on a
+  # future regression of any contract.
   #
-  # NON-BLOCKING by design:
-  #   - NOT in build.needs or deploy.needs (does not gate the build/deploy path).
-  #   - NOT a required status check (founder wires required-check in branch
-  #     protection at Phase 5, exactly as noted for frontend-boot-smoke D1 gate).
+  # REQUIRED STATUS CHECK (Phase 5): this job is now intended as a REQUIRED
+  # status check on develop — the founder wires "FE Gate: lint (5 contracts)"
+  # into branch protection (repo-settings change, founder-gated, NOT in this
+  # workflow file). A red gate then BLOCKS merge.
+  #
+  # Still NOT in build.needs/deploy.needs by design: "required status check"
+  # gates MERGE via branch protection, not the build/deploy DAG. The FE lint
+  # must stay fast + independent of the container build and K3s deploy.
   #
   # Node-only (no pnpm install): the scanners are dependency-free Node ESM
   # (node:fs + node:path only) — pnpm setup is dead weight here. Faster than
@@ -913,9 +918,10 @@ jobs:
   # frontend-boot-smoke) so it fires only on PRs that touch frontend libs, shell,
   # or any MFE — backend-only PRs skip it cleanly.
   #
-  # Phase 1: --strict=fe2 (after icon migration, founder wires)
-  # Phase 4: --strict=fe2,fe3 (after chrome primitives land)
-  # Phase 5: --strict (all); job becomes a required status check.
+  # Phase history:
+  #   Phase 1: --strict=fe2 (after icon migration)
+  #   Phase 4: --strict=fe2,fe3 (after chrome primitives land)
+  #   Phase 5 (ACTIVE): --strict (all 5); job is a required status check.
   # =============================================================================
   fe-lint-contracts:
     name: "FE Gate: lint (5 contracts)"
@@ -944,13 +950,16 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Run FE contract scanners (strict FE-2)
+      - name: Run FE contract scanners (strict — all 5)
         working-directory: frontend
-        # Phase 1: --strict=fe2 (icon migration complete; job goes RED on new raw icon leaks).
-        # FE-2 strict = exit 1 on any violation; FE-1/3/4/5 remain warn-only.
-        # Job is NOT in build.needs/deploy.needs; required-check deferred to Phase 5.
+        # Phase 5 (ACTIVE): --strict (all 5). Job goes RED on ANY violation of
+        # FE-1 (PrimeNG seal), FE-2 (icon seal), FE-3 (chrome shell-only),
+        # FE-4 (lib DAG), or FE-5 (apps import barrel roots only). All clean today.
+        # Now intended as a REQUIRED status check on develop (founder wires it in
+        # branch protection — NOT in this file). Still NOT in build.needs/deploy.needs:
+        # required-check gates MERGE, not the build/deploy DAG.
         # No pnpm install — scanners are dependency-free Node ESM (node:fs + node:path).
-        run: node tools/contracts/run-all.mjs --strict=fe2
+        run: node tools/contracts/run-all.mjs --strict
 
   # =============================================================================
   # BUILD — Docker images via Cloud Build

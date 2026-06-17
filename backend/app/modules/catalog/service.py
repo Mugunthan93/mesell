@@ -221,8 +221,14 @@ def _validate_single_field(
                 )
             return None
         if resolver == "category":
-            allowed = (category_enums or {}).get(canonical_name) or []
-            if isinstance(allowed, list) and value not in allowed:
+            # Fail-open: only reject when we actually resolved a NON-EMPTY
+            # allowed set and the value is outside it.  An empty/missing set
+            # means the per-category enum could not be resolved (cold cache,
+            # unseeded field_enum_values, get_field_enum miss) — rejecting in
+            # that case would falsely 422 valid input.  Static enums are
+            # authoritative and are NOT failed-open (see the branch above).
+            allowed = (category_enums or {}).get(canonical_name)
+            if allowed and value not in allowed:
                 return (
                     f"validation.{canonical_name}.invalid_enum_value",
                     f"{canonical_name}: not in category enum",
@@ -504,7 +510,12 @@ async def patch_product(
     if product_row is None:
         raise ProductNotFoundError()
 
-    schema = await category_service.fetch_schema(product_row.category_id, db=db)
+    # Validation reads the FLAT §5A.C WIRE DTO (carries the derived
+    # ``enum_resolver`` / ``enum_values`` keys), NOT the rich at-rest
+    # envelope.  The rich envelope omits ``enum_resolver``, which makes
+    # ``_resolve_allowed_enums`` default every dropdown to "static" + []
+    # and falsely reject valid category-enum values (e.g. "3.5").
+    schema = await category_service.fetch_schema_dto(product_row.category_id, db=db)
 
     # Step 3 — per-field validation.
     patch_fields = request.fields or {}
@@ -618,7 +629,10 @@ async def autofill_product(
     product_row = await catalog_repo.find_by_id(db, user_id, product_id)
     if product_row is None:
         raise ProductNotFoundError()
-    schema = await category_service.fetch_schema(product_row.category_id, db=db)
+    # Feed the FLAT §5A.C WIRE DTO to ``_resolve_allowed_enums`` (carries the
+    # derived ``enum_resolver`` key) so the Layer-2 guardrail resolves
+    # category enums correctly — same rich-vs-flat fix as ``patch_product``.
+    schema = await category_service.fetch_schema_dto(product_row.category_id, db=db)
 
     # Step 4 — build allowed_enums for §6A.E Layer-2 guardrail.
     allowed_enums = await _resolve_allowed_enums(

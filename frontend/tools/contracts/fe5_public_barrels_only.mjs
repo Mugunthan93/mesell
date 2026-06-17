@@ -11,23 +11,19 @@
  * Sub-rule (a) — deep barrel bypass:
  *   import from '@mesell/<lib>/<anything>' where a slash follows the lib name.
  *
- * Phase-0 seed allow-list (WARN only, do not error):
- *   The lean-bundle deep-import pattern from SP0 (PR #38) intentionally uses
- *   deep imports. These ARE expected in Phase 0 and will warn. Phase 5 decides:
- *   (a) ratify (add to permanent allow-list), or (b) refactor to barrel imports.
- *   Accepted prefixes (Phase-0 baseline, revisit at Phase-5 flip):
- *   - '@mesell/ui-kit/'
- *   - '@mesell/composites/'
- *   - '@mesell/core/models'
+ * Phase 5 — the seal is final:
+ *   apps import @mesell/* barrel ROOTS ONLY — no deep subpath, no cross-MFE.
+ *   The SP0 lean-bundle deep-import allowance (anticipated in PR #38) was never
+ *   used (0 deep imports exist in apps/**), so the allow-list is now EMPTY.
+ *   ANY deep @mesell/<lib>/<subpath> import fails the strict gate.
  *
  * Sub-rule (b) — cross-MFE import:
  *   A relative import (../../, ../../../ etc.) from one apps/<unit>/ into a
  *   different apps/<unit>/ directory. Also flags absolute paths into another
  *   apps unit.
  *
- * Phase-0 expectation: 0 violations (all imports in apps/ are barrel-level;
- *   the SP0 lean-bundle deep imports do NOT actually exist in the current
- *   codebase — they were anticipated but not committed). Record actual count.
+ * Phase 5: enforced (strict; FE Gate is a required check on develop). Baseline
+ *   is 0 violations (all imports in apps/ are barrel-level).
  */
 
 import { readdirSync, statSync } from 'node:fs';
@@ -37,13 +33,10 @@ import { feRoot, walk, rel, readLines } from './_walk.mjs';
 const CONTRACT = 'FE-5';
 const DESCRIPTION = 'Apps import @mesell/* public barrels only — no deep subpaths, no cross-MFE imports';
 
-// Phase-0 seed allow-list (lean-bundle pattern — warn-only baseline).
-// Phase 5 action: empty this list after barrel refactor, OR ratify as permanent.
-const PHASE0_ALLOWED_DEEP_PREFIXES = [
-  '@mesell/ui-kit/',
-  '@mesell/composites/',
-  '@mesell/core/models',
-];
+// Phase 5: the seal is final — apps import @mesell/* barrel roots ONLY.
+// The vestigial lean-bundle deep-import allow-list is emptied (0 deep imports
+// exist; the list guarded nothing). ANY deep import now fails the strict gate.
+const PHASE0_ALLOWED_DEEP_PREFIXES = [];
 
 // Sub-rule (a): deep barrel bypass — @mesell/<lib>/<subpath>
 // Matches: from '@mesell/<lib>/<anything>'

@@ -20,7 +20,8 @@
  * The module specifier must appear inside quotes immediately after the keyword.
  * A comment mentioning 'primeng' is NOT flagged.
  *
- * Phase-0 expectation: 0 violations (seal already clean, PR #38).
+ * Phase 5: enforced (strict; FE Gate is a required check on develop). The seal
+ *   has been clean since PR #38 — 0 violations baseline.
  */
 
 import { join } from 'node:path';
