@@ -79,6 +79,59 @@ Hand-offs:
   - sidebar-brand--light was a dead class in Phase 3; its absence in Phase 4 is benign.
 =========
 
+=== UPDATE: 2026-06-17 09:00 ===
+Phase: /catalogs/:id/edit — WI-3 wizard spec type-debt fix
+Agent: meesell-angular-component-builder (specialist dispatch)
+Session: mesell-wizard-spec-types-frontend-session-1
+Branch: fix/wizard-spec-types
+
+Done:
+  - frontend/apps/mfe-catalog/src/app/catalog-form/catalog-form/catalog-form.component.spec.ts
+      Added step_id to 8 FieldSchema inline fixtures missing the now-required property:
+      (1) MOCK_SCHEMA compulsory product_name: step_id='basics'
+      (2) MOCK_SCHEMA compulsory brand: step_id='basics'
+      (3) MOCK_SCHEMA compulsory color: step_id='basics'
+      (4) MOCK_SCHEMA recommended sleeve_length: step_id='sizing'
+      (5) MOCK_SCHEMA optional frill_detail: step_id='description'
+      (6) schemaWithoutOptional inline fixture (line 202): step_id='basics'
+      (7) buildSections test compulsory inline fixture (line 488): step_id='basics'
+      (8) buildSections test recommended inline fixture (line 489): step_id='basics'
+      The makeWizardField() factory already had step_id default -- left untouched.
+      NOTE: fixture product key is product_name (not product_title) after #269 union-merge.
+  - frontend/package.json
+      Added "typecheck": "tsc -p tsconfig.spec.json --noEmit" script.
+      Closes the CI gap: esbuild/vitest strips types at runtime; this is the only
+      gate that catches TS2741 and similar property-missing errors in spec fixtures.
+  - .github/workflows/ci.yml
+      Added "Type-check specs (tsconfig.spec.json)" step to the frontend-build job
+      matrix, before the "Test" step, so type errors surface before the test runner runs.
+      Step runs `pnpm run typecheck` (the new frontend/package.json script).
+      CI wiring path taken: WIRED DIRECTLY (small, clearly-frontend-tooling addition,
+      no infra concern, same job that already runs pnpm install + rebuild).
+      REBASE FOLLOW-UP: un-masked the frontend ng test step (removed `|| echo skipping`)
+      so a real spec/compile break fails CI loud — see rebase report.
+
+Tests:
+  - 133/133 pure-function tests passing (catalog-form.component.spec.ts + field-schema.model.spec.ts)
+  - catalog-form-api.service.spec.ts: 0 run (pre-existing @mesell/core path alias failure
+    under raw vitest — pre-dates this PR; confirmed pre-existing via git stash check)
+  - typecheck PRE-FIX:  8 TS2741 errors (confirmed)
+  - typecheck POST-FIX: 0 errors (confirmed)
+
+Build: mfe-catalog --configuration development: PASS (9.656s)
+       catalog-form-component chunk: 77.16 kB raw
+
+In progress: none
+Blockers: none
+
+Hand-offs:
+  - fix/wizard-spec-types → PR #268 rebased onto develop @ 1133ab5 (union STATUS + product_name+step_id spec)
+  - CI wiring: DONE — "Type-check specs" step added directly to frontend-build matrix
+    in .github/workflows/ci.yml (step: after "pnpm rebuild native binaries", before "Test")
+  - meesell-infra-builder: NO action required. CI step is frontend-tooling only (pnpm run
+    typecheck = tsc --noEmit). No infra change, no new secrets, no service containers.
+=========
+
 === UPDATE: 2026-06-17 08:00 ===
 Phase: /catalogs/:id/edit — autofill product_name key fix
 Agent: meesell-angular-component-builder

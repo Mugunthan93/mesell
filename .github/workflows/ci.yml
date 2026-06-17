@@ -664,6 +664,16 @@ jobs:
         # platform binaries — without this `ng build` fails on a fresh CI checkout.
         run: pnpm rebuild esbuild @parcel/watcher lmdb msgpackr-extract
 
+      - name: "Type-check specs (tsconfig.spec.json)"
+        if: matrix.run == 'true'
+        working-directory: frontend
+        # Type-checks all *.spec.ts files via the workspace tsconfig.spec.json.
+        # Esbuild/vitest strips types at runtime — this is the only gate that catches
+        # TS2741 (missing required property) and similar type errors in spec fixtures.
+        # Runs before the unit-test step so a type failure surfaces before spending
+        # time on the test runner.
+        run: pnpm run typecheck
+
       - name: "Test: ${{ matrix.unit }}"
         if: matrix.run == 'true'
         working-directory: frontend

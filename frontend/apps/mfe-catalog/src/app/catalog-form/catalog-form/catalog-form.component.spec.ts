@@ -49,10 +49,10 @@ const MOCK_SCHEMA: FieldGroup[] = [
   {
     group: 'compulsory',
     fields: [
-      { canonical_name: 'product_name', display_name: 'Product Name', primitive: 'text_short', required: true, help_text: 'Enter the full product name' },
-      { canonical_name: 'brand',         display_name: 'Brand',         primitive: 'text_short', required: true },
+      { canonical_name: 'product_name', display_name: 'Product Name', primitive: 'text_short', required: true, step_id: 'basics', help_text: 'Enter the full product name' },
+      { canonical_name: 'brand',         display_name: 'Brand',         primitive: 'text_short', required: true,  step_id: 'basics' },
       {
-        canonical_name: 'color', display_name: 'Color', primitive: 'enum', required: true,
+        canonical_name: 'color', display_name: 'Color', primitive: 'enum', required: true, step_id: 'basics',
         enum_options: [{ label: 'Blue', value: 'Blue' }],
       },
     ],
@@ -60,14 +60,14 @@ const MOCK_SCHEMA: FieldGroup[] = [
   {
     group: 'recommended',
     fields: [
-      { canonical_name: 'sleeve_length', display_name: 'Sleeve Length', primitive: 'enum', required: false,
+      { canonical_name: 'sleeve_length', display_name: 'Sleeve Length', primitive: 'enum', required: false, step_id: 'sizing',
         enum_options: [{ label: 'Full Sleeve', value: 'Full Sleeve' }] },
     ],
   },
   {
     group: 'optional',
     fields: [
-      { canonical_name: 'frill_detail', display_name: 'Frill Detail', primitive: 'text_short', required: false },
+      { canonical_name: 'frill_detail', display_name: 'Frill Detail', primitive: 'text_short', required: false, step_id: 'description' },
     ],
   },
 ];
@@ -199,7 +199,7 @@ describe('catalog-form.model — field group accessors', () => {
 
   it('returns empty arrays when a group is absent from schema', () => {
     const schemaWithoutOptional: FieldGroup[] = [
-      { group: 'compulsory', fields: [{ canonical_name: 'x', display_name: 'X', primitive: 'text_short', required: true }] },
+      { group: 'compulsory', fields: [{ canonical_name: 'x', display_name: 'X', primitive: 'text_short', required: true, step_id: 'basics' }] },
     ];
     expect(getRecommendedFields(schemaWithoutOptional)).toHaveLength(0);
     expect(getOptionalFields(schemaWithoutOptional)).toHaveLength(0);
@@ -485,8 +485,8 @@ describe('catalog-form.model — buildSections (3-section descriptor)', () => {
 
   it('sections carry correct fields from schema', () => {
     const schema: FieldGroup[] = [
-      { group: 'compulsory',  fields: [{ canonical_name: 'c', display_name: 'C', primitive: 'text_short', required: true }] },
-      { group: 'recommended', fields: [{ canonical_name: 'r', display_name: 'R', primitive: 'text_short', required: false }] },
+      { group: 'compulsory',  fields: [{ canonical_name: 'c', display_name: 'C', primitive: 'text_short', required: true,  step_id: 'basics' }] },
+      { group: 'recommended', fields: [{ canonical_name: 'r', display_name: 'R', primitive: 'text_short', required: false, step_id: 'basics' }] },
       { group: 'optional',    fields: [] },
     ];
     const sections = buildSections(schema, { compulsory: true });

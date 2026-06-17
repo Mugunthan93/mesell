@@ -19,7 +19,8 @@
     "dev:serve-static": "node tools/dev/serve-static.mjs",
     "dev:check-routes": "node tools/dev/route-check.mjs",
     "dev:static": "node tools/dev/dev-static.mjs",
-    "smoke:boot": "node tools/boot-smoke/boot-smoke.js"
+    "smoke:boot": "node tools/boot-smoke/boot-smoke.js",
+    "typecheck": "tsc -p tsconfig.spec.json --noEmit"
   },
   "private": true,
   "packageManager": "pnpm@11.5.2",
