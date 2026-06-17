@@ -226,6 +226,24 @@ VALIDATION_MESSAGES: dict[str, str] = {
         "AI assistance is taking a break for the day. Please fill in manually "
         "or try again tomorrow."
     ),
+    # ── §5A.I generic validation family (per-field fallback target) ──────
+    # Per-field IDs (``validation.<field>.<rule>``) fall back to these
+    # ``validation.generic.<rule>`` strings when no field-specific entry is
+    # registered (see ``i18n.resolver`` Step-2b).  This avoids minting a
+    # bespoke key for every dynamic catalog field.
+    "validation.generic.invalid_enum_value": (
+        "That value isn't one of the allowed options for this field. "
+        "Please pick from the list."
+    ),
+    "validation.generic.invalid_type": (
+        "That value has the wrong format for this field."
+    ),
+    "validation.generic.too_long": (
+        "That value is too long. Please shorten it."
+    ),
+    "validation.generic.invalid_url": (
+        "Please enter a valid link starting with http:// or https://."
+    ),
 }
 
 

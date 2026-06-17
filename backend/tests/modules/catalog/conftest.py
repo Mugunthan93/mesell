@@ -157,6 +157,16 @@ def _build_eye_serum_schema() -> dict[str, Any]:
                 "is_advanced": False,
                 "enum_resolver": "static",
                 "enum_values": ["under-eye", "eyelid", "full-face"],
+                # Rich at-rest inline map — this is what ``fetch_schema_dto``'s
+                # ``_map_field_to_dto`` reads to DERIVE ``enum_resolver="static"``
+                # + the flat ``enum_values``. Validation now reads the FLAT DTO
+                # (catalog-422-fix), so a static enum MUST carry ``enum_codes_map``
+                # here or the DTO mapper reclassifies it as ``"category"``.
+                "enum_codes_map": {
+                    "under-eye": "UNDER_EYE",
+                    "eyelid": "EYELID",
+                    "full-face": "FULL_FACE",
+                },
                 "validation_message_ids": [],
             },
             {

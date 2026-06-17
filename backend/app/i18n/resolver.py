@@ -109,6 +109,18 @@ def resolve(message_id: str, locale: str = "en") -> str:
     if en_hit is not None:
         return en_hit
 
+    # Step 2b — per-field validation ids fall back to the generic family.
+    # ``validation.<field>.<rule>`` → ``validation.generic.<rule>`` so we do
+    # not have to mint a bespoke registry key for every dynamic catalog field.
+    # Resolved — does NOT bump the missing-key counter or WARN.
+    if message_id.startswith("validation.") and message_id.count(".") >= 2:
+        rule = message_id.rsplit(".", 1)[-1]
+        generic_id = f"validation.generic.{rule}"
+        if generic_id != message_id:
+            generic_hit = _REGISTRIES["en"].get(generic_id)
+            if generic_hit is not None:
+                return generic_hit
+
     # Step 3 — verbatim ID. Bump the §15.J Prometheus counter so observability
     # picks up the seed/registry gap. The counter behaviour is unchanged for
     # every id (including the L_iam_1 allowlist) — only the LOG LEVEL differs.
