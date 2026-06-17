@@ -22,6 +22,7 @@ import { Router } from '@angular/router';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 
 import { MeeConfirmService } from '@mesell/ui-kit';
+import { MeePageComponent } from '@mesell/layout';
 import {
   StatCardComponent,
   StatusBadgeComponent,
@@ -47,6 +48,7 @@ import { ProfileCompletenessSummary, formatRelativeTime, filterProductsByName } 
   providers: [DashboardApiService],
   imports: [
     ReactiveFormsModule,
+    MeePageComponent,
     StatCardComponent,
     StatusBadgeComponent,
     PageHeaderComponent,
@@ -59,9 +61,12 @@ import { ProfileCompletenessSummary, formatRelativeTime, filterProductsByName } 
     <div class="mee-dashboard w-full flex flex-col">
 
       <!-- Offline banner — always at viewport top; MeeOfflineBannerComponent reads NetworkService.online() (§6). -->
+      <!-- H1: offline-banner is a sibling ABOVE mee-page — deliberately edge-to-edge, no padding/max-width. -->
       <mee-offline-banner />
 
-      <div class="px-4 py-6 sm:px-6 max-w-7xl mx-auto w-full flex flex-col gap-6">
+      <!-- L1: page container — mee-page maxWidth="xl" padding="tight" gap="lg" is byte-parity with the
+           hand-rolled px-4 py-6 sm:px-6 max-w-7xl mx-auto w-full flex flex-col gap-6 (UI-DS Phase 6 pilot). -->
+      <mee-page maxWidth="xl" padding="tight" gap="lg">
 
         <!-- Page header -->
         <mee-page-header
@@ -217,7 +222,7 @@ import { ProfileCompletenessSummary, formatRelativeTime, filterProductsByName } 
             }
           }
         </div>
-      </div>
+      </mee-page>
     </div>
   `,
   styles: [`
