@@ -1,13 +1,19 @@
 import {
-  ChangeDetectionStrategy, Component, computed, inject, signal, viewChild
+  ChangeDetectionStrategy, Component, computed, inject, signal,
 } from '@angular/core';
 
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { RouterOutlet } from '@angular/router';
 import { AuthService } from '@mesell/core';
-import { MeeDrawerComponent, MeeMenuComponent, MeeIconComponent } from '@mesell/ui-kit';
+import { MeeDrawerComponent } from '@mesell/ui-kit';
 import type { MeeMenuItem, MeeIconName } from '@mesell/ui-kit';
+import {
+  MeeAppBarComponent,
+  MeeSideNavComponent,
+  MeeUserMenuComponent,
+} from '@mesell/layout';
+import type { MeeNavGroup } from '@mesell/layout';
 
-/** A single navigable sidebar entry within a group. */
+/** A single navigable sidebar entry within a group (shell's internal model). */
 interface NavItem {
   readonly label: string;
   readonly route: string;
@@ -18,7 +24,7 @@ interface NavItem {
   /** When true, also keep the group active for any path PREFIXED by `route`
    *  (e.g. /catalogs stays active on /catalogs/new and /catalogs/:id/*). When
    *  false/undefined, exact-match active highlighting is used so e.g. /catalogs
-   *  does NOT bleed into /categories/*. */
+   *  does NOT bleed into /categories/*. Mapped to MeeNavItem.exact = !prefixMatch. */
   readonly prefixMatch?: boolean;
   /** Optional visibility predicate — item is rendered only when this returns true.
    *  Used for the conditional Onboarding item (founder DECISION #1). */
@@ -31,20 +37,31 @@ interface NavGroup {
   readonly items: readonly NavItem[];
 }
 
+/**
+ * ShellComponent — the host singleton (Phase 4 refactor).
+ *
+ * The chrome (app-bar / side-nav / nav-item / user-menu) now lives in
+ * `@mesell/layout` as reusable, shell-only primitives. This host keeps ONLY
+ * what is genuinely app-specific: the nav DATA, AuthService wiring, the
+ * onboarding-hide predicate, the user-menu items + initials, the mobile-drawer
+ * `visible` signal, and the `<router-outlet>`. It composes the chrome and maps
+ * its internal nav model down to the layout lib's presentational contract.
+ */
 @Component({
   selector: 'mee-shell',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    RouterOutlet, RouterLink, RouterLinkActive,
-    MeeDrawerComponent, MeeMenuComponent, MeeIconComponent,
+    RouterOutlet,
+    MeeDrawerComponent,
+    MeeAppBarComponent,
+    MeeSideNavComponent,
+    MeeUserMenuComponent,
   ],
   templateUrl: './shell.component.html',
   styleUrls:   ['./shell.component.css'],
 })
 export class ShellComponent {
-  private readonly userMenu = viewChild.required<MeeMenuComponent>('userMenu');
-
   readonly auth = inject(AuthService);
   protected mobileSidebarVisible = signal(false);
 
@@ -103,20 +120,35 @@ export class ShellComponent {
     },
   ];
 
-  /** Items in `group` that pass their visibility predicate (if any). */
-  protected visibleItems(group: NavGroup): readonly NavItem[] {
-    return group.items.filter(item => item.visible ? item.visible() : true);
-  }
+  /**
+   * The nav model mapped to the layout lib's presentational contract:
+   * applies each item's `visible` predicate, drops now-empty groups, and maps
+   * `prefixMatch → exact: !prefixMatch`. Feeds both the desktop and mobile
+   * `mee-side-nav` instances. Reactive — the onboarding-hide predicate re-runs
+   * when `currentUser()` changes.
+   */
+  protected readonly visibleNavGroups = computed<readonly MeeNavGroup[]>(() =>
+    this.navGroups
+      .map((group) => ({
+        label: group.label,
+        items: group.items
+          .filter((item) => (item.visible ? item.visible() : true))
+          .map((item) => ({
+            label: item.label,
+            route: item.route,
+            icon: item.icon,
+            accent: item.accent,
+            exact: !item.prefixMatch,
+          })),
+      }))
+      .filter((group) => group.items.length > 0),
+  );
 
   protected readonly userMenuItems: MeeMenuItem[] = [
     { label: 'My Profile', icon: 'user',   routerLink: '/profile' },
     { separator: true },
     { label: 'Log out',    icon: 'logout', command: () => this.auth.logout() },
   ];
-
-  protected toggleUserMenu(event: Event): void {
-    this.userMenu().toggle(event);
-  }
 
   protected get userInitials(): string {
     const name = this.auth.currentUser()?.name ?? 'U';

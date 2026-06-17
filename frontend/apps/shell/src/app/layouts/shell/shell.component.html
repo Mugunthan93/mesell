@@ -1,89 +1,36 @@
 <div class="shell-layout">
-  <!-- Desktop sidebar — founder-approved 4 groups (Home / Catalogs / Categories / Account) -->
-  <nav class="sidebar-desktop" aria-label="Main navigation">
-    <div class="sidebar-brand">MeeSell</div>
-    @for (group of navGroups; track group.label) {
-      @if (visibleItems(group).length > 0) {
-        <div class="nav-group" role="group" [attr.aria-label]="group.label">
-          <h2 class="nav-group__label">{{ group.label }}</h2>
-          <ul class="sidebar-nav">
-            @for (item of visibleItems(group); track item.route) {
-              <li>
-                <a [routerLink]="item.route"
-                   routerLinkActive="nav-item--active"
-                   [routerLinkActiveOptions]="{ exact: !item.prefixMatch }"
-                   class="nav-item"
-                   [class.nav-item--accent]="item.accent">
-                  <mee-icon [name]="item.icon" />
-                  <span>{{ item.label }}</span>
-                </a>
-              </li>
-            }
-          </ul>
-        </div>
-      }
-    }
-  </nav>
+  <!-- Desktop sidebar — chrome primitive; positioning via .sidebar-desktop (shell-owned).
+       Founder-approved 4 groups (Home / Catalogs / Categories / Account). -->
+  <mee-side-nav
+    class="sidebar-desktop"
+    brand="MeeSell"
+    [groups]="visibleNavGroups()"
+  />
 
-  <!-- Mobile sidebar overlay -->
+  <!-- Mobile sidebar overlay — shell owns the drawer; the side-nav is its content.
+       Closing on navigate keeps the original UX (tap a link → drawer closes). -->
   <mee-drawer
     [visible]="mobileSidebarVisible()"
     (visibleChange)="mobileSidebarVisible.set($event)"
     styleClass="mee-mobile-sidebar"
-    [modal]="true">
-    <div class="sidebar-brand sidebar-brand--light">MeeSell</div>
-    @for (group of navGroups; track group.label) {
-      @if (visibleItems(group).length > 0) {
-        <div class="nav-group" role="group" [attr.aria-label]="group.label">
-          <h2 class="nav-group__label">{{ group.label }}</h2>
-          <ul class="sidebar-nav">
-            @for (item of visibleItems(group); track item.route) {
-              <li>
-                <a [routerLink]="item.route"
-                   routerLinkActive="nav-item--active"
-                   [routerLinkActiveOptions]="{ exact: !item.prefixMatch }"
-                   class="nav-item"
-                   [class.nav-item--accent]="item.accent"
-                   (click)="mobileSidebarVisible.set(false)">
-                  <mee-icon [name]="item.icon" />
-                  <span>{{ item.label }}</span>
-                </a>
-              </li>
-            }
-          </ul>
-        </div>
-      }
-    }
+    [modal]="true"
+  >
+    <mee-side-nav
+      brand="MeeSell"
+      [groups]="visibleNavGroups()"
+      (navigated)="mobileSidebarVisible.set(false)"
+    />
   </mee-drawer>
 
   <!-- Main content area -->
   <div class="shell-main">
-    <!-- Top header -->
-    <header class="shell-header">
-      <button
-        class="hamburger"
-        aria-label="Open navigation"
-        aria-haspopup="true"
-        (click)="mobileSidebarVisible.set(true)">
-        <mee-icon name="menu" />
-      </button>
-      <div class="header-spacer"></div>
-      <div class="user-menu-trigger">
-        <div class="avatar"
-             role="button"
-             tabindex="0"
-             aria-haspopup="true"
-             aria-label="User menu"
-             (click)="toggleUserMenu($event)"
-             (keydown.enter)="toggleUserMenu($event)"
-             (keydown.space)="toggleUserMenu($event)">
-          {{ userInitials }}
-        </div>
-        <mee-menu #userMenu [items]="userMenuItems" />
-      </div>
-    </header>
+    <!-- Top header — chrome primitive; hamburger opens the mobile drawer,
+         the user menu is projected into the trailing actions region. -->
+    <mee-app-bar (menuToggle)="mobileSidebarVisible.set(true)">
+      <mee-user-menu [initials]="userInitials" [items]="userMenuItems" />
+    </mee-app-bar>
 
-    <!-- Page content -->
+    <!-- Page content — shell owns the <main> landmark -->
     <main class="page-content">
       <router-outlet />
     </main>
