@@ -673,7 +673,7 @@ export class CatalogFormComponent implements OnInit, AfterViewInit {
   // ── Computed ───────────────────────────────────────────────────────────────────
 
   readonly productName = computed<string>(() => {
-    const v = this.fieldValues()['product_title'];
+    const v = this.fieldValues()['product_name'];
     return (typeof v === 'string' && v) ? v : 'New Product';
   });
 
@@ -945,9 +945,9 @@ export class CatalogFormComponent implements OnInit, AfterViewInit {
   }
 
   onAutofill(): void {
-    const description = this.fieldValues()['product_title'];
+    const description = this.fieldValues()['product_name'];
     if (typeof description !== 'string' || !description.trim()) {
-      this.toast.error('Add a product title first — autofill needs it.');
+      this.toast.error('Add a product name first — autofill needs it.');
       return;
     }
     this.autofilling.set(true);

@@ -79,6 +79,27 @@ Hand-offs:
   - sidebar-brand--light was a dead class in Phase 3; its absence in Phase 4 is benign.
 =========
 
+=== UPDATE: 2026-06-17 08:00 ===
+Phase: /catalogs/:id/edit — autofill product_name key fix
+Agent: meesell-angular-component-builder
+Branch: fix/autofill-product-name-key → PR #269
+
+Done:
+  fix(catalog-form): autofill reads product_name not product_title
+  - catalog-form.component.ts: onAutofill() reads fieldValues()['product_name'] (was 'product_title');
+    toast copy updated to "Add a product name first — autofill needs it."
+  - catalog-form.component.ts: productName computed reads fieldValues()['product_name']
+  - catalog-form.model.ts: deriveProductName() reads fieldValues['product_name']
+  - 3 spec files updated: all product_title fixtures/assertions → product_name (real contract)
+
+Grep clean: grep -rn product_title apps/mfe-catalog/ → 0 matches
+Build: ng build mfe-catalog → complete 5.3s, 0 errors
+Tests: vitest run catalog-form → 133 passed / 0 failed (2 spec files; api.service.spec pre-existing @mesell/core alias failure outside ng build — confirmed on develop before this branch)
+
+Blockers: none
+Hand-offs: PR #269 open — frontend-coordinator to run merge-gate review
+=========
+
 === UPDATE: 2026-06-17 ===
 Phase: UI Design-System Decoupling — Phase 3 (Layout: page primitives) — UI-STYLER POLISH PASS
 Agent: meesell-angular-ui-styler

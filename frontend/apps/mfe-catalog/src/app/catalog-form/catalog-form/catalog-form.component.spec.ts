@@ -14,7 +14,7 @@
  *   Test 2 — loading=true before schema resolves (skeleton visible)
  *   Test 3 — compulsoryFields().length > 0 when schema resolves (section heading)
  *   Test 4 — autofilling=true set immediately on onAutofill() call (before resolution)
- *   Test 5 — isAiSuggested('product_title') = true after autofill completes
+ *   Test 5 — isAiSuggested('product_name') = true after autofill completes
  *   Test 6 — editing AI-suggested field removes it from aiSuggestions map
  */
 
@@ -49,7 +49,7 @@ const MOCK_SCHEMA: FieldGroup[] = [
   {
     group: 'compulsory',
     fields: [
-      { canonical_name: 'product_title', display_name: 'Product Title', primitive: 'text_short', required: true, help_text: 'Enter the full product name' },
+      { canonical_name: 'product_name', display_name: 'Product Name', primitive: 'text_short', required: true, help_text: 'Enter the full product name' },
       { canonical_name: 'brand',         display_name: 'Brand',         primitive: 'text_short', required: true },
       {
         canonical_name: 'color', display_name: 'Color', primitive: 'enum', required: true,
@@ -74,7 +74,7 @@ const MOCK_SCHEMA: FieldGroup[] = [
 
 /** Simulated autofill response (8 compulsory fields, spec §6) */
 const AUTOFILL_RESPONSE: Record<string, unknown> = {
-  product_title: 'Blue Cotton Kurti — Mirror Work',
+  product_name: 'Blue Cotton Kurti — Mirror Work',
   brand: 'Generic',
   color: 'Blue',
   material: 'Cotton',
@@ -130,12 +130,12 @@ describe('CatalogFormComponent — Wave 5 F8 (pure-function tests)', () => {
   it('Gate 4 — aiSuggestions is empty before autofill resolves', () => {
     const emptyMap: Record<string, unknown> = {};
     // Before autofill resolves, no keys are present
-    expect(isAiSuggested('product_title', emptyMap)).toBe(false);
+    expect(isAiSuggested('product_name', emptyMap)).toBe(false);
     expect(Object.keys(emptyMap)).toHaveLength(0);
   });
 
   /**
-   * Gate Test 5 — isAiSuggested('product_title') returns true after autofill completes
+   * Gate Test 5 — isAiSuggested('product_name') returns true after autofill completes
    * After merging the autofill response into aiSuggestions, every filled field
    * is detectable via isAiSuggested().
    */
@@ -143,7 +143,7 @@ describe('CatalogFormComponent — Wave 5 F8 (pure-function tests)', () => {
     const aiSuggestions = mergeAiSuggestions({}, AUTOFILL_RESPONSE);
 
     // All 8 autofill fields should be detected
-    expect(isAiSuggested('product_title', aiSuggestions)).toBe(true);
+    expect(isAiSuggested('product_name', aiSuggestions)).toBe(true);
     expect(isAiSuggested('brand',         aiSuggestions)).toBe(true);
     expect(isAiSuggested('color',         aiSuggestions)).toBe(true);
     expect(isAiSuggested('material',      aiSuggestions)).toBe(true);
@@ -163,13 +163,13 @@ describe('CatalogFormComponent — Wave 5 F8 (pure-function tests)', () => {
    */
   it('Gate 6 — clearAiSuggestion removes only the edited field, leaving others intact', () => {
     const before = mergeAiSuggestions({}, AUTOFILL_RESPONSE);
-    expect(isAiSuggested('product_title', before)).toBe(true);
+    expect(isAiSuggested('product_name', before)).toBe(true);
     expect(isAiSuggested('brand',         before)).toBe(true);
 
-    const after = clearAiSuggestion('product_title', before);
+    const after = clearAiSuggestion('product_name', before);
 
-    // product_title is gone after clear
-    expect(isAiSuggested('product_title', after)).toBe(false);
+    // product_name is gone after clear
+    expect(isAiSuggested('product_name', after)).toBe(false);
 
     // brand and other fields remain highlighted
     expect(isAiSuggested('brand',   after)).toBe(true);
@@ -213,15 +213,15 @@ describe('catalog-form.model — field error validation', () => {
   });
 
   it('returns error message when required field has no value', () => {
-    const error = getFieldError('product_title', MOCK_SCHEMA, {});
+    const error = getFieldError('product_name', MOCK_SCHEMA, {});
     expect(error).toBeDefined();
-    expect(error).toContain('Product Title');
+    expect(error).toContain('Product Name');
     expect(error).toContain('required');
   });
 
   it('returns undefined when required field has a value', () => {
-    const values = { product_title: 'My Kurti' };
-    expect(getFieldError('product_title', MOCK_SCHEMA, values)).toBeUndefined();
+    const values = { product_name: 'My Kurti' };
+    expect(getFieldError('product_name', MOCK_SCHEMA, values)).toBeUndefined();
   });
 
   it('returns undefined for unknown canonical names', () => {
@@ -235,37 +235,37 @@ describe('catalog-form.model — isFormComplete', () => {
   });
 
   it('returns false when only some compulsory fields are filled', () => {
-    const partial = { product_title: 'My Kurti', brand: 'Generic' };
-    // MOCK_SCHEMA has 3 compulsory: product_title, brand, color — color missing
+    const partial = { product_name: 'My Kurti', brand: 'Generic' };
+    // MOCK_SCHEMA has 3 compulsory: product_name, brand, color — color missing
     expect(isFormComplete(MOCK_SCHEMA, partial)).toBe(false);
   });
 
   it('returns true when all compulsory fields have values', () => {
-    const complete = { product_title: 'My Kurti', brand: 'Generic', color: 'Blue' };
+    const complete = { product_name: 'My Kurti', brand: 'Generic', color: 'Blue' };
     expect(isFormComplete(MOCK_SCHEMA, complete)).toBe(true);
   });
 
   it('returns true even when recommended/optional fields are empty', () => {
-    const onlyCompulsory = { product_title: 'My Kurti', brand: 'Generic', color: 'Blue' };
+    const onlyCompulsory = { product_name: 'My Kurti', brand: 'Generic', color: 'Blue' };
     expect(isFormComplete(MOCK_SCHEMA, onlyCompulsory)).toBe(true);
   });
 });
 
 describe('catalog-form.model — deriveProductName', () => {
-  it('returns the product_title value when set', () => {
-    expect(deriveProductName({ product_title: 'Blue Kurti' })).toBe('Blue Kurti');
+  it('returns the product_name value when set', () => {
+    expect(deriveProductName({ product_name: 'Blue Kurti' })).toBe('Blue Kurti');
   });
 
-  it('returns "New Product" when product_title is empty string', () => {
-    expect(deriveProductName({ product_title: '' })).toBe('New Product');
+  it('returns "New Product" when product_name is empty string', () => {
+    expect(deriveProductName({ product_name: '' })).toBe('New Product');
   });
 
-  it('returns "New Product" when product_title is absent', () => {
+  it('returns "New Product" when product_name is absent', () => {
     expect(deriveProductName({})).toBe('New Product');
   });
 
-  it('returns "New Product" when product_title is not a string', () => {
-    expect(deriveProductName({ product_title: 42 })).toBe('New Product');
+  it('returns "New Product" when product_name is not a string', () => {
+    expect(deriveProductName({ product_name: 42 })).toBe('New Product');
   });
 });
 
@@ -302,21 +302,21 @@ describe('catalog-form.model — mergeAiSuggestions (immutability)', () => {
 
 describe('catalog-form.model — clearAiSuggestion (immutability)', () => {
   it('removes only the specified key', () => {
-    const map = { product_title: 'AI Title', brand: 'Generic' };
-    const result = clearAiSuggestion('product_title', map);
-    expect(result).not.toHaveProperty('product_title');
+    const map = { product_name: 'AI Title', brand: 'Generic' };
+    const result = clearAiSuggestion('product_name', map);
+    expect(result).not.toHaveProperty('product_name');
     expect(result).toHaveProperty('brand', 'Generic');
   });
 
   it('does not mutate the original map', () => {
-    const map = { product_title: 'AI Title' };
-    clearAiSuggestion('product_title', map);
-    expect(map).toHaveProperty('product_title');
+    const map = { product_name: 'AI Title' };
+    clearAiSuggestion('product_name', map);
+    expect(map).toHaveProperty('product_name');
   });
 
   it('is a no-op when the key is not present', () => {
     const map = { brand: 'Generic' };
-    const result = clearAiSuggestion('product_title', map);
+    const result = clearAiSuggestion('product_name', map);
     expect(result).toEqual({ brand: 'Generic' });
   });
 });
@@ -353,8 +353,8 @@ describe('catalog-form.model — route builders', () => {
 
 describe('catalog-form.model — extractSuggestionEntries (autofill overlay)', () => {
   const SUGGESTIONS = {
-    product_title: { value: 'AI Blue Kurti', confidence: 0.95, source: 'ai' as const },
-    color:         { value: 'Blue',          confidence: 0.90, source: 'ai' as const },
+    product_name: { value: 'AI Blue Kurti', confidence: 0.95, source: 'ai' as const },
+    color:        { value: 'Blue',          confidence: 0.90, source: 'ai' as const },
   };
 
   it('returns one entry per suggestion key', () => {
@@ -364,7 +364,7 @@ describe('catalog-form.model — extractSuggestionEntries (autofill overlay)', (
 
   it('entry has canonical and value fields', () => {
     const entries = extractSuggestionEntries(SUGGESTIONS);
-    const titleEntry = entries.find(e => e.canonical === 'product_title');
+    const titleEntry = entries.find(e => e.canonical === 'product_name');
     expect(titleEntry).toBeDefined();
     expect(titleEntry?.value).toBe('AI Blue Kurti');
   });
@@ -376,15 +376,15 @@ describe('catalog-form.model — extractSuggestionEntries (autofill overlay)', (
 
 describe('catalog-form.model — applySuggestion (per-suggestion apply)', () => {
   const SUGGESTIONS = {
-    product_title: { value: 'AI Blue Kurti', confidence: 0.95, source: 'ai' as const },
-    color:         { value: 'Blue',          confidence: 0.90, source: 'ai' as const },
+    product_name: { value: 'AI Blue Kurti', confidence: 0.95, source: 'ai' as const },
+    color:        { value: 'Blue',          confidence: 0.90, source: 'ai' as const },
   };
 
   it('applies the suggestion value to fieldValues (immutable)', () => {
-    const before = { product_title: '' };
-    const after = applySuggestion('product_title', SUGGESTIONS, before);
-    expect(after['product_title']).toBe('AI Blue Kurti');
-    expect(before['product_title']).toBe(''); // original unchanged
+    const before = { product_name: '' };
+    const after = applySuggestion('product_name', SUGGESTIONS, before);
+    expect(after['product_name']).toBe('AI Blue Kurti');
+    expect(before['product_name']).toBe(''); // original unchanged
   });
 
   it('is a no-op when canonical is not in suggestions', () => {
@@ -402,19 +402,19 @@ describe('catalog-form.model — applySuggestion (per-suggestion apply)', () => 
 
 describe('catalog-form.model — dismissSuggestion (per-suggestion dismiss)', () => {
   const SUGGESTIONS = {
-    product_title: { value: 'AI Blue Kurti', confidence: 0.95, source: 'ai' as const },
-    color:         { value: 'Blue',          confidence: 0.90, source: 'ai' as const },
+    product_name: { value: 'AI Blue Kurti', confidence: 0.95, source: 'ai' as const },
+    color:        { value: 'Blue',          confidence: 0.90, source: 'ai' as const },
   };
 
   it('removes only the specified canonical from suggestions (immutable)', () => {
-    const after = dismissSuggestion('product_title', SUGGESTIONS);
-    expect(after).not.toHaveProperty('product_title');
+    const after = dismissSuggestion('product_name', SUGGESTIONS);
+    expect(after).not.toHaveProperty('product_name');
     expect(after).toHaveProperty('color');
   });
 
   it('does not mutate the original suggestions', () => {
-    dismissSuggestion('product_title', SUGGESTIONS);
-    expect(SUGGESTIONS).toHaveProperty('product_title');
+    dismissSuggestion('product_name', SUGGESTIONS);
+    expect(SUGGESTIONS).toHaveProperty('product_name');
   });
 
   it('is a no-op when canonical is not present', () => {
@@ -648,8 +648,8 @@ function makeWizardField(
 describe('groupIntoSteps — spec §A: field grouping by step_id', () => {
   it('groups fields by step_id and returns non-empty steps only', () => {
     const fields: FieldSchema[] = [
-      makeWizardField('product_title', true,  'basics'),
-      makeWizardField('mrp',           true,  'pricing'),
+      makeWizardField('product_name', true,  'basics'),
+      makeWizardField('mrp',          true,  'pricing'),
       makeWizardField('sleeve_length', false, 'sizing'),
     ];
     const steps = groupIntoSteps(fields);
@@ -662,10 +662,10 @@ describe('groupIntoSteps — spec §A: field grouping by step_id', () => {
 
   it('orders steps by STEP_ORDER canonical order', () => {
     const fields: FieldSchema[] = [
-      makeWizardField('sleeve_length',  false, 'sizing'),
-      makeWizardField('material_care',  false, 'materials'),
-      makeWizardField('product_title',  true,  'basics'),
-      makeWizardField('mrp',            true,  'pricing'),
+      makeWizardField('sleeve_length', false, 'sizing'),
+      makeWizardField('material_care', false, 'materials'),
+      makeWizardField('product_name',  true,  'basics'),
+      makeWizardField('mrp',           true,  'pricing'),
     ];
     const steps = groupIntoSteps(fields);
     const ids = steps.map(s => s.id);
@@ -691,7 +691,7 @@ describe('groupIntoSteps — spec §A: field grouping by step_id', () => {
 
   it('excludes skip-primitive fields (image_upload) from step field lists', () => {
     const fields: FieldSchema[] = [
-      makeWizardField('product_title', true,  'basics'),
+      makeWizardField('product_name', true, 'basics'),
       { canonical_name: 'hero_image', display_name: 'Hero Image', primitive: 'skip', required: false, step_id: 'photos' },
     ];
     const steps = groupIntoSteps(fields);
@@ -725,7 +725,7 @@ describe('groupIntoSteps — spec §A: field grouping by step_id', () => {
   });
 
   it('assigns labels from STEP_LABELS', () => {
-    const fields: FieldSchema[] = [makeWizardField('product_title', true, 'basics')];
+    const fields: FieldSchema[] = [makeWizardField('product_name', true, 'basics')];
     const steps = groupIntoSteps(fields);
     expect(steps[0].label).toBe(STEP_LABELS['basics']);
     expect(steps[0].label).toBe('Basics');
@@ -776,14 +776,14 @@ describe('canAdvanceFromStep — spec §D: Next-button gating', () => {
       id: 'basics',
       label: 'Basics',
       fields: [
-        makeWizardField('product_title', true,  'basics'),
-        makeWizardField('brand',         true,  'basics'),
-        makeWizardField('description',   false, 'basics'),
+        makeWizardField('product_name', true,  'basics'),
+        makeWizardField('brand',        true,  'basics'),
+        makeWizardField('description',  false, 'basics'),
       ],
       requiredCount: 2,
     };
     expect(canAdvanceFromStep(step, {})).toBe(false);
-    expect(canAdvanceFromStep(step, { product_title: 'Kurti' })).toBe(false);
+    expect(canAdvanceFromStep(step, { product_name: 'Kurti' })).toBe(false);
   });
 
   it('returns true when all required fields on the step are filled', () => {
@@ -791,12 +791,12 @@ describe('canAdvanceFromStep — spec §D: Next-button gating', () => {
       id: 'basics',
       label: 'Basics',
       fields: [
-        makeWizardField('product_title', true, 'basics'),
-        makeWizardField('brand',         true, 'basics'),
+        makeWizardField('product_name', true, 'basics'),
+        makeWizardField('brand',        true, 'basics'),
       ],
       requiredCount: 2,
     };
-    const values = { product_title: 'Kurti', brand: 'Generic' };
+    const values = { product_name: 'Kurti', brand: 'Generic' };
     expect(canAdvanceFromStep(step, values)).toBe(true);
   });
 
@@ -863,15 +863,15 @@ describe('stepRequiredFieldErrors — per-step error map for Next tooltip', () =
       id: 'basics',
       label: 'Basics',
       fields: [
-        makeWizardField('product_title', true, 'basics'),
-        makeWizardField('brand',         true, 'basics'),
-        makeWizardField('opt_field',     false, 'basics'),
+        makeWizardField('product_name', true, 'basics'),
+        makeWizardField('brand',        true, 'basics'),
+        makeWizardField('opt_field',    false, 'basics'),
       ],
       requiredCount: 2,
     };
     const errors = stepRequiredFieldErrors(step, {});
     expect(Object.keys(errors)).toHaveLength(2);
-    expect(errors['product_title']).toContain('required');
+    expect(errors['product_name']).toContain('required');
     expect(errors['brand']).toContain('required');
     expect(errors['opt_field']).toBeUndefined();
   });
@@ -880,10 +880,10 @@ describe('stepRequiredFieldErrors — per-step error map for Next tooltip', () =
     const step: WizardStep = {
       id: 'basics',
       label: 'Basics',
-      fields: [makeWizardField('product_title', true, 'basics')],
+      fields: [makeWizardField('product_name', true, 'basics')],
       requiredCount: 1,
     };
-    const errors = stepRequiredFieldErrors(step, { product_title: 'Blue Kurti' });
+    const errors = stepRequiredFieldErrors(step, { product_name: 'Blue Kurti' });
     expect(errors).toEqual({});
   });
 

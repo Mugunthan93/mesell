@@ -133,7 +133,7 @@ export function isFormComplete(
  * Returns the display name for the product, falling back to 'New Product'.
  */
 export function deriveProductName(fieldValues: FieldValuesMap): string {
-  const v = fieldValues['product_title'];
+  const v = fieldValues['product_name'];
   return typeof v === 'string' && v ? v : 'New Product';
 }
 
