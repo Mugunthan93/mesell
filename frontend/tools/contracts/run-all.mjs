@@ -6,14 +6,17 @@
  * report. Mirrors the backend `check_*.py` + Gate 3 pattern (BACKEND_ARCHITECTURE.md §16.E).
  *
  * Usage (from frontend/):
- *   node tools/contracts/run-all.mjs              # warn-only, exits 0 always (Phase 0)
+ *   node tools/contracts/run-all.mjs              # warn-only, exits 0 always
  *   node tools/contracts/run-all.mjs --strict      # exits 1 if ANY violation exists
  *   node tools/contracts/run-all.mjs --strict=fe2,fe3  # exits 1 if FE-2 or FE-3 has violations
  *
- * Phase 0: warn-only mode is the DEFAULT. The CI job in Phase 0 runs without --strict.
- * Phase 1: CI flips --strict=fe2 after icon migration.
- * Phase 4: CI flips --strict=fe2,fe3 after chrome primitives land.
- * Phase 5: CI flips --strict (all) and the job becomes a required status check.
+ * Warn → strict roadmap:
+ *   Phase 0: warn-only DEFAULT (CI runs without --strict).
+ *   Phase 1: CI flips --strict=fe2 after icon migration.
+ *   Phase 4: CI flips --strict=fe2,fe3 after chrome primitives land.
+ *   Phase 5 (ACTIVE): CI flips --strict (ALL 5) and the FE Gate job becomes a
+ *     REQUIRED status check on develop (founder wires it in branch protection).
+ *     A violation of any of FE-1..FE-5 fails the gate and blocks merge.
  */
 
 import { scan as fe1 } from './fe1_no_primeng_outside_uikit.mjs';
@@ -41,7 +44,7 @@ const isStrictMode = strictAll || strictContracts.size > 0;
 // ── Run all scanners ───────────────────────────────────────────────────────────
 console.log('');
 console.log('='.repeat(70));
-console.log('  MeeSell FE Contract Scanners — Phase 0 (UI Design-System Decoupling)');
+console.log('  MeeSell FE Contract Scanners — Phase 5 (UI Design-System Decoupling — sealed)');
 console.log('='.repeat(70));
 console.log('');
 
@@ -96,8 +99,8 @@ console.log('');
 
 // ── Exit code logic ────────────────────────────────────────────────────────────
 if (!isStrictMode) {
-  // Phase 0 default: always exit 0 regardless of violations.
-  console.log('WARN-ONLY MODE (Phase 0): violations reported, pipeline not failed.');
+  // Warn-only default (no --strict flag): always exit 0 regardless of violations.
+  console.log('WARN-ONLY MODE: violations reported, pipeline not failed.');
   console.log('Use --strict or --strict=<fe-id,...> to enable strict enforcement.');
   console.log('');
   process.exit(0);

@@ -9,8 +9,9 @@ Frontend coordinator for MeeSell. Orchestrates the 3 frontend specialists (compo
 - [auth_otp_feature.md](auth_otp_feature.md) — auth-otp: your role as frontend lead, 3-specialist dispatch order (service-builder → component-builder → ui-styler), branch ownership, FE-D5 contracts to enforce in PR review
 
 ### UI Design-System Decoupling (workstream — I am the standalone LEAD from Phase 3)
-- [UI-DS Phase 3](ui_ds_phase3.md) — @mesell/layout page primitives (6) + MEE_LAYOUT shipped; **PR #265 OPEN** (founder merges). HYBRID SPEC→component-builder→ui-styler→merge-gate. ui-styler caught WCAG dup-`<main>` + grid responsive bugs. FE-1/FE-4 green by construction. Roadmap P4–P7 + per-phase-worktree discipline inside.
-- [UI-DS Phase 4](ui_ds_phase4.md) — chrome primitives (app-bar/side-nav/nav-item/user-menu) + thin-host shell refactor + FE-3 strict; **PR #267 OPEN** (stacked on #265 → merge #265 first). Built DIRECTLY under API-529 overload (subagent dispatch failed 3×) + ui-styler parity pass (restored dropped `<nav>` landmark). Parity oracle GREEN unmodified. KEY learnings: worktree node_modules symlink trick, mobile-hide specificity guard (0,2,0 > :host 0,1,0), 529-fallback. Roadmap P5–P7 inside.
+- [UI-DS Phase 3](ui_ds_phase3.md) — @mesell/layout page primitives (6) + MEE_LAYOUT; **MERGED #265**. HYBRID SPEC→component-builder→ui-styler→merge-gate. ui-styler caught WCAG dup-`<main>` + grid responsive bugs. Per-phase-worktree discipline inside.
+- [UI-DS Phase 4](ui_ds_phase4.md) — chrome primitives (app-bar/side-nav/nav-item/user-menu) + thin-host shell refactor + FE-3 strict; **MERGED #267**. Built DIRECTLY under API-529 overload (subagent dispatch failed 3×) + ui-styler parity pass (restored dropped `<nav>` landmark). Parity oracle GREEN unmodified. KEY: worktree node_modules symlink, mobile-hide specificity guard (0,2,0 > :host 0,1,0), 529-fallback.
+- [UI-DS Phase 5](ui_ds_phase5.md) — SEAL capstone: all 5 FE contracts strict (`--strict`) + **FE Gate added to develop required checks** (gh api, 14 total); **PR #271 OPEN**. FE-5 allow-list emptied (0 deep imports). KEY: squash+stacked-PR rebase recipe, retarget-needs-close+reopen-to-trigger-CI, required-check gh api recipe. P6 (MFE adoption) + P7 (swap-proof) remain.
 
 ### Prior sessions
 - [Framework gate](framework_gate.md) — Angular 18 ratified 2026-06-05; React scaffold to be deleted

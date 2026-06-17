@@ -10,11 +10,19 @@ and are dependency-free Node ESM (only `node:fs` + `node:path`).
 
 | ID | File | Rule | Status |
 |----|------|------|--------|
-| **FE-1** | `fe1_no_primeng_outside_uikit.mjs` | No `primeng`/`@primeuix` ES import outside `libs/ui-kit/` | CLEAN (0 violations) — warn-only |
+| **FE-1** | `fe1_no_primeng_outside_uikit.mjs` | No `primeng`/`@primeuix` ES import outside `libs/ui-kit/` | **STRICT (Phase 5)** — CI exits 1 on violation |
 | **FE-2** | `fe2_no_raw_pi_icons.mjs` | No raw icon class string outside `libs/ui-kit/icon/icon.registry.ts` | **STRICT (Phase 1)** — CI exits 1 on violation |
-| **FE-3** | `fe3_chrome_shell_only.mjs` | MFEs must not import `ShellComponent` or chrome primitives | CLEAN (0 violations) — warn-only |
-| **FE-4** | `fe4_lib_dag.mjs` | Lib import DAG: `composites → layout → ui-kit` (no back-edges) | CLEAN (0 violations) — warn-only |
-| **FE-5** | `fe5_public_barrels_only.mjs` | Apps import `@mesell/*` public barrels only; no cross-MFE imports | CLEAN (0 violations) — warn-only |
+| **FE-3** | `fe3_chrome_shell_only.mjs` | MFEs must not import `ShellComponent` or chrome primitives | **STRICT (Phase 4)** — CI exits 1 on violation |
+| **FE-4** | `fe4_lib_dag.mjs` | Lib import DAG: `composites → layout → ui-kit` (no back-edges) | **STRICT (Phase 5)** — CI exits 1 on violation |
+| **FE-5** | `fe5_public_barrels_only.mjs` | Apps import `@mesell/*` public barrels only; no cross-MFE imports | **STRICT (Phase 5)** — CI exits 1 on violation |
+
+> **Phase 5 — SEALED.** All 5 contracts are now strict (`--strict`, all). The
+> **FE Gate** (`FE Gate: lint (5 contracts)`) is a **required status check on
+> `develop`** (wired in branch protection) — a red gate blocks merge. The FE-5
+> deep-import allow-list (`PHASE0_ALLOWED_DEEP_PREFIXES`) is **emptied** (0 deep
+> imports exist; apps import barrel roots only). The icon/theme swap-proof
+> demonstration (prove a one-file PrimeNG→other swap with these seals holding) is
+> **Phase 7**, not here.
 
 ---
 
@@ -48,9 +56,9 @@ node tools/contracts/fe2_no_raw_pi_icons.mjs
 | Phase | CI action | Contracts flipped |
 |-------|-----------|------------------|
 | **Phase 0** (complete) | warn-only, non-blocking | none (all warn) |
-| **Phase 1** (current) | `--strict=fe2` — icon migration complete; `mee-icon` + registry shipped | **FE-2 strict** |
-| **Phase 4** | `--strict=fe2,fe3` after chrome primitives land | FE-3 |
-| **Phase 5** | `--strict` (all); job becomes a required status check (founder wires in branch protection, same as `frontend-boot-smoke` D1 gate) | FE-1, FE-4, FE-5 |
+| **Phase 1** (complete) | `--strict=fe2` — icon migration complete; `mee-icon` + registry shipped | **FE-2 strict** |
+| **Phase 4** (complete) | `--strict=fe2,fe3` after chrome primitives land | FE-3 |
+| **Phase 5** (current — SEALED) | `--strict` (all); FE Gate becomes a **required status check** on `develop` (founder wires in branch protection, same as `frontend-boot-smoke` D1 gate); FE-5 allow-list emptied | FE-1, FE-4, FE-5 |
 
 ---
 
@@ -76,24 +84,22 @@ What was migrated in Phase 1:
 - `apps/mfe-catalog/.../smart-picker.component.ts` — `icon="send"` (was `icon="pi pi-send"`)
 - `button.component.spec.ts` + `menu.component.spec.ts` — spec fixtures use `MeeIconName` keys
 
-### FE-5 — lean-bundle deep imports (Phase 5)
+### FE-5 — deep-import allow-list (Phase 5 — EMPTIED)
 
-The constant `PHASE0_ALLOWED_DEEP_PREFIXES` in `fe5_public_barrels_only.mjs` holds the
-SP0 lean-bundle deep import set that PR #38 introduced:
+The constant `PHASE0_ALLOWED_DEEP_PREFIXES` in `fe5_public_barrels_only.mjs` was a
+vestigial seed for the SP0 lean-bundle deep-import pattern anticipated in PR #38.
+That pattern was **never committed** — 0 deep `@mesell/<lib>/<subpath>` imports exist
+in `apps/**`, so the allow-list guarded nothing.
+
+**Phase 5: emptied.** The seal is now final — apps import `@mesell/*` barrel ROOTS
+only (no deep subpath, no cross-MFE):
 
 ```js
-const PHASE0_ALLOWED_DEEP_PREFIXES = [
-  '@mesell/ui-kit/',
-  '@mesell/composites/',
-  '@mesell/core/models',
-];
+const PHASE0_ALLOWED_DEEP_PREFIXES = [];
 ```
 
-**Phase 5 action (founder decision needed):**
-- **Ratify:** keep these prefixes in the allow-list, wire `--strict` to ALL (they pass).
-- **Refactor:** barrel-ize all deep imports first, then empty the allow-list, then wire strict.
-
-The Phase-0 violation count (baseline) for FE-5 is recorded in the CI run for Phase 5's reference.
+With `--strict` (all 5) active, ANY deep `@mesell/<lib>/<subpath>` import in `apps/**`
+now fails the FE Gate. Baseline today: FE-5 = 0 violations.
 
 ---
 
