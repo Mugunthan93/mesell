@@ -60,6 +60,62 @@ Hand-offs:
     `imports: [...MEE_LAYOUT]`. Token spacing flows through MEE_GAP_TOKEN → var(--mee-space-N).
 =========
 
+=== UPDATE: 2026-06-16 23:45 ===
+Phase: /catalogs/:id/edit — wizard refactor (multi-step wizard) — mesell-catalog-form-wizard-frontend-session-2
+Agent: meesell-angular-component-builder
+Branch: feature/catalog-form-wizard @ HEAD (PUSHED after commit below)
+
+Done:
+  WIP checkpoint 2065c68 reviewed + 4 build errors fixed:
+    1. TS2305: WizardStep imported from ../services/catalog-form-api.service (not exported there)
+       → Fixed: import WizardStep from ../models/field-schema.model instead
+    2-4. TS7006: 3 × implicit any on arrow-function params in computed signals + loadStepEnums
+       → Fixed: explicit `: FieldSchema` type annotation on all 3 filter callbacks
+
+  Spec §A verified: groupIntoSteps groups by step_id, STEP_ORDER canonical order,
+    required-first within step, excludes skip primitives, requiredCount correct.
+  Spec §B verified: "More details" collapsible toggle present (optionalFields > 0 branch).
+  Spec §C verified: mee-steps stepper (from @mesell/ui-kit, no hand-rolled stepper, no primeng direct),
+    sticky bottom nav bar (.mee-wizard-nav fixed), "Step X of N" label, ≥44px touch targets.
+  Spec §D verified: canAdvanceFromStep blocks only on unfilled required fields;
+    requiredCount===0 = freely skippable; photos never blocks.
+  Spec §E verified: loadStepEnums() lazy-loads per-step on stepEnter(), enumCache deduplicates.
+  Spec §F verified: ImageUploaderComponent (app-image-uploader, selector confirmed) embedded
+    in photos step; non-blocking front-photo warning via MeeAlertBannerComponent.
+  Spec §G preserved: categoryIdMissing focus, GAP-1 getProduct, getDraft prefill,
+    10s debounced autosave, AI autofill overlay + per-field highlight, OnPush, signals, a11y
+    aria-current/aria-live/aria-label/role=region/role=alert/tabindex.
+
+Tests (pure-function, Vitest):
+  - catalog-form.component.spec.ts: 133 tests (107 pre-existing + 26 new wizard spec)
+    new: groupIntoSteps (10), canAdvanceFromStep (6), hasPhotosStepFrontMissing (4),
+         stepRequiredFieldErrors (5), STEP_ORDER integrity (2 tests + 1 label test)
+  - field-schema.model.spec.ts: unchanged, passing
+  - catalog-form-api.service.spec.ts: PRE-EXISTING FAILURE (not caused by WIP)
+    Vitest cannot resolve @mesell/core path alias (no vitest alias config in workspace).
+    Affects only the service unit test (pure business logic tests pass).
+    Escalate to meesell-angular-service-builder or meesell-frontend-coordinator to add
+    vite resolve.alias for @mesell/* in Vitest config.
+  Total: 133 passed / 0 failed (in-scope specs)
+
+Build: mfe-catalog --configuration development GREEN (ZERO TS errors, ZERO angular-compiler errors)
+  WARNs only: pre-existing shared-mapping metadata warnings from native-federation config (not code errors).
+  Confirmed via background task ba14mfwiy exit code 0.
+
+PrimeNG boundary: PASS — no primeng imports outside libs/ui-kit. mee-steps wraps p-steps internally.
+  app-image-uploader: reused from frontend/apps/mfe-catalog/src/app/images/image-uploader/.
+
+In progress: none
+Blockers: catalog-form-api.service.spec.ts Vitest @mesell/core resolution (pre-existing, not this session)
+Next: meesell-frontend-coordinator merge-gate review
+Hand-offs:
+  - CatalogFormComponent wizard rewrite validated and built green on feature/catalog-form-wizard
+  - WizardStep type: import from ../models/field-schema.model (NOT from the api service re-exports)
+  - ImageUploaderComponent (selector: app-image-uploader, standalone, providers:[ImageService])
+    reads productId from ActivatedRoute internally — no inputs needed from catalog-form
+  - mee-steps: input `steps` (MeeStep[]), `active_index` (number), output `active_index_change`
+=========
+
 === UPDATE: 2026-06-16 ===
 Phase: UI Design-System Decoupling — Phase 3 (Layout: page primitives)
 Agent: meesell-angular-component-builder
