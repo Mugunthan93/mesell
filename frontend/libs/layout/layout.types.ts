@@ -30,3 +30,16 @@ export type MeePageMaxWidth = 'sm' | 'md' | 'lg' | 'xl' | 'full';
 
 /** Max-width options for form columns (tighter set). */
 export type MeeFormMaxWidth = 'sm' | 'md' | 'lg' | 'full';
+
+/**
+ * Discrete horizontal/vertical padding scale for `mee-page`.
+ *   'none'    → no padding (edge-to-edge); equivalent to the boolean `false`.
+ *   'tight'   → 'px-4 py-6 sm:px-6'           (omits the lg:px-8 step — for
+ *               pixel-parity adoption by pages that hand-roll this padding).
+ *   'default' → 'px-4 py-6 sm:px-6 lg:px-8'   (the design-system standard;
+ *               equivalent to the boolean `true`).
+ *
+ * `mee-page`'s `padding` input accepts `boolean | MeePagePadding` for backward
+ * compatibility: `false ≡ 'none'`, `true ≡ 'default'`.
+ */
+export type MeePagePadding = 'none' | 'tight' | 'default';

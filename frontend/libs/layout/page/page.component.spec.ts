@@ -59,6 +59,43 @@ describe('MeePageComponent', () => {
     expect(container.className).not.toContain('px-4');
   });
 
+  // --- Phase 6a: MeePagePadding scale tests (additive — back-compat tests above are UNCHANGED) ---
+
+  it('should include lg:px-8 when padding is true (pins the default explicitly)', () => {
+    fixture.componentRef.setInput('padding', true);
+    fixture.detectChanges();
+    const container = fixture.nativeElement.querySelector('div');
+    expect(container.className).toContain('lg:px-8');
+  });
+
+  it('should apply full default padding when padding is "default" (≡ true)', () => {
+    fixture.componentRef.setInput('padding', 'default');
+    fixture.detectChanges();
+    const container = fixture.nativeElement.querySelector('div');
+    expect(container.className).toContain('px-4');
+    expect(container.className).toContain('py-6');
+    expect(container.className).toContain('sm:px-6');
+    expect(container.className).toContain('lg:px-8');
+  });
+
+  it('should apply tight padding (px-4 py-6 sm:px-6) but NOT lg:px-8 when padding is "tight"', () => {
+    fixture.componentRef.setInput('padding', 'tight');
+    fixture.detectChanges();
+    const container = fixture.nativeElement.querySelector('div');
+    expect(container.className).toContain('px-4');
+    expect(container.className).toContain('py-6');
+    expect(container.className).toContain('sm:px-6');
+    expect(container.className).not.toContain('lg:px-8');
+  });
+
+  it('should omit padding classes when padding is "none" (≡ false)', () => {
+    fixture.componentRef.setInput('padding', 'none');
+    fixture.detectChanges();
+    const container = fixture.nativeElement.querySelector('div');
+    expect(container.className).not.toContain('px-4');
+    expect(container.className).not.toContain('lg:px-8');
+  });
+
   it('should bind gap token via [style.gap] for gap="lg"', () => {
     fixture.componentRef.setInput('gap', 'lg');
     fixture.detectChanges();
