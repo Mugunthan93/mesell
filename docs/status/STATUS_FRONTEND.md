@@ -7504,3 +7504,32 @@ Blockers: none.
 Next: Wave 2B.3 — spec file for resolveInitOutcome() pure helper
 Hand-offs: CatalogFormComponent now safe on hard-reload. Depends on getProduct() from CatalogFormApiService (commit 2264fed, Wave 2B.1).
 =========
+
+=== UPDATE: 2026-06-17 — UI-DS Phase 6 B-Pilot — dashboard adopts mee-page ===
+Phase: UI-DS Phase 6 (B-Pilot) / mfe-dashboard
+Done:
+  - DashboardComponent (/dashboard): replaced hand-rolled L1 page container div
+    (px-4 py-6 sm:px-6 max-w-7xl mx-auto w-full flex flex-col gap-6)
+    with <mee-page maxWidth="xl" padding="tight" gap="lg">
+  - Added: import { MeePageComponent } from '@mesell/layout' (single import, NOT ...MEE_LAYOUT per H7)
+  - Added: MeePageComponent to standalone imports[] array
+  - landing.component.ts: UNTOUCHED (zero edits; bespoke marketing page with no mee-page container)
+  - Offline-banner (mee-offline-banner) kept as a sibling ABOVE <mee-page> (H1 — full-bleed)
+  - .mee-stat-grid, aria-live L3, L5 toolbar, L6 table — all left raw per SPEC leave-raw list
+Tests: 39/39 dashboard.component.spec.ts passed (Vitest, pure-function — no TestBed)
+       landing.component.spec.ts + dashboard-api.service.spec.ts: pre-existing Vitest package
+       resolution failures (unrelated to this change; confirmed same failure on origin HEAD)
+Build: ng build mfe-dashboard --configuration=production: EXIT 0, 3.230s
+       BEFORE: DashboardComponent chunk 18,155 bytes raw / 4,886 bytes gzip
+       AFTER:  DashboardComponent chunk 18,174 bytes raw / 4,892 bytes gzip
+       DELTA:  +19 bytes raw / +6 bytes gzip (bar: ≤ +2KB gzip — PASS)
+FE Gate: 5/5 contracts CLEAN (node tools/contracts/run-all.mjs --strict → exit 0)
+DOM-parity: mee-page renders inner div with flex flex-col w-full mx-auto max-w-screen-xl px-4 py-6 sm:px-6
+            + [style.gap]=var(--mee-space-6); equivalent to original gap-6 (24px flex gap).
+            mee-page adds :host{display:block} wrapper (one extra DOM node). Noted for ui-styler review.
+In progress: none.
+Blockers: none.
+Next: Coordinator merge-gate review (§6 checklist).
+Hand-offs: DashboardComponent adopts mee-page; landing.component.ts 100% unchanged.
+           ui-styler owns 3-breakpoint pixel-diff (H3 flex-gap, H2 stat-grid mobile 2-up, H1 banner full-bleed).
+=========
