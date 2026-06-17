@@ -1,7 +1,83 @@
 # STATUS — FRONTEND
 
 **Owner:** meesell-frontend-coordinator (master session)
-**Last update:** 2026-06-16
+**Last update:** 2026-06-17
+
+=== UPDATE: 2026-06-17 14:42 ===
+Phase: UI Design-System Decoupling — Phase 4 (chrome primitives + shell refactor) — UI-STYLER PARITY PASS
+Agent: meesell-angular-ui-styler
+Branch: feat/ui-ds-phase4
+
+Done:
+  A11y parity fix — mee-side-nav missing <nav> landmark:
+    Phase 3 shell used <nav class="sidebar-desktop" aria-label="Main navigation"> as the desktop
+    sidebar root element. After the Phase 4 refactor, <mee-side-nav> became the root; it rendered
+    brand + groups directly with no <nav> wrapper. This eliminated the navigation landmark that
+    screen readers use for WCAG 2.4.1 (bypass blocks). Fix: added
+    <nav aria-label="Main navigation"> wrapper inside mee-side-nav's template. The landmark wraps
+    all inner content (brand + groups + nav-items), restoring structural parity with Phase 3.
+    Updated side-nav.component.spec.ts: added nav landmark assertion (+1 test).
+    No CSS change needed. No spec selector changes (all class-based queries still resolve).
+
+  5 parity dimensions reviewed — no other defects found:
+    1. Sidebar (mee-side-nav): CONFIRMED PARITY
+       Combined CSS (mee-side-nav :host + shell .sidebar-desktop) = identical to Phase 3
+       .sidebar-desktop: width 260px, position fixed, z-index 100, inset 0 — correct.
+       mee-side-nav :host: display flex, flex-direction column, background var(--mee-color-sidebar)
+       — covering the properties Phase 3 had on .sidebar-desktop itself.
+       Mobile hide: .shell-layout .sidebar-desktop { display:none } at specificity 0,2,0
+       beats mee-side-nav :host { display:flex } at 0,1,0 — CONFIRMED WINS.
+       Group dividers, brand, group labels, uppercase/letter-spacing all lifted verbatim.
+
+    2. nav-item (.nav-item i icon sizing): CONFIRMED PARITY (EXISTING NO-OP)
+       .nav-item i { font-size:16px; width:20px } was already a cross-encapsulation dead rule
+       in Phase 3: the <i> inside mee-icon carried _ngcontent-ICON, not _ngcontent-SHELL, so
+       the shell's scoped .nav-item i rule never matched. The same non-piercing behavior holds
+       in Phase 4 (mee-icon's <i> has _ngcontent-ICON, not _ngcontent-NAVITEM). Parity =
+       identical non-match in both phases. Icon inherits font-size:14px from .nav-item in both.
+       No fix required; no ::ng-deep change (would be a non-parity improvement, not a parity fix).
+
+    3. app-bar (:host display:contents): CONFIRMED PARITY
+       display:contents makes mee-app-bar's host transparent, so the inner <header class="shell-header">
+       is a direct flex child of .shell-main — identical to Phase 3 where <header> was directly in
+       the shell template. position:sticky top:0 anchors correctly in both cases.
+       60px height, surface bg, bottom border — all verified verbatim lifted.
+       Hamburger show/hide (display:none default, display:flex at ≤1023px) — correct.
+
+    4. user-menu: CONFIRMED PARITY
+       .avatar: 36px circle, primary bg, on-primary color, min 44px touch target — verbatim lifted.
+       Keyboard a11y: role=button, tabindex=0, keydown.enter/space — verbatim lifted.
+       :host { display:inline-flex; align-items:center } — cosmetically equivalent to Phase 3's
+       unstyled <div class="user-menu-trigger">. No visual regression.
+
+    5. Mobile drawer close-on-nav: CONFIRMED PARITY
+       Phase 3 had (click)="mobileSidebarVisible.set(false)" on each individual nav link.
+       Phase 4 uses (navigated)="mobileSidebarVisible.set(false)" on mee-side-nav, which re-emits
+       from any child nav-item click via the navigated output chain. Behavioral parity confirmed.
+
+  Sidebar-brand--light class: CONFIRMED DEAD CLASS
+    Phase 3 mobile drawer had class="sidebar-brand sidebar-brand--light" but no CSS rule existed
+    for sidebar-brand--light. Its omission in Phase 4 has zero visual effect.
+
+Build: OK — 5.429s, zero errors. Initial total 138.59kB (+0.10kB delta, nav wrapper markup only)
+  Shell-component lazy chunk: 10.93kB
+A11y: nav landmark RESTORED (critical parity fix — WCAG 2.4.1 compliance).
+Mobile (360px): mobile-hide specificity confirmed correct (0,2,0 beats :host 0,1,0).
+  Mobile drawer close-on-nav verified via output chain.
+Contracts: All 5 CLEAN (FE-1=0, FE-2=0, FE-3=0, FE-4=0, FE-5=0), exit 0 (--strict=fe2,fe3)
+Tests: 1183 passed (was 1182) / 1 failed (pre-existing app.spec.ts NG0201 — unchanged known debt)
+  +1 new test: side-nav nav landmark a11y assertion
+In progress: none
+Blockers: none
+Next: meesell-frontend-coordinator merge-gate review
+Hand-offs:
+  - A11y parity fix applied: <nav aria-label="Main navigation"> wrapper restored in mee-side-nav.
+    Phase 3 landmark parity confirmed. Coordinator can proceed with merge-gate.
+  - No CSS token changes. No input API changes. Styling/markup only.
+  - .nav-item i cross-encapsulation is a pre-existing no-op in Phase 3 AND Phase 4 — no ::ng-deep
+    fix warranted (would be an improvement over Phase 3, not a parity fix).
+  - sidebar-brand--light was a dead class in Phase 3; its absence in Phase 4 is benign.
+=========
 
 === UPDATE: 2026-06-17 ===
 Phase: UI Design-System Decoupling — Phase 3 (Layout: page primitives) — UI-STYLER POLISH PASS
