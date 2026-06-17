@@ -1,0 +1,48 @@
+# k8s/svc-category/service.yaml
+# ---------------------------------------------------------------------------
+# svc-category — Sub-Plan F (category extraction, MS-4), INFRA deliverable I3.
+#
+# ClusterIP Service `svc-category` on port 8001 → the svc-category-api pod's :8001.
+# Authority: handoff_msF_infra.md §1 I3 (ClusterIP :8001) + MASTER_PLAN §2.C
+# (gateway targets `svc-category:8001`).
+#
+# The Service selects ONLY the api component (app=svc-category, component=api).
+# There is NO worker (category has no Celery task) — so no second selector is needed.
+#
+# Traffic paths into this Service:
+#   - North-south (external): Traefik IngressRoute (I4) → svc-category:8001 for the
+#     5 PUBLIC routes (/api/v1/categories/*).
+#   - East-west (internal): svc-category EXPOSES the 2-3 frozen /internal/* shims
+#     (schema, field-enum, + commission/super-categories per Open Question). These
+#     are reached by sibling services (export-svc, pricing-svc, and at MS-5
+#     catalog-svc) over cluster DNS via the SAME Service (svc-category:8001) — the
+#     /internal/* routing is the Traefik IngressRoute I4, but the in-cluster callers
+#     resolve `svc-category.dev.svc.cluster.local:8001` directly. The Service backs
+#     BOTH the public and internal surfaces (one FastAPI app, two route families).
+#
+# *** category is a CALLEE that EXPOSES /internal/* (unlike pricing which is a leaf
+# consumer exposing none). export-svc + pricing-svc already-built category_client
+# shims (MS-A / MS-D) dial these /internal/* paths; at category's cutover the Traefik
+# route for /internal/categories/* flips from monolith → svc-category, transparent to
+# their call sites (§16.G). ***
+#
+# Port note: like svc-image/svc-pricing/svc-customer (and unlike the monolith `api`
+# Service which is port 80 → 8000), svc-category uses 8001 on BOTH the Service port
+# and the targetPort, matching the gateway map's `svc-category:8001` literal.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-category
+  namespace: dev
+  labels:
+    app: svc-category
+spec:
+  type: ClusterIP
+  selector:
+    app: svc-category
+    component: api
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001

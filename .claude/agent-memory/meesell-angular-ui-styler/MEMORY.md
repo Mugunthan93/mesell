@@ -469,8 +469,117 @@ Build: ZERO errors, 1.649s. Tests: 17/17 PASS. Screenshots: 3 auth pages clean.
 
 ---
 
+## project: section3_wave2a_uikit_blur_icon (2026-06-15)
+
+Task: Section-3 Wave 2A Units 2A.2 + 2A.3 — ui-kit blur output + PrimeNG icon mapping.
+Branch: feature/section-3/frontend @ c9486a4
+Session: mesell-section-3-frontend-session-1
+
+### Unit 2A.2 — blur output
+
+Root cause: CatalogFormComponent `(blur)="onFieldBlur(field.canonical_name, $event)"` bound to
+`<mee-input>` and `<mee-textarea>`. Without a declared `blur` output, Angular fell back to the
+host element's native FocusEvent. `$event` was a FocusEvent object written to `fields_jsonb`.
+
+Fix pattern applied to both MeeInputComponent and MeeTextareaComponent:
+  1. Added `output` to `@angular/core` import destructure.
+  2. Added `readonly blur = output<string>();` after `innerValue` signal.
+  3. Changed template `(blur)="onTouched()"` to `(blur)="onBlur()"`.
+  4. Added `onBlur()` method: calls `this._onTouched()` + `this.blur.emit(this.innerValue())`.
+  5. Original `onTouched()` preserved (still used by tests and ControlValueAccessor contract).
+
+LEARNING: When a component implements ControlValueAccessor and uses `(blur)="onTouched()"` in
+the template, adding an Angular `output()` named `blur` causes the output to shadow the native
+FocusEvent binding. The parent gets the emitted string value instead of the DOM event.
+This is the correct pattern for typed blur outputs from CVA components.
+
+Files: frontend/libs/ui-kit/input/input.component.ts, frontend/libs/ui-kit/textarea/textarea.component.ts
+Spec files: 2 new tests each — blur emits string payload, blur invokes onTouched.
+
+### Unit 2A.3 — PrimeNG icon mapping
+
+Root cause: MeeButtonComponent.pgIcon() passed Material icon names (auto_awesome, arrow_forward,
+etc.) directly to `<p-button [icon]>`. PrimeNG expects `pi pi-*` CSS class strings. Icons silent-
+ly disappeared in the rendered UI.
+
+Fix: Added module-level constant MATERIAL_TO_PI above the @Component decorator:
+  'auto_awesome'  → 'pi pi-sparkles'
+  'arrow_forward' → 'pi pi-arrow-right'
+  'arrow_back'    → 'pi pi-arrow-left'
+  'check'         → 'pi pi-check'
+  'close'         → 'pi pi-times'
+  'delete'        → 'pi pi-trash'
+pgIcon() updated to `return MATERIAL_TO_PI[i] ?? i;` (passthrough for already-mapped or
+unknown icon names).
+
+LEARNING: PrimeNG `<p-button [icon]>` does NOT accept Material Symbol names. It requires
+PrimeIcons CSS class strings in the form `pi pi-<name>`. When consuming an abstraction layer
+(like MeeButtonComponent) that accepts Material icon names from feature components, a lookup
+table at the wrapper boundary is the correct fix — zero changes to feature templates required.
+
+File: frontend/libs/ui-kit/button/button.component.ts
+Spec file: 8 new tests — undefined guard, 6 mapping assertions, 1 passthrough.
+
+### Build + test results
+
+Build: ng build frontend --configuration development — CLEAN (zero errors, 3.864s)
+Tests: 1067/1067 PASS (65 spec files, Vitest via @angular/build:unit-test)
+tsc --noEmit: CLEAN
+Lint: no eslint config in workspace (tsc satisfies type-check requirement)
+
+---
+
 ## breakpoint notes (2026-06-06)
 
 - All changes are cosmetic (colors, border-radius, font-family).
 - No layout or dimension changes that could break 360px baseline.
 - Token changes propagate to all breakpoints uniformly via CSS custom properties.
+
+---
+
+## project: ui_ds_phase3_layout_polish (2026-06-17)
+
+Task: Phase 3 UI-styler responsive/token/a11y polish pass on @mesell/layout primitives.
+Branch: feat/ui-ds-phase3
+Files changed:
+  - frontend/libs/layout/page/page.component.ts (EDITED — <main> → <div>)
+  - frontend/libs/layout/page/page.component.spec.ts (EDITED — updated assertions for <div>)
+  - frontend/libs/layout/grid/grid.component.ts (EDITED — cols=4 responsive fix)
+  - frontend/libs/layout/grid/grid.component.spec.ts (EDITED — new cols=4 regression test)
+
+### A11y landmark decision: mee-page <main> → <div>
+
+RULE: mee-page MUST NOT render `<main>`. The shell component (`apps/shell/src/app/layouts/shell/shell.component.html`) already wraps `<router-outlet>` in `<main class="page-content">`. A second `<main>` inside mee-page creates a duplicate ARIA landmark — WCAG 2.4.1 violation (screen readers announce both; navigating by landmark gives two "main" regions).
+
+Decision: mee-page renders `<div>` as its inner container. Shell is the sole `<main>` owner.
+
+FUTURE PATTERN: If a context ever needs mee-page to own `<main>` (e.g. a page without the shell), the recommended pattern is an opt-in input (`asMain: boolean = false` → renders `<main>` when true, `<div>` otherwise), or a separate `mee-page-root` wrapper for shell-less contexts. Do NOT make `<main>` the default — the shell always owns it in this architecture.
+
+### Responsive fix: mee-grid cols=4
+
+OLD: `grid-cols-1 sm:grid-cols-2 md:grid-cols-4` — 2→4 jump at 768px (abrupt, tablet items too narrow)
+NEW: `grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4` — smooth 3-step progression
+
+RULE: For mee-grid numeric cols, always use a 3-step mobile-first progression for cols=4:
+  base(360+) → 1 col, sm(640+) → 2 cols, md(768+) → N-1 cols (or 3), lg(1024+) → 4 cols
+  This ensures tablet users (768–1023px) get reasonably sized items, not cramped narrow columns.
+
+cols=1 → `grid-cols-1` (no breakpoints needed)
+cols=2 → `grid-cols-1 sm:grid-cols-2` (two-step)
+cols=3 → `grid-cols-1 sm:grid-cols-2 md:grid-cols-3` (three-step, was already correct)
+cols=4 → `grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4` (four-step — FIXED)
+
+### Token discipline: all 6 primitives correct
+
+- Spacing: MEE_GAP_TOKEN map → var(--mee-space-N). No hard-coded px for spacing tokens.
+- Colors: var(--mee-color-*) inline styles. No hard-coded hex values.
+- Tailwind: structural classes (flex/grid/max-width/centering). Token spacing via [style.gap].
+
+### Build + test results (post-polish)
+
+Build: ng build frontend --configuration development — CLEAN (zero errors, 3.224s)
+  Initial total: 138.49kB (delta = 0 from Phase 3 baseline — primitives still tree-shake out)
+Tests: 1163/1164 PASS (73 files / 1 pre-existing app.spec.ts NG0201 failure — known debt)
+  Layout specs: 7 files, all PASS. Test count +1 (new cols=4 regression spec).
+tsc --noEmit: CLEAN (TSC_EXIT=0)
+Contracts: All 5 CLEAN exit 0 (FE-1/FE-2/FE-3/FE-4/FE-5)

@@ -1,4 +1,5 @@
-"""``catalog`` router — 6 endpoint handlers per §10.B (LOCKED 2026-06-05).
+"""``catalog`` router — 7 endpoint handlers per §10.B (LOCKED 2026-06-05) +
+section-3 Wave 1 GAP-1 addition.
 
 Endpoints
 ---------
@@ -8,6 +9,7 @@ Endpoints
 4. ``GET    /api/v1/products/{id}/preview``          — Live Product Preview (§10.B.4)
 5. ``DELETE /api/v1/products/{id}``                  — soft delete (§10.B.5)
 6. ``GET    /api/v1/products/{id}/draft``            — draft recovery (§10.B.6)
+7. ``GET    /api/v1/products/{id}``                  — Get single product (GAP-1 reload fix, section-3 Wave 1)
 
 Route invariants (§10.B + §4.B)
 -------------------------------
@@ -30,11 +32,12 @@ Audit posture (§10.B + §4.G)
   * POST   /products/{id}/autofill    → ``catalog.autofill.invoked``
   * DELETE /products/{id}             → ``catalog.product.deleted``
 
-2 read endpoints get NO audit decorator (per `MVP_ARCH §11.3`
+3 read endpoints get NO audit decorator (per `MVP_ARCH §11.3`
 read-flood rule):
 
   * GET    /products/{id}/preview
   * GET    /products/{id}/draft
+  * GET    /products/{id}
 
 Rate-limit decorators (§4.G + §4.E)
 -----------------------------------
@@ -44,6 +47,7 @@ Rate-limit decorators (§4.G + §4.E)
 * GET    /products/{id}/preview    — 600/h per-IP only.
 * DELETE /products/{id}            — 60/h/user.
 * GET    /products/{id}/draft      — 600/h per-IP only.
+* GET    /products/{id}            — 600/h per-IP (``product_detail``).
 
 DECISION FLAG §10-CATALOG-D2
 ----------------------------
@@ -62,14 +66,16 @@ import logging
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import CurrentUser, get_current_user
+from app.core.errors import MeesellError
 from app.core.middleware.audit_mw import audit_event
 from app.core.middleware.rate_limit_mw import rate_limit
 from app.modules.catalog import service as catalog_service
+from app.shared.config import settings
 from app.modules.catalog.domain import Pagination as PaginationInternal
 from app.modules.catalog.exceptions import (
     DraftNotFoundError,
@@ -188,6 +194,31 @@ async def patch_product(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 7. GET /products/{id}  — §10.B.7 (GAP-1 reload fix — section-3 Wave 1)
+# ─────────────────────────────────────────────────────────────────────────────
+@router.get(
+    "/products/{id}",
+    response_model=ProductResponse,
+    summary="Get a single product — returns category_id for CatalogForm reload (GAP-1 fix)",
+)
+@rate_limit(scope="product_detail", limit=600, window=3600)
+async def get_product(
+    id: UUID,
+    user: Annotated[CurrentUser, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ProductResponse:
+    """§10.B.7 — GET /products/{id}.
+
+    No audit event (read-only per MVP_ARCH §11.3).
+    No feature flag — GAP-1 fix is unconditional.
+
+    Status codes: 200, 401, 404.
+    """
+    product = await catalog_service.get_product_detail(user.user_id, id, db=db)
+    return _product_to_response(product)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 3. POST /products/{id}/autofill  — §10.B.3
 # ─────────────────────────────────────────────────────────────────────────────
 @router.post(
@@ -214,9 +245,21 @@ async def autofill_product(
     Plan-guard ``ai_autofill_hourly`` (50/h/user) is enforced INSIDE
     the service (step 2 of the §10.B.3 flow).
 
+    Feature flag: returns 404 when ``FEATURE_AI_AUTOFILL_ENABLED=false``
+    per Master Plan §3.2 + ai-autofill FEATURE_PLAN.md D2.  Reading
+    ``settings`` at request-time (not import-time) so tests can
+    monkeypatch the attribute and the guard reflects the override.
+
     Status codes: 200 (success OR graceful fallback), 400, 401, 402,
     404, 422.
     """
+    # ── Feature flag guard (§3.2 / ai-autofill D2) ───────────────────
+    if not settings.FEATURE_AI_AUTOFILL_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="AI Auto-fill is disabled in this environment",
+        )
+
     # The request_id is set by RequestIdMiddleware on request.state.
     # We forward it to ai_ops so the LangFuse trace_id correlates with
     # the inbound request.  Falling back to a per-call UUID inside
@@ -268,7 +311,20 @@ async def get_product_preview(
     No audit event (read-only per `MVP_ARCH §11.3`).
 
     Status codes: 200, 401, 404.
+    Feature flag: returns 404 with code ``feature.live_preview.disabled``
+    when ``FEATURE_LIVE_PREVIEW_ENABLED=false`` (default False — gated rollout
+    per Master Plan §3.2 + FEATURE_PLAN.md D3).
     """
+    # ── Feature flag guard (§3.2 / D3 gated rollout) ─────────────────────
+    # NOTE: FEATURE_LIVE_PREVIEW_ENABLED defaults to False (the ONLY V1 flag
+    # that ships default-False; all others default True). Raise via MeesellError
+    # to carry the machine-readable `code` field per §4.F envelope contract.
+    if not settings.FEATURE_LIVE_PREVIEW_ENABLED:
+        raise MeesellError(
+            code="feature.live_preview.disabled",
+            status_code=404,
+            detail="Preview unavailable",
+        )
     preview = await catalog_service.get_preview(user.user_id, id, db=db)
     return ProductPreviewResponse(
         id=preview.id,

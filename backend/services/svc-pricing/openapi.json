@@ -1,0 +1,339 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MeeSell svc-pricing",
+    "description": "Standalone P&L price-calculator microservice (MS Sub-Plan D)",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/products/{id}/price-calc": {
+      "post": {
+        "tags": [
+          "pricing"
+        ],
+        "summary": "Price Calculator (Feature 7) \u2014 deterministic P&L + alerts",
+        "description": "\u00a712.B.1 \u2014 POST /products/{id}/price-calc.\n\nStatus codes:\n  * 200 \u2014 calc completed successfully.\n  * 400 \u2014 ``validation.price.invalid_input`` (Pydantic catches\n    ``input_cost <= 0`` / ``target_margin_pct < 0`` / etc.; service\n    adds the V1.5 cross-field surface).\n  * 401 \u2014 JWT missing/invalid (handled by \u00a74.A auth middleware).\n  * 404 \u2014 ``catalog.product.not_found`` from the \u00a710.C\n    ``assert_product_ownership`` cross-module ownership gate.\n  * 422 \u2014 ``pricing.commission.missing`` when the resolved category\n    has no usable commission rate.",
+        "operationId": "price_calc_api_v1_products__id__price_calc_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriceCalcRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceCalcResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "description": "Liveness probe.  DB / Valkey deep checks are deferred to the\nreadiness probe wired by the infra lane.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "PriceCalcAlert": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "LOW_MARGIN",
+              "HIGH_MRP_MULTIPLIER",
+              "THIN_PROFIT"
+            ],
+            "title": "Code"
+          },
+          "message_id": {
+            "type": "string",
+            "title": "Message Id",
+            "description": "validation_message_id per \u00a75A.H \u2014 resolved client-side via i18n."
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "warning",
+              "info"
+            ],
+            "title": "Severity"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message_id",
+          "severity"
+        ],
+        "title": "PriceCalcAlert",
+        "description": "Wire-shape pricing alert.  See :class:`~app.domain.PricingAlert`\nfor the internal dataclass that the service constructs and the router\nmaps to this Pydantic model."
+      },
+      "PriceCalcRequest": {
+        "properties": {
+          "input_cost": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$"
+              }
+            ],
+            "title": "Input Cost",
+            "description": "Cost of goods per unit, in INR."
+          },
+          "target_margin_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 500.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$"
+              }
+            ],
+            "title": "Target Margin Pct",
+            "description": "Desired profit margin as a percentage of input_cost.",
+            "default": "30"
+          },
+          "override_commission_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Commission Pct",
+            "description": "V1.5+ Pro override; V1 ignores this field."
+          },
+          "override_gst_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Gst Pct",
+            "description": "V1.5+ Pro override; V1 ignores this field."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "input_cost"
+        ],
+        "title": "PriceCalcRequest",
+        "description": "Body for ``POST /api/v1/products/{id}/price-calc``.\n\nPer \u00a712.B.1 + \u00a712.E.  Pydantic validates the field constraints at the\nroute boundary; service-layer business-rule checks (V1.5) are\nsurfaced via :class:`~app.exceptions.InvalidPriceInputError`."
+      },
+      "PriceCalcResponse": {
+        "properties": {
+          "mrp": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Mrp"
+          },
+          "meesho_price": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Meesho Price"
+          },
+          "seller_price": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Seller Price"
+          },
+          "commission_pct": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Commission Pct"
+          },
+          "commission_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Commission Amount"
+          },
+          "gst_pct": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Gst Pct"
+          },
+          "gst_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Gst Amount"
+          },
+          "profit": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Profit"
+          },
+          "profit_pct": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Profit Pct"
+          },
+          "alerts": {
+            "items": {
+              "$ref": "#/components/schemas/PriceCalcAlert"
+            },
+            "type": "array",
+            "title": "Alerts"
+          },
+          "calculated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Calculated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mrp",
+          "meesho_price",
+          "seller_price",
+          "commission_pct",
+          "commission_amount",
+          "gst_pct",
+          "gst_amount",
+          "profit",
+          "profit_pct",
+          "alerts",
+          "calculated_at"
+        ],
+        "title": "PriceCalcResponse",
+        "description": "200-OK body for ``POST /api/v1/products/{id}/price-calc``.\n\nAll monetary values in INR with 2 decimal places (quantized\n``ROUND_HALF_EVEN`` per the \u00a712.B.1 step 6 lock).\n\nTHE FROZEN CONTRACT: bare Decimal fields emit as JSON strings \u2014 NO float,\nNO json_encoders, NO model_config serialization override (spec \u00a71)."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "OAuth2PasswordBearer": {
+        "type": "oauth2",
+        "flows": {
+          "password": {
+            "scopes": {},
+            "tokenUrl": "/api/v1/auth/otp/verify"
+          }
+        }
+      }
+    }
+  }
+}

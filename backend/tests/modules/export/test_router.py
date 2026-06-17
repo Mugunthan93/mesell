@@ -231,6 +231,19 @@ async def export_client():
     _test_cache_client = _redis_lib.from_url(f"{valkey_base}/3", decode_responses=True)
     _valkey_module._cache_client = _test_cache_client  # type: ignore[assignment]
 
+    # D2 fix (Gate-4 repair-1): rate_limit_mw calls get_valkey_otp() as a
+    # plain function call — NOT through FastAPI DI — so the DI override above
+    # has no effect on it.  After test N's function loop closes, the stale
+    # _otp_client StreamWriter's transport._loop is closed; test N+1's fixture
+    # setup triggers a pipeline call that does loop.call_soon() on that closed
+    # loop → RuntimeError: Event loop is closed (4 of the 13 teardown errors).
+    # Same fix as customer_client (3c) and iam_client (4c).
+    _original_otp_client = _valkey_module._otp_client
+    _test_otp_client_singleton = _redis_lib.from_url(
+        f"{valkey_base}/0", decode_responses=True
+    )
+    _valkey_module._otp_client = _test_otp_client_singleton  # type: ignore[assignment]
+
     # Seed OTP in test Valkey DB 0.
     otp_seed_client = _redis_lib.from_url(f"{valkey_base}/0", decode_responses=True)
     try:
@@ -248,9 +261,17 @@ async def export_client():
     )
     await otp_seed_client.set(f"otp:{_EXPORT_TEST_PHONE}", otp_payload, ex=300)
 
+    # Track the lifespan-created engine + Valkey client so we can explicitly
+    # dispose/close them AFTER the lifespan exits — prevents
+    # ``Event loop is closed`` teardown errors (same fix as customer_client).
+    _lifespan_db_engine = None
+    _lifespan_valkey = None
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
         async with app.router.lifespan_context(app):
+            _lifespan_db_engine = getattr(app.state, "db_engine", None)
+            _lifespan_valkey = getattr(app.state, "valkey", None)
             # Obtain Bearer token via /otp/verify.
             resp = await ac.post(
                 "/api/v1/auth/otp/verify",
@@ -265,12 +286,26 @@ async def export_client():
             ac.headers["Authorization"] = f"Bearer {body['access_token']}"
             yield ac
 
+        # Lifespan has exited — explicitly dispose residual pool connections
+        # while still in the function loop (prevents ``Event loop is closed``).
+        if _lifespan_db_engine is not None:
+            try:
+                await _lifespan_db_engine.dispose()
+            except Exception:
+                pass
+        if _lifespan_valkey is not None:
+            try:
+                await _lifespan_valkey.aclose()
+            except Exception:
+                pass
+
     # Teardown.
     app.dependency_overrides.clear()
     _audit_mw.AsyncSessionLocal = _original_audit_session_local
     _valkey_module._cache_client = _original_cache_client
+    _valkey_module._otp_client = _original_otp_client  # type: ignore[assignment]
 
-    for c in _otp_clients + [otp_seed_client, _test_cache_client]:
+    for c in _otp_clients + [otp_seed_client, _test_cache_client, _test_otp_client_singleton]:
         try:
             await c.aclose()
         except Exception:
@@ -302,17 +337,60 @@ async def export_client():
 async def unauth_client():
     """Bare ASGI client with no Authorization header.
 
-    Does NOT require Valkey — auth middleware rejects the request before
-    any service or Valkey call is made.
+    Requests are rejected before any service call (auth middleware sets
+    request.state.user = None; get_current_user raises 401 inside the route).
+    However, rate_limit_mw DOES run before auth rejection and calls
+    get_valkey_otp() as a plain function — NOT via FastAPI DI.
+
+    D2 fix (Gate-4 repair-1): patch _valkey_module._otp_client to a fresh
+    function-loop-bound client so that rate_limit_mw never uses a stale
+    client from a previous test's (now-closed) event loop.  Without this,
+    if a previous test's export_client or another unauth_client initialized
+    _otp_client in its own loop, this test's rate_limit_mw call would
+    trigger loop.call_soon() on the closed loop →
+    RuntimeError: Event loop is closed.  See D2 rationale in export_client
+    and integration/conftest.py iam_client for the full explanation.
 
     CI Gate-4 pass-3 (§2.1): ``loop_scope="function"`` added so the ASGI app /
     middleware Futures bind to the test's own loop (clears the
     ``BaseHTTPMiddleware … Future attached to a different loop`` error).
     """
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
-        async with app.router.lifespan_context(app):
-            yield ac
+    import app.shared.valkey as _valkey_module
+    from tests.conftest import _valkey_base
+
+    valkey_base = _valkey_base()
+    _original_otp_client = _valkey_module._otp_client
+    _test_otp_client = _redis_lib.from_url(f"{valkey_base}/0", decode_responses=True)
+    _valkey_module._otp_client = _test_otp_client  # type: ignore[assignment]
+
+    _lifespan_db_engine = None
+    _lifespan_valkey = None
+
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            async with app.router.lifespan_context(app):
+                _lifespan_db_engine = getattr(app.state, "db_engine", None)
+                _lifespan_valkey = getattr(app.state, "valkey", None)
+                yield ac
+
+            # Explicit disposal to drain pending pool callbacks before loop teardown.
+            if _lifespan_db_engine is not None:
+                try:
+                    await _lifespan_db_engine.dispose()
+                except Exception:
+                    pass
+            if _lifespan_valkey is not None:
+                try:
+                    await _lifespan_valkey.aclose()
+                except Exception:
+                    pass
+    finally:
+        _valkey_module._otp_client = _original_otp_client  # type: ignore[assignment]
+        try:
+            await _test_otp_client.aclose()
+        except Exception:
+            pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────

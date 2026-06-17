@@ -56,13 +56,14 @@ from __future__ import annotations
 import logging
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import CurrentUser, get_current_user
 from app.core.middleware.rate_limit_mw import rate_limit
 from app.modules.dashboard import service as dashboard_service
 from app.modules.dashboard.schemas import DashboardQuery, DashboardResponse
+from app.shared.config import settings
 from app.shared.database import get_db
 
 logger = logging.getLogger(__name__)
@@ -111,6 +112,14 @@ async def list_products(
     No plan_guard (§13.I lock — dashboard is one of 3 plan_guard-excluded
     modules alongside customer + pricing).
     """
+    # ── Feature flag guard (§3.2 / D3 kill-switch) ───────────────────────
+    # D3 ruling: the read IS the feature — 404 on GET is intentional per
+    # docs/plans/features/tracking-dashboard/FEATURE_PLAN.md §2.2.
+    if not settings.FEATURE_TRACKING_DASHBOARD_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tracking Dashboard is disabled in this environment",
+        )
     query = DashboardQuery(page=page, limit=limit)
     return await dashboard_service.list_products_for_dashboard(
         user_id=user.user_id,

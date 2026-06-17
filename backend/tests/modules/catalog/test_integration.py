@@ -77,9 +77,16 @@ class TestFullProductLifecycle:
         )
         assert autofill_result.fallback_offered is False
         assert "product_name" in autofill_result.suggestions
-        assert autofill_result.applied.get("product_name") is True
+        # BE-CATALOG-G7-AUTOAPPLY-1: FOUNDER RULING 2026-06-11 (ai-autofill D1)
+        # removed the §10 auto-apply-at-0.85-confidence-floor behaviour for autofill.
+        # autofill_product writes ONLY to ai_suggestions_jsonb; applied[field] is
+        # ALWAYS False — the seller explicitly accepts each suggestion in the UI.
+        # This assertion was previously `is True`; updated to match the ruled
+        # behaviour (always False). See docs/plans/features/ai-autofill/FEATURE_PLAN.md
+        # §D1 and feature_board_backend.md G7 entry.
+        assert autofill_result.applied.get("product_name") is False
 
-        # ── 3. PATCH autosave ───────────────────────────────────────────
+        # ── 3. PATCH autosave (user types a description) ────────────────
         autosave_req = PatchProductRequest(
             fields={"product_description": "User-typed long description."}
         )
@@ -87,14 +94,29 @@ class TestFullProductLifecycle:
             user.id, product.id, autosave_req, is_autosave=True, db=db
         )
 
-        # ── 4. PATCH manual (status=ready) ──────────────────────────────
-        ready_req = PatchProductRequest(status="ready")
+        # ── 4. PATCH manual — accept autofill suggestions + status=ready ─
+        # BE-CATALOG-G7-AUTOAPPLY-1: FOUNDER RULING 2026-06-11 (ai-autofill D1)
+        # removed auto-apply from autofill_product.  Autofill only writes to
+        # ai_suggestions_jsonb; the seller must explicitly accept each suggestion.
+        # Simulating user accepting the 3 compulsory fields suggested by the stub
+        # stub_call_gemini: {product_name, brand_name, application_area}.
+        # Then set status=ready.  Without this manual write, patch_product would
+        # raise ValidationFailedError("3 required field(s) still empty") because
+        # fields_jsonb is untouched by autofill under G7.
+        accept_req = PatchProductRequest(
+            fields={
+                "product_name": "Glow Eye Serum",
+                "brand_name": "BrightLab",
+                "application_area": "under-eye",
+            },
+            status="ready",
+        )
         ready_product = await catalog_service.patch_product(
-            user.id, product.id, ready_req, is_autosave=False, db=db
+            user.id, product.id, accept_req, is_autosave=False, db=db
         )
         assert ready_product.status == "ready", (
-            "After autofill auto-applies compulsory fields, status=ready transition "
-            "must succeed without further user input."
+            "After seller accepts autofill suggestions via manual PATCH, "
+            "status=ready transition must succeed."
         )
 
         # ── 5. get_preview ──────────────────────────────────────────────
@@ -197,3 +219,100 @@ class TestCrossModuleOwnershipAssertion:
         await catalog_service.assert_product_ownership(
             product.id, user.id, db=db
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# §10.B.7 — GET /products/{id} (GAP-1 reload fix — section-3 Wave 1)
+# ─────────────────────────────────────────────────────────────────────────────
+class TestGetProductDetail:
+    """Integration tests for :func:`catalog.service.get_product_detail` and
+    the ``GET /api/v1/products/{id}`` route handler (GAP-1 regression guard).
+
+    Test 1 — :func:`test_get_product_returns_category_id_for_reload` — is the
+    named regression guard.  If it ever breaks, the CatalogForm hard-reload
+    fix (section-3 Wave 1) has regressed.
+    """
+
+    async def test_get_product_returns_category_id_for_reload(
+        self,
+        db,
+        user,
+        beauty_category,
+        beauty_profile,
+    ):
+        """GAP-1 regression guard: GET /products/{id} returns ``category_id``
+        matching the value used at create time so the CatalogForm can reload
+        the correct schema on page reload / direct-URL navigation.
+        """
+        create_req = CreateProductRequest(
+            category_id=beauty_category.id, name="Reload Test Product"
+        )
+        product = await catalog_service.create_product(
+            user.id, "free", create_req, db=db
+        )
+
+        # The read path — the new service method added in section-3 Wave 1.
+        fetched = await catalog_service.get_product_detail(
+            user.id, product.id, db=db
+        )
+
+        assert fetched.id == product.id
+        assert fetched.category_id == beauty_category.id, (
+            "GAP-1 guard: category_id must be returned so CatalogForm can "
+            "reload the correct schema after a hard reload or direct-URL navigation."
+        )
+        assert fetched.name == "Reload Test Product"
+        assert fetched.status == "draft"
+
+    async def test_get_product_unauthenticated(self, client, use_live_valkey):
+        """GET /api/v1/products/{id} with no/invalid bearer token → 401.
+
+        Uses the bare test client (no auth token) to exercise the auth
+        middleware rejection path.  The product UUID is random — the 401
+        fires before any ownership check or DB query.
+        """
+        import uuid
+
+        random_id = uuid.uuid4()
+        resp = await client.get(
+            f"/api/v1/products/{random_id}",
+            headers={"Authorization": "Bearer invalid.token.value"},
+        )
+        assert resp.status_code == 401
+
+    async def test_get_product_wrong_owner_returns_404(
+        self,
+        db,
+        user,
+        other_user,
+        beauty_category,
+        beauty_profile,
+    ):
+        """Seller A creates a product; seller B calls get_product_detail → 404.
+
+        Ownership assertion collapses "not found / wrong owner / soft-deleted"
+        to the same 404 envelope (leak-protection per §10.C + §2.D).
+        """
+        create_req = CreateProductRequest(
+            category_id=beauty_category.id, name="Tenant A Product"
+        )
+        product = await catalog_service.create_product(
+            user.id, "free", create_req, db=db
+        )
+
+        # Seller B (other_user) tries to fetch — must raise ProductNotFoundError
+        # with code == "catalog.product_not_found" (the locked error code).
+        with pytest.raises(ProductNotFoundError) as exc_info:
+            await catalog_service.get_product_detail(
+                other_user.id, product.id, db=db
+            )
+
+        assert exc_info.value.code == "catalog.product_not_found"
+
+    async def test_get_product_not_found(self, db, user, beauty_profile):
+        """GET with a random UUID that has no product row → 404."""
+        import uuid
+
+        random_id = uuid.uuid4()
+        with pytest.raises(ProductNotFoundError):
+            await catalog_service.get_product_detail(user.id, random_id, db=db)

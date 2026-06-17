@@ -24,3 +24,9 @@ variable "image_tag" {
   default     = "16"
   description = "PostgreSQL image tag. Must be '16' per CLAUDE.md tech stack decision. Do not change without founder approval."
 }
+
+variable "max_connections" {
+  type        = number
+  default     = 200
+  description = "PostgreSQL max_connections. MS-0 / D5 step 1 (MS-DB-3, infra plan §3.3) raised this 100 -> 200 for the microservices connection-pool budget. ~5MB/conn memory cost is covered by the 1.5Gi memory limit. Passed to the container as `-c max_connections=N`."
+}

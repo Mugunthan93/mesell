@@ -59,6 +59,8 @@ Per `secrets.tf`, the following secrets exist with `meesell-` prefix and lowerca
 
 Workload SA can read all of them. `scripts/secrets-from-gcp.sh` already materialises them into `k8s/secrets.yaml` on the VM.
 
+> SUPERSEDED 2026-06-12: this section describes the `meesell-`-prefixed SM scheme the applied `app_secrets` module never used (it uses un-prefixed IDs: `gemini-api-key`, `jwt-secret`, etc.). `meesell-gemini-api-key` is a dead SM secret (HTTP 400, unreferenced by any live path). `scripts/secrets-from-gcp.sh` was deleted 2026-06-12; the live path populates the k8s Secret `backend-secrets` (dev ns) via `gcloud secrets versions add`. See `docs/INFRASTRUCTURE_ARCHITECTURE.md`.
+
 ### 1.5 Storage
 - GCS bucket `project-1f5cbf72-2820-4cdb-949-meesell-assets` (UBLA, public-access-prevention enforced, versioned, 90-day archive lifecycle).
 

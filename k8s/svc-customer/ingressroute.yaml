@@ -1,0 +1,93 @@
+# k8s/svc-customer/ingressroute.yaml
+# ---------------------------------------------------------------------------
+# svc-customer — Sub-Plan E (customer extraction), INFRA deliverable I4.
+#
+# Traefik IngressRoute (D4 path-prefix gateway, MASTER_PLAN §2.C / infra plan §2.4)
+# routing the PUBLIC seller-profile routes on api.mesell.xyz to customer-svc:8001.
+#
+# Public routes — cited from SUB_PLAN_0E §0.4 (router.py SSOT, lines 60-64 of the
+# sub-plan's route table):
+#   1. GET   /api/v1/seller-profile                          (router.py:75   get_seller_profile)
+#   2. PATCH /api/v1/seller-profile                          (router.py:101  patch_seller_profile        @audit_event)
+#   3. PATCH /api/v1/seller-profile/active-categories        (router.py:129  patch_active_categories     @audit_event)
+#   4. PATCH /api/v1/seller-profile/compliance/{super_id}    (router.py:158  patch_compliance_extension  @audit_event)
+#   5. GET   /api/v1/seller-profile/required-fields          (router.py:198  get_required_fields)
+#
+# ── ROUTING DISCIPLINE — PathPrefix is CORRECT AND EXCLUSIVE here ───────────────
+#   customer owns the ENTIRE /api/v1/seller-profile namespace: the bare path (#1/#2)
+#   AND every sub-path (#3 active-categories, #4 compliance/{super_id}, #5
+#   required-fields). NO other service owns any /api/v1/seller-profile* path — this
+#   prefix is customer-exclusive. So a single `PathPrefix(/api/v1/seller-profile)`
+#   captures all 5 routes (both GET and PATCH verbs) without hijacking any sibling.
+#   This is UNLIKE svc-dashboard (which needed Method(GET) + exact Path because it
+#   shared /api/v1/products with catalog's POST) and UNLIKE svc-export/svc-image
+#   (which own only a leaf sub-route under a prefix catalog otherwise owns). Here
+#   the whole prefix is ours → PathPrefix is the right, simplest matcher. No
+#   Method() split is needed (all verbs on this prefix belong to customer).
+#
+# ── /internal/* IS NOT ROUTED HERE (handoff §1 I4 / MASTER_PLAN §2.C / §0.6) ─────
+#   customer is a CALLEE for 3 /internal/seller-profile/* shims (compliance-block,
+#   onboarding-completeness, eligibility/{super_id}) consumed by export-svc,
+#   dashboard-svc, and monolith-catalog. Those are CLUSTER-INTERNAL / hybrid-CI only
+#   — reached via the ClusterIP DNS name customer-svc.dev.svc.cluster.local:8001,
+#   NEVER via the public ingress. There is DELIBERATELY no /internal/* Rule in this
+#   IngressRoute: the absence of a public route IS the V1 isolation primitive
+#   (NetworkPolicy is V2 — handoff §4). A `/api/v1/seller-profile` PathPrefix does
+#   NOT match `/internal/*` (different path root), so no /internal leak is possible
+#   through this rule.
+#
+# ── TLS + CORS ──────────────────────────────────────────────────────────────────
+#   - TLS: reuse the LIVE api.mesell.xyz LE certificate. *** secretName: api-tls ***
+#     — VERIFIED LIVE 2026-06-13: `kubectl get certificate -n dev` → `api-tls`
+#     READY=True (api.mesell.xyz), and `kubectl get ingress api -n dev` references
+#     `api-tls`. The secret `api-mesell-xyz-tls` does NOT exist in dev — the
+#     svc-image/svc-export/svc-dashboard sibling ingressroutes reference that
+#     NON-EXISTENT name (a latent defect: at cutover Traefik would fall back to its
+#     default/self-signed cert). svc-customer uses the REAL live name `api-tls`
+#     (playbook §0 — live state is SSOT). The siblings should be corrected before
+#     their founder-gated cutover apply (flagged to backend/master — see report).
+#     entryPoint: websecure.
+#   - CORS / Set-Cookie: NO `headers` Middleware is attached. CORS is owned by the
+#     FastAPI app (CORSMiddleware, vendored per service per MASTER_PLAN §5.A);
+#     Traefik does routing + TLS ONLY and MUST NOT strip/rewrite CORS or Set-Cookie
+#     (the R-SP7-1 P0 ADD-ONLY rule; the 5 seller-profile responses are LIVE with
+#     the Angular onboarding wizard, Wave-6B — zero header drift allowed).
+#
+# Namespace: dev ONLY (Sub-Plan E constraint §4).
+#
+# STRANGLER NOTE (handoff "KEY CONSTRAINTS"): the live host-based `api` Ingress
+# (k8s/ingress.yaml) currently routes ALL of api.mesell.xyz → api:80 (the monolith).
+# customer is NOT cut over at MS-3 — the monolith keeps serving
+# /api/v1/seller-profile/* until the founder-gated cutover flip. This IngressRoute
+# is the PLACEHOLDER that, when applied at cutover, becomes HIGHER-precedence for
+# the /api/v1/seller-profile prefix (a Host+PathPrefix match outscores a host-only
+# Ingress on Traefik specificity). Rollback (customer-svc-rollback.md Step 1)
+# re-points the prefix at the monolith by deleting this IngressRoute so the host-
+# only Ingress reclaims it. *** Per the handoff, this manifest provisions the route
+# OBJECT; applying it live is the SEPARATE founder cutover gate. ***
+# ---------------------------------------------------------------------------
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: customer-svc
+  namespace: dev
+  labels:
+    app: customer-svc
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    # All 5 public seller-profile routes (GET + PATCH). customer owns the ENTIRE
+    # /api/v1/seller-profile prefix exclusively (no sibling shares it), so a single
+    # PathPrefix captures the bare path + active-categories + compliance/{super_id}
+    # + required-fields without a Method() split. /internal/* is NOT under this
+    # prefix and is intentionally NOT routed (cluster-DNS only).
+    - kind: Rule
+      match: Host(`api.mesell.xyz`) && PathPrefix(`/api/v1/seller-profile`)
+      services:
+        - name: customer-svc
+          port: 8001
+  tls:
+    # Reuse the existing api.mesell.xyz LE cert. LIVE name is `api-tls` (verified
+    # 2026-06-13) — NOT `api-mesell-xyz-tls` (which does not exist in dev).
+    secretName: api-tls

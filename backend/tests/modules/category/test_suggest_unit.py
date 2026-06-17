@@ -12,7 +12,7 @@ The branches covered HERE are the §9.B.1 flow steps NOT exercised by the
 above two (which both terminate in the empty-fallback envelope):
 
 * **Step 1 — query validation** (``SuggestQueryInvalidError`` on empty /
-  whitespace-only / > 500-char ``q``).  Neither existing test trips the
+  whitespace-only / > 5000-char ``q``).  Neither existing test trips the
   length guard.
 * **Steps 6-8 — the SUCCESS path**: a valid AI suggestion is enriched
   from the in-process tree (super_id / super_name / path / leaf_name),
@@ -92,11 +92,11 @@ def _stub_tree_with(category_id: str):
         "",            # empty
         "   ",         # whitespace-only → trims to empty
         "\t\n ",       # mixed whitespace
-        "x" * 501,     # over the 500-char §9.B.1 bound
+        "x" * 5001,    # over the 5000-char §9.B.1 bound
     ],
 )
 async def test_suggest_rejects_out_of_bounds_query(bad_q, monkeypatch):
-    """Step 1: ``1 <= len(q.strip()) <= 500`` — else SuggestQueryInvalidError.
+    """Step 1: ``1 <= len(q.strip()) <= 5000`` — else SuggestQueryInvalidError.
 
     The guard fires BEFORE plan_guard / cache / AI — so no stubs of those
     are required.  Asserts the 400-mapped category exception per §9.G.
@@ -109,11 +109,11 @@ async def test_suggest_rejects_out_of_bounds_query(bad_q, monkeypatch):
 
 
 async def test_suggest_accepts_max_length_boundary(monkeypatch):
-    """A 500-char query is INSIDE the bound — must not raise on length.
+    """A 5000-char query is INSIDE the bound — must not raise on length.
 
     We stub the tree + AI so the call returns the empty fallback cleanly;
     the assertion is simply that no ``SuggestQueryInvalidError`` escapes
-    the length guard at exactly len==500.
+    the length guard at exactly len==5000.
     """
     monkeypatch.setattr(
         category_service, "_fetch_tree_dicts", _stub_tree_with(_SEEDED_ID)
@@ -133,7 +133,7 @@ async def test_suggest_accepts_max_length_boundary(monkeypatch):
     )
 
     payload = await category_service.suggest_categories(
-        uuid4(), "k" * 500, db=None  # type: ignore[arg-type]
+        uuid4(), "k" * 5000, db=None  # type: ignore[arg-type]
     )
     # No raise → length guard passed; envelope is the graceful empty shape.
     assert payload["suggestions"] == []

@@ -73,7 +73,7 @@ will otherwise provision resources in the wrong account.
 
 ## Day-2
 
-- **Rotate a secret:** edit `terraform.tfvars`, `terraform apply`. A new Secret Manager version is created automatically; pods on the next pod restart will pull it via `scripts/secrets-from-gcp.sh` (re-render `k8s/secrets.yaml`, then `kubectl apply -f k8s/secrets.yaml`).
+- **Rotate a secret:** edit `terraform.tfvars`, `terraform apply`. A new Secret Manager version is created automatically. (NOTE 2026-06-12: the legacy `scripts/secrets-from-gcp.sh` materialiser was deleted — it used the dead `meesell-`-prefixed SM IDs and the legacy `meesell` namespace, neither of which the live path uses. The live path is the un-prefixed `app_secrets` module → k8s Secret `backend-secrets` in `dev` ns, populated via `gcloud secrets versions add`. See `docs/INFRASTRUCTURE_ARCHITECTURE.md`.)
 - **Resize the VM:** change `vm_machine_type`, `terraform apply` — GCE will stop and restart the VM. The boot disk (and K3s state on it) survives.
 - **Destroy:** set `bucket_force_destroy = true` first if you want `terraform destroy` to remove the bucket along with its objects. Otherwise destroy will refuse to delete a non-empty bucket — by design.
 

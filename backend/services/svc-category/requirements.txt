@@ -1,0 +1,36 @@
+# svc-category runtime dependencies (MS Sub-Plan F).
+#
+# Versions PINNED to the monolith's exact pins (backend/requirements.txt) so
+# the extracted pipeline + the vendored ai_ops smart_picker.v1 step behave
+# identically.
+#
+# EXPLICITLY ABSENT vs the monolith requirements:
+#   * NO celery  — category runs no worker (no tasks.py).
+#   * NO openpyxl — export-only.
+#   * NO pillow / rembg — image-only.
+#   * NO google-cloud-storage — category has no storage surface.
+#   * NO msg91 / razorpay — category has no SMS/payment surface.
+
+# ── Web framework ────────────────────────────────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+pydantic-settings>=2.5,<3
+
+# ── Database (async) ─────────────────────────────────────────────────────
+sqlalchemy[asyncio]==2.0.32
+asyncpg==0.29.0
+
+# ── Cache (read-through DB 3 + budget brake DB 0) ────────────────────────
+redis==5.0.8
+
+# ── Auth (local JWT verification — D7/A2) ────────────────────────────────
+pyjwt==2.9.0
+
+# ── AI (vendored smart_picker.v1 step — F1/D6) ───────────────────────────
+google-generativeai==0.8.0
+
+# ── HTTP (LangFuse trace egress — httpx-direct, no SDK) ───────────────────
+httpx==0.27.0
+
+# ── Observability ────────────────────────────────────────────────────────
+prometheus-client>=0.20,<1

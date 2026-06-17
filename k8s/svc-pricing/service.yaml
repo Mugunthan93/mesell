@@ -1,0 +1,39 @@
+# k8s/svc-pricing/service.yaml
+# ---------------------------------------------------------------------------
+# svc-pricing — Sub-Plan D (pricing extraction), INFRA deliverable I3.
+#
+# ClusterIP Service `svc-pricing` on port 8001 → the svc-pricing-api pod's :8001.
+# Authority: handoff_msD_infra.md §1 I3 + MASTER_PLAN §2.C (gateway targets
+# `svc-pricing:8001`).
+#
+# The Service selects ONLY the api component (app=svc-pricing, component=api). There
+# is NO worker (pricing has no Celery task) — so no second selector is needed.
+#
+# Traffic paths into this Service:
+#   - North-south (external): Traefik IngressRoute (I4) → svc-pricing:8001 for the
+#     ONE public route POST /api/v1/products/{id}/price-calc.
+#   - East-west (internal): NONE exposed BY pricing. svc-pricing is a LEAF CONSUMER
+#     (MASTER_PLAN §2.C) — it has NO /internal/* endpoint. pricing CALLS catalog's
+#     assert_product_ownership /internal shim over cluster DNS (the §0.6 ownership
+#     shim) but exposes none of its own; nothing dials svc-pricing internally.
+#
+# Port note: like svc-export + svc-image (and unlike the monolith `api` Service which
+# is port 80 → 8000), svc-pricing uses 8001 on BOTH the Service port and the
+# targetPort, matching the gateway map's `svc-pricing:8001` literal.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-pricing
+  namespace: dev
+  labels:
+    app: svc-pricing
+spec:
+  type: ClusterIP
+  selector:
+    app: svc-pricing
+    component: api
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001

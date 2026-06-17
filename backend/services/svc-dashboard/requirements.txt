@@ -1,0 +1,30 @@
+# svc-dashboard runtime dependencies (MS Sub-Plan B, spec §3.A).
+#
+# Versions PINNED to the monolith's exact pins (backend/requirements.txt) so
+# the extracted compose behaves identically.
+#
+# dashboard is a PURE READ (§13.I): NO celery / openpyxl / gemini / langfuse /
+# msg91 / razorpay / rembg / google-cloud-storage.  It delegates all data
+# access to its catalog + customer HTTP shims (httpx) and verifies the user
+# JWT locally (pyjwt).
+
+# ── Web framework ────────────────────────────────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+pydantic-settings>=2.5,<3
+
+# ── Database (async) — auth existence check + audit wiring only ──────────
+sqlalchemy[asyncio]==2.0.32
+asyncpg==0.29.0
+
+# ── Cache (rate-limit sliding windows + audit-coalesce, Valkey DB 0) ─────
+redis==5.0.8
+
+# ── Auth (local JWT verification — A2 / D7) ──────────────────────────────
+pyjwt==2.9.0
+
+# ── HTTP shim transport (extracted_clients: catalog + customer) ──────────
+httpx==0.27.0
+
+# ── Observability ────────────────────────────────────────────────────────
+prometheus-client>=0.20,<1

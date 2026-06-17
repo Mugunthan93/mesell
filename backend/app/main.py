@@ -61,6 +61,19 @@ async def lifespan(app: FastAPI):
     is logged and swallowed so a cold cache does not block boot.
     """
     logger.info(f"MeeSell API starting (env={settings.APP_ENV})")
+    if settings.DEV_OTP_BYPASS_CODE:
+        if settings.APP_ENV == "production":
+            logger.critical(
+                "DEV_OTP_BYPASS_CODE is SET in PRODUCTION — it is code-force-disabled "
+                "by the APP_ENV guard and will NOT be honored, but this is a serious "
+                "misconfiguration. Unset it."
+            )
+        else:
+            logger.warning(
+                "DEV OTP BYPASS ACTIVE (env=%s) — ANY phone logs in with code '%s' after "
+                "a normal /otp/send. NEVER use in production.",
+                settings.APP_ENV, settings.DEV_OTP_BYPASS_CODE,
+            )
     app.state.db_engine = create_async_engine(settings.DATABASE_URL, pool_pre_ping=True)
     app.state.valkey = redis.from_url(settings.VALKEY_URL, decode_responses=True)
 
@@ -120,7 +133,11 @@ app.include_router(customer_router)
 app.include_router(category_router)
 
 # §10 catalog — owns /api/v1/products/* (6 endpoints per §10.B LOCKED 2026-06-05).
-app.include_router(catalog_router)
+# Feature-flag guarded (§3.2 / catalog-form FEATURE_PLAN.md D2): when
+# FEATURE_CATALOG_FORM_ENABLED is False the router is NOT mounted, so every
+# /api/v1/products/* path falls through to FastAPI's default 404.
+if settings.FEATURE_CATALOG_FORM_ENABLED:
+    app.include_router(catalog_router)
 
 # §11 image — owns /api/v1/products/{id}/images (2 endpoints per §11.B LOCKED 2026-06-05).
 app.include_router(image_router)

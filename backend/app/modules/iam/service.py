@@ -309,7 +309,19 @@ async def verify_otp_and_issue_tokens(
         raise OtpInvalidError()
 
     presented_hash = _hash_otp(otp)
-    if not secrets.compare_digest(presented_hash, record.otp_hash):
+
+    # ── Dev-only OTP bypass (dev-otp-bypass feature) ───────────────────────
+    # Two independent guards: a NON-EMPTY configured code AND a non-production
+    # APP_ENV.  In production the bypass is force-disabled here regardless of
+    # the config value (so a misconfigured prod env var is inert).  The
+    # record-exists gate above is unchanged: a real /otp/send must still have
+    # seeded the Valkey record.  Only the code comparison is relaxed; a wrong
+    # code under an active bypass still falls through to the mismatch /
+    # attempts / lockout path below.
+    bypass_active = bool(settings.DEV_OTP_BYPASS_CODE) and settings.APP_ENV != "production"
+    bypass_match = bypass_active and secrets.compare_digest(otp, settings.DEV_OTP_BYPASS_CODE)
+
+    if not bypass_match and not secrets.compare_digest(presented_hash, record.otp_hash):
         new_attempts = record.attempts + 1
         if new_attempts >= _OTP_MAX_ATTEMPTS:
             await valkey.delete(key)

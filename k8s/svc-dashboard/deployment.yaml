@@ -1,0 +1,110 @@
+# k8s/svc-dashboard/deployment.yaml
+# ---------------------------------------------------------------------------
+# svc-dashboard — Sub-Plan B (dashboard extraction), INFRA deliverable I2.
+#
+# ONE Deployment from ONE image (asia-south1-docker.pkg.dev/.../svc-dashboard):
+#   - svc-dashboard-api   1 replica, FastAPI HTTP server on :8001
+#
+# *** NO WORKER DEPLOYMENT *** (contrast k8s/svc-export/deployment.yaml which has
+# two). dashboard has NO Celery (§0.6 leaf consumer, 2 outbound HTTP shims, zero
+# background jobs). This file therefore declares exactly ONE Deployment.
+#
+# Sizing authority — handoff_msB_infra.md §1 I2 (dashboard is the LIGHTEST
+# service of any extraction: api-only, owns no tables, no XLSX build, no rembg):
+#   api  req  50m CPU / 128Mi  ·  lim 200m CPU / 256Mi   (handoff exact)
+#                                                          mem lim 256Mi < the
+#                                                          svc-export api 512Mi —
+#                                                          no XLSX assembly buffer.
+#
+# D3 capacity (handoff §3 / infra plan §6.3): svc-dashboard adds ONLY 50m CPU
+# request (no worker). At the MS-2 wave the node hosts:
+#   monolith api 2×200m=400m + monolith worker 2×250m=500m
+#   + svc-export api 50m + svc-export worker 200m
+#   + svc-dashboard api 50m
+#   + svc-image api 50m + svc-image worker (rembg-heavy, ~250m est.)
+#   ≈ 1.55 vCPU of REQUESTS on a 2 vCPU e2-standard-2 node.
+# svc-dashboard is the SMALLEST contributor (50m). Capacity math FITS the current
+# node → NO D3 VM-upgrade ask for Sub-Plan B. (D3 e2-standard-4 is plan-pre-
+# approved but gets a FRESH founder cost-ask only if the MS-2 wave genuinely
+# overflows the node — flagged in the infra report, NOT silently provisioned.)
+#
+# Namespace: dev ONLY (constraint §4 — no staging/prod manifests in Sub-Plan B).
+#
+# Rolling-update strategy mirrors k8s/svc-export/deployment.yaml: the dev node is
+# CPU-tight, so kill-before-surge (maxSurge:0 / maxUnavailable:1) avoids the
+# "new pod Pending: Insufficient cpu" deadlock (the CI run 27360475090 lesson).
+#
+# Secrets/config (deliverables I7 + I8): the container consumes the trimmed
+# svc-dashboard Secret (svc-dashboard-secrets, I7) + the trimmed svc-dashboard
+# ConfigMap (svc-dashboard-config, I8 — carries FEATURE_TRACKING_DASHBOARD_ENABLED
+# + APP_ENV) via envFrom. svc-dashboard needs ONLY: DATABASE_URL (no owned schema
+# — mw/get_db wiring + inert audit path), VALKEY_URL (rate_limit DB 0 + audit),
+# JWT_SECRET (local verify per D7/A2), FEATURE_TRACKING_DASHBOARD_ENABLED, APP_ENV.
+# It does NOT receive GEMINI/LANGFUSE/MSG91/RAZORPAY/GCS (no AI/SMS/payment/storage
+# — §0.6 / handoff §1 I7). This is the §5.D blast-radius trim.
+#
+# *** NO GCS auth block *** (contrast svc-export I6 keyless-metadata note):
+# dashboard touches NO GCS — no images, no exports. GOOGLE_APPLICATION_CREDENTIALS
+# is absent because dashboard never calls GCS at all (not merely "keyless").
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: svc-dashboard-api
+  namespace: dev
+  labels:
+    app: svc-dashboard
+    component: api
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Kill-before-surge: dev node is CPU-saturated; a surge pod cannot schedule.
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: svc-dashboard
+      component: api
+  template:
+    metadata:
+      labels:
+        app: svc-dashboard
+        component: api
+    spec:
+      containers:
+        - name: svc-dashboard-api
+          image: asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-prod-images/svc-dashboard:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8001
+          envFrom:
+            # Trimmed config (I8): APP_ENV + FEATURE_TRACKING_DASHBOARD_ENABLED only.
+            # NOT the monolith's full meesell-config (no GEMINI_MODEL/GCS_*/LangFuse
+            # — §5.D trim, mirrors the trimmed-secret discipline).
+            - configMapRef:
+                name: svc-dashboard-config
+            # Trimmed secret (I7): DATABASE_URL, VALKEY_URL, JWT_SECRET only.
+            - secretRef:
+                name: svc-dashboard-secrets
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3

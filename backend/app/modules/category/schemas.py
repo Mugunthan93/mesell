@@ -29,16 +29,25 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class SuggestQuery(BaseModel):
-    """Query parameters for GET /api/v1/categories/suggest.
+    """JSON request body for POST /api/v1/categories/suggest.
 
-    ``q`` must have 1–500 non-empty characters (after strip).  Pydantic
+    ``q`` must have 1–5000 non-empty characters (after strip).  Pydantic
     enforces the character bounds; the service layer enforces the
     strip-and-recheck rule.
+
+    Raised from GET→POST (founder ruling 2026-06-16, finding #4): a 5000-char
+    description in a GET query string risks browser/proxy URL-length limits
+    (RFC 9110 RECOMMENDED max varies, de-facto ~8 KB).  POST JSON body has no
+    such limit.  The field name ``q`` is preserved so existing callers that
+    already built request objects only need to change the HTTP verb and move
+    the value from query param to JSON body.
 
     validation_message_id on violation: ``validation.suggest_q.too_short_or_long``
     """
 
-    q: str = Field(min_length=1, max_length=500)
+    model_config = ConfigDict(extra="forbid")
+
+    q: str = Field(min_length=1, max_length=5000)
 
 
 class BrowseQuery(BaseModel):

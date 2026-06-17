@@ -1,3 +1,5 @@
+import type { MeeIconName } from '../icon/icon.registry';
+
 /**
  * MeeSell-semantic menu item. A narrowed subset of PrimeNG's MenuItem that
  * exposes only the props MeeSell needs. Keeps PrimeNG's full API off the
@@ -6,8 +8,8 @@
 export interface MeeMenuItem {
   /** Visible label. Omit when `separator` is true. */
   label?: string;
-  /** Icon class (e.g. 'pi pi-user'). */
-  icon?: string;
+  /** Semantic icon name (e.g. 'user'). Resolved to a PrimeIcons class via MEE_ICONS. */
+  icon?: MeeIconName;
   /** Router link target for navigation items. */
   routerLink?: string | unknown[];
   /** Click handler for action items. */

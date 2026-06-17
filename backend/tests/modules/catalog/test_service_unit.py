@@ -26,6 +26,7 @@ import pytest
 
 from app.modules.catalog import repository as catalog_repo
 from app.modules.catalog import service as catalog_service
+from app.modules.catalog.domain import Product
 from app.modules.catalog.exceptions import (
     ProductNotFoundError,
     ValidationFailedError,
@@ -442,3 +443,65 @@ class TestPlanGuardEnforcement:
         assert count_after == 100, (
             f"plan_guard must fail BEFORE any DB write; got {count_after}"
         )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# section-3 Wave 1 — get_product_detail (GAP-1: category_id recovery)
+# ─────────────────────────────────────────────────────────────────────────────
+class TestGetProductDetail:
+    """``get_product_detail`` returns a single user-scoped product so the
+    catalog-form frontend can recover ``category_id`` on hard reload.
+
+    Ownership / not-found / soft-delete all collapse to
+    ProductNotFoundError per the §10 leak-protection rule.
+    """
+
+    async def test_get_product_detail_success(
+        self, db, user, beauty_category, use_live_valkey
+    ):
+        """Owned, active product → :class:`Product` with category_id intact."""
+        catalog = await _seed_catalog(db, user.id)
+        product = await _seed_product(db, user.id, catalog.id, beauty_category.id)
+
+        result = await catalog_service.get_product_detail(
+            user.id, product.id, db=db
+        )
+
+        assert isinstance(result, Product)
+        assert result.category_id == beauty_category.id
+        assert result.id == product.id
+        assert result.status == "draft"
+        assert result.name == "Test Product"
+
+    async def test_get_product_detail_wrong_owner(
+        self, db, user, other_user, beauty_category, use_live_valkey
+    ):
+        """Product owned by user A → ProductNotFoundError when user B asks."""
+        catalog = await _seed_catalog(db, user.id)
+        product = await _seed_product(db, user.id, catalog.id, beauty_category.id)
+        with pytest.raises(ProductNotFoundError):
+            await catalog_service.get_product_detail(
+                other_user.id, product.id, db=db
+            )
+
+    async def test_get_product_detail_not_found(
+        self, db, user, beauty_category, use_live_valkey
+    ):
+        """Random UUID → ProductNotFoundError."""
+        with pytest.raises(ProductNotFoundError):
+            await catalog_service.get_product_detail(
+                user.id, uuid.uuid4(), db=db
+            )
+
+    async def test_get_product_detail_soft_deleted(
+        self, db, user, beauty_category, use_live_valkey
+    ):
+        """``deleted_at IS NOT NULL`` → ProductNotFoundError (even for owner)."""
+        catalog = await _seed_catalog(db, user.id)
+        product = await _seed_product(
+            db, user.id, catalog.id, beauty_category.id, deleted=True
+        )
+        with pytest.raises(ProductNotFoundError):
+            await catalog_service.get_product_detail(
+                user.id, product.id, db=db
+            )

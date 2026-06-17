@@ -813,6 +813,11 @@ Recommendation: `super_id` (stable, opaque) with a `backend/app/constants/super_
 **Who writes it:** `scripts/build_template_schemas.py` at seed time
 **Who reads it:** API routes (schema endpoint), frontend wizard, AI auto-fill
 
+Note: the frontend wizard does NOT read schema_jsonb's rich §5.6.1 shape
+directly — it consumes the flat §5A.C 9-key DTO materialized at read time by
+category.service.fetch_schema_dto (see BACKEND_ARCHITECTURE §5A amendment
+2026-06-16). Storage stays rich; the wire shape is projected.
+
 ---
 
 ### 4.3 — `field_enum_values.enum_entries`

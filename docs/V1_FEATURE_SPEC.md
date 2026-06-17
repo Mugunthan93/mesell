@@ -127,6 +127,8 @@ Reference: `docs/VALIDATED_PAIN_POINTS.md` (themes T1–T6, new pains S3.x)
 
 **Effort estimate:** Backend 8 h · Frontend 5 h · **Total 13 h**
 
+**AMENDMENT 2026-06-16 — finding #4 (founder-ratified):** the `/api/v1/categories/suggest` contract is superseded. The endpoint is now **`POST /api/v1/categories/suggest`** with JSON body `{"q": "<description>"}` (was `GET /api/v1/categories/suggest?q=<description>`). The description max length is now **5000** characters (was 500). Rationale: 5000-character descriptions exceed the safe URL length for a GET query string, so the description moves into a POST JSON body. The response shape (`SuggestResponse`) and all behavior — top-3 leaf suggestions, confidence, 3 s P95, Gemini fallback to keyword search, the empty/short-input 422 — are **unchanged**. Implemented on `develop` via backend PR #246 + frontend PR #247. (End amendment.)
+
 ---
 
 ### Feature 3: Fast Catalog Form
@@ -195,7 +197,7 @@ Reference: `docs/VALIDATED_PAIN_POINTS.md` (themes T1–T6, new pains S3.x)
 **Pain solved:** Section 3.1 (NEW pain — image policy rejection) + Theme 4 sub-pain. EcomSarthi's free checker proves user pull.
 
 **User journey:**
-1. User on `/catalogs/:id/images` drags up to 6 images (max 10 MB each)
+1. User on `/catalogs/:id/images` drags up to 4 images (max 10 MB each)
 2. Frontend uploads to `POST /api/v1/products/:id/images` (multipart)
 3. Backend stores in GCS, queues Celery job to run checks
 4. Worker runs: JPEG check, RGB/CMYK check (Pillow), resolution ≥1500×1500, white-BG heuristic, watermark detection (Gemini vision)
@@ -226,7 +228,7 @@ Reference: `docs/VALIDATED_PAIN_POINTS.md` (themes T1–T6, new pains S3.x)
 - [ ] User sees per-check pass/fail with one-line fix hint ("Convert image to RGB before upload")
 - [ ] Failed images marked red; user can re-upload to replace
 - [ ] Watermark check accuracy ≥85 % on 30-image seed test
-- [ ] Total upload size capped at 60 MB per product (6 × 10 MB)
+- [ ] Total upload size capped at 40 MB per product (4 × 10 MB)
 
 **Edge cases:**
 - Upload not JPEG/PNG → reject at API with 415
@@ -511,7 +513,7 @@ CREATE TABLE exports (
 | POST | `/api/v1/auth/otp/send` | Send 6-digit OTP via MSG91 |
 | POST | `/api/v1/auth/otp/verify` | Verify OTP, return JWT |
 | POST | `/api/v1/auth/login` | Reserved (V1.5 email/password) |
-| GET  | `/api/v1/categories/suggest?q=<desc>` | Smart picker — top-3 Gemini suggestions |
+| POST | `/api/v1/categories/suggest` | Smart picker — top-3 Gemini suggestions (amended 2026-06-16 → POST, JSON body `{"q": "<desc>"}`, max 5000 chars; was GET `?q=<desc>`, see Feature 2 amendment) |
 | GET  | `/api/v1/categories/{id}/schema` | Field schema for category |
 | POST | `/api/v1/products` | Create draft product |
 | PATCH | `/api/v1/products/{id}` | Autosave field changes |

@@ -1,3 +1,96 @@
+/**
+ * export.model.ts — typed contracts for the XLSX export feature.
+ *
+ * Wire DTOs: §1 of spec_w6c_export.md (Wave 6 Wave C Lane 2).
+ *
+ * Key decisions:
+ * - ExportInitiatedResponse.status is LITERAL 'pending' (NOT 'processing') — backend constant.
+ * - ExportResponseDTO has NO progress_pct field — wire shape confirmed in spec §1.
+ * - MOCK_DOWNLOAD_URL REMOVED — signed URL is read from ExportResponseDTO.xlsx_signed_url.
+ * - SIMULATED_PASSING_CHECKS retained as DISPLAY-ONLY per GAP-1 Option A ruling;
+ *   the real readiness gate is the 422 export.product_not_ready on initiate (R-W6-1).
+ * - nextProgress / isProgressComplete REMOVED — no progress_pct on the wire.
+ * - retryState adjusted — no progress field.
+ * - isTerminalStatus added as a pure-function gate for the poll loop.
+ */
+
+// ── Wire formats ────────────────────────────────────────────────────────────────
+
+/** Supported export formats (ExportRequest.format — backend extra=forbid). */
+export type ExportFormat = 'xlsx_only' | 'xlsx_with_images';
+
+/**
+ * Request body for POST /api/v1/products/{product_id}/export-xlsx.
+ * Backend enforces extra=forbid — only `format` is allowed.
+ */
+export interface ExportRequest {
+  format: ExportFormat;
+}
+
+/**
+ * Response from POST /api/v1/products/{product_id}/export-xlsx (HTTP 202).
+ * status is ALWAYS the literal 'pending' (not 'processing').
+ * Source: backend/app/modules/export/schemas.py:39
+ */
+export interface ExportInitiatedResponse {
+  export_id: string;
+  status: 'pending';
+  enqueued_task_id: string;
+  initiated_at: string; // ISO 8601 datetime
+}
+
+/**
+ * Wire status values from GET /api/v1/exports/{export_id}.
+ * Backend emits these three values only. 'pending' = job in Celery queue or running.
+ */
+export type ExportWireStatus = 'pending' | 'ready' | 'failed';
+
+/**
+ * Response from GET /api/v1/exports/{export_id} (HTTP 200, any status).
+ * NO progress_pct field — status-based polling, no numeric progress on the wire.
+ * Source: backend/app/modules/export/schemas.py:48
+ */
+export interface ExportResponseDTO {
+  export_id: string;
+  product_id: string;
+  status: ExportWireStatus;
+  format: ExportFormat;
+  /** Populated when status = 'ready'. Fresh 1 h GCS signed URL. */
+  xlsx_signed_url: string | null;
+  /** Populated when status = 'ready' AND format = 'xlsx_with_images'. */
+  zip_signed_url: string | null;
+  /** Populated when status = 'failed'. */
+  error_message: string | null;
+  error_code: string | null;
+  initiated_at: string; // ISO 8601 datetime
+  /**
+   * Always null in V1 — backend has no DDL column for this yet.
+   * Retained per spec §1 to avoid future shape drift.
+   */
+  completed_at: string | null;
+  /** true when status = 'ready' and round-trip XLSX validation passed. */
+  round_trip_validated: boolean | null;
+}
+
+// ── UI-local types ──────────────────────────────────────────────────────────────
+
+/**
+ * UI-local export status enum.
+ * 'idle'       — not yet triggered
+ * 'processing' — initiate returned 202 + poll is running (wire status = 'pending')
+ * 'ready'      — poll returned status = 'ready'; signed URL available
+ * 'failed'     — poll returned status = 'failed'; or network/404 error
+ *
+ * Wire-to-UI mapping: 'pending' → 'processing' (template keeps its 4-state enum
+ * without change; builder 2 owns the template render per §5 serial chain).
+ */
+export type ExportStatus = 'idle' | 'processing' | 'ready' | 'failed';
+
+// ── GAP-1 Option A — display-only checklist ─────────────────────────────────────
+// These checks are DISPLAY-ONLY constants, NOT backed by any backend endpoint.
+// The authoritative readiness gate is the 422 `export.product_not_ready` /
+// `export.front_image_missing` returned by POST export-xlsx (R-W6-1).
+
 export interface ValidationChecks {
   title_ok: boolean;
   category_ok: boolean;
@@ -5,27 +98,17 @@ export interface ValidationChecks {
   images_ok: boolean;
 }
 
-export interface ExportJob {
-  id: string;
-  status: 'processing' | 'ready' | 'failed';
-  progress_pct: number;
-  download_url: string | null;
-  created_at: string;
-}
-
-export interface ExportTriggerResponse {
-  export_id: string;
-}
-
-export type ExportStatus = 'idle' | 'processing' | 'ready' | 'failed';
-
 /** Validation check display item for the checklist UI. */
 export interface ValidationCheckItem {
   label: string;
   ok: boolean;
 }
 
-/** All 4 checks pass in V1 simulation (journey step 10). */
+/**
+ * All 4 checks set to true for V1 simulation.
+ * DISPLAY-ONLY — not backed by a backend endpoint (GAP-1 Option A ruling).
+ * The real gate is POST export-xlsx 422 response.
+ */
 export const SIMULATED_PASSING_CHECKS: ValidationChecks = {
   title_ok:    true,
   category_ok: true,
@@ -33,11 +116,7 @@ export const SIMULATED_PASSING_CHECKS: ValidationChecks = {
   images_ok:   true,
 };
 
-/** Mock download URL returned after simulated XLSX generation. */
-export const MOCK_DOWNLOAD_URL =
-  'https://storage.googleapis.com/mee-exports/mock-kurti-catalog.xlsx';
-
-// ── Pure functions (exported for unit testing without TestBed) ─────────────────
+// ── Pure functions (exported for unit testing without TestBed) ──────────────────
 
 /**
  * Returns the 4 validation check items for display in the checklist table.
@@ -70,25 +149,19 @@ export function canGenerate(status: ExportStatus, checks: ValidationChecks): boo
 }
 
 /**
- * Derives the next progress value after one tick, capped at 100.
+ * Returns true when the wire status is terminal (poll loop should stop).
+ * 'ready' and 'failed' are terminal; 'pending' is not.
  * Pure: no side-effects.
  */
-export function nextProgress(current: number, tick: number): number {
-  return Math.min(current + tick, 100);
-}
-
-/**
- * Returns true when progress has reached 100 and the export should become 'ready'.
- * Pure: no side-effects.
- */
-export function isProgressComplete(progress: number): boolean {
-  return progress >= 100;
+export function isTerminalStatus(status: ExportWireStatus): boolean {
+  return status === 'ready' || status === 'failed';
 }
 
 /**
  * Returns reset state values for the Retry action.
+ * No progress field — numeric progress was removed (no progress_pct on the wire).
  * Pure: no side-effects.
  */
-export function retryState(): { status: ExportStatus; progress: number; downloadUrl: null } {
-  return { status: 'idle', progress: 0, downloadUrl: null };
+export function retryState(): { status: ExportStatus; downloadUrl: null } {
+  return { status: 'idle', downloadUrl: null };
 }

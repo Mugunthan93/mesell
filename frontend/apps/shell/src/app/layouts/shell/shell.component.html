@@ -1,19 +1,28 @@
 <div class="shell-layout">
-  <!-- Desktop sidebar -->
+  <!-- Desktop sidebar — founder-approved 4 groups (Home / Catalogs / Categories / Account) -->
   <nav class="sidebar-desktop" aria-label="Main navigation">
     <div class="sidebar-brand">MeeSell</div>
-    <ul class="sidebar-nav">
-      @for (item of navItems; track item.route) {
-        <li>
-          <a [routerLink]="item.route"
-             routerLinkActive="nav-item--active"
-             class="nav-item">
-            <i [class]="item.icon" aria-hidden="true"></i>
-            <span>{{ item.label }}</span>
-          </a>
-        </li>
+    @for (group of navGroups; track group.label) {
+      @if (visibleItems(group).length > 0) {
+        <div class="nav-group" role="group" [attr.aria-label]="group.label">
+          <h2 class="nav-group__label">{{ group.label }}</h2>
+          <ul class="sidebar-nav">
+            @for (item of visibleItems(group); track item.route) {
+              <li>
+                <a [routerLink]="item.route"
+                   routerLinkActive="nav-item--active"
+                   [routerLinkActiveOptions]="{ exact: !item.prefixMatch }"
+                   class="nav-item"
+                   [class.nav-item--accent]="item.accent">
+                  <mee-icon [name]="item.icon" />
+                  <span>{{ item.label }}</span>
+                </a>
+              </li>
+            }
+          </ul>
+        </div>
       }
-    </ul>
+    }
   </nav>
 
   <!-- Mobile sidebar overlay -->
@@ -23,19 +32,28 @@
     styleClass="mee-mobile-sidebar"
     [modal]="true">
     <div class="sidebar-brand sidebar-brand--light">MeeSell</div>
-    <ul class="sidebar-nav">
-      @for (item of navItems; track item.route) {
-        <li>
-          <a [routerLink]="item.route"
-             routerLinkActive="nav-item--active"
-             class="nav-item"
-             (click)="mobileSidebarVisible.set(false)">
-            <i [class]="item.icon" aria-hidden="true"></i>
-            <span>{{ item.label }}</span>
-          </a>
-        </li>
+    @for (group of navGroups; track group.label) {
+      @if (visibleItems(group).length > 0) {
+        <div class="nav-group" role="group" [attr.aria-label]="group.label">
+          <h2 class="nav-group__label">{{ group.label }}</h2>
+          <ul class="sidebar-nav">
+            @for (item of visibleItems(group); track item.route) {
+              <li>
+                <a [routerLink]="item.route"
+                   routerLinkActive="nav-item--active"
+                   [routerLinkActiveOptions]="{ exact: !item.prefixMatch }"
+                   class="nav-item"
+                   [class.nav-item--accent]="item.accent"
+                   (click)="mobileSidebarVisible.set(false)">
+                  <mee-icon [name]="item.icon" />
+                  <span>{{ item.label }}</span>
+                </a>
+              </li>
+            }
+          </ul>
+        </div>
       }
-    </ul>
+    }
   </mee-drawer>
 
   <!-- Main content area -->
@@ -47,7 +65,7 @@
         aria-label="Open navigation"
         aria-haspopup="true"
         (click)="mobileSidebarVisible.set(true)">
-        <i class="pi pi-bars" aria-hidden="true"></i>
+        <mee-icon name="menu" />
       </button>
       <div class="header-spacer"></div>
       <div class="user-menu-trigger">

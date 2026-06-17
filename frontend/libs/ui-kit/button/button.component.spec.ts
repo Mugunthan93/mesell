@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { MeeButtonComponent } from './button.component';
+import { MEE_ICONS } from '../icon/icon.registry';
+import type { MeeIconName } from '../icon/icon.registry';
 
 describe('MeeButtonComponent', () => {
   beforeEach(async () => {
@@ -62,5 +64,45 @@ describe('MeeButtonComponent', () => {
     comp.clicked.subscribe(() => { emitted = true; });
     comp.clicked.emit();
     expect(emitted).toBe(true);
+  });
+
+  it('pgIcon should return undefined when no icon is provided', () => {
+    const comp = makeComp('Test');
+    expect(comp.pgIcon()).toBeUndefined();
+  });
+
+  it('pgIcon "sparkles" resolves via registry to MEE_ICONS["sparkles"]', () => {
+    const comp = makeComp('Test', { icon: 'sparkles' satisfies MeeIconName });
+    expect(comp.pgIcon()).toBe(MEE_ICONS['sparkles']);
+  });
+
+  it('pgIcon "forward" resolves via registry to MEE_ICONS["forward"]', () => {
+    const comp = makeComp('Test', { icon: 'forward' satisfies MeeIconName });
+    expect(comp.pgIcon()).toBe(MEE_ICONS['forward']);
+  });
+
+  it('pgIcon "back" resolves via registry to MEE_ICONS["back"]', () => {
+    const comp = makeComp('Test', { icon: 'back' satisfies MeeIconName });
+    expect(comp.pgIcon()).toBe(MEE_ICONS['back']);
+  });
+
+  it('pgIcon "check" resolves via registry to MEE_ICONS["check"]', () => {
+    const comp = makeComp('Test', { icon: 'check' satisfies MeeIconName });
+    expect(comp.pgIcon()).toBe(MEE_ICONS['check']);
+  });
+
+  it('pgIcon "close" resolves via registry to MEE_ICONS["close"]', () => {
+    const comp = makeComp('Test', { icon: 'close' satisfies MeeIconName });
+    expect(comp.pgIcon()).toBe(MEE_ICONS['close']);
+  });
+
+  it('pgIcon "delete" resolves via registry to MEE_ICONS["delete"]', () => {
+    const comp = makeComp('Test', { icon: 'delete' satisfies MeeIconName });
+    expect(comp.pgIcon()).toBe(MEE_ICONS['delete']);
+  });
+
+  it('pgIcon "user" resolves via registry to MEE_ICONS["user"]', () => {
+    const comp = makeComp('Test', { icon: 'user' satisfies MeeIconName });
+    expect(comp.pgIcon()).toBe(MEE_ICONS['user']);
   });
 });

@@ -1,0 +1,42 @@
+# k8s/svc-dashboard/service.yaml
+# ---------------------------------------------------------------------------
+# svc-dashboard — Sub-Plan B (dashboard extraction), INFRA deliverable I3.
+#
+# ClusterIP Service `svc-dashboard` on port 8001 → the svc-dashboard-api pod's
+# :8001. Authority: handoff_msB_infra.md §1 I3 + MASTER_PLAN §2.C (gateway target
+# `svc-dashboard:8001`).
+#
+# The Service selects the api component (app=svc-dashboard, component=api). There
+# is NO worker component for dashboard (no Celery — §0.6), so the selector is
+# simpler than svc-export's (no worker pod to exclude), but we keep the explicit
+# component=api label for symmetry and to make a future worker addition a non-event.
+#
+# Traffic paths into this Service:
+#   - North-south (external): Traefik IngressRoute (I4) → svc-dashboard:8001 for
+#     the SINGLE public route GET /api/v1/products (method-aware — POST stays on
+#     the monolith; see ingressroute.yaml).
+#   - East-west (internal): NONE in V1. dashboard is a LEAF CONSUMER (§0.6) — it
+#     exposes NO /internal/* routes (zero inbound callers). It only makes OUTBOUND
+#     shim calls to catalog + customer. So no other in-cluster service dials
+#     svc-dashboard.dev.svc.cluster.local. (The Service still exists for the
+#     Traefik north-south target.)
+#
+# Port note: like svc-export, svc-dashboard uses 8001 on BOTH the Service port and
+# the targetPort, matching the gateway map's `svc-dashboard:8001` literal.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-dashboard
+  namespace: dev
+  labels:
+    app: svc-dashboard
+spec:
+  type: ClusterIP
+  selector:
+    app: svc-dashboard
+    component: api
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001

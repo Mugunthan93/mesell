@@ -36,6 +36,17 @@ spec:
             - "app.workers.celery_app"
             - "worker"
             - "--loglevel=info"
+            # QUEUE ROUTING ACTIVATED (image-precheck Feature 5, FEATURE_PLAN §Infra row 4).
+            # Backend landed task_routes {"image.precheck": {"queue": "image-tasks"}} in
+            # celery_app.py (#143), so image.precheck now publishes to the dedicated
+            # `image-tasks` queue while export.xlsx (no route) stays on the default
+            # `celery` queue. The worker MUST consume BOTH queues explicitly — once -Q is
+            # set, Celery no longer auto-consumes the default `celery` queue, so omitting
+            # it here would STALL export.xlsx. Hence `-Q celery,image-tasks` (both named).
+            - "-Q"
+            - "celery,image-tasks"
+            # image-precheck Feature 5: concurrency=4 per FEATURE_PLAN §Infra row 4
+            # (8s/image × 4 = 32s budget/min × 60 ≈ 7,500 images/hr capacity).
             - "--concurrency=4"
             - "--max-tasks-per-child=100"
           envFrom:
@@ -43,8 +54,17 @@ spec:
                 name: meesell-config
             - secretRef:
                 name: backend-secrets
-          # NOTE: No -Q queue override — celery_app.py INCLUDE list locked to
-          # [image.tasks, export.tasks] per §18.B. Workers process both queues.
+          # QUEUE ROUTING — RESOLVED 2026-06-12 (image-precheck Feature 5, §Infra row 4):
+          #   Backend #143 added `task_routes={"image.precheck": {"queue": "image-tasks"}}`
+          #   to celery_app.py. image.precheck → `image-tasks`; export.xlsx (no route) →
+          #   default `celery`. The `-Q celery,image-tasks` flag above (activated this
+          #   slice) makes this single worker consume BOTH queues. The earlier "adding -Q
+          #   would break the pipeline" caveat NO LONGER APPLIES now that task_routes is
+          #   live AND both queues are named explicitly. The infra↔backend inter-lead
+          #   dependency (memo handoff_image_tasks_queue.md) is hereby CLOSED.
+          #
+          # NOTE (pre-existing): celery_app.py INCLUDE list locked to
+          # [image.tasks, export.tasks] per §18.B. Workers process both task modules.
           # NOTE: GOOGLE_APPLICATION_CREDENTIALS absent — ADC via GCE metadata server
           # (VM SA 888244156264-compute@... has storage.objectAdmin on
           # gs://meesell-prod-assets per Phase A A2). If Workload Identity is later

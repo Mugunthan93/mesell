@@ -1,0 +1,108 @@
+# k8s/svc-pricing/deployment.yaml
+# ---------------------------------------------------------------------------
+# svc-pricing — Sub-Plan D (pricing extraction), INFRA deliverable I2.
+#
+# ONE Deployment from ONE image:
+#   - svc-pricing-api  1 replica, FastAPI HTTP server on :8001
+#
+# *** NO worker Deployment. *** svc-pricing has no Celery task (verified — no
+# modules/pricing/tasks.py; the image ships no worker entrypoint). pricing is
+# stateless lightweight math (1 INSERT audit row + ≤1 SELECT per request).
+#
+# Mirrors the PROVEN MS-A svc-export api Deployment recipe — svc-pricing is the
+# recipe-copy with the worker block DELETED and the LEANEST secret set
+# (no GCS/AI/Celery — see k8s/svc-pricing/secrets.yaml.example).
+#
+# Sizing authority — handoff_msD_infra.md §1 I2:
+#   api  req  50m CPU / 128Mi  ·  lim 200m CPU / 256Mi
+#        (api is the LIGHTEST of any service — one deterministic price-calc handler;
+#         lim mem 256Mi (not 512Mi like svc-image/export) because pricing holds no
+#         decoded image / no XLSX workbook in RAM — pure math + one ORM round-trip.)
+#
+# ── D3 VM-FIT (handoff §3 — "fits current node, no D3 ask") ────────────────────
+#   svc-pricing at 50m/128Mi (api-only, NO worker) is the LIGHTEST container in the
+#   migration. It adds just 50m CPU request to the node. The MS-0 live snapshot
+#   (board 2026-06-12) recorded node CPU req 83% AFTER PgBouncer; pricing's +50m is
+#   well inside the remaining headroom on the e2-standard-2 (2000m allocatable).
+#   VERDICT: FITS the current node — NO D3 (e2-standard-4) ask, NO money committed.
+#   CROSS-WAVE WATCH (handoff §3): MS-E customer lands the SAME wave (MS-3); the
+#   COMBINED wave-3 footprint (monolith + export + dashboard + image + pricing +
+#   customer) is what could overflow the node — pricing's tiny 50m is unlikely to be
+#   the trigger, but if the combined wave-3 deploy overflows, STOP and flag the
+#   founder for the FRESH D3 ask (do NOT silently provision a node upgrade — §4).
+#
+# Namespace: dev ONLY (constraint §4 — no staging/prod manifests in Sub-Plan D).
+#
+# Rolling-update strategy mirrors svc-export + k8s/api.yaml: the dev node is
+# CPU-tight, so kill-before-surge (maxSurge:0 / maxUnavailable:1) avoids the
+# "new pod Pending: Insufficient cpu" deadlock. (With 1 replica this means a brief
+# api gap on rollout — acceptable for dev zero-traffic; the live cutover ordering +
+# monolith-fallback is handled at the founder-gated deploy per MASTER_PLAN §3.C.)
+#
+# Secrets/config (I7): the api container consumes the svc-pricing Secret
+# (svc-pricing-secrets) + the shared ConfigMap (meesell-config) via envFrom.
+# svc-pricing is deterministic — UNLIKE svc-image it does NOT receive GEMINI/LANGFUSE,
+# and UNLIKE svc-export it does NOT receive GCS_* or CELERY_*. The SMALLEST secret
+# surface of any service (DATABASE_URL @schema pricing + VALKEY_URL DB0 + JWT_SECRET
+# + APP_ENV only — see secrets.yaml.example).
+#
+# GCS auth (I6): NONE. pricing touches no GCS — no SA, no GOOGLE_APPLICATION_CREDENTIALS.
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: svc-pricing-api
+  namespace: dev
+  labels:
+    app: svc-pricing
+    component: api
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Kill-before-surge: dev node is CPU-saturated; a surge pod cannot schedule.
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: svc-pricing
+      component: api
+  template:
+    metadata:
+      labels:
+        app: svc-pricing
+        component: api
+    spec:
+      containers:
+        - name: svc-pricing-api
+          image: asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-prod-images/svc-pricing:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8001
+          envFrom:
+            - configMapRef:
+                name: meesell-config
+            - secretRef:
+                name: svc-pricing-secrets
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+# *** NO svc-pricing-worker Deployment — pricing has no Celery task (I1/I2). ***

@@ -14,9 +14,10 @@ Observability MUST NOT block the business path.  Both public methods —
     but V1 code paths do not raise it.
   * Drop-on-failure with a single WARNING log per dropped event.
   * Degrade to a complete no-op (no network egress, no error) when
-    LangFuse credentials are missing at startup.  A single one-time
-    WARNING is logged when this happens: ``"langfuse credentials missing
-    — trace egress disabled"``.
+    tracing is disabled (``LANGFUSE_ENABLED`` false — the default, and
+    the expected dev posture) or when LangFuse credentials are missing.
+    A single one-time line is logged: DEBUG when intentionally disabled,
+    WARNING when enabled-but-misconfigured (staging/prod).
 
 Decision flag D1 — httpx direct, no SDK
 ---------------------------------------
@@ -78,16 +79,35 @@ def _get_init_lock() -> asyncio.Lock:
 
 
 def _has_creds() -> bool:
-    """Return True iff both public + secret keys are configured.
+    """Return True iff tracing is enabled AND both keys are configured.
 
-    On the first call that finds credentials missing, log a single
-    WARNING ("langfuse credentials missing — trace egress disabled").
-    Subsequent calls return False silently.
+    Tracing is opt-in via ``settings.LANGFUSE_ENABLED`` (default ``False``).
+    When disabled — the expected dev posture, where placeholder
+    ``LANGFUSE_PUBLIC_KEY``/``LANGFUSE_SECRET_KEY`` exist only to satisfy
+    ``REQUIRED_FIELDS`` — the trace path is a clean no-op: no network
+    egress, hence no 401 and no per-call WARNING. A single concise line is
+    logged on the first call only:
+
+      * DEBUG when intentionally disabled (``LANGFUSE_ENABLED`` false).
+      * WARNING when *enabled* but credentials are missing — a real
+        misconfiguration in staging/prod.
+
+    Subsequent calls return ``False`` silently.
     """
     global _creds_warned
+    if not settings.LANGFUSE_ENABLED:
+        if not _creds_warned:
+            logger.debug(
+                "langfuse tracing disabled — LANGFUSE_ENABLED is false "
+                "(expected in dev); no trace egress"
+            )
+            _creds_warned = True
+        return False
     if not (settings.LANGFUSE_PUBLIC_KEY and settings.LANGFUSE_SECRET_KEY):
         if not _creds_warned:
-            logger.warning("langfuse credentials missing — trace egress disabled")
+            logger.warning(
+                "langfuse enabled but credentials missing — trace egress disabled"
+            )
             _creds_warned = True
         return False
     return True

@@ -81,6 +81,10 @@ class MeResponse(BaseModel):
     plan: Literal["free"]
     created_at: datetime
     last_login_at: datetime | None = None
+    # Cross-module fact sourced from the customer module's
+    # ``get_onboarding_completeness`` surface (see router).  Resolves to
+    # ``False`` for a brand-new seller with no profile row yet — never raises.
+    onboarding_complete: bool = False
 
 
 class WebhookCaptureResponse(BaseModel):

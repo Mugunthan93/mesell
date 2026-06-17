@@ -96,11 +96,12 @@ class AutofillSuggestionInternal:
     Per `MVP_ARCH §2.4` ``ai_suggestions_jsonb`` shape: each entry is
     ``{"value", "confidence", "source"}``.  V1 ``autofill.v1`` prompt
     outputs ``{"fields": {<canonical>: <value>}}`` flat — the §10.B.3
-    flow assigns a single high-confidence value to every emitted field
+    flow assigns a single confidence value (0.9) to every emitted field
     (the prompt instructs the model to OMIT fields it is not confident
-    about — see §10.B.3 step 7).  The locked confidence floor for
-    auto-application is **0.85** per `MVP_ARCH §5.2`; emitted-with-
-    omission semantics map to 0.9 (above the floor → auto-applied).
+    about — see §10.B.3 step 7).  Per the FOUNDER RULING 2026-06-11
+    (ai-autofill D1) confidence is a display/provenance signal ONLY —
+    there is NO auto-apply, so it never gates a write to
+    ``products.fields_jsonb``.
     """
 
     canonical_name: str
@@ -115,8 +116,11 @@ class AutofillResponse:
     :class:`schemas.AutofillResponse` at the router boundary.
 
     ``suggestions``: full AI output (the per-field provenance map).
-    ``applied``: which canonical_names were merged into
-                  ``products.fields_jsonb`` (confidence ≥ 0.85).
+    ``applied``: per-field accept flags.  Per the FOUNDER RULING
+                  2026-06-11 (ai-autofill D1) autofill NEVER auto-applies,
+                  so every value here is ``False`` — the seller accepts
+                  each suggestion explicitly in the §F4 yellow-highlight
+                  UX.  Nothing is merged into ``products.fields_jsonb``.
     ``fallback_offered``: True when AI was skipped or exhausted —
                             §6A.F + §9.B.1 precedent (200, not 503).
     """

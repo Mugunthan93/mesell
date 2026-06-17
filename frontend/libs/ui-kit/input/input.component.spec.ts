@@ -44,4 +44,20 @@ describe('MeeInputComponent', () => {
     comp.writeValue(null);
     expect(comp.innerValue()).toBe('');
   });
+
+  it('onBlur should emit the current innerValue as a string on the blur output', () => {
+    comp.onModelChange('hello');
+    let emitted: string | undefined;
+    comp.blur.subscribe((v: string) => { emitted = v; });
+    comp.onBlur();
+    expect(typeof emitted).toBe('string');
+    expect(emitted).toBe('hello');
+  });
+
+  it('onBlur should invoke the registered onTouched callback', () => {
+    let touched = false;
+    comp.registerOnTouched(() => { touched = true; });
+    comp.onBlur();
+    expect(touched).toBe(true);
+  });
 });

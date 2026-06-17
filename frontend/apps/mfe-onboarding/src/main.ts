@@ -17,9 +17,12 @@
 import { bootstrapApplication } from '@angular/platform-browser';
 import { provideRouter, type Routes } from '@angular/router';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
+import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/http';
 
 import { OnboardingComponent } from './app/onboarding.component';
 import { ProfileComponent } from './app/profile.component';
+
+import { jwtInterceptor, refreshInterceptor, errorInterceptor } from '@mesell/core';
 
 const devRoutes: Routes = [
   { path: '', component: OnboardingComponent },
@@ -30,5 +33,11 @@ bootstrapApplication(OnboardingComponent, {
   providers: [
     provideRouter(devRoutes),
     provideAnimationsAsync(),
+    // Wave 6 Wave A: interceptor chain for dev-serve standalone parity.
+    // In federated mode the shell injector provides HttpClient (proven #101 ruling).
+    provideHttpClient(
+      withFetch(),
+      withInterceptors([jwtInterceptor, refreshInterceptor, errorInterceptor]),
+    ),
   ],
 }).catch((err) => console.error(err));

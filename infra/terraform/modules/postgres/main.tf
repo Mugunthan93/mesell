@@ -73,6 +73,16 @@ resource "kubernetes_stateful_set" "postgres" {
           name  = "postgres"
           image = "postgres:${var.image_tag}"
 
+          # MS-0 / D5 step 1 (MS-DB-3): raise max_connections 100 -> 200 to give the
+          # connection-pool headroom the microservices migration (infra plan §3.3)
+          # requires. The postgres entrypoint forwards extra args to the `postgres`
+          # binary, so `-c max_connections=200` overrides the compiled default at boot.
+          # Memory cost ~= 5MB/conn * 100 extra conns ~= +500MB worst case -> the
+          # memory LIMIT is raised 1Gi -> 1.5Gi below (request stays 500Mi: idle
+          # connection slots cost little until used, so scheduler pressure is unchanged
+          # and CPU — the binding constraint on the e2-standard-2 node — is untouched).
+          args = ["-c", "max_connections=${var.max_connections}"]
+
           port {
             container_port = 5432
           }
@@ -118,8 +128,12 @@ resource "kubernetes_stateful_set" "postgres" {
               memory = "500Mi"
             }
             limits = {
+              # MS-0 / D5 step 1: memory limit raised 1Gi -> 1.5Gi to cover the
+              # ~+500MB worst-case from max_connections=200 (~5MB/conn * 100 extra).
+              # Node has ~4.6Gi free RAM (44% requested of 8GB), so this is well
+              # within budget. CPU limit unchanged.
               cpu    = "1000m"
-              memory = "1Gi"
+              memory = "1536Mi"
             }
           }
 

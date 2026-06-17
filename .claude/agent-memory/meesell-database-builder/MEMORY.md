@@ -631,3 +631,175 @@ tables, update the head revision in Section 1 and Section 6.
 | DATABASE_ARCHITECTURE.md canonical | reference | docs/DATABASE_ARCHITECTURE.md supersedes MVP_ARCHITECTURE §2 for DDL; update on every schema change |
 | JSONB shapes in §4 | reference | All 9 JSONB column contracts documented in DATABASE_ARCHITECTURE.md §4 — canonical location |
 | K3s unreachable during Phase 7 | feedback | kubectl exec / port-forward verification blocked; documented in memory; all schema facts sourced from ORM files |
+
+## MS Sub-Plan A Phase A — svc-export Alembic schema-split COMPLETE (2026-06-12)
+
+### Scope
+Sub-session dispatched by `meesell-backend-coordinator` per `spec_msA_backend.md` §3.C. Task: author and validate the standalone Alembic migration chain for `svc-export`, effecting the `public.exports` → `export.exports` schema move called for by MASTER_PLAN §2.D (schema-per-service isolation, V1.5 prep). Commit 5747189 on `feature/microservices-export/backend` (worktree `/tmp/mesell-wt/msA-backend/`).
+
+### What was built (4-file standalone chain)
+
+| File | Path | Purpose |
+|---|---|---|
+| `alembic.ini` | `backend/services/svc-export/alembic.ini` | Standalone chain config. `sqlalchemy.url` intentionally blank — URL injected via `DATABASE_URL` env var to avoid configparser `%`-interpolation. `script_location = alembic`. |
+| `env.py` | `backend/services/svc-export/alembic/env.py` | Async env with `version_table_schema="export"` — the chain's version row lands in `export.alembic_version`, not `public.alembic_version`. `target_metadata = None` (hand-authored DDL only). `transaction_per_migration=True`. |
+| `script.py.mako` | `backend/services/svc-export/alembic/script.py.mako` | Standard Alembic mako template (unmodified default). |
+| `e7a3c1f9b42d_move_exports_to_export_schema.py` | `backend/services/svc-export/alembic/versions/` | Revision `e7a3c1f9b42d`, `down_revision=None` (root of chain). |
+
+`upgrade()`: (1) Risk#5 integrity pre-scan — orphaned `exports.user_id` count; raises `RuntimeError` with up to 20 detail rows on non-zero (hard abort, no partial move); (2) `CREATE SCHEMA IF NOT EXISTS export`; (3) `ALTER TABLE public.exports SET SCHEMA export`. `downgrade()`: `ALTER TABLE export.exports SET SCHEMA public`.
+
+### Monolith head status
+`f31c75438e61` — UNCHANGED. The two chains are fully independent (different version tables in different schemas).
+
+### Validated round-trip (local Homebrew Postgres 16.11 — NOT the dev tunnel)
+Dev tunnel down (`nc -zv localhost 5433` refused). Scratch DB `meesell_svc_export_test` seeded with valid users/exports pair. Results: upgrade → `e7a3c1f9b42d (head)` in export schema, `public.exports` gone, `export.exports` + `export.alembic_version` present; orphan-abort test PASSED (RuntimeError, clean rollback); downgrade restored `public.exports`; full round-trip PASSED.
+
+### Critical env.py gotcha — schema must exist BEFORE context.configure()
+Alembic's `_ensure_version_table()` runs at `context.configure()` time and needs `export.alembic_version` creatable — if the schema doesn't exist yet, Postgres errors before any migration code runs. Fix (load-bearing): in `do_run_migrations()`, execute `CREATE SCHEMA IF NOT EXISTS export` + `connection.commit()` BEFORE `context.configure(...)`. The commit is required so the schema DDL is visible to configure-time internal queries (asyncpg implicit-transaction visibility).
+
+### Reusable schema-split recipe (for waves MS-2..5)
+1. `backend/services/<svc>/alembic.ini` with `sqlalchemy.url =` blank — URL via env var only (configparser `%`-interpolation trap).
+2. `env.py`: `version_table_schema="<svc_schema>"` (one distinct schema per chain, never reuse); `target_metadata = None` unless the service owns its own ORM Base; `transaction_per_migration=True`; `CREATE SCHEMA IF NOT EXISTS <svc_schema>` + `connection.commit()` at top of `do_run_migrations()` BEFORE `context.configure()`.
+3. First migration: `down_revision = None` (root); `ALTER TABLE public.<table> SET SCHEMA <svc_schema>`.
+4. Local Homebrew PG16 is a valid validation substitute when the dev tunnel is down — identical DDL behavior to K3s Supabase PG16 for these operations.
+5. Risk#5 pattern: always pre-scan FK integrity before a schema move; `SELECT COUNT(*) ... WHERE NOT EXISTS (...)` + raise on non-zero + emit up to 20 detail rows.
+
+### Memory index entry
+| Entry | Type | Summary |
+|---|---|---|
+| MS Sub-Plan A Phase A svc-export schema-split | project | 4-file standalone Alembic chain; head e7a3c1f9b42d; version_table_schema="export"; monolith head f31c75438e61 unchanged; round-trip validated on local Homebrew PG 16.11 |
+| schema-split env.py gotcha | reference | CREATE SCHEMA + commit MUST precede context.configure() — _ensure_version_table() needs schema visible at configure time |
+| schema-split recipe for MS-2..5 | reference | version_table_schema per service; blank sqlalchemy.url; Risk#5 orphan-abort pattern; commit DDL before context.configure() |
+
+---
+
+## Category Seeding Wave 1 — LOCAL-ONLY seed COMPLETE (2026-06-16)
+
+### Scope
+Session `mesell-category-seeding-backend-session-1`, worktree `/private/tmp/mesell-wt/category-seeding`, branch `feature/category-seeding`. Dispatched by `meesell-data-engineer` per `CATEGORY_SEEDING_WAVE1_SPEC.md`. Build step of HYBRID 3-step.
+
+### What was done
+
+1. **Import-path corrections (§3.1)** — 5 seed scripts had stale `app.config` → `app.shared.config` and `app.models.*` → `app.shared.models.*`. Applied mechanical substitutions to: `seed_all.py` (2 blocks), `seed_categories.py`, `seed_field_aliases.py`, `seed_field_enum_values.py`, `build_template_schemas.py`. Zero logic change. Class names and `settings` symbol confirmed identical before editing.
+
+2. **Makefile `seed` target** — added `PYTHONPATH=backend backend/.venv/bin/python scripts/seed_all.py` + `seed` to `.PHONY`.
+
+3. **Worktree venv** — created `backend/.venv` (Python 3.11 via Homebrew; 3.12 unavailable). Installed sqlalchemy[asyncio], asyncpg, alembic, pydantic-settings, dotenv, fastapi, pyjwt, redis, prometheus_client, google-generativeai.
+
+4. **Local .env** — created `backend/.env` (gitignored) with `DATABASE_URL=postgresql+asyncpg://meesell:password@localhost:5432/meesell` (port 5432; .env.example shows 5433 but 5432 is live). VALKEY_URL=redis://localhost:6379/0 (6379 is live; 6380 not).
+
+5. **Seed run 1** — `make seed`, 19.4s, exit 0. field_aliases=67 (exact), templates=3566 (in [3539,3575]), categories=3772 (exact), field_enum_values=49259 (in [49048,49542]).
+
+6. **Seed run 2 (idempotency)** — 21.1s, exit 0, identical counts, zero errors.
+
+7. **Acceptance proof** — (a) prewarm: 100 schemas warmed after clearing stale Valkey cache (see gotcha below); (b) /browse trgm: q='kurti' → 5 matches, q='saree' → 8 matches; (c) 3772 categories confirm live.
+
+8. **Commit** `d5e71a9` on `feature/category-seeding`; **PR #245** opened (`feature/category-seeding → develop`), LEFT OPEN for founder merge.
+
+### Alembic head
+`f31c75438e61` — UNCHANGED. No migration authored or touched.
+
+### Gotcha: stale Valkey cache blocks prewarm after fresh seed
+Valkey DB 3 had a stale pre-seed `meesell:v1:category_tree` key (empty list `[]`) stored from a prior app run when categories were 0 rows. On first prewarm call, `get_or_set` hit this fast-path cached value → returned `[]` → `super_categories: []` → 0 schemas warmed. Fix: `redis-cli -n 3 DEL "meesell:v1:category_tree"`. After clearing, prewarm correctly warmed 100 schemas. **In K8s deploy sequence (migrate → seed → API pod start), no stale cache exists — prewarm will always warm >0 from the freshly seeded DB.**
+
+### Hand-offs
+- PR #245 OPEN. Backend lead + data lead merge-gate review pending. Founder merges.
+- Wave 2 (K8s seed Job): `meesell-infra-builder` — deferred per D1 resolution.
+- Wave 1.5 commission backfill: `meesell-scraper-maintainer` → `category_commissions.json` → `seed_category_commissions.py`.
+
+---
+
+## MS Sub-Plan B Phase A — svc-dashboard DB attestation B4 (2026-06-13) [meesell-database-builder AUTHORITATIVE]
+
+### Scope
+VERIFY-ONLY task. Independently verified (as the correct meesell-database-builder owner per CLAUDE.md rule 1) that the dashboard module (`backend/app/modules/dashboard/`) owns ZERO tables and introduces NO Alembic chain. Worktree: `/tmp/mesell-wt/msB-backend/`, source commit `98f6a96`.
+
+### Evidence — all 6 files read in full + grep results
+
+Files confirmed present and read:
+- `__init__.py` (lines 1-37): module docstring + `from app.modules.dashboard.router import router as dashboard_router`. No imports from SQLAlchemy, alembic, or any DB layer.
+- `domain.py` (lines 1-41): post-§13.A.1 amendment — intentionally empty (`__all__: list[str] = []`). Only `from __future__ import annotations`. No ORM, no DB.
+- `exceptions.py` (lines 1-62): `DashboardError` + `InvalidPaginationError` both subclass `app.core.errors.MeesellError`. No DB access, no SQLAlchemy imports.
+- `schemas.py` (lines 1-98): 4 Pydantic v2 models (`DashboardQuery`, `ProductListItem`, `ProfileCompletenessSummary`, `DashboardResponse`). `from pydantic import BaseModel` only — NOT SQLAlchemy Base.
+- `router.py` (lines 1-131): `GET /api/v1/products` handler. `db: Annotated[AsyncSession, Depends(get_db)]` declared as FastAPI DI parameter; immediately forwarded to `dashboard_service.list_products_for_dashboard(user_id=..., query=..., db=db)` at line 124-128 — no direct query.
+- `service.py` (lines 1-150): `list_products_for_dashboard` makes exactly 2 awaits: `catalog_service.list_products(user_id=user_id, pagination=pagination, db=db)` (line 78) and `customer_service.get_onboarding_completeness(user_id=user_id, db=db)` (line 84-87). `_compose_response` is pure (no I/O, no await, no DB). `db` is never used to execute any query in this file.
+
+#### Grep results (file:line evidence)
+
+**SQLAlchemy ORM terms** (`Base`, `__tablename__`, `Mapped[`, `mapped_column`, `Column(`, `declarative_base`):
+- `schemas.py:25` — `from pydantic import BaseModel, ConfigDict, Field` (Pydantic, NOT SQLAlchemy)
+- `schemas.py:28,42,61,81` — class definitions `(BaseModel)` (Pydantic, NOT SQLAlchemy)
+- `exceptions.py:35` — prose docstring "Base class for dashboard module failures" (English prose, NOT SQLAlchemy Base)
+- Result: ZERO SQLAlchemy ORM hits
+
+**Alembic terms** (`op.`, `revision`, `down_revision`, `alembic`):
+- Result: NO MATCHES (zero hits across all 6 files)
+
+**Raw query execution** (`select(`, `.execute(`, `scalars`, `scalar_one`, `fetchall`, `fetchone`, `text(`, `db.`, `session.`):
+- Result: NO MATCHES (zero hits in `service.py`; `db` parameter appears only in function signatures as `AsyncSession` type annotation, never as a call site)
+
+#### Structural checks
+- `repository.py`: DOES NOT EXIST in `/tmp/mesell-wt/msB-backend/backend/app/modules/dashboard/` — deliberate §13.D deviation confirmed.
+- `backend/services/`: contains only `svc-export/` — `svc-dashboard/` DOES NOT EXIST.
+- `backend/alembic/versions/`: 3 files — `935e55b4852c_v1_baseline_13_tables.py`, `a1b2c3d4e5f6_pg_trgm_and_category_gin.py`, `f31c75438e61_add_idx_product_drafts_saved_at.py`. The word "dashboards" appears only at `f31c75438e61_add_idx_product_drafts_saved_at.py:10` in prose: "staleness dashboards, manual cleanup runs during V1" — zero schema action related to any dashboard table.
+- Monolith Alembic head: `f31c75438e61` — UNCHANGED.
+
+### Learning (§13.D pattern for future reference)
+When a module is a pure consumer (leaf in the §2.D dependency matrix) that composes results from two other modules' service functions, the correct database-builder stance is to author NO migration, NO model file, NO Alembic chain, and NO repository.py — the §13.D structural deviation is load-bearing, not an oversight. The verification discipline for such modules is: grep for `__tablename__`, `Mapped[`, `Base`, `alembic` across the subtree (must all be zero for ORM / migration terms); confirm `AsyncSession` appears only as a forwarded parameter, never as a query-issuing call site; confirm no `repository.py` exists; confirm no entry in `backend/services/`. This pattern generalises to any future "view-only aggregation" module (e.g., a reporting module that reads from catalog + pricing).
+
+### Memory index entry
+| Entry | Type | Summary |
+|---|---|---|
+| MS-B B4 svc-dashboard DB attestation (AUTHORITATIVE) | project | meesell-database-builder owner; ZERO tables, ZERO migrations, ZERO model files, NO repository.py; monolith head f31c75438e61 unchanged; verified @ commit 98f6a96; all 6 files read + grep evidence at file:line |
+| §13.D no-repository pattern | reference | Pure consumer modules own no DB objects; AsyncSession forwarded not queried; grep __tablename__/Mapped[/Base to confirm clean; generalises to any aggregation-only module |
+| Category Seeding Wave 1 (LOCAL-ONLY) COMPLETE | project | Seed scripts import-corrected (app.config → app.shared.config; app.models.* → app.shared.models.*). make seed target added. Counts: categories=3772, field_aliases=67, templates=3566, field_enum_values=49259. Idempotency confirmed. PR #245 OPEN (feature/category-seeding → develop), commit d5e71a9. Head f31c75438e61 unchanged. |
+| Stale Valkey cache blocks prewarm after fresh seed | reference | If Valkey DB 3 has a stale pre-seed empty-list category_tree key (from before seed ran), prewarm logs "0 schema entries warmed". Fix: redis-cli -n 3 DEL "meesell:v1:category_tree". The K8s deploy order (migrate → seed → API boot) naturally avoids this in non-local envs. |
+| Seed script import-path pattern (post-MS-PAR-1 rebuild) | reference | All 5 seed scripts used app.config + app.models.* (pre-modular-monolith paths). Live tree has app.shared.config + app.shared.models.*. Class names (Category, Template, FieldAlias, FieldEnumValue) and settings symbol are identical in both. Mechanical substitution only; no logic change. |
+| Worktree venv creation pattern | reference | Worktrees carry no .venv. Use python3.11 -m venv backend/.venv (gitignored). Install: sqlalchemy[asyncio], asyncpg, alembic, pydantic-settings, python-dotenv, fastapi, pyjwt, redis, prometheus_client for the full prewarm import chain. Python 3.12 not required; 3.11 works. |
+| Local DB port: 5432 not 5433 | reference | .env.example shows 5433 but live local dev stack uses 5432. Probe with pg_isready before creating .env. The local .env (gitignored) must override to 5432. |
+
+---
+
+## Category Seeding Wave 3 — Wizard-chain verification COMPLETE (2026-06-16)
+
+### Scope
+Session `mesell-category-seeding-session-1` Wave-3 verification dispatch. Worktree `/private/tmp/mesell-wt/category-seeding`, branch `feature/category-seeding`. READ-MOSTLY — no schema changes, no migrations, no code edits.
+
+### FK integrity result
+- `categories.template_id → templates.id`: 0 orphans (confirmed via both LEFT JOIN and NOT EXISTS probes)
+- 3772/3772 categories have a `template_id` pointing to a valid `templates.id`
+- 3772/3772 leaf categories have at least one `field_enum_values` row (0 leaves without enum data)
+
+### Category exercised
+- `leaf_name`: Couple watches
+- `category_id`: `1227f77c-8b99-4c87-99b8-deb8835d1d2d`
+- `meesho_leaf_id`: 12400
+- `path`: Women Fashion > Accessories > Watches > Couple watches
+- `template_id`: `a0dd6f6b-5117-44f2-a5d6-227b563adfb4`
+- `compliance_shape`: standard
+- Fields in template: 71 (from `schema_jsonb`)
+- Enum-backed field rows in `field_enum_values`: 44
+
+### Wizard schema field/enum counts (from live API)
+- `GET /api/v1/categories/1227f77c.../schema` → HTTP 200, 71 fields, 10 steps, 51,123 bytes
+- `GET /api/v1/categories/1227f77c.../field-enum/brand` → HTTP 200, 50 entries returned (truncated=true; DB has 426), shape `{canonical, meesho, labels: {en}}`
+- `GET /api/v1/categories/1227f77c.../field-enum/color` → HTTP 200, 31 entries (truncated=false; all values returned)
+
+### Execution path used
+Live API at `localhost:8000`. Auth via OTP bypass `000000` (`POST /api/v1/auth/otp/send` + `/otp/verify`). FK integrity via direct SQL (psql). Schema structure from `GET /schema`. Enum values from `GET /field-enum/{name}`.
+
+### Design note: /suggest is POST not GET
+`/api/v1/categories/suggest` is a POST endpoint (AI smart-picker) with body `{"q": "..."}`. GET returns 405. `POST` with correct body returns AI-ranked suggestions from seeded category corpus via Gemini + Valkey `category_tree` cache.
+
+### Design note: enum values in /schema vs /field-enum
+`/schema` response sets `enum_codes_map` and `enum_labels` to null for all fields. Enum values are lazy-loaded separately via `/field-enum/{name}`. This is by design — a 71-field schema with 44 enum fields (some with 400+ entries) would be multi-MB if inlined.
+
+### Verdict
+PASS — all 6 chain links resolve. Seed unblocks catalog-create → wizard end-to-end on localhost. Evidence appended to `docs/plans/architecture/CATEGORY_SEEDING_WAVE1_RUNLOG.md` (Wave-3 section).
+
+### Memory index entries
+| Entry | Type | Summary |
+|---|---|---|
+| Wave 3 wizard-chain verification COMPLETE | project | 0 FK orphans; 3772/3772 leaves with enum data; /schema → 71 fields; /field-enum/brand → 50 entries; /field-enum/color → 31 entries; all 6 chain links PASS. Evidence in RUNLOG §Wave-3. |
+| /suggest is POST not GET | reference | /api/v1/categories/suggest is POST with body {"q": "..."}; GET returns 405. AI smart-picker, requires Gemini + Valkey category_tree cache. |
+| /schema enum null by design | reference | enum_codes_map and enum_labels are null in /schema response. FE must lazy-load via /field-enum/{name} per field. Avoids multi-MB responses for high-cardinality enum fields. |

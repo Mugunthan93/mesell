@@ -1,0 +1,41 @@
+# k8s/svc-image/service.yaml
+# ---------------------------------------------------------------------------
+# svc-image — Sub-Plan C (image extraction), INFRA deliverable I3.
+#
+# ClusterIP Service `svc-image` on port 8001 → the svc-image-api pod's :8001.
+# Authority: handoff_msC_infra.md §1 I3 + MASTER_PLAN §2.C (gateway targets
+# `svc-image:8001`).
+#
+# The Service selects ONLY the api component (app=svc-image, component=api) — the
+# worker has no HTTP listener and must NOT receive cluster traffic.
+#
+# Traffic paths into this Service:
+#   - North-south (external): Traefik IngressRoute (I4) → svc-image:8001 for the two
+#     PUBLIC image routes (POST/GET /api/v1/products/{id}/images).
+#   - East-west (internal):  K3s cluster DNS svc-image.dev.svc.cluster.local:8001
+#     for the /internal/products/{product_id}/images endpoint (NOT exposed by
+#     Traefik — MASTER_PLAN §2.C; the absence of an /internal/* IngressRoute is the
+#     V1.5 isolation primitive). svc-export's front-image gate calls this internal
+#     route over cluster DNS (SHIM_CONTRACT §2.6).
+#
+# Port note: like svc-export (and unlike the monolith `api` Service which is port 80
+# → 8000), svc-image uses 8001 on BOTH the Service port and the targetPort, matching
+# the gateway map's `svc-image:8001` literal so east-west callers dial one
+# consistent port.
+# ---------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-image
+  namespace: dev
+  labels:
+    app: svc-image
+spec:
+  type: ClusterIP
+  selector:
+    app: svc-image
+    component: api
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001

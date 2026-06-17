@@ -1,8 +1,622 @@
 # STATUS — INFRASTRUCTURE
 
 **Owner:** `meesell-infra-builder`
-**Last update:** 2026-06-11 (ci-activation — PR #120 develop→main MERGED; full pipeline ran Gates 1-5 + Frontend 8/8 + **Build GREEN (first ever)**; Deploy still RED on 2 more deploy-script bugs — #123 git-ref already fixed, #127 readyz-escape now on develop awaiting fresh founder gate)
+**Last update:** 2026-06-14 (**MS-4 Sub-Plan F — svc-category INFRA lane AUTHORED + offline-VALIDATED (₹0, dev-only).** 8 files on `feature/microservices-category/infra` (tip `e1b890a`). Recipe blend: AI-bearing (svc-image: GEMINI + LANGFUSE_SECRET) + api-only (svc-pricing/customer — NO worker). **CRITICAL grants in schema-role.sql:** `CREATE SCHEMA category` + `category_user` owns schema (for the c4f1e7a9d302 schema-move + Alembic) + the cross-schema `GRANT INSERT ON public.audit_events` (AI cost ledger F3.c). Valkey budget-keyspace carve-out HONORED (`ai:*` global/un-prefixed DB 0; category cache `category:`-prefixed DB 3). TLS `api-tls`. NO razorpay/msg91. New SM secret `dev-category-db-password` (→founder). Cluster /32-firewalled → 27 yaml assertions + SQL grant check + secret-scan PASS; server dry-run + dev smoke deferred (§15 F3). **I push + report; backend-coordinator runs the infra→integration merge gate.** See MS-4 Sub-Plan F UPDATE below.)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
+
+## UPDATE — 2026-06-14 — mesell-microservices-category-infra-session-1 — MS-4 Sub-Plan F svc-category INFRA lane (authored + offline-validated)
+
+=== STEP F: svc-category infra surfaces (8 files) — Sub-Plan F category extraction (MS-4) ===
+Phase: Playbook §5 (Postgres schema/role/grants), §6 (Valkey — DB-3 cache mount + DB-0 global
+       budget brake), §7 (Traefik ingress + TLS), §10 (Secret Management Discipline), §0 (live
+       state is SSOT — TLS secret name `api-tls`), §15 (Safe deployment — server dry-run
+       [MANDATORY GATE], F3 deferral branch when cluster unreachable).
+       Recipe authority: the PROVEN AI-bearing svc-image manifests + the api-only svc-pricing/
+       svc-customer manifests (copy pattern). Task authority: handoff_msF_infra.md +
+       SUB_PLAN_0F_category_extraction.md (§F-infra, §F3.b/c, §F4).
+Session: mesell-microservices-category-infra-session-1
+Authorization: master-session MS-4 Wave 2 Phase A dispatch (MS-3 merged, GO). Standalone lead —
+       executes directly. Dev namespace ONLY, ₹0, additive scaffolding behind a founder gate.
+Pre-flight check: PASS — backend `db` branch has the schema-move migration c4f1e7a9d302 (4× ALTER
+       TABLE ... SET SCHEMA category for categories/templates/field_enum_values/field_aliases);
+       `svc` branch app/ tree not yet pushed → Dockerfile COPY targets authored against the spec'd
+       shape, validated at the backend merge gate (same deferred posture as MS-A/MS-D).
+
+Files authored (8):
+  I1  backend/services/svc-category/Dockerfile        — python:3.12-slim, SINGLE api CMD (gunicorn
+                                                         -w2 uvicorn worker), google-genai+langfuse
+                                                         deps, alembic schema-move chain copied,
+                                                         gunicorn==22.0.0 pinned in image layer
+                                                         (backend sole-writes requirements.txt). NO
+                                                         Celery worker (category has no tasks). Cache
+                                                         pre-warm = app lifespan (no Dockerfile change).
+  I2  k8s/svc-category/deployment.yaml                — ONE Deployment svc-category-api 1×, req
+                                                         100m/256Mi → lim 300m/512Mi, kill-before-surge
+                                                         (maxSurge0/maxUnavailable1), readiness
+                                                         initialDelay 30s (gates the lifespan full-tree
+                                                         + top-100-schema + 291-brand-enum pre-warm),
+                                                         liveness initialDelay 45s (no pre-warm restart
+                                                         loop). envFrom: meesell-config +
+                                                         svc-category-config + svc-category-secrets.
+  I3  k8s/svc-category/service.yaml                   — ClusterIP svc-category:8001 (port==targetPort),
+                                                         selects component=api; backs public + /internal.
+  I4  k8s/svc-category/ingressroute.yaml              — Traefik IngressRoute traefik.io/v1alpha1.
+                                                         PathPrefix(/api/v1/categories) [5 public GET]
+                                                         + PathPrefix(/internal/categories) [2-3 frozen
+                                                         shims] → svc-category:8001. categories prefix
+                                                         is category-EXCLUSIVE → PathPrefix SAFE (no
+                                                         /products contention vs image/export/pricing/
+                                                         dashboard). TLS secretName `api-tls` (LIVE
+                                                         name per §0/svc-pricing precedent, NOT stale
+                                                         `api-mesell-xyz-tls`). NO CORS Middleware
+                                                         (app-owned CORSMiddleware; R-SP7-1 ADD-ONLY).
+  I5  k8s/svc-category/schema-role.sql                — CREATE SCHEMA category (idempotent) + ROLE
+                                                         category_user (LOGIN NOSUPERUSER, guarded) +
+                                                         ALTER SCHEMA OWNER + USAGE/DML/sequences/
+                                                         default-privileges on `category` (role owns
+                                                         schema for the schema-move + Alembic;
+                                                         tables read-only at RUNTIME, not via revoked
+                                                         grant). *** THE CRITICAL CROSS-SCHEMA GRANT:
+                                                         GRANT USAGE ON SCHEMA public + GRANT INSERT
+                                                         ON public.audit_events TO category_user ***
+                                                         (AI cost ledger F3.c; INSERT-only least-priv).
+                                                         NEGATIVE assertion: NO products/catalog
+                                                         read-grant (category is a callee, zero
+                                                         outbound DB reads).
+  I8  k8s/svc-category/configmap.yaml                 — trimmed svc-category-config (APP_ENV=development
+                                                         [NEVER "dev" — Literal], CACHE_VERSION=v1
+                                                         [matches monolith; does NOT version the global
+                                                         ai:* brake keys], FEATURE_SMART_PICKER_ENABLED
+                                                         =true). AI non-secret config (GEMINI_MODEL,
+                                                         LANGFUSE_PUBLIC_KEY, LANGFUSE_HOST,
+                                                         AI_DAILY_BUDGET_INR) from shared meesell-config.
+  I7  k8s/svc-category/secrets.yaml.example           — svc-category-secrets template: DATABASE_URL
+                                                         @category (search_path category,public),
+                                                         VALKEY_URL (ONE URL → DB-0 global brake +
+                                                         DB-3 cache via the DB-agnostic shared/valkey.py
+                                                         factory — verified _build_url_for_db rewrites
+                                                         the path per-factory: get_valkey_otp→0,
+                                                         get_valkey_cache→3), JWT_SECRET (SAME jwt-secret
+                                                         iam-svc signs with — F2/D7 local-JWT),
+                                                         GEMINI_API_KEY + LANGFUSE_SECRET_KEY (category
+                                                         IS AI-consuming). DELIBERATELY ABSENT: razorpay
+                                                         (×3), msg91 (×2), celery (×2), GCS, refresh-
+                                                         pepper, pii-salt. REPLACE-ME placeholders only.
+  --  docs/runbooks/svc-category-rollback.md          — schema-move REVERSE (alembic downgrade, NOT
+                                                         DROP — the 4 tables hold seed data + cross-
+                                                         schema FKs from public.catalogs/products);
+                                                         /internal route flip-back for export-svc +
+                                                         pricing-svc callers (§16.G); budget-brake
+                                                         carve-out verification (ai:* un-prefixed,
+                                                         no category:ai:* split-cap key); cache
+                                                         pre-warm reattach.
+
+Validation (offline — cluster /32-firewalled, expected; §15 F3 branch):
+  - python3 yaml.safe_load_all on the 5 manifests: 27 field assertions PASS (kind/ns/ports/envFrom
+    order/kill-before-surge/readiness-30s/no-command/100m-cpu/TLS-api-tls/5-secret-keys/NO razorpay-
+    msg91-celery/search_path category,public).
+  - SQL: the two critical grants present + executable (anchored grep, not comment):
+    `GRANT INSERT ON public.audit_events TO category_user` + `GRANT USAGE ON SCHEMA public`;
+    `CREATE SCHEMA IF NOT EXISTS category` + guarded `CREATE ROLE category_user`; NEGATIVE assert —
+    no products/catalogs/catalog-schema GRANT line.
+  - Secret scan (added lines, real-secret patterns): clean — only REPLACE-ME / EXAMPLE placeholders.
+  - kubectl --dry-run=server DEFERRED to deploy time (the cluster API is unreachable + the dry-run
+    needs cluster discovery; playbook §15 [MANDATORY GATE] is satisfied at the founder-gated cutover
+    deploy on the VM, not the laptop).
+
+D3 VM-FIT: svc-category adds 100m CPU request (api-only, no worker). The COMBINED MS-4 footprint
+  (monolith + export + dashboard + image + pricing + customer + category + iam) — NOT category's own
+  100m — is the overflow risk on the e2-standard-2 (2000m allocatable). Per MASTER_PLAN D3 the
+  e2-standard-4 (~₹2,600/mo) is plan-pre-approved BUT the SPEND gets a FRESH founder ask at the moment
+  the wave's deploy doesn't fit. STOP-AND-ASK at deploy — NOT silently provisioned (constraint §4).
+  Manifests authored+validated here ₹0; deploy + any node upgrade is the founder-gated cutover.
+
+Branch / handoff: `feature/microservices-category/infra` (cut from origin/feature/microservices-
+  category/integration `39b6bbd`), tip `e1b890a`. I PUSH + REPORT; backend-coordinator runs the
+  infra→integration merge gate — I do NOT open the PR or merge. Inter-lead row → backend opened
+  (the 6 merge-gate acceptance items + the new SM secret `dev-category-db-password`).
+Board sweep: session-start + session-end — NO Active row untouched 7+ days (oldest active 2026-06-11,
+  3 days). Added the microservices-category IN PROGRESS row + the backend inter-lead row.
+Cost: ₹0/month (dev-namespace manifest authoring; no cloud resource provisioned, nothing applied).
+Next action: backend-coordinator merge gate on the infra→integration PR (re-derive Dockerfile COPY
+  targets / app entrypoint against the LANDED svc-category app tree once the `svc` branch pushes it —
+  per the MS-A merge-gate lesson). Founder creates SM `dev-category-db-password` at bootstrap.
+=========
+
+## UPDATE — 2026-06-13 — mesell-microservices-image-infra-session-1 — MS-C A2 svc-image INFRA lane (authored + offline-validated)
+
+=== STEP A2: svc-image infra surfaces (I1–I10) — Sub-Plan C image extraction ===
+Phase: Playbook §15 (Safe deployment — server dry-run [MANDATORY GATE], F3 deferral branch when
+       cluster unreachable), §5 (Postgres role/grants), §7 (Traefik ingress), §10 (Secret discipline).
+       Recipe authority: recipe_ms_extraction.md + the PROVEN MS-A svc-export manifests (copy pattern).
+       Task authority: handoff_msC_infra.md (Option-B-updated) + spec_msC_backend_EXECUTION.md.
+Session: mesell-microservices-image-infra-session-1
+Authorization: master-session A2 dispatch (parallel with database-builder). Dev namespace ONLY, ₹0
+       unless the D3 VM-fit limit fires (it DID — deploy gated on a fresh founder ask).
+
+**Session-start sweep:** feature_board_infra.md — all Active rows touched 2026-06-11/12/13 (current). No 7+ day stale row to flag.
+
+**Pre-flight:**
+- gcloud auth: vaishnaviramoorthy@gmail.com ACTIVE; project project-1f5cbf72-2820-4cdb-949 confirmed.
+- Cluster reachability: `kubectl get nodes` → `34.180.58.185:6443 connection refused` — UNREACHABLE
+  (6443 /32-firewalled to the founder IP; my laptop isn't it). §15 server dry-run DEFERRED per the F3
+  branch (deploy-time on the VM). NOT a blocker for authoring dev-only manifests.
+- Worktree: `/tmp/mesell-wt/msC-infra` on `feature/microservices-image/infra` cut from origin
+  `feature/microservices-image/integration` (`3dc0f91`). Master tree never switched branch.
+- svc-image BACKEND code NOT yet on integration (db/svc/routes lanes run PARALLEL) — manifests validated
+  against the SPEC tree-shape (spec §1.B1), the SAME deferred-validation posture MS-A svc-export used.
+
+**Deliverables authored (7 files):**
+- I1 `backend/services/svc-image/Dockerfile` — python:3.12-slim, ONE image api+worker. Image-size rationale
+  documented: Pillow (~30MB) + google-cloud-storage + ai_ops (Gemini SDK + langfuse) on the svc-export
+  baseline. **rembg DELIBERATELY DEFERRED** (zero call sites; carrying = +onnxruntime ~300MB + u2net ONNX
+  ~170MB pre-bake). Native deps add libjpeg62-turbo + zlib1g (Pillow decode). gunicorn==22.0.0 pinned.
+- I2 `k8s/svc-image/deployment.yaml` — svc-image-api 1× (50m/128Mi, lim 200m/512Mi) + DEDICATED
+  svc-image-worker 1× (req **500m/1Gi**, lim **1000m/2Gi** — heaviest early-wave; lim=2× req R-MS-9). Worker
+  `-Q svc-image`, module `app.celery_app`, concurrency=2. Kill-before-surge (maxSurge:0).
+- I3 `k8s/svc-image/service.yaml` — ClusterIP `svc-image:8001`, selects component=api only.
+- I4 `k8s/svc-image/ingressroute.yaml` — Traefik websecure, tight PathRegexp `^/api/v1/products/[^/]+/images$`
+  (POST+GET) → svc-image:8001, reuses api-mesell-xyz-tls. `/internal/*` NOT routed (cluster-DNS isolation).
+- I5 `k8s/svc-image/schema-role.sql` — `image` schema + `image_user` (least-priv) + image DML +
+  **`GRANT INSERT ON public.audit_events`**. **§0.10 OPTION B: NO `products` read-grant** (DISCARDED line
+  left commented as negative assertion; grep confirms zero active products GRANT).
+- I6 `k8s/svc-image/gcs-sa.yaml.example` — keyless (GCE metadata). Option A: node VM SA ALREADY holds
+  `roles/storage.objectAdmin` on `gs://meesell-images` (VERIFIED get-iam-policy 2026-06-13). Path
+  `{user_id}/{product_id}/{idx}.jpg`. ₹0, no new IAM.
+- I7 `k8s/svc-image/secrets.yaml.example` — `svc-image-secrets`: DATABASE_URL@schema image, VALKEY_URL(DB0),
+  CELERY DB1/DB2, JWT_SECRET, **GEMINI_API_KEY + LANGFUSE_SECRET_KEY (image IS AI-consuming)**, GCS_*, APP_ENV.
+  NOT MSG91/RAZORPAY/pepper/pii-salt. GEMINI+LANGFUSE+JWT verified ENABLED in SM 2026-06-13. One new bootstrap
+  SM secret: `dev-image-db-password` (founder creates).
+- I8 (in secrets) — Valkey budget-brake: VALKEY_URL → SHARED instance DB 0; un-prefixed global
+  `ai:cost:*`/`ai:budget:*` (₹500/day brake per D6) stays cross-service coordinated.
+- I9 (in deployment + secrets) — dedicated `svc-image` queue (broker DB1/results DB2, keys `svc-image:`),
+  disjoint from monolith `image-tasks` (PR #143) + default `celery`.
+- I10 — MS-DB-3 `max_connections=200` already LIVE (MS-0). svc-image pools fit under 200. No action.
+
+**D3 VM-FIT CAPACITY MATH (handoff §3 — the LOUD flag):**
+- e2-standard-2 allocatable ≈ 2000m. Live baseline = ~1675m (84%, MS-0 post-apply).
+- Projected MS-2 adds: svc-export 250m + svc-dashboard ~50m + svc-image 550m → **≈ 2525m = 126% → OVERFLOWS ~525m.**
+- **VERDICT: STOP. Node does NOT fit svc-image at MS-2.** FRESH founder D3 ask (e2-standard-4 ~₹2,600/mo,
+  >₹500/mo gate) required BEFORE apply. NOT silently provisioned (constraint §4). rembg-deferred already
+  applied (cheapest mitigation; cuts image+RAM, not enough CPU to fit). On e2-standard-4 (~4000m), 2525m=63%.
+  Deploy-time gate, NOT a merge blocker (manifests dev-only, ₹0).
+
+Validation: OFFLINE PASS — `yaml.safe_load_all` on 4 appliable manifests (deployment ×2, service,
+  ingressroute, secret) parse clean, kind/name/namespace=dev + resources/envFrom asserted; schema-role.sql
+  idempotent guards present + Option-B grant grep-verified; Dockerfile structural review clean (no rembg).
+  Server `--dry-run=server` + dev smoke DEFERRED to deploy time (§15 F3, cluster unreachable; the deploy
+  itself is D3-gated).
+Board sweep: 1 Active row added (microservices-image IN PROGRESS → IN REVIEW on PR open); 1 outgoing
+  inter-lead row added (backend-coordinator, 6 confirmations incl D3 overflow); no stale rows.
+Next action: open PR → `feature/microservices-image/integration` (infra-lead-reviewed; backend lead runs the
+  integration merge gate, NOT self-merged). Flag the D3 overflow to founder in the PR body. Provision NOTHING.
+=========
+
+## UPDATE — 2026-06-12 — mesell-ms-pgbouncer-session-1 (APPLY) — MS-0 / D5 step 1 APPLIED LIVE to dev
+
+=== STEP: apply runbook steps 1–2 — Postgres max_connections=200 + PgBouncer (transaction-pool) ===
+Phase: Playbook §5 (PostgreSQL — TF `module.postgres_dev`), §10 (Secret discipline — userlist),
+       §15 (Safe deployment — server dry-run [MANDATORY GATE], RE-RUN immediately before apply).
+       Executing `docs/runbooks/pgbouncer-cutover.md` steps 0/1/2 ONLY. Step 3 NOT authorized.
+Session: mesell-ms-pgbouncer-session-1 (APPLY phase)
+Authorization: founder "run the apply per the runbook" after PR #181 reviewed/APPROVED/squash-merged
+       to develop @ 29ed457. Dev namespace only, ₹0 new spend.
+
+**Session-start sweep:** feature_board_infra.md — all Active rows touched 2026-06-11/12 (current). No 7+ day stale row.
+
+**Pre-flight (runbook §0) — all pass:**
+- gcloud auth: vaishnaviramoorthy@gmail.com ACTIVE; project project-1f5cbf72-2820-4cdb-949.
+- `kubectl get nodes`: meesell-dev-master Ready (K3s API reachable — founder IP in firewall /32).
+- `SHOW max_connections` = **100** (pre, as expected). postgres-0 1/1 Running.
+- Snapshots: `/tmp/meesell-pre-ms0-state.txt` (instances — meesell-dev confirmed), `/tmp/meesell-pre-ms0-postgres-sts.yaml`.
+- Baseline: api 2/2, worker 2/2 Running (the zero-impact reference).
+
+**Step 1 — Postgres max_connections=200 (TF) APPLIED:**
+- `terraform init` in fresh worktree `/tmp/mesell-wt/ms0-apply/infra/terraform` (GCS backend `meesell-tfstate`, read-config, safe).
+- `terraform plan -target=module.postgres_dev` (dev.tfvars + 2 password vars from ~/.meesell-secrets, ADC token via GOOGLE_OAUTH_ACCESS_TOKEN workaround):
+  **`Plan: 0 to add, 1 to change, 0 to destroy`** (in-place update of `kubernetes_stateful_set.postgres`:
+  `args += ["-c","max_connections=200"]`, `resources.limits.memory "1Gi" -> "1536Mi"`) — matches the hard-limit gate exactly. Saved `.tflogs/ms0-postgres.tfplan`.
+- `terraform apply` saved plan: OK. `rollout status statefulset/postgres`: complete. postgres-0 1/1 Running (fresh, RESTARTS 0).
+- VERIFY: `pg_isready` → accepting connections; `SHOW max_connections` → **200** (expected 200, MATCH).
+
+**Step 2 — PgBouncer (transaction-pool) APPLIED:**
+- 2a. `pgbouncer-userlist` Secret populated from live `postgres-credentials` (password NEVER printed; temp file shredded). [see auth fix below]
+- 2b. **MANDATORY §15 server dry-run** `kubectl -n dev apply --dry-run=server -f k8s/pgbouncer.yaml` → clean (3 objects: configmap/deployment/service). Re-run clean after each manifest fix.
+- 2c. `kubectl apply -f k8s/pgbouncer.yaml` → applied; `rollout status deployment/pgbouncer` → successfully rolled out; pod **1/1 Running**.
+- VERIFY: end-to-end **SELECT 1 through `:6432` → `1`** (app→pgbouncer→postgres); `SHOW POOLS` → `meesell` pool `pool_mode=transaction` (sv_idle=1, real backend opened+returned). Endpoint `pgbouncer.dev.svc.cluster.local:6432` LIVE.
+
+**TWO apply-time manifest defects found + fixed forward (folded into k8s/pgbouncer.yaml; ride the docs-record PR):**
+1. **Image tag `1.23.1`→`v1.23.1-p3`.** `edoburu/pgbouncer:1.23.1` 404s on Docker Hub (`not found` → ErrImagePull); edoburu uses a `vMAJOR.MINOR.PATCH-pN` convention. `v1.23.1-p3` is the latest patch of the 1.23.1 line. Verified the real tag via the Docker Hub tags API before applying.
+2. **`auth_type` `md5`→`scram-sha-256` + PLAINTEXT userlist.** Postgres runs `password_encryption=scram-sha-256` (the `meesell` rolpassword is `SCRA...`); pgbouncer with an md5 userlist failed server-side auth: `cannot do SCRAM authentication: wrong password type`. Fix: `auth_type=scram-sha-256` with the plaintext password in userlist.txt (pgbouncer forwards SCRAM to the server). Also corrected the runbook §2a procedure + verify queries (the `user:pw@host` DSN form breaks on `@`-containing base64 passwords — switched to `env PGPASSWORD=` + discrete `-h/-p/-U/-d` flags, per MEMORY).
+
+**Post-apply health sweep — zero impact confirmed:**
+- api 2/2 + worker 2/2 still Running, AGE preserved (NOT restarted — nothing routes through pgbouncer; api/worker untouched as required). api `/health` → {postgres:ok,valkey:ok}.
+- postgres mem **limit = 1536Mi** live; live usage postgres 37Mi (<<limit), pgbouncer 1Mi/10m CPU.
+- Node meesell-dev-master post-apply: CPU req **1675m/2000m (83%)** (pgbouncer's 25m fit the ~325m free), mem req 44% — headroom OK, no breach.
+
+**Step 3 (DATABASE_URL flip to :6432):** NOT applied — separate founder gate, blocked on backend R-MS-8 (asyncpg/SQLAlchemy transaction-pool compat). Inter-lead request to backend remains OPEN. D5 step-1 PREREQUISITE is now LIVE; the flip is the next (separately gated) step.
+
+**Records:** docs-only PR to develop from worktree `/tmp/mesell-wt/ms0-apply` branch `chore/ms0-apply-record` (NOT a founder gate). Board MS-0 row → Recently merged (MERGED+APPLIED). Cost ₹0/mo.
+
+
+## UPDATE — 2026-06-12 — mesell-ms-pgbouncer-session-1 — MS-0 / D5 step 1 (PgBouncer + max_connections=200)
+
+=== STEP: author + validate PgBouncer (transaction-pool) + Postgres max_connections=200 ===
+Phase: Playbook §5 (PostgreSQL — TF-managed `module.postgres_dev`), §10 (Secret discipline — userlist),
+       §15 (Safe deployment template — server dry-run [MANDATORY GATE]). Infra plan §3.3 (MS-DB-3 + MS-DB-4),
+       MASTER_PLAN D5. Rule followed: postgres changes go through the TF module, NOT k8s/postgres.yaml
+       (doc-only mirror); server dry-run is mandatory and was RUN (cluster reachable this session).
+Session: mesell-ms-pgbouncer-session-1
+Scope: DEV namespace only. Current hardware (e2-standard-2). ₹0 new spend. NO live mutation this session.
+
+**Session-start sweep:** feature_board_infra.md Active features — all rows touched 2026-06-11/12 (current).
+No row untouched 7+ days. No stale flag needed.
+
+**Live pre-state (verified, cluster reachable — founder IP currently in firewall /32):**
+- postgres-0 `SHOW max_connections` = 100; baseline ~10 conns. Resources req 200m/500Mi lim 1/1Gi, no args.
+- Node meesell-dev-master: CPU 1650m/2000m requested (82% — BINDING constraint, ~350m free);
+  memory 3528Mi/8129Mi (44% — ample headroom). Confirms: raise memory limit (cheap), do NOT add CPU.
+
+**What changed (authoring only):**
+1. `infra/terraform/modules/postgres/{main.tf,variables.tf}` — container `args=["-c","max_connections=${var.max_connections}"]`
+   (new var, default 200); memory **limit** 1Gi→1536Mi (request UNCHANGED 500Mi — idle conn slots cost little,
+   no scheduler pressure; CPU untouched). `terraform fmt` clean.
+2. `k8s/postgres.yaml` — doc-mirror updated to match (args + 1.5Gi limit), DO-NOT-APPLY header intact.
+3. `k8s/pgbouncer.yaml` (NEW) — ConfigMap `pgbouncer-config` (`pool_mode=transaction`, default_pool_size=20,
+   reserve=5, max_db_connections=25, max_client_conn=1000, max_prepared_statements=0, server_reset_query=DISCARD ALL,
+   per-db `meesell` entry designed additive for per-service entries) + Deployment `pgbouncer` (**1 replica** —
+   JUSTIFIED: e2-standard-2 CPU-bound, pgbouncer single-threaded epoll, HA is prod-only; 25m/32Mi req,
+   image `edoburu/pgbouncer:1.23.1`, tcp readiness/liveness) + Service ClusterIP :6432.
+4. `k8s/pgbouncer-userlist.secret.yaml.example` (NEW) — userlist Secret template + md5 populate procedure
+   sourcing the live password from `postgres-credentials` (§10 — NO creds committed).
+5. `docs/runbooks/pgbouncer-cutover.md` (NEW) — apply order, verify queries (`SHOW max_connections`, `SHOW POOLS`),
+   smoke, rollback, founder-gated DATABASE_URL flip note.
+
+**Validation (NO live mutation):**
+- `terraform plan -target=module.postgres_dev` (var-file dev.tfvars + pg/valkey passwords, GOOGLE_OAUTH_ACCESS_TOKEN
+  workaround, ADC=vaishnaviramoorthy) = **`Plan: 0 to add, 1 to change, 0 to destroy`** — in-place StatefulSet update
+  (args += max_connections=200; memory limit 1Gi→1536Mi); no destroy, no PVC churn. Saved `.tflogs/ms0-postgres-maxconn-plan.txt`.
+- `kubectl -n dev apply --dry-run=client -f k8s/pgbouncer.yaml` → 3 objects created (dry run), clean.
+- **`kubectl -n dev apply --dry-run=server -f k8s/pgbouncer.yaml` → 3 objects (server dry run), CLEAN.**
+  §15 [MANDATORY GATE] MET this session (cluster reachable) — NOT deferred.
+- userlist `.example` structurally parsed (yaml) — Secret/pgbouncer-userlist, key userlist.txt. NOT applied (has REPLACE-ME).
+
+**Board sweep (session-end):** added MS-0 Active-features row (IN REVIEW on PR open) + backend inter-lead row (R-MS-8).
+No stale rows. No other writer touched the board between session-start read and these edits (worktree off origin/develop).
+
+**HANDOFF — meesell-backend-coordinator (FLAGGED):** R-MS-8 asyncpg/SQLAlchemy transaction-pool compatibility
+(`statement_cache_size=0`, `pool_pre_ping=False`, `executemany_mode='values_only'`, no SET LOCAL/LISTEN) is BACKEND
+CODE, required before any `DATABASE_URL`→pgbouncer:6432 flip. Memo:
+`.claude/agent-memory/meesell-infra-builder/handoff_d5_pgbouncer_backend.md`. Inter-lead row OPEN. NOT a blocker for
+the MS-0 PR (pgbouncer is additive; nothing routes through it until the founder-gated flip).
+
+Validation: PASS. Board sweep: 2 rows added (MS-0 + inter-lead), 0 stale, 1 inter-lead open.
+Next action: open founder-gate PR (LEFT OPEN — feature→develop is the founder's gate per D1).
+Cost: ₹0/month. PgBouncer = 1 tiny pod; postgres memory request unchanged (limit-only raise).
+=========
+
+## UPDATE — 2026-06-12 — mesell-ms-export-infra-session-1 — Sub-Plan A INFRA GATE on PR #190 (APPROVE + in-gate fix)
+
+=== STEP: merge-gate review of PR #190 (feature/microservices-export/infra → /integration) ===
+Phase: INFRASTRUCTURE_PLAYBOOK.md §15 ([MANDATORY GATE] dry-run, offline branch when cluster unreachable) + §10 (secret discipline). Merge-gate criteria per `.github/PULL_REQUEST_TEMPLATE/infra.md` + board Acceptance gate.
+Session: mesell-ms-export-infra-session-1
+Reviewed tip: aafcc30 (at open) → **234e4d2** (after in-gate fix).
+
+**VERDICT: APPROVE.** PR comment https://github.com/Mugunthan93/mesell/pull/190#issuecomment-4693636063
+
+- I1–I8 verified IN THE DIFF at handoff-specified values (sizing 50m/128Mi + 200m/512Mi; ClusterIP 8001; 2 Traefik paths with exact `[^/]+/export-xlsx$` regex + `/api/v1/exports` prefix; `/internal/*` absent; schema-role.sql `GRANT INSERT ON public.audit_events TO export_user`; secrets.yaml.example NO AI/SMS/payment vars; TF `max_connections=200` minimal additive, prevent_destroy intact). Field-assertion pass ALL PASS.
+- Dev-namespace-only; secret scan on diff CLEAN (REPLACE-ME placeholders only); file-list scoped (12 files in-lane).
+- **§5 ADVERSARIAL CHECK vs landed backend tree (e23080c)** — 3 would-not-run defects found + FIXED in `234e4d2` (Dockerfile + deployment only, backend sole-writer files untouched): (1) gunicorn missing from landed requirements.txt → `pip install gunicorn==22.0.0` in image; (2) worker `-A app.workers.celery_app`→`app.celery_app` (no app/workers/ pkg); (3) worker `-Q celery`→`-Q svc-export` (landed `task_default_queue="svc-export"`). `app.main:app` confirmed.
+- Server-dry-run + dev smoke DEFERRED to deploy time (cluster unreachable; default ctx 34.180.58.185 dead, real VM 35.234.223.66 firewall-scoped) — playbook §15 F3 branch, honestly documented; NOT a Sub-Plan-A blocker (dev, zero-traffic).
+- D3: 250m CPU fits e2-standard-2, no D3 ask, ₹0/mo.
+- **Deploy-time bootstrap (founder):** create SM container `dev-export-db-password` (export_user Postgres pw) — used in I5 ALTER ROLE + I7 DATABASE_URL. Per-service DB pw, not a new IAM grant (within §4 ceiling).
+Validation: APPROVE. Squash executed by the session window after verdict (NOT this lane). Board row → IN REVIEW.
+
+---
+
+## UPDATE — 2026-06-12 — mesell-ms-export-infra-session-1 — Sub-Plan A (export extraction) INFRA lane I1–I8
+
+=== STEP: author + offline-validate the svc-export infra surfaces (Sub-Plan A, first microservices extraction) ===
+Phase: INFRASTRUCTURE_PLAYBOOK.md §5 (PostgreSQL) + §7 (Ingress/TLS) + §15 ([MANDATORY GATE] dry-run; offline-only branch when cluster unreachable). Authorities: docs/plans/microservices_migration/MASTER_PLAN.md §2.B/§2.C/§2.D/§2.E/§5.A/§5.B/§5.D, docs/plans/infra/microservices_infra_plan.md §2.4/§3.2/§3.3/§6.3, handoff_msA_infra.md (work-package I1–I8), backend/app/modules/export/router.py (exact route paths).
+Session: mesell-ms-export-infra-session-1
+Branch: feature/microservices-export/infra (cut from origin/develop `c859955`) → PR to feature/microservices-export/integration (infra-lead-reviewed; founder gates integration→develop).
+
+**Constraints honored:** dev namespace ONLY · current `e2-standard-2` hardware (NO D3 ask) · ₹0 spend · NO terraform/gcloud APPLY (founder applies; my ADC is not vaishnaviramoorthy and no live GCP mutation is in scope for this lane) · no `git add -A` (exact paths only).
+
+**Deliverables landed (paths):**
+- I1 `backend/services/svc-export/Dockerfile` — python:3.12-slim, ONE image (api default CMD = gunicorn on :8001; worker overrides command in deployment.yaml). Authored against the spec'd tree shape (app/ + alembic/ + requirements.txt authored by the parallel backend lane; validated at integration).
+- I2 `k8s/svc-export/deployment.yaml` — svc-export-api 1 replica req 50m/128Mi lim 200m/512Mi; svc-export-worker 1 replica req 200m/512Mi lim 400m/1Gi (lim=2×req per R-MS-9). kill-before-surge strategy (dev CPU-tight). Worker consumes ONLY `-Q celery` (export.xlsx has no task_route → default queue; image-tasks belongs to a different service, NOT consumed here).
+- I3 `k8s/svc-export/service.yaml` — ClusterIP `svc-export` :8001→:8001, selects component=api only.
+- I4 `k8s/svc-export/ingressroute.yaml` — Traefik IngressRoute (traefik.io/v1alpha1, websecure, api.mesell.xyz TLS reused). Route 1 `PathRegexp(^/api/v1/products/[^/]+/export-xlsx$)` (tight — does NOT hijack catalog's /products/*); Route 2 `PathPrefix(/api/v1/exports)`. `/internal/*` deliberately NOT routed (cluster-DNS-only isolation, MASTER_PLAN §2.C). Param name `product_id` per router.py:91.
+- I5 `k8s/svc-export/schema-role.sql` — idempotent: CREATE SCHEMA export; CREATE ROLE export_user (LOGIN, least-priv); ALTER SCHEMA OWNER; USAGE+DML on export schema (+default privileges); **`GRANT USAGE ON SCHEMA public` + `GRANT INSERT ON public.audit_events TO export_user` (R3 — the backend merge gate's audit-row test depends on this)**. INSERT-only on audit_events (least privilege). Password set out-of-band from SM (not in git).
+- I6 `k8s/svc-export/gcs-sa.yaml.example` — GCS SA SPEC (reference, not appliable). DECISION for Sub-Plan A: option A (inherit node VM SA `888244156264-compute@`, which already has storage.objectAdmin on gs://meesell-prod-assets; app-layer prefix tenancy under `exports/{user_id}/...`; ₹0; ZERO new IAM). Dedicated export SA + Workload Identity + prefix-scoped IAM Condition (MASTER_PLAN §2.E target, option B) deferred to MS-K8S-4 when WI lands on K3s. Keyless (org policy forbids SA JSON keys). Within the §4 one-SA ceiling (actually zero new SAs).
+- I7 `k8s/svc-export/secrets.yaml.example` — svc-export-secrets template: DATABASE_URL (role export_user, `?options=-csearch_path%3Dexport,public`), VALKEY_URL + CELERY_BROKER/RESULT, JWT_SECRET (SM jwt-secret; LOCAL verify per D7/A2), APP_ENV="development", GCS_BUCKET/GCS_PROJECT_ID (keyless). **DELIBERATELY ABSENT: GEMINI/LANGFUSE/MSG91/RAZORPAY/REFRESH_TOKEN_PEPPER*/AUDIT_PII_SALT** (export is deterministic). All values REPLACE-ME placeholders — no secret committed (verified by secret-scan: 0 real key material).
+- I8 `infra/terraform/modules/postgres/main.tf` — minimal additive `args = ["-c", "max_connections=200"]` on the postgres StatefulSet container. **I8 OVERLAP CHECK CLEAN:** no MS-0 / pgbouncer / max_connections PR or branch exists in origin (`gh pr list --search pgbouncer` → only doc PRs; `git log origin/develop` → none; `git ls-remote --heads origin | grep -iE 'pgbouncer|ms-0|pool|ms-db'` → none; only the 3 microservices-export branches exist). Genuinely absent → I made the minimal change. PgBouncer (MS-DB-4) NOT in Sub-Plan A (deferred; dev-only zero-traffic).
+
+**Validation evidence (offline-only — cluster UNREACHABLE):**
+- Cluster: `34.180.58.185:6443` connection refused (K3s API /32-firewalled to founder IP per the memory IP-rotation pattern; the VM endpoint also differs from the memory's `35.234.223.66`). `kubectl --dry-run=client/server` BOTH require the API server (RESTMapper/OpenAPI fetch) → impossible offline. This is the playbook §15 "offline-only / deferred-to-deploy-time" branch (same posture as the mfe-cutover SP07 session). Server dry-run + dev smoke are DEFERRED to deploy time (the integration→develop deploy job runs `kubectl apply` on the VM + gates on rollout-status + health smoke + auto-rollback).
+- Offline validation performed: (a) `yaml.safe_load_all` PARSE OK on all 4 manifests (Deployment×2, Service, IngressRoute, Secret); (b) field-level assertions PASS — api req 50m/128Mi lim 200m/512Mi, worker req 200m/512Mi lim 400m/1Gi, both port/targetPort 8001, worker `-Q celery` (no image-tasks), IngressRoute both routes → :8001, `/internal` not present, export-xlsx regex anchored; (c) `terraform fmt -check infra/terraform/modules/postgres/` exit 0 (no diff); (d) SQL structural sanity PASS (balanced `$$`, all 7 key statements incl the audit_events grant present); (e) secret-scan clean (5 REPLACE-ME placeholders, 0 real key material).
+- `terraform plan` NOT run: requires GCS state backend + K8s provider (unreachable cluster) + ADC=vaishnaviramoorthy (active ADC is not). Plan/apply is the founder step per constraint §4. Documented honestly — not faked.
+
+**Acceptance items the backend merge gate needs (handoff §5):**
+1. I5 audit_events INSERT grant — PRESENT (`GRANT INSERT ON public.audit_events TO export_user` at schema-role.sql:79; verified by grep + SQL sanity). ✅
+2. I8 max_connections=200 — DONE here (not deferred to MS-0; overlap check clean — no MS-0 PR exists). Shipped as the minimal additive TF arg; founder applies the targeted `terraform apply -target=module.postgres_dev`. ✅
+3. I2 sizing — svc-export at api 50m + worker 200m = **250m CPU request fits the current e2-standard-2 (2000m) node** alongside the monolith → "fits current node, no D3 ask" holds for §4 row-A. ✅
+
+**D3 capacity statement:** svc-export adds 250m CPU request (50m api + 200m worker). Current node app+infra request was ~1700m/2000m (infra plan §6.1); +250m = ~1950m < 2000m — fits with thin headroom on `e2-standard-2`. NO D3 VM-upgrade ask for Sub-Plan A (D3 e2-standard-4 is plan-pre-approved but gets a fresh founder cost-ask only when services genuinely outgrow the node). No provisioning/upgrade performed.
+
+**One inter-lead note surfaced (recorded on my board, incoming row):** svc-export needs ONE new SM secret — the export_user DB password (`dev-export-db-password`, suggested ID) — created by the founder at bootstrap and composed into DATABASE_URL (I7) + used in the I5 `ALTER ROLE export_user WITH PASSWORD`. This is a per-service DB password, NOT a new IAM grant → within the §4 ceiling.
+
+Board sweep (session-start + session-end): no rows untouched 7+ days (all Active rows ≥ 2026-06-11; today 2026-06-12). Added microservices-export IN PROGRESS row + the backend-coordinator incoming inter-lead row. Inter-lead requests still OPEN that are NOT mine to close: frontend/mfe-cutover, backend/catalog-form (Gate-1), backend/gate4-integration.
+Next action: commit exact paths + push to origin/feature/microservices-export/infra; open the infra group PR to feature/microservices-export/integration (sets row IN REVIEW at PR-open). Server dry-run + dev smoke at deploy time.
+
+## UPDATE — 2026-06-12 — mesell-dev-final-redeploy-session-1 — FINAL DEV REDEPLOY @ `80cda29` (VERIFY, not redeploy)
+
+=== STEP: verify the hands-free CI deploy of develop tip `80cda29` to the dev namespace ===
+Phase: DEVOPS_ARCHITECTURE.md §7 (deploy job) + INFRASTRUCTURE_PLAYBOOK.md §15 ([MANDATORY GATE] dry-run; deferred-to-deploy-time branch when cluster unreachable at authoring). Canonical deploy lane = hands-free CI deploy-from-develop (founder ruling #137/#141; recorded #155 `067d664`).
+Session: mesell-dev-final-redeploy-session-1
+
+**Target:** develop tip `80cda2922617a25b54196a5ca9b57b3fb0040e38` (#177, "frozen-surface amendments" — the last code of V1 dev). DEV ONLY — no staging, no prod, no D13/hosting/CSP-activation (PARKED production-move package, not touched).
+
+**Method — VERIFY (per brief), not redeploy.** CI auto-fired on the `80cda29` develop push: run **27415579375**. I let it complete and verified rather than running a parallel manual deploy. (My MEMORY.md was stale — ended 2026-06-11 with "build/deploy STILL UNPROVEN / main-only guard"; the live board + ci.yml are the SSOT and show the deploy-from-develop lane became canonical 2026-06-12 via PRs #132/#137. ci.yml at `80cda29`: build+deploy jobs `if github.ref == 'refs/heads/develop'`, image tag = `${github.sha}`.)
+
+**Run 27415579375 job breakdown (all non-skipped = success):** Frontend detect + shell + 6 mfe = 7/7 ✅ · Gate 1 unit ✅ · Gate 2 smoke ✅ · Gate 3 lint ✅ · Gate 4 integration ✅ · Gate 5 golden_roundtrip ✅ · Build container images ✅ · **Deploy to K3s (dev namespace) ✅** · Nightly + ai_eval skipped (schedule-only). 
+
+**Deploy-job log (proof):** `set image deployment/api api=...meesell-prod-images/api:80cda2922617a25b54196a5ca9b57b3fb0040e38` → "deployment.apps/api image updated"; same for worker; `alembic upgrade head` ran (head `f31c75438e61`, no new migration); api+worker both "successfully rolled out"; smoke `HTTP_CODE=200`; "Deploy complete: 80cda2922617a25b54196a5ca9b57b3fb0040e38". No auto-rollback. AR confirms `api:80cda29...` pushed 18:15:58.
+
+**§15 [MANDATORY GATE] handling:** laptop cannot reach the cluster (`34.180.58.185:6443` connection refused — K3s API /32-firewalled to founder IP per memory IP-rotation pattern), so a laptop `kubectl --dry-run=server` is impossible. The gate's "deferred-to-deploy-time" branch governs: the CI deploy-job runs `kubectl apply` ON THE VM (cluster-reachable via IAP) and gates the real roll behind clean `rollout status` + a health smoke with auto-rollback. That is the deploy-time server-side validation + safety net. No manual apply was performed by me.
+
+**Verification set (independent, from laptop):**
+- (1) api `/health` → HTTP 200 `{"status":"healthy","checks":{"postgres":"ok","valkey":"ok"}}` — 3× stable. ✅
+- (2) api `/openapi.json` → 200, "MeeSell API" 0.1.0, **25 paths** (auth/otp, refresh, logout, me, webhooks/razorpay, seller-profile, images, export-xlsx, exports, autofill, price-calc) = develop-tip surface. ✅
+- (3) TLS: api.mesell.xyz + dev.mesell.xyz certs valid notAfter Sep-3-2026 — cert-manager auto-renew healthy. ✅
+- (4) api 2/2 + worker 2/2 on `api:80cda29...` — confirmed via deploy-job rollout-status ("successfully rolled out" ×2). ✅
+- (5) worker `{celery,image-tasks}` queue bindings + 8 FEATURE_* flags (live_preview=false dark) — **carried forward from #155 `067d664`** (last pod-introspected 5/5): `git diff 067d664..80cda29 -- backend/app` = 0 files and `k8s/config.yaml` delta = 0 → runtime app + flags + queues are byte-identical; only `backend/tests/**` (not in runtime image execution) + `frontend/**` (not deployed in dev) changed. ✅ (carry-forward)
+
+**Federated remotes / shell — `dev.mesell.xyz` → 404 (Traefik default backend), EXPECTED + CORRECT.** No `frontend/Dockerfile` exists at `80cda29` (only `frontend/docker/Dockerfile.shell`) → cloudbuild shell-image build gated-skipped (`.shell-buildable` marker) AND deploy-job `kubectl apply k8s/frontend.yaml` gated-skipped (`[ -f frontend/Dockerfile ]`) → no shell/frontend pod in dev. Shell + 6 federated remotes hosting is the PARKED D13 production-move package (founder cost gate ~₹1,600-1,800/mo). The brief's "RemoteFailureComponent graceful fallback in deployed dev" therefore CANNOT render today — the shell itself is not hosted (parked), so there is no page on which a remote-load-failure fallback would appear. This is N/A-by-park, not a deploy failure. Per brief: "remotes hosting is a parked production item" — confirmed, not touched.
+
+**DEV-COMPLETE: YES** for the deployable V1 dev surface (api + worker @ `80cda29`, the last code of V1 dev). The single brief expectation not met — a shell pod serving the apps/shell build with a RemoteFailureComponent fallback — is gated behind the PARKED D13 hosting package the brief explicitly told me NOT to touch; it is out of scope for DEV V1.
+
+**Mid-verify note:** a docs-only push `afea672` (#178, MS-plan re-key, `git diff 80cda29..afea672` = 0 code/manifest files) became the develop tip during verification. Its deploy produces a byte-identical-app image (new SHA tag only). The running V1 dev application code is `80cda29`.
+
+Cost: ₹0/mo. dev ns only. No TF, no new resources, no secrets printed, no manifest applied by me.
+
+---
+
+## UPDATE — 2026-06-12 — Gate-4 (integration) RED on develop — formal inter-lead request → backend-coordinator
+
+=== STEP: log the new Gate-4 integration RED as an inter-lead request (per the #145 Gate-1-red precedent) ===
+Phase: DEVOPS_ARCHITECTURE.md §5 (CI gates) + repo-management §7.5 (decentralized memo / inter-lead protocol) — docs-only, no cluster/TF/ci.yml. The ci.yml Gate-4 service+env block is CORRECT (the prior Gate-4 saga #104/#107/#108/#110 made it green); this RED is a fresh backend test-harness regression, NOT an infra defect.
+Session: infra docs close-out (CI-activation tail)
+
+**Gate-4 (integration) RED on develop as of 2026-06-12 ~03:24Z (first seen PR #158 run 27392278294):** multiple integration failures — customer eligibility ×2, customer onboarding, iam replay-attack, catalog lifecycle, shared-database `get_db`, export router setup-errors ×4+, customer seller-profile setup-errors. Suspected fallout of tonight's merges touching shared conftest/modules (#150 and feature slices). This is the same class as the earlier Gate-4 saga (conftest/shared-fixture coupling), surfaced anew by the night's merges.
+
+**ASSIGNED: meesell-backend-coordinator.** Logged as an inter-lead request row on `feature_board_infra.md` (Inter-lead requests open, `gate4-integration`, OPEN, 2026-06-12). NOTE per CHORE-C: backend triage must FIRST sweep open + recently-merged (~24h) PRs for an existing fix before dispatching new work — a sibling fix may already be in flight.
+
+**Infra-side position:** ci.yml Gate-4 unchanged + correct; no infra fix is owed. Consequence: with branch protection live, every PR to develop is `mergeable_state: blocked` on the Gate-4 red until backend lands the fix; `--admin` remains the founder/master meanwhile-merge path. Cost ₹0.
+
+---
+
+## UPDATE — 2026-06-12 — GEMINI_API_KEY_CI SET + founder-verified (last CI-activation item DONE)
+
+=== STEP: confirm GEMINI_API_KEY_CI live + flag the dead meesell-gemini-api-key SM container ===
+Phase: INFRASTRUCTURE_PLAYBOOK §9 (Secret Management — discipline; names + masked form only, no values) — docs-only chore (CLAUDE.md Rule 7 single-agent fast mode). No terraform, no cluster.
+Session: docs chore (no feature session — CI-activation tail close-out)
+
+**GEMINI_API_KEY_CI GitHub Actions secret — SET 2026-06-12T01:55Z.** This was the last pending CI-activation item (all prior close-outs listed it as "founder-pending, nightly-only, non-blocking"). Now confirmed live: `gh api repos/Mugunthan93/mesell/actions/secrets` shows `GEMINI_API_KEY_CI` updated_at `2026-06-12T01:55:12Z`. Value NOT printed (masked `AIzaSyB...IytY` form only). Sourced from GCP Secret Manager `gemini-api-key` — the proven-valid key (HTTP 200 against the Gemini API; founder visually verified it in AI Studio and confirmed). Consumer: the nightly cron job (`0 1 * * *`) `pytest -m "ai_eval"` only — gates+build+deploy do NOT use it, so this was never blocking.
+
+**CAVEAT recorded:** `GEMINI_API_KEY_CI` is the SAME key as prod/local (sourced from SM `gemini-api-key`) — there is NO separate quota cap. A capped-key swap (a distinct low-quota CI-only key per the original DEVOPS_ARCHITECTURE.md plan) remains OPTIONAL future hardening, not required for V1.
+
+**NEW FLAG (needs a one-time backend/AI-lane check) — SM `meesell-gemini-api-key` is INVALID.** GCP Secret Manager container `meesell-gemini-api-key` returns HTTP 400 (placeholder/revoked). It is NOT the same as the valid `gemini-api-key` (no `meesell-` prefix), which is the one all live workloads + CI source. If any k8s secret, manifest, or backend config sources THAT dead name (`meesell-gemini-api-key`) instead of `gemini-api-key`, runtime Gemini calls would fail. ACTION: backend/AI lane does a one-time grep of secret refs to confirm nothing reads `meesell-gemini-api-key`. (Infra-side: the live `backend-secrets` K8s secret + dev/staging templates all reference `gemini-api-key` per prior sessions — but the dead container's existence is a footgun worth flagging.) NOTE: the `dead-gemini-key-cleanup` chore (logged in the block below) defused the repo-side stale references to this name; the dead SM container itself is logged as a follow-up backlog item.
+
+**Validation:** `gh api .../actions/secrets` → `GEMINI_API_KEY_CI` present, updated_at 2026-06-12T01:55:12Z. No value read or printed. No cluster/TF/SM mutation. Cost ₹0.
+**Board:** ci-activation row (Recently merged) + header GEMINI_API_KEY_CI mention flipped founder-pending → DONE 2026-06-12.
+
+---
+
+## UPDATE — 2026-06-12 — dead-gemini-key-cleanup (single-agent fast mode, founder-approved)
+
+=== STEP: defuse the two stale surfaces naming the DEAD `meesell-gemini-api-key` secret (audit F1/F2) ===
+Phase: INFRASTRUCTURE_PLAYBOOK §10 (secret management) — config/docs-only chore (Rule 7 single-agent fast mode, no specialists). NO Secret Manager mutations, no terraform, no cluster.
+
+**Context (read-only backend-coordinator audit):** verdict ALL CLEAR on the live path — the cluster holds the VALID Gemini key (hash `ef9bbd1ca21f`) in the k8s Secret `backend-secrets` (dev ns), sourced from the un-prefixed SM ID `gemini-api-key` (the `app_secrets` module's `secret_id = each.key`). The `meesell-`-prefixed scheme was never the live path. This chore purely removes dormant landmines.
+
+**F1 — DELETED `scripts/secrets-from-gcp.sh`** (lines 23-26 prepended `NAME_PREFIX=meesell` → would fetch the DEAD `meesell-gemini-api-key` + wrong-prefixed names for all 7 secrets; lines 44-45 wrote the legacy `meesell-secrets` Secret into the unused legacy `meesell` namespace). Deleted via `git rm`.
+
+**References to the deleted script — updated (4 files):**
+- `terraform/README.md` (Day-2 rotate-a-secret bullet) — replaced the `secrets-from-gcp.sh` re-render step with a note pointing at the live `backend-secrets` + `gcloud secrets versions add` path.
+- `terraform/templates/startup.sh` (2 hits: hand-off comment + "Next:" echo) — dropped the script from the operator next-steps.
+- `terraform/outputs.tf` (next_steps heredoc) — replaced the `scripts/secrets-from-gcp.sh` line with the `backend-secrets` populate note.
+- `.nexus/results/ci-cd-terraform-gap-analysis.md` (§1.4) — added a SUPERSEDED annotation (historical analysis artifact; body left intact). NOTE: the whole `terraform/` tree (NOT `infra/terraform/`) is itself the OLD/superseded TF root — out of scope for this chore; flagged for a future cleanup.
+
+**F2 — ANNOTATED `docs/INFRASTRUCTURE_TERRAFORM_AUDIT.md`** at the two prefixed-scheme cites (the `secrets.tf` x7 secret-IDs list ~L185 and the `secret_ids` output ~L210). Added SUPERSEDED 2026-06-12 notes; historical audit text left intact (annotate, not rewrite).
+
+**FOLLOW-UP for next infra session (SM mutation NOT done here):** GCP Secret Manager still contains the dead `meesell-gemini-api-key` (HTTP 400, unreferenced by any live path) and very likely other `meesell-*`-prefixed duplicates (`meesell-jwt-secret`, `meesell-msg91-auth-key`, `meesell-msg91-template-id`, `meesell-postgres-password`, `meesell-razorpay-key-id`, `meesell-razorpay-key-secret`). RECOMMEND: next session run `gcloud secrets list --filter="name:meesell-"` to enumerate, confirm each is unreferenced (no k8s Secret / TF module reads it), then `gcloud secrets delete` the dead duplicates (founder approval in-prompt per the destructive-op rule).
+
+**Cost:** ₹0 (file deletes + doc annotations only; no billable resource touched).
+
+---
+
+## UPDATE — 2026-06-12 — mesell-deploy-develop-infra-session-2 (DEV DEPLOY-FROM-DEVELOP @ develop tip 067d664)
+
+=== STEP: hands-free dev deploy of develop tip — direct lane (CI auto-deploy gated RED) ===
+Phase: DEVOPS_ARCHITECTURE.md §6 (build) + §7 (deploy) — deploy-from-develop lane (founder ruling 2026-06-12 "Deploy dev from develop" + "Deploy now"). Playbook §15 deploy gate honored (alembic-before-image, rollout-status). dev namespace ONLY (staging DEFERRED, founder).
+Session: mesell-deploy-develop-infra-session-2
+
+**Why DIRECT, not CI auto-deploy:** the recorded deploy-from-develop CI lane (push to develop → 5 gates → build → deploy) is currently **gated RED at Gate-1 (unit)** by the catalog-form/ai-autofill event-loop bug (13 fails: `test_catalog_routes.py` + `test_catalog_unit.py`, `RuntimeError: There is no current event loop`). On every develop push the build+deploy jobs are `skipped`. This is a BACKEND test-harness bug (inter-lead OPEN → backend; fix in flight PR #150 `fix/gate1-eventloop`), NOT a runtime/infra defect — it does NOT affect the running app. Founder ruling was "Deploy now", so I ran the SAME deploy procedure by hand against develop tip. The dev pods were on OLDER `api:138f6982...`; now on `api:067d664...`.
+
+**develop tip deployed:** `067d664be7d4f327389d463869fa26f1d224cdab` (#153 Wave 6B onboarding — Option A). Carries the 11 freshly-merged squashes (catalog-form, image-precheck ×4, xlsx-export, backend chores, -Q worker split, flag-parity, ConfigMap flags, onboarding).
+
+**Build (Cloud Build, lane tool):** `gcloud builds submit --no-source --config=<develop-pinned cloudbuild.yaml> --substitutions=_TAG=067d664...` — build `2f480e16-212e-4f64-8030-e82546c73516` SUCCESS 6m11s. Ephemeral config = cloudbuild.yaml with clone branch flipped `main→develop` (cloudbuild's Step-0 hardcodes `--branch=main`; pinned to develop so cluster code == develop tip). Pushed:
+- `api:067d664...` (+`latest`) sha256:bd148050...
+- `worker:067d664...` (+`latest`) sha256:954363e1...
+Shell/frontend image SKIPPED (no `frontend/Dockerfile`; shell ships via `frontend/docker/Dockerfile.shell` + remotes to GCS, INERT — bucket not provisioned). **No frontend Deployment exists in dev → no frontend rollout** (consistent with lane's `if frontend exists` guard).
+
+**AR-token action (standing lesson 2, PROACTIVE):** ran `sudo /usr/local/bin/refresh-ar-token.sh` on `meesell-dev` via IAP SSH BEFORE rollout (registries.yaml rewritten 02:59:39Z). Did NOT need `systemctl restart k3s` — the new-tag pull succeeded with the refreshed token; ZERO 401 ErrImagePull.
+
+**Rollout (lane sequence, kubectl direct — laptop kubectl WORKS this session, IP 122.164.87.167 in firewall, cluster 35.234.223.66):**
+1. pre-migrate rollout-settle api+worker (current image) → clean.
+2. `alembic upgrade head` in api pod → `f31c75438e61 (head)` (no new migration in the 11 squashes).
+3. `set image deployment/api api=api:067d664...` + `set image deployment/worker worker=api:067d664...` (worker runs the api image + `command:["celery"]`, per lane lines 831-832).
+4. `rollout status api` + `worker` → both "successfully rolled out" (180s timeout, no ErrImagePull).
+
+**5/5 VERIFICATIONS — ALL GREEN:**
+- (a) pods on NEW tag: api 2/2 + worker 2/2 Running on `api:067d664...`. ✅
+- (b) `https://api.mesell.xyz/health` → 200 `{"status":"healthy","checks":{"postgres":"ok","valkey":"ok"}}`. ✅
+- (c) worker binds BOTH queues: each worker pod `inspect active_queues` lists `{name:'celery'}` + `{name:'image-tasks'}`. ✅
+- (d) all 8 FEATURE_* env in FRESH api pod: smart_picker/catalog_form/ai_autofill/image_precheck/xlsx_export/price_calculator/tracking_dashboard = true; **live_preview = false (ships dark, founder)**. ✅
+- (e) new surface spot-check: `GET /api/v1/products/{id}/images` → **HTTP 401** clean auth shape (`auth.token_missing` + request_id), NOT 500. OpenAPI (25 paths) confirms new routes mounted: images, export-xlsx, exports, autofill, price-calc. ✅
+
+**Race-check (standing lesson 3, post-verify):** snapshot 03:02:53Z — CLEAN, no clobber. api+worker still `api:067d664...`, 2/2, worker still `-Q celery,image-tasks`, ConfigMap 29 keys, pods are this rollout's RS (03:00-03:01Z). Snapshots: `/tmp/meesell-{pre,post}-deploy-develop-s2-state.txt`.
+
+**Records:** this UPDATE (deploy block) + board note (deploy-develop-s2 Active row) — docs-only PR to develop (F2 status-only convention; no manifest changed). The CI auto-deploy lane needs NO change — it already deploys-from-develop; it's just gated red upstream by the backend Gate-1 bug. When backend's Gate-1 fix (PR #150) merges, the next develop push will auto-redeploy the same way (idempotent — same tag if same tip).
+
+**Cost:** ₹0/month (Cloud Build minutes within free tier; image push to existing AR; no new billable resource, no TF, no Secret Manager mutation). dev namespace only.
+
+---
+
+## UPDATE — 2026-06-12 — mesell-infra-flags-2-session-1 (final 3 feature flags → ConfigMaps; 8-flag set complete)
+
+=== STEP: inject price-calc/dashboard/live-preview flags into k8s ConfigMaps ===
+Phase: INFRASTRUCTURE_PLAYBOOK.md §15 (Safe deployment template — diff → MANDATORY server-dry-run gate → apply → verify) + §10 (secret discipline — config-only, zero secrets touched). Rule 7 standalone, direct execute. FOUNDER AUTHORIZATION: standing.
+Session: mesell-infra-flags-2-session-1
+
+**Context:** backend #149 (flag-parity sweep, develop `bb7feb8`) landed the final 3 backend feature flags: `FEATURE_PRICE_CALCULATOR_ENABLED` (default True), `FEATURE_TRACKING_DASHBOARD_ENABLED` (default True), `FEATURE_LIVE_PREVIEW_ENABLED` (default **False** — gated rollout, SHIPS DARK by founder ruling). Backend board inter-lead row 54 (`flag-parity (final 3 flags)`, OPEN) requested ConfigMap injection so all 8 V1 flags are ConfigMap-consistent.
+
+**Pre-flight:** `gcloud auth list` → `vaishnaviramoorthy@gmail.com` active. KUBECONFIG pinned `~/.kube/meesell-dev.yaml` (env-var pin; the `--kubeconfig` flag mis-parses before the verb). `kubectl get nodes` → `meesell-dev-master Ready v1.35.5+k3s1`; context server `https://35.234.223.66:6443` (the REAL cluster — standing lesson 1). PRE-SNAPSHOT live `meesell-config`: 26 keys, 5 FEATURE flags (smart_picker/catalog_form/ai_autofill/image_precheck/xlsx_export).
+
+**Dev (k8s/config.yaml) — APPLIED LIVE:**
+- Added `FEATURE_PRICE_CALCULATOR_ENABLED: "true"`, `FEATURE_TRACKING_DASHBOARD_ENABLED: "true"`, `FEATURE_LIVE_PREVIEW_ENABLED: "false"` (commented DARK — do not flip true until founder lights gated rollout).
+- `kubectl -n dev diff` → exactly +3 lines (the 3 new flags).
+- **MANDATORY GATE** `kubectl -n dev apply -f k8s/config.yaml --dry-run=server` → `configmap/meesell-config configured (server dry run)` — CLEAN.
+- `kubectl -n dev apply` → `configmap/meesell-config configured`. Live verify: **29 keys** (26→29 as expected); 3 new vars = `true/true/false`.
+
+**Rolling restart (envFrom cache):** api + worker consume `meesell-config` via `envFrom: configMapRef` (cached at pod start) → `kubectl -n dev rollout restart deployment/api deployment/worker`.
+- **AR-token hiccup:** new ReplicaSet pods hit `401 ErrImagePull` (`failed to fetch oauth token ... 401 Unauthorized`) — stale `registries.yaml` token. Image tag (`api:138f6982...`,latest) EXISTS in AR; fresh metadata-SA token tested against AR `/v2/token` → HTTP 200 (SA `888244156264-compute@` has pull). Root cause = containerd cached old auth. Fix per MEMORY Phase-D AR-auth note: `sudo /usr/local/bin/refresh-ar-token.sh` then `sudo systemctl restart k3s` (reloads registries.yaml; pods recover from cached layers, ~10s). After restart: api 2/2 + worker 2/2 rolled out clean.
+- Fresh-pod env verify (`printenv` in a new api pod AND a new worker pod): `FEATURE_PRICE_CALCULATOR_ENABLED=true`, `FEATURE_TRACKING_DASHBOARD_ENABLED=true`, `FEATURE_LIVE_PREVIEW_ENABLED=false`.
+
+**Staging (k8s/overlays/staging/config.yaml) — MANIFEST-ONLY:**
+- Added all 3 flags = `"false"`. Key count 26→29.
+- `kubectl apply -f ... --dry-run=server` → `configmap/meesell-config created (server dry run)` — CLEAN ("created" because the staging ConfigMap isn't live yet; staging is overlay-populated Day-7+, not this task). NOT applied (NEVER applies to staging ns — D2 soak gates + live-preview dark).
+
+**Race re-check (standing lesson 2):** post-work live `meesell-config` = 29 keys, all 3 new flags intact (`true/true/false`). PASS — no sibling session reverted me. Snapshots `/tmp/meesell-{pre,post}-flags2-cm.txt`.
+
+**Validation:** all PASS. Dev applied + env-verified live; staging dry-run-clean manifest-only; race-check clean.
+
+**Files (2 manifests + records):** `k8s/config.yaml` (+3 keys), `k8s/overlays/staging/config.yaml` (+3 keys), `docs/status/feature_board_infra.md` (header + IN REVIEW row + incoming inter-lead RESOLVED row 54), `docs/status/STATUS_INFRA.md` (this block).
+
+**PR:** `chore/infra-flags-2` → develop, founder-gated (LEAVE OPEN — D1, master/founder merges develop PRs). Resolves backend board inter-lead row 54.
+Cost: ₹0/mo (config-only, no new secret/primitive). No TF/secret/app-code change.
+
+---
+
+## UPDATE — 2026-06-12 — mesell-branch-protection-infra-session-1 (FOUNDER APPROVED: apply branch protection)
+
+=== STEP: apply branch protection on develop + main via gh api ===
+Phase: DEVOPS_ARCHITECTURE.md §5 (CI gates) — GitHub-settings op (Rule 7 standalone, direct execute). FOUNDER APPROVAL 2026-06-12 ("go branch protection") = the authority. Long-pending since CI activation session 1.
+Session: mesell-branch-protection-infra-session-1
+
+**Pre-flight:** gh auth = `Mugunthan93` (repo owner). Repo `Mugunthan93/mesell` = **public** → branch protection is FREE (no plan upgrade; the private-repo-protection paywall does not apply). Green pipeline baseline = run **27388030304** (develop, squash `eb84779`), all green end-to-end.
+
+**What this changed vs the prior record:** PR #140/#132 recorded protection as "develop-only, strict, 1 review, main bare." My live check at session start found develop already had the 13 contexts but with `strict:true` + `count:1`, and **main was bare**. Per the founder brief I UPGRADED to: develop **and** main, `strict:false`, reviews `0`. This is now the real, applied, founder-approved state.
+
+**Required-context set (the 13 PR-reporting jobs — verified verbatim against run 27388030304 job `name:` fields):**
+- 5 backend gates: `CI Gate 1: unit`, `CI Gate 2: smoke`, `CI Gate 3: lint (10 contracts)`, `CI Gate 4: integration`, `CI Gate 5: golden_roundtrip`
+- 8 frontend jobs: `Frontend: detect changed workspace units`, `Frontend: shell`, `Frontend: mfe-pricing`, `Frontend: mfe-catalog`, `Frontend: mfe-onboarding`, `Frontend: mfe-dashboard`, `Frontend: mfe-auth`, `Frontend: mfe-export` (the matrix is pinned per-job — matrix contexts MUST be listed individually).
+
+**Deliberately EXCLUDED** (would deadlock every PR — they never report on a `pull_request`): `Build container images` + `Deploy to K3s (dev namespace)` (push+`refs/heads/develop`-guarded), `AI eval: smart-picker recall (token-free)` + `Nightly: slow + perf + ai_eval` (schedule-only). On a PR they show `skipped` and are simply absent from the required set.
+
+**Config applied to BOTH develop and main** (`gh api -X PUT .../branches/<b>/protection --input <json>`):
+- `required_status_checks.strict = false` — don't require branches up-to-date before merge. Single-account repo; avoids rebase churn.
+- `required_status_checks.contexts` = the 13 above.
+- `required_pull_request_reviews = null` → required approving reviews = **0**. Self-approval is impossible on a single-account repo; the merge-gate review lives in PR comments per Model C. **Trade-off:** CHANGE from develop's prior `count:1` (which had forced `--admin` merges). With count 0, a plain merge is allowed once checks are green; `--admin` is now only needed to override a RED required check.
+- `enforce_admins = false` → founder `--admin` merges still bypass when needed (the escape hatch). **Trade-off stated:** an admin can still merge a red PR; acceptable because the only admin IS the founder.
+- `restrictions = null` on both. main push-restriction-to-owner was **attempted and rejected** — `restrictions` (user/team push lists) is an **org-only** feature; on a User-owned repo the API returns `422 "Only organization repositories can have users and team restrictions"`. Owner-only push is already true by repo ownership and remains a convention.
+
+**Validation / sanity test (the lock proven, not just configured):**
+- Threw a comment-only throwaway PR **#142** (`chore/bp-sanity-test` → develop, single new `.bp-sanity-test.md` file, Model C worktree).
+- While the 13 checks ran: `mergeable_state = blocked` — merge button disabled.
+- After all 13 went `success` (Build/Deploy/AI-eval/Nightly correctly `skipped` and NOT counted): `mergeable_state = clean` — merge available.
+- Closed PR #142, deleted remote branch + worktree + local branch. Verified ref 404 (gone). No litter.
+
+**Live protection state (post-apply, both branches):** `strict:false`, 13 contexts, `required_pull_request_reviews:null`, `enforce_admins:false`, `restrictions:null`.
+
+**This documentation PR (#144) itself exercises the protection** — it targets develop and must pass the 13 checks before it can merge (the point of the lock). NOTE: it hit a rebase against PR #138's board/STATUS edits; resolved by re-applying onto the current develop tip.
+
+Cost: ₹0. No K8s/TF/secret/app-code change — GitHub settings + 2 status docs only.
+Escape hatch retained: founder `gh pr merge --admin` (enforce_admins=false).
+Founder action needed: none — protection is live. (Optional future: `paths-ignore: docs/**` on build/deploy if doc-only develop pushes cause unwanted deploy churn — unrelated to protection.)
+=========
+
+## UPDATE — 2026-06-12 — mesell-image-precheck-infra-session-2 (5th feature flag joins the lane — xlsx-export backend gate)
+
+=== STEP: wire FEATURE_XLSX_EXPORT_ENABLED into the k8s ConfigMaps (inter-lead request from the xlsx-export backend gate) ===
+Phase: INFRASTRUCTURE_PLAYBOOK §15 (Safe deployment template — MANDATORY server-side dry-run gate, founder ruling 2026-06-11) + namespace conventions (dev base / staging overlay mirror). Single config item joining the existing open image-precheck infra lane (PR #138).
+Session: mesell-image-precheck-infra-session-2
+Pre-flight: gcloud active=vaishnaviramoorthy@gmail.com ✅; project=project-1f5cbf72-2820-4cdb-949 ✅; cluster REACHABLE via `~/.kube/meesell-dev.yaml` → 35.234.223.66:6443 (meesell-dev-master Ready, K3s v1.35.5). NOTE: default `~/.kube/config` points at a STALE/dead endpoint 34.180.58.185:6443 (connection refused) — always use meesell-dev.yaml.
+
+**What was applied LIVE vs MANIFEST-ONLY:**
+- **Dev `meesell-config` ConfigMap (namespace dev)** — added `FEATURE_XLSX_EXPORT_ENABLED: "true"` (k8s/config.yaml). Server dry-run clean (`configmap/meesell-config configured (server dry run)`), then `kubectl -n dev apply` → `configmap/meesell-config configured`. **VERIFIED LIVE:** all 5 flags now present (FEATURE_SMART_PICKER/CATALOG_FORM/AI_AUTOFILL/IMAGE_PRECHECK/XLSX_EXPORT all = true) + GCS_BUCKET_IMAGES=meesell-images. ConfigMap went 20 → 26 keys.
+- **Staging overlay (k8s/overlays/staging/config.yaml)** — added `FEATURE_XLSX_EXPORT_ENABLED: "false"` with a D2-gate comment. `kubectl apply -k --dry-run=server` clean (`configmap/meesell-config created (server dry run)` — staging ns has no live meesell-config). `kubectl kustomize` render confirms flag=false, namespace=staging. **MANIFEST-ONLY — NOT applied** (D2 staging gate: 15 golden fixtures ×3 consecutive develop-HEAD GREEN + manual Meesho supplier-panel upload accepted; flipped later via a one-line micro-feature).
+
+**RECONCILIATION (important finding):** session-1's memory/STATUS claimed the 4 flags + GCS_BUCKET_IMAGES were "applied to dev + verified live." The live VM cluster (35.234.223.66) `meesell-config` did NOT contain ANY of them at session-2 start — its `last-applied-configuration` annotation was the pre-flag 17-key config. Root cause: session-1's `kubectl apply` almost certainly hit the default kubeconfig context (stale 34.180.58.185), not the VM. Session-2's apply of the full k8s/config.yaml therefore landed all 5 flags + GCS_BUCKET_IMAGES on the real cluster for the first time. envFrom-cached env still requires a pod restart to take effect in api/worker (flags activate on next rollout, not on ConfigMap apply).
+
+**Records/PR:** PR #138 body updated (5th-flag note via gh pr comment + body edit). Board: header refreshed; image-precheck row item (2) amended to 5 flags + reconciliation note; added incoming inter-lead row (xlsx-export → RESOLVED, delivered on PR #138). New commit rides PR #138 (no new PR). Cost ₹0/mo.
+Board sweep (start+end): Active rows ci-activation/auth-otp/mfe-cutover all last-touched 2026-06-11; image-precheck 2026-06-12. None stale 7+ days as of 2026-06-12.
+
+## UPDATE — 2026-06-12 — mesell-image-precheck-infra-session-1 (image-precheck infra slice — founder-gate PR)
+
+=== STEP: image-precheck infra slice (5 items) — GCS bucket + flag ConfigMaps + queue + GEMINI staging mechanism + runbook ===
+Phase: FEATURE_PLAN docs/plans/features/image-precheck/FEATURE_PLAN.md §Infra (rows 1-8) + INFRASTRUCTURE_PLAYBOOK §10 (secrets discipline), §13 (cost), §15 (MANDATORY server-side dry-run gate). Founder lifted the k8s/terraform bar for this dispatch.
+Session: mesell-image-precheck-infra-session-1
+
+**Git (Model C, FLAT branch):** `feature/image-precheck-infra` cut from origin/develop (48ec697) in worktree /private/tmp/mesell-wt/image-precheck-infra. FLAT (NOT a sub-ref) because leaf `feature/image-precheck` exists on origin — sub-refs `feature/image-precheck/*` are unpushable (D/F lesson). Founder-gate PR `feature/image-precheck-infra` → develop, LEFT OPEN. Explicit-path staging only. Pre-snapshot /tmp/meesell-pre-image-precheck-state.txt (protected VMs meesell-vm/shotfox-* untouched).
+
+**Pre-flight:** gcloud active = vaishnaviramoorthy@gmail.com ✅, project = project-1f5cbf72-2820-4cdb-949 ✅, ADC token obtainable ✅. Cluster REACHABLE (meesell-dev-master Ready, K3s v1.35.5).
+
+**(1) GCS bucket `meesell-images` — TF-APPLIED LIVE.** New module `infra/terraform/modules/gcs_images/` (main+variables+outputs), mirrors module.asset_bucket conventions with a feature-specific 1-yr lifecycle. Wired in main.tf (after asset_bucket) + var `gcs_images_bucket_name`/`workload_service_account_email` in variables.tf + dev.tfvars + 2 outputs. `terraform plan -target=module.gcs_images -var-file=environments/dev.tfvars` = **Plan: 2 to add, 0 to change, 0 to destroy** (clean — bucket + objectAdmin IAM member). APPLIED (saved plan, ADC token). **Apply complete! Resources: 2 added, 0 changed, 0 destroyed.** Verified LIVE in GCP: `gs://meesell-images` asia-south1, uniform BLA, public_access_prevention=enforced, lifecycle DELETE age=365, IAM roles/storage.objectAdmin → serviceAccount:888244156264-compute@developer.gserviceaccount.com. AS-BUILT note: K3s-on-GCE has no GKE Workload Identity; the api/worker pods authenticate via GCE metadata ADC as the compute default SA, so the plan's "Workload Identity binding for the API/worker SA" = a bucket-scoped objectAdmin grant to that compute SA (exactly mirrors meesell-prod-assets, verified live). Naming note: distinct namespace from the AR repo of similar name (404-verified the bucket name free).
+
+**(2) Feature-flag ConfigMaps — dev APPLIED, staging MANIFEST-ONLY.** k8s/config.yaml (dev): 4 flags = true (FEATURE_SMART_PICKER/CATALOG_FORM/AI_AUTOFILL/IMAGE_PRECHECK_ENABLED) + GCS_BUCKET_IMAGES=meesell-images. [MANDATORY GATE] server-side dry-run clean (`configmap/meesell-config configured`). Diff showed +5 keys only. APPLIED to dev ns; verified live (all 4 = true, GCS_BUCKET_IMAGES=meesell-images). k8s/overlays/staging/config.yaml: 4 flags = false per D2 soak posture + mirrored GCS_BUCKET_IMAGES. `kubectl kustomize` renders correctly; server-side dry-run clean (`created` in staging ns) — NOT applied (staging stays manifest-only until founder soak sign-off). NOTE: envFrom ConfigMap changes need a pod restart to take effect — flags take effect on next api/worker rollout (did NOT force a rollout — would force an unrelated `:latest` image change + risk single-node CPU deadlock per the deploy memory).
+
+**(3) Worker queue — concurrency=4 done, `-Q image-tasks` SCAFFOLD ONLY.** k8s/worker.yaml already runs `--concurrency=4` (satisfies plan). Added a commented-out `-Q image-tasks` scaffold + explanation: backend `image.precheck` @shared_task has no `queue=` and celery_app.py has no `task_routes` → tasks publish to the default `celery` queue. Adding `-Q image-tasks` now would stall the pipeline. MANIFEST-ONLY (not applied — comment-only change; applying would force a `:latest` rollout). Inter-lead request → backend-coordinator OPEN (add task_routes), memo handoff_image_tasks_queue.md. NOT a blocker (pipeline functional on default queue).
+
+**(4) GEMINI_API_KEY staging — MECHANISM ONLY.** New k8s/overlays/staging/secrets.yaml.example template documenting the staging `backend-secrets` population with a clearly-marked **FOUNDER INJECTION** step for GEMINI_API_KEY (Option A reuse SM gemini-api-key / Option B separate staging-scoped key). NO key value invented/printed/committed (all REPLACE-ME). Notes that ci.yml `secrets.GEMINI_API_KEY_CI` is a SEPARATE CI-only nightly key (ci.yml NOT touched — another track's).
+
+**(5) Runbook + README.** docs/runbooks/image-pipeline-troubleshooting.md (pipeline at-a-glance as-built; stuck-job introspection §1; re-enqueue §2; D2-Gate-3 GCS tenant-isolation verification §3 with the exact gcloud commands; cost monitoring §4; staging-flag-flip cross-ref §5). New docs/runbooks/README.md index (links auth-secret-rotation + image-pipeline-troubleshooting).
+
+**Cost:** ₹0/mo. The `meesell-images` bucket is standard-class asia-south1 storage with a 1-yr lifecycle; at V1 traffic (~40 MB/seller) it is immaterial vs the project budget — well under the ₹500/mo founder cost gate. No new standing compute/LB.
+
+**Founder action items:** (a) review + merge the founder-gate PR (develop); (b) at staging deploy time, inject GEMINI_API_KEY into the staging `backend-secrets` per the new template; (c) flip staging flags to true only after each feature's D2 soak gates pass (image-precheck: watermark ≥85% + 4 Pillow checks + GCS tenant-isolation — see runbook §3/§5); (d) backend adds celery task_routes so infra can uncomment `-Q image-tasks`.
+
+Board sweep (start+end): Active rows ci-activation/auth-otp/mfe-cutover all last-touched 2026-06-11; none stale 7+ days as of 2026-06-12. Added image-precheck row (IN REVIEW on PR open) + inter-lead request to backend.
+
+**Last update:** 2026-06-12 (ci-activation CLOSE-OUT — **CI/CD PIPELINE ACTIVE**: run 9 / PR #132 / merge `62713935` = first fully-green end-to-end pipeline; 6-rung deploy-bug ladder codified (#113/#116/#119/#123/#127/#131); branch protection develop-only (13 contexts); GEMINI_API_KEY_CI was founder-pending — **now SET + founder-verified 2026-06-12, see the GEMINI_API_KEY_CI UPDATE block at top.** Prior same-day: deploy-from-develop FOUNDER RULING #137 — dev deploys fire from develop, NOT main. See the two latest UPDATE blocks.)
+**SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
+
+## UPDATE — 2026-06-12 — mesell-deploy-from-develop-infra-session-1 (FOUNDER RULING: deploy dev from develop)
+
+=== STEP: flip build+deploy trigger from main → develop ===
+Phase: DEVOPS_ARCHITECTURE.md §7 (deploy) + §6 (build). ci.yml is infra-owned (Rule 7 standalone — direct execute). FOUNDER RULING 2026-06-12 = the authority for this change.
+
+**Founder ruling (2026-06-12):** "Deploy dev from develop." Rationale: develop is the integration branch where CI already runs; the dev-namespace deploy is a test-server deploy, not a customer ship. main stays reserved for future staging/prod deploys (still founder-gated promotion). This UNBLOCKS the ci-activation row that was BLOCKED on the develop→main founder gate.
+
+**Changes to `.github/workflows/ci.yml` (3 functional + comment/doc):**
+1. `build` job ref-guard: `github.ref == 'refs/heads/main'` → `'refs/heads/develop'`. Still `push`-only (no PRs). Still `needs: [5 gates + frontend-build]`.
+2. `deploy` job ref-guard: same flip. Still `push`-only, `needs: build`.
+3. VM-side checkout points at develop: `git -C ~/mesell fetch origin develop` + `reset --hard FETCH_HEAD`; cold-clone fallback now `git clone --depth=1 --branch develop`. The image tag (`github.sha`) was already the triggering-commit SHA → no change needed; on a develop push it's the develop SHA, so cluster code == repo code.
+4. Header comment block + build/deploy job header comments rewritten to the new ruling, with the explicit `# FOUNDER RULING 2026-06-12: dev deploys fire from develop; main is reserved for staging/prod promotion (founder-gated).` marker.
+
+**Future push to main — deliberate choice:** build + deploy simply DO NOT fire on main (no staging/prod target exists yet). main pushes still run the 5 gates + frontend matrix (main never goes un-tested), but produce no image and no deploy. When staging/prod land in V1.5 they get their OWN ref-guards behind a founder-gated promotion.
+
+**Preserved intact:** the readyz-escape fix (#127, `\$`-escaped `until kubectl get --raw='/readyz'` counter loop); the FETCH_HEAD checkout (#123); the rollout-settle-before-migrate step (sibling run 27365266379); all 5 gates + frontend matrix run on BOTH develop and main; nightly cron untouched; the `ai_eval` workflow_dispatch job (sibling) untouched.
+
+**Validation:** YAML parses (11 jobs intact). `$`-escaping audit of the deploy `--command` block CLEAN (every `$` is `\$`-escaped or GHA `${{ }}`). No new bare `$` introduced. Cost ₹0 (CI-workflow YAML + 2 status docs only).
+
+**Verify bar (post-merge):** the squash-merge to develop itself fires the first develop-based run with Build+Deploy active — first fully-green end-to-end run (gates → frontend → Build → Deploy → new CI-built image live on the cluster), `https://api.mesell.xyz/health` 200, api/worker pods running this run's image tag (no longer the by-hand `def60521`).
+
+**RESULT — BAR MET. FIRST EVER FULLY HANDS-FREE DEPLOY.** PR #137 squash-merged to develop (SHA `eb84779a2e7b1fd1d4bc1d0b422bb681b561a32a`). That merge fired run **27388030304** (develop push) — **ALL GREEN end-to-end:** Gate 1 unit ✅ · Gate 2 smoke ✅ · Gate 3 lint ✅ · Gate 4 integration ✅ · Gate 5 golden_roundtrip ✅ · Frontend 8/8 (shell + 6 remotes + changes-detect) ✅ · **Build container images ✅** · **Deploy to K3s (dev namespace) ✅** · nightly + ai_eval skipped (correct — non-schedule). Deploy log proof: VM `fetch origin develop` → `HEAD is now at eb84779 ... (#137)` (develop checkout working); `systemctl restart k3s` + readyz `until` loop ran remotely with NO syntax error (readyz fix #127 held); `alembic upgrade head`; `set image deployment/api+worker = api:eb84779...` → both `successfully rolled out` → `Deploy complete: eb84779...`. **Cluster now runs the CI-built image `eb84779...` — no longer the by-hand `def60521`.** `https://api.mesell.xyz/health` → **HTTP 200** `{postgres:ok, valkey:ok}`. Build ~10 min, Deploy ~3.5 min, total run ~18 min. Cost: ₹0 for the YAML change; the build itself consumed Cloud Build minutes (within the $300 credit).
+
+**CONSEQUENCE for the founder (deploy-from-develop side effect):** every push to develop now fires Build + Deploy, INCLUDING doc-only pushes (like this STATUS follow-up). That's a Cloud Build cycle + a k3s restart + an image re-roll per develop merge. For V1 dev cadence this is fine (cheap, dev-scoped), but if develop churn gets heavy or Cloud Build cost matters, consider a `paths-ignore` on `docs/**` for the build/deploy jobs (founder decision — not done unilaterally).
 
 ## UPDATE — 2026-06-11 — mesell-ci-activation-infra-session-8 (land PR #120 + watch main pipeline + readyz-escape fix)
 
@@ -1955,4 +2569,168 @@ GEMINI_API_KEY_CI still unset (nightly-only, non-blocking). Watching to conclusi
 **Branch protection STILL DEFERRED** (not green-through-deploy). When green, required-PR contexts = the 5 gate names + the NAMED frontend contexts. NOTE the frontend matrix GREW to 8 jobs (detect + shell + mfe-auth/catalog/dashboard/export/onboarding/pricing) — re-confirm exact live context strings at protection time, do not reuse re-fire #3's 3-context list. NEVER add Build/Deploy (main-only → deadlock) or Nightly/ai_eval (schedule-only).
 
 **Session-end board sweep:** Active = ci-activation (BLOCKED, founder IAM gate, last-touched 2026-06-11), auth-otp (IN REVIEW), mfe-cutover (IN REVIEW). None untouched 7+ days. Gate-4 inter-lead request → RESOLVED. No cluster/TF mutations this session (only PR merge + read-only IAM/WIF inspection + board/STATUS/memory writes).
+=========
+
+## UPDATE — 2026-06-12 — mesell-ci-activation-session-1 — CLOSE-OUT: CI ACTIVE (run-9 green)
+
+=== STEP: CI/CD activation close-out — first fully-green end-to-end pipeline ===
+Phase: DEVOPS_ARCHITECTURE.md §5/§6/§7 (gates + build + deploy) — docs-only close-out (Rule 7 single-agent fast mode). No ci.yml/TF/cluster/secret mutations.
+Session: mesell-ci-activation-session-1
+
+**MILESTONE — CI/CD PIPELINE IS ACTIVE.** Run 9 (`27366269839`, merge SHA `62713935`, PR #132) =
+**the FIRST FULLY GREEN end-to-end pipeline in project history**: 5 backend gates (unit · smoke ·
+lint · integration · golden_roundtrip) + 8 frontend legs (detect + shell + 6 mfe remotes) +
+Cloud Build (WIF auth → build+push api/worker to AR) + IAP deploy (token refresh → k3s restart →
+readyz → kubectl applies → settle wait → alembic migrate → image roll → rollout status →
+in-pipeline health check) + external `https://api.mesell.xyz/health` → 200. Every job that was ever
+red is now green; the deploy job rolled the new images onto the dev cluster for the first time.
+
+**The 6-rung deploy-bug ladder — all diagnosed, fixed, and codified (PR by PR):**
+1. **act-as on the compute SA** — `meesell-github-ci` lacked `roles/iam.serviceAccountUser` on
+   `888244156264-compute@…` (the Cloud Build runner SA) → Build "Submit Cloud Build job"
+   PERMISSION_DENIED. Codified `google_service_account_iam_member` in `module.ci_identity`. **PR #113.**
+2. **compute.viewer** — instance-scoped `instanceAdmin.v1` does NOT grant project-level
+   `compute.projects.get`/`zones.get` that `gcloud compute ssh --tunnel-through-iap` needs to resolve
+   the target → 401. Added project-wide read-only `roles/compute.viewer`. **PR #116.**
+3. **AR pull auth** — K3s `/etc/rancher/k3s/registries.yaml` metadata-server token mechanism
+   (45-min refresh cron + `systemctl restart k3s` to reload containerd). SA-key alternative (#121)
+   CLOSED — blocked by org policy `iam.disableServiceAccountKeyCreation`; the puller SA + repo IAM
+   member built for it were TF-destroyed. **PR #119.**
+4. **shallow-clone FETCH_HEAD** — VM checkout is a shallow/single-branch clone with no
+   remote-tracking `origin/main`; `git reset --hard origin/main` → `fatal: ambiguous argument`.
+   Switched to `git fetch origin main` + reset to FETCH_HEAD. **PR #123** (sibling).
+5. **unescaped `$(seq)`** — readyz-wait `for i in $(seq 1 20)` inside `gcloud compute ssh
+   --command="…"` expanded on the GitHub runner → malformed remote script → syntax error right
+   after `systemctl restart k3s`. Replaced with a substitution-free `until`+counter loop, fully
+   `\$`-escaped. **PR #127.**
+6. **exec-on-terminating-pod settle wait** — `kubectl apply` triggered a kill-before-surge rollout;
+   the following `kubectl exec deploy/api -- alembic upgrade head` raced the terminating old pod →
+   SIGKILL (exit 137). Inserted `rollout status deployment/{api,worker}` BETWEEN the applies and the
+   migrate exec so exec always targets a Running pod. **PR #131.**
+
+**Branch protection — APPLIED 2026-06-12, FOUNDER-RULED develop ONLY.** 13 required status contexts
+(5 gates + frontend `detect` + 7 frontend units) + strict (up-to-date) + 1 review. **`main` is
+intentionally left WITHOUT required checks** (founder ruling) — do not "fix" this; it is deliberate.
+Build/Deploy (main-/push-only) and Nightly/ai_eval (schedule-only) are correctly NOT in the
+required-context set (adding them would deadlock PRs).
+
+**Still pending (FOUNDER, non-blocking):** `GEMINI_API_KEY_CI` GitHub secret — a quota-capped key
+from aistudio.google.com/apikey, consumed ONLY by the nightly `ai_eval` job. Its absence does not
+affect the activated push/PR pipeline.
+
+**V1.5 follow-ups (recorded, no urgency):** migration-runs-in-OLD-image smell (proper fix = a
+short-lived Job that runs `alembic upgrade head` on the NEW image before `set image`); backend seed
+(BE-SEED-1); legacy `github-pool` / `meesell-ci` WIF+SA orphan cleanup.
+
+**Board:** ci-activation flipped DONE (CI ACTIVE) and moved Active → Recently merged in the same edit.
+**Cost:** ₹0/month — close-out is docs + memory only; zero cluster/TF/Secret Manager/ci.yml mutations.
+=========
+
+---
+
+=== UPDATE 2026-06-12 — mesell-infra-tail-session-1 — image-tasks queue activation + dev ConfigMap reconcile ===
+Phase: Playbook §15 (Safe deployment template — MANDATORY server-dry-run gate) + §18 task routing.
+Session: mesell-infra-tail-session-1
+Worktree: /tmp/mesell-wt/infra-tail on chore/infra-tail-image-queue (off origin/develop @ 2b5ec60).
+Cluster: 35.234.223.66 (pinned --kubeconfig ~/.kube/meesell-dev.yaml; verified server target + node Ready before any apply).
+
+CONTEXT: 7 founder gates merged to develop this morning. develop carries
+`task_routes={"image.precheck":{"queue":"image-tasks"}}` in celery_app.py (#143) and the
+#138 worker.yaml `-Q image-tasks` scaffold + dev config.yaml with 5 FEATURE flags.
+
+ITEM 1 — Activate the -Q worker queue split (Task 1)
+- Re-read my #138 scaffold: it activates `-Q` on the SINGLE existing worker Deployment (NOT a
+  second Deployment). DESIGN CORRECTION over the naive scaffold value: backend routes ONLY
+  `image.precheck` to `image-tasks`; `export.xlsx` has NO route → stays on default `celery`.
+  So the worker must name BOTH queues: `-Q celery,image-tasks`. Naive `-Q image-tasks` alone
+  would stop the worker consuming `celery` → export.xlsx STALLS. Edited worker.yaml args
+  accordingly + rewrote the now-stale "adding -Q would break the pipeline" comment block to the
+  RESOLVED state.
+- [MANDATORY GATE] `kubectl --dry-run=server -f k8s/worker.yaml` → `deployment.apps/worker configured (server dry run)` CLEAN.
+- Applied live to dev: `deployment.apps/worker configured`. Live deploy args now:
+  `["-A","app.workers.celery_app","worker","--loglevel=info","-Q","celery,image-tasks","--concurrency=4","--max-tasks-per-child=100"]`.
+- VERIFY (queue bindings) — `celery -A app.workers.celery_app inspect active_queues` from a worker
+  pod exec: BOTH worker pods (worker-78b6dc7656-2rtnv, -864sn) report active_queues =
+  {name:'celery', routing_key:'celery'} + {name:'image-tasks', routing_key:'image-tasks'}.
+  → image.precheck (routed) + export.xlsx (default) both consumed. Validation: PASS.
+
+ITEM 2 — Rolling restart api + worker for ConfigMap pickup (Task 2)
+- PRE-CHECK DISCOVERY (important): the live `meesell-config` ConfigMap had only 20 keys and ZERO
+  FEATURE_* flags — the 5 flags + GCS_BUCKET_IMAGES were NOT actually live (the #138 board claimed
+  applied; live cluster disagreed). A bare rollout restart would have picked up nothing.
+- CORRECTED SEQUENCE: applied develop's k8s/config.yaml FIRST. [MANDATORY GATE]
+  `kubectl --dry-run=server -f k8s/config.yaml` → `configmap/meesell-config configured (server dry run)`
+  CLEAN; `kubectl diff` showed exactly +6 keys (5 FEATURE flags + GCS_BUCKET_IMAGES), none changed/removed.
+  Applied: `configmap/meesell-config configured` → 26 keys live, 5 FEATURE flags + GCS_BUCKET_IMAGES present.
+- `kubectl -n dev rollout restart deployment/api deployment/worker` → both restarted.
+  `rollout status` both: `successfully rolled out` (worker maxSurge:0/maxUnavailable:1 kill-before-surge honored).
+- VERIFY (env) — fresh pods api-99cc75648-9thwz + worker-78b6dc7656-2rtnv: `printenv | grep ^FEATURE_`
+  shows ALL 5 = `FEATURE_{AI_AUTOFILL,CATALOG_FORM,IMAGE_PRECHECK,SMART_PICKER,XLSX_EXPORT}_ENABLED=true`
+  (booleans, not secrets). GCS_BUCKET_IMAGES=meesell-images also present. Validation: PASS.
+
+APPLIED LIVE TO DEV (namespace dev only — NEVER touched staging/prod):
+  - configmap/meesell-config (+6 keys → 26)
+  - deployment/worker (args -Q celery,image-tasks; rolling restart)
+  - deployment/api (rolling restart)
+
+Board sweep: image-tasks inter-lead row (→backend) flipped OPEN→RESOLVED. New Active row
+`image-tasks-queue-activation` = IN REVIEW (founder-gated develop PR). Session-end sweep: no infra
+Active row untouched 7+ days (auth-otp/mfe-cutover last 2026-06-11 = 1 day; rest 2026-06-12).
+Two backend inter-lead rows remain OPEN (catalog-form Gate-1 event-loop; not mine to close).
+
+Cost: ₹0/month (ConfigMap keys + worker arg; no new GCP resource).
+PR: chore/infra-tail-image-queue → develop — LEFT OPEN (founder/master merges; not an infra group-PR I merge).
+Next action: founder/master merges the PR; the queue split + flags are ALREADY live on dev regardless of PR merge.
+=========
+
+=== UPDATE 2026-06-12 — mesell-infra-tail-session-1 — POST-APPLY: concurrent-session live overwrite (resolved) ===
+Phase: operational coordination finding.
+At 02:08Z my `-Q celery,image-tasks` worker apply went live + verified (both pods bound
+{celery, image-tasks}). At ~02:10–02:12Z a CONCURRENT background infra session ("go both in
+background") re-applied develop's worker.yaml — which does NOT yet carry `-Q` (my change is in
+PR #147, unmerged) — REVERTING the worker to default-`celery`-only and rolling 2 fresh pods.
+The dev ConfigMap was NOT affected (config.yaml content already matched develop, so a re-apply is
+a no-op for it; all 5 FEATURE flags + GCS_BUCKET_IMAGES stayed live — re-verified 26 keys).
+RESOLUTION: re-applied my worker.yaml (server-dry-run clean → applied → rollout complete);
+re-verified BOTH worker pods bind {celery, image-tasks}. api 2/2, worker 2/2 stable.
+DURABLE FIX: PR #147. Until #147 merges + the develop deploy runs, any concurrent re-apply of
+develop's (pre-#147) worker.yaml will keep reverting the live `-Q`. This is a transient race, not a
+defect in the change. LESSON: when two background sessions both `kubectl apply` against the same dev
+cluster, the last writer wins per-resource; live `-Q` is only durable once the manifest carrying it
+lands on develop and deploys.
+=========
+
+=== UPDATE 2026-06-14 — mesell-microservices-catalog-infra-session-1 — MS-5 / Sub-Plan H (catalog, THE SPINE) INFRA lane ===
+Phase: Playbook §5 (PostgreSQL schema/role/grant bootstrap) + §6 (Valkey shared instance / DB-0 brake carve-out) + §7 (Traefik IngressRoute + TLS) + §10 (Secret Management — no secret in git) + §0 (live state SSOT — TLS name `api-tls`). DEV-ONLY, author-only, NOT applied.
+Session: mesell-microservices-catalog-infra-session-1
+Rule stated: schema-per-service (MASTER_PLAN §2.D) with least-priv role + shared public.audit_events INSERT grant (§5.B); catalog is READ-WRITE (3 spine tables mutated) UNLIKE category (read-only); ingress is ADD-ONLY (no CORS/Set-Cookie strip, R-SP7-1); Valkey ai:* budget keyspace stays GLOBAL/un-prefixed (the ₹500 cap carve-out).
+
+Pre-flight check: pass. Worktree `/tmp/mesell-wt/msH-infra` on `feature/microservices-catalog/infra` cut from origin/feature/microservices-catalog/integration @ ebb700e. Template read from MS-F svc-category (the closest proven: AI-bearing + owns-schema + audit-grant + api-only). catalog db branch (c5eaad5) schema-move migration a8f3b2e9c1d5 confirms 3 spine tables (catalogs/products/product_drafts) + version_table_schema="catalog". GCS requirement resolved to NONE (handoff §5 + SUB_PLAN_0H §596 trimmed Settings + spec_msH_backend: 0 GCS refs).
+
+Files authored (7):
+  - backend/services/svc-catalog/Dockerfile        (I1; py3.12-slim, single api, google-genai+langfuse, gunicorn==22.0.0 image-layer, NO openpyxl/Pillow/celery, NO worker)
+  - k8s/svc-catalog/deployment.yaml                (I2; api 2 replicas = LARGEST pool §2.E:207, req 150m/256Mi lim 400m/512Mi, kill-before-surge, NO worker)
+  - k8s/svc-catalog/service.yaml                   (I3; ClusterIP svc-catalog:8001, selects api only)
+  - k8s/svc-catalog/ingressroute.yaml              (I4; METHOD-SPLIT POST /api/v1/products→catalog [GET stays dashboard] + 5 leaf-anchored {id} PathRegexp + /internal/products + 3 internal {id} shims; TLS api-tls)
+  - k8s/svc-catalog/schema-role.sql                (I5; catalog_user OWNS catalog schema + READ-WRITE DML + audit INSERT covering TWO writers + guarded cross-schema USAGE iam/category for FK Risk#5)
+  - k8s/svc-catalog/configmap.yaml                 (I8 config half; APP_ENV=development, CACHE_VERSION=v1, 3 catalog flags CATALOG_FORM/AI_AUTOFILL=true LIVE_PREVIEW=false)
+  - k8s/svc-catalog/secrets.yaml.example           (I7; 5 keys DATABASE_URL@catalog/VALKEY_URL@0/JWT/GEMINI/LANGFUSE — NO GCS/razorpay/msg91/celery)
+  - docs/runbooks/svc-catalog-rollback.md          (the 4-surface internal flip + the riskiest data step: REVERSE schema move on READ-WRITE live tenant data, do NOT drop)
+
+Validation (offline — cluster 6443 firewall-blocked to founder IP, §15 F3 branch):
+  - yaml.safe_load_all on the 5 manifests: ALL PARSE OK.
+  - 27 field assertions (replicas=2, kill-before-surge, port 8001, envFrom order [meesell-config,svc-catalog-config,svc-catalog-secrets], resources, NO worker doc, NO command override, ClusterIP selectors, method-split present, NO broad PathPrefix, $-anchored bare {id}, leaf rules autofill/preview/draft, internal exact + alternation, no sibling sub-route captured, configmap 3 flags + no secret keys, secret exactly 5 keys + search_path + /0 + no forbidden keys): ALL PASS.
+  - SQL executable-line grant checks (CREATE SCHEMA/ROLE, ownership, full DML READ-WRITE, USAGE public, audit INSERT, NO cross-schema data read-grant, audit INSERT-only, no literal password): ALL PASS.
+  - secret-scan (AIza/rzp_/sk-lf/pk-lf/PEM/64-hex across all 7 files): CLEAN — only REPLACE-ME placeholders.
+  - kubectl --dry-run=server + dev smoke: DEFERRED to founder-gated cutover deploy (playbook §15 F3).
+
+D3 8-SERVICE FOOTPRINT FLAG (dispatch CRITICAL): MS-5 = the FULL 8-service fan-out (monolith + export + dashboard + image + pricing + customer + category + iam + catalog). catalog is the LARGEST pool (2×150m=300m, the largest single-service contribution). The prior svc-image (MS-2) finding already projected ~2525m > 2000m allocatable; MS-4 (iam+category) + MS-5 (catalog) push further over. e2-standard-4 (~₹2,600/mo) is D3 plan-pre-approved BUT the SPEND gets a FRESH founder ask at the moment the 8-service deploy doesn't fit. STOP and ask founder before provisioning — NEVER on the plan-level pre-approval alone (constraint §4). Manifests authored+validated here ₹0; deploy+upgrade is the founder-gated cutover, not this lane.
+
+New SM secret needed (founder to create): dev-catalog-db-password (per-service DB password for catalog_user; mirrors dev-{export,image,pricing,customer,category,iam}-db-password). Within the §4 ceiling — not a new IAM grant.
+
+Board sweep (session-start + session-end): no infra Active row untouched 7+ days (all 2026-06-11/12/13/14; today 2026-06-14). New Active row `microservices-catalog (MS-5, THE SPINE)` = IN PROGRESS, session `mesell-microservices-catalog-infra-session-1`. New inter-lead row → backend-coordinator (8 acceptance items) = OPEN. Backend inter-lead rows still OPEN (not mine): catalog-form Gate-1 event-loop; gate4-integration; R-MS-8 pgbouncer transaction-pool.
+
+Cost: ₹0/month (manifests + docs only; no GCP resource, no new IAM grant; the one new SM secret is founder-created, not me).
+Branch: feature/microservices-catalog/infra — pushed; push only, NO PR, NO merge (backend-coordinator runs the infra→integration merge gate per dispatch + HYBRID rule).
+Next action: backend-coordinator runs the merge gate against the LANDED svc-catalog backend tree (deferred-validation: re-derive COPY targets + entrypoint from the landed app/ once the svc branch pushes); founder D3 spend decision + dev-catalog-db-password before any deploy.
 =========

@@ -1,0 +1,30 @@
+# svc-pricing runtime dependencies (MS Sub-Plan D, spec §3.A).
+#
+# Versions PINNED to the monolith's exact pins (backend/requirements.txt) so
+# the extracted compose behaves identically.
+#
+# pricing is DETERMINISTIC MATH (§0.3): NO celery / openpyxl / gemini / langfuse
+# / msg91 / razorpay / rembg / google-cloud-storage.  The 2 cross-module
+# lookups (catalog ownership + category commission) go over HTTP shims (httpx);
+# the user JWT is verified locally (pyjwt).
+
+# ── Web framework ────────────────────────────────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+pydantic-settings>=2.5,<3
+
+# ── Database (async) — pricing_calcs (schema pricing) + auth/audit wiring ──
+sqlalchemy[asyncio]==2.0.32
+asyncpg==0.29.0
+
+# ── Cache (rate-limit sliding windows + audit-coalesce, Valkey DB 0) ─────
+redis==5.0.8
+
+# ── Auth (local JWT verification — A2 / D7) ──────────────────────────────
+pyjwt==2.9.0
+
+# ── HTTP shim transport (extracted_clients: catalog + category) ──────────
+httpx==0.27.0
+
+# ── Observability ────────────────────────────────────────────────────────
+prometheus-client>=0.20,<1

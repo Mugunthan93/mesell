@@ -1,0 +1,84 @@
+# k8s/svc-category/configmap.yaml
+# ===========================================================================
+# svc-category — Sub-Plan F (category extraction, MS-4), INFRA deliverable I8 (config half).
+#
+# TRIMMED non-secret ConfigMap for svc-category, named `svc-category-config` in the
+# `dev` namespace. The svc-category-api Deployment consumes it via
+# `envFrom: configMapRef: { name: svc-category-config }` (see deployment.yaml),
+# AFTER `meesell-config` so its values override the shared ConfigMap on key collision.
+#
+# Authority: handoff_msF_infra.md §1 (CACHE_VERSION, APP_ENV) + SUB_PLAN_0F (smart
+# picker flag) + MASTER_PLAN §5.D (per-service trimmed Settings).
+#
+# ── WHY A DEDICATED ConfigMap (not ONLY the shared meesell-config) ──────────
+#   The extracted svc-category carries its category-trimmed non-secret env in its OWN
+#   ConfigMap, so the override values (APP_ENV, CACHE_VERSION) are scoped to category
+#   and not coupled to the monolith's full config surface. The pod ALSO mounts the
+#   shared `meesell-config` (deployment.yaml envFrom #1) for the AI non-secret block
+#   that category SHARES with the monolith + svc-image:
+#     GEMINI_MODEL            (the Gemini model id — shared, comes from meesell-config)
+#     LANGFUSE_PUBLIC_KEY     (LangFuse public key — shared, from meesell-config)
+#     LANGFUSE_HOST           (LangFuse host — shared, from meesell-config)
+#     AI_DAILY_BUDGET_INR     (the ₹500 GLOBAL cap value — shared, from meesell-config;
+#                              MUST be identical across all AI services so the brake
+#                              math agrees — so it stays in the SHARED ConfigMap, not
+#                              re-declared here, to avoid drift)
+#   This ConfigMap carries ONLY the category-specific overrides + the smart-picker
+#   flag. (LANGFUSE_SECRET_KEY + GEMINI_API_KEY are SECRETS — in svc-category-secrets,
+#   NOT here. NEVER a secret value in a ConfigMap, playbook §0/§10.)
+#
+# ── CACHE_VERSION (SUB_PLAN_0F §F3 cache contracts) ─────────────────────────
+#   category caches its surfaces in Valkey DB 3 with the `category:` key prefix:
+#   category_tree, schema:{id}, field_enum:{id}:{field}, smart_picker:{hash} (§F3.a).
+#   CACHE_VERSION is the cache-key version segment used by the vendored core/cache.py
+#   so a deploy can bust the cache by bumping the version. The value MUST match the
+#   live monolith CACHE_VERSION during the strangler window (shared Valkey instance,
+#   `category:`-prefixed keys) to avoid double-population. The live monolith value at
+#   k8s/config.yaml is "v1" — mirror it here. Confirm at deploy time.
+#   *** CARVE-OUT REMINDER (handoff §2, the LOAD-BEARING rule): the GLOBAL budget
+#   brake keys (ai:cost:*, ai:budget:*) in Valkey DB 0 are NOT `category:`-prefixed
+#   and are NOT versioned by CACHE_VERSION — they are global so the ₹500 cap stays a
+#   single counter. CACHE_VERSION applies ONLY to category's OWN DB-3 cache keys. ***
+#
+# ── FEATURE_SMART_PICKER_ENABLED ────────────────────────────────────────────
+#   The smart-category-picker feature flag (V1_FEATURE_SPEC §F2). Live monolith value
+#   at k8s/config.yaml:58 is "true" (dev). The /api/v1/categories/suggest route is
+#   gated on this flag. Carried here so the extracted pod reads the same flag the
+#   monolith does during the strangler window. dev=true.
+#
+# ── NO GCS / NO CELERY / NO CORS env ────────────────────────────────────────
+#   category touches no GCS (no GCS_* / GOOGLE_APPLICATION_CREDENTIALS). It has no
+#   Celery (no CELERY_*). CORS is owned by the FastAPI app's vendored CORSMiddleware
+#   (MASTER_PLAN §5.A); Traefik does NOT inject CORS (R-SP7-1 ADD-ONLY). If the
+#   landed trimmed Settings reads CORS_ALLOWED_ORIGINS at env-level, add it here
+#   scoped to https://dev.mesell.xyz (the dev frontend origin — the live Angular
+#   wizard renders category schema fields off /categories/{id}/schema, so CORS MUST
+#   allow the dev frontend) — coordinate via the merge gate; left out until the
+#   landed Settings shape confirms the need.
+#
+# Namespace: dev ONLY (Sub-Plan F constraint).
+# NEVER put a secret value in this ConfigMap (playbook §0 / k8s/config.yaml header).
+# ===========================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: svc-category-config
+  namespace: dev
+  labels:
+    app: svc-category
+data:
+  # App env — Pydantic Settings Literal {development|staging|production}.
+  # dev namespace ⇒ "development" (MEMORY: NEVER "dev"; the Literal type rejects it.
+  # Founder ruling 2026-06-11 F1). Overrides meesell-config's APP_ENV (same value).
+  APP_ENV: "development"
+
+  # Cache-key version segment (vendored core/cache.py). Bump to bust category's
+  # Valkey DB 3 cache (category_tree, schema:{id}, field_enum:{id}:{field},
+  # smart_picker:{hash} — all `category:`-prefixed). Match the live monolith
+  # CACHE_VERSION at the strangler window ("v1" = monolith k8s/config.yaml:79;
+  # confirm at deploy time). Does NOT version the global ai:* budget keys.
+  CACHE_VERSION: "v1"
+
+  # Smart-category-picker feature flag (V1_FEATURE_SPEC §F2). dev=true. Gates
+  # /api/v1/categories/suggest. Mirrors the live monolith k8s/config.yaml:58 value.
+  FEATURE_SMART_PICKER_ENABLED: "true"

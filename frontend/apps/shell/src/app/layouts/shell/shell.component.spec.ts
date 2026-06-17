@@ -52,9 +52,45 @@ describe('ShellComponent', () => {
     expect(fixture.componentInstance).toBeTruthy();
   });
 
-  it('should render 4 nav items', () => {
+  it('should render the 4 sidebar groups', () => {
+    // Desktop nav renders one labelled group per founder-approved section.
+    const labels = Array.from(
+      fixture.nativeElement.querySelectorAll('.sidebar-desktop .nav-group__label'),
+    ).map((el) => (el as HTMLElement).textContent?.trim());
+    expect(labels).toEqual(['Home', 'Catalogs', 'Categories', 'Account']);
+  });
+
+  it('should render the grouped nav items', () => {
     const items = fixture.nativeElement.querySelectorAll('.nav-item');
-    expect(items.length).toBeGreaterThanOrEqual(4);
+    // Dashboard, All Catalogs, New Catalog, Browse, Profile, Onboarding (x desktop+drawer)
+    expect(items.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it('should render "+ New Catalog" as an accent CTA item', () => {
+    const accent = fixture.nativeElement.querySelector('.nav-item--accent');
+    expect(accent).toBeTruthy();
+    expect(accent.textContent).toContain('New Catalog');
+  });
+
+  it('should show the Onboarding item while onboarding is not complete (default)', () => {
+    const onboarding = Array.from(
+      fixture.nativeElement.querySelectorAll('.sidebar-desktop .nav-item'),
+    ).some((el) => (el as HTMLElement).textContent?.includes('Onboarding'));
+    expect(onboarding).toBe(true);
+  });
+
+  it('should hide the Onboarding item once onboarding is complete', () => {
+    // Founder DECISION #1: hide-when-complete. Simulate the integration seam by
+    // setting the (currently optional) onboarding_complete flag on the user.
+    authSvc.setSession('tok', {
+      id: 1, name: 'Done Seller', phone: '+91',
+      onboarding_complete: true,
+    } as never);
+    fixture.detectChanges();
+    const onboarding = Array.from(
+      fixture.nativeElement.querySelectorAll('.sidebar-desktop .nav-item'),
+    ).some((el) => (el as HTMLElement).textContent?.includes('Onboarding'));
+    expect(onboarding).toBe(false);
   });
 
   it('should show "U" initials when no user is set', () => {

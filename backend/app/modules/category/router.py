@@ -2,7 +2,10 @@
 
 Endpoints
 ---------
-1. ``GET  /api/v1/categories/suggest?q=<description>``     — Smart Category Picker (§9.B.1)
+1. ``POST /api/v1/categories/suggest``                     — Smart Category Picker (§9.B.1)
+   AMENDMENT 2026-06-16 (founder ruling, finding #4): changed from GET→POST.
+   Description moved from query param to JSON body to support up to 5000 chars
+   without hitting browser/proxy URL-length limits.  Field name ``q`` preserved.
 2. ``GET  /api/v1/categories/browse``                      — Manual Browse pg_trgm (§9.B.2)
 3. ``GET  /api/v1/categories``                             — Full category tree (§9.B.3)
 4. ``GET  /api/v1/categories/{id}/schema``                 — Compiled wizard schema (§9.B.4)
@@ -21,7 +24,7 @@ Audit posture (§9.B + §4.G):
   rationale.  Same posture as §7.B.5 ``/me`` and §8.B.1 / §8.B.5 read endpoints.
 
 Rate-limit decorators (§4.G + §4.E):
-- ``GET /suggest``  — ``@rate_limit(scope="smart_picker", limit=100, window=3600)``
+- ``POST /suggest`` — ``@rate_limit(scope="smart_picker", limit=100, window=3600)``
   (plan_guard enforced INSIDE ``service.suggest_categories`` per §9.B.1 flow step 2,
   not in the router — follows the §8 customer router precedent where plan_guard lives
   inside the service, not the handler).
@@ -37,7 +40,7 @@ ETag handling (§9.B.3 + §9.B.4 + §4.D):
 
 DECISION FLAG §9-ROUTES-D1
 ---------------------------
-``@rate_limit`` decorator is placed ABOVE ``@router.get`` so Starlette sees the
+``@rate_limit`` decorator is placed ABOVE ``@router.post`` so Starlette sees the
 innermost function (the route handler) rather than the decorated wrapper.  This
 matches the order used in the customer router (§8) and is the locked pattern for
 MeeSell decorated routes.
@@ -50,7 +53,7 @@ import logging
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -63,6 +66,7 @@ from app.modules.category.schemas import (
     CategoryTreeResponse,
     FieldEnumResponse,
     SchemaResponse,
+    SuggestQuery,
     SuggestResponse,
 )
 from app.shared.config import settings
@@ -78,23 +82,18 @@ router = APIRouter(prefix="/api/v1", tags=["category"])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 1. GET /categories/suggest  — §9.B.1
+# 1. POST /categories/suggest  — §9.B.1
+#    AMENDMENT 2026-06-16 (founder ruling, finding #4): GET→POST, max_length 500→5000.
+#    Body field name ``q`` preserved for minimal client-side diff.
 # ─────────────────────────────────────────────────────────────────────────────
-@router.get(
+@router.post(
     "/categories/suggest",
     response_model=SuggestResponse,
     summary="AI-ranked Smart Category Picker — top-5 suggestions for a product description",
 )
 @rate_limit(scope="smart_picker", limit=100, window=3600)
 async def suggest_categories(
-    q: Annotated[
-        str,
-        Query(
-            min_length=1,
-            max_length=500,
-            description="Free-text product description (1–500 chars)",
-        ),
-    ],
+    body: Annotated[SuggestQuery, Body(description="Product description for AI category ranking")],
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> SuggestResponse:
@@ -105,6 +104,14 @@ async def suggest_categories(
     valid suggestions (budget cap, retry exhaustion) — the frontend surfaces
     the manual ``/browse`` UI in that case.
 
+    Request body: ``{"q": "<product description (1–5000 chars)>"}``
+
+    AMENDMENT 2026-06-16 (founder ruling, finding #4):
+    Changed from GET with ``?q=`` query param to POST with JSON body.
+    Reason: 5000-char descriptions in a GET query string risk browser/proxy
+    URL-length limits.  Service call signature unchanged — ``body.q`` is
+    passed as the ``q`` positional argument.  Response shape unchanged.
+
     Plan-guard ``smart_picker_hourly`` (100/h/user) is enforced INSIDE the
     service (step 2 of the §9.B.1 pipeline), not in this handler.
 
@@ -112,6 +119,13 @@ async def suggest_categories(
 
     Feature flag: returns 404 when ``FEATURE_SMART_PICKER_ENABLED=false``
     per Master Plan §3.2 + FEATURE_PLAN.md D2.
+
+    AI-ops note (FLAG — do NOT close until ai-coordinator reviews):
+    The service now receives up to 5000 chars in ``q``.  The Gemini prompt
+    budget for the picker prompt (``suggest_categories`` in ai_ops/prompts/)
+    was calibrated for ≤500 chars.  The meesell-ai-coordinator should verify
+    token budget / truncation strategy for 5000-char inputs before staging
+    cutover.
     """
     # ── Feature flag guard (§3.2 / D2) ───────────────────────────────────
     if not settings.FEATURE_SMART_PICKER_ENABLED:
@@ -121,7 +135,7 @@ async def suggest_categories(
         )
 
     payload = await category_service.suggest_categories(
-        user.user_id, q, db=db
+        user.user_id, body.q, db=db
     )
     return SuggestResponse.model_validate(payload)
 
@@ -246,7 +260,7 @@ async def get_category_schema(
 
     Status codes: 200; 401; 404 (``category.lookup.not_found``).
     """
-    payload = await category_service.fetch_schema(id, db=db)
+    payload = await category_service.fetch_schema_dto(id, db=db)
     etag_value = etag_for(json.dumps(payload, default=str).encode())
 
     if if_none_match and if_none_match == etag_value:

@@ -37,9 +37,9 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from app.config import settings
-from app.models.category import Category
-from app.models.template import Template
+from app.shared.config import settings
+from app.shared.models.category import Category
+from app.shared.models.template import Template
 
 logging.basicConfig(
     level=logging.INFO,

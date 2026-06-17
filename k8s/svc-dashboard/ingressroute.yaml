@@ -1,0 +1,88 @@
+# k8s/svc-dashboard/ingressroute.yaml
+# ---------------------------------------------------------------------------
+# svc-dashboard — Sub-Plan B (dashboard extraction), INFRA deliverable I4.
+#
+# Traefik IngressRoute (D4 path-prefix gateway, infra plan §2.4) routing the
+# SINGLE PUBLIC dashboard route on api.mesell.xyz to svc-dashboard:8001.
+#
+# Exact route — cited from backend/app/modules/dashboard/router.py (the SSOT,
+# enumerated in SUB_PLAN_0B §0.4):
+#   1. GET /api/v1/products  (router.py:81-92; handler `list_products`;
+#      response_model=DashboardResponse; query params page/limit) → svc-dashboard:8001
+#
+# ── CRITICAL ROUTING DISCIPLINE — METHOD-AWARE (§13-DASHBOARD-D2 path-key collision) ──
+#   `GET /api/v1/products` shares the EXACT path-key `/api/v1/products` with
+#   catalog's `POST /api/v1/products` (catalog create). FastAPI registers them as
+#   two distinct APIRoute objects under one path key (SUB_PLAN_0B §0.4,
+#   router.py:44-51). They split across services on METHOD:
+#       GET  /api/v1/products  → svc-dashboard  (THIS rule)
+#       POST /api/v1/products  → monolith       (catalog; extracts LAST at MS-5)
+#   Therefore this rule MUST be method-scoped. We match
+#       Method(`GET`) && Path(`/api/v1/products`)
+#   — `Method(GET)` so the catalog POST is NOT hijacked, and `Path(...)` (EXACT,
+#   NOT PathPrefix) because /api/v1/products is a leaf path: the page/limit
+#   inputs are QUERY params (?page=1&limit=20), not path segments, so there are
+#   no sub-paths under /api/v1/products that dashboard owns. A PathPrefix here
+#   would wrongly also claim e.g. /api/v1/products/{id}/images (MS-C image's
+#   prefix) and /api/v1/products/{id}/export-xlsx (svc-export's route) — Path
+#   (exact) keeps this rule tightly scoped to the one collision path.
+#
+# ── PARALLEL-LANE DISCIPLINE with MS-C image (handoff §4 / constraint) ──────────
+#   This edit is ADDITIVE to the shared Traefik table and touches a DISJOINT path
+#   from MS-C image. Path key map at MS-2:
+#       GET /api/v1/products              → svc-dashboard (this file)   [exact path]
+#       /api/v1/products/{id}/images*     → svc-image (MS-C)            [prefix, disjoint]
+#       /api/v1/products/{id}/export-xlsx → svc-export (MS-A)           [regex, disjoint]
+#       /api/v1/exports/*                 → svc-export (MS-A)           [prefix, disjoint]
+#       POST /api/v1/products + all other /api/v1/products/* → monolith (catalog)
+#   No overlap: dashboard's rule is an EXACT path + GET method; image's is a
+#   sub-path prefix. The two IngressRoute objects coexist; Traefik selects the
+#   most-specific matching rule per request.
+#
+# ── /internal/* IS NOT ROUTED HERE (MASTER_PLAN §2.C / handoff §1 I4 / §0.6) ────
+#   dashboard is a LEAF CONSUMER — it exposes NO /internal/* endpoints (zero
+#   inbound callers, §0.6). There is therefore NOTHING to deliberately withhold;
+#   no /internal/* match exists for dashboard because no such route exists.
+#
+# ── TLS + CORS (mirrors k8s/svc-export/ingressroute.yaml discipline) ────────────
+#   - TLS: the api.mesell.xyz LE certificate (cert-manager, Ready since Phase B) is
+#     reused — `tls: secretName: api-mesell-xyz-tls`. entryPoint `websecure`.
+#   - CORS / Set-Cookie: NO `headers` Middleware is attached. CORS is owned by the
+#     FastAPI app (CORSMiddleware, vendored per service per MASTER_PLAN §5.A);
+#     Traefik does routing + TLS ONLY and MUST NOT strip/rewrite CORS or Set-Cookie
+#     (same R-SP7-1 P0 ADD-ONLY rule as the api Ingress + svc-export route).
+#
+# Namespace: dev ONLY (Sub-Plan B constraint §4).
+#
+# NOTE on coexistence with the live host-based `api` Ingress: the live
+# api.mesell.xyz Ingress (k8s/ingress.yaml doc) currently routes ALL of
+# api.mesell.xyz → api:80 (the monolith). During the strangler window this
+# IngressRoute is HIGHER-precedence for `GET /api/v1/products` (a Method+Path
+# match outscores a host-only Ingress on specificity in Traefik). The catalog
+# `POST /api/v1/products` is NOT matched here and continues to fall through to the
+# monolith. Rollback (svc-dashboard-rollback.md Step 1) re-points the GET at the
+# monolith by deleting this IngressRoute so the host-only Ingress reclaims it.
+# ---------------------------------------------------------------------------
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: svc-dashboard
+  namespace: dev
+  labels:
+    app: svc-dashboard
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    # Route 1 — GET /api/v1/products (router.py:81-92). METHOD-scoped so the
+    # catalog POST /api/v1/products is NOT hijacked (it stays on the monolith
+    # until catalog extracts at MS-5). Path() is EXACT — page/limit are query
+    # params, not path segments; no sub-paths belong to dashboard.
+    - kind: Rule
+      match: Host(`api.mesell.xyz`) && Method(`GET`) && Path(`/api/v1/products`)
+      services:
+        - name: svc-dashboard
+          port: 8001
+  tls:
+    # Reuse the existing api.mesell.xyz LE cert (cert-manager, Ready since Phase B).
+    secretName: api-mesell-xyz-tls

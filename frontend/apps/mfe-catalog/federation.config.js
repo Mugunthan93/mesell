@@ -12,7 +12,8 @@ module.exports = withNativeFederation({
   name: 'mfe-catalog',
 
   exposes: {
-    './CatalogRoutes': './apps/mfe-catalog/src/app/catalog.routes.ts',
+    './CatalogRoutes':   './apps/mfe-catalog/src/app/catalog.routes.ts',
+    './BrowseComponent': './apps/mfe-catalog/src/app/categories/browse/browse.component.ts',
   },
 
   shared: {
@@ -24,6 +25,8 @@ module.exports = withNativeFederation({
     'rxjs/fetch',
     'rxjs/testing',
     'rxjs/webSocket',
+    '@primeuix/themes', // F-001
+    '@primeuix/themes/aura', // F-001 guard
   ],
 
   features: {

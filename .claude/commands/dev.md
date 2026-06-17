@@ -11,7 +11,7 @@ a second time will skip already-running services rather than duplicate them.
 Check which of the required ports are currently in use:
 
 ```bash
-for port in 8001 5173 5174 6379 5432; do
+for port in 8000 5173 5174 6379 5432; do
   lsof -ti tcp:$port | xargs -r ps -p 2>/dev/null | tail -n +2 | awk "{print \"port $port: \", \$0}"
 done
 ```
@@ -19,7 +19,7 @@ done
 Rules:
 - Port **5432** (Postgres): must be listening. If not → `brew services start postgresql@14`
 - Port **6379** (Valkey): must be listening. If not → `brew services start valkey`
-- Port **8001** (API): if uvicorn is already there, skip. If a foreign process is there, kill it first.
+- Port **8000** (API): if uvicorn is already there, skip. If a foreign process is there, kill it first.
 - Ports **5173/5174** (Frontend): if Vite is already there, skip. If a foreign process is on 5173, kill it.
 
 ## Step 2 — DB migration check
@@ -53,10 +53,10 @@ psql postgresql://meesell:password@localhost:5432/meesell -c "\dt"
 
 ## Step 3 — Start services (background, idempotent)
 
-**API** (skip if uvicorn already on 8001):
+**API** (skip if uvicorn already on 8000):
 ```bash
 cd /Users/mugunthansrinivasan/Project/mesell/backend && source .venv/bin/activate
-nohup uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload --log-level info \
+nohup uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-level info \
   > /tmp/mesell-logs/api.log 2>&1 &
 ```
 
@@ -77,7 +77,7 @@ nohup npm run dev -- --port 5173 > /tmp/mesell-logs/frontend.log 2>&1 &
 
 ```bash
 sleep 4
-curl -s -o /dev/null -w "%{http_code}" http://localhost:8001/health
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health
 lsof -ti tcp:5173 > /dev/null 2>&1 && echo "Frontend OK on 5173"
 pg_isready -h localhost -p 5432
 redis-cli -p 6379 ping
@@ -130,7 +130,7 @@ Captures while you manually use the app:
 ```
 [mesell] Dev stack ready
 ─────────────────────────────────────────
- API      http://localhost:8001   ✅
+ API      http://localhost:8000   ✅
  Frontend http://localhost:5173   ✅
  Postgres localhost:5432          ✅
  Valkey   localhost:6379          ✅
@@ -150,9 +150,9 @@ When a monitor fires with an error, dispatch the right agent immediately — nev
 
 | Monitor         | Trigger pattern                                    | Agent to dispatch                        |
 |-----------------|----------------------------------------------------|------------------------------------------|
-| API errors      | `ERROR:` / 5xx / `CRITICAL:` / startup failed     | `nexus:level-3:python-developer-agent`   |
-| Worker failures | `ERROR/Fork` / `retry:` / `Traceback` / exception | `nexus:level-3:python-developer-agent`   |
-| Frontend errors | Build failed / `Cannot find module` / SyntaxError  | `nexus:level-3:nextjs-developer-agent`   |
+| API errors      | `ERROR:` / 5xx / `CRITICAL:` / startup failed     | `meesell-backend-coordinator`   |
+| Worker failures | `ERROR/Fork` / `retry:` / `Traceback` / exception | `meesell-backend-coordinator`   |
+| Frontend errors | Build failed / `Cannot find module` / SyntaxError  | `meesell-frontend-coordinator`   |
 
 Pass the exact error lines + relevant source files in the dispatch prompt.
 
@@ -161,7 +161,7 @@ Pass the exact error lines + relevant source files in the dispatch prompt.
 ## Stopping the stack
 
 ```bash
-lsof -ti tcp:8001 | xargs kill -SIGTERM 2>/dev/null || true
+lsof -ti tcp:8000 | xargs kill -SIGTERM 2>/dev/null || true
 pkill -f "meesell-worker" 2>/dev/null || true
 pkill -f "celery.*app.workers.celery_app" 2>/dev/null || true
 lsof -ti tcp:5173 | xargs kill -SIGTERM 2>/dev/null || true

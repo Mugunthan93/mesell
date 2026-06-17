@@ -47,10 +47,10 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from app.config import settings
+from app.shared.config import settings
 from app.i18n.primitive_classifier import classify_primitive as _classify_primitive  # noqa: F401
 from app.i18n.step_assignment import STEP_ASSIGNMENT, STEP_ORDER, assign_step as _assign_step  # noqa: F401
-from app.models.template import Template
+from app.shared.models.template import Template
 
 logging.basicConfig(
     level=logging.INFO,

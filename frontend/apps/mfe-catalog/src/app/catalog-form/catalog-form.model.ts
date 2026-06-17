@@ -7,7 +7,7 @@
  * This file establishes the semantic contract for the 6 required dispatch-gate tests.
  */
 
-import type { FieldGroup, FieldSchema } from './models/field-schema.model';
+import type { FieldGroup, FieldSchema, WizardStep } from './models/field-schema.model';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -165,4 +165,149 @@ export function buildImagesRoute(productId: string): [string, string, string] {
  */
 export function buildDashboardRoute(): [string] {
   return ['/dashboard'];
+}
+
+// ── Wave 6C builder-2: autofill overlay + enum resolution helpers ──────────────
+
+export interface AutofillSuggestionEntry {
+  canonical: string;
+  value: unknown;
+}
+
+/**
+ * extractSuggestionEntries — maps the AutofillResponse suggestions map to
+ * a flat array of { canonical, value } entries for the overlay @for loop.
+ */
+export function extractSuggestionEntries(
+  suggestions: Record<string, { value: unknown }>,
+): AutofillSuggestionEntry[] {
+  return Object.entries(suggestions).map(([canonical, s]) => ({ canonical, value: s.value }));
+}
+
+/**
+ * applySuggestion — returns a new fieldValues map with the suggestion value applied
+ * for the given canonical key. Immutable.
+ */
+export function applySuggestion(
+  canonical: string,
+  suggestions: Record<string, { value: unknown }>,
+  fieldValues: FieldValuesMap,
+): FieldValuesMap {
+  const suggestion = suggestions[canonical];
+  if (!suggestion) return fieldValues;
+  return { ...fieldValues, [canonical]: suggestion.value };
+}
+
+/**
+ * dismissSuggestion — returns a new suggestions map with the given canonical removed.
+ * Immutable.
+ */
+export function dismissSuggestion(
+  canonical: string,
+  suggestions: Record<string, { value: unknown }>,
+): Record<string, { value: unknown }> {
+  const { [canonical]: _removed, ...rest } = suggestions;
+  return rest;
+}
+
+/**
+ * resolveFieldOptions — returns the select options for a field.
+ * Uses enumCache for needs_api_enum fields; falls back to field.enum_options for static.
+ *
+ * @param canonical - the canonical_name of the field
+ * @param needsApiEnum - true when enum_resolver==='category' (lazy via #16)
+ * @param staticOptions - field.enum_options (may be undefined for api-enum fields)
+ * @param enumCache - populated by getFieldEnum #16 calls at schema-load time
+ */
+export function resolveFieldOptions(
+  canonical: string,
+  needsApiEnum: boolean,
+  staticOptions: Array<{ label: string; value: string }> | undefined,
+  enumCache: Record<string, Array<{ label: string; value: string }>>,
+): Array<{ label: string; value: string }> {
+  if (needsApiEnum) {
+    return enumCache[canonical] ?? [];
+  }
+  return staticOptions ?? [];
+}
+
+/**
+ * buildSections — creates the 3-section descriptor array from the schema.
+ * Used by the component's computed sections() signal and unit-tested here.
+ */
+export interface SectionDescriptor {
+  id: 'compulsory' | 'recommended' | 'optional';
+  label: string;
+  open: boolean;
+  fields: FieldSchema[];
+}
+
+export function buildSections(
+  schema: FieldGroup[],
+  openState: Record<string, boolean>,
+): SectionDescriptor[] {
+  return [
+    { id: 'compulsory',  label: 'Compulsory',  open: !!openState['compulsory'],  fields: getCompulsoryFields(schema) },
+    { id: 'recommended', label: 'Recommended', open: !!openState['recommended'], fields: getRecommendedFields(schema) },
+    { id: 'optional',    label: 'Optional',    open: !!openState['optional'],    fields: getOptionalFields(schema) },
+  ];
+}
+
+// ── Wizard step helpers (Wizard Refactor) ──────────────────────────────────────
+
+/**
+ * canAdvanceFromStep — returns true when the current step allows advancing.
+ *
+ * Block advancing only when the current step has at least one required field
+ * that has no value. Steps with requiredCount===0 are always freely advanceable.
+ * The 'photos' step never blocks (warn-only per spec §F).
+ *
+ * Pure function — no Angular, no side effects.
+ */
+export function canAdvanceFromStep(
+  step: WizardStep | undefined,
+  fieldValues: FieldValuesMap,
+): boolean {
+  if (!step) return true;
+  // photos step: warn-only, never block
+  if (step.id === 'photos') return true;
+  // Steps with no required fields are freely skippable
+  if (step.requiredCount === 0) return true;
+  // Block when any required field is empty
+  return step.fields.every(f => !f.required || !!fieldValues[f.canonical_name]);
+}
+
+/**
+ * hasPhotosStepFrontMissing — returns true when the photos step is the current step
+ * AND the front image (slot 1) has not yet been uploaded.
+ *
+ * Used to render the non-blocking front-photo warning per spec §F.
+ *
+ * @param currentStepId - the id of the active wizard step
+ * @param hasFrontImage - whether slot 1 (is_front) has been uploaded
+ */
+export function hasPhotosStepFrontMissing(
+  currentStepId: string,
+  hasFrontImage: boolean,
+): boolean {
+  return currentStepId === 'photos' && !hasFrontImage;
+}
+
+/**
+ * stepRequiredFieldErrors — returns a map of canonicalName → error message
+ * for all required fields on the given step that have no value.
+ * Used by the Next button tooltip / validation summary.
+ */
+export function stepRequiredFieldErrors(
+  step: WizardStep | undefined,
+  fieldValues: FieldValuesMap,
+): Record<string, string> {
+  if (!step || step.id === 'photos') return {};
+  const errors: Record<string, string> = {};
+  for (const field of step.fields) {
+    if (field.required && !fieldValues[field.canonical_name]) {
+      errors[field.canonical_name] = `${field.display_name} is required`;
+    }
+  }
+  return errors;
 }

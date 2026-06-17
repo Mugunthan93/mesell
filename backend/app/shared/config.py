@@ -124,6 +124,14 @@ class Settings(BaseSettings):
     # keys.  Plain integer (not a secret) — deliberately NOT in REQUIRED_FIELDS.
     REFRESH_TOKEN_PEPPER_VERSION: int = 1
 
+    # ── Refresh-cookie environment attributes (cookie-env-config feature) ──
+    # FE-D5 security-critical attrs (HttpOnly, SameSite=Strict) are ALWAYS on and
+    # NOT configurable. Only env-dependent attrs come from config:
+    #   COOKIE_DOMAIN: prod=".mesell.xyz"; dev/local="" (empty → no Domain attr → binds to request host)
+    #   COOKIE_SECURE: prod=True; local-http dev=False
+    COOKIE_DOMAIN: str = ""        # empty == omit Domain attribute
+    COOKIE_SECURE: bool = True     # prod/staging True; local-http dev False
+
     # NOTE: ``JWT_EXPIRY_DAYS`` was DEPRECATED per the FE-D5 + FE-D6 amendments
     # and REMOVED during the §7 (`iam`) construction dispatch (2026-06-06).
     # Use ``ACCESS_TOKEN_TTL_SECONDS`` (access JWT lifetime) +
@@ -149,6 +157,11 @@ class Settings(BaseSettings):
     GCS_SIGNED_URL_TTL_SECONDS: int = 3600  # 1 h per MVP_ARCH §10.8
 
     # ── LangFuse (§5.D table 8) ────────────────────────────────────────────
+    # Tracing is OPT-IN. Default OFF so dev (which carries placeholder
+    # LANGFUSE_PUBLIC_KEY/SECRET to satisfy REQUIRED_FIELDS) never attempts a
+    # network flush — those placeholders would otherwise 401 on every AI call.
+    # Staging/prod set LANGFUSE_ENABLED=true alongside real credentials.
+    LANGFUSE_ENABLED: bool = False
     LANGFUSE_PUBLIC_KEY: str = ""
     LANGFUSE_SECRET_KEY: str = ""  # NEW — populated during §6A dispatch
     LANGFUSE_HOST: str = "https://cloud.langfuse.com"
@@ -182,6 +195,67 @@ class Settings(BaseSettings):
     # (Decision D2 in docs/plans/features/smart-picker/FEATURE_PLAN.md).
     # Route returns 404 when False per Master Plan §3.2 backend protocol.
     FEATURE_SMART_PICKER_ENABLED: bool = True
+
+    # FEATURE_XLSX_EXPORT_ENABLED: dev default True; staging default False
+    # until 15 golden fixtures pass ×3 consecutive develop-HEAD runs AND a
+    # manual Meesho supplier-panel upload is accepted (D2 staging gate per
+    # docs/plans/features/xlsx-export/FEATURE_PLAN.md D2).
+    # POST /products/{id}/export-xlsx returns 404 when False.
+    # GET /exports/{id} is NOT gated — in-flight export polls must keep working.
+    # Route returns 404 on POST when False per Master Plan §3.2 backend protocol.
+    FEATURE_XLSX_EXPORT_ENABLED: bool = True
+
+    # FEATURE_IMAGE_PRECHECK_ENABLED: dev default True; staging default False
+    # until 3 gates pass (watermark ≥ 85%, deterministic Pillow smoke,
+    # GCS tenant-isolation verified) per Decision D2 in
+    # docs/plans/features/image-precheck/FEATURE_PLAN.md.
+    # POST /products/{id}/images returns 404 when False (Master Plan §3.2).
+    # GET  /products/{id}/images returns empty list when False (read-only
+    # endpoint; sellers may have legacy images — do NOT 404).
+    FEATURE_IMAGE_PRECHECK_ENABLED: bool = True
+
+    # FEATURE_CATALOG_FORM_ENABLED: dev default True; staging default False
+    # (set via env) until the 5-condition soak passes
+    # (Decision D2 in docs/plans/features/catalog-form/FEATURE_PLAN.md).
+    # Catalog routes (/api/v1/products/*) return 404 when False per
+    # Master Plan §3.2 backend protocol.
+    FEATURE_CATALOG_FORM_ENABLED: bool = True
+
+    # FEATURE_AI_AUTOFILL_ENABLED: dev default True; staging default False
+    # (set via env) until soak passes
+    # (Decision in docs/plans/features/ai-autofill/FEATURE_PLAN.md).
+    # POST /api/v1/products/{id}/autofill returns 404 when False per
+    # Master Plan §3.2 backend protocol (route guard owned by api-routes-builder).
+    FEATURE_AI_AUTOFILL_ENABLED: bool = True
+
+    # FEATURE_PRICE_CALCULATOR_ENABLED: dev default True; staging default False
+    # (set via env) until staging soak confirms P&L formula accuracy ≥ target
+    # (Decision D2 in docs/plans/features/price-calculator/FEATURE_PLAN.md §1.B).
+    # POST /api/v1/products/{id}/price-calc returns 404 when False per
+    # Master Plan §3.2 backend protocol.
+    FEATURE_PRICE_CALCULATOR_ENABLED: bool = True
+
+    # FEATURE_TRACKING_DASHBOARD_ENABLED: dev default True; staging default False
+    # (set via env) until staging soak confirms paginated list latency + accuracy
+    # (Decision D3 in docs/plans/features/tracking-dashboard/FEATURE_PLAN.md §2.2).
+    # GET /api/v1/products returns 404 when False per Master Plan §3.2.
+    # D3 kill-switch: the read IS the feature — 404 on GET is intentional.
+    FEATURE_TRACKING_DASHBOARD_ENABLED: bool = True
+
+    # FEATURE_LIVE_PREVIEW_ENABLED: dev default FALSE (gated rollout — the ONLY
+    # V1 flag that ships default-False; all others default True).
+    # Decision D3 in docs/plans/features/live-preview/FEATURE_PLAN.md §3.
+    # GET /api/v1/products/{id}/preview returns 404 when False.
+    # Set FEATURE_LIVE_PREVIEW_ENABLED=true in .env to enable in development.
+    FEATURE_LIVE_PREVIEW_ENABLED: bool = False
+
+    # ── Dev-only OTP bypass (dev-otp-bypass feature) ───────────────────────────
+    # OFF by default ("" == disabled). When NON-EMPTY *and* APP_ENV != "production",
+    # the OTP-verify path treats a submitted code equal to this value as a match
+    # (a real /otp/send must still have seeded the Valkey record — only the code
+    # comparison is relaxed). FORCE-DISABLED in production by the APP_ENV guard in
+    # service.py regardless of this value. Dev sets "000000"; PROD MUST leave empty.
+    DEV_OTP_BYPASS_CODE: str = ""
 
     # ── Validators ─────────────────────────────────────────────────────────
     @field_validator("CORS_ALLOWED_ORIGINS", mode="before")

@@ -1,0 +1,161 @@
+# k8s/svc-category/deployment.yaml
+# ---------------------------------------------------------------------------
+# svc-category — Sub-Plan F (category extraction, MS-4), INFRA deliverable I2.
+#
+# ONE Deployment from ONE image:
+#   - svc-category-api  1 replica, FastAPI HTTP server on :8001
+#
+# *** NO worker Deployment. *** svc-category has no Celery task (verified — no
+# modules/category/tasks.py; the image ships no worker entrypoint). category is
+# read-heavy + cache-fronted; the smart-picker Gemini call is SYNCHRONOUS
+# in-request (vendored ai_ops), not enqueued. (Contrast svc-image/svc-export which
+# DO carry a Celery worker.)
+#
+# Mirrors the PROVEN MS-C svc-image api Deployment recipe (AI-bearing envFrom set)
+# MINUS the worker block, and the MS-D svc-pricing / MS-E svc-customer api-only
+# shape. svc-category = api-only (pricing/customer) + AI secret set (image).
+#
+# Sizing authority — handoff_msF_infra.md (api replicas, size per infra plan §6.3):
+#   api  req  100m CPU / 256Mi  ·  lim 300m CPU / 512Mi
+#     - CPU req 100m (NOT the 50m of pricing/customer/image-api): category is the
+#       HEAVIEST cache consumer — the lifespan pre-warm builds the full 3,772-leaf
+#       tree + top-100 schemas + 291 brand-pattern enums into Valkey DB 3 at startup,
+#       and the smart-picker ranking pipeline does real CPU work per /suggest call.
+#       100m gives the pre-warm + ranking headroom; lim 300m allows burst on the
+#       cold-start pre-warm + concurrent /suggest.
+#     - mem req 256Mi / lim 512Mi: category holds the category-tree + schema envelopes
+#       in process memory alongside the Valkey cache (the vendored picker keeps the
+#       ranking corpus resident). 512Mi lim matches svc-image-api (no XLSX/Pillow
+#       buffer, but a non-trivial in-process tree + AI SDK footprint). lim = ~2× req
+#       (R-MS-9 OOM-cascade rule).
+#   Numbers are PROVISIONAL — validate against a real pre-warm + /suggest memory
+#   profile at the MS-4 deploy; right-size if the profile is lighter.
+#
+# ── D3 VM-FIT (handoff §3 / SUB_PLAN_0F Acceptance D3 checkpoint) ──────────────
+#   MS-4 is the wave most likely to exceed the e2-standard-2 node: the deploy is
+#   monolith + export + dashboard + image + pricing + customer + category + iam.
+#   svc-category adds 100m CPU request. The COMBINED MS-4 footprint — NOT
+#   category's own 100m — is what could overflow the 2000m-allocatable node. Per the
+#   MASTER_PLAN D3 pre-approval the e2-standard-4 upgrade (~₹2,600/mo) is
+#   plan-approved BUT the SPEND gets a FRESH founder ask at the moment the wave's
+#   deploy doesn't fit. *** STOP and ask the founder before provisioning *** — never
+#   on the plan-level pre-approval alone (constraint §4; master-session standing
+#   rule). These manifests are AUTHORED + VALIDATED here (dev-only, ₹0); the DEPLOY +
+#   any node upgrade is the founder-gated cutover, not this lane.
+#
+# Namespace: dev ONLY (constraint — no staging/prod manifests in Sub-Plan F).
+#
+# Rolling-update strategy mirrors svc-image/svc-pricing + k8s/api.yaml: the dev node
+# is CPU-tight, so kill-before-surge (maxSurge:0 / maxUnavailable:1) avoids the
+# "new pod Pending: Insufficient cpu" deadlock. With 1 replica this means a brief
+# api gap on rollout — acceptable for dev zero-traffic; the live cutover ordering +
+# monolith-fallback is the founder-gated deploy (MASTER_PLAN §3.C).
+#
+# Secrets/config (I7/I8): the api container consumes THREE env sources via envFrom:
+#   1. meesell-config        (shared ConfigMap — GEMINI_MODEL, LANGFUSE_PUBLIC_KEY,
+#                             LANGFUSE_HOST, AI_DAILY_BUDGET_INR — the AI non-secret
+#                             config category shares with the monolith + svc-image)
+#   2. svc-category-config   (trimmed dedicated ConfigMap — APP_ENV, CACHE_VERSION,
+#                             FEATURE_SMART_PICKER_ENABLED; see configmap.yaml)
+#   3. svc-category-secrets  (the trimmed Secret — DATABASE_URL@category, VALKEY_URL,
+#                             JWT_SECRET, GEMINI_API_KEY, LANGFUSE_SECRET_KEY; see
+#                             secrets.yaml.example)
+# Later sources override earlier on key collision — meesell-config provides the
+# AI non-secret block; svc-category-config overrides APP_ENV/CACHE_VERSION to the
+# category-trimmed values; the Secret provides the secret values last.
+#
+# ── CACHE PRE-WARM + READINESS (handoff §2 — heaviest cache consumer) ─────────
+#   The full-tree + top-100-schema + 291-brand-enum pre-warm runs INSIDE the
+#   FastAPI lifespan (app startup), populating Valkey DB 3 (the cache mount in
+#   VALKEY_URL / a dedicated CACHE DB-3 URL — see secrets.yaml.example I7/I8). The
+#   readiness probe below has a LONGER initialDelaySeconds (30s, vs the 15s of
+#   pricing/image-api) so the pod does NOT report Ready until the lifespan pre-warm
+#   has had time to complete — this is HOW "the pre-warm runs before the pod reports
+#   ready" (handoff §2) is enforced at the infra layer: traffic is gated on
+#   readiness, readiness is gated on /health returning 200, and /health returns 200
+#   only after lifespan startup (incl. pre-warm) completes. The app's lifespan owns
+#   the actual pre-warm logic (init logic in the app's lifespan per handoff §2);
+#   infra owns the readiness-gate timing budget.
+#
+# GCS auth (I6): NONE. category touches no GCS — no SA, no
+# GOOGLE_APPLICATION_CREDENTIALS, no GCS_* env. (Like svc-pricing/svc-dashboard;
+# unlike svc-image/svc-export.)
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: svc-category-api
+  namespace: dev
+  labels:
+    app: svc-category
+    component: api
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Kill-before-surge: dev node is CPU-saturated; a surge pod cannot schedule.
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: svc-category
+      component: api
+  template:
+    metadata:
+      labels:
+        app: svc-category
+        component: api
+    spec:
+      containers:
+        - name: svc-category-api
+          image: asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-prod-images/svc-category:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8001
+          envFrom:
+            # Shared AI non-secret config (GEMINI_MODEL, LANGFUSE_PUBLIC_KEY,
+            # LANGFUSE_HOST, AI_DAILY_BUDGET_INR). Same source svc-image uses.
+            - configMapRef:
+                name: meesell-config
+            # Trimmed dedicated ConfigMap (APP_ENV, CACHE_VERSION, smart-picker flag).
+            # Overrides meesell-config's APP_ENV/CACHE_VERSION with category-trimmed
+            # values (later envFrom source wins on key collision).
+            - configMapRef:
+                name: svc-category-config
+            # Trimmed Secret (DATABASE_URL@category, VALKEY_URL, JWT_SECRET,
+            # GEMINI_API_KEY, LANGFUSE_SECRET_KEY).
+            - secretRef:
+                name: svc-category-secrets
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "300m"
+              memory: "512Mi"
+          # Readiness gated on /health (200 only after lifespan pre-warm completes).
+          # Longer initialDelaySeconds (30s) than pricing/image-api (15s) because the
+          # lifespan pre-warms the FULL category tree + top-100 schemas + 291 brand
+          # enums into Valkey DB 3 before serving — the pod must not take traffic
+          # until that cache is warm (handoff §2). periodSeconds 10 + failureThreshold
+          # default(3) keeps a 30s grace if a transient pre-warm hiccup occurs.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+          # Liveness probe is slacker than readiness — it restarts the pod only if
+          # the process truly wedges, not merely if the pre-warm is slow. Longer
+          # initialDelaySeconds (45s) so a slow cold-start pre-warm does NOT trip a
+          # liveness restart loop (the classic pre-warm/liveness footgun).
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 45
+            periodSeconds: 30
+            failureThreshold: 3
+# *** NO svc-category-worker Deployment — category has no Celery task (I1/I2). ***

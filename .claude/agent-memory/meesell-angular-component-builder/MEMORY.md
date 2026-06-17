@@ -4,6 +4,7 @@
 Angular 18 component specialist for MeeSell. Owns 10 page components + shared UI components. Standalone, OnPush, Reactive Forms, Tailwind + Material. Decentralized memory ecosystem.
 
 ## MEMORY.md Index
+- [Session 2026-06-15 — Section-3 Wave 2A.1 — mfe-catalog provideMeeUi bootstrap (GAP-3)](#s3-w2a1-providemeeui)
 - [Session 2026-06-10 — Wave 5 F12 Export + F11 pricing route EXECUTED](#wave5-f12-export)
 - [Session 2026-06-10 — Wave 5 F11 Pricing EXECUTED](#wave5-f11-pricing)
 - [Session 2026-06-10 — Wave 5 F10 Preview EXECUTED](#wave5-f10-preview)
@@ -17,6 +18,43 @@ Angular 18 component specialist for MeeSell. Owns 10 page components + shared UI
 - [Session 2026-06-06 — Smart Picker Dispatch 1](#smart-picker-dispatch-1)
 - [Session 2026-06-06 — Auth Dispatch 1 — LandingComponent](#landing-dispatch-1)
 - [Session 2026-06-06 — Catalog Wave 2a — catalog-form service layer](#catalog-wave-2a)
+
+---
+
+## Session 2026-06-15 — Section-3 Wave 2A.1 — mfe-catalog provideMeeUi bootstrap (GAP-3) {#s3-w2a1-providemeeui}
+
+### Task
+Add `provideMeeUi()` from `@mesell/ui-kit` to `frontend/apps/mfe-catalog/src/main.ts` dev-serve bootstrap.
+This is a one-file, two-line addition to close GAP-3: PrimeNG Aura theme + MessageService +
+ConfirmationService now available in standalone (non-federated) dev mode.
+
+### Route touched
+`/catalogs/*` — mfe-catalog remote (all 5 catalog routes via CATALOG_ROUTES)
+
+### Pattern: provideMeeUi() spread placement in remote bootstrap
+- Import AFTER `@mesell/core` interceptors import: `import { provideMeeUi } from '@mesell/ui-kit'`
+- Place `...provideMeeUi()` immediately after `provideAnimationsAsync()` in providers array
+- MUST spread (`...`) — `provideMeeUi()` returns `(Provider | EnvironmentProviders)[]` not a single provider
+- This mirrors shell's `app.config.ts` which already calls `...provideMeeUi()` at line 41
+- In federated (production) mode: remote inherits shell injector → provideMeeUi in shell covers PrimeNG
+- In dev-serve mode (standalone bootstrap): remote has its OWN injector → must call provideMeeUi locally
+
+### Pattern: R-SP3-1 comment block (lines 4-14) is LOAD-BEARING — never touch
+- The large comment block at the top of main.ts explains Native Federation shared-mapping analysis
+- DO NOT remove, reorder, or trim anything in the comment block or the CATALOG_ROUTES reference
+- The FULL `provideRouter(CATALOG_ROUTES)` call must remain — Sheriff analyzes this for singleton graph
+
+### Pattern: Pre-existing build errors in mfe-catalog — do not conflate with your change
+- `smart-picker.component.ts` has pre-existing uncommitted NG8001/NG8002 errors (`mee-button` import missing)
+- These errors existed BEFORE this task (confirmed: `git status` shows the file already modified)
+- My change to `main.ts` adds zero new TypeScript errors
+- `@mesell/ui-kit` path alias is declared in `frontend/tsconfig.json` → `libs/ui-kit/index.ts`
+- `provideMeeUi` is exported from `libs/ui-kit/index.ts` → re-exports from `./providers`
+
+### Commit
+- Branch: feature/section-3/frontend
+- Commit: 0ef003b — "T-S3-W2A: add provideMeeUi to mfe-catalog dev-serve bootstrap (GAP-3)"
+- Files: `frontend/apps/mfe-catalog/src/main.ts` + `docs/status/STATUS_FRONTEND.md`
 
 ---
 
@@ -2397,3 +2435,132 @@ Route /catalogs/new correctly loads CatalogNewComponent — do NOT rename.
 - Total suite: 256/292 pass (33/38 spec files pass)
 - 5 pre-existing failures: images (16 fail), preview (12), catalog-form (6), pricing (1), loading-skeleton (1)
 - Boundary: CLEAN — zero primeng in features/catalog-new/
+
+---
+
+## Session 2026-06-15 — Section-2 Plan 3-B: SmartPickerComponent browse button fix {#sec2-plan3b}
+
+### Route touched
+`/catalogs/new` — apps/mfe-catalog/src/app/smart-picker/smart-picker.component.ts
+
+### Services consumed
+None changed. CategoryService.browseRedirect() handler (onBrowse) unchanged.
+
+### Task
+Single targeted fix: replace the raw `<button>` "Browse if none match" fallback element with
+`<mee-button variant="ghost" size="sm" [fullWidth]="false" (clicked)="onBrowse()" />`.
+
+### Pattern: Worktree file path vs main project file path
+- This project uses git worktrees: `feature/section-2/frontend` lives at `/tmp/mesell-wt/section-2-frontend/`
+- The main project at `/Users/mugunthansrinivasan/Project/mesell/` is on `develop`
+- ALWAYS edit the worktree file at `/tmp/mesell-wt/section-2-frontend/frontend/apps/...`, NOT the main project file
+- The task prompt says "Work in /tmp/mesell-wt/section-2-frontend" — trust that; find the file under that path first
+- Accidentally editing the develop branch file in the main project creates a partial/broken state in develop
+
+### Pattern: MeeButtonComponent (ui-kit barrel) — confirmed API
+- Selector: `mee-button`
+- Barrel: `@mesell/ui-kit` (libs/ui-kit/index.ts exports `MeeButtonComponent`)
+- Inputs: `label` (required), `variant` ('primary'|'secondary'|'ghost'|'danger', default 'primary'),
+  `size` ('sm'|'md'|'lg', default 'md'), `fullWidth` (boolean, default false),
+  `loading` (boolean), `disabled` (boolean), `icon` (string|undefined)
+- Output: `clicked` (void) — emits when p-button onClick fires
+- Path confirmed: `libs/ui-kit/button/button.component.ts` (NOT `libs/ui-kit/src/lib/button/...`)
+  The task prompt had the wrong path; actual path is one level up from what the coordinator described
+
+### Pattern: ui-kit barrel path in this codebase
+- Barrel: `/Users/mugunthansrinivasan/Project/mesell/frontend/libs/ui-kit/index.ts`
+- NOT `frontend/libs/ui-kit/src/index.ts` (that path does not exist)
+- Component files: `frontend/libs/ui-kit/<component-name>/<component-name>.component.ts`
+
+### Pattern: Adding to existing @mesell/ui-kit destructured import
+- When another mee-* component is already imported from @mesell/ui-kit, add to the existing destructured import
+- DO NOT add a second `import { X } from '@mesell/ui-kit'` line — merge into the existing destructure
+
+### Verification checks
+- `grep -n "<button" <file>` must return ZERO hits — absence of raw button confirmed
+- `grep -n "primeng" <file>` must return ZERO hits — no direct PrimeNG imports
+- Build in worktree fails due to missing node_modules (pnpm install not run in worktree) — not a code defect
+
+### Commit
+- Exact message: `sec2: replace hand-rolled browse button with mee-button ghost (Plan 3-B)`
+- Branch: feature/section-2/frontend @ 2a290b0 — PUSHED to origin
+
+---
+
+## Session 2026-06-16 — UI Design-System Phase 3 — MEE_LAYOUT page primitives {#ui-ds-phase3}
+
+### Task
+Build 6 standalone Angular 18 page-primitive components in `frontend/libs/layout/` as
+specified by `docs/plans/architecture/UI_DS_PHASE3_SPEC.md`. Create MEE_LAYOUT aggregator,
+populate the barrel index, author the README.
+
+### Route touched
+N/A — library primitives, no routing. MFE adoption = Phase 6.
+
+### Services consumed
+None. Layout primitives are purely structural (no services, no HTTP, no providers).
+
+### Files created/edited
+- `libs/layout/layout.types.ts` — MeeLayoutGap, MEE_GAP_TOKEN, MeePageMaxWidth, MeeFormMaxWidth
+- `libs/layout/page/page.component.ts + spec.ts`
+- `libs/layout/section/section.component.ts + spec.ts`
+- `libs/layout/toolbar/toolbar.component.ts + spec.ts`
+- `libs/layout/grid/grid.component.ts + spec.ts`
+- `libs/layout/stack/stack.component.ts + spec.ts`
+- `libs/layout/form-layout/form-layout.component.ts + spec.ts`
+- `libs/layout/aggregators.ts` — MEE_LAYOUT (6 members)
+- `libs/layout/aggregators.spec.ts` — pure-Vitest assertions (9 tests, no TestBed)
+- `libs/layout/index.ts` (EDITED) — barrel populated
+- `libs/layout/README.md` — usage/demo doc
+- `docs/status/STATUS_FRONTEND.md` (UPDATED)
+
+### Styling idiom chosen (Phase 3 record)
+- **Gap spacing**: `[style.gap]` / `[style.margin-top]` / `[style.grid-template-columns]` bound
+  to `var(--mee-space-N)` via the `MEE_GAP_TOKEN` map in `layout.types.ts`.
+  Rationale: keeps token values out of Tailwind's JIT scan scope and ties them to the
+  single source-of-truth in `_tokens.css`. Avoids Tailwind arbitrary-value `[gap:var(...)]`
+  which requires double-bracket escaping and is harder to grep.
+- **Structural layout**: Tailwind utilities (`flex`, `grid`, `flex-col`, `grid-cols-*`,
+  `items-*`, `justify-*`, `max-w-*`, `flex-wrap`) — readable + mobile-first.
+- **No hard-coded px** for any spacing that has a `--mee-space-*` token.
+
+### Pattern: aggregators.spec.ts for libs — pure Vitest, NO TestBed throwaway component
+- `import { describe, it, expect } from 'vitest'` at the top (no globals injection)
+- Angular compiler CANNOT statically analyze `imports: [...MEE_LAYOUT]` when the
+  array comes from a separate module — produces NG1010 "Unable to evaluate statically"
+- The compile-time typing proof is already captured by:
+  `as const satisfies readonly Type<unknown>[]` in aggregators.ts + `npx tsc --noEmit`
+- aggregators.spec.ts: pure runtime membership assertions (count, set-size, toContain)
+- Mirror: `libs/ui-kit/aggregators.spec.ts` which follows the same pattern (no TestBed)
+
+### Pattern: worktree node_modules must be installed
+- Git worktrees do NOT share node_modules with the master tree
+- `pnpm install --frozen-lockfile` must be run in the worktree's frontend/ before any tsc/ng commands
+- Took ~39s on first run (uses pnpm store cache)
+
+### Pattern: browser gap normalization in jsdom
+- `div.style.gap = '0'` → browser reads back as `'0px'` in jsdom
+- `div.style.margin-top = '0'` → browser reads back as `'0px'`
+- Spec assertions for zero gaps must use: `expect(['0', '0px']).toContain(el.style.gap)`
+- Token values (`var(--mee-space-N)`) are NOT normalized — they come back as-is from jsdom
+
+### Pattern: spec "project content via ng-content"
+- Do NOT overwrite `fixture.nativeElement.innerHTML` to inject test content — this
+  destroys the component's rendered DOM (including the inner <main> or wrapper div)
+- Instead, assert that the inner container element exists (it always does if component renders)
+- Or use `TestBed.overrideTemplate()` to provide content-projection test content pre-creation
+
+### Pattern: MeeGridComponent null vs undefined for [style.grid-template-columns]
+- `computed(() => null)` for numeric cols — Angular removes the style binding when null
+- `computed(() => 'repeat(...)')` for auto cols — sets the style
+- jsdom: `el.style.gridTemplateColumns` is `''` (empty string) when null is bound, not `null`
+- Spec: `expect(div.style.gridTemplateColumns).toBeFalsy()` (covers both '' and null)
+
+### Build result (2026-06-16 Phase 3)
+- `npx tsc -p tsconfig.json --noEmit`: ZERO errors
+- `npx ng build frontend --configuration development`: SUCCESS, 137.6s
+- Bundle delta: ZERO — primitives tree-shake out (no consumer yet; Phase 6 wires imports)
+- Initial bundle unchanged: polyfills.js 98.77kB, styles.css 27.99kB, main.js 303B
+- Tests: 1162 passed / 1 failed (pre-existing app.spec.ts NG0201 MessageService)
+- New layout spec files: 7, new tests: 69
+- Contracts: All 5 CLEAN, exit 0 (FE-1/FE-2/FE-3/FE-4/FE-5 all OK)

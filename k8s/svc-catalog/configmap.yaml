@@ -1,0 +1,106 @@
+# k8s/svc-catalog/configmap.yaml
+# ===========================================================================
+# svc-catalog — Sub-Plan H (catalog extraction, MS-5), INFRA deliverable I8 (config half).
+#
+# TRIMMED non-secret ConfigMap for svc-catalog, named `svc-catalog-config` in the
+# `dev` namespace. The svc-catalog-api Deployment consumes it via
+# `envFrom: configMapRef: { name: svc-catalog-config }` (see deployment.yaml),
+# AFTER `meesell-config` so its values override the shared ConfigMap on key collision.
+#
+# Authority: handoff_msH_infra.md §5 (CACHE_VERSION, APP_ENV, the 3 catalog feature
+# flags) + SUB_PLAN_0H + MASTER_PLAN §5.D (per-service trimmed Settings).
+#
+# ── WHY A DEDICATED ConfigMap (not ONLY the shared meesell-config) ──────────
+#   The extracted svc-catalog carries its catalog-trimmed non-secret env in its OWN
+#   ConfigMap, so the override values (APP_ENV, CACHE_VERSION) + the 3 catalog
+#   feature flags are scoped to catalog and not coupled to the monolith's full
+#   config surface. The pod ALSO mounts the shared `meesell-config`
+#   (deployment.yaml envFrom #1) for the AI non-secret block that catalog SHARES
+#   with the monolith + svc-image + svc-category:
+#     GEMINI_MODEL            (the Gemini model id — shared, from meesell-config)
+#     LANGFUSE_PUBLIC_KEY     (LangFuse public key — shared, from meesell-config)
+#     LANGFUSE_HOST           (LangFuse host — shared, from meesell-config)
+#     AI_DAILY_BUDGET_INR     (the ₹500 GLOBAL cap value — shared, from meesell-config;
+#                              MUST be identical across all AI services so the brake
+#                              math agrees — so it stays in the SHARED ConfigMap, not
+#                              re-declared here, to avoid drift)
+#   This ConfigMap carries ONLY the catalog-specific overrides + the 3 catalog
+#   feature flags. (LANGFUSE_SECRET_KEY + GEMINI_API_KEY are SECRETS — in
+#   svc-catalog-secrets, NOT here. NEVER a secret value in a ConfigMap, playbook §0/§10.)
+#
+# ── CACHE_VERSION ───────────────────────────────────────────────────────────
+#   catalog caches its OWN small surfaces in Valkey DB 3 with the `catalog:` key
+#   prefix (handoff §2 — "catalog mounts Valkey DB 3 only for its own small cache
+#   keys"). catalog is NOT a heavy cache consumer (its hot path fetch_schema is
+#   served by CATEGORY-svc's pre-warm cache, NOT catalog's own). CACHE_VERSION is
+#   the cache-key version segment used by the vendored core/cache.py so a deploy can
+#   bust the cache by bumping the version. The value MUST match the live monolith
+#   CACHE_VERSION during the strangler window (shared Valkey instance,
+#   `catalog:`-prefixed keys) to avoid double-population. The live monolith value at
+#   k8s/config.yaml is "v1" — mirror it here. Confirm at deploy time.
+#   *** CARVE-OUT REMINDER (handoff §2, the LOAD-BEARING rule): the GLOBAL budget
+#   brake keys (ai:cost:*, ai:budget:*) in Valkey DB 0 are NOT `catalog:`-prefixed
+#   and are NOT versioned by CACHE_VERSION — they are global so the ₹500 cap stays a
+#   single counter across category + catalog + image. CACHE_VERSION applies ONLY to
+#   catalog's OWN DB-3 cache keys. ***
+#
+# ── THE 3 CATALOG FEATURE FLAGS (handoff §5 / SUB_PLAN_0H §3 / spec_msH_backend §148-149) ──
+#   FEATURE_CATALOG_FORM_ENABLED   — the catalog-form MOUNT GUARD (main.py:126). The
+#     extracted svc-catalog app mounts its 6 catalog routes behind this flag (R9 —
+#     the guard is PRESERVED in the app, not dropped). dev=true. *** This flag also
+#     governs whether catalog serves at all in an env — the app 404s the catalog
+#     routes when off; the Traefik route is gated equivalently by the app-internal
+#     guard (handoff §3 — backend handles the app-layer guard). ***
+#   FEATURE_AI_AUTOFILL_ENABLED    — gates POST /products/{id}/autofill (the AI seam;
+#     a 404 guard when off — spec_msH_backend.md:148). dev=true.
+#   FEATURE_LIVE_PREVIEW_ENABLED   — gates GET /products/{id}/preview (404 guard when
+#     off — spec_msH_backend.md:149). *** SHIPS DARK in dev=false *** — this is the
+#     ONLY default-False V1 flag (founder ruling 2026-06-12: live-preview ships dark
+#     until the founder lights the gated rollout; mirrors the live monolith
+#     k8s/config.yaml FEATURE_LIVE_PREVIEW_ENABLED="false" set by infra-flags-2).
+#     Do NOT flip true here until the founder lights it.
+#   Mirror the live monolith k8s/config.yaml values during the strangler window so
+#   the extracted pod reads the SAME flags the monolith does. Confirm at deploy time.
+#
+# ── NO GCS / NO CELERY / NO CORS env ────────────────────────────────────────
+#   catalog touches no GCS (no GCS_* / GOOGLE_APPLICATION_CREDENTIALS — verified
+#   against handoff §5 + SUB_PLAN_0H §596 + spec_msH_backend: ZERO GCS refs). It has
+#   no Celery (no CELERY_* — zero background tasks). CORS is owned by the FastAPI
+#   app's vendored CORSMiddleware (MASTER_PLAN §5.A); Traefik does NOT inject CORS
+#   (R-SP7-1 ADD-ONLY). If the landed trimmed Settings reads CORS_ALLOWED_ORIGINS at
+#   env-level, add it here scoped to https://dev.mesell.xyz (the dev frontend origin
+#   — the live Angular catalog-form wizard POSTs/PATCHes products + autofill +
+#   preview, so CORS MUST allow the dev frontend) — coordinate via the merge gate;
+#   left out until the landed Settings shape confirms the need.
+#
+# Namespace: dev ONLY (Sub-Plan H constraint).
+# NEVER put a secret value in this ConfigMap (playbook §0 / k8s/config.yaml header).
+# ===========================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: svc-catalog-config
+  namespace: dev
+  labels:
+    app: svc-catalog
+data:
+  # App env — Pydantic Settings Literal {development|staging|production}.
+  # dev namespace ⇒ "development" (MEMORY: NEVER "dev"; the Literal type rejects it.
+  # Founder ruling 2026-06-11 F1). Overrides meesell-config's APP_ENV (same value).
+  APP_ENV: "development"
+
+  # Cache-key version segment (vendored core/cache.py). Bump to bust catalog's small
+  # Valkey DB 3 cache (`catalog:`-prefixed). Match the live monolith CACHE_VERSION at
+  # the strangler window ("v1" = monolith k8s/config.yaml; confirm at deploy time).
+  # Does NOT version the global ai:* budget keys.
+  CACHE_VERSION: "v1"
+
+  # --- The 3 catalog feature flags (handoff §5; mirror live monolith dev values) ---
+  # Mount guard for the 6 catalog routes (main.py:126). dev=true. R9: PRESERVED.
+  FEATURE_CATALOG_FORM_ENABLED: "true"
+  # Gates POST /products/{id}/autofill (the AI seam). dev=true.
+  FEATURE_AI_AUTOFILL_ENABLED: "true"
+  # Gates GET /products/{id}/preview. *** SHIPS DARK dev=false *** — the ONLY
+  # default-False V1 flag (founder ruling 2026-06-12). Do NOT flip true until the
+  # founder lights the gated rollout. Mirrors live monolith config.yaml.
+  FEATURE_LIVE_PREVIEW_ENABLED: "false"

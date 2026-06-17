@@ -24,8 +24,10 @@ if ! command -v gcloud >/dev/null 2>&1; then
   apt-get install -y --no-install-recommends google-cloud-cli
 fi
 
-# --- Hand off the deployment params so setup-vm.sh / secrets-from-gcp.sh
-#     can find them without re-deriving anything.
+# --- Hand off the deployment params so setup-vm.sh can find them without
+#     re-deriving anything. (The legacy secrets-from-gcp.sh materialiser was
+#     removed 2026-06-12 — secrets are now populated directly into the k8s
+#     Secret `backend-secrets` via `gcloud secrets versions add`.)
 cat > /etc/meesell.env <<EOF
 PROJECT_ID="${project_id}"
 REGION="${region}"
@@ -38,4 +40,4 @@ EOF
 chmod 0644 /etc/meesell.env
 
 echo "==> MeeSell bootstrap finished $(date -u +%FT%TZ)"
-echo "Next: SSH in, clone the repo, then run scripts/secrets-from-gcp.sh && sudo scripts/setup-vm.sh"
+echo "Next: SSH in, clone the repo, then run sudo scripts/setup-vm.sh (populate backend-secrets via 'gcloud secrets versions add' first)"

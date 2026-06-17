@@ -13,7 +13,7 @@
 // ── Backend §9.E interfaces (LOCKED — field-for-field match) ─────────────────
 
 /**
- * A single category suggestion returned by GET /api/v1/categories/suggest.
+ * A single category suggestion returned by POST /api/v1/categories/suggest.
  * Matches backend CategorySuggestion schema exactly (§9.E).
  * NOTE: commission_pct is NOT in this contract — omitted per lead ruling 2026-06-11.
  */
@@ -38,7 +38,7 @@ export interface CategorySuggestion {
 }
 
 /**
- * Full response from GET /api/v1/categories/suggest.
+ * Full response from POST /api/v1/categories/suggest.
  * Matches backend SuggestResponse schema exactly (§9.E).
  * suggestions.length is always 0..5.
  * fallback_offered=true means the AI budget cap was hit or BudgetExceededError occurred.
@@ -73,7 +73,7 @@ export function validateDescription(
   if (!touched) return undefined;
   if (!value || value.trim().length === 0) return 'Please describe your product.';
   if (value.trim().length < 10) return 'Please enter at least 10 characters.';
-  if (value.trim().length > 500) return 'Description must be 500 characters or fewer.';
+  if (value.trim().length > 5000) return 'Description must be 5000 characters or fewer.';
   return undefined;
 }
 
@@ -122,4 +122,28 @@ export function buildEditRoute(catalogId: string): [string, string, string] {
  */
 export function topN(suggestions: CategorySuggestion[], n = 3): CategorySuggestion[] {
   return suggestions.slice(0, n);
+}
+
+// ── Browse interfaces (added Plan 1-A 2026-06-15) ─────────────────────────────
+
+/**
+ * A single row returned by GET /api/v1/categories/browse.
+ * Field-for-field match with backend BrowseResultRow schema.
+ */
+export interface BrowseResultRow {
+  category_id: string;
+  super_id: string;
+  super_name: string;
+  path: string;
+  leaf_name: string;
+  similarity: number;
+}
+
+/**
+ * Full response from GET /api/v1/categories/browse.
+ * results.length is bounded by the requested limit parameter.
+ */
+export interface BrowseResponse {
+  results: BrowseResultRow[];
+  total: number;
 }

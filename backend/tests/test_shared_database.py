@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import NullPool
 
@@ -78,18 +78,46 @@ def test_session_factory_expire_on_commit_false() -> None:
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_get_db_yields_async_session() -> None:
-    """get_db yields an AsyncSession via FastAPI-style dependency."""
-    gen = get_db()
-    session = await gen.__anext__()
+    """get_db yields an AsyncSession via FastAPI-style dependency.
+
+    Gate-4 cross-loop fix: the original implementation called get_db()
+    directly against the app-global ``AsyncSessionLocal`` — a module-import-
+    time singleton whose asyncpg pool binds to the session loop.  Running
+    this test in a function-scoped loop (pytest-asyncio 0.24 default for
+    @pytest.mark.asyncio tests) then causes ``got Future attached to a
+    different loop``.
+
+    Fix: patch ``app.shared.database.AsyncSessionLocal`` to a per-test
+    NullPool session-maker for the duration of this test so get_db() opens
+    a fresh connection in the *current* (function-scoped) loop.  The test
+    still exercises the full get_db() lifecycle (yield, commit, close).
+    The two sibling tests (commit_on_success, rolls_back_on_exception) are
+    unaffected — they already patch AsyncSessionLocal with a mock.
+    """
+    from unittest.mock import patch as _patch
+
+    from sqlalchemy.ext.asyncio import async_sessionmaker as _async_sessionmaker
+
+    from tests.conftest import _DEV_DATABASE_URL
+
+    _test_engine = create_async_engine(_DEV_DATABASE_URL, poolclass=NullPool, echo=False)
+    _TestSession = _async_sessionmaker(_test_engine, expire_on_commit=False)
+
     try:
-        assert isinstance(session, AsyncSession)
-        # Verify it can actually reach Postgres
-        result = await session.execute(text("SELECT 1 AS one"))
-        assert result.scalar() == 1
+        with _patch("app.shared.database.AsyncSessionLocal", _TestSession):
+            gen = get_db()
+            session = await gen.__anext__()
+            try:
+                assert isinstance(session, AsyncSession)
+                # Verify it can actually reach Postgres.
+                result = await session.execute(text("SELECT 1 AS one"))
+                assert result.scalar() == 1
+            finally:
+                # Drive the generator to completion so commit + close run.
+                with pytest.raises(StopAsyncIteration):
+                    await gen.__anext__()
     finally:
-        # Drive the generator to completion so commit + close run
-        with pytest.raises(StopAsyncIteration):
-            await gen.__anext__()
+        await _test_engine.dispose()
 
 
 @pytest.mark.asyncio

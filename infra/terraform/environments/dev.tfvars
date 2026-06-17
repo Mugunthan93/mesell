@@ -37,6 +37,7 @@ namespaces_to_create = ["dev", "staging"]
 
 # Supporting infrastructure defaults (non-blocking per plan §17 Q9, Q10)
 gcs_asset_bucket_name     = "meesell-prod-assets"
+gcs_images_bucket_name    = "meesell-images" # image-precheck Feature 5 product-image bucket (1-yr lifecycle)
 artifact_registry_repo_id = "meesell-prod-images"
 ci_service_account_id     = "meesell-prod-ci"
 gitlab_repository_path    = "techades/mesell"

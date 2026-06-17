@@ -1,0 +1,77 @@
+# k8s/svc-export/ingressroute.yaml
+# ---------------------------------------------------------------------------
+# svc-export — Sub-Plan A (export extraction), INFRA deliverable I4.
+#
+# Traefik IngressRoute (D4 path-prefix gateway, infra plan §2.4) routing the TWO
+# PUBLIC export routes on api.mesell.xyz to svc-export:8001.
+#
+# Exact routes — cited from backend/app/modules/export/router.py (the SSOT):
+#   1. POST /api/v1/products/{product_id}/export-xlsx   (router.py:90-91; param
+#      name is `product_id`)  → svc-export:8001
+#   2. GET  /api/v1/exports/{export_id}                 (router.py:143-144)
+#      → svc-export:8001  (matched via the /api/v1/exports prefix)
+#
+# ── CRITICAL ROUTING DISCIPLINE (MASTER_PLAN §2.C) ─────────────────────────────
+#   `/api/v1/products/*` as a WHOLE belongs to catalog-svc (and the image / pricing
+#   sub-routes belong to their services). svc-export owns ONLY the single
+#   `…/export-xlsx` sub-route under /products. We therefore match it with a tight
+#   PathRegexp anchored to `/export-xlsx`, NOT a `/api/v1/products` PathPrefix —
+#   a prefix would hijack every catalog route. The regex `[^/]+` captures exactly
+#   one path segment (the product_id UUID) and `$` anchors the suffix.
+#
+#   `/api/v1/exports/*` is svc-export-exclusive (no other service claims it), so a
+#   PathPrefix is safe and correct there.
+#
+# ── /internal/* IS NOT ROUTED HERE (MASTER_PLAN §2.C / handoff §1 I4) ──────────
+#   svc-export's /internal/* endpoints are reachable ONLY via K3s cluster DNS
+#   (svc-export.dev.svc.cluster.local:8001). The DELIBERATE ABSENCE of any
+#   IngressRoute rule for /internal/* is the V1.5 isolation primitive (NetworkPolicy
+#   is a V2 concern). Do NOT add an /internal/* match below.
+#
+# ── TLS + CORS (mirrors k8s/ingress.yaml discipline) ───────────────────────────
+#   - TLS: the api.mesell.xyz LE certificate (cert-manager, Ready since Phase B) is
+#     reused — `tls: secretName: api-mesell-xyz-tls` (the secret cert-manager already
+#     populates for the host). entryPoint `websecure`.
+#   - CORS / Set-Cookie: NO `headers` Middleware is attached here. CORS is owned by
+#     the FastAPI app (CORSMiddleware, vendored per service per MASTER_PLAN §5.A);
+#     Traefik does routing + TLS ONLY and MUST NOT strip/rewrite CORS or Set-Cookie
+#     (same R-SP7-1 P0 ADD-ONLY rule as the api Ingress).
+#
+# Namespace: dev ONLY (Sub-Plan A constraint §4).
+#
+# NOTE on coexistence with the live host-based `api` Ingress: the live api.mesell.xyz
+# Ingress (Terraform-managed, k8s/ingress.yaml doc) currently routes ALL of
+# api.mesell.xyz → api:80 (the monolith). During the strangler window this
+# IngressRoute is HIGHER-precedence for its two specific paths (a Path/PathRegexp
+# match outscores a host-only Ingress on path specificity in Traefik). Cutover
+# ordering + monolith-fallback for these two paths is handled at integration/deploy
+# time per MASTER_PLAN §3.C rollback contract (point the rule back at api:80 on
+# rollback). For Sub-Plan A (dev, zero-traffic) this rule simply peels the two
+# export paths off the monolith onto svc-export.
+# ---------------------------------------------------------------------------
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: svc-export
+  namespace: dev
+  labels:
+    app: svc-export
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    # Route 1 — POST /api/v1/products/{product_id}/export-xlsx (router.py:91)
+    - kind: Rule
+      match: Host(`api.mesell.xyz`) && PathRegexp(`^/api/v1/products/[^/]+/export-xlsx$`)
+      services:
+        - name: svc-export
+          port: 8001
+    # Route 2 — GET /api/v1/exports/{export_id} (router.py:144); /api/v1/exports/* prefix
+    - kind: Rule
+      match: Host(`api.mesell.xyz`) && PathPrefix(`/api/v1/exports`)
+      services:
+        - name: svc-export
+          port: 8001
+  tls:
+    # Reuse the existing api.mesell.xyz LE cert (cert-manager, Ready since Phase B).
+    secretName: api-mesell-xyz-tls

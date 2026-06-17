@@ -80,13 +80,40 @@ logger = logging.getLogger(__name__)
 # ── Decorators / tags ──────────────────────────────────────────────────────
 _AUDIT_EVENT_ATTR = "__audit_event__"
 
-# Locked autosave path regex.  Matches both the dev convention
-# ``/api/v1/products/{id}/draft`` and the FE-prefer alternative
-# ``/api/v1/products/{id}/autosave``.  Both forms route through the
-# autosave coalescing window.
+# Locked autosave path regex.  Matches the explicit-suffix conventions
+# ``/api/v1/products/{id}/draft`` and ``/api/v1/products/{id}/autosave``.
+# Both forms route through the autosave coalescing window for ANY write
+# method.
 _AUTOSAVE_PATH = re.compile(
     r"^/api/v1/products/[0-9a-fA-F-]+/(draft|autosave)/?$"
 )
+
+# The catalog-form plan's REAL autosave surface is bare
+# ``PATCH /api/v1/products/{id}`` (FEATURE_PLAN.md §F3 + audit §4.G).  The
+# explicit-suffix ``_AUTOSAVE_PATH`` above never matched it, so coalescing
+# never fired.  This pattern matches the bare product path; it is gated to
+# the PATCH method ONLY in ``_is_autosave`` below so PUT/POST/DELETE on the
+# same path (e.g. delete-product) are NOT coalesced away.
+_BARE_PRODUCT_PATH = re.compile(
+    r"^/api/v1/products/[0-9a-fA-F-]+/?$"
+)
+
+
+def _is_autosave(method: str, path: str) -> bool:
+    """Return True if (method, path) is an autosave that should coalesce.
+
+    Two surfaces qualify:
+      1. Any write method on ``/products/{id}/draft`` or
+         ``/products/{id}/autosave`` (explicit-suffix convention).
+      2. ``PATCH /products/{id}`` (the bare-path autosave the catalog-form
+         plan actually uses).  Restricted to PATCH so a PUT/POST/DELETE on
+         the same bare path is audited normally, never coalesced.
+    """
+    if _AUTOSAVE_PATH.match(path):
+        return True
+    if method.upper() == "PATCH" and _BARE_PRODUCT_PATH.match(path):
+        return True
+    return False
 
 # ── PII scrubbing constants ────────────────────────────────────────────────
 _PII_HASH_KEYS = ("phone",)
@@ -237,7 +264,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
             return
 
         path = request.url.path
-        is_autosave = bool(_AUTOSAVE_PATH.match(path))
+        is_autosave = _is_autosave(request.method, path)
 
         # Gate 3: coalesce autosave hits within the 5-minute window.
         if is_autosave:

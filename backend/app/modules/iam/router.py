@@ -27,6 +27,8 @@ Cookie format (locked per §4.B FE-D5 amendment)
 -----------------------------------------------
 ``Set-Cookie: refresh_token=<value>; Domain=.mesell.xyz; Path=/api/v1/auth;
 HttpOnly; Secure; SameSite=Strict; Max-Age=<TTL>``
+(production values; dev omits Domain and Secure — see settings.COOKIE_DOMAIN /
+COOKIE_SECURE)
 (or Max-Age=0 with empty value to clear on failure/logout).
 """
 
@@ -51,6 +53,7 @@ from app.modules.iam.schemas import (
     VerifyOtpResponse,
     WebhookCaptureResponse,
 )
+from app.shared.config import settings
 from app.shared.database import get_db
 from app.shared.valkey import get_valkey_otp
 
@@ -62,32 +65,41 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 _REFRESH_COOKIE_NAME = "refresh_token"
 _REFRESH_COOKIE_PATH = "/api/v1/auth"
-_REFRESH_COOKIE_DOMAIN = ".mesell.xyz"
 
 
 def _set_refresh_cookie(response: Response, token: str, max_age: int) -> None:
-    """Attach the locked-format refresh cookie to ``response``."""
+    """Attach the locked-format refresh cookie to ``response``.
+
+    Domain + Secure are environment-dependent (``settings.COOKIE_DOMAIN`` /
+    ``settings.COOKIE_SECURE``): prod = ``.mesell.xyz`` + Secure; local-http dev
+    omits both.  HttpOnly + SameSite=Strict are FE-D5 security-critical and
+    always on, never configurable.
+    """
     response.set_cookie(
         key=_REFRESH_COOKIE_NAME,
         value=token,
         max_age=max_age,
         path=_REFRESH_COOKIE_PATH,
-        domain=_REFRESH_COOKIE_DOMAIN,
-        secure=True,
+        domain=settings.COOKIE_DOMAIN or None,
+        secure=settings.COOKIE_SECURE,
         httponly=True,
         samesite="strict",
     )
 
 
 def _clear_refresh_cookie(response: Response) -> None:
-    """Idempotent clear-cookie header per §7.B.3 / §7.B.4."""
+    """Idempotent clear-cookie header per §7.B.3 / §7.B.4.
+
+    Domain MUST match the set-cookie's Domain or the browser will not clear it,
+    so this mirrors ``_set_refresh_cookie``'s env-dependent Domain/Secure.
+    """
     response.set_cookie(
         key=_REFRESH_COOKIE_NAME,
         value="",
         max_age=0,
         path=_REFRESH_COOKIE_PATH,
-        domain=_REFRESH_COOKIE_DOMAIN,
-        secure=True,
+        domain=settings.COOKIE_DOMAIN or None,
+        secure=settings.COOKIE_SECURE,
         httponly=True,
         samesite="strict",
     )
@@ -230,14 +242,30 @@ async def me(
 
     No audit event per documented absence — the JWT itself proves the user
     is active; logging every ``/me`` would flood the table.
+
+    ``onboarding_complete`` is a CUSTOMER-domain fact, sourced cleanly through
+    the customer module's public service surface
+    (:func:`customer.service.get_onboarding_completeness` — the same seam
+    ``dashboard.service`` uses).  No customer ORM model is imported into iam.
+    For a brand-new seller with no profile row yet, that surface returns
+    ``onboarding_complete=False`` without raising (per customer §8.F), so the
+    pre-onboarding case is handled by the callee, not here.
     """
+    # Function-level import: keeps the customer dependency off iam's
+    # module-load path (no circular import — customer does not import iam).
+    from app.modules.customer import service as customer_service
+
     profile = await iam_service.get_profile(user.user_id, db)
+    completeness = await customer_service.get_onboarding_completeness(
+        user.user_id, db
+    )
     return MeResponse(
         user_id=profile.user_id,
         phone=profile.phone,
         plan="free",  # V1 narrow per §4.B CurrentUser
         created_at=profile.created_at,
         last_login_at=profile.last_login_at,
+        onboarding_complete=completeness.onboarding_complete,
     )
 
 

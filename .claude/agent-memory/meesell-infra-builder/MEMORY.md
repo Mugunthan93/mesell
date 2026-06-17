@@ -775,3 +775,267 @@ So when an apply changes Deployment shape, we wait for the kill-before-surge rol
 **V1.5 DESIGN SMELL (record only — NO code change today, out of scope):** the migration exec runs `alembic upgrade head` in the CURRENT (OLD-image) api pod, BEFORE `set image`. So brand-new migration FILES that ship in the NEW image are NOT present in the pod at migrate time — the migrate-before-roll ordering means we migrate with the OLD code's alembic versions/ dir. For V1 this is benign (migrations in a release are usually already on the running image from the prior deploy, or the head is unchanged), but it is structurally wrong: a release that ADDS a migration won't have that revision available to run. **Proper fix someday: a short-lived k8s Job that runs `alembic upgrade head` using the NEW image (the one about to be rolled), gated before the `set image` step.** That decouples "which code's migrations" from "which pod is currently serving." Out of scope for this CI race fix.
 
 **Mechanics:** verified bug still live on fresh `origin/develop` BEFORE editing (deploy block L789-798: applies → exec, no settle between; step-5 rollout status only after set image) — not a stale-premise no-op this time. Worktree `/tmp/mesell-wt/deploy-settle` off `origin/develop` (HEAD bd5a780); Edit worked directly (no bg-isolation guard). `python3 yaml.safe_load` validated the edited ci.yml parses. Diff = exactly +6 lines (3 comment + 2 rollout-status + 1 blank). PR to develop via `GH_TOKEN="$(gh auth token)" gh pr create`, base=develop — NOT merged (reviewer/founder gate). NOTE: the worktree's committed MEMORY.md was 756 lines (origin/develop tip); the master-tree copy had uncommitted sibling appends (942 lines) — appended to the worktree copy so this learning ships in THIS PR without clobbering the sibling's unmerged local edits. Cost ₹0/month.
+
+---
+
+## CI/CD ACTIVE — run-9 fully green — close-out — 2026-06-12
+
+**THE CI/CD PIPELINE IS LIVE.** Run 9 (`27366269839`, merge SHA `62713935`, PR #132) is the **FIRST FULLY GREEN end-to-end pipeline** in project history: 5 backend gates + 8 frontend legs + Cloud Build + IAP deploy (token refresh → k3s restart → readyz → applies → settle wait → alembic migrate → image roll → rollout status → in-pipeline health check) + external `https://api.mesell.xyz/health` → 200. After this, "what's the CI/CD state" = ACTIVE; the long red-march is over.
+
+**The 6-rung deploy-bug ladder (memorize the SHAPE — each rung is a distinct failure class, all now codified):**
+1. **act-as on the compute SA** (PR #113) — `meesell-github-ci` needed `roles/iam.serviceAccountUser` ON `888244156264-compute@…` (Cloud Build's runner SA). `cloudbuild.builds.editor` lets you SUBMIT; act-as lets the build RUN as the compute SA.
+2. **compute.viewer** (PR #116) — instance-scoped `instanceAdmin.v1` ≠ project-level `compute.projects.get`/`zones.get`. `gcloud compute ssh --tunnel-through-iap` resolves the target via project/zone reads BEFORE the tunnel → needs project-wide read (`compute.viewer`).
+3. **AR pull auth** (PR #119) — K3s-outside-GKE pulls via `registries.yaml` metadata-server token (45-min cron + `systemctl restart k3s` to reload containerd; NO hot-reload). SA-key alt (#121) DEAD by org policy `iam.disableServiceAccountKeyCreation`; its puller SA + repo IAM member TF-destroyed.
+4. **shallow-clone FETCH_HEAD** (PR #123, sibling) — VM clone has no `origin/main` ref → `git fetch origin main` + reset to FETCH_HEAD, never `git reset --hard origin/main`.
+5. **unescaped `$(seq)`** (PR #127) — every `$` in `gcloud compute ssh --command="…"` must be `\$`-escaped unless runner-side (`${{ }}`) is intended; command substitutions are the worst offenders. Substitution-free `until`+counter loop removes the class.
+6. **exec-on-terminating-pod settle wait** (PR #131) — `kubectl apply` is NOT inert ("X configured" = a rollout fired); on kill-before-surge the old pod terminates FIRST, so a following `kubectl exec deploy/<name>` races a dying pod → SIGKILL exit 137. Insert `rollout status` between apply and exec.
+
+**Branch protection — APPLIED 2026-06-12, FOUNDER-RULED develop ONLY.** 13 required contexts (5 gates + frontend `detect` + 7 frontend units) + strict (up-to-date) + 1 review. **`main` deliberately has NO required checks** (founder ruling) — do NOT add them; it is intentional. NEVER add Build/Deploy (main-/push-only → would deadlock PRs) or Nightly/ai_eval (schedule-only) to any required-context set. When re-confirming exact context strings, list them from a real green run — the frontend matrix is 7 units (auth/catalog/dashboard/export/onboarding/pricing + shell) + detect, NOT the old 3-context list.
+
+**Still pending (FOUNDER, non-blocking):** `GEMINI_API_KEY_CI` GitHub secret (quota-capped key from aistudio.google.com/apikey; consumed ONLY by nightly `ai_eval`). Does not affect the activated push/PR pipeline.
+
+**V1.5 follow-ups (already in memory; reconfirmed):** migration-runs-in-OLD-image smell (proper fix = short-lived Job running `alembic upgrade head` on the NEW image, gated before `set image`); BE-SEED-1; legacy `github-pool`/`meesell-ci` WIF+SA orphan cleanup.
+
+**Process lesson (durable):** NEVER chain a branch-delete unconditionally after a PR merge — gate on `merged == true`. The PR #124 incident (a delete fired on a non-merged path) was recovered via #126. Any "merge then delete branch" automation must read the merge result first.
+
+**Close-out mechanics:** docs + 2 memory files only (board + STATUS_INFRA + this MEMORY + ONE authorized scribe-entry to the director's `project_meesell_ci_activation.md` — explicit master-session exception to memory-ownership rule 4). Branch `docs/ci-activation-close-out` off origin/develop. NOTE: develop now carries 13 required checks — the close-out PR itself must pass the gates before it can merge (expected; reported, not merged by me). Cost ₹0/month; zero cluster/TF/secret/ci.yml mutations.
+
+---
+
+## Dead `meesell-`-prefixed secret scheme — cleanup F1/F2 — 2026-06-12
+
+**The prefixed-SM landmine, documented once and for all.** Early TF (the `terraform/` tree, NOT the live `infra/terraform/`) created Secret Manager secrets with a `meesell-` prefix (`meesell-gemini-api-key`, `meesell-jwt-secret`, etc.) and a legacy `meesell` k8s namespace. **That scheme was never the live path.** The applied `app_secrets` module (in `infra/terraform/`) uses `secret_id = each.key` → UN-prefixed IDs (`gemini-api-key`, `jwt-secret`, ...), surfaced into the k8s Secret `backend-secrets` in the `dev` ns via manual `gcloud secrets versions add`. A 2026-06-12 backend read-only audit confirmed ALL-CLEAR on the live path: cluster holds the VALID Gemini key (hash `ef9bbd1ca21f`); `meesell-gemini-api-key` is dead (HTTP 400) and unreferenced.
+
+**This chore (single-agent fast mode, founder-approved):**
+- F1 — `git rm scripts/secrets-from-gcp.sh` (it prepended `NAME_PREFIX=meesell` to all 7 IDs + wrote the legacy `meesell-secrets`/`meesell` ns Secret — pure dead path).
+- F1 refs (4 files): `terraform/README.md`, `terraform/templates/startup.sh` (2 hits), `terraform/outputs.tf`, `.nexus/results/ci-cd-terraform-gap-analysis.md` — pointed each at the live `backend-secrets` + `gcloud secrets versions add` path; the .nexus one got a SUPERSEDED annotation (historical artifact, body kept).
+- F2 — annotated `docs/INFRASTRUCTURE_TERRAFORM_AUDIT.md` (~L185 x7-secret-IDs list + ~L210 `secret_ids` output) with SUPERSEDED notes; did NOT rewrite the historical audit body.
+- **NO SM mutation in this chore** (explicit constraint). Dead `meesell-*` SM duplicates still exist → logged as a follow-up backlog row on `feature_board_infra.md` + a STATUS_INFRA recommendation: next session `gcloud secrets list --filter="name:meesell-"` → confirm unreferenced → `gcloud secrets delete` (founder approval in-prompt, destructive-op rule).
+
+**Larger landmine spotted (out of scope, flagged):** the ENTIRE `terraform/` tree (root-level, last touched ~Jun 5) is the OLD/superseded TF root — `meesell-` prefix, `meesell` ns, Ubuntu 24.04, AR repo `meesell-images` with `frontend` (not `worker`), `vm_name = meesell-vm`. The live root is `infra/terraform/`. A future cleanup should retire `terraform/` wholesale; this chore only touched its script-references.
+
+**Worktree-isolation gotcha (operational, important):** this agent runs in an isolated worktree at `.claude/worktrees/agent-<id>/`. Bash `cd /Users/.../mesell` lands in the SHARED checkout, not the worktree — my first `git rm` hit the shared checkout and had to be `git -C <shared> checkout --`'d back. **Rule: do NOT `cd` to the shared mesell root from this agent.** Stay in the worktree (the env cwd). Edit/Write/Read MUST use the full worktree-prefixed absolute path (`.../worktrees/agent-<id>/...`); the harness rejects shared-checkout paths for Edit and treats worktree paths as distinct file handles (must Read the worktree copy before Edit even if I read the shared copy earlier). `git rm` / `git status` without `-C` operate on the worktree correctly.
+
+---
+
+## GEMINI_API_KEY_CI SET + founder-verified — last CI-activation item DONE; flag dead meesell-gemini-api-key — 2026-06-12
+
+**Docs chore (CLAUDE.md Rule 7 single-agent fast mode). Branch `docs/gemini-ci-key-done` off origin/develop, worktree. Files: STATUS_INFRA + feature_board_infra + this MEMORY. ₹0, no terraform, no cluster, no secret values printed.**
+
+**GEMINI_API_KEY_CI is now SET (the last pending CI-activation tail item).** GitHub Actions secret, updated_at `2026-06-12T01:55:12Z` (verified via `gh api repos/Mugunthan93/mesell/actions/secrets --jq '.secrets[]|{name,updated_at}'` — names only, value never readable via that API). Sourced from GCP SM `gemini-api-key` (the proven-valid key, HTTP 200 against Gemini API; founder visually verified in AI Studio). Consumer = nightly cron `0 1 * * *` `pytest -m ai_eval` ONLY — gates+build+deploy never used it, so it was never blocking. All prior close-outs that listed it "founder-pending, nightly-only, non-blocking" are now superseded → DONE.
+
+**CAVEAT (durable):** `GEMINI_API_KEY_CI` is the SAME key as prod/local (both source SM `gemini-api-key`). There is NO separate quota cap. The original DEVOPS_ARCHITECTURE.md plan called for a distinct low-quota CI-only key — that capped-key swap is now OPTIONAL future hardening, NOT required for V1. If nightly ai_eval ever burns prod quota, this is the lever to pull.
+
+**NEW FLAG — SM `meesell-gemini-api-key` is DEAD (HTTP 400, placeholder/revoked).** This is a DIFFERENT container from the valid `gemini-api-key` (note the `meesell-` prefix). All live workloads + CI + the `backend-secrets` K8s secret + dev/staging templates source the VALID `gemini-api-key` (verified in prior sessions). But the dead `meesell-gemini-api-key` container EXISTS in SM and is a footgun: if any future k8s secret/manifest/backend config sources THAT name, runtime Gemini calls fail with 400. Logged an inter-lane ask for backend/AI to one-time grep secret refs and confirm nothing reads `meesell-gemini-api-key`. (I did NOT delete the dead container — deletes need explicit founder approval per hard constraints; just flagged it.)
+
+**Divergence noted (NOT acted on):** origin/develop's MEMORY.md was 801 lines; my master-tree local HEAD was ~1050 (branch-protection-infra-session-1 + other recent sessions are committed locally but NOT pushed to origin/develop). I appended ONLY to the END of the origin/develop copy (purely additive, won't clobber). The unpushed local-only memory sessions are a separate reconciliation for whoever pushes the master tree — out of scope for this chore. RULE reaffirmed: edit status/memory off origin/develop, and keep appends strictly additive at EOF so divergent histories merge cleanly.
+
+---
+
+## Final close-out chore — rebase #148/#146 onto fresh develop + log Gate-4 RED — 2026-06-12 (founder-ruled)
+
+**Two conflicted docs-only PRs rebased onto fresh origin/develop (post PR #158), KEEP-BOTH-SIDES; new Gate-4 RED logged as a formal inter-lead → backend.** Founder pre-approved admin-merging both after the rebase (master session executes the merges). Work done in dedicated worktrees `/private/tmp/mesell-wt/rebase-148` + `/private/tmp/mesell-wt/rebase-146`; master tree never left develop.
+
+**MERGE ORDER for the master session: #148 FIRST, then #146.** #148 (`chore/dead-gemini-key-cleanup`, rebased tip `f6ab3d1`) is the dead-gemini F1/F2 cleanup; #146 (`docs/gemini-ci-key-done`) is the GEMINI_API_KEY_CI-DONE flip + dead-key flag. #146 predates #148 content-wise, so I rebased **#146 onto the rebased #148 branch tip (`f6ab3d1`), NOT onto origin/develop** — this is the cleaner path because #146's GEMINI block must layer ON TOP of #148's content so both survive and neither undoes the other. Since the master session merges #148 first, #148's content is on develop by the time #146 merges; #146 fast-forwards cleanly because its base already contains #148.
+
+**KEEP-BOTH-SIDES resolution method (the reusable recipe for these status-doc rebases):**
+- **Header `Last update`/`Last updated` line** = a SINGLE line; the newest/last-merged entry wins the top slot, the displaced upstream entry is demoted to a `**Prior:**` line. Never drop the upstream entry — demote it.
+- **UPDATE blocks (STATUS) and Prior chains (board)** = pure stack — the branch's new block goes ABOVE the upstream blocks; ALL upstream blocks are preserved below. Newest-on-top ordering.
+- **The conflict's "theirs" half is usually a DUPLICATE** of the branch block I just placed at the top → delete the entire `=======`…`>>>>>>>` region after placing the branch content up top. (Both #148 and #146 STATUS/board conflicts were this shape.)
+- **A single shared row that BOTH sides edit (the board ci-activation Recently-merged row)** needs a true field-level merge: I kept HEAD's CORRECT protection wording (develop+main / strict:false / reviews:0 — the current-develop truth) AND folded in #146's GEMINI_API_KEY_CI "SET + founder-verified — DONE" + NEW-FLAG sentences (replacing HEAD's stale "STILL founder-pending"). Don't blindly take one side when each side carries a distinct true fact.
+- **MEMORY.md** = EOF append on both sides; both blocks survive in author order (#148's dead-gemini block, then #146's GEMINI block). The `^=======` grep false-positives on a pytest output line (`===... deselected ...===`, line ~661) — that's content, not a marker; only `^======= ` (7-eq exactly) / `^<<<<<<< ` / `^>>>>>>> ` are real markers. Grep `^=======$` to avoid the 9-equals STATUS report-closers (`=========`).
+
+**Gate-4 RED logged (per the #145 Gate-1-red precedent):** added an Inter-lead-requests-open row `gate4-integration` (OPEN, →backend-coordinator) on the #146 board + a short STATUS UPDATE block. Verbatim text per the founder brief (customer eligibility ×2, customer onboarding, iam replay-attack, catalog lifecycle, shared-database get_db, export router setup-errors ×4+, customer seller-profile setup-errors; first seen PR #158 run 27392278294 ~03:24Z; suspected #150 + feature-slice conftest/shared-module fallout). CHORE-C note included: backend triage sweeps open + recently-merged (~24h) PRs for an existing fix BEFORE dispatching. ci.yml Gate-4 block is correct (the #104/#107/#108/#110 saga made it green) — this is a fresh backend test-harness regression, NOT an infra defect.
+
+**Force-pushes:** #148 `--force-with-lease` (d2fe577→f6ab3d1) clean. #146 `--force-with-lease` after rebase onto f6ab3d1. Verified each branch: zero real conflict markers, only the expected files changed vs origin/develop.
+
+---
+
+## Microservices Sub-Plan A — svc-export extraction INFRA lane — 2026-06-12
+
+**Session:** `mesell-ms-export-infra-session-1`. First microservices extraction (MASTER_PLAN §3.B order #1 = export — no downstream consumers, cleanest). Worktree `/tmp/mesell-wt/msA-infra`, branch `feature/microservices-export/infra` (cut from origin/develop `c859955`) → PR to `feature/microservices-export/integration`. Index memo: [handoff_msA_infra_response.md](handoff_msA_infra_response.md) (my confirmation back to backend on the I1–I8 work-package).
+
+**Deliverables (all in `k8s/svc-export/` + `backend/services/svc-export/Dockerfile` + the postgres TF arg):**
+- I1 Dockerfile: ONE python:3.12-slim image, api default CMD `gunicorn app.main:app -b 0.0.0.0:8001`; worker overrides `command` in deployment.yaml. svc-export app tree (app/+alembic/+requirements.txt) is the parallel BACKEND lane — author the Dockerfile against the spec'd tree shape, it's validated at integration.
+- I2 deployment.yaml: 2 Deployments (svc-export-api 1× 50m/128Mi→200m/512Mi; svc-export-worker 1× 200m/512Mi→400m/1Gi). worker lim = 2×req per R-MS-9. **kill-before-surge (maxSurge:0/maxUnavailable:1)** — mandatory on the CPU-tight dev node (the api.yaml/worker.yaml note: surge-before-kill deadlocked CI run 27360475090).
+- I3 service.yaml: ClusterIP `svc-export:8001` (NOT port 80 like the monolith — MASTER_PLAN §2.C gateway map literal is `svc-export:8001`, so port==targetPort==8001). Selector `component=api` (worker has no HTTP).
+- I4 ingressroute.yaml: Traefik **IngressRoute CRD `traefik.io/v1alpha1`** (NOT a plain Ingress). The two export routes only.
+- I5 schema-role.sql: idempotent bootstrap. **The R3 line the backend merge gate depends on: `GRANT INSERT ON public.audit_events TO export_user` (+ `GRANT USAGE ON SCHEMA public`).** INSERT-only = least privilege.
+- I6 gcs-sa.yaml.example: SPEC only. **Sub-Plan A = option A (inherit node VM SA, app-layer prefix tenancy under `exports/{user_id}/...`, ₹0, ZERO new IAM).** Dedicated SA + WI (MASTER_PLAN §2.E target) deferred to MS-K8S-4 when Workload Identity lands on K3s.
+- I7 secrets.yaml.example: svc-export-secrets — DATABASE_URL@export, VALKEY_URL, JWT_SECRET, GCS_*, APP_ENV=development. **DELIBERATELY ABSENT: GEMINI/LANGFUSE/MSG91/RAZORPAY/REFRESH_TOKEN_PEPPER*/AUDIT_PII_SALT** (export is deterministic — §5.D blast-radius trim).
+- I8 postgres TF: `args = ["-c", "max_connections=200"]` on the StatefulSet container. **Overlap check protocol (founder brief): before duplicating a parallel session's diff, run `gh pr list --search pgbouncer`, `git log origin/develop --oneline`, `git ls-remote --heads origin | grep -iE 'pgbouncer|ms-0|pool|ms-db'`. All clean → genuinely absent → minimal additive change.** If MS-0 had it in flight → SKIP + record the dependency.
+
+**Route paths — ALWAYS cite from the router, never the plan glossary:** `backend/app/modules/export/router.py` — POST `/api/v1/products/{product_id}/export-xlsx` (line 91; param `product_id`) + GET `/api/v1/exports/{export_id}` (line 144). The MASTER_PLAN §2.C glossary had stale invented service names (`svc-quality`/`svc-billing`) — the infra plan §0 SUPERSEDED note + the router are authoritative, not the glossary.
+
+**Traefik path-routing discipline (the trap):** `/api/v1/products/*` as a WHOLE belongs to catalog-svc. svc-export owns ONLY the `…/export-xlsx` sub-route. Match it with a tight `PathRegexp(\`^/api/v1/products/[^/]+/export-xlsx$\`)` — a `PathPrefix(/api/v1/products)` would hijack EVERY catalog route. `/api/v1/exports/*` is svc-export-exclusive → PathPrefix is safe there. `/internal/*` gets NO route (cluster-DNS-only isolation, §2.C; the absence IS the V1.5 primitive).
+
+**Worker queue:** export.xlsx is `@shared_task(name="export.xlsx")` with NO `queue=` → default `celery` queue. svc-export-worker = `-Q celery` ONLY (NOT `celery,image-tasks` — image.precheck/image-tasks belongs to a DIFFERENT service). Don't copy the monolith worker's `-Q celery,image-tasks` blindly.
+
+**Cluster UNREACHABLE this session (recurring):** `34.180.58.185:6443` connection refused. TWO things: (1) the endpoint differs from memory's `35.234.223.66` — the dev VM's kubeconfig server IP has changed again (or it's the stale default-context `34.180.58.185` that an earlier session flagged as the dead context); (2) even if reachable, the K3s API is /32-firewalled to the founder IP. **`kubectl --dry-run=client` STILL hits the server** (RESTMapper/OpenAPI fetch) → it is NOT an offline tool. True offline validation = `python3 yaml.safe_load_all` + field assertions + `terraform fmt -check` + SQL structural sanity + secret-scan. This is the documented §15 "offline-only / deferred-to-deploy-time" branch (same as the mfe-cutover SP07 session). Server dry-run + dev smoke happen at the integration→develop deploy job (applies on the VM, gates on rollout-status + health smoke + auto-rollback).
+
+**D3 capacity (the standing rule):** svc-export = 250m CPU request (50m api + 200m worker). Node app+infra was ~1700m/2000m → +250m = ~1950m < 2000m, fits `e2-standard-2` with thin headroom. **D3 (e2-standard-4, ~₹2,600/mo) is PLAN-pre-approved but gets a FRESH founder cost-ask only when services genuinely outgrow the node — NOT at execution start, NOT for Sub-Plan A.** Sub-Plan A commits ₹0. If my math had said overflow → STOP and flag, never silently upgrade.
+
+**Worktree isolation guard gotcha:** in this bg/worktree session, writes to the MASTER tree (`/Users/.../mesell/...`) — including the board, STATUS, AND my own `.claude/agent-memory/meesell-infra-builder/` — are BLOCKED by the isolation hook ("parent bg session hasn't isolated yet"). The board/STATUS/memory ALSO exist in the worktree (on my branch, cut from origin/develop) and ARE writable there. So I update them in the worktree; they reconcile to master at the integration→develop merge. The worktree's board copy was MORE current than the master-tree HEAD (had dev-final-redeploy etc.) because it was cut from a newer origin/develop — the worktree copy is authoritative for my branch.
+
+**One new SM secret needed at bootstrap:** `dev-export-db-password` (export_user DB password). Founder creates SM container+version; used in both `ALTER ROLE export_user WITH PASSWORD` (I5) and the I7 DATABASE_URL. Per-service DB password, NOT a new IAM grant → within the §4 one-SA ceiling. Deploy-time bootstrap item, not a merge blocker. Recorded as the backend-coordinator incoming inter-lead row on my board + in handoff_msA_infra_response.md.
+
+---
+
+## Sub-Plan A INFRA merge gate on PR #190 — APPROVE + in-gate fix (2026-06-12)
+
+**Session:** `mesell-ms-export-infra-session-1` (gate). Reviewed tip `aafcc30` → fixed to **`234e4d2`** → APPROVE. PR comment `#issuecomment-4693636063`. Squash run by the session window (not this lane).
+
+**THE LESSON — validate infra-against-spec'd-shape vs the ACTUAL landed sibling tree.** My earlier dispatch (commit `aafcc30`) authored the svc-export Dockerfile + worker Deployment against the SPEC'd tree shape BEFORE the backend lane (PR #189) landed the real app tree. At the gate I diffed against `origin/feature/microservices-export/backend` @ `e23080c` and found **3 defects that would have built/deployed then crash-looped or silently stalled**:
+1. **gunicorn not in the landed requirements.txt.** svc-export `requirements.txt` (backend sole-writer) ships `uvicorn[standard]` but NOT gunicorn — yet the api CMD is `gunicorn app.main:app`. Would fail `executable not found`. FIX: `RUN pip install --no-cache-dir gunicorn==22.0.0` in the infra Dockerfile layer (monolith's exact pin). **Could NOT edit the backend lane's requirements.txt — sole-writer boundary.** The image layer is the correct infra-owned place to add it.
+2. **worker `-A app.workers.celery_app` → `app.celery_app`.** Landed Celery instance `celery_app` lives in `app/celery_app.py`; svc-export has NO `app/workers/` package (that was the MONOLITH layout). Old path = ModuleNotFoundError at worker boot.
+3. **worker `-Q celery` → `-Q svc-export`.** Landed `app/celery_app.py:39,77-78` sets `task_default_queue="svc-export"` + routes `export.xlsx`→`svc-export`. The old `-Q celery` would consume the wrong/empty queue → export jobs never picked up (silent stall, no crash — the worst kind). The aafcc30 deployment COMMENT even asserted "no task_route → default celery queue" which was FACTUALLY WRONG vs the landed code. **Read the landed code, never trust the spec-era comment.**
+
+`app.main:app` entrypoint was correct (`main.py:58 app = FastAPI(...)`).
+
+**Process rule cemented:** when infra authors a Dockerfile/worker-cmd ahead of (or in parallel with) the backend app tree, the merge gate MUST re-derive the entrypoint/module-path/queue-name from the LANDED tree on the sibling branch — `git show <sibling>:.../requirements.txt`, grep the celery instance + `task_default_queue` + `task_routes`, grep `app = FastAPI`. Spec-shape comments rot the moment the real tree lands.
+
+**Gate mechanics that worked:** field-assertion pass via python+yaml.safe_load_all (kubectl can't even client-validate with the cluster unreachable — it needs the discovery doc; the yaml parse + structured assertions are the authoritative offline check). Secret scan = grep added `^+` lines for AIza../rzp_../PEM/64-hex/assigned-pw and subtract REPLACE-ME/known-non-secret. Server-dry-run deferred to deploy time per §15 F3 (documented honestly, not a dev/zero-traffic blocker).
+
+**`task_default_queue` collision safety:** the landed celery_app namespaces broker+result keys with `global_keyprefix="svc-export:"` (§2.E), so the dedicated `svc-export` queue can't collide with the monolith's keyspace even though they share the Valkey instance (broker DB 1 / result DB 2 in dev). Good — confirms `-Q svc-export` is safe alongside the still-running monolith worker.
+
+---
+
+## MS-B svc-dashboard INFRA extraction — 2026-06-13 (session mesell-ms-dashboard-infra-session-1)
+
+**Context:** Second microservices extraction (MS-2 wave, parallel with MS-C image). Worktree-scoped bg session at `/tmp/mesell-wt/msB-infra` on `feature/microservices-dashboard/infra`. Authored manifests only — NO cluster deploy (cluster API 34.180.58.185:6443 unreachable from bg session; firewall /32-scoped to founder IP, expected). All git handled by the session.
+
+**Template used:** svc-export (MS-A) pilot at `k8s/svc-export/*` + `backend/services/svc-export/Dockerfile` + `docs/runbooks/svc-export-rollback.md`. Copy-and-trim is the right move — dashboard is the LIGHTEST extraction.
+
+**dashboard vs svc-export — the deltas that matter (memorize for MS-C/MS-D):**
+- **NO Celery worker** → ONE Deployment (svc-dashboard-api), not two. Dockerfile has NO worker-override path; CMD is the only entrypoint. No CELERY_BROKER_URL/RESULT_BACKEND in the secret.
+- **Owns ZERO tables** → I5 is an `audit-grant.sql`, NOT a `schema-role.sql`. NO `CREATE SCHEMA`, NO `ALTER SCHEMA OWNER`, NO table DML grants, NO ALTER DEFAULT PRIVILEGES. ONLY `GRANT USAGE ON SCHEMA public` + `GRANT INSERT ON public.audit_events` (the R3 cross-schema audit grant — needed for IMPORT-SAFETY of vendored audit_mw even though the read-only GET writes no row).
+- **NO owned schema** → DATABASE_URL has NO `?options=-csearch_path%3D...` override (default public is correct). Contrast svc-export which pins `export,public`.
+- **NO alembic** → Dockerfile copies ONLY requirements.txt + app/ (no alembic/, no alembic.ini). No per-service migration Job.
+- **NO GCS (I6 skip)** → no GCS_* env, no GOOGLE_APPLICATION_CREDENTIALS, no gcs-sa.yaml.example. Dashboard touches no storage at all (not merely "keyless" — absent entirely).
+- **mem limit 256Mi** (vs svc-export api 512Mi) — no XLSX build buffer. CPU req 50m, lim 200m (same api sizing).
+
+**I4 METHOD-AWARE Traefik routing (the §13-DASHBOARD-D2 path-key collision) — KEY PATTERN:**
+- `GET /api/v1/products` and `POST /api/v1/products` (catalog create) share ONE exact path key but are different services. Catalog extracts LAST (MS-5), so during dashboard's window only the GET moves.
+- Matcher: `Host(`api.mesell.xyz`) && Method(`GET`) && Path(`/api/v1/products`)`.
+  - `Method(GET)` — so the catalog POST is NOT hijacked (falls through to monolith host-Ingress).
+  - `Path(...)` EXACT, NOT `PathPrefix` — page/limit are QUERY params not path segments; a PathPrefix would wrongly claim `/api/v1/products/{id}/images*` (MS-C) + `/{id}/export-xlsx` (MS-A). Traefik picks the most-specific rule.
+- Parallel-lane discipline confirmed: dashboard (exact `/api/v1/products` + GET) and image (`/api/v1/products/{id}/images*` prefix) are DISJOINT — additive coexisting IngressRoute objects. Reusable rule: when two services collide on a path key, split on `Method()`; when one owns sub-paths, use `PathPrefix`/`PathRegexp`; never PathPrefix a leaf path another service shares.
+
+**Trimmed ConfigMap pattern (I8):** created a DEDICATED `svc-dashboard-config` ConfigMap (APP_ENV + FEATURE_TRACKING_DASHBOARD_ENABLED only) rather than reusing the shared `meesell-config`. Applies the §5.D blast-radius trim to NON-secret config too — extracted pod doesn't inherit GEMINI_MODEL/GCS_*/LANGFUSE_*/other-flags. The shared meesell-config already carries the flag at k8s/config.yaml:64 (=true, monolith). Flag semantics: dev=true / staging=false; 404-on-read kill-switch (router.py:118). dev-only Sub-Plan → no staging overlay authored.
+
+**Offline validation when cluster unreachable:** kubectl `--dry-run=client` STILL contacts the API server (RESTMapper/OpenAPI fetch) — `--validate=false` does NOT avoid it. From a bg session with no cluster route, fall back to a Python PyYAML structural parse + explicit field assertions (28 assertions here, all PASS). Document the cluster-unreachable reason in the report; do NOT treat it as a blocker (deploy is a deploy-window op, not this session's job). Beware grep false-positives on comment lines that DESCRIBE an absence ("NO CREATE SCHEMA") — re-grep anchored `^\s*` for executable statements.
+
+**MS-2 capacity math (the D3 watch — NO trigger for Sub-Plan B):**
+Sum of CPU REQUESTS at MS-2 on the e2-standard-2 (2 vCPU = 2000m) node:
+- monolith api 2×200m=400m, monolith worker 2×250m=500m
+- svc-export api 50m + worker 200m = 250m
+- svc-dashboard api 50m (NO worker)
+- svc-image api 50m + worker ~250m (rembg est.) = ~300m
+≈ **1500m of 2000m requests** → FITS. svc-dashboard is the smallest contributor (50m). NO D3 e2-standard-4 ask for Sub-Plan B. If image's rembg worker req is higher than estimated and the sum approaches the ceiling at the MS-2 strangler window, STOP and flag founder (do NOT silently upgrade). Flagged in report as a watch, not a blocker.
+
+**Files authored (8):** backend/services/svc-dashboard/Dockerfile (I1); k8s/svc-dashboard/{deployment,service,ingressroute,configmap}.yaml + secrets.yaml.example + audit-grant.sql (I2/I3/I4/I8/I7/I5); docs/runbooks/svc-dashboard-rollback.md. I6 skipped (no GCS — noted). I9 = doc-only note (max_connections=200 + PgBouncer already live MS-0 #181/#192; dashboard pool 2-3 conns in backend-lane shared/database.py).
+
+**One new SM secret needed (inter-lead, founder):** `dev-dashboard-db-password` (per-service DB password for dashboard_user; NOT a new IAM grant; within §4 ceiling). Mirrors svc-export's `dev-export-db-password`. Founder creates SM container+version at bootstrap; infra composes into DATABASE_URL.
+
+---
+
+## Authored docs/DISPATCH_PLAYBOOK.md — 2026-06-14 (Director fast-mode write; verbatim content: dispatch decision tree, 18-agent roster, 4 prompt templates A-D, mandatory blocks, git/worktree rules, decentralized memory model).
+
+---
+
+## MS-PAR-1 worktree + stray-branch cleanup — 2026-06-14
+
+Post-migration housekeeping (develop @ 1baf6d0, main protected @ 9a2b25c, 0 open PRs).
+
+**Worktrees:** 26 in-scope under /private/tmp/mesell-wt/. Removed 22 CLEAN with `git worktree remove --force`. SKIPPED 4 DIRTY (never force past uncommitted work):
+- msC-integration → M .claude/agent-memory/meesell-backend-coordinator/MEMORY.md
+- msC-routes-fix → M meesell-api-routes-builder/MEMORY.md + docs/status/STATUS_BACKEND.md
+- msE-backend → M docs/status/STATUS_BACKEND.md
+- w6c-cat → M frontend/pnpm-workspace.yaml
+The dirty mods are mostly peer-agent MEMORY.md / STATUS files — NOT mine to commit or discard. Left for the owning agent/founder to resolve.
+
+**Out-of-task-scope worktrees left untouched:** the `.claude/worktrees/agent-*` set (and docs+session-close-dual-pepper, chore/frontend/start-all) — task scoped only to /private/tmp/mesell-wt/ prefixes. 2 are `locked`. Did not enumerate-remove these.
+
+**Stray remote branches — KEY SAFETY LESSON:** of 13 candidate origin/feature/microservices-{catalog,category,customer,iam}/* branches, only 3 were actually merged into origin/develop (the `/integration` tips for catalog, category, iam). The migration merged via the integration branches; the per-group leaf branches (db/infra/svc/backend) were NOT individually merged into develop (their content reached develop through the integration merge, but `git branch -r --merged` does not consider them merged because their tip commits aren't ancestors of develop). So `--merged origin/develop` is the correct, conservative gate — it deleted only the 3 truly-merged refs and protected the other 10. Deleted: catalog/integration, category/integration, iam/integration. Skipped 10 unmerged — left for founder decision.
+
+**Stash:** intentionally-kept stash@{0} ("pre-develop-switch") left untouched (not a worktree).
+
+Pattern to reuse: ALWAYS gate remote-branch deletion on `git branch -r --merged origin/develop` membership, re-confirm per-branch with `grep -qx`, never assume a feature's leaf branches are merged just because the feature is merged.
+
+---
+
+## Founder-authorized develop merge — PR #230 (2026-06-15)
+
+Founder explicitly authorized merging PR #230 (`docs/section-parallel-model` → `develop`, 3 DRAFT docs: SECTION_PARALLEL_MODEL.md, SECTION_DISPATCH_PROTOCOL.md, .claude/agents/meesell-section-coordinator.md). Normally `feature→develop` is the founder's gate (D1) — I do NOT approve those — but a direct in-prompt founder authorization to *execute* the merge is the exception.
+
+**Execution pattern (worked clean):**
+- Pre-check: `gh pr view 230 --json state,mergeable,mergeStateStatus,statusCheckRollup,baseRefName,headRefName`. All 5 CI gates SUCCESS, mergeStateStatus=CLEAN, mergeable=MERGEABLE. build/deploy/nightly SKIPPED (expected for non-push/non-schedule PR event).
+- `develop` is branch-protected (PR-only + lead approval). `gh pr merge 230 --merge --admin` satisfies the protected self-approval bypass since founder authorized. `--merge` (merge-commit) was allowed by repo settings — no fallback to `--squash` needed. Merge-commit method preserves history per MASTER_PLAN §2.2.
+- Merge SHA == new origin/develop tip: `e4a0ad6` (prev tip 1baf6d0).
+- Confirmation via `git fetch origin develop` + `git cat-file -e origin/develop:<path>` per file. Did NOT pull/checkout master tree — it stays behind until founder pulls.
+
+**Cleanup (_WORKTREE_PROTOCOL §5 reclaim):**
+- Worktree at `/private/tmp/mesell-wt/section-parallel-model` — checked `git -C <wt> status --porcelain` was empty FIRST (clean), then `git worktree remove` (no --force needed).
+- `git branch -d` gives a harmless warning "merged to origin/<branch> but not yet merged to HEAD" — that's because master HEAD is the pre-merge develop locally; the branch IS merged on the remote, so `-d` (not `-D`) still succeeds. Safe.
+- `git push origin --delete <branch>` + `git worktree prune` to finish.
+
+**Reusable cmd sequence** for future founder-authorized develop merges of doc/spec PRs is exactly the above. The key safety invariant: never mutate the master tree's checkout state — confirmation is always via `origin/<base>` after fetch.
+
+## Section-Parallel ratification + section-2 boot — 2026-06-15
+
+**PR #231 (chore/ratify-section-parallel → develop) MERGED, then section-2 (Smart Category Picker) integration branch booted. Founder-authorized.**
+
+- **mergeStateStatus=BLOCKED with mergeable=MERGEABLE means the protected-branch SELF-APPROVAL block** (develop requires reviews via the gate, founder can't self-approve their own PR), NOT a check failure. `--admin` is the correct founder-authorized bypass for that. Do NOT confuse BLOCKED with a failing check — always inspect `statusCheckRollup` to distinguish.
+- **Required checks on develop** (from `gh api .../branches/develop/protection`): 5 CI gates (unit→smoke→lint→integration→golden_roundtrip) + 8 frontend units (detect + shell + 6 mfe-*) + frontend detect. `strict=false` (not up-to-date-required), reviews=null in the reviews block but enforced via gate.
+- **The 5 CI gates run SEQUENTIALLY** (~30s each, gate N+1 starts only after N succeeds). On a fresh push they trickle in over ~4-5 min. Even with `--admin` available, I WAITED for all 5 to go green before merging — forcing through in-progress required gates risks landing broken code on develop. Polled `gh pr view 231 --json statusCheckRollup` filtered to `startswith("CI Gate")` every 30s until 5×SUCCESS or any FAILURE. This is the right discipline: `--admin` bypasses the self-approval block, not the duty to verify CI is actually green.
+- Merge method: `gh pr merge 231 --merge --admin` → merge-commit `8963a58`. origin/develop `e4a0ad6`→`8963a58`.
+- **Master-tree FF**: `git -C <repo> -c pull.rebase=false pull --ff-only origin develop` — the `-c pull.rebase=false` is REQUIRED because repo has `pull.rebase=true` and unstaged tracked agent-memory files would block a rebase. Clean FF `e4a0ad6`→`8963a58`. Never stash/reset/checkout.
+- **F1 ordering (section boot)**: integration branch FIRST, off develop (NOT main). `git branch feature/section-2/integration develop` → worktree `/tmp/mesell-wt/section-2-integration` → `git push -u origin`. Group branches (frontend/backend) are cut OFF integration ONLY AFTER the section coordinator's wave plan passes the check-in gate (SECTION_DISPATCH_PROTOCOL §2) — do NOT pre-create them.
+- **F3 integration-branch protection** (MASTER_PLAN §9.5): applied cleanly via `gh api -X PUT .../branches/feature%2Fsection-2%2Fintegration/protection` with `required_approving_review_count=0`, `allow_force_pushes=false`, `allow_deletions=false`, `required_status_checks=null`. URL-encode the slashes in the branch name (`feature%2Fsection-2%2Fintegration`). Verified in response body.
+- Ratify cleanup: worktree clean (empty porcelain) → `git worktree remove` (no --force) → `git branch -d chore/ratify-section-parallel` → `git push origin --delete` → `git worktree prune`. All exit 0.
+
+## Section 3-9 integration-branch scaffolding (batch boot) — 2026-06-15
+
+**Founder-authorized: pre-created the integration PARENT branch for sections 3-9 (7 V1 features) so each can be opened as a section-coordinator session later. Mirror of the section-2 boot (memory entry above). NO group branches, NO coordinators, NO development.**
+
+- Section ↔ slug alias: 3=catalog-form, 4=ai-autofill, 5=image-precheck, 6=live-preview, 7=price-calculator, 8=tracking-dashboard, 9=xlsx-export. **Branches use the section-N token, NOT the slug** (`feature/section-3/integration`, etc.). Section-1 (auth) is AS-BUILT (skipped); section-2 already existed (skipped, worktree untouched).
+- Baseline: master tree on `develop`; `git fetch origin`; develop tip = `8963a58` (the section-2 boot merge #231). All 7 integration branches cut OFF develop (`git branch feature/section-N/integration 8963a58`) — NOT main. Confirmed all 7 absent on local+origin BEFORE creating (`git ls-remote --heads origin "feature/section-*/integration"`).
+- Per-section recipe (exact, all 7 succeeded clean): (1) `git branch feature/section-N/integration 8963a58` (2) `git worktree add /tmp/mesell-wt/section-N-integration feature/section-N/integration` (3) `git push -u origin feature/section-N/integration`. `/tmp`→`/private/tmp` on this box so `git worktree list` shows `/private/tmp/mesell-wt/section-N-integration`.
+- **F3 protection applied to all 7** via `gh api -X PUT repos/Mugunthan93/mesell/branches/feature%2Fsection-N%2Fintegration/protection` (URL-encode slashes `%2F`) with payload `{required_status_checks:null, enforce_admins:false, required_pull_request_reviews:{required_approving_review_count:0}, restrictions:null, allow_force_pushes:false, allow_deletions:false}`. Verified each response: force_push=False, deletions=False, reviews_count=0, status_checks=None. **All 7 APPLIED — zero deferred.**
+- Group branches (frontend/backend) deliberately NOT created — they're cut OFF integration ONLY after each section coordinator's wave plan passes its check-in gate (SECTION_DISPATCH_PROTOCOL §2). Confirmed none exist post-run.
+- Master tree never switched branch (stayed `develop` throughout). No main/staging/section-1/section-2 touched. No force-push, no deletions, no cloud-spend, no secrets. ₹0/month.
+- **Batch pattern works clean in one shell loop** — branch+worktree+push in loop 1, F3 in loop 2 (separate so a push failure doesn't strand a protection call). GH_TOKEN="$(gh auth token)" exported once for the F3 loop. No 401, no protection failure on any of the 7.
+
+---
+
+## PR #232 merge + persist-worktree cleanup — 2026-06-15
+
+**Task:** Merge founder-authorized PR #232 (`docs/persist-section-2-3` → develop, 2 additive doc files persisting section-2/section-3 dispatch prompts), FF master tree, clean up temp worktree/branch.
+
+**Outcome (all green):**
+- Diff verified ONLY the 2 files: `docs/plans/features/{smart-picker,catalog-form}/SECTION_DISPATCH_PROMPT.md`.
+- Initial `mergeStateStatus=BLOCKED` was NOT a failure — it was `CI Gate 2: smoke` still QUEUED. develop branch protection requires all 5 CI Gates + 8 Frontend contexts. Waited for gates to settle (all 5 PASS), state went `CLEAN`.
+- Merged with `gh pr merge 232 --merge --admin` (merge-commit; --admin for protected self-approval, founder-authorized). Merge SHA `cf1d4a4ede9157641cc38787cd75d232a3510610`, now origin/develop tip.
+- Master tree FF `8963a58..cf1d4a4` (clean, -c pull.rebase=false --ff-only). Both files confirmed via `git cat-file -e origin/develop:...`.
+- Cleanup: removed worktree `/private/tmp/mesell-wt/persist-sec23` (clean, 0 dirty), deleted local + remote branch `docs/persist-section-2-3`, pruned.
+
+**Operational notes:**
+- `gh` CLI worked without the PATH export this session (was already resolvable). `git -C <abs>` used throughout — cwd resets between Bash calls.
+- macOS `/tmp` → `/private/tmp` symlink: `git worktree list` reports the physical `/private/tmp/...` path; `git worktree remove /private/tmp/...` works directly. Brief's `/tmp/...` path is the same target.
+- The section-2..9 integration worktrees (`/private/tmp/mesell-wt/section-N-integration`, N=2..9) are LONG-LIVED — do NOT touch during persist cleanup. Verified all 8 intact at original SHAs post-cleanup.
+- Discipline reaffirmed: BLOCKED merge state with an in-flight (QUEUED/in_progress) required check is NOT a "failing check" stop condition. Wait for settle, then confirm CLEAN before --admin. Only merge over green.
+
+## Centralize section 4-9 dispatch prompts onto develop (2026-06-15)
+
+**Task:** FAST MODE git consolidation. Copy the 6 `SECTION_DISPATCH_PROMPT.md` files (sections 4-9) from their integration branches onto develop, WITHOUT merging the integration branches. Sections 2 & 3 were already on develop at cf1d4a4.
+
+**Outcome:** PR #233 (`docs/centralize-dispatch-prompts` → develop) merged. Merge SHA `6e1f9ed`. All 6 copied: ai-autofill, image-precheck, live-preview, price-calculator, tracking-dashboard, xlsx-export (1838 insertions). All 5 CI gates green; deploy/build/nightly correctly skipped (docs-only, non-main push). Master tree FF cf1d4a4..6e1f9ed. All 8 section integration worktrees/branches untouched (verified at original SHAs).
+
+**Pattern (copy-doc-without-merging-branch):**
+- `git show origin/feature/section-N/integration:<path> > <path>` in a worktree branched off origin/develop. Pulls a single file out of a branch's tree without checking it out or merging. The dest feature dirs already existed on develop, so no mkdir needed.
+- Verify sources first with `git cat-file -e origin/feature/section-N/integration:<path>` before copying (brief said STOP+report if any missing — all 6 present).
+
+**git PATH gotcha (NEW — important):**
+- `git` is at `/usr/bin/git` (system) AND `/opt/homebrew/bin/git`. Even after `export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"`, a multiline `for ... done` loop intermittently hit `(eval):N: command not found: git` — the eval shell lost resolution mid-loop. FIX: use the ABSOLUTE binary path `/usr/bin/git` (and `/opt/homebrew/bin/gh`) for EVERY invocation. This is more reliable than relying on PATH export across the zsh-eval wrapper. Single explicit commands per line beat a bash for-loop for this.
+
+**Discipline reaffirmed:** waited for all 5 gates to settle green before `gh pr merge --admin`; BLOCKED+MERGEABLE with in-progress required checks is not a fail. FF pull --ff-only with pre-existing unstaged memory edits in working tree still succeeds cleanly (untracked/unstaged changes don't block a FF that doesn't touch those paths). Cleanup: removed temp worktree, deleted local+remote `docs/centralize-dispatch-prompts`, pruned. Never touched main/staging or any feature/section-* branch.

@@ -43,7 +43,7 @@ import logging
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import CurrentUser, get_current_user
@@ -51,6 +51,7 @@ from app.core.middleware.audit_mw import audit_event
 from app.core.middleware.rate_limit_mw import rate_limit
 from app.modules.pricing import service as pricing_service
 from app.modules.pricing.schemas import PriceCalcRequest, PriceCalcResponse
+from app.shared.config import settings
 from app.shared.database import get_db
 
 logger = logging.getLogger(__name__)
@@ -92,6 +93,12 @@ async def price_calc(
       * 422 — ``pricing.commission.missing`` when the resolved category
         has no usable commission rate.
     """
+    # ── Feature flag guard (§3.2 / D2) ───────────────────────────────────
+    if not settings.FEATURE_PRICE_CALCULATOR_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Price Calculator is disabled in this environment",
+        )
     return await pricing_service.calculate(user.user_id, id, payload, db=db)
 
 

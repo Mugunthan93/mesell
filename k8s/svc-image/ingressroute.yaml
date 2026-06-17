@@ -1,0 +1,76 @@
+# k8s/svc-image/ingressroute.yaml
+# ---------------------------------------------------------------------------
+# svc-image — Sub-Plan C (image extraction), INFRA deliverable I4.
+#
+# Traefik IngressRoute (D4 path-prefix gateway, infra plan §2.4) routing the TWO
+# PUBLIC image routes on api.mesell.xyz to svc-image:8001.
+#
+# Exact routes — cited from backend/app/modules/image/router.py (the SSOT @ d4aa572)
+# + spec_msC_backend_EXECUTION.md §0.1:
+#   1. POST /api/v1/products/{id}/images   (router.py — §11.B.1 upload; public param
+#      name is `{id}`)                      → svc-image:8001
+#   2. GET  /api/v1/products/{id}/images   (router.py — §11.B.2 list)
+#                                           → svc-image:8001
+#
+# ── CRITICAL ROUTING DISCIPLINE (MASTER_PLAN §2.C) ─────────────────────────────
+#   `/api/v1/products/*` as a WHOLE belongs to catalog-svc (MS-5, last). The image,
+#   export, and pricing SUB-routes under /products belong to THEIR services. So we
+#   match svc-image's two routes with a TIGHT PathRegexp anchored to the
+#   `/images` suffix, NOT a `/api/v1/products` PathPrefix — a prefix would hijack
+#   every catalog route AND collide with svc-export's `…/export-xlsx` rule.
+#   The regex `[^/]+` captures exactly one path segment (the product_id UUID) and
+#   `$` anchors the suffix so ONLY `…/{id}/images` matches (both POST upload and
+#   GET list share this path; the HTTP method is differentiated by the FastAPI app,
+#   not the route — a single PathRegexp rule serves both verbs).
+#
+# ── /internal/* IS NOT ROUTED HERE (MASTER_PLAN §2.C / handoff §1 I4) ──────────
+#   svc-image's internal route `GET /internal/products/{product_id}/images?user_id=`
+#   (the SHIM_CONTRACT §2.6 list_images callee that svc-export's front-image gate
+#   calls) is reachable ONLY via K3s cluster DNS (svc-image.dev.svc.cluster.local:8001).
+#   The DELIBERATE ABSENCE of any IngressRoute rule for /internal/* is the V1.5
+#   isolation primitive (NetworkPolicy is a V2 concern). Do NOT add an /internal/*
+#   match below.
+#
+# ── TLS + CORS (mirrors svc-export + k8s/ingress.yaml discipline) ──────────────
+#   - TLS: the api.mesell.xyz LE certificate (cert-manager, Ready since Phase B) is
+#     reused — `tls: secretName: api-mesell-xyz-tls`. entryPoint `websecure`.
+#   - CORS / Set-Cookie: NO `headers` Middleware is attached here. CORS is owned by
+#     the FastAPI app (CORSMiddleware, vendored per service per MASTER_PLAN §5.A);
+#     Traefik does routing + TLS ONLY and MUST NOT strip/rewrite CORS or Set-Cookie
+#     (same R-SP7-1 P0 ADD-ONLY rule as the api Ingress + svc-export).
+#
+# Namespace: dev ONLY (Sub-Plan C constraint §4).
+#
+# NOTE on coexistence with the live host-based `api` Ingress + the svc-export
+# IngressRoute: the live api.mesell.xyz Ingress (TF-managed, k8s/ingress.yaml doc)
+# routes ALL of api.mesell.xyz → api:80 (monolith). During the strangler window
+# this IngressRoute is HIGHER-precedence for its two specific image paths (a
+# Path/PathRegexp match outscores a host-only Ingress on path specificity in
+# Traefik). It does NOT overlap svc-export's `…/export-xlsx` rule (different suffix)
+# nor svc-export's `/api/v1/exports` prefix. Cutover ordering + monolith-fallback is
+# handled at integration/deploy time per MASTER_PLAN §3.C rollback contract (point
+# the rule back at api:80 on rollback). For Sub-Plan C (dev, zero-traffic) this rule
+# simply peels the two image paths off the monolith onto svc-image.
+# ---------------------------------------------------------------------------
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: svc-image
+  namespace: dev
+  labels:
+    app: svc-image
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    # Routes 1 + 2 — POST + GET /api/v1/products/{id}/images (both verbs, one rule).
+    # PathRegexp anchored to the /images suffix so it does NOT hijack other
+    # /products sub-routes (catalog, export-xlsx, pricing).
+    - kind: Rule
+      match: Host(`api.mesell.xyz`) && PathRegexp(`^/api/v1/products/[^/]+/images$`)
+      services:
+        - name: svc-image
+          port: 8001
+  tls:
+    # Reuse the existing api.mesell.xyz LE cert (cert-manager, Ready since Phase B).
+    secretName: api-mesell-xyz-tls

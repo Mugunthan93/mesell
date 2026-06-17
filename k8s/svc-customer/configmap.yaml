@@ -1,0 +1,69 @@
+# k8s/svc-customer/configmap.yaml
+# ===========================================================================
+# svc-customer — Sub-Plan E (customer extraction), INFRA deliverable I6 (config half).
+#
+# TRIMMED non-secret ConfigMap for svc-customer, named `customer-svc-config` in the
+# `dev` namespace. The customer-svc-api Deployment consumes it via
+# `envFrom: configMapRef: { name: customer-svc-config }` (see deployment.yaml).
+#
+# Authority: handoff_msE_infra.md §1 I6 (the pod needs CACHE_VERSION + APP_ENV among
+# its env) + spec_msE_backend.md:58 (trimmed Settings: ...CACHE_VERSION, APP_ENV) +
+# MASTER_PLAN §5.D (per-service trimmed Settings).
+#
+# ── WHY A DEDICATED ConfigMap (not the shared meesell-config) ───────────────
+#   The extracted customer-svc carries ONLY the non-secret env it reads, in its OWN
+#   trimmed ConfigMap, so the pod does not inherit the monolith's full config surface
+#   (GEMINI_MODEL, GCS_*, LANGFUSE_*, the feature flags, CORS for other origins,
+#   etc.). This mirrors the trimmed-SECRET discipline (§5.D blast-radius): customer's
+#   env surface = ONLY what customer reads. customer's vendored Settings reads exactly:
+#   APP_ENV + CACHE_VERSION (+ DATABASE_URL/VALKEY_URL/JWT_SECRET from the Secret).
+#
+# ── CACHE_VERSION (SUB_PLAN_0E §7 / spec_msE_backend.md cache contracts) ─────
+#   customer caches two surfaces in Valkey DB 3 with the `customer:` key prefix:
+#   required_fields (60s TTL) and super_category_set (3600s TTL). CACHE_VERSION is
+#   the cache-key version segment used by the vendored core/cache.py so a deploy can
+#   bust the cache by bumping the version. Carried as a non-secret env here. The
+#   value mirrors whatever the monolith's CACHE_VERSION is at extraction time (the
+#   cache keyspace is shared-instance but `customer:`-prefixed, so the version must
+#   match the monolith's during the strangler window to avoid double-population —
+#   confirm the live monolith CACHE_VERSION value at deploy time; "1" is the
+#   placeholder below and is the monolith's V1 default).
+#
+# ── NO FEATURE FLAG ──────────────────────────────────────────────────────────
+#   Unlike svc-dashboard (which carries FEATURE_TRACKING_DASHBOARD_ENABLED — a
+#   404-on-read kill-switch), customer has NO feature-flag gate on its routes; the
+#   5 seller-profile endpoints are always-on (they back the LIVE onboarding wizard,
+#   Wave-6B). So this ConfigMap carries no flag.
+#
+# ── CORS NOTE ────────────────────────────────────────────────────────────────
+#   CORS_ALLOWED_ORIGINS is NOT duplicated here. CORS is owned by the FastAPI app's
+#   vendored CORSMiddleware (MASTER_PLAN §5.A); Traefik does NOT inject CORS
+#   (R-SP7-1 ADD-ONLY). If the backend lane's trimmed Settings requires
+#   CORS_ALLOWED_ORIGINS at env-level, add it here scoped to https://dev.mesell.xyz
+#   (the dev frontend origin) — coordinate via the merge gate; left out until the
+#   landed Settings shape confirms the need (the 5 seller-profile responses are LIVE
+#   with the dev frontend, so CORS MUST allow https://dev.mesell.xyz — if the
+#   vendored Settings defaults that origin internally, no env var is needed; if it
+#   reads from env, add CORS_ALLOWED_ORIGINS: "https://dev.mesell.xyz" here).
+#
+# Namespace: dev ONLY (Sub-Plan E constraint §4).
+# NEVER put a secret value in this ConfigMap (playbook §0 / k8s/config.yaml header).
+# ===========================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: customer-svc-config
+  namespace: dev
+  labels:
+    app: customer-svc
+data:
+  # App env — Pydantic Settings Literal {development|staging|production}.
+  # dev namespace ⇒ "development" (MEMORY: NEVER "dev"; the Literal type rejects it.
+  # Founder ruling 2026-06-11 F1).
+  APP_ENV: "development"
+
+  # Cache-key version segment (vendored core/cache.py). Bump to bust customer's
+  # Valkey DB 3 cache (required_fields 60s / super_category_set 3600s). Match the
+  # live monolith CACHE_VERSION at the strangler window (placeholder "1" = monolith
+  # V1 default; confirm at deploy time).
+  CACHE_VERSION: "1"

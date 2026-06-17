@@ -10,6 +10,9 @@ every owned-table query path consumes:
   SQLAlchemy ``Select``.  Replaces ad-hoc ``.where(Model.user_id == ...)``
   calls so that grep-for-``scope_to_user`` is the §19 CI anchor.
 
+See also :data:`_GLOBAL_TABLES` — the four tables whose rows are shared
+across all tenants and are therefore exempt from ``scope_to_user``.
+
 V1 enforcement is at the application layer; RLS is deferred to V1.5
 per §0.F and ``MVP_ARCH §9``.
 """
@@ -25,6 +28,33 @@ from sqlalchemy.sql import Select
 from app.core.errors import MeesellError
 
 logger = logging.getLogger(__name__)
+
+
+#: Tables whose rows are shared across all tenants — no ``user_id`` column
+#: and no ``scope_to_user`` / ``assert_owned`` call required.
+#:
+#: Source of truth: BACKEND_ARCHITECTURE.md §4.C (the four global tables are
+#: named in prose at §4.C and referenced in the §9.D multi-tenancy model and
+#: the §9.J category-repository exemption).  See also ``category/repository.py``
+#: docstring (L17) which cites this carve-out.
+#:
+#: **Documentation sentinel — not yet a linter input.**
+#: The §19 linter (``tests/lint/check_scope_to_user.py``) enforces the
+#: global-table carve-out via a module-name allowlist
+#: (``ALLOWLISTED_MODULES``, L61 of that file) and does NOT read this
+#: frozenset at runtime.  Wiring this frozenset as the linter's source of
+#: truth is a §19 behaviour change gated on founder ruling R1 (default
+#: adopted 2026-06-12: **sentinel only**).  When R1 is revisited,
+#: ``check_scope_to_user.py`` should import ``_GLOBAL_TABLES`` and replace
+#: the inline string set.
+_GLOBAL_TABLES: frozenset[str] = frozenset(
+    {
+        "categories",
+        "templates",
+        "field_enum_values",
+        "field_aliases",
+    }
+)
 
 
 class TenantViolationError(MeesellError):
@@ -122,6 +152,7 @@ def scope_to_user(
 
 
 __all__ = [
+    "_GLOBAL_TABLES",
     "TenantViolationError",
     "assert_owned",
     "scope_to_user",

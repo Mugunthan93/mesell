@@ -5,7 +5,10 @@ export { PageHeaderComponent }     from './page-header/page-header.component';
 export { EmptyStateComponent }     from './empty-state/empty-state.component';
 export { LoadingSkeletonComponent } from './loading-skeleton/loading-skeleton.component';
 export { AuthLayoutComponent }       from './auth-layout/auth-layout.component';
+export { MeeAlertBannerComponent }   from './alert-banner/alert-banner.component';
+export { MeeOfflineBannerComponent } from './offline-banner/offline-banner.component';
 
 // Public types
-export type { StatCardColor }  from './stat-card/stat-card.component';
-export type { ProductStatus }  from './status-badge/status-badge.component';
+export type { StatCardColor }       from './stat-card/stat-card.component';
+export type { ProductStatus }       from './status-badge/status-badge.component';
+export type { MeeAlertVariant }     from './alert-banner/alert-banner.component';

@@ -1,0 +1,111 @@
+# k8s/svc-pricing/ingressroute.yaml
+# ---------------------------------------------------------------------------
+# svc-pricing — Sub-Plan D (pricing extraction), INFRA deliverable I4.
+#
+# Traefik IngressRoute (D4 path-prefix gateway, infra plan §2.4) routing the ONE
+# PUBLIC pricing route on api.mesell.xyz to svc-pricing:8001.
+#
+# Exact route — cited from backend/app/modules/pricing/router.py (the SSOT @ 942eba7):
+#   router.py:63  APIRouter(prefix="/api/v1")
+#   router.py:70  @router.post("/products/{id}/price-calc")
+#   ⇒ POST /api/v1/products/{id}/price-calc   → svc-pricing:8001
+#   *** Path param is `{id}` (router.py:70/78 `id: UUID`), NOT `{product_id}`. ***
+#   ONE verb only (POST). A single PathRegexp rule serves it (the FastAPI app rejects
+#   other verbs with 405; Traefik does not method-filter here).
+#
+# ── CRITICAL ROUTING DISCIPLINE (MASTER_PLAN §2.C) ─────────────────────────────
+#   `/api/v1/products/*` as a WHOLE belongs to catalog-svc (MS-5, last). The image,
+#   export, and pricing SUB-routes under /products belong to THEIR services. So we
+#   match svc-pricing's one route with a TIGHT PathRegexp anchored to the
+#   `/price-calc` suffix, NOT a `/api/v1/products` PathPrefix — a prefix would
+#   hijack every catalog route AND collide with svc-image's `…/images` rule and
+#   svc-export's `…/export-xlsx` rule.
+#   The regex `[^/]+` captures exactly one path segment (the product_id UUID) and
+#   `$` anchors the suffix so ONLY `…/{id}/price-calc` matches.
+#
+#   *** HOW THIS RANKS vs the catalog catch-all (handoff §2 PRIORITY FLAG) ***
+#   There is NO separate numeric "priority table" — the TIGHT-REGEX pattern IS the
+#   ranking scheme (mirrors svc-image's ingressroute, the solved precedent). Traefik
+#   computes a default rule priority from the rule's LENGTH/specificity: a long,
+#   anchored `PathRegexp(^/api/v1/products/[^/]+/price-calc$)` matcher outranks the
+#   catalog-svc catch-all (a host-only or short `/api/v1/products` PathPrefix rule)
+#   on specificity, so the pricing request is peeled onto svc-pricing and never
+#   swallowed by catalog. The three carve-outs under the catalog family are COHERENT
+#   by construction — they each use the SAME tight-anchored-suffix scheme (NOT three
+#   different invented priority numbers):
+#     • svc-image   PathRegexp(`^/api/v1/products/[^/]+/images$`)       (MS-2)
+#     • svc-export  …/export-xlsx  +  /api/v1/exports prefix           (MS-1)
+#     • svc-pricing PathRegexp(`^/api/v1/products/[^/]+/price-calc$`)   (MS-3, here)
+#   Disjoint suffixes → zero overlap between the three; each outranks the eventual
+#   catalog catch-all on length/specificity. No explicit `priority:` field is set
+#   (none is needed — and hardcoding one would risk drift across the three sessions,
+#   exactly the failure handoff §2 warns against). If a future master `/products/*`
+#   priority table lands and prescribes explicit numeric priorities, switch to it
+#   then; until it exists, the tight-regex scheme is the agreed pattern (mirrors the
+#   svc-image precedent on develop).
+#
+# ── /internal/* IS NOT ROUTED HERE — N/A for pricing anyway ────────────────────
+#   svc-pricing is a LEAF CONSUMER (MASTER_PLAN §2.C) — it exposes NO /internal/*
+#   endpoint at all. (It CALLS catalog's assert_product_ownership /internal shim over
+#   cluster DNS, but offers none of its own.) So there is simply nothing to route
+#   internally; the deliberate absence of any /internal match is trivially correct.
+#
+# ── TLS + CORS (mirrors svc-image/svc-export routing discipline; TLS NAME CORRECTED) ─
+#   - TLS: the api.mesell.xyz LE certificate (cert-manager, Ready since Phase B) is
+#     reused. *** The LIVE dev secret name is `api-tls` *** (verified against the live
+#     cluster 2026-06-13: `kubectl get ingress api -n dev` → secret=`api-tls`;
+#     `kubectl get certificate -n dev` → `api-tls` READY=True). The svc-image +
+#     svc-export precedent ingressroutes reference `api-mesell-xyz-tls`, which does
+#     NOT exist in the dev namespace — that is a LATENT DEFECT in those (still
+#     IN-REVIEW / founder-gated, NOT yet applied) precedents: at cutover Traefik
+#     would not find that secret and would fall back to its default cert. Per
+#     playbook §0 (live state is SSOT), svc-pricing uses the REAL live name `api-tls`
+#     so it serves a valid LE cert at cutover. (Flagged to backend lead + master via
+#     STATUS_INFRA so the sibling carve-outs can be corrected before their apply.)
+#     entryPoint `websecure`.
+#   - CORS / Set-Cookie: NO `headers` Middleware is attached here. CORS is owned by
+#     the FastAPI app (CORSMiddleware, vendored per service per MASTER_PLAN §5.A);
+#     Traefik does routing + TLS ONLY and MUST NOT strip/rewrite CORS or Set-Cookie
+#     (same R-SP7-1 P0 ADD-ONLY rule as the api Ingress + svc-image + svc-export).
+#
+# Namespace: dev ONLY (Sub-Plan D constraint §4).
+#
+# NOTE on coexistence with the live host-based `api` Ingress + sibling carve-out
+# IngressRoutes: the live api.mesell.xyz Ingress (TF-managed, k8s/ingress.yaml doc)
+# routes ALL of api.mesell.xyz → api:80 (monolith). During the strangler window this
+# IngressRoute is HIGHER-precedence for its one specific price-calc path (a
+# Path/PathRegexp match outscores a host-only Ingress on path specificity in Traefik).
+# It does NOT overlap svc-image's `…/images` rule nor svc-export's `…/export-xlsx`
+# rule / `/api/v1/exports` prefix (different suffixes). Cutover ordering +
+# monolith-fallback is handled at integration/deploy time per MASTER_PLAN §3.C
+# rollback contract (point the rule back at api:80 on rollback). For Sub-Plan D
+# (dev, zero-traffic) this rule simply peels the one price-calc path off the monolith
+# onto svc-pricing.
+# ---------------------------------------------------------------------------
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: svc-pricing
+  namespace: dev
+  labels:
+    app: svc-pricing
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    # POST /api/v1/products/{id}/price-calc — tight PathRegexp anchored to the
+    # /price-calc suffix so it does NOT hijack other /products sub-routes
+    # (catalog catch-all, images, export-xlsx). `[^/]+` = one segment (the UUID),
+    # `$` anchors the suffix. This long anchored rule outranks the catalog catch-all
+    # on Traefik's length/specificity-derived default priority (NO numeric priority
+    # field needed — the tight regex IS the scheme; mirrors svc-image).
+    - kind: Rule
+      match: Host(`api.mesell.xyz`) && PathRegexp(`^/api/v1/products/[^/]+/price-calc$`)
+      services:
+        - name: svc-pricing
+          port: 8001
+  tls:
+    # Reuse the existing api.mesell.xyz LE cert (cert-manager, Ready since Phase B).
+    # LIVE dev secret name is `api-tls` (verified 2026-06-13) — NOT `api-mesell-xyz-tls`
+    # (the stale name in the svc-image/svc-export precedents, which does not exist in dev).
+    secretName: api-tls

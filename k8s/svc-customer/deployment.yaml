@@ -1,0 +1,115 @@
+# k8s/svc-customer/deployment.yaml
+# ---------------------------------------------------------------------------
+# svc-customer — Sub-Plan E (customer extraction), INFRA deliverable I2.
+#
+# ONE Deployment from ONE image (asia-south1-docker.pkg.dev/.../svc-customer):
+#   - customer-svc-api   1 replica, FastAPI HTTP server on :8001
+#
+# *** NO WORKER DEPLOYMENT *** (contrast k8s/svc-export/deployment.yaml which has
+# two). customer has NO Celery (SUB_PLAN_0E §2 "ships NO Celery app";
+# spec_msE_backend.md:17). This file therefore declares exactly ONE Deployment —
+# same shape as svc-dashboard (the other api-only service).
+#
+# Sizing authority — handoff_msE_infra.md §1 I2 (customer is SMALL and query-light;
+# the smallest service alongside pricing):
+#   api  req  50m CPU / 128Mi  ·  lim 200m CPU / 512Mi   (handoff §1 I2 exact)
+#   NOTE: mem lim 512Mi (the handoff I2 value) — higher than svc-dashboard's 256Mi
+#   because customer holds the COMPLIANCE_EXTENSION_MAP (11 keys) + the cached
+#   super_category_set + required-fields response in working memory; the handoff
+#   pins 512Mi, so 512Mi it is (per-deliverable authority over the dashboard twin).
+#
+# D3 capacity (handoff §3 / infra plan §6.3): customer-svc adds ONLY 50m CPU request
+# (api-only, no worker). At the MS-3 wave the node hosts the monolith remnant +
+# export-svc (MS-1) + dashboard-svc + image-svc (MS-2) + the MS-3 pair (customer +
+# pricing). customer is ~50m, pricing ~50m. Per the handoff §3 standing rule
+# (MASTER_PLAN §3.A.1 / MS-PAR-1 D3 checkpoint): customer itself commits NO money;
+# if the MASTER-SESSION capacity math at MS-3 deploy shows monolith + 4 small
+# services + customer + pricing OVERFLOWS the e2-standard-2 node, STOP and ask the
+# founder for D3 (e2-standard-4, ~₹2,600/mo) — do NOT silently upgrade. customer's
+# 50m by itself fits with headroom; the wave-3 SUM is the master-session watch.
+#
+# Namespace: dev ONLY (constraint §4 — no staging/prod manifests in Sub-Plan E).
+#
+# Rolling-update strategy mirrors the sibling services: the dev node is CPU-tight,
+# so kill-before-surge (maxSurge:0 / maxUnavailable:1) avoids the "new pod Pending:
+# Insufficient cpu" deadlock (the CI run 27360475090 lesson).
+#
+# STRANGLER POSTURE (handoff "KEY CONSTRAINTS"): this Deployment PROVISIONS the pod
+# but svc-customer is NOT cut over. The monolith keeps serving
+# /api/v1/seller-profile/* until the founder-gated cutover flip. This manifest +
+# the IngressRoute placeholder (I4) stand up the service; the cutover (re-pointing
+# Traefik + the monolith customer_client + the export/dashboard customer_client base
+# URLs) is a SEPARATE founder gate — NOT wired live here.
+#
+# Secrets/config (deliverables I6): the container consumes the trimmed
+# customer-svc Secret (customer-svc-secrets, I6) + the trimmed customer-svc
+# ConfigMap (customer-svc-config) via envFrom. svc-customer needs ONLY:
+# DATABASE_URL (@schema customer search_path), VALKEY_URL (DB 3, customer: prefix),
+# JWT_SECRET (local verify per D7/A2), CACHE_VERSION, APP_ENV.
+# It does NOT receive GEMINI/LANGFUSE/MSG91/RAZORPAY/GCS (no AI/SMS/payment/storage
+# — handoff §1 I6 / spec_msE_backend.md:58). This is the §5.D blast-radius trim.
+#
+# *** NO GCS auth block *** (handoff "NO GCS service account"): customer touches NO
+# object storage — no images, no exports. GOOGLE_APPLICATION_CREDENTIALS is absent
+# because customer never calls GCS at all (not merely "keyless").
+# ---------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: customer-svc-api
+  namespace: dev
+  labels:
+    app: customer-svc
+    component: api
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Kill-before-surge: dev node is CPU-saturated; a surge pod cannot schedule.
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: customer-svc
+      component: api
+  template:
+    metadata:
+      labels:
+        app: customer-svc
+        component: api
+    spec:
+      containers:
+        - name: customer-svc-api
+          image: asia-south1-docker.pkg.dev/project-1f5cbf72-2820-4cdb-949/meesell-prod-images/svc-customer:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8001
+          envFrom:
+            # Trimmed config: APP_ENV + CACHE_VERSION only (non-secret). NOT the
+            # monolith's full meesell-config (no GEMINI_MODEL/GCS_*/LangFuse — §5.D trim).
+            - configMapRef:
+                name: customer-svc-config
+            # Trimmed secret (I6): DATABASE_URL, VALKEY_URL, JWT_SECRET only.
+            - secretRef:
+                name: customer-svc-secrets
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3

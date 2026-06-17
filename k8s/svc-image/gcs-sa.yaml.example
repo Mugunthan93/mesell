@@ -1,0 +1,86 @@
+# k8s/svc-image/gcs-sa.yaml.example
+# ===========================================================================
+# svc-image — Sub-Plan C (image extraction), INFRA deliverable I6.
+#
+# GCS Service Account SPEC for the image path prefix. REFERENCE/SPEC ONLY — this is
+# NOT a kubectl-appliable manifest (GCS SAs are a GCP IAM concern, created via
+# Terraform + applied by the founder; the org policy forbids SA JSON keys so there
+# is NO k8s Secret to apply).
+#
+# Authority: handoff_msC_infra.md §1 I6 + MASTER_PLAN §2.E ("Each service that
+# touches GCS (image-svc, export-svc) gets its own GCP Service Account with
+# storage.objectAdmin on its path prefix. No bucket split in V1.5.") + monolith
+# backend/app/adapters/gcs.py (ADC from instance metadata, no JSON env).
+#
+# ── SCOPE GUARD (Sub-Plan C constraint §4) ─────────────────────────────────
+#   This authorizes EXACTLY ONE new GCP Service Account (the image workload SA) at
+#   the V1.5-hardened tier — OR ZERO new SAs at the recommended Sub-Plan-C tier
+#   (option A below). Anything bigger — a new bucket, a new IAM role beyond this one
+#   SA, project-level grants — is OUT OF SCOPE: STOP and flag to the founder.
+#
+# ── AUTH MODEL: KEYLESS (GCE metadata server) ──────────────────────────────
+#   The org policy constraints/iam.disableServiceAccountKeyCreation FORBIDS SA JSON
+#   keys. So:
+#     - There is NO k8s Secret holding a key.json.
+#     - GOOGLE_APPLICATION_CREDENTIALS is ABSENT from the svc-image pods.
+#     - The pod inherits a GCP identity via the GCE metadata server (169.254.169.254)
+#       on the K3s node (gcs.py reads ADC from instance metadata).
+#
+#   TWO viable bindings (founder/TF picks one at apply):
+#
+#   (A) SUB-PLAN-C RECOMMENDED — reuse the node's VM SA (current monolith pattern).
+#       The K3s node VM SA `888244156264-compute@developer.gserviceaccount.com`
+#       ALREADY has roles/storage.objectAdmin on gs://meesell-images
+#       (*** VERIFIED 2026-06-13 *** via `gcloud storage buckets get-iam-policy
+#       gs://meesell-images` → objectAdmin → serviceAccount:888244156264-compute@...).
+#       svc-image pods on the node inherit it transparently — ZERO new IAM, ₹0.
+#       Path-prefix tenancy is enforced in APPLICATION code (image_service /
+#       gcs.py write only under meesell-images/{user_id}/{product_id}/{idx}.jpg),
+#       NOT by IAM. This is the recommended Sub-Plan-C path (dev, zero-traffic) —
+#       even tighter than the §4 ceiling (zero new SAs).
+#
+#   (B) V1.5 HARDENED (MASTER_PLAN §2.E target) — a DEDICATED image workload SA
+#       bound to the K8s ServiceAccount via Workload Identity, with
+#       storage.objectAdmin granted via an IAM Condition scoping it to the
+#       `meesell-images/` bucket (or a prefix within a shared bucket). Requires
+#       Workload Identity wiring on K3s (kubelet credential provider) — deferred per
+#       MEMORY (Phase E follow-up) + infra plan MS-K8S-4 (L, V1.5 hardening, NOT the
+#       Sub-Plan-C default per R-MS-6).
+#
+#   DECISION for Sub-Plan C: take (A) — inherit the node VM SA, app-layer prefix
+#   tenancy, ₹0, no new IAM. The dedicated-SA (B) ships with MS-K8S-4 when Workload
+#   Identity lands on the cluster.
+#
+# ── BUCKET / PATH PREFIX ───────────────────────────────────────────────────
+#   *** Bucket: gs://meesell-images *** (asia-south1; the DEDICATED product-image
+#   bucket, distinct from the export `gs://meesell-prod-assets`). Surfaced to the app
+#   as GCS_BUCKET_IMAGES in the shared ConfigMap meesell-config (live since
+#   2026-06-12 per k8s/config.yaml:52). Image objects:
+#     meesell-images/{user_id}/{product_id}/{idx}.jpg     (idx 0..3, up to 4 images)
+#   This matches gcs.py's documented image path convention + the monolith
+#   GCS_BUCKET_IMAGES read.
+#
+#   NOTE — svc-image uses GCS_BUCKET_IMAGES (meesell-images), NOT GCS_BUCKET
+#   (meesell-prod-assets, the export bucket). Both are non-secret ConfigMap values;
+#   the image SA scope above is on meesell-images.
+#
+# ── TERRAFORM (when option B is taken at V1.5) ──────────────────────────────
+#   New module infra/terraform/modules/svc_image_gcs_sa/ (NOT authored/applied in
+#   Sub-Plan C — option A needs no module):
+#     resource "google_service_account" "svc_image"             # image workload SA
+#     resource "google_storage_bucket_iam_member" "svc_image"   # objectAdmin on
+#                                                               # gs://meesell-images
+#     resource "google_service_account_iam_member" "wi_binding" # WI: KSA → GSA
+#   Apply: terraform apply -target=module.svc_image_gcs_sa  (founder-run).
+#
+# ── ENV (set regardless of A/B; non-secret, from meesell-config) ────────────
+#   GCS_BUCKET_IMAGES=meesell-images          (the bucket svc-image writes to)
+#   GCS_PROJECT_ID=project-1f5cbf72-2820-4cdb-949
+#   GCS_SIGNED_URL_TTL_SECONDS=3600           (list_images returns 1-hour signed URLs;
+#                                              SHIM_CONTRACT §2.6 requires 1 h TTL)
+#   (NO GOOGLE_APPLICATION_CREDENTIALS — keyless.)
+#
+# Cost impact: ₹0 (option A reuses the existing node SA + the existing meesell-images
+# bucket; image object storage is immaterial at V1 volume — well under the GCS free
+# tier).
+# ===========================================================================

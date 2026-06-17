@@ -45,7 +45,7 @@ import logging
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import CurrentUser, get_current_user
@@ -57,6 +57,7 @@ from app.modules.image.schemas import (
     ImageUploadResponse,
     ImagesListResponse,
 )
+from app.shared.config import settings
 from app.shared.database import get_db
 
 logger = logging.getLogger(__name__)
@@ -102,6 +103,14 @@ async def upload_image(
       (``catalog.product.not_found``).
     * 409 — slot already occupied (``image.slot.occupied``).
     """
+    # ── Feature flag guard (FEATURE_PLAN.md D2) ──────────────────────────
+    # Request-time check (reads settings inside handler, NOT at import time)
+    # per the smart-picker pattern in category/router.py:117.
+    if not settings.FEATURE_IMAGE_PRECHECK_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Image upload is disabled in this environment",
+        )
     # FastAPI's Form() default cannot enforce the [1,4] range
     # declaratively (Pydantic schema lives in the Form arg, not a model).
     # Fail-fast at the route boundary so the service does not waste a
@@ -141,6 +150,11 @@ async def list_images(
     No audit event per §11.J (read-only polling — would flood
     ``audit_events``).
     """
+    # ── Feature flag guard (FEATURE_PLAN.md D2) ──────────────────────────
+    # GET is read-only — sellers may have legacy images.  Return an empty
+    # list (200) rather than 404 when the flag is OFF.
+    if not settings.FEATURE_IMAGE_PRECHECK_ENABLED:
+        return ImagesListResponse(images=[])
     return await image_service.list_images(user.user_id, id, db=db)
 
 

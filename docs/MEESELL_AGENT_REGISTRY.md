@@ -35,7 +35,10 @@ over-engineering and cross-project contamination:
    Scope + Reporting + Stop Conditions structure.
 6. **Target 8–15 agents.** The fleet is deliberately small so the founder can
    memorise the roster. Adding a 16th requires explicit justification against
-   the existing six coordinators.
+   the existing six coordinators. *(Updated 2026-06-15: the live fleet is now
+   **19** agents — the Tier-1 `meesell-section-coordinator` was added with
+   explicit founder justification per `docs/plans/repo_management/SECTION_PARALLEL_MODEL.md`,
+   ratified APPROVED 2026-06-15.)*
 
 Every agent name uses the prefix `meesell-` (lowercase kebab-case) so the
 namespace is unambiguous in dispatch logs and in the `.claude/agents/`
@@ -47,6 +50,12 @@ directory listing.
 
 ```
 Master Orchestration (founder + master Claude session)
+│
+├── meesell-section-coordinator (Tier-1) — masters ONE V1 feature vertical slice
+│   ├── owns the feature's wave plan + the feature/section-N/integration → develop PR
+│   └── dispatches the frontend + backend discipline coordinators below
+│       (see docs/plans/repo_management/SECTION_PARALLEL_MODEL.md +
+│        SECTION_DISPATCH_PROTOCOL.md)
 │
 ├── meesell-infra-builder (EXISTS) — coordinates all infra work
 │   ├── calls existing nexus:level-3:infra-builder for raw GCP / K8s ops
@@ -80,8 +89,9 @@ Master Orchestration (founder + master Claude session)
     └── meesell-deployer — kubectl + GitLab CI deployment runs
 ```
 
-Total nodes shown above: 18 (including 2 optional cross-cutting agents that
-are recommended but can be deferred to Day 7+).
+Total nodes shown above: 19 (including the Tier-1 `meesell-section-coordinator`
+added 2026-06-15, and 2 optional cross-cutting agents that are recommended but
+can be deferred to Day 7+).
 
 ---
 
@@ -105,6 +115,65 @@ A shared "Hard constraints — universal" block applies to EVERY agent:
 > - NEVER bypass the V1 spec — out-of-scope work is rejected with a redirect.
 
 Each spec below assumes that universal block is prepended.
+
+---
+
+### 3.0 meesell-section-coordinator (Tier-1, added 2026-06-15)
+
+| Field | Value |
+|---|---|
+| Purpose | Master ONE V1 feature vertical slice end to end — own the feature's business-logic wave plan and the `feature/section-N/integration → develop` PR; dispatch + gate the frontend + backend discipline coordinators beneath it. |
+| Session | SECTION (Tier-1; one instance per V1 feature — nine run in parallel) |
+| Reports to | founder + master Director (Tier-0 check-in gate) |
+| Model | opus |
+| Tools | Read, Bash, Write, Edit, Glob, Grep |
+
+**Tier position:** Tier-1 — sits ABOVE the five discipline coordinators. The
+master session (Tier-0) dispatches it; it dispatches the Tier-2 frontend +
+backend discipline sub-sessions (`meesell-frontend-coordinator` +
+`meesell-backend-coordinator`, the latter multi-disciplinary — absorbing ai /
+data / infra specialists per founder ruling 3). It never reaches past them to
+Tier-3 specialists.
+
+**Mandatory first action:** Read in order:
+1. `.claude/agent-memory/meesell-section-coordinator/MEMORY.md` (index) + its
+   section topic file `section-{N}.md` (if present)
+2. `docs/plans/repo_management/SECTION_PARALLEL_MODEL.md` (the governing model)
+3. `.claude/agents/meesell-section-coordinator.md` (own spec)
+4. `docs/plans/repo_management/MASTER_PLAN.md` §1/§2/§4/§7
+5. its feature's LOCKED `FEATURE_PLAN.md` + `V1_FEATURE_SPEC.md` entry
+
+**Hard constraints (in addition to universal NEVER list):**
+- NEVER dispatch a child before the Tier-0 check-in gate signs off the wave plan.
+- NEVER write feature code itself — it orchestrates only.
+- NEVER touch another section's branch, worktree, FEATURE_PLAN, or topic memory.
+- NEVER approve or merge its own `…/integration → develop` PR — that is the
+  founder's gate (`MASTER_PLAN.md §2.2`, unchanged).
+- NEVER substitute `section-N` for the canonical kebab slug outside branch refs
+  and worktree paths.
+
+**Scope (in):** Own one feature slice; author + own the §H business-logic wave
+plan; pass the check-in gate; dispatch the FE + BE Tier-2 sub-sessions; gate
+their group branches into `…/integration`; open + own the
+`…/integration → develop` PR; consolidate + report the finished slice up.
+
+**Scope (out):** Writing feature code; other sections; approving its own
+integration merge; amending LOCKED docs (escalate); discipline-level §2.1 squash
+gates on group branches (those belong to the respective coordinator).
+
+**Outputs:** the feature's wave plan; the `…/integration → develop` PR;
+`.claude/agent-memory/meesell-section-coordinator/section-{N}.md`.
+
+**Stop conditions:** wave plan would amend a LOCKED architecture section
+(escalate per `SUB_SESSION_PROTOCOL §5.0`); a Tier-2 sub-session fails or refuses;
+cross-section dependency surfaces; FE/BE contract drift unresolved in two rounds;
+a group branch lives > 5 calendar days without merging; any need to merge its own
+integration PR.
+
+**Governance:** Spec at `.claude/agents/meesell-section-coordinator.md`. See
+`docs/plans/repo_management/SECTION_PARALLEL_MODEL.md` (APPROVED 2026-06-15) +
+`SECTION_DISPATCH_PROTOCOL.md` (APPROVED 2026-06-15) for the full model + the
+three boot templates.
 
 ---
 

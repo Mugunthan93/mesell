@@ -1,13 +1,51 @@
-import { Injectable, signal, computed } from '@angular/core';
+import { Injectable, signal, computed, inject, OnDestroy } from '@angular/core';
+import { switchMap, map, catchError, EMPTY, type Observable } from 'rxjs';
+import { AuthApiService } from './auth-api.service';
+import type { MeResponse } from './auth-api.service';
 
+/**
+ * AuthUser — DECISION-3 additive-optional reconciliation.
+ *
+ * Legacy fields (id, name) kept OPTIONAL so existing inline constructors
+ * (otp-verify mock, SP06 C4 smoke) don't break at compile time — they use
+ * {id, name, phone} which is still valid against this interface.
+ *
+ * Real backend fields (from MeResponse / GET /auth/me) are additive-optional.
+ * phone is REQUIRED — present in both legacy mock and real MeResponse.
+ *
+ * The real-login path (§4.3) populates user_id/plan/created_at from /me.
+ * The legacy id/name fields fade out as otp-verify migrates to the real flow.
+ */
 export interface AuthUser {
-  id: number;
-  name: string;
+  // Legacy mock fields — kept OPTIONAL (DECISION-3: additive, no breaking change)
+  id?: number;
+  name?: string;
+  // Required in both legacy and real
   phone: string;
+  // Additive from MeResponse (DECISION-3)
+  user_id?: string;       // MeResponse.user_id (UUID)
+  plan?: 'free';          // MeResponse.plan (V1 always free)
+  created_at?: string;    // MeResponse.created_at (ISO-8601 TZ)
+  last_login_at?: string | null;
+  // Onboarding gate (Stage-1 wire, Path B) — additive-optional. Drives the shell
+  // Onboarding nav-item visibility (hidden when true). Absent on legacy mock users.
+  onboarding_complete?: boolean;
+}
+
+/** Minimal AuthUser shape derived from MeResponse. */
+function meToUser(me: MeResponse): AuthUser {
+  return {
+    phone: me.phone,
+    user_id: me.user_id,
+    plan: me.plan,
+    created_at: me.created_at,
+    last_login_at: me.last_login_at,
+    onboarding_complete: me.onboarding_complete,
+  };
 }
 
 @Injectable({ providedIn: 'root' })
-export class AuthService {
+export class AuthService implements OnDestroy {
   // FE-D5: in-memory token only — never persisted to localStorage/sessionStorage
   private readonly _token = signal<string | null>(null);
   private readonly _user  = signal<AuthUser | null>(null);
@@ -15,13 +53,37 @@ export class AuthService {
   readonly isAuthenticated = computed(() => this._token() !== null);
   readonly currentUser     = computed(() => this._user());
 
-  /** Called by login/OTP flow after backend confirms token */
-  setSession(token: string, user: AuthUser): void {
+  /** Timer handle for proactive silent refresh (scheduleRefresh). */
+  private _refreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** AuthApiService injected via constructor (Angular DI — avoids NG0203 outside injection context). */
+  private readonly authApi = inject(AuthApiService);
+
+  // ── Public API ─────────────────────────────────────────────────────────────
+
+  /**
+   * Called by login/OTP flow after backend confirms token.
+   *
+   * Frozen-surface amendment (2026-06-12, founder-approved §7.3): setSession
+   * now AUTO-PAIRS with scheduleRefresh. When the optional `expiresIn` (seconds)
+   * is supplied, a proactive silent refresh is scheduled automatically — the
+   * caller no longer has to remember the setSession → scheduleRefresh pairing.
+   *
+   * BACKWARD COMPATIBLE: when `expiresIn` is omitted (the existing 2-arg
+   * call shape — otp-verify mock, SP06 C4 smoke, bootstrap pre-hydration),
+   * behaviour is UNCHANGED: token + user are set, no refresh is scheduled.
+   * scheduleRefresh() remains public and callable for those paths.
+   */
+  setSession(token: string, user: AuthUser, expiresIn?: number): void {
     this._token.set(token);
     this._user.set(user);
+    if (expiresIn !== undefined) {
+      this.scheduleRefresh(expiresIn);
+    }
   }
 
   logout(): void {
+    this._cancelRefreshTimer();
     this._token.set(null);
     this._user.set(null);
   }
@@ -29,5 +91,133 @@ export class AuthService {
   /** Returns bearer token for HTTP interceptor */
   getToken(): string | null {
     return this._token();
+  }
+
+  // ── Silent-refresh scheduling (§4.2) ───────────────────────────────────────
+
+  /**
+   * Schedule a proactive token refresh BEFORE the access token expires.
+   * expires_in: seconds-to-live from verify/refresh response.
+   * Fires at (expires_in - 30)s to give a 30-second window before expiry.
+   * The 401-path refresh (refreshInterceptor) is the safety net.
+   *
+   * Clears any previous timer (idempotent — safe to call after every setSession).
+   */
+  scheduleRefresh(expiresIn: number): void {
+    this._cancelRefreshTimer();
+    const delayMs = Math.max((expiresIn - 30) * 1000, 0);
+    this._refreshTimer = setTimeout(() => {
+      this._doSilentRefresh();
+    }, delayMs);
+  }
+
+  /**
+   * App-init bootstrap — page-reload survival path (FE-D5).
+   * Calls POST /auth/refresh (the HttpOnly cookie is auto-sent by the browser).
+   * On SUCCESS → setSession(new token, user from /me) + scheduleRefresh.
+   * On FAILURE (401 — no/expired cookie) → stay logged-out, no redirect.
+   *   The route guard handles unauthorised navigation.
+   *
+   * MUST resolve (never reject) — a rejected APP_INITIALIZER hangs app init.
+   * Called from shell app.config.ts APP_INITIALIZER / provideAppInitializer.
+   */
+  bootstrap(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      this.authApi
+        .refresh()
+        .pipe(
+          switchMap((refreshResp) => {
+            // Got a new access token. Set it in _token BEFORE calling /me so that
+            // jwtInterceptor can attach Bearer on the /me request (which is Bearer-protected).
+            // This is the early-token-set pattern required because bootstrap() calls me()
+            // before setSession(), but jwtInterceptor reads from _token signal.
+            const newToken = refreshResp.access_token;
+            this._token.set(newToken);
+            return this.authApi.me().pipe(
+              catchError(() => {
+                // /me failed but we have a token — schedule refresh and stay partially hydrated
+                // (_token is already set above; user remains null until next real login)
+                this.scheduleRefresh(refreshResp.expires_in);
+                return EMPTY;
+              }),
+              switchMap((me) => {
+                // Full hydration: overwrite with real user from /me
+                this.setSession(newToken, meToUser(me));
+                this.scheduleRefresh(refreshResp.expires_in);
+                return EMPTY;
+              }),
+            );
+          }),
+          catchError(() => {
+            // refresh 401 — no valid cookie; stay logged-out
+            return EMPTY;
+          }),
+        )
+        .subscribe({ complete: () => resolve() });
+    });
+  }
+
+  /**
+   * Re-hydrate the shared user from GET /auth/me WITHOUT touching the token or
+   * the refresh timer. Use after a backend mutation that changes user-scoped
+   * state already reflected by /me (e.g. onboarding submit flips
+   * `onboarding_complete`) so the shell's `currentUser()` updates immediately
+   * — without waiting for the next page reload or silent refresh.
+   *
+   * Bearer-auth via the existing in-memory token (jwtInterceptor attaches it).
+   * On any failure (401/5xx/offline) the existing user signal is left untouched
+   * and the observable completes — callers MUST NOT depend on it for navigation.
+   * Returns the void observable; subscribe to know when hydration settled.
+   */
+  refreshUser(): Observable<void> {
+    return this.authApi.me().pipe(
+      map((me) => {
+        this._user.set(meToUser(me));
+      }),
+      catchError(() => EMPTY),
+    );
+  }
+
+  // ── Private helpers ────────────────────────────────────────────────────────
+
+  private _cancelRefreshTimer(): void {
+    if (this._refreshTimer !== null) {
+      clearTimeout(this._refreshTimer);
+      this._refreshTimer = null;
+    }
+  }
+
+  private _doSilentRefresh(): void {
+    this.authApi
+      .refresh()
+      .pipe(
+        switchMap((resp) => {
+          // Early-set: update _token immediately so jwtInterceptor attaches new Bearer on /me.
+          // The old token is still in _token up to this point (proactive refresh fires 30s before
+          // expiry so the old token SHOULD still work on /me, but using the new token is safer).
+          this._token.set(resp.access_token);
+          return this.authApi.me().pipe(
+            catchError(() => {
+              // /me failed — token is already updated; just reschedule
+              this.scheduleRefresh(resp.expires_in);
+              return EMPTY;
+            }),
+            switchMap((me) => {
+              this.setSession(resp.access_token, meToUser(me));
+              this.scheduleRefresh(resp.expires_in);
+              return EMPTY;
+            }),
+          );
+        }),
+        catchError(() => {
+          // Silent refresh failed — let the 401-interceptor handle the next request
+          return EMPTY;
+        }),
+      )
+      .subscribe();
+  }
+
+  ngOnDestroy(): void {
+    this._cancelRefreshTimer();
   }
 }

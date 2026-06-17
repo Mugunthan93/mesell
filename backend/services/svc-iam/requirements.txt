@@ -1,0 +1,34 @@
+# svc-iam runtime dependencies (MS Sub-Plan G, SUB_PLAN_0G §"Code surfaces").
+#
+# Versions PINNED to the monolith's exact pins (backend/requirements.txt) so
+# the extracted service behaves identically.
+#
+# iam is IDENTITY / OTP / TOKEN ISSUANCE (§0.2 / §0.3):
+#   * NO celery / openpyxl / rembg          (no worker, no image/export pipeline)
+#   * NO gemini / langfuse                   (no AI track)
+#   * NO google-cloud-storage                (no storage)
+# iam IS the only service that ISSUES tokens (pyjwt — sign + verify), sends OTP
+# (httpx → MSG91 adapter), and verifies the Razorpay webhook HMAC (httpx).
+# iam is all-✗ in the call matrix (§0.4) — httpx is used ONLY for the MSG91 /
+# Razorpay OUTBOUND adapters, NOT for any cross-module /internal/* shim.
+
+# ── Web framework ────────────────────────────────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+pydantic-settings>=2.5,<3
+
+# ── Database (async) — users (schema iam) + cross-schema audit wiring ─────
+sqlalchemy[asyncio]==2.0.32
+asyncpg==0.29.0
+
+# ── Cache (OTP records + FE-D5 refresh-allowlist + rate-limit, Valkey DB 0)
+redis==5.0.8
+
+# ── Auth (HS256 sign + LOCAL verify — A2 / D7) ───────────────────────────
+pyjwt==2.9.0
+
+# ── HTTP (MSG91 OTP-send adapter + Razorpay webhook verification) ────────
+httpx==0.27.0
+
+# ── Observability ────────────────────────────────────────────────────────
+prometheus-client>=0.20,<1

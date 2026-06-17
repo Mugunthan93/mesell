@@ -7,6 +7,7 @@ import {
 import { Menu } from 'primeng/menu';
 import type { MenuItem } from 'primeng/api';
 import type { MeeMenuItem } from './menu.types';
+import { MEE_ICONS } from '../icon/icon.registry';
 
 /**
  * MeeSell popup menu wrapper — Layer 2 abstraction over PrimeNG's <p-menu>.
@@ -26,11 +27,11 @@ export class MeeMenuComponent {
 
   private readonly menu = viewChild.required<Menu>('menu');
 
-  /** Maps the MeeSell-semantic items to PrimeNG's MenuItem shape. */
+  /** Maps the MeeSell-semantic items to PrimeNG's MenuItem shape, resolving icon names. */
   protected primeItems(): MenuItem[] {
     return this.items().map((item) => ({
       label: item.label,
-      icon: item.icon,
+      icon: item.icon ? MEE_ICONS[item.icon] : undefined,
       routerLink: item.routerLink,
       command: item.command ? () => item.command!() : undefined,
       separator: item.separator,

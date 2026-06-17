@@ -1,0 +1,15 @@
+{
+  "run_date": "2026-06-11",
+  "gate": "D2 Gate 2 \u2014 4 deterministic Pillow checks (smoke)",
+  "total_cases": 20,
+  "bad_pass": 10,
+  "good_pass": 10,
+  "passed": 20,
+  "bad_expected": 10,
+  "good_expected": 10,
+  "worst_case_pillow_seconds": 0.028,
+  "pillow_budget_seconds": 2.0,
+  "gemini_calls": 0,
+  "gemini_cost_inr": 0.0,
+  "verdict": "PASS"
+}

@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject, Injectable } from '@angular/core';
 import { ConfirmDialog } from 'primeng/confirmdialog';
 import { ConfirmationService } from 'primeng/api';
+import { MEE_ICONS } from '../icon/icon.registry';
 
 export interface MeeConfirmConfig {
   message: string;
@@ -17,7 +18,7 @@ export class MeeConfirmService {
     this.confirmSvc.confirm({
       message: config.message,
       header: config.header ?? 'Confirm',
-      icon: 'pi pi-exclamation-triangle',
+      icon: MEE_ICONS['warning'],
       accept: config.accept,
       reject: config.reject,
     });

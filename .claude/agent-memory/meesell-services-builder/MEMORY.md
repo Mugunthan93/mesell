@@ -5,6 +5,121 @@ Business-logic specialist for MeeSell. Owns service layer (ai_engine call site, 
 
 ---
 
+## catalog-form schema DTO mapper (2026-06-16, branch feature/catalog-form-fix, worktree /tmp/mesell-wt/catalog-form-fix)
+
+### Scope / root cause
+Catalog-form UI bugs (#1/#3 blank labels + "undefined", #2 dead dropdowns). `category.service.fetch_schema`
+shipped the RICH at-rest §5.6.1 field shape (25 keys: canonical/display/export layers) VERBATIM. That shape
+has NO `name`/`help_text`/`enum_resolver`/`validation_message_ids` — but the §5A.C WIRE contract (9 keys) and the
+FE adapter both expect them. Two broken consumers: FE field-schema adapter (reads dto.name/dto.enum_resolver) AND
+`catalog.service.validate_product` (reads spec["enum_resolver"]/spec.get("enum_values"), defaulted "static"+[]).
+
+### The fix (Option C — read-time projection, NOT a storage change, NOT a §5A.C amendment)
+NEW `category.service.fetch_schema_dto(category_id, db)` wraps `fetch_schema` (reuses the `schema:{category_id}`
+cache) and applies a pure field-level projection. Storage stays RICH; the wire shape is materialized at read time.
+- `_map_field_to_dto(rich)`: name←display_label["en"] (fallback `canonical_name.replace("_"," ").title()` — NEVER
+  empty); help_text←display_help["en"] (fallback `f"Enter {name}."` — display_help is None when seed had no help);
+  enum_resolver derived (see below); validation_message_ids←[] (rich validation_message is display text, not IDs);
+  canonical_name/marker/data_type/primitive/is_advanced pass-through with defaults. Emits EXACTLY 9 keys + conditional
+  enum_values; ALL other rich keys dropped.
+- enum_resolver derivation: data_type!="dropdown"→None; dropdown+truthy enum_codes_map→"static" (+enum_values=list of
+  map keys); dropdown+no inline map→"category" (V1 always — enum_codes_map is None at template level; per-category
+  enums live in field_enum_values, FE lazy-loads, validator hits get_field_enum). enum_values surfaced ONLY when "static".
+- `_map_envelope_to_dto(env)`: maps fields[] element-wise; 6 other envelope keys (compulsory_count/optional_count/
+  total_count/wizard_step_count/main_sheet_label/compliance_shape) pass through UNCHANGED. Counts NEVER recomputed.
+
+### Consumer routing (LOCKED after fix)
+- GET /categories/{id}/schema (category/router.py:263) → fetch_schema_dto. SchemaResponse model UNCHANGED.
+- catalog/service.py ALL 6 fetch_schema sites (464/507/621/801/987/1059) → fetch_schema_dto.
+- export/service.py:452 → UNCHANGED rich fetch_schema (needs meesho_column_header/index/main_sheet_label).
+- core/cache.py:232 prewarm → UNCHANGED rich fetch_schema (warms the underlying schema:{id} cache that
+  fetch_schema_dto also reads; discards return value, does NOT read flat keys). This is the THIRD caller the
+  task spec didn't enumerate — leaving it rich is correct.
+
+### Test harness gotcha (IMPORTANT for future worktree sessions)
+This worktree has NO .venv. System python3 is 3.9 → fails on `Mapped[str | None]` ORM annotations.
+Use the MASTER tree's 3.11 venv as a TOOLCHAIN against worktree code:
+`VENV=/Users/mugunthansrinivasan/Project/mesell/backend/.venv/bin/python3.11`
+`cd <worktree>/backend && PYTHONPATH=$PWD <dummy env> $VENV -m pytest ...`
+conftest sets APP_ENV/DATABASE_URL/VALKEY_URL/JWT_SECRET only; the other ~13 REQUIRED_FIELDS (REFRESH_TOKEN_PEPPER,
+MSG91_*, RAZORPAY_*, GEMINI_API_KEY, GCS_*, LANGFUSE_*, AUDIT_PII_SALT, CORS_ALLOWED_ORIGINS) must be passed as dummy
+env or config.py SystemExits at import. ruff lives at /opt/homebrew/bin/ruff (NOT in the venv).
+Test file used the MIRROR-FIXTURE approach (not importing scripts.build_template_schemas) because the script imports
+app.shared.config.settings + mutates sys.path at module load — spec explicitly permits mirror fixtures with a docstring
+saying so. 104 passed (mapper + per-field shape); 162 across related §5A unit suite.
+
+### Docs amended (append-only)
+BACKEND_ARCHITECTURE §5A end (after §5A.J): amendment 2026-06-16 documenting read-time materialization.
+DATABASE_ARCHITECTURE §4.2 (after templates.schema_jsonb who-reads-it): wizard reads flat DTO, not rich shape.
+
+---
+
+## MS-D Phase B — svc-pricing extraction (2026-06-13, branch feature/microservices-pricing/backend)
+
+### Scope
+Heavy lift for Sub-Plan D (pricing extraction, MS-3). Vendored service/repository/domain/exceptions byte-for-byte
+from monolith `app/modules/pricing/`, built 2 outbound HTTP shims (catalog + category), resolved the §0.6
+shared-ORM hazard, trimmed Settings, vendored 6-mw + core, standalone main.py (NO Celery). Worktree
+`/tmp/mesell-wt/msD-backend/backend/services/svc-pricing/`. Phase A (schema-split 97c9dd63f587) was already done.
+
+### §0.6 RESOLUTION = OPTION B (the contract item future sub-plans must honor)
+Monolith service.calculate read `category_id` via `from app.shared.models.product import Product as ProductORM` +
+`db.get(ProductORM, product_id)` (illegal cross-schema after extraction). RESOLVED by **widening the catalog
+ownership shim** to ALSO return category_id, NOT by widening export-snapshot (Option A). New shim method
+`catalog_client.get_category_id(product_id, user_id, db=db)` hits `GET /internal/products/{id}/ownership-check`
+(the SAME endpoint as the ownership gate) and reads `{"category_id":"<uuid>"}` from the 200 body. The monolith's
+`db.get(ProductORM)` + TOCTOU if-guard + `category_id = product.category_id` (3 statements) → ONE line. repository's
+`products`-JOIN rewritten OUT (find_latest_by_product = bare product_id read; user-scoping upstream at ownership shim).
+**Executable ProductORM/products refs = ZERO (AST-verified).** Merge gate greps for these — only docstring mentions
+remain (they explain the elimination, same as dashboard/export precedent).
+
+CONTRACT ITEMS emitted (callee sub-plans MUST implement):
+- Sub-Plan H/catalog: WIDEN `GET /internal/products/{id}/ownership-check` (params: user_id) → 200
+  `{"category_id":"<uuid>"}` on success; 404 (catalog.product.not_found) conflating not-found/cross-tenant/soft-deleted.
+- Sub-Plan F/category: NEW `GET /internal/categories/{id}/commission` → 200 `{"commission_pct":"<decimal-string>"}`
+  NEVER null (`"0.00"`=unseeded); 404 (category.lookup.not_found). (NEW vs MS-A SHIM_CONTRACT.)
+
+### §16.G discipline — PROVEN
+AST recursive-strip (imports + docstrings) diff of svc service.py vs monolith = a SINGLE block replacement (the §0.6
+db.get elimination), 3 contiguous ast.dump hunks all part of that one block. The 3 protected cross-module call sites
+are byte-for-byte: `await catalog_service.assert_product_ownership(product_id, user_id, db=db)` (×2, monolith :134/:241,
+svc :151/:241) + `commission_pct = await category_service.get_commission(category_id, db=db)` (svc :165). _compute_pnl/
+_q/_generate_alerts = verbatim; D2 golden mrp=157.96 confirmed. The 2 import rewires: catalog→catalog_client,
+category→category_client (re-exported as catalog_service/category_service so call sites unchanged); plus the svc-tree
+module flattening (app.modules.pricing.X → app.X: repository/domain/exceptions/schemas).
+
+### Reusable extraction mechanics (held across SP01 export / MS-B dashboard / MS-D pricing)
+- **svc-dashboard is the closest template for a NO-Celery service** (pricing copied its 7 middleware + core + shared
+  shape). DELTA: pricing OWNS a table (pricing_calcs@pricing schema) so it KEEPS repository.py + shared/models/
+  pricing_calc.py, and audit_mw FIRES (write POST) vs dashboard's read-only GET NO-OP. The 5 middleware
+  (auth/tenancy/plan_guard/rate_limit/audit) are byte-identical to dashboard — `cp` them, then edit ONLY docstrings.
+- **Owned-table ORM model in svc tree:** bind `{"schema":"<mod>"}` explicitly; DROP the SQLAlchemy `ForeignKey` +
+  `relationship` to any catalog-owned table (Product) — keep the column as bare UUID; the DB-level cross-schema FK
+  stays valid (dropped only at catalog extraction). This is the §0.6 elimination at the MODEL layer.
+- **schemas.py + router.py are api-routes-builder's deliverables** — main.py mounts router import-tolerantly
+  (try/except ImportError); service.py imports `from app.schemas import ...` so service.py won't import until
+  schemas lands. To smoke-test service.py import + math, drop a THROWAWAY app/schemas.py stub, verify, then `rm` it
+  (do NOT commit it). `import app.main` boots clean without schemas (router import-tolerant).
+- **Shim transport (recipe §4) copied verbatim** from dashboard _transport.py — only the contextvar names change
+  (svc_pricing_*). httpx.MockTransport patches `_transport.httpx.AsyncClient` to record requests + assert
+  JWT+X-Request-ID forwarding + 503/504-only-retry.
+- **check_scope_to_user allowlist** entry `app.modules.pricing.repository.insert_calc` carried as a doc note (svc
+  lint context is Phase-C lead-owned).
+
+### Validation run (real output)
+ruff clean (app/). import-smoke `import app.main` OK (6 routes, 8 user_middleware). service.py rewire-identity +
+D2 golden math PASS. Shim round-trip + 404-mapping + JWT-forward PASS. No-vendor grep = doc-only (EXPLICITLY-ABSENT
+list + "no Celery"). Branch tip after push recorded in STATUS.
+
+### Hand-offs
+- api-routes-builder: router.py (1 route POST /products/{id}/price-calc 200, @rate_limit price_calc 600/3600 +
+  @audit_event pricing.calculated, NO /internal/*) + schemas.py (9 bare Decimal fields verbatim, extra="forbid").
+- infra/db: grant = INSERT ON public.audit_events TO pricing_user (audit FIRES); NO products SELECT (Option B=HTTP).
+- LEAD Phase C: §16.G CI AST parity (single §0.6 hunk allowed); T1 Decimal byte-golden; T6 cross-schema audit
+  round-trip; T3/T4 shim round-trips.
+
+---
+
 ## D4 §20.5 CI YAML CONSTRUCTED (2026-06-09, .gitlab-ci.yml)
 
 ### Scope
@@ -1764,3 +1879,254 @@ load_categories). ANY hit outside candidate+docs => KEEP.
   backend/ and docs/, but it's noise — worth a .git/info/exclude or sparse setup next time.
 
 ---
+
+---
+
+## MS-C B1 — svc-image service layer EXTRACTED (2026-06-13)
+
+### Scope
+HYBRID Phase-2 B1 (HEAVY-LIFT). Built `backend/services/svc-image/` (52 files) on branch
+`feature/microservices-image/svc` (worktree `/tmp/mesell-wt/msC-svc`, cut from
+`feature/microservices-image/integration` @ 3dc0f91). PR #204 → integration (LEAD squash gate, NOT merged).
+Authority: `spec_msC_backend_EXECUTION.md` §1 B1 + `recipe_ms_extraction.md` (svc-export template).
+
+### Reusable extraction recipe (copy for MS-D pricing / MS-E customer / etc.)
+- **Scaffold by cloning svc-export's `app/` tree**, then surgically replace the module-specific files
+  (service/tasks/repository/domain/exceptions/schemas/models/extracted_clients/ai_ops/requirements). The
+  vendored `core/*` + `shared/{database,valkey}` + middleware + i18n/resolver are ~identical across services
+  — copy verbatim, fix only docstrings + the trimmed bits (config fields, metrics, messages_en IDs).
+- **§16.G AST-parity check** (the gate the lead re-runs): parse both twins, strip module docstring (first
+  string-Expr) + ALL Import/ImportFrom nodes RECURSIVELY via `ast.NodeTransformer` (visit_Import/visit_ImportFrom
+  → None — top-level-only strip FALSE-FAILS on lazy in-body imports), compare `ast.dump`. PASS = byte-identical
+  executable. My service.py + tasks.py both PASS.
+- **Harness gotcha**: `cp -R` scaffolded files must be Read before Edit/Write (harness "File has not been read"
+  error). Easiest: Write the whole file fresh after a 2-line Read to satisfy the gate.
+
+### Image-specific decisions
+- **Option-B repository (§16.G EXEMPT, founder-RULED d4aa572/PR#197)**: repository.py is the ONE file whose
+  BODIES change. Removed `scope_to_user` + `Product as ProductORM` imports + `_owned_product_ids_subquery`; every
+  method scopes by `product_id`/`image_id` DIRECT (no products join, no read-grant). Tenancy = upstream
+  `assert_product_ownership` HTTP shim. Worker path (`update_precheck_result`) scopes by `image_id` alone — SAFE
+  (payload validated at enqueue + task_prerun JWT re-val); documented in code comment for the reviewer. AST scan
+  confirmed ZERO live scope_to_user/ProductORM/products refs (docstring-only mentions OK).
+- **ORM `product_image.py`** → schema `image` (table `image.product_images`), products FK + relationship DROPPED.
+- **ai_ops VENDORED whole-package** (client/cost_tracker/guardrail/budget_cap/prompt_registry/eval + watermark_v1
+  prompt) + gemini + langfuse adapters. prompt_registry resolves via `importlib` LAZILY → trimming
+  autofill_v1/smart_picker_v1 prompts is SAFE (only docstring refs remain). **Budget brake keyspace
+  `ai:cost:daily`/`ai:cost:pending`/`ai:budget:reservation` is UN-prefixed + SHARED on Valkey DB 0** (via
+  `get_valkey_otp` = `_make_client(0)`) — global ₹500/day cap per D6, do NOT namespace. Only the Celery broker
+  (DB1) + results (DB2) keys get the `svc-image:` prefix.
+- **`core/metrics` must re-add** `AI_OPS_BUDGET_ALARM` (budget_cap) + `AI_OPS_COST_INR` (cost_tracker) vs the
+  export-trimmed version — ai_ops imports them at module load. `adapters/__init__` must re-add `GeminiAdapterError`
+  (gemini adapter imports it) + `LangfuseAdapterError`.
+- **Celery `task_prerun` JWT re-validation handler**: svc-export did NOT carry it; image's spec §1.G REQUIRES it.
+  Carried scoped to `image.precheck` only (existence check vs public.users via make_worker_session NullPool;
+  Reject(requeue=False) on miss; fail-open on DB error).
+- **Router import path** (NOT pinned by spec): used svc-export precedent `from app.router import router as
+  image_router` in main.py. B2 (api-routes-builder) owns router.py; flagged for lead verification.
+- **rembg DEFERRED** — declared in monolith requirements, zero call sites; NOT carried into svc-image (cheapest
+  D3 VM-fit mitigation).
+
+### Validation posture in the sandbox worktree
+- ruff at `/opt/homebrew/bin/ruff` (NOT in a venv); NO `backend/.venv` in this worktree; system py = 3.9 (can't run
+  pydantic-v2 / `str|None` runtime / schema-qualified PG). So: ruff + AST-parity + py_compile (parse) + an
+  import-graph resolver scan (all app.* imports resolve within the tree, only app.router B2-owned unresolved). The
+  actual unit-test run + cross-schema PG round-trip are Phase-C (lead `test_image_extraction.py`).
+- git: stage EXACT paths (`git add backend/services/svc-image/ docs/status/STATUS_BACKEND.md`) — never `-A`.
+  F3 protection via `gh api -X PUT .../protection --input -` with a PROPER JSON body (`-f field=null` sends the
+  STRING "null" and fails — use `--input -` with real JSON null).
+
+### Hand-offs queued
+- B2 (api-routes-builder): build router.py (2 public + /internal list-images); schemas.py already vendored;
+  ImageSummary field names = FROZEN §2.6 5 keys + additive extras (do not rename the 5).
+- LEAD: §16.G CI parity (service.py+tasks.py, EXEMPT repository.py) + Option-B no-products-read assertion +
+  ai_ops DB-0 budget coherence + cross-schema audit round-trip + /internal shim JWT-forward parity; merge-gate.
+- infra(A2)+db(A1): SOLE cross-schema grant = GRANT INSERT ON public.audit_events TO image_user (NO products SELECT).
+
+---
+
+## MS-B svc-dashboard extraction CONSTRUCTED (2026-06-13, services-builder Phase B heavy lift)
+
+### Scope
+Worktree /tmp/mesell-wt/msB-backend, branch feature/microservices-dashboard/backend. Created backend/services/svc-dashboard/ (35 source files) by mirroring the svc-export pilot, trimmed for dashboard. dashboard = LEAF CONSUMER: owns NO tables (§13.D, no Alembic), runs NO Celery worker (pure read §13.I), exposes NO /internal/* (zero inbound). 2 OUTBOUND shims only (catalog + customer). No git ops (session commits).
+
+### §16.G diff-proof (the load-bearing acceptance) — PROVEN TWO WAYS
+1. Raw `diff` of monolith modules/dashboard/service.py vs extracted: ONLY lines 36-43 (the import block) differ. Call sites :78/:84 + _compose_response byte-for-byte unchanged.
+2. AST recursive-strip (recipe §2 validated method): `ast.NodeTransformer` with visit_Import/visit_ImportFrom→None (recursive — catches lazy in-body imports) + strip module docstring (first bare-string Expr) → `ast.dump` IDENTICAL. This is the mathematically-conclusive proof; re-run it in CI.
+3. _compose_response purity: AST walk for `ast.Await` nodes inside the FunctionDef → ZERO; `inspect.iscoroutinefunction` → False. GOTCHA: substring 'await' in source matches the DOCSTRING ("No await") — do NOT use string-grep for purity; use AST Await-node count.
+
+### Import-line rewrite (the ONLY change to service.py)
+- `from app.modules.catalog import service as catalog_service` → `from app.core.extracted_clients import catalog_client as catalog_service`
+- `from app.modules.catalog.domain import (PaginatedProductsInternal, Pagination,)` → `from app.core.extracted_clients.catalog_client import (PaginatedProductsInternal, Pagination,)`
+- `from app.modules.customer import service as customer_service` → `from app.core.extracted_clients import customer_client as customer_service`
+- `from app.modules.customer.domain import ProfileCompleteness` → `from app.core.extracted_clients.customer_client import ProfileCompleteness`
+- `from app.modules.dashboard.schemas import (...)` → `from app.schemas import (...)`  (flat tree; schemas.py is api-routes-builder's lane)
+The re-export-as-same-symbol trick (`import catalog_client as catalog_service`) is what keeps the call sites unchanged. Preserve the ORIGINAL symbol order inside multi-name imports (DashboardQuery, DashboardResponse, ProductListItem, ProfileCompletenessSummary).
+
+### Shim signatures (frozen — SUB_PLAN_0B §"Shim 1/2")
+- `catalog_client.list_products(*, user_id: UUID, pagination, db: Any = None) -> PaginatedProductsInternal` → `GET /internal/products?page=&limit=`. user_id is NOT in the URL — callee derives tenant from forwarded JWT sub (kwarg accepted for call-site parity only). db accepted+ignored. Vendors Product (11 fields, kw_only), Pagination (page/limit), PaginatedProductsInternal (items/total/page/limit). Empty inventory → items:[],total:0 at 200 (NOT 404).
+- `customer_client.get_onboarding_completeness(*, user_id: UUID, db: Any = None) -> ProfileCompleteness` → `GET /internal/seller-profile/{user_id}/onboarding-completeness`. METHOD NAME = get_onboarding_completeness, NOT get_profile_completeness (plan-prose was wrong; wrong name = re-dispatch trigger). user_id IS in URL path. Vendors ProfileCompleteness (5 fields: base_complete_count, base_total_count, extension_complete_count, extension_total_count, onboarding_complete). Missing profile → zero-shape at 200 (NOT 404). NOTE: monolith doesn't expose this endpoint yet (customer extracts MS-3/E) — shim built vs FROZEN contract, mock-tested.
+- _transport.py copied VERBATIM from svc-export (only contextvar names renamed svc_export_*→svc_dashboard_*): httpx.AsyncClient, Timeout(timeout=5.0, connect=2.0), _RETRYABLE_STATUSES=frozenset({503,504}), EXACTLY 1 retry on those only, JWT (Authorization Bearer) + X-Request-ID from contextvars set by RequestContextMiddleware. set_worker_context retained for parity (no worker call site).
+
+### Trimmed Settings (REQUIRED_FIELDS = DATABASE_URL, VALKEY_URL, JWT_SECRET, AUDIT_PII_SALT, CORS_ALLOWED_ORIGINS, MONOLITH_INTERNAL_BASE_URL, APP_ENV)
+- Carries FEATURE_TRACKING_DASHBOARD_ENABLED (bool, default True) — the router 404 guard reads it. NO gemini/langfuse/msg91/razorpay/GCS (verified via `Settings.model_fields` check = []). DB pool tiny: DB_POOL_SIZE=2, DB_MAX_OVERFLOW=1 (smallest of any svc — dashboard does no owned data access; pool exists only for auth existence-check + audit). shared/database.py drops make_worker_session (no Celery). shared/valkey.py keeps only get_valkey_otp (DB 0 — rate-limit + audit-coalesce). shared/models = user + audit_event only (NO dashboard model — owns no tables); audit_event bound to public.
+
+### Middleware chain (vendored verbatim, 6-mw §4.H)
+request_id → request_context (extraction-support, NOT in 6-count) → auth → tenancy → rate_limit → plan_guard (INERT — dashboard plan_guard-excluded §13.I) → audit (INERT on read-only GET — write-method gate §13.B). main.py registers deepest-first; boots to 8 user_middleware (CORS + 6-chain + request_context; ServerErrorMiddleware not counted as it's framework). 5 error handlers. /health + /metrics. Router include is import-tolerant (try/except ImportError) so main.py boots clean before api-routes-builder lands router.py.
+
+### Verification env GOTCHA (reusable)
+- macOS system python3 = 3.9 → `@dataclass(kw_only=True)` raises TypeError (kw_only is 3.10+). The catalog Product/Pagination dataclasses use kw_only. Must verify on py3.11+. No master venv in this worktree (recipe says backend/.venv but it was absent). FIX: `/opt/homebrew/bin/python3.11 -m venv /tmp/x && pip install` the trimmed deps (fastapi/sqlalchemy[asyncio]/httpx/redis/pyjwt/pydantic-settings/prometheus-client + asyncpg). asyncpg is imported EAGERLY by create_async_engine at app.shared.database module load → must be installed for main.py boot test (it's a real boot dep, not optional).
+- service.py import test needs a TEMP app/schemas.py stub (api-routes-builder's deliverable). Created stub, ran test, DELETED stub + purged all __pycache__ + temp venv before finishing. Do NOT leave the stub — it's the other lane's file.
+- ruff is /opt/homebrew/bin/ruff (NOT in any venv). `ruff check backend/services/svc-dashboard/` → clean.
+
+### Hand-offs
+- api-routes-builder (Phase B next): service sig FROZEN `await list_products_for_dashboard(user_id, query, db)`; author app/router.py (1 route) + app/schemas.py (4 classes). main.py wiring ready.
+- lead Phase C: re-run §16.G AST proof in CI; wire-shape parity once schemas land.
+- infra-builder: Dockerfile/k8s/Traefik/ConfigMap/audit-grant = infra lane (handoff_msB_infra.md), api-only 1 replica no worker.
+
+---
+
+## Section-2 (smart-picker) Plan 2-W1 — i18n error message contract (2026-06-15, branch feature/section-2/backend)
+
+### Scope
+HYBRID Step-2 specialist dispatch (mesell-section-2-backend-session-1). Worktree
+`/tmp/mesell-wt/section-2-backend` (separate checkout — NOT the same tree as
+/Users/.../Project/mesell; ALWAYS edit the worktree path for section work).
+
+### What I did
+- Change A: `validation_message_id` 2-segment `"rate_limit.exceeded"` → 3-segment
+  `"rate_limit.window.exceeded"` in `RateLimitExceededError` class attr + the
+  `_build_rate_limit_response` envelope, in BOTH the monolith
+  `backend/app/core/middleware/rate_limit_mw.py` AND `backend/services/svc-category/app/core/middleware/rate_limit_mw.py`.
+  The `code = "rate_limit.exceeded"` machine slug is NOT touched (not governed by the 3-segment regex).
+- Change B: added `"rate_limit.window.exceeded"` to `VALIDATION_MESSAGES` near the plan_guard/rate_limit
+  cross-cutting section; fixed `validation.suggest_q.too_short_or_long` copy "2 and 60" → "1 and 500"
+  (matches the enforced 1–500 code bound), in BOTH `backend/app/i18n/messages_en.py` +
+  `backend/services/svc-category/app/i18n/messages_en.py`.
+- Change C honoured: did NOT register `smart_picker.ai.unavailable` / `smart_picker.budget.exceeded`
+  (those are HTTP 200 + fallback_offered=true paths, not error envelopes).
+- New test `backend/tests/test_section2_i18n_contract.py` (5 funcs / 10 cases) — 10/10 PASS.
+- Collateral: `backend/tests/test_core_rate_limit_mw.py:66` assertion updated to the new 3-segment value
+  (the middleware it tests no longer emits the old value). 3/3 PASS against local Valkey 6379.
+
+### Reusable learnings
+- **Section worktrees are SEPARATE checkouts.** The dispatch gives a worktree path under /tmp/mesell-wt/.
+  Files read from /Users/.../Project/mesell may DIFFER from the worktree. Edit the worktree only.
+- **Test env to import `app.shared.config.settings`**: it SystemExits at import unless ~14 env vars are set
+  (REFRESH_TOKEN_PEPPER, MSG91_AUTH_KEY, MSG91_TEMPLATE_ID, RAZORPAY_KEY_ID/SECRET/WEBHOOK_SECRET,
+  GEMINI_API_KEY, GCS_BUCKET, GCS_PROJECT_ID, LANGFUSE_PUBLIC_KEY/SECRET_KEY, AUDIT_PII_SALT,
+  CORS_ALLOWED_ORIGINS, JWT_SECRET). Export dummies before pytest.
+- **Use the PROJECT venv python (3.11) not system python3 (3.9).** System 3.9 chokes on `Mapped[str | None]`
+  declarative annotations at model import (MappedAnnotationError). Path: /Users/.../mesell/backend/.venv/bin/python.
+  It resolves `app` via PYTHONPATH=<worktree>/backend.
+- **conftest defaults VALKEY_URL to :6381** (an SSH tunnel). Local Valkey is :6379. The use_live_valkey
+  fixture precedence is TEST_VALKEY_URL > VALKEY_URL > CORE_TEST_VALKEY_URL > bare 6379. To run rate-limit
+  tests locally: export VALKEY_URL=redis://localhost:6379/15 TEST_VALKEY_URL=redis://localhost:6379/0.
+  Without a reachable Valkey the rate-limit mw fails OPEN (200), so 429-expecting tests fail spuriously.
+
+### DISCREPANCY flagged to coordinator (Step-3 gate)
+Spec Check-1 wants ZERO tree-wide hits of `validation_message_id.*rate_limit.exceeded`, but Change A scoped
+ONLY main + svc-category. 7 OTHER svc trees (svc-catalog/customer/dashboard/export/iam/image/pricing) still
+carry the old 2-segment value. Left untouched per "no more, no less". Flagged in STATUS_BACKEND for a possible
+follow-up sweep wave.
+
+### Committed
+`960ed70 sec2: add/verify i18n message contract (Plan 2-W1)` on feature/section-2/backend (pushed, no PR —
+coordinator gates Step 3).
+
+---
+
+## section-3 Wave 1.1 — catalog.service.get_product_detail (2026-06-15, branch feature/section-3/backend)
+
+### Scope
+Single new PUBLIC read method on `app/modules/catalog/service.py` (GAP-1: catalog-form FE
+recovers `category_id` on hard reload / direct-URL nav without router state). The 11th public
+catalog surface. Commits 71960c4 (code+tests) + 5f19111 (STATUS) on feature/section-3/backend.
+
+### Method (mirrors existing get_validation_summary / get_preview shape exactly)
+```
+async def get_product_detail(user_id, product_id, db) -> Product:
+    await assert_product_ownership(product_id, user_id, db=db)   # leak-collapse gate
+    row = await catalog_repo.find_by_id(db, user_id, product_id)  # canonical scoped accessor
+    if row is None: raise ProductNotFoundError()                  # TOCTOU None-guard
+    return _orm_to_domain(row)
+```
+- Returns `catalog.domain.Product` (frozen dataclass, carries category_id). NOT "ProductDomain"
+  (no such name). Raises `ProductNotFoundError` (404 / catalog.product.not_found) collapsing
+  missing/cross-tenant/soft-deleted — identical to assert_product_ownership semantics.
+- `catalog_repo.find_by_id(db, user_id, product_id)` is POSITIONAL (db FIRST). Filters
+  deleted_at IS NULL + scope_to_user, returns None on any of the 3 miss cases.
+- Zero new imports — Product, assert_product_ownership, catalog_repo, ProductNotFoundError,
+  _orm_to_domain all already in service.py. Edits: __all__ (alpha after get_draft) + docstring
+  inventory line only.
+
+### Tests (tests/modules/catalog/test_service_unit.py — class TestGetProductDetail, 4 fns)
+Reused existing `_seed_product`/`_seed_catalog` helpers + fixtures `db,user,other_user,
+beauty_category,use_live_valkey`. _seed_product takes `deleted=True` for soft-delete case.
+Tests are marked integration (need Postgres on localhost:5432 — reachable; NOT the 5433 tunnel).
+
+### Infra gotcha confirmed AGAIN (carried from §19 memory)
+`TestAutofillGracefulFallback::test_budget_exceeded_*` in the SAME file fails locally with
+redis ConnectionError to localhost:6381 (the `use_live_valkey` tunnel port, not running on
+laptop). PRE-EXISTING — proven via `git stash` baseline run. My 4 tests pass independently
+(autofill is the only Valkey-touching test in that file). When running this file locally,
+filter `-k "not Autofill"` or stand up the 6381 tunnel.
+
+### Branch/worktree note
+The repo root checkout was on `develop`; `feature/section-3/integration` was checked out in a
+SEPARATE worktree (git showed `+` prefix). Target `feature/section-3/backend` existed already.
+Committed by: stash my 2 files → checkout target → stash pop → add ONLY my files → commit.
+Other unrelated dirty files (memory MDs, STATUS_FRONTEND, smart-picker.ts) were left untouched.
+
+---
+
+## catalog-form merge-gate D1 fix — M10 local-var rename (2026-06-16, branch feature/catalog-form-fix)
+
+Merge-gate REJECTED commit e6980c6 for ONE defect: in `category/service.py::_map_field_to_dto`
+the LOCAL VAR `enum_codes_map` is an M10 forbidden export-layer symbol when used as an IDENTIFIER
+outside `app/modules/export/**`. The §16 M10 AST scanner (Contract 9, check_no_meesho_symbols_outside_export.py)
+flags `ast.Name`/`ast.Attribute`/`ast.keyword`/`ast.arg` for the 3 forbidden symbols
+(meesho_column_header / meesho_column_index / enum_codes_map). String LITERALS are NOT walked.
+
+FIX: renamed local `enum_codes_map` → `inline_enum_map` (3 lines, ~561-564), kept
+`rich.get("enum_codes_map")` string subscript intact. No behavior change. Committed 8e912dc as single
+file. ruff clean; 110 passed (lint + test_schema_dto_mapper + test_per_field_shape_keys).
+
+LESSON (reusable): when reading a forbidden-symbol key out of a dict, NEVER name the receiving local
+after the key. Use a neutral local name (`inline_enum_map`) and keep the forbidden token only as the
+quoted string subscript. The scanner is identifier-only.
+
+---
+
+## catalog-form CI Gate-4 (integration) RED — scope-reduction fix (2026-06-16, branch feature/catalog-form-fix)
+
+CI Gate 4 RED on PR #257. `tests/modules/catalog/test_integration.py::TestFullProductLifecycle::test_full_lifecycle`
+FAILED: `ValidationFailedError: application_area: not in category enum`. ROOT CAUSE = over-reach in e6980c6:
+I had rerouted ALL 6 catalog/service.py `fetch_schema` call sites (incl. patch_product/validate_product) to
+`fetch_schema_dto` (flat §5A.C). The mapper derives `enum_resolver="category"` for every dropdown → the catalog
+validator then calls `get_field_enum(category_id, "application_area")` → `FieldEnumNotFoundError` (no enum seeded
+for that field in the test's beauty_category) → value rejected. On develop the validator read the RICH shape where
+`enum_resolver` is ABSENT → defaulted to lenient "static" → accepted. Rerouting the VALIDATOR changed behavior.
+
+FIX (scope the mapper to the /schema route ONLY):
+- REVERTED all 6 catalog/service.py call sites + 2 comment/docstring lines → `fetch_schema` (rich). catalog/service.py
+  is now BYTE-IDENTICAL to develop (`git diff develop -- catalog/service.py` empty). Validator behavior restored.
+- KEPT `category/router.py:263` `/schema` route on `fetch_schema_dto` (the actual FE wizard fix — bugs #1/#2/#3).
+- KEPT mapper (`_map_field_to_dto`/`_map_envelope_to_dto`/`fetch_schema_dto`) + `tests/test_schema_dto_mapper.py`.
+- export/service.py:452 + core/cache.py:232 prewarm STAY rich `fetch_schema` (unchanged).
+- Fixed BACKEND_ARCHITECTURE §5A amendment: removed the false "read by catalog.validate_product" claim; now states
+  the §5A.C flat shape is the WIRE shape served via GET /categories/{id}/schema (`fetch_schema_dto`), and
+  `catalog.validate_product` continues to read the RICH shape via `fetch_schema` (validator alignment = DEFERRED).
+  DATABASE_ARCHITECTURE §4.2 note only mentioned the wizard → left as-is (accurate).
+
+LESSON (reusable): the catalog FORM bugs are FE `/schema`-consumer bugs. The catalog VALIDATOR (PATCH per-field
+validation) reads the SAME schema fn but its enum-resolution semantics are load-bearing — a read-time projection that
+DERIVES `enum_resolver` flips lenient→strict and rejects valid dropdown values whose per-category enum isn't seeded.
+SCOPE a wire-shape projection to the wire route (router) ONLY; never reroute the validator without a separate test.
+
+TEST HARNESS (local, no 5433 port-forward): the integration `db` fixture falls through to localhost:5433 when neither
+TEST_DATABASE_URL nor DEV_DATABASE_URL is set. Live local Postgres is on :5432 (db `meesell`, 3772 seeded categories).
+Run with `DEV_DATABASE_URL=postgresql+asyncpg://meesell:password@localhost:5432/meesell` + `TEST_VALKEY_URL=redis://localhost:6379/0`
++ `CORE_TEST_VALKEY_URL=redis://localhost:6379`, env sourced from master `.env`, 3.11 venv, PYTHONPATH=worktree/backend.
+Per-test transaction rolls back so the seeded categories aren't polluted. Result: 36 integration passed (incl.
+test_full_lifecycle), 110 unit passed, ruff clean.

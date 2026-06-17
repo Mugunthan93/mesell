@@ -1,38 +1,36 @@
-import type { PnlBreakdown } from './pricing.model';
-
-/** V1 hardcoded commission + GST percentages (Meesho category average). */
-const COMMISSION_PCT = 5;
-const GST_PCT = 5;
+/**
+ * pricing.utils.ts — Display helpers for the pricing MFE.
+ *
+ * RETIRED (DECISION-1 + R-W6-1, ruled 2026-06-11):
+ *   computePnlBreakdown — server computes P&L; client math is DEAD.
+ *   COMMISSION_PCT, GST_PCT — server resolves from category tables (NOT hardcoded).
+ *   Any re-introduction of client math = AUTO-REJECT at merge gate.
+ *
+ * SURVIVORS:
+ *   formatRupee  — display helper; adapted to accept string | number (R-W6-6 Decimal strings).
+ *   parseDecimal — thin helper to convert Decimal strings to number for arithmetic.
+ */
 
 /**
- * Compute a P&L breakdown from MRP and target margin.
- * All arithmetic is client-side (no HTTP call required in V1 simulation).
- * Returns values rounded to 2 decimal places for display precision.
+ * Convert a Decimal-string (or number) from the server to a JavaScript number.
+ * Used for arithmetic comparisons (e.g. profit > 0 for badge colour).
+ * Returns 0 on NaN guard (defensive; should not occur with valid server responses).
  */
-export function computePnlBreakdown(mrp: number, targetMargin: number): PnlBreakdown {
-  const meesho_price    = Math.round(mrp * 0.5);
-  const commission_amt  = Math.round(meesho_price * (COMMISSION_PCT / 100));
-  const gst_amt         = Math.round(commission_amt * (GST_PCT / 100));
-  const seller_payout   = meesho_price - commission_amt - gst_amt;
-  const net_margin      = seller_payout - targetMargin;
-  const net_margin_pct  = mrp > 0
-    ? parseFloat(((net_margin / mrp) * 100).toFixed(1))
-    : 0;
-
-  return {
-    mrp,
-    meesho_price,
-    commission_pct: COMMISSION_PCT,
-    commission_amt,
-    gst_pct: GST_PCT,
-    gst_amt,
-    seller_payout,
-    net_margin,
-    net_margin_pct,
-  };
+export function parseDecimal(value: string | number): number {
+  const n = typeof value === 'number' ? value : parseFloat(value);
+  return isNaN(n) ? 0 : n;
 }
 
-/** Format a number as an Indian Rupee string (no decimal places for integers). */
-export function formatRupee(amount: number): string {
-  return `₹${Math.round(amount).toLocaleString('en-IN')}`;
+/**
+ * Format a Rupee amount for display in the P&L table.
+ * Accepts both string Decimal (from server wire, R-W6-6) and number (for zero / static values).
+ * Rounds to nearest integer (sub-rupee precision not shown in V1 UI).
+ * Examples:
+ *   "899.00" → "₹899"
+ *   "1000.00" → "₹1,000" (en-IN locale comma separator)
+ *   1500 → "₹1,500"
+ */
+export function formatRupee(amount: string | number): string {
+  const n = parseDecimal(amount);
+  return `₹${Math.round(n).toLocaleString('en-IN')}`;
 }

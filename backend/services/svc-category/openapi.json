@@ -1,0 +1,721 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MeeSell svc-category",
+    "description": "Standalone category tree + Smart Picker + schema microservice (MS Sub-Plan F)",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/categories/suggest": {
+      "get": {
+        "tags": [
+          "category"
+        ],
+        "summary": "AI-ranked Smart Category Picker \u2014 top-5 suggestions for a product description",
+        "description": "\u00a79.B.1 \u2014 Smart Category Picker.\n\nReturns top-5 AI-ranked category suggestions for the seller's product\ndescription.  ``fallback_offered=True`` when the AI track cannot produce\nvalid suggestions (budget cap, retry exhaustion) \u2014 the frontend surfaces\nthe manual ``/browse`` UI in that case.\n\nPlan-guard ``smart_picker_hourly`` (100/h/user) is enforced INSIDE the\nservice (step 2 of the \u00a79.B.1 pipeline), not in this handler.\n\nRate limit: 100 calls/h per user_id via ``@rate_limit`` decorator (\u00a74.E).\n\nFeature flag: returns 404 when ``FEATURE_SMART_PICKER_ENABLED=false``\nper Master Plan \u00a73.2 + FEATURE_PLAN.md D2.",
+        "operationId": "suggest_categories_api_v1_categories_suggest_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Free-text product description (1\u2013500 chars)",
+              "title": "Q"
+            },
+            "description": "Free-text product description (1\u2013500 chars)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/categories/browse": {
+      "get": {
+        "tags": [
+          "category"
+        ],
+        "summary": "pg_trgm-powered manual category browse with optional super-category filter",
+        "description": "\u00a79.B.2 \u2014 Manual Browse fallback.\n\npg_trgm ILIKE against the 3 GIN indexes (path, leaf_name, super_name).\nResults ordered by similarity score; super_id filter narrows to one\nparent bucket.\n\nNo per-route rate limit (per-IP DDoS floor only \u2014 incremental typing\nis a legitimate burst pattern per \u00a79.B.2).\n\nStatus codes: 200; 400 (``validation.browse.invalid_pagination``); 401.",
+        "operationId": "browse_categories_api_v1_categories_browse_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional search query (max 100 chars)",
+              "title": "Q"
+            },
+            "description": "Optional search query (max 100 chars)"
+          },
+          {
+            "name": "super_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional super-category filter",
+              "title": "Super Id"
+            },
+            "description": "Optional super-category filter"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Page size (1\u2013100, default 20)",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Page size (1\u2013100, default 20)"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Page offset (>=0, default 0)",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Page offset (>=0, default 0)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/categories": {
+      "get": {
+        "tags": [
+          "category"
+        ],
+        "summary": "Full hierarchical category tree (all super-categories + leaf children)",
+        "description": "\u00a79.B.3 \u2014 Full category tree.\n\nReturns all 3,772 category leaves grouped under their super-categories.\nCached GLOBAL with TTL 1 h + ETag per \u00a74.D + \u00a76.6.\n\nETag behaviour:\n- Response includes ``ETag`` header on 200.\n- If the request sends ``If-None-Match`` matching the ETag, responds\n  304 Not Modified (no body).\n\nNo per-route rate limit (per-IP DDoS floor only).",
+        "operationId": "get_category_tree_api_v1_categories_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "if-none-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-None-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryTreeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/categories/{id}/schema": {
+      "get": {
+        "tags": [
+          "category"
+        ],
+        "summary": "Compiled wizard schema for a category (templates.schema_jsonb envelope)",
+        "description": "\u00a79.B.4 \u2014 Compiled wizard schema.\n\nReturns the ``templates.schema_jsonb`` envelope per \u00a75A.B verbatim\n(7 keys: ``fields[]``, ``compulsory_count``, ``optional_count``,\n``total_count``, ``wizard_step_count``, ``main_sheet_label``,\n``compliance_shape``).\n\nCached GLOBAL per ``category_id`` with TTL 1 h + ETag per \u00a74.D + \u00a76.6.\nPre-warmed for top-100 categories at startup.\n\nETag behaviour mirrors ``GET /categories`` (304 on match).\n\nCross-module consumers: ``catalog.service.validate_product`` (\u00a72.4 + \u00a716)\nand ``export.service.build_xlsx_sheet`` (\u00a72.8) both call\n``category.service.fetch_schema`` directly \u2014 this HTTP surface is for\nthe frontend wizard and API clients.\n\nStatus codes: 200; 401; 404 (``category.lookup.not_found``).",
+        "operationId": "get_category_schema_api_v1_categories__id__schema_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          },
+          {
+            "name": "if-none-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-None-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchemaResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/categories/{id}/field-enum/{name}": {
+      "get": {
+        "tags": [
+          "category"
+        ],
+        "summary": "Field-Enum lookup for Brand-pattern fields (canonical + meesho + labels)",
+        "description": "\u00a79.B.5 \u2014 Field-Enum lookup.\n\nReturns the complete enum value list for a Brand-pattern field within a\ncategory.  Each ``EnumEntry`` carries:\n\n- ``canonical`` \u2014 used by catalog validator for input acceptance.\n- ``meesho``    \u2014 consumed by export adapter only; never rendered in wizard.\n- ``labels``    \u2014 ``{locale: label}``; V1 contains only ``\"en\"``.\n\nCached GLOBAL per ``(category_id, field_name)`` with TTL 1 h.  Single-flight\nmandatory per ``MVP_ARCH \u00a76.8`` (enum payloads can be 50\u2013200 KB each).\n\nStatus codes: 200; 401; 404 (``category.lookup.not_found`` if category_id\ninvalid; ``category.field_enum.not_found`` if field_name has no enum for\nthis category).",
+        "operationId": "get_field_enum_api_v1_categories__id__field_enum__name__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldEnumResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "description": "Liveness probe.  DB / Valkey deep checks are deferred to the\nreadiness probe wired by the infra lane.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "BrowseResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/BrowseResultRow"
+            },
+            "type": "array",
+            "title": "Results"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "results",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "BrowseResponse",
+        "description": "Paginated response for GET /api/v1/categories/browse."
+      },
+      "BrowseResultRow": {
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Category Id"
+          },
+          "super_id": {
+            "type": "string",
+            "title": "Super Id"
+          },
+          "super_name": {
+            "type": "string",
+            "title": "Super Name"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "leaf_name": {
+            "type": "string",
+            "title": "Leaf Name"
+          },
+          "similarity": {
+            "type": "number",
+            "title": "Similarity"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category_id",
+          "super_id",
+          "super_name",
+          "path",
+          "leaf_name",
+          "similarity"
+        ],
+        "title": "BrowseResultRow",
+        "description": "One result row from the pg_trgm browse search.\n\n``similarity`` is the pg_trgm score 0.0\u20131.0.  In V1 the repository\nreports 0.0 (ordering is preserved by the SQL ORDER BY); lifting the\nscore end-to-end is a V1.5 refinement.\n\nReused inside ``SuperCategoryNode.leaves`` for the tree endpoint\n(``similarity`` is 0.0 in tree mode \u2014 not computed)."
+      },
+      "CategorySuggestion": {
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Category Id"
+          },
+          "super_id": {
+            "type": "string",
+            "title": "Super Id"
+          },
+          "super_name": {
+            "type": "string",
+            "title": "Super Name"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "leaf_name": {
+            "type": "string",
+            "title": "Leaf Name"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category_id",
+          "super_id",
+          "super_name",
+          "path",
+          "leaf_name",
+          "confidence",
+          "reasons"
+        ],
+        "title": "CategorySuggestion",
+        "description": "One ranked category suggestion from the Smart Category Picker.\n\n``confidence`` is calibrated by ``picker.calibrate_confidence``\n(range 0.0\u20131.0).  ``reasons`` are short human-readable rationale\nstrings produced by the AI-track ranking pipeline."
+      },
+      "CategoryTreeResponse": {
+        "properties": {
+          "super_categories": {
+            "items": {
+              "$ref": "#/components/schemas/SuperCategoryNode"
+            },
+            "type": "array",
+            "title": "Super Categories"
+          }
+        },
+        "type": "object",
+        "required": [
+          "super_categories"
+        ],
+        "title": "CategoryTreeResponse",
+        "description": "Response envelope for GET /api/v1/categories (full tree)."
+      },
+      "EnumEntry": {
+        "properties": {
+          "canonical": {
+            "type": "string",
+            "title": "Canonical"
+          },
+          "meesho": {
+            "type": "string",
+            "title": "Meesho"
+          },
+          "labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Labels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "canonical",
+          "meesho",
+          "labels"
+        ],
+        "title": "EnumEntry",
+        "description": "One enum entry from ``field_enum_values``.\n\n``canonical`` \u2014 the canonical internal value used by the catalog\nvalidator for input acceptance.\n\n``meesho`` \u2014 the Meesho-format string consumed ONLY by the export\nadapter (\u00a714 / M10); never rendered in the seller wizard.\n\n``labels`` \u2014 ``{locale: localised_label}``; V1 contains only ``\"en\"``."
+      },
+      "FieldEnumResponse": {
+        "properties": {
+          "enum_entries": {
+            "items": {
+              "$ref": "#/components/schemas/EnumEntry"
+            },
+            "type": "array",
+            "title": "Enum Entries"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enum_entries",
+          "total",
+          "truncated"
+        ],
+        "title": "FieldEnumResponse",
+        "description": "Response envelope for GET /api/v1/categories/{id}/field-enum/{name}.\n\nThis model is the FROZEN \u00a7F4 Shim #2 shape \u2014 export-svc consumes it\nverbatim via the /internal/categories/{id}/field-enum/{field} endpoint."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "SchemaResponse": {
+        "properties": {
+          "fields": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Fields"
+          },
+          "compulsory_count": {
+            "type": "integer",
+            "title": "Compulsory Count"
+          },
+          "optional_count": {
+            "type": "integer",
+            "title": "Optional Count"
+          },
+          "total_count": {
+            "type": "integer",
+            "title": "Total Count"
+          },
+          "wizard_step_count": {
+            "type": "integer",
+            "title": "Wizard Step Count"
+          },
+          "main_sheet_label": {
+            "type": "string",
+            "title": "Main Sheet Label"
+          },
+          "compliance_shape": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "collapsed"
+            ],
+            "title": "Compliance Shape"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "fields",
+          "compulsory_count",
+          "optional_count",
+          "total_count",
+          "wizard_step_count",
+          "main_sheet_label",
+          "compliance_shape"
+        ],
+        "title": "SchemaResponse",
+        "description": "Pass-through of ``templates.schema_jsonb`` envelope per \u00a75A.B.\n\n``extra='allow'`` ensures forward-compatible envelope evolutions\n(\u00a75A amendments) do not break existing readers.\n\n``fields`` is typed as ``list[dict[str, Any]]`` \u2014 see module docstring\nfor the Python 3.11 TypedDict rationale.  ``test_per_field_shape_keys.py``\nis the conformance gate for the 9 \u00a75A.C-locked per-field keys.\n\n``main_sheet_label`` is the Meesho header consumed by the export adapter\n(\u00a714 / M10).  It is present in this response because the export path\nneeds it; the seller-facing wizard does NOT render this field.\n\nThis model is the FROZEN \u00a7F4 Shim #1 shape \u2014 export-svc and catalog-svc\nconsume it verbatim via the /internal/categories/{id}/schema endpoint."
+      },
+      "SuggestResponse": {
+        "properties": {
+          "suggestions": {
+            "items": {
+              "$ref": "#/components/schemas/CategorySuggestion"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "title": "Suggestions"
+          },
+          "fallback_offered": {
+            "type": "boolean",
+            "title": "Fallback Offered"
+          }
+        },
+        "type": "object",
+        "required": [
+          "suggestions",
+          "fallback_offered"
+        ],
+        "title": "SuggestResponse",
+        "description": "Response envelope for GET /api/v1/categories/suggest.\n\n``fallback_offered=True`` signals the frontend to surface the manual\n/browse fallback per ``MVP_ARCH \u00a75.1`` decision #8.  Always 200 \u2014 never\na 5xx for AI failures per \u00a79.B.1 graceful-fallback contract."
+      },
+      "SuperCategoryNode": {
+        "properties": {
+          "super_id": {
+            "type": "string",
+            "title": "Super Id"
+          },
+          "super_name": {
+            "type": "string",
+            "title": "Super Name"
+          },
+          "leaves": {
+            "items": {
+              "$ref": "#/components/schemas/BrowseResultRow"
+            },
+            "type": "array",
+            "title": "Leaves"
+          }
+        },
+        "type": "object",
+        "required": [
+          "super_id",
+          "super_name",
+          "leaves"
+        ],
+        "title": "SuperCategoryNode",
+        "description": "One super-category bucket in the full hierarchical tree.\n\n``leaves`` reuse ``BrowseResultRow`` (similarity is 0.0 in tree mode)."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "OAuth2PasswordBearer": {
+        "type": "oauth2",
+        "flows": {
+          "password": {
+            "scopes": {},
+            "tokenUrl": "/api/v1/auth/otp/verify"
+          }
+        }
+      }
+    }
+  }
+}

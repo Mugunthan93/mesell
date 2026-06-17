@@ -1,4 +1,5 @@
 // Components
+export { MeeIconComponent }            from './icon/icon.component';
 export { MeeButtonComponent }          from './button/button.component';
 export { MeeInputComponent }           from './input/input.component';
 export { MeeOtpInputComponent }        from './otp-input/otp-input.component';
@@ -12,6 +13,7 @@ export { MeeSelectComponent }          from './select/select.component';
 export { MeeTreeSelectComponent }      from './tree-select/tree-select.component';
 export { MeeSkeletonComponent }        from './skeleton/skeleton.component';
 export { MeeProgressBarComponent }     from './progress-bar/progress-bar.component';
+export { MeeSpinnerComponent }         from './spinner/spinner.component';
 export { MeeToastComponent }           from './toast/toast.component';
 export { MeeToastService }             from './toast/toast.service';
 export { MeeConfirmDialogComponent }   from './confirm-dialog/confirm-dialog.component';
@@ -36,3 +38,9 @@ export type { MeeSkeletonVariant }                                       from '.
 export type { MeeFileUploadEvent }                                       from './file-upload/file-upload.types';
 export type { MeeTreeNode }                                              from './tree-select/tree-select.component';
 export type { MeeConfirmConfig }                                         from './confirm-dialog/confirm-dialog.component';
+export type { MeeIconName }                                              from './icon/icon.registry';
+
+// Aggregators (for component imports — NOT providers)
+// Use MEE_FORM / MEE_OVERLAY / etc. in a standalone component's imports:[].
+// MeeToastService + MeeConfirmService are providers — they live in provideMeeUi().
+export { MEE_FORM, MEE_OVERLAY, MEE_FEEDBACK, MEE_DATA, MEE_COMMON, MEE_FILE, MEE_UI_ALL } from './aggregators';

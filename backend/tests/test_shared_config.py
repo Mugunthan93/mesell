@@ -162,6 +162,50 @@ def test_cache_version_default_v1() -> None:
 
 
 # ───────────────────────────────────────────────────────────────────────────
+# Refresh-cookie environment attributes (cookie-env-config feature)
+# ───────────────────────────────────────────────────────────────────────────
+
+
+def test_cookie_env_attr_defaults() -> None:
+    """COOKIE_SECURE defaults True (prod-safe); COOKIE_DOMAIN defaults empty.
+
+    A misconfigured/absent env must NOT accidentally drop Secure in prod, so
+    the safe default is Secure=True + empty Domain (binds to request host).
+    """
+    fields = Settings.model_fields
+    assert fields["COOKIE_SECURE"].default is True
+    assert fields["COOKIE_DOMAIN"].default == ""
+
+
+def test_cookie_env_attrs_not_required() -> None:
+    """Empty COOKIE_DOMAIN is valid — neither field is in REQUIRED_FIELDS."""
+    assert "COOKIE_DOMAIN" not in REQUIRED_FIELDS
+    assert "COOKIE_SECURE" not in REQUIRED_FIELDS
+
+
+def test_cookie_prod_overrides_parse(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Prod env (COOKIE_DOMAIN=.mesell.xyz + COOKIE_SECURE=true) parses."""
+    s = _build_settings(
+        monkeypatch,
+        _good_env(COOKIE_DOMAIN=".mesell.xyz", COOKIE_SECURE="true"),
+    )
+    assert s.COOKIE_DOMAIN == ".mesell.xyz"
+    assert s.COOKIE_SECURE is True
+
+
+def test_cookie_secure_false_coerces_to_bool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Local-http dev (COOKIE_SECURE=false) coerces to the bool False."""
+    s = _build_settings(
+        monkeypatch,
+        _good_env(COOKIE_DOMAIN="", COOKIE_SECURE="false"),
+    )
+    assert s.COOKIE_SECURE is False
+    assert s.COOKIE_DOMAIN == ""
+
+
+# ───────────────────────────────────────────────────────────────────────────
 # Happy path — full env satisfies the validator
 # ───────────────────────────────────────────────────────────────────────────
 

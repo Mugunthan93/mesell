@@ -1,0 +1,164 @@
+[
+  {
+    "id": "bad_01_png",
+    "file": "fixtures/bad_01_png.png",
+    "category": "bad",
+    "expected_status": "failed_precheck",
+    "expected_fail_reasons": [
+      "jpeg"
+    ]
+  },
+  {
+    "id": "bad_02_cmyk",
+    "file": "fixtures/bad_02_cmyk.jpg",
+    "category": "bad",
+    "expected_status": "failed_precheck",
+    "expected_fail_reasons": [
+      "color_space"
+    ]
+  },
+  {
+    "id": "bad_03_small",
+    "file": "fixtures/bad_03_small.jpg",
+    "category": "bad",
+    "expected_status": "failed_precheck",
+    "expected_fail_reasons": [
+      "resolution"
+    ]
+  },
+  {
+    "id": "bad_04_dark_bg",
+    "file": "fixtures/bad_04_dark_bg.jpg",
+    "category": "bad",
+    "expected_status": "failed_precheck",
+    "expected_fail_reasons": [
+      "white_bg"
+    ]
+  },
+  {
+    "id": "bad_05_png_small",
+    "file": "fixtures/bad_05_png_small.png",
+    "category": "bad",
+    "expected_status": "failed_precheck",
+    "expected_fail_reasons": [
+      "jpeg",
+      "resolution"
+    ]
+  },
+  {
+    "id": "bad_06_cmyk_small",
+    "file": "fixtures/bad_06_cmyk_small.jpg",
+    "category": "bad",
+    "expected_status": "failed_precheck",
+    "expected_fail_reasons": [
+      "color_space",
+      "resolution"
+    ]
+  },
+  {
+    "id": "bad_07_textured_bg",
+    "file": "fixtures/bad_07_textured_bg.jpg",
+    "category": "bad",
+    "expected_status": "failed_precheck",
+    "expected_fail_reasons": [
+      "white_bg"
+    ]
+  },
+  {
+    "id": "bad_08_hue_tint",
+    "file": "fixtures/bad_08_hue_tint.jpg",
+    "category": "bad",
+    "expected_status": "failed_precheck",
+    "expected_fail_reasons": [
+      "white_bg"
+    ]
+  },
+  {
+    "id": "bad_09_black_bg",
+    "file": "fixtures/bad_09_black_bg.jpg",
+    "category": "bad",
+    "expected_status": "failed_precheck",
+    "expected_fail_reasons": [
+      "white_bg"
+    ]
+  },
+  {
+    "id": "bad_10_grass_bg",
+    "file": "fixtures/bad_10_grass_bg.jpg",
+    "category": "bad",
+    "expected_status": "failed_precheck",
+    "expected_fail_reasons": [
+      "white_bg"
+    ]
+  },
+  {
+    "id": "good_01",
+    "file": "fixtures/good_01.jpg",
+    "category": "good",
+    "expected_status": "ready",
+    "expected_fail_reasons": []
+  },
+  {
+    "id": "good_02",
+    "file": "fixtures/good_02.jpg",
+    "category": "good",
+    "expected_status": "ready",
+    "expected_fail_reasons": []
+  },
+  {
+    "id": "good_03",
+    "file": "fixtures/good_03.jpg",
+    "category": "good",
+    "expected_status": "ready",
+    "expected_fail_reasons": []
+  },
+  {
+    "id": "good_04",
+    "file": "fixtures/good_04.jpg",
+    "category": "good",
+    "expected_status": "ready",
+    "expected_fail_reasons": []
+  },
+  {
+    "id": "good_05",
+    "file": "fixtures/good_05.jpg",
+    "category": "good",
+    "expected_status": "ready",
+    "expected_fail_reasons": []
+  },
+  {
+    "id": "good_06",
+    "file": "fixtures/good_06.jpg",
+    "category": "good",
+    "expected_status": "ready",
+    "expected_fail_reasons": []
+  },
+  {
+    "id": "good_07",
+    "file": "fixtures/good_07.jpg",
+    "category": "good",
+    "expected_status": "ready",
+    "expected_fail_reasons": []
+  },
+  {
+    "id": "good_08",
+    "file": "fixtures/good_08.jpg",
+    "category": "good",
+    "expected_status": "ready",
+    "expected_fail_reasons": []
+  },
+  {
+    "id": "good_09",
+    "file": "fixtures/good_09.jpg",
+    "category": "good",
+    "expected_status": "ready",
+    "expected_fail_reasons": []
+  },
+  {
+    "id": "good_10",
+    "file": "fixtures/good_10.jpg",
+    "category": "good",
+    "expected_status": "ready",
+    "expected_fail_reasons": []
+  }
+]

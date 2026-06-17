@@ -4,17 +4,31 @@
 # Spec: docs/DEVOPS_ARCHITECTURE.md §5 (CI), §6 (build), §7 (deploy), §9 (frontend matrix)
 #
 # Triggers:
-#   push to main              → 5 backend CI gates + frontend matrix → build → deploy to dev
-#   push to develop           → 5 backend CI gates + frontend matrix only (NO build, NO deploy —
-#                               build/deploy jobs are ref-guarded to refs/heads/main)
+#   push to develop           → 5 backend CI gates + frontend matrix → build → deploy to dev
+#   push to main              → 5 backend CI gates + frontend matrix only (NO build, NO deploy —
+#                               build/deploy jobs are ref-guarded to refs/heads/develop. main is
+#                               reserved for future staging/prod promotion, founder-gated.)
 #   pull_request to main       → 5 backend CI gates + frontend matrix only (no build, no deploy)
 #   pull_request to develop    → 5 backend CI gates + frontend matrix only (no build, no deploy)
 #   schedule (nightly)         → slow/perf + ai_eval (no CI gates, no build, no deploy)
 #
-# Founder ruling 2026-06-11 ("why develop->main / let keep in develop"): the pipeline must
-# exercise on `develop` itself. A develop->main promotion is NOT the re-fire mechanism — every
-# push/PR to develop runs Gates 1-5 + the frontend matrix directly. build + deploy stay
-# main-only via their `github.ref == 'refs/heads/main'` guards, so a develop push NEVER deploys.
+# FOUNDER RULING 2026-06-12: dev deploys fire from develop; main is reserved for staging/prod
+# promotion (founder-gated).
+#   Rationale: develop is the integration branch where CI already runs; the dev-namespace deploy
+#   is a TEST-SERVER deploy, not a customer ship — so it should fire from the same commit CI
+#   gates. main no longer triggers any build/deploy (no staging/prod deploy exists yet — see the
+#   "future push to main" note below). When staging/prod land in V1.5, their deploy jobs get
+#   their OWN ref-guards (refs/heads/main or a release tag) behind a founder-gated promotion.
+#
+#   Future push to main (deliberate choice): the build + deploy jobs simply DO NOT fire on main
+#   for now. main pushes still run the 5 gates + frontend matrix (so main never goes un-tested),
+#   but produce no image and no deploy. This is the simplest correct behaviour until a
+#   staging/prod target physically exists.
+#
+# Prior ruling (2026-06-11, superseded by the above for the deploy ref): the pipeline must
+# exercise on `develop` itself — every push/PR to develop runs Gates 1-5 + the frontend matrix
+# directly; a develop->main promotion was NOT the re-fire mechanism. The 2026-06-12 ruling
+# extends this: develop now also fires build + deploy (not just the gates).
 #
 # Backend CI gates (sequential — each needs its predecessor; fast-fail at gate 1 cancels the rest):
 #   1. unit              pytest -m "unit"            no services    < 30s
@@ -665,15 +679,281 @@ jobs:
         run: pnpm exec ng build ${{ matrix.project }} --configuration production
 
   # =============================================================================
+  # FRONTEND: BOOT SMOKE — browser-boot gate that catches F-001-class failures.
+  #
+  # Purpose: prove that the served Angular SPA actually boots in a real browser —
+  # build-green does NOT mean browser-green for federated apps.
+  # The classic failure mode (F-001): a native-federation import-map subpath miss
+  # compiles fine (TypeScript resolves via tsconfig aliases) but throws
+  # "Unable to resolve specifier" at runtime, crashing the app.
+  #
+  # Serve strategy — DEV PATH (ng serve via start:all):
+  #   The previous approach (7 sequential `ng build --configuration production` +
+  #   static serve) stalled ~24 min PER BUILD on NF cold "Preparing shared npm
+  #   packages" (7 x 24 min = 168 min > any timeout). Even dev builds stall the
+  #   same way — this is NOT a dev vs prod distinction. `ng serve` takes a different
+  #   code path that avoids the cold-prepare stall, delivering a ready server in
+  #   minutes. F-001 class failures fire identically under ng serve because the
+  #   import map is generated from the same federation config.
+  #
+  # False-pass immunity (the round-1 gate shipped a false pass):
+  #   * Serve strategy: ng serve (native SPA history-fallback, no static server).
+  #   * Assertion (a): document HTTP status MUST be 200 — captured via
+  #     page.on('response'). This is the assertion that was missing from round-1.
+  #   * Assertion (b): real component selectors per route, NOT generic body checks.
+  #   * Assertion (c): ZERO "Unable to resolve specifier" console errors.
+  #   * Assertion (d): ZERO uncaught page exceptions / unhandled rejections.
+  #
+  # Advisory: this job is NOT yet a required status check. The founder promotes it
+  # via GitHub branch protection (Settings → Branches → Require status checks →
+  # add "Frontend: boot smoke") after the first confirmed green CI run.
+  #
+  # Triggers: any push/PR to develop or main that touches frontend libs, shell,
+  #   mfe-auth, mfe-onboarding, or mfe-dashboard — the three routes tested
+  #   (/, /login, /profile) touch these units. CI does not fire on schedule.
+  #
+  # NOTE: This job does NOT gate the build/deploy jobs (needs: not added to them).
+  # The founder will wire it into required_status_checks separately (D1).
+  # =============================================================================
+  frontend-boot-smoke:
+    name: "Frontend: boot smoke"
+    runs-on: ubuntu-latest
+    needs: frontend-changes
+    # Fire when any of the units that affect the 3 smoke routes changed.
+    # libs fan-out: any shared-layer change also triggers (safe, not noisy — already
+    # required for frontend-build anyway).
+    if: |
+      github.event_name != 'schedule' &&
+      (
+        needs.frontend-changes.outputs.libs        == 'true' ||
+        needs.frontend-changes.outputs.shell       == 'true' ||
+        needs.frontend-changes.outputs.mfe_auth    == 'true' ||
+        needs.frontend-changes.outputs.mfe_onboarding == 'true' ||
+        needs.frontend-changes.outputs.mfe_dashboard  == 'true'
+      )
+    # Target: < 10 min wall clock (dev ng serve path, no prod builds).
+    # Hard ceiling: 15 min so a regression can never hang for an hour again.
+    # Previous timeout of 90m was masking the real problem (7 sequential prod builds
+    # stalling ~24 min each on NF cold "Preparing shared npm packages" → job hung).
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up pnpm 11.5.2
+        uses: pnpm/action-setup@v4
+        with:
+          version: "11.5.2"
+
+      - name: pnpm install (frozen lockfile)
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: pnpm rebuild native binaries
+        working-directory: frontend
+        # Required on CI — pnpm ignores build scripts for esbuild et al. by default.
+        # ng serve (dev path) still needs the native binaries for esbuild + file watching.
+        run: pnpm rebuild esbuild @parcel/watcher lmdb msgpackr-extract
+
+      - name: Install Playwright chromium
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      # ── DEV PATH: start all 7 ng serve processes via start:all ───────────────
+      #
+      # REPLACES the 7 sequential production/dev builds + the 7 static serve.js
+      # servers + the manifest localhost assertion.
+      #
+      # WHY DEV PATH:
+      #   The 7 prod builds stalled ~24 min on a cold CI runner inside Native
+      #   Federation's "Preparing shared npm packages" step. Dev builds stall
+      #   identically. The ng serve code path avoids the cold-prepare stall and
+      #   matches exactly what the founder runs locally. F-001 class failures
+      #   (import-map subpath misses) fire identically under ng serve because the
+      #   import map is generated from the same federation config.
+      #
+      # PGID trick: setsid creates a new process group so a single `kill -- -$PGID`
+      # in teardown kills the entire start:all subtree (all 7 ng serve children).
+      - name: Start dev servers (start:all in background)
+        working-directory: frontend
+        run: |
+          setsid pnpm run start:all > /tmp/start-all.log 2>&1 &
+          echo $! > /tmp/start-all.pid
+          echo "start:all PID: $(cat /tmp/start-all.pid)"
+
+      # ── READINESS GATE ───────────────────────────────────────────────────────
+      #
+      # Dev differences vs prod-static:
+      #   Shell: poll http://localhost:4200/ (root, not /index.html — ng serve
+      #     does not expose /index.html as a distinct path in all configurations).
+      #   Remotes: poll /remoteEntry.json exactly as before — ng serve exposes it.
+      #   SPA fallback: ng serve natively provides history-API fallback; curl
+      #     http://localhost:4200/login MUST return 200.
+      #
+      # Budget: 480 seconds (8 min) — generous for cold-runner NF dev prepare.
+      # Hard-fail with log tail so the failure is diagnosable.
+      - name: Wait for dev servers to be ready
+        run: |
+          MAX_TRIES=480
+          check() {
+            local url="$1"
+            local tries=0
+            until curl -sf "$url" >/dev/null 2>&1; do
+              tries=$((tries + 1))
+              if [ "$tries" -ge "$MAX_TRIES" ]; then
+                echo "FAIL: $url did not become ready after ${MAX_TRIES}s"
+                echo "--- start:all log (last 60 lines) ---"
+                tail -60 /tmp/start-all.log || true
+                exit 1
+              fi
+              sleep 1
+            done
+            echo "READY: $url"
+          }
+          # Shell: poll root path (ng serve SPA — always 200)
+          check http://localhost:4200/
+          # Remotes: poll remoteEntry.json (proves federation entry point is live)
+          check http://localhost:4201/remoteEntry.json
+          check http://localhost:4202/remoteEntry.json
+          check http://localhost:4203/remoteEntry.json
+          check http://localhost:4204/remoteEntry.json
+          check http://localhost:4205/remoteEntry.json
+          check http://localhost:4206/remoteEntry.json
+          # SPA fallback proof: /login MUST return 200 (ng serve history fallback).
+          HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4200/login)
+          echo "SPA fallback check: /login → HTTP $HTTP_CODE"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "ERROR: SPA fallback is not working — /login returned $HTTP_CODE (expected 200)."
+            echo "--- start:all log (last 60 lines) ---"
+            tail -60 /tmp/start-all.log || true
+            exit 1
+          fi
+          echo "SPA fallback OK: /login → 200"
+
+      # Run the boot smoke gate (UNCHANGED — harness is correct, do NOT modify).
+      - name: Run boot smoke
+        working-directory: frontend
+        env:
+          SMOKE_SHELL_URL: http://localhost:4200
+          SMOKE_SCREENSHOT_DIR: tools/boot-smoke/screenshots
+          SMOKE_RESULTS_FILE: tools/boot-smoke/smoke-results.json
+        run: node tools/boot-smoke/boot-smoke.js
+
+      # Upload screenshots + results ALWAYS so the founder can diagnose pass and fail.
+      - name: Upload smoke artifacts (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot-smoke-${{ github.run_id }}
+          path: |
+            frontend/tools/boot-smoke/screenshots/
+            frontend/tools/boot-smoke/smoke-results.json
+          retention-days: 7
+
+      # Also upload the start:all log for diagnosis on any outcome.
+      - name: Upload start:all log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: start-all-log-${{ github.run_id }}
+          path: /tmp/start-all.log
+          retention-days: 7
+
+      # Teardown: kill the entire start:all process group (setsid creates a new
+      # PGID equal to the PID we stored). Falls back to individual kill if setsid
+      # wasn't available. Always runs, even on failure.
+      - name: Teardown dev servers
+        if: always()
+        run: |
+          if [ -f /tmp/start-all.pid ]; then
+            PGID=$(cat /tmp/start-all.pid)
+            kill -- -"$PGID" 2>/dev/null || kill "$PGID" 2>/dev/null || true
+            echo "Dev servers stopped (PGID/PID: $PGID)."
+          else
+            echo "No start:all PID file found — nothing to kill."
+          fi
+
+  # =============================================================================
+  # FE GATE: LINT (5 CONTRACTS) — Phase 0, warn-only / report-only
+  #
+  # Purpose: run the 5 FE design-system boundary scanners and print a report.
+  # This mirrors the backend Gate 3 (§16.E import-linter + 3 AST scanners) but
+  # for the frontend design-system decoupling contracts.
+  #
+  # Phase 0 = warn-only: run-all.mjs exits 0 regardless of violations, so this
+  # job is always green. The report tells the team about known leaks (FE-2: 3
+  # pi pi-* files) and confirms the seal (FE-1: 0 violations) on every PR.
+  #
+  # NON-BLOCKING by design:
+  #   - NOT in build.needs or deploy.needs (does not gate the build/deploy path).
+  #   - NOT a required status check (founder wires required-check in branch
+  #     protection at Phase 5, exactly as noted for frontend-boot-smoke D1 gate).
+  #
+  # Node-only (no pnpm install): the scanners are dependency-free Node ESM
+  # (node:fs + node:path only) — pnpm setup is dead weight here. Faster than
+  # frontend-build and cannot be broken by lockfile drift.
+  #
+  # Trigger scope: gated on frontend-changes (same paths-filter fan-out as
+  # frontend-boot-smoke) so it fires only on PRs that touch frontend libs, shell,
+  # or any MFE — backend-only PRs skip it cleanly.
+  #
+  # Phase 1: --strict=fe2 (after icon migration, founder wires)
+  # Phase 4: --strict=fe2,fe3 (after chrome primitives land)
+  # Phase 5: --strict (all); job becomes a required status check.
+  # =============================================================================
+  fe-lint-contracts:
+    name: "FE Gate: lint (5 contracts)"
+    runs-on: ubuntu-latest
+    needs: frontend-changes
+    if: |
+      github.event_name != 'schedule' &&
+      (
+        needs.frontend-changes.outputs.libs        == 'true' ||
+        needs.frontend-changes.outputs.shell       == 'true' ||
+        needs.frontend-changes.outputs.mfe_pricing == 'true' ||
+        needs.frontend-changes.outputs.mfe_export  == 'true' ||
+        needs.frontend-changes.outputs.mfe_onboarding == 'true' ||
+        needs.frontend-changes.outputs.mfe_dashboard  == 'true' ||
+        needs.frontend-changes.outputs.mfe_catalog    == 'true' ||
+        needs.frontend-changes.outputs.mfe_auth       == 'true'
+      )
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run FE contract scanners (strict FE-2)
+        working-directory: frontend
+        # Phase 1: --strict=fe2 (icon migration complete; job goes RED on new raw icon leaks).
+        # FE-2 strict = exit 1 on any violation; FE-1/3/4/5 remain warn-only.
+        # Job is NOT in build.needs/deploy.needs; required-check deferred to Phase 5.
+        # No pnpm install — scanners are dependency-free Node ESM (node:fs + node:path).
+        run: node tools/contracts/run-all.mjs --strict=fe2
+
+  # =============================================================================
   # BUILD — Docker images via Cloud Build
-  # Runs ONLY on push to main, after all 5 backend CI gates + the frontend matrix pass.
+  # FOUNDER RULING 2026-06-12: dev deploys fire from develop; main is reserved for staging/prod
+  # promotion (founder-gated). Runs ONLY on push to develop, after all 5 backend CI gates + the
+  # frontend matrix pass. A push to main does NOT build (no staging/prod target exists yet).
   # See cloudbuild.yaml + DEVOPS_ARCHITECTURE.md §6.
   # =============================================================================
   build:
     name: "Build container images"
     runs-on: ubuntu-latest
     needs: [unit, smoke, lint, integration, golden_roundtrip, frontend-build]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     timeout-minutes: 30
 
     permissions:
@@ -706,14 +986,17 @@ jobs:
 
   # =============================================================================
   # DEPLOY — Rolling deploy to dev namespace via IAP TCP tunnel
-  # Runs ONLY on push to main, after build succeeds.
+  # FOUNDER RULING 2026-06-12: dev deploys fire from develop; main is reserved for staging/prod
+  # promotion (founder-gated). Runs ONLY on push to develop, after build succeeds. The deployed
+  # code (VM repo reset, manifests, image tag) all track develop so the cluster matches the
+  # triggering commit. A push to main does NOT deploy (no staging/prod target exists yet).
   # See DEVOPS_ARCHITECTURE.md §7.
   # =============================================================================
   deploy:
     name: "Deploy to K3s (dev namespace)"
     runs-on: ubuntu-latest
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     timeout-minutes: 20
 
     permissions:
@@ -740,6 +1023,24 @@ jobs:
         # IAP-tunneled SSH — no public port 6443, OIDC WIF for the SA, scoped IAM
         # (roles/iap.tunnelResourceAccessor + roles/compute.instanceAdmin.v1 on the VM).
         run: |
+          # OUTER (runner-side) retry wrapper around the gcloud SSH connect.
+          # DIAGNOSIS (run 27490730981): the connect layer intermittently fails with
+          # 'Permission denied (publickey)' / exit 255 BEFORE the remote --command runs.
+          # Root cause is the OS-Login ephemeral-key propagation race — gcloud pushes a
+          # short-lived SSH key, but the VM's sshd has not yet picked it up when the
+          # connect is attempted. It is a benign transient (proven by 4 same-window
+          # successes); a short retry clears it. The remote --command payload below is
+          # idempotent (kubectl apply + rollout status + set image + health-check-with-
+          # rollback), so re-invoking it is safe.
+          # NOTE: these counter variables run on the GitHub RUNNER (bare $, not \$). The
+          # --command="..." payload's \$-escaped constructs remain byte-identical so they
+          # still evaluate REMOTELY. Self-contained counter — no $(seq), which expands on
+          # the runner and malforms the remote script (lesson from run 27364056936).
+          MAX_ATTEMPTS=3
+          ATTEMPT=1
+          while true; do
+            echo "Deploy SSH attempt ${ATTEMPT}/${MAX_ATTEMPTS}..."
+            if \
           gcloud compute ssh ${{ env.VM_NAME }} \
             --zone=${{ env.VM_ZONE }} \
             --tunnel-through-iap \
@@ -751,11 +1052,16 @@ jobs:
               FRONTEND_IMAGE=${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.REPO }}/frontend:\${IMAGE_TAG}
 
               # 1. Refresh the manifest checkout on the VM so any k8s/*.yaml change ships.
+              #    FOUNDER RULING 2026-06-12: dev deploys fire from develop, so the VM repo is
+              #    reset to origin/develop (the branch this deploy was triggered from) — the
+              #    deployed manifests + scripts match the triggering commit. The image tag below
+              #    (github.sha) is already the develop commit SHA, so cluster code == repo code.
+              #    main is reserved for staging/prod promotion (founder-gated) — not deployed here.
               if [ -d ~/mesell/.git ]; then
-                git -C ~/mesell fetch origin main
+                git -C ~/mesell fetch origin develop
                 git -C ~/mesell reset --hard FETCH_HEAD
               else
-                git clone --depth=1 https://github.com/Mugunthan93/mesell.git ~/mesell
+                git clone --depth=1 --branch develop https://github.com/Mugunthan93/mesell.git ~/mesell
               fi
 
               # 1b. Refresh the Artifact Registry pull token and make containerd reload it.
@@ -827,7 +1133,20 @@ jobs:
                 exit 1
               fi
               echo \"Deploy complete: \${IMAGE_TAG}\"
-            "
+            "; then
+              echo "Deploy SSH attempt ${ATTEMPT} succeeded."
+              break
+            fi
+            # gcloud returned non-zero (255 publickey flake, or a genuine remote failure
+            # — the idempotent payload makes a re-run safe either way).
+            if [ "${ATTEMPT}" -ge "${MAX_ATTEMPTS}" ]; then
+              echo "Deploy SSH failed after ${MAX_ATTEMPTS} attempts. Failing the build."
+              exit 1
+            fi
+            echo "Deploy SSH attempt ${ATTEMPT} failed; retrying in 15s (OS-Login key-propagation race)."
+            sleep 15
+            ATTEMPT=$((ATTEMPT + 1))
+          done
 
   # =============================================================================
   # NIGHTLY — slow/perf + ai_eval, schedule-only
