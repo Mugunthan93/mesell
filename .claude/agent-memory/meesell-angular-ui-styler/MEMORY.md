@@ -534,3 +534,52 @@ Lint: no eslint config in workspace (tsc satisfies type-check requirement)
 - All changes are cosmetic (colors, border-radius, font-family).
 - No layout or dimension changes that could break 360px baseline.
 - Token changes propagate to all breakpoints uniformly via CSS custom properties.
+
+---
+
+## project: ui_ds_phase3_layout_polish (2026-06-17)
+
+Task: Phase 3 UI-styler responsive/token/a11y polish pass on @mesell/layout primitives.
+Branch: feat/ui-ds-phase3
+Files changed:
+  - frontend/libs/layout/page/page.component.ts (EDITED — <main> → <div>)
+  - frontend/libs/layout/page/page.component.spec.ts (EDITED — updated assertions for <div>)
+  - frontend/libs/layout/grid/grid.component.ts (EDITED — cols=4 responsive fix)
+  - frontend/libs/layout/grid/grid.component.spec.ts (EDITED — new cols=4 regression test)
+
+### A11y landmark decision: mee-page <main> → <div>
+
+RULE: mee-page MUST NOT render `<main>`. The shell component (`apps/shell/src/app/layouts/shell/shell.component.html`) already wraps `<router-outlet>` in `<main class="page-content">`. A second `<main>` inside mee-page creates a duplicate ARIA landmark — WCAG 2.4.1 violation (screen readers announce both; navigating by landmark gives two "main" regions).
+
+Decision: mee-page renders `<div>` as its inner container. Shell is the sole `<main>` owner.
+
+FUTURE PATTERN: If a context ever needs mee-page to own `<main>` (e.g. a page without the shell), the recommended pattern is an opt-in input (`asMain: boolean = false` → renders `<main>` when true, `<div>` otherwise), or a separate `mee-page-root` wrapper for shell-less contexts. Do NOT make `<main>` the default — the shell always owns it in this architecture.
+
+### Responsive fix: mee-grid cols=4
+
+OLD: `grid-cols-1 sm:grid-cols-2 md:grid-cols-4` — 2→4 jump at 768px (abrupt, tablet items too narrow)
+NEW: `grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4` — smooth 3-step progression
+
+RULE: For mee-grid numeric cols, always use a 3-step mobile-first progression for cols=4:
+  base(360+) → 1 col, sm(640+) → 2 cols, md(768+) → N-1 cols (or 3), lg(1024+) → 4 cols
+  This ensures tablet users (768–1023px) get reasonably sized items, not cramped narrow columns.
+
+cols=1 → `grid-cols-1` (no breakpoints needed)
+cols=2 → `grid-cols-1 sm:grid-cols-2` (two-step)
+cols=3 → `grid-cols-1 sm:grid-cols-2 md:grid-cols-3` (three-step, was already correct)
+cols=4 → `grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4` (four-step — FIXED)
+
+### Token discipline: all 6 primitives correct
+
+- Spacing: MEE_GAP_TOKEN map → var(--mee-space-N). No hard-coded px for spacing tokens.
+- Colors: var(--mee-color-*) inline styles. No hard-coded hex values.
+- Tailwind: structural classes (flex/grid/max-width/centering). Token spacing via [style.gap].
+
+### Build + test results (post-polish)
+
+Build: ng build frontend --configuration development — CLEAN (zero errors, 3.224s)
+  Initial total: 138.49kB (delta = 0 from Phase 3 baseline — primitives still tree-shake out)
+Tests: 1163/1164 PASS (73 files / 1 pre-existing app.spec.ts NG0201 failure — known debt)
+  Layout specs: 7 files, all PASS. Test count +1 (new cols=4 regression spec).
+tsc --noEmit: CLEAN (TSC_EXIT=0)
+Contracts: All 5 CLEAN exit 0 (FE-1/FE-2/FE-3/FE-4/FE-5)
