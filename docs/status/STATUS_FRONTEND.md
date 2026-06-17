@@ -3,6 +3,63 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-16
 
+=== UPDATE: 2026-06-17 ===
+Phase: UI Design-System Decoupling — Phase 3 (Layout: page primitives) — UI-STYLER POLISH PASS
+Agent: meesell-angular-ui-styler
+
+Done:
+  1. A11y landmark — mee-page <main> → <div> (CRITICAL FIX):
+     Shell `shell.component.html` already owns `<main class="page-content">` wrapping `<router-outlet>`.
+     mee-page rendered a second `<main>` → duplicate ARIA landmark → WCAG 2.4.1 violation.
+     Fix: changed mee-page inner element from `<main>` to `<div>`. Shell retains the sole `<main>`.
+     Updated page.component.spec.ts assertions from `querySelector('main')` → `querySelector('div')`
+     and added explicit `expect(querySelector('main')).toBeNull()` guard.
+
+  2. Responsive / mobile-first — mee-grid cols=4 fix:
+     Previous: `grid-cols-1 sm:grid-cols-2 md:grid-cols-4` — abrupt 2→4 jump at 768px.
+     Fixed:    `grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4`
+     Reason: tablet users (768–1023px) now get 3 columns instead of 4 narrow columns.
+     Only desktop (1024px+) shows the full 4-column layout. cols 1/2/3 were already correct.
+     Updated grid.component.spec.ts: added test asserting lg:grid-cols-4 + md:grid-cols-3 for cols=4.
+
+  3. Token discipline — NO CHANGE NEEDED (already correct):
+     All 6 primitives use `[style.gap]` → `var(--mee-space-N)` via MEE_GAP_TOKEN. Zero hard-coded px
+     for any spacing that has a design token. Tailwind for structural classes (flex/grid/max-width).
+     Colors applied via `style="color: var(--mee-color-*)"` inline (correct idiom — matches page-header exemplar).
+
+  4. Visual consistency with exemplars — NO CHANGE NEEDED (already correct):
+     mee-section heading: `text-lg font-semibold` + `var(--mee-color-on-surface)` — matches page-header `text-2xl font-bold`.
+     mee-section description: `text-sm` + `var(--mee-color-on-surface-muted)` — matches page-header subtitle pattern.
+     All 6 primitives: `:host { display: block; }` — matches auth-layout exemplar.
+
+  5. Toolbar mobile wrap — NO CHANGE NEEDED (already correct):
+     `flex flex-wrap justify-between` — wraps on mobile, space-between (correct).
+
+  6. Form layout reading width — NO CHANGE NEEDED (already correct):
+     max-w-screen-sm (≈640px) default + `[&>*]:w-full` child stretch — correct form reading width.
+
+  7. mee-section heading semantics — NO CHANGE NEEDED (already correct):
+     Uses `<h2>` rendered only when `heading()` is set. Spec requirement met.
+
+Tests: 1163 passed / 1 failed (pre-existing app.spec.ts NG0201 — unchanged known debt)
+  Layout spec files: 7 (all PASS) — test count +1 from new cols=4 regression spec
+  Total test files: 74 (73 passed + 1 pre-existing failure)
+Build: OK — 3.224s, zero errors, Initial total 138.49kB (delta = 0, primitives tree-shake out)
+A11y: Duplicate main landmark FIXED (critical). WCAG 2.4.1 compliance restored.
+Mobile (360px): grid collapse to 1 col verified by spec assertions. toolbar flex-wrap confirmed.
+Contracts: All 5 CLEAN (FE-1=0, FE-2=0, FE-3=0, FE-4=0, FE-5=0), exit 0
+In progress: none
+Blockers: none
+Next: meesell-frontend-coordinator merge-gate review → PR to develop
+Hand-offs:
+  - LANDMARK DECISION flagged to coordinator: mee-page renders <div> not <main>.
+    Shell owns the page's <main> landmark. If a future context (e.g. standalone page without shell)
+    needs mee-page to own the <main>, that should be an opt-in input (`role='main'` or a separate
+    `mee-page-root` wrapper) — not the default. Coordinator should record this in the Phase 4 plan.
+  - MEE_LAYOUT + styling tokens published: component-builder may use all 6 primitives via
+    `imports: [...MEE_LAYOUT]`. Token spacing flows through MEE_GAP_TOKEN → var(--mee-space-N).
+=========
+
 === UPDATE: 2026-06-16 23:45 ===
 Phase: /catalogs/:id/edit — wizard refactor (multi-step wizard) — mesell-catalog-form-wizard-frontend-session-2
 Agent: meesell-angular-component-builder
@@ -57,6 +114,43 @@ Hand-offs:
   - ImageUploaderComponent (selector: app-image-uploader, standalone, providers:[ImageService])
     reads productId from ActivatedRoute internally — no inputs needed from catalog-form
   - mee-steps: input `steps` (MeeStep[]), `active_index` (number), output `active_index_change`
+=========
+
+=== UPDATE: 2026-06-16 ===
+Phase: UI Design-System Decoupling — Phase 3 (Layout: page primitives)
+Agent: meesell-angular-component-builder
+Branch: feat/ui-ds-phase3
+
+Done:
+  Components added (7 new spec files, 69 new tests):
+  - libs/layout/layout.types.ts (NEW) — MeeLayoutGap union + MEE_GAP_TOKEN map + MeePageMaxWidth/MeeFormMaxWidth types
+  - libs/layout/page/page.component.ts + spec.ts (NEW) — MeePageComponent
+  - libs/layout/section/section.component.ts + spec.ts (NEW) — MeeSectionComponent
+  - libs/layout/toolbar/toolbar.component.ts + spec.ts (NEW) — MeeToolbarComponent
+  - libs/layout/grid/grid.component.ts + spec.ts (NEW) — MeeGridComponent
+  - libs/layout/stack/stack.component.ts + spec.ts (NEW) — MeeStackComponent
+  - libs/layout/form-layout/form-layout.component.ts + spec.ts (NEW) — MeeFormLayoutComponent
+  - libs/layout/aggregators.ts (NEW) — MEE_LAYOUT aggregator (6 members)
+  - libs/layout/aggregators.spec.ts (NEW) — pure-Vitest membership assertions (9 tests)
+  - libs/layout/index.ts (EDITED) — populated barrel: component re-exports + type re-exports + MEE_LAYOUT
+  - libs/layout/README.md (NEW) — usage/demo doc (per spec section 4)
+
+Tests: 1162 passed / 1 failed (pre-existing app.spec.ts NG0201 MessageService — not from this phase)
+  New layout spec files: 7 (all PASS)
+  New layout tests: 69 across 7 spec files
+  Total test files: 74 (73 passed + 1 pre-existing failure)
+Build: OK — development build succeeded, 137.6s, bundle delta = 0 (no consumer imports layout yet, primitives tree-shake out)
+  Initial bundle: polyfills.js 98.77kB + styles.css 27.99kB + main.js 303B — identical to baseline
+Contracts: All 5 CLEAN (FE-1=0, FE-2=0, FE-3=0, FE-4=0, FE-5=0), exit 0
+Styling idiom: [style.gap]/[style.margin-top]/[style.grid-template-columns] bound to var(--mee-space-N) tokens via MEE_GAP_TOKEN map. Tailwind classes for structural layout (flex/grid/cols/wrap/align/justify/max-width). No hard-coded px for any spacing that has a design token.
+In progress: none (ui-styler responsive/token/a11y polish pass = next step)
+Blockers: none
+Next: meesell-angular-ui-styler responsive polish pass -> coordinator merge-gate -> PR
+Hand-offs:
+  - MEE_LAYOUT (6 components) ready in @mesell/layout
+  - All 6 primitives standalone OnPush, signal inputs, content projection, zero PrimeNG
+  - MFE adoption deferred to Phase 6 — no app/MFE imports changed
+  - ui-styler: review mobile-first breakpoints (grid cols collapse, toolbar flex-wrap), token usage, a11y semantic tags
 =========
 
 === UPDATE: 2026-06-15 ===
