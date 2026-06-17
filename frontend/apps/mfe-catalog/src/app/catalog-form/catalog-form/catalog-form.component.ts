@@ -147,6 +147,11 @@ import {
       gap: var(--mee-space-4);
     }
 
+    /* Full-width spanner: text_long (textarea) fields always occupy both columns */
+    .mee-field--full {
+      grid-column: 1 / -1;
+    }
+
     /* ── "More details" sub-section (Basics step B) ───────────────────── */
     .mee-more-details-toggle {
       display: flex;
@@ -284,6 +289,15 @@ import {
         max-width: 42rem;
         padding: var(--mee-space-6) var(--mee-space-8);
         padding-bottom: 88px;
+      }
+
+      /* Two-column field grid — required block and optional ("More details") block */
+      .mee-step-fields,
+      .mee-more-details-fields {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        column-gap: var(--mee-space-6);
+        row-gap: var(--mee-space-4);
       }
     }
 
@@ -432,7 +446,8 @@ import {
                     <div class="mee-step-fields" aria-label="Required fields">
                       @for (field of requiredFields; track field.canonical_name) {
                         <div class="field-wrapper"
-                             [class.mee-ai-suggested]="isAiSuggested(field.canonical_name)">
+                             [class.mee-ai-suggested]="isAiSuggested(field.canonical_name)"
+                             [class.mee-field--full]="field.primitive === 'text_long'">
                           @switch (field.primitive) {
                             @case ('text_long') {
                               <mee-textarea
@@ -481,7 +496,8 @@ import {
                       <div id="more-details-panel" class="mee-more-details-fields">
                         @for (field of optionalFields; track field.canonical_name) {
                           <div class="field-wrapper"
-                               [class.mee-ai-suggested]="isAiSuggested(field.canonical_name)">
+                               [class.mee-ai-suggested]="isAiSuggested(field.canonical_name)"
+                               [class.mee-field--full]="field.primitive === 'text_long'">
                             @switch (field.primitive) {
                               @case ('text_long') {
                                 <mee-textarea
