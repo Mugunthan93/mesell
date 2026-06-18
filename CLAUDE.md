@@ -410,7 +410,7 @@ The same Angular codebase is wrapped with **Ionic + Capacitor** for iOS/Android 
 2. **GCS, not S3** — we're on GCP, same cloud as Gemini API
 3. **Gemini 2.5 Flash, not GPT-4** — 10x cheaper, sufficient quality for catalog text
 4. **rembg on CPU, not GPU** — 3-5s/image is acceptable for MVP, no GPU cost
-5. **Phone OTP login, not email** — Indian sellers prefer phone, no password friction
+5. **Dual-identity login: phone OTP OR Google Sign-In** — Indian sellers prefer phone, no password friction; Google Sign-In is an additive identity provider for the Android/Google-account cohort (removes SMS cost + delivery friction). **AMENDMENT 2026-06-18 — google-auth ratification:** the original "phone OTP login, not email" decision is widened to a DUAL-IDENTITY model. A user may exist with phone only (every existing row), Google only (`email` + Google `sub`, `phone = NULL`), or both. `iam.users.phone` becomes nullable-unique; `email` gains a nullable-UNIQUE linking constraint; a new nullable-UNIQUE `google_sub` column and an `auth_provider` audit column are added; a table-level CHECK guarantees `phone IS NOT NULL OR google_sub IS NOT NULL`. Account-linking is AUTO-LINK on a Google-`email_verified` match: `google_sub` match → login; else verified-`email` match → link `google_sub` onto the existing user; else create a Google-only user; a 409 is returned if the email belongs to a different `google_sub`. The phone-OTP path is unchanged. (End amendment.)
 6. **K3s, not docker-compose in prod** — production-grade orchestration, easy to scale horizontally
 7. **Meesho CSV export, not API upload** — Meesho has no open API for small third parties
 8. **FastAPI, not Django** — async-first, better for AI/ML pipeline integration
@@ -421,6 +421,8 @@ The same Angular codebase is wrapped with **Ionic + Capacitor** for iOS/Android 
 13. **Ionic + Capacitor deferred to Phase 2** — MVP is web-only PWA; mobile wrap happens after product-market fit
 14. **MSG91 OTP + JWT (PyJWT), not GoTrue / Supabase Auth** — full control over OTP flow, no external auth dependency, JWT issued by our own FastAPI. **AMENDMENT 2026-06-05 — FE-D5 ratification:** access JWT held in-memory by the frontend; refresh token in HttpOnly+Secure+SameSite=Strict cookie owned by backend with server-side revocation via Valkey allowlist (HMAC-with-pepper keyspace) on logout — no tokens in localStorage. (End amendment.)
 15. **Trimmed self-hosted Supabase for PostgreSQL only** — use Supabase's hardened Postgres image on K3s; do NOT enable GoTrue, Realtime, or Storage subsystems
+
+> **AMENDMENT 2026-06-18 — google-auth endpoint-inventory bump (BACKEND_ARCHITECTURE.md §7.3 / §17).** The dual-identity decision (#5 amendment) adds exactly one new endpoint, `POST /api/v1/auth/google/verify`, to the `iam` module. The locked iam endpoint count rises **6 → 7**; the locked §17 mounted-endpoint inventory rises **28 → 29**. The new route is feature-flag gated (`FEATURE_GOOGLE_AUTH_ENABLED`, default `False`): it is NOT mounted when the flag is off, so the OpenAPI surface and §17 count remain at 28 until the flag is enabled per namespace (dev → staging; prod deferred to V1.5). Reverse this amendment by deleting the route + the flag-gated mount and restoring the 6/28 counts. (End amendment.)
 
 ## Environment Variables
 
