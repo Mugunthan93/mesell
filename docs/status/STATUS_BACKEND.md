@@ -1,6 +1,35 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-19 14:00 (meesell-database-builder) — Razorpay Wave 1 DB layer ===
+Phase: razorpay-integration / billing tables
+Done:
+  - 3 new ORM models at app/shared/models/: subscription.py, payment.py, webhook_event.py
+  - users.py: added trial_ends_at TIMESTAMPTZ NULL, ck_users_plan CHECK, widened plan comment,
+    added subscriptions + payments relationships
+  - app/shared/models/__init__.py: registered Subscription, Payment, WebhookEvent (entries 14–16)
+  - Alembic migration f8fa7a36383f (down_revision=c2d3e4f5a6b7) — hand-authored, spec-compliant
+    * Tables: subscriptions, payments, webhook_events
+    * Indexes: idx_subscriptions_user_id_status, uq_subscriptions_one_active_per_user (partial),
+      idx_payments_user_id, idx_payments_subscription_id,
+      idx_webhook_events_type_received, idx_webhook_events_unprocessed (partial)
+    * users changes: trial_ends_at col, ck_users_plan CHECK, plan comment update
+  - Round-trip validated: upgrade head → downgrade -1 → upgrade head (3x clean, single head throughout)
+  - 20/20 billing model tests pass (backend/tests/test_billing_models.py)
+  - ruff lint clean on all new/modified files
+  - Branch: feature/razorpay-integration/backend, PR: see Hand-offs
+In progress: none
+Blockers: none
+Next: meesell-backend-coordinator merge-gate review (HYBRID step 3)
+Hand-offs:
+  - meesell-backend-coordinator: billing tables + migration f8fa7a36383f ready for merge-gate review.
+    Branch feature/razorpay-integration/backend → feature/razorpay-integration.
+  - DEVIATION from spec: down_revision is c2d3e4f5a6b7 (not b7c2e1a9d3f4 as spec stated) — google
+    identity migration landed on develop after spec was authored. Using real head avoids divergence.
+  - meesell-api-routes-builder (Wave 3): can now consume Subscription, Payment, WebhookEvent from
+    app.shared.models; ck_users_plan and trial_ends_at are live on users table.
+=========
+
 === UPDATE: 2026-06-18 (meesell-services-builder) — export validation aggregation ===
 Phase: V1 Feature 9 Export — collect-all pre-enqueue validation
 Session: export-validation-aggregation, branch feat/export-validation-aggregation,
