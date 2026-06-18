@@ -6,6 +6,7 @@ import {
   inject,
   input,
   OnInit,
+  output,
   signal,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
@@ -16,7 +17,8 @@ import {
   ValidationErrors,
 } from '@angular/forms';
 import { MultiSelect } from 'primeng/multiselect';
-import { merge } from 'rxjs';
+import type { MultiSelectFilterEvent } from 'primeng/multiselect';
+import { debounceTime, merge, Subject } from 'rxjs';
 import type { MeeSelectOption } from '../select/select.types';
 
 /** When to surface validation errors from the bound form control. */
@@ -91,6 +93,10 @@ function resolveErrorMessage(errors: ValidationErrors): string {
       [ngModel]="innerValue()"
       (ngModelChange)="onModelChange($event)"
       (onPanelHide)="onTouched()"
+      [virtualScroll]="virtualScroll()"
+      [virtualScrollItemSize]="virtualScrollItemSize()"
+      [loading]="loading()"
+      (onFilter)="onFilter($event)"
     />
     @if (computedError()) {
       <small role="alert" class="mee-error">{{ computedError() }}</small>
@@ -123,8 +129,24 @@ export class MeeMultiselectComponent implements ControlValueAccessor, OnInit {
    * - 'always' — always show, even before interaction (useful after form submit)
    */
   readonly showErrorOn      = input<MeeShowErrorOn>('touched');
+  /** Enable PrimeNG virtual scroll for large option lists. */
+  readonly virtualScroll         = input<boolean>(false);
+  /** Row height in px for virtual scroll accuracy. Default matches PrimeNG option height. */
+  readonly virtualScrollItemSize = input<number>(38);
+  /** Show loading spinner in the dropdown. Use while fetching server-side results. */
+  readonly loading               = input<boolean>(false);
+  /** Debounce time in ms for server-side filter query emission. */
+  readonly filterDebounce        = input<number>(300);
+
+  // ── Outputs ──────────────────────────────────────────────────────────────────
+  /**
+   * Emits debounced filter query for server-side search.
+   * Parent updates [options] in response. Empty string = restore full list.
+   */
+  readonly search = output<string>();
 
   // ── Internal state ───────────────────────────────────────────────────────────
+  private readonly _filterSubject = new Subject<string>();
   readonly innerValue = signal<unknown[]>([]);
 
   /** Reactive bridge: triggers `computedError` recomputation on status/value change. */
@@ -149,6 +171,13 @@ export class MeeMultiselectComponent implements ControlValueAccessor, OnInit {
         .pipe(takeUntilDestroyed(this.destroyRef))
         .subscribe(() => this._controlStatus.set(ctrl.status));
     }
+    this._filterSubject
+      .pipe(debounceTime(this.filterDebounce()), takeUntilDestroyed(this.destroyRef))
+      .subscribe(q => this.search.emit(q));
+  }
+
+  onFilter(event: MultiSelectFilterEvent): void {
+    this._filterSubject.next(event.filter ?? '');
   }
 
   /** Resolved error message — explicit [error] input wins over auto-validator messages. */

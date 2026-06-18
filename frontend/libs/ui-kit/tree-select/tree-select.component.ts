@@ -1,62 +1,250 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
+  DestroyRef,
+  inject,
   input,
+  OnInit,
   output,
+  signal,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import {
+  ControlValueAccessor,
+  FormsModule,
+  NgControl,
+  ValidationErrors,
+} from '@angular/forms';
 import { TreeSelect } from 'primeng/treeselect';
 import type { TreeNode } from 'primeng/api';
+import type { TreeSelectNodeExpandEvent } from 'primeng/treeselect';
+import type { TreeNodeSelectEvent } from 'primeng/tree';
+import { Subject, debounceTime, merge } from 'rxjs';
+
+// ── Public types ──────────────────────────────────────────────────────────────
 
 export interface MeeTreeNode {
   label: string;
   value: unknown;
+  /** Set to true when this node has children that haven't been loaded yet (lazy expand). */
+  leaf?: boolean;
   children?: MeeTreeNode[];
+}
+
+export type MeeShowErrorOn = 'touched' | 'dirty' | 'always';
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function resolveErrorMessage(errors: ValidationErrors): string {
+  if (errors['required']) return 'This field is required';
+  return 'Invalid selection';
 }
 
 function toTreeNode(node: MeeTreeNode): TreeNode {
   return {
     label: node.label,
     data: node.value,
+    leaf: node.leaf,
     children: node.children?.map(toTreeNode),
   };
 }
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 @Component({
   selector: 'mee-tree-select',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [TreeSelect],
+  imports: [TreeSelect, FormsModule],
+  // NO providers[] — NgControl injected to avoid circular dep
+  styles: [`
+    :host { display: block; }
+    .mee-label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: var(--mee-space-1);
+      color: var(--mee-color-on-surface);
+    }
+    .mee-required { color: var(--mee-color-error); }
+    ::ng-deep p-treeselect { display: block; width: 100%; }
+    ::ng-deep p-treeselect .p-treeselect { min-height: 44px; width: 100%; }
+    .mee-error {
+      display: block;
+      margin-top: var(--mee-space-1);
+      font-size: 12px;
+      color: var(--mee-color-error);
+    }
+    .mee-hint {
+      display: block;
+      margin-top: var(--mee-space-1);
+      font-size: 12px;
+      color: var(--mee-color-on-surface-muted);
+    }
+  `],
   template: `
+    @if (label()) {
+      <label class="mee-label">
+        {{ label() }}
+        @if (required()) {
+          <span aria-hidden="true" class="mee-required"> *</span>
+        }
+      </label>
+    }
     <p-treeselect
       [options]="treeNodes()"
       [placeholder]="placeholder()"
       [loading]="loading()"
+      [disabled]="disabled()"
+      [filter]="filter()"
+      [invalid]="!!computedError()"
       selectionMode="single"
-      class="w-full"
-      [style]="{ minHeight: '44px', width: '100%' }"
+      [ngModel]="innerValue()"
+      (ngModelChange)="onModelChange($event)"
       (onNodeSelect)="onNodeSelect($event)"
+      (onNodeExpand)="onNodeExpandHandler($event)"
+      (onHide)="onTouched()"
     />
+    @if (computedError()) {
+      <small role="alert" class="mee-error">{{ computedError() }}</small>
+    } @else if (hint()) {
+      <small class="mee-hint">{{ hint() }}</small>
+    }
   `,
 })
-export class MeeTreeSelectComponent {
-  readonly nodes = input.required<MeeTreeNode[]>();
-  readonly placeholder = input<string>('Select category');
-  readonly loading = input<boolean>(false);
+export class MeeTreeSelectComponent implements ControlValueAccessor, OnInit {
+  private readonly ngControl      = inject(NgControl, { optional: true, self: true });
+  private readonly destroyRef     = inject(DestroyRef);
 
+  // ── Inputs ──────────────────────────────────────────────────────────────────
+  readonly nodes          = input.required<MeeTreeNode[]>();
+  readonly placeholder    = input<string>('Select category');
+  readonly label          = input<string | undefined>(undefined);
+  readonly error          = input<string | undefined>(undefined);
+  readonly hint           = input<string | undefined>(undefined);
+  readonly loading        = input<boolean>(false);
+  readonly disabled       = input<boolean>(false);
+  readonly required       = input<boolean>(false);
+  readonly showErrorOn    = input<MeeShowErrorOn>('touched');
+  /** Enable built-in client-side filter. Set false when using server-side (search) output. */
+  readonly filter         = input<boolean>(true);
+  /** Debounce ms for server-side search emission (when filter=true). */
+  readonly filterDebounce = input<number>(300);
+
+  // ── Outputs ─────────────────────────────────────────────────────────────────
+  /** Emits the selected MeeTreeNode when a leaf is chosen. */
   readonly value_change = output<MeeTreeNode>();
+  /**
+   * Emits when a non-leaf node is expanded — parent should fetch and provide children
+   * by updating [nodes]. The emitted node has leaf=false and no children yet.
+   */
+  readonly node_expand = output<MeeTreeNode>();
+  /**
+   * Emits debounced filter string for server-side category search.
+   * Parent calls POST /categories/suggest and updates [nodes] with flat results.
+   * Empty string = restore full tree.
+   */
+  readonly search = output<string>();
 
-  get treeNodes(): () => TreeNode[] {
-    return () => this.nodes().map(toTreeNode);
+  // ── Internal ────────────────────────────────────────────────────────────────
+  readonly innerValue             = signal<TreeNode | null>(null);
+  private readonly _controlStatus = signal<string>('VALID');
+  private readonly _filterSubject = new Subject<string>();
+
+  /** Derived tree nodes from MeeTreeNode[] input. */
+  readonly treeNodes = computed(() => this.nodes().map(toTreeNode));
+
+  private _onChange: (v: unknown) => void = () => {};
+  private _onTouched: () => void = () => {};
+  readonly onTouched = () => this._onTouched();
+
+  constructor() {
+    if (this.ngControl) this.ngControl.valueAccessor = this;
   }
 
-  onNodeSelect(event: { node: TreeNode }): void {
+  ngOnInit(): void {
+    const ctrl = this.ngControl?.control;
+    if (ctrl) {
+      merge(ctrl.statusChanges, ctrl.valueChanges)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe(() => this._controlStatus.set(ctrl.status));
+    }
+    this._filterSubject
+      .pipe(debounceTime(this.filterDebounce()), takeUntilDestroyed(this.destroyRef))
+      .subscribe(q => this.search.emit(q));
+  }
+
+  readonly computedError = computed<string | null>(() => {
+    if (this.error()) return this.error()!;
+    this._controlStatus();
+    const ctrl = this.ngControl?.control;
+    if (!ctrl) return null;
+    const on = this.showErrorOn();
+    const shouldShow = on === 'always' || (on === 'touched' && ctrl.touched) || (on === 'dirty' && ctrl.dirty);
+    if (!shouldShow || ctrl.valid) return null;
+    return resolveErrorMessage(ctrl.errors!);
+  });
+
+  onModelChange(value: TreeNode | null): void {
+    this.innerValue.set(value);
+    if (value) this._onChange(value.data);
+  }
+
+  onNodeSelect(event: TreeNodeSelectEvent): void {
     if (event.node) {
-      const selected: MeeTreeNode = {
+      this.value_change.emit({
         label: event.node.label ?? '',
         value: event.node.data,
-        children: undefined,
-      };
-      this.value_change.emit(selected);
+        leaf: event.node.leaf,
+      });
+      this._onChange(event.node.data);
     }
+  }
+
+  onNodeExpandHandler(event: TreeSelectNodeExpandEvent): void {
+    if (event.node) {
+      this.node_expand.emit({
+        label: event.node.label ?? '',
+        value: event.node.data,
+        leaf: false,
+      });
+    }
+  }
+
+  // ── CVA ────────────────────────────────────────────────────────────────────
+  writeValue(value: unknown): void {
+    // value here is the raw data (node.data), not a TreeNode
+    // Find matching TreeNode from current options or set null
+    if (value == null) {
+      this.innerValue.set(null);
+    } else {
+      // Find the tree node whose data matches
+      const found = this.findNodeByData(this.treeNodes(), value);
+      this.innerValue.set(found ?? null);
+    }
+  }
+
+  private findNodeByData(nodes: TreeNode[], data: unknown): TreeNode | null {
+    for (const node of nodes) {
+      if (node.data === data) return node;
+      if (node.children) {
+        const found = this.findNodeByData(node.children, data);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  registerOnChange(fn: (v: unknown) => void): void {
+    this._onChange = fn;
+  }
+
+  registerOnTouched(fn: () => void): void {
+    this._onTouched = fn;
+  }
+
+  setDisabledState(_isDisabled: boolean): void {
+    // Handled via disabled() input binding
   }
 }

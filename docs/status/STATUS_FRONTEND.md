@@ -1,5 +1,225 @@
 # STATUS — FRONTEND
 
+=== UPDATE: 2026-06-18 14:00 ===
+Phase: libs/ui-kit — mee-tree-select overhaul (CVA, lazy expand, server search, Tailwind residue fix)
+Done:
+  - Replaced frontend/libs/ui-kit/tree-select/tree-select.component.ts entirely
+  - Removed: class="w-full" + [style]="{ minHeight: '44px', width: '100%' }" Tailwind/inline residue
+  - Added: NgControl (self+optional inject) CVA pattern — no providers[]/forwardRef, matching multiselect
+  - Added: ControlValueAccessor interface + writeValue/registerOnChange/registerOnTouched/setDisabledState
+  - Added: DestroyRef inject, OnInit lifecycle
+  - Added: innerValue signal<TreeNode|null> for ngModel bridge
+  - Added: treeNodes = computed(() => nodes().map(toTreeNode)) — replaces get treeNodes() getter
+  - Added: label, error, hint, disabled, required, showErrorOn, filter, filterDebounce inputs
+  - Added: MeeShowErrorOn type export ('touched'|'dirty'|'always')
+  - Added: node_expand output<MeeTreeNode> — fires on (onNodeExpand) for lazy tree loading
+  - Added: search output<string> — debounced via Subject+debounceTime for server-side category search
+  - Added: _controlStatus signal + merge(statusChanges,valueChanges).pipe(takeUntilDestroyed) in ngOnInit
+  - Added: computedError computed signal (explicit error() input wins; falls back to validator messages)
+  - Added: findNodeByData() private helper for writeValue() TreeNode lookup
+  - Template: [filter], [disabled], [invalid] bindings on p-treeselect (all verified in .d.ts)
+  - Template: (onNodeExpand) -> onNodeExpandHandler(event: TreeSelectNodeExpandEvent)
+  - Template: (onHide) -> onTouched() — panel hide triggers CVA touched
+  - CSS: ::ng-deep rules replace class="w-full" + [style] — 44px minHeight via component styles
+  - CSS: .mee-label, .mee-required, .mee-error, .mee-hint classes added
+  - Import: TreeSelectNodeExpandEvent from 'primeng/treeselect'; TreeNodeSelectEvent from 'primeng/tree'
+  - Import: Subject, debounceTime, merge from 'rxjs'
+  - MeeTreeNode: added leaf?: boolean field for lazy expand support
+PrimeNG API verifications (from d.ts):
+  - [filter]: YES — filter: boolean on TreeSelect
+  - (onNodeExpand): YES — onNodeExpand: EventEmitter<TreeSelectNodeExpandEvent>
+  - [invalid]: YES — via BaseEditableHolder.invalid InputSignalWithTransform
+  - (onHide): YES — onHide: EventEmitter<Event>
+  - TreeSelectNodeExpandEvent shape: { originalEvent: Event; node: TreeNode }
+  - TreeNodeSelectEvent shape: { originalEvent: Event; node: TreeNode }
+Tests: no spec changes this task (pure API wiring + CVA)
+Build: tsc --noEmit — ZERO errors (verified post-edit)
+In progress: none
+Blockers: none
+Next: next assigned ui-kit task
+Hand-offs:
+  - "MeeTreeSelectComponent now implements CVA (NgControl pattern, no forwardRef/NG_VALUE_ACCESSOR).
+     Supports [formControl]/[formControlName] binding.
+     Added [filter] for client-side filtering; (search) output for server-side debounced category search.
+     Added (node_expand) output for lazy tree loading (parent provides children by updating [nodes]).
+     All Tailwind residue (class='w-full', [style]) removed; sizing via ::ng-deep component styles."
+=========
+
+=== UPDATE: 2026-06-18 13:00 ===
+Phase: libs/ui-kit — mee-table lazy server-side mode + virtual scroll
+Done:
+  - table.types.ts: added MeeTableLazyEvent interface
+  - table.component.ts: added lazy, scrollHeight, virtualScroll, virtualRowHeight inputs
+  - table.component.ts: added lazy_load output<MeeTableLazyEvent>
+  - table.component.ts: added onLazyLoad() handler using TableLazyLoadEvent from primeng/types/table
+  - table.component.ts: updated p-table bindings with [lazy], [scrollable], [scrollHeight], [virtualScroll], [virtualScrollItemSize], (onLazyLoad)
+Tests: no spec changes this task (new inputs/output wiring; pure pass-through handler)
+Build: tsc --noEmit: ZERO errors (verified post-edit)
+In progress: none
+Blockers: none
+Next: next assigned ui-kit task
+Hand-offs:
+  - "MeeTableComponent now supports lazy server-side mode via [lazy]=true + (lazy_load) output.
+     Emits MeeTableLazyEvent on page/sort/filter changes.
+     Also supports virtual scroll via [virtualScroll]=true + [scrollHeight]='400px' + [virtualRowHeight]=44.
+     All existing inputs/outputs/CSS preserved."
+=========
+
+=== UPDATE: 2026-06-18 ===
+Phase: libs/ui-kit — mee-select upgrade (CVA pattern + virtual scroll + lazy server-side search)
+Done:
+  - Replaced frontend/libs/ui-kit/select/select.component.ts entirely
+  - Removed: providers[NG_VALUE_ACCESSOR/forwardRef], forwardRef import, NG_VALUE_ACCESSOR import
+  - Added: NgControl (self+optional inject) CVA pattern — matches multiselect canonical
+  - Added: DestroyRef inject, OnInit lifecycle
+  - Added: resolveErrorMessage() — required/minlength/maxlength/min/max/invalid fallback
+  - Added: MeeShowErrorOn type export ('touched'|'dirty'|'always')
+  - Added: showErrorOn input (default 'touched')
+  - Added: required input (boolean, default false)
+  - Added: hint input (string|undefined)
+  - Added: filter input (boolean, default false)
+  - Added: virtualScroll input (boolean, default false) — for 3,772-category lists
+  - Added: virtualScrollItemSize input (number, default 38px)
+  - Added: loading input (boolean, default false)
+  - Added: filterDebounce input (number, default 300ms)
+  - Added: search output<string> — debounced via Subject+debounceTime for server-side search
+  - Added: _controlStatus signal + merge(statusChanges,valueChanges).pipe(takeUntilDestroyed) in ngOnInit
+  - Added: computedError computed signal (explicit error() wins; falls back to validator messages)
+  - Added: _filterSubject Subject<string> wired to debounce + search.emit in ngOnInit
+  - Template: [filter], [virtualScroll], [virtualScrollItemSize], [loading], [invalid] bindings on p-select
+  - Template: (onChange) emits value_change; (ngModelChange) drives CVA only
+  - Template: (onFilter) feeds _filterSubject; (onHide) fires onTouched
+  - Template: required * indicator inside label block
+  - Template: computedError() drives error block; hint() drives hint block
+  - CSS: added .mee-required, .mee-hint classes (matching multiselect canonical)
+  - import { SelectFilterEvent } from 'primeng/select' — verified in primeng/types/primeng-select.d.ts
+  - import { Subject, debounceTime, merge } from 'rxjs' — rxjs 7.8.2 barrel export confirmed
+  - MeeShowErrorOn NOT re-exported from index.ts for select — already exported from multiselect; no duplicate
+Tests: no spec changes this task (structural CVA wiring; same pattern as multiselect)
+Build: tsc --noEmit: ZERO errors
+In progress: none
+Blockers: none
+Next: next assigned ui-kit task
+Hand-offs:
+  - "MeeSelectComponent upgraded to NgControl CVA pattern + virtual scroll + lazy server-side search.
+     New inputs: required, hint, showErrorOn, filter, virtualScroll, virtualScrollItemSize, loading, filterDebounce.
+     New output: search (debounced string for server-side filtering).
+     NG_VALUE_ACCESSOR provider removed; uses NgControl self-injection same as multiselect.
+     SmartPickerComponent or CategoryDropdowns that need 3772-category virtual scroll:
+     set [virtualScroll]='true' [virtualScrollItemSize]='38' [filter]='true' (search)='onSearch($event)'."
+=========
+
+=== UPDATE: 2026-06-19 03:10 ===
+Phase: libs/ui-kit — mee-multiselect virtual scroll + server-side search
+Done:
+  - Extended MeeMultiselectComponent (libs/ui-kit/multiselect/multiselect.component.ts) additively:
+    - Added inputs: virtualScroll (boolean, default false), virtualScrollItemSize (number, default 38),
+      loading (boolean, default false), filterDebounce (number, default 300)
+    - Added output: search (string) — emits debounced filter query for server-side search
+    - Added private _filterSubject: Subject<string> for debounce wiring
+    - Added onFilter(event: MultiSelectFilterEvent): void — called from (onFilter) template binding
+    - ngOnInit: wired _filterSubject.pipe(debounceTime(filterDebounce()), takeUntilDestroyed) → search.emit
+    - Template: added [virtualScroll], [virtualScrollItemSize], [loading], (onFilter) bindings to p-multiselect
+    - Imports: added output from @angular/core; debounceTime/merge/Subject from rxjs (consolidated);
+      MultiSelectFilterEvent (type-only) from primeng/multiselect
+    - CVA code fully preserved — zero changes to writeValue/registerOnChange/registerOnTouched/setDisabledState
+    - All existing inputs, template bindings, and styles preserved
+  - PrimeNG type verified: MultiSelectFilterEvent { filter: any } exported from primeng/multiselect
+    via primeng/types/multiselect re-export (confirmed from .d.ts)
+Tests: no spec changes this task (additive input/output wiring; no logic branches to test)
+Build: tsc --noEmit: ZERO errors
+In progress: none
+Blockers: none
+Next: next assigned ui-kit task
+Hand-offs:
+  - "MeeMultiselectComponent now supports virtualScroll, virtualScrollItemSize, loading, filterDebounce inputs
+     and search output. Consumers: bind [loading]="fetching" and (search)="onSearch($event)" to implement
+     server-side filtering; update [options] from the search handler. Virtual scroll enabled via [virtualScroll]="true"."
+=========
+
+=== UPDATE: 2026-06-19 02:35 ===
+Phase: libs/ui-kit — mee-textarea NgControl CVA upgrade
+Done:
+  - Upgraded libs/ui-kit/textarea/textarea.component.ts (MeeTextareaComponent)
+    - Removed: providers[NG_VALUE_ACCESSOR/forwardRef], forwardRef import, NG_VALUE_ACCESSOR import
+    - Added: NgControl (self+optional inject), DestroyRef inject, OnInit lifecycle
+    - Added: resolveErrorMessage() — required/minlength/maxlength/min/max/pattern
+    - Added: MeeTextareaShowErrorOn type export ('touched'|'dirty'|'always')
+    - Added: showErrorOn input (default 'touched')
+    - Added: _controlStatus signal + merge(statusChanges,valueChanges).pipe(takeUntilDestroyed) in ngOnInit
+    - Added: computedError computed signal (explicit error() wins; falls back to validator messages)
+    - Template: [invalid]="!!computedError()" (was !!error())
+    - Template: [class.mee-textarea--invalid]="!!computedError()" on textarea element
+    - Template: @if (computedError()) error block (was @if (error()))
+    - CSS: .mee-textarea-field.mee-textarea--invalid { border-color: var(--mee-color-error) }
+    - All existing inputs preserved: label, placeholder, rows, error, hint, disabled, required, autoResize
+    - All existing CSS preserved: .mee-textarea-field, .mee-label, .mee-error, .mee-hint, .mee-required
+    - Class declaration: implements ControlValueAccessor, OnInit
+Tests: no spec changes this task (pure signal/CVA wiring; same pattern as multiselect + input)
+Build: tsc --noEmit: ZERO errors
+In progress: none
+Blockers: none
+Next: next assigned ui-kit task
+Hand-offs:
+  - "MeeTextareaComponent upgraded to NgControl CVA pattern. Selector: mee-textarea.
+     NG_VALUE_ACCESSOR provider removed; uses NgControl self-injection same as multiselect/input/password-input.
+     showErrorOn input controls when validation errors surface from the bound FormControl.
+     MeeTextareaShowErrorOn type exported from textarea.component."
+=========
+
+=== UPDATE: 2026-06-19 02:30 ===
+Phase: libs/ui-kit — mee-password-input NgControl CVA upgrade
+Done:
+  - libs/ui-kit/password-input/password-input.component.ts upgraded from NG_VALUE_ACCESSOR/forwardRef to NgControl self-injection pattern
+  - Removed: providers[NG_VALUE_ACCESSOR/forwardRef], forwardRef import, NG_VALUE_ACCESSOR import
+  - Added: NgControl (self+optional inject), DestroyRef inject, OnInit lifecycle
+  - Added: resolveErrorMessage() — required → 'This field is required'; minlength/maxlength/pattern → 'Password does not meet requirements'
+  - Added: required input (boolean, default false), hint input (string|undefined), showErrorOn input ('touched'|'dirty'|'always', default 'touched')
+  - Added: _controlStatus signal + merge(statusChanges,valueChanges) pipe(takeUntilDestroyed) in ngOnInit
+  - Added: computedError computed signal (auto-validator errors; no explicit [error] input on password — delegated to NgControl entirely)
+  - Template: required * indicator inside label block (matching multiselect canonical)
+  - Template: [invalid]="!!computedError()" on <p-password>
+  - Template: @if (computedError()) error block; @else if (hint()) hint block
+  - CSS: added .mee-required, .mee-error, .mee-hint classes (identical tokens to multiselect)
+  - All pre-existing ::ng-deep p-password rules fully preserved (min-height/width/flex)
+  - Class declaration updated to: implements ControlValueAccessor, OnInit
+Tests: no spec changes this task
+Build: tsc --noEmit: ZERO errors
+In progress: none
+Blockers: none
+Next: next assigned ui-kit task
+Hand-offs:
+  - "MeePasswordInputComponent upgraded to NgControl CVA pattern. Selector: mee-password-input.
+     Import from @mesell/ui-kit. New inputs: required, hint, showErrorOn.
+     computedError() surfaces reactive validator errors. [invalid] bound to !!computedError()."
+=========
+
+=== UPDATE: 2026-06-19 02:00 ===
+Phase: libs/ui-kit — mee-input NgControl CVA upgrade
+Done:
+  - libs/ui-kit/input/input.component.ts upgraded from NG_VALUE_ACCESSOR/forwardRef to NgControl self-injection pattern
+  - Removed: providers[NG_VALUE_ACCESSOR/forwardRef], forwardRef import, NG_VALUE_ACCESSOR import
+  - Added: NgControl (self+optional inject), DestroyRef inject, OnInit lifecycle
+  - Added: resolveErrorMessage() — required/minlength/maxlength/min/max/pattern/email
+  - Added: MeeShowErrorOn type export ('touched'|'dirty'|'always')
+  - Added: showErrorOn input (default 'touched')
+  - Added: _controlStatus signal + merge(statusChanges,valueChanges) in ngOnInit
+  - Added: computedError computed signal (explicit error() wins; falls back to validator messages)
+  - Template: [invalid] and [class.mee-input--invalid] now read computedError() instead of error()
+  - Template: @if (computedError()) error block (was @if (error()))
+  - CSS: added .mee-input-field.mee-input--invalid { border-color: var(--mee-color-error) }
+  - MeeShowErrorOn NOT re-exported from index.ts (already exported from multiselect — same type)
+Tests: no spec changes this task (pure signal/CVA wiring, no TestBed-testable behavior change)
+Build: tsc --noEmit: ZERO errors
+In progress: none
+Blockers: none
+Next: next assigned ui-kit task
+Hand-offs:
+  - "MeeInputComponent upgraded to NgControl CVA pattern. Selector: mee-input. Import from @mesell/ui-kit.
+     showErrorOn input controls when validation errors surface from the bound FormControl.
+     MeeShowErrorOn type exported from multiselect.component (NOT duplicated in input)."
+=========
+
 === UPDATE: 2026-06-19 01:00 ===
 Phase: libs/ui-kit — new mee-multiselect primitive
 Done:
