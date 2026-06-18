@@ -16,7 +16,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import String, text
+from sqlalchemy import CheckConstraint, String, text
 from sqlalchemy.dialects.postgresql import TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -33,20 +33,47 @@ if TYPE_CHECKING:
 
 class User(Base):
     __tablename__ = "users"
+    # google-auth (2026-06-18): table-level CHECK guarantees every row carries
+    # at least one authentication identity (phone OR google_sub).  Migration
+    # c2d3e4f5a6b7 adds the constraint; it validates immediately on existing
+    # rows (all have a phone).
+    __table_args__ = (
+        CheckConstraint(
+            "phone IS NOT NULL OR google_sub IS NOT NULL",
+            name="ck_users_at_least_one_identity",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
         server_default=text("gen_random_uuid()"),
     )
-    phone: Mapped[str] = mapped_column(
+    phone: Mapped[str | None] = mapped_column(
         String(15),
         unique=True,
-        nullable=False,
+        nullable=True,  # google-auth: widened NOT NULL → NULL (Google-only users)
         index=True,
-        comment="E.164 format Indian mobile, e.g. +919876543210",
+        comment="E.164 format Indian mobile; NULL for Google-only users",
     )
-    email: Mapped[str | None] = mapped_column(String(255))
+    email: Mapped[str | None] = mapped_column(
+        String(255),
+        unique=True,  # google-auth: now a nullable-UNIQUE linking key
+        index=True,
+        comment="Verified email; UNIQUE linking key (nullable-unique)",
+    )
+    google_sub: Mapped[str | None] = mapped_column(
+        String(255),
+        unique=True,
+        index=True,
+        comment="Google Identity Services stable subject (sub); NULL for phone-only users",
+    )
+    auth_provider: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default=text("'phone'"),
+        comment="Most-recent provider used to authenticate: phone | google",
+    )
     plan: Mapped[str] = mapped_column(
         String(20),
         nullable=False,

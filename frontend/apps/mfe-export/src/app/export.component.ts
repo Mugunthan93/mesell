@@ -284,7 +284,7 @@ const TICK_INTERVAL_MS = 2000;
             <mee-card>
               <div class="export-generating">
                 <p class="export-generating__label">
-                  <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+                  <mee-icon name="spinner" />
                   Preparing your file&hellip;
                 </p>
                 <p class="export-generating__hint">This usually takes a few seconds.</p>
@@ -297,11 +297,11 @@ const TICK_INTERVAL_MS = 2000;
             <mee-card>
               <div class="export-ready">
                 <div class="export-ready__banner">
-                  <i class="pi pi-check-circle" aria-hidden="true"></i>
+                  <mee-icon name="check-circle" />
                   <span>Your file is ready!</span>
                 </div>
                 <div class="export-ready__file">
-                  <i class="pi pi-file-excel" aria-hidden="true"></i>
+                  <mee-icon name="file-excel" />
                   <span class="export-ready__filename">{{ downloadUrl() ?? 'catalog.xlsx' }}</span>
                 </div>
                 <a
@@ -310,7 +310,7 @@ const TICK_INTERVAL_MS = 2000;
                   class="export-download-btn"
                   aria-label="Download XLSX file"
                 >
-                  <i class="pi pi-download" aria-hidden="true"></i>
+                  <mee-icon name="download" />
                   Download XLSX
                 </a>
                 <mee-button
@@ -329,7 +329,7 @@ const TICK_INTERVAL_MS = 2000;
             <mee-card>
               <div class="export-error">
                 <div class="export-error__banner">
-                  <i class="pi pi-times-circle" aria-hidden="true"></i>
+                  <mee-icon name="times-circle" />
                   <span>{{ notReadyMessage() ?? 'Export failed. Please try again.' }}</span>
                 </div>
                 <mee-button
@@ -348,7 +348,7 @@ const TICK_INTERVAL_MS = 2000;
             <mee-card>
               <div class="export-idle">
                 <div class="export-idle__icon">
-                  <i class="pi pi-file-export" aria-hidden="true"></i>
+                  <mee-icon name="file-export" />
                 </div>
                 <p class="export-idle__title">Ready to export</p>
                 <p class="export-idle__hint">Your Meesho-format XLSX will be generated once all checks pass.</p>

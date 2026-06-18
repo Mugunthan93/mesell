@@ -11,12 +11,15 @@ Per BACKEND_ARCHITECTURE.md §7 (LOCKED 2026-06-05), this module exposes
 4. ``POST /api/v1/auth/logout``        — FE-D5 server-side revocation
 5. ``GET  /api/v1/auth/me``            — JWT introspection (infra surface)
 6. ``POST /api/v1/webhooks/razorpay``  — V1 capture-only webhook
+7. ``POST /api/v1/auth/google/verify`` — google-auth feature (flag-gated;
+   mounted via ``google_router`` only when FEATURE_GOOGLE_AUTH_ENABLED)
 
 The public router lives in :mod:`.router`; the service surface lives in
 :mod:`.service`; the repository (module-private per §16) lives in
 :mod:`.repository`.
 """
 
+from app.modules.iam.router import google_router as iam_google_router
 from app.modules.iam.router import router as iam_router
 
-__all__ = ["iam_router"]
+__all__ = ["iam_router", "iam_google_router"]

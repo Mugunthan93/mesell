@@ -71,6 +71,22 @@ VALIDATION_MESSAGES: dict[str, str] = {
     "auth.webhook.signature_invalid": (
         "Webhook signature could not be verified."
     ),
+    # ── §7 iam — google-auth (5 IDs, 2026-06-18) ─────────────────────────
+    "validation.credential.invalid_format": (
+        "We couldn't read your Google sign-in. Please try again."
+    ),
+    "auth.google.token_invalid": (
+        "Your Google sign-in could not be verified. Please try again."
+    ),
+    "auth.google.email_unverified": (
+        "Your Google email isn't verified. Please verify it with Google and try again."
+    ),
+    "auth.google.unavailable": (
+        "Google sign-in is temporarily unavailable. Please try again in a moment."
+    ),
+    "auth.google.identity_conflict": (
+        "This email is already linked to a different Google account. Please contact support."
+    ),
     # ── §8 customer (6 module-specific IDs) ──────────────────────────────
     "validation.pincode.invalid_format": (
         "Please enter a valid 6-digit pincode."

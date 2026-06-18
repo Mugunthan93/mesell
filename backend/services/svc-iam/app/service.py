@@ -42,9 +42,11 @@ import time
 from uuid import UUID
 
 from redis.asyncio import Redis
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import repository as iam_repo
+from app.adapters import google as google_adapter
 from app.adapters import msg91 as msg91_adapter
 from app.adapters import razorpay as razorpay_adapter
 from app.core.auth import (
@@ -68,6 +70,7 @@ from app.domain import (
     WebhookCaptureResult,
 )
 from app.exceptions import (
+    GoogleIdentityConflictError,
     MalformedWebhookPayloadError,
     Msg91UnavailableError,
     OtpAttemptsExceededError,
@@ -258,6 +261,16 @@ def _hash_phone_for_audit(phone: str) -> str:
     return hashlib.sha256((phone + salt).encode("utf-8")).hexdigest()
 
 
+def _hash_email_for_audit(email: str) -> str:
+    """SHA-256(email + AUDIT_PII_SALT) — email is PII (google-auth §F.3).
+
+    Mirrors :func:`_hash_phone_for_audit`; the Google login audit row stores
+    the hashed email, never the plaintext.
+    """
+    salt = settings.AUDIT_PII_SALT
+    return hashlib.sha256((email + salt).encode("utf-8")).hexdigest()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Public service surface — §7.C six methods.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -389,6 +402,124 @@ async def verify_otp_and_issue_tokens(
             "hashed_phone": _hash_phone_for_audit(phone),
         },
     )
+
+    return VerifyOtpResult(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        access_expires_in=settings.ACCESS_TOKEN_TTL_SECONDS,
+        refresh_expires_in=settings.REFRESH_TOKEN_TTL_SECONDS,
+    )
+
+
+async def verify_google_and_issue_tokens(
+    credential: str,
+    client_ip: str,
+    db: AsyncSession,
+    valkey: Redis,
+) -> VerifyOtpResult:
+    """``POST /api/v1/auth/google/verify`` business path (google-auth §F.2).
+
+    Pipeline:
+
+    1. Verify the Google ID-token via the adapter (raises typed errors;
+       enforces signature / aud / iss / exp / ``email_verified``).
+    2. Upsert/link the user per the deterministic linking rules (design §E).
+       A 409 conflict (email owned by a different google_sub) raises
+       :class:`GoogleIdentityConflictError`.
+    3. Mint the access JWT + opaque refresh token and write the Valkey
+       allowlist entry — the EXACT same issuance code as the OTP path
+       (no new token shape / TTL / allowlist key format).
+    4. Write the ``auth.login.success`` audit row (provider=google) via the
+       §7.I direct-ORM SAVEPOINT path so the user_id FK resolves against the
+       just-upserted row.  Emit ``auth.google.linked`` when a phone user
+       gained a Google identity, and an info ``auth.google.email_changed``
+       note when the token email differs from the stored email.
+
+    Concurrency: a unique-violation on the create path (two concurrent first
+    logins for the same new email/sub) is caught once, the session rolled back,
+    and the upsert retried (now finds the row → links/logs in) per §E.4.
+
+    Returns the SAME :class:`VerifyOtpResult` the OTP path returns — the router
+    serialises it identically (access JWT in body, refresh token → cookie).
+    """
+    # ── Step 1 — verify the Google ID-token (typed raises) ─────────────────
+    claims = await google_adapter.verify_id_token(credential)
+
+    # ── Step 2 — upsert / link, with a single retry on a unique-violation ──
+    try:
+        outcome = await iam_repo.upsert_user_on_google_login(
+            db,
+            google_sub=claims.sub,
+            email=claims.email,
+            ip=client_ip,
+            capture_dpdp=True,
+        )
+    except IntegrityError:
+        # Race (§E.4 / edge case 7): a concurrent request created the same
+        # new email/sub between our lookups and the INSERT.  Roll back the
+        # poisoned transaction and retry once — the row now exists, so the
+        # upsert resolves via rule 1/2 (login/link).
+        logger.info("iam.google_login.integrity_race — retrying upsert once.")
+        await db.rollback()
+        outcome = await iam_repo.upsert_user_on_google_login(
+            db,
+            google_sub=claims.sub,
+            email=claims.email,
+            ip=client_ip,
+            capture_dpdp=True,
+        )
+
+    if outcome.conflict:
+        # Edge case 4 — verified email owned by a DIFFERENT google_sub.
+        # Fail closed; no tokens issued.  No user_id audit row (we did not
+        # authenticate anyone); the service logger records the event.
+        logger.warning(
+            "iam.google_login.identity_conflict existing_user=%s — failing closed (409).",
+            outcome.user.id,
+        )
+        raise GoogleIdentityConflictError()
+
+    user = outcome.user
+
+    # ── Step 3 — mint tokens + allowlist entry (IDENTICAL to the OTP path) ─
+    access_token = issue_access_token(user.id, user.plan)
+    refresh_token = issue_refresh_token()
+    allowlist_entry = RefreshAllowlistEntry(
+        user_id=user.id,
+        issued_at=int(time.time()),
+        ip=client_ip,
+    )
+    await valkey.set(
+        refresh_allowlist_key(refresh_token),
+        _serialize_allowlist_entry(allowlist_entry),
+        ex=settings.REFRESH_TOKEN_TTL_SECONDS,
+    )
+
+    # ── Step 4 — audit (direct-ORM SAVEPOINT, in-request) ──────────────────
+    await _write_audit_direct(
+        user_id=user.id,
+        event_type="auth.login.success",
+        db=db,
+        metadata={
+            "provider": "google",
+            "ip": client_ip,
+            "hashed_email": _hash_email_for_audit(claims.email),
+        },
+    )
+    if outcome.linked:
+        await _write_audit_direct(
+            user_id=user.id,
+            event_type="auth.google.linked",
+            db=db,
+            metadata={"ip": client_ip, "hashed_email": _hash_email_for_audit(claims.email)},
+        )
+    if outcome.email_changed:
+        await _write_audit_direct(
+            user_id=user.id,
+            event_type="auth.google.email_changed",
+            db=db,
+            metadata={"ip": client_ip},
+        )
 
     return VerifyOtpResult(
         access_token=access_token,
@@ -651,6 +782,7 @@ async def capture_razorpay_webhook(
 __all__ = [
     "send_otp_for_login",
     "verify_otp_and_issue_tokens",
+    "verify_google_and_issue_tokens",
     "rotate_refresh_token",
     "revoke_refresh_token",
     "get_profile",
