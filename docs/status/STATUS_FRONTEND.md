@@ -1,5 +1,46 @@
 # STATUS — FRONTEND
 
+=== UPDATE: 2026-06-18 18:06 ===
+Phase: libs/ui-kit — mee-data-table new primitive (feat/mee-data-table)
+Agent: meesell-angular-component-builder
+Branch: feat/mee-data-table (worktree /tmp/mesell-wt/mee-data-table)
+
+Done:
+  NEW: frontend/libs/ui-kit/data-table/data-table.types.ts
+    - Discriminated column union: MeeDataTableTextColumn | MeeDataTableStatusColumn | MeeDataTableActionsColumn
+    - Event types: MeeDataTablePageEvent, MeeDataTableSortEvent, MeeDataTableBulkActionEvent
+    - MeeDataTableBulkAction type
+  NEW: frontend/libs/ui-kit/data-table/data-table.component.ts
+    - MeeDataTableComponent — standalone, OnPush, signal inputs
+    - Server-side lazy pagination with 1-based page conversion (first/rows → page)
+    - Sort state tracking (avoids duplicate initial fetch via lastEmitted sentinel)
+    - Status column via MeeBadge + caller-supplied statusMap/labelMap
+    - Per-row kebab actions via shared MeeMenu toggled imperatively
+    - Bulk selection: per-row checkbox + select-all + selectedCount/allSelected/someSelected computed
+    - Floating bulk action bar: fixed bottom ≤640px (safe-area-inset), sticky ≥768px
+    - Slide-up animation with prefers-reduced-motion override
+    - First-load skeleton (5x mee-skeleton table-row) — shown when loading && rows.length === 0
+    - Debounced search bar via RxJS debounceTime + distinctUntilChanged + takeUntilDestroyed
+    - A11y: aria-sort on sortable columns, aria-selected on rows, aria-label on checkboxes
+    - All colors via --mee-* tokens only (no hardcoded hex/Tailwind color classes)
+  NEW: frontend/libs/ui-kit/data-table/data-table.component.spec.ts
+    - 28 Vitest tests across 9 acceptance scenarios (direct class instantiation, no TestBed)
+    - PrimeNG TestBed crash avoided via proven pure-function / signal pattern
+  UPDATED: frontend/libs/ui-kit/icon/icon.registry.ts — added 'ellipsis-v': 'pi pi-ellipsis-v'
+  UPDATED: frontend/libs/ui-kit/icon/icon.registry.alt.ts — added 'ellipsis-v': 'material-icons mi-more_vert'
+  UPDATED: frontend/libs/ui-kit/index.ts — exports MeeDataTableComponent + all 7 data-table types
+
+Tests: 28/28 PASS (vitest run — pure-function / signal pattern)
+Build:
+  FE contracts: 5/5 CLEAN (node tools/contracts/run-all.mjs --strict)
+  TypeScript: 0 errors (tsc --noEmit -p tsconfig.json)
+  mfe-catalog: 2 pre-existing errors (xlsx module missing in live-listings.component.ts — NOT introduced here; verified present on origin/develop HEAD fd4331d)
+In progress: none
+Blockers: none
+Next: coordinator merge-gate review
+Hand-offs: MeeDataTableComponent ready. Consumers import via @mesell/ui-kit. ellipsis-v added to both icon registries (FE-2 parity maintained). mfe-catalog primary consumer — the xlsx pre-existing error is a separate blocker for that build.
+=========
+
 === UPDATE: 2026-06-18 14:00 ===
 Phase: libs/ui-kit — mee-tree-select overhaul (CVA, lazy expand, server search, Tailwind residue fix)
 Done:
