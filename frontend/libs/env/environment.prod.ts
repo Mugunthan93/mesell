@@ -31,4 +31,11 @@ export const environment: Environment = {
    * All /api/v1/... URLs remain relative — no CORS or cookie-domain changes needed.
    */
   apiBase: '',
+  /**
+   * PROD Google OAuth Web client id. Authorized JS origin = the production app
+   * (shell) origin. Provisioned in GCP by infra (see handoff memo). The backend
+   * MUST pin this same id for ID-token `aud` verification.
+   * Placeholder until the prod OAuth client is provisioned.
+   */
+  googleOauthClientId: 'PROD_GOOGLE_WEB_CLIENT_ID.apps.googleusercontent.com',
 };

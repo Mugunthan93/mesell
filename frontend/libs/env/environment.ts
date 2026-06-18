@@ -26,4 +26,11 @@ export const environment: Environment = {
    * /api/v1/* to http://localhost:8000. In production the Ingress does the same.
    */
   apiBase: '',
+  /**
+   * DEV Google OAuth Web client id. Authorized JS origin = the shell dev origin
+   * (http://localhost:4200 — the user interacts with the shell, never the
+   * mfe-auth remote at :4206). Provisioned in GCP by infra (see handoff memo).
+   * Placeholder until the dev OAuth client is provisioned.
+   */
+  googleOauthClientId: 'DEV_GOOGLE_WEB_CLIENT_ID.apps.googleusercontent.com',
 };

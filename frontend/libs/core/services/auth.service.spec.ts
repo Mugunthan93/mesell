@@ -504,6 +504,88 @@ describe('AuthService.refreshUser()', () => {
   });
 });
 
+// ── completeLogin() — shared post-credential success tail (Google + OTP) ──────
+
+describe('AuthService.completeLogin()', () => {
+  const RESP = { access_token: 'cl-tok', expires_in: 900, token_type: 'bearer' as const };
+
+  it('happy path: fetches /me, setSession with full user, routes to /dashboard when onboarding_complete:true', () => {
+    const { service, controller } = setup();
+
+    let routed: string[] = [];
+    service.completeLogin(RESP).subscribe(({ route }) => { routed = route; });
+
+    // Token set first so the /me call is authorized.
+    expect(service.getToken()).toBe('cl-tok');
+
+    const meReq = controller.expectOne('/api/v1/auth/me');
+    expect(meReq.request.method).toBe('GET');
+    meReq.flush({
+      user_id: 'uuid-1', phone: '+919876543210', plan: 'free',
+      created_at: '2026-01-01T00:00:00Z', last_login_at: null,
+      onboarding_complete: true,
+    });
+
+    expect(service.isAuthenticated()).toBe(true);
+    expect(service.currentUser()?.user_id).toBe('uuid-1');
+    expect(service.currentUser()?.phone).toBe('+919876543210');
+    expect(routed).toEqual(['/dashboard']);
+  });
+
+  it('onboarding gate: routes to /onboarding when onboarding_complete:false', () => {
+    const { service, controller } = setup();
+
+    let routed: string[] = [];
+    service.completeLogin(RESP).subscribe(({ route }) => { routed = route; });
+
+    controller.expectOne('/api/v1/auth/me').flush({
+      user_id: 'uuid-2', phone: null, plan: 'free',
+      created_at: '2026-01-01T00:00:00Z', last_login_at: null,
+      onboarding_complete: false,
+    });
+
+    expect(routed).toEqual(['/onboarding']);
+    // Google-only user with no phone is supported (phone null).
+    expect(service.currentUser()?.phone).toBeNull();
+  });
+
+  it('/me failure: still sets a minimal session, routes to /dashboard, never errors', () => {
+    const { service, controller } = setup();
+
+    let routed: string[] = [];
+    let errored = false;
+    service.completeLogin(RESP).subscribe({
+      next: ({ route }) => { routed = route; },
+      error: () => { errored = true; },
+    });
+
+    controller.expectOne('/api/v1/auth/me').flush(
+      { detail: 'Server Error' },
+      { status: 500, statusText: 'Server Error' },
+    );
+
+    expect(errored).toBe(false);
+    expect(service.isAuthenticated()).toBe(true);
+    expect(service.getToken()).toBe('cl-tok');
+    expect(service.currentUser()?.phone).toBeNull(); // default fallback user
+    expect(routed).toEqual(['/dashboard']);
+  });
+
+  it('/me failure with fallbackUser: retains the supplied phone (OTP path)', () => {
+    const { service, controller } = setup();
+
+    service.completeLogin(RESP, { phone: '+919876543210' }).subscribe();
+
+    controller.expectOne('/api/v1/auth/me').flush(
+      { detail: 'Server Error' },
+      { status: 500, statusText: 'Server Error' },
+    );
+
+    expect(service.isAuthenticated()).toBe(true);
+    expect(service.currentUser()?.phone).toBe('+919876543210');
+  });
+});
+
 // ── refreshShared() — single-flight gate (stampede fix) ──────────────────────
 
 describe('AuthService.refreshShared() — single-flight gate', () => {

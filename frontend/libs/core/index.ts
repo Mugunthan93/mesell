@@ -8,6 +8,11 @@ export { AuthApiService } from './services/auth-api.service';
 export type { MeResponse, SendOtpResponse, VerifyOtpResponse, RefreshResponse } from './services/auth-api.service';
 export { ApiClient } from './services/api-client.service';
 export type { ApiClientOptions } from './services/api-client.service';
+export { GoogleIdentityService } from './services/google-identity.service';
+export type {
+  GoogleCredentialResponse,
+  GoogleButtonConfiguration,
+} from './types/google-gsi';
 export { ErrorService } from './services/error.service';
 export { NetworkService } from './services/network.service';
 
