@@ -1,12 +1,26 @@
 /**
- * auth.service.spec.ts — Wave 6 Wave A
+ * auth.service.spec.ts — Wave 6 Wave A + stampede fix
  *
  * Tests AuthService extension:
  * - AuthUser additive-optional: both legacy {id,name,phone} and real {user_id,phone,plan,created_at} compile
- * - scheduleRefresh: fires at (expires_in-30)s; logout cancels the timer
+ * - scheduleRefresh: fires at clamped delay (new D-D formula); logout cancels the timer
  * - bootstrap(): refresh-200 → setSession + me() hydrate + scheduleRefresh scheduled
  * - bootstrap(): refresh-401 → stays logged-out, RESOLVES (never rejects)
  * - setSession/logout/getToken (existing behaviour preserved)
+ * - refreshShared(): single-flight → ONE authApi.refresh call; resets after completion
+ * - forceLogout(): logout-once; navigate exactly once; _doSilentRefresh 401 → forceLogout
+ * - scheduleRefresh clamp: MIN_REFRESH_DELAY_MS floor (expiresIn=10 → ≥5000ms)
+ * - bootstrap racing _doSilentRefresh → only ONE authApi.refresh via refreshShared
+ *
+ * New delay formula (D-D fix):
+ *   skew    = min(30, expiresIn * 0.1)
+ *   delayMs = max((expiresIn - skew) * 1000, 5000)
+ *
+ * Examples:
+ *   expiresIn=60  → skew=6,  delayMs=54 000 ms
+ *   expiresIn=900 → skew=30, delayMs=870 000 ms
+ *   expiresIn=10  → skew=1,  delayMs=max(9000,5000)=9000 ms
+ *   expiresIn=2   → skew=0.2, delayMs=max(1800,5000)=5000 ms
  *
  * No Zone.js — use vi.useFakeTimers() for timer tests (fakeAsync is NOT available).
  * Pattern: create component/service AFTER vi.useFakeTimers() for timer-dependent tests.
@@ -15,6 +29,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient, withFetch } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
+import { provideRouter, Router } from '@angular/router';
 import { vi } from 'vitest';
 
 import { AuthService, AuthUser } from './auth.service';
@@ -29,11 +44,15 @@ function setup() {
       AuthApiService,
       provideHttpClient(withFetch()),
       provideHttpClientTesting(),
+      provideRouter([
+        { path: 'login', children: [] },
+      ]),
     ],
   });
   return {
     service:    TestBed.inject(AuthService),
     controller: TestBed.inject(HttpTestingController),
+    router:     TestBed.inject(Router),
   };
 }
 
@@ -101,10 +120,13 @@ describe('AuthService — setSession / logout / getToken', () => {
   });
 });
 
-// ── scheduleRefresh ───────────────────────────────────────────────────────────
+// ── scheduleRefresh (D-D fix — new delay formula) ────────────────────────────
+//
+// New formula: skew=min(30, expiresIn*0.1), delayMs=max((expiresIn-skew)*1000, 5000)
+// expiresIn=60 → skew=6, delay=54 000 ms (was 30 000 ms in old formula)
 
 describe('AuthService.scheduleRefresh()', () => {
-  it('fires a refresh after (expires_in - 30) seconds', () => {
+  it('fires a refresh after the clamped delay (expiresIn=60 → 54 000 ms)', () => {
     vi.useFakeTimers();
 
     TestBed.configureTestingModule({
@@ -113,6 +135,7 @@ describe('AuthService.scheduleRefresh()', () => {
         AuthApiService,
         provideHttpClient(withFetch()),
         provideHttpClientTesting(),
+        provideRouter([{ path: 'login', children: [] }]),
       ],
     });
 
@@ -120,12 +143,12 @@ describe('AuthService.scheduleRefresh()', () => {
     const controller = TestBed.inject(HttpTestingController);
 
     service.setSession('tok', { phone: '+91x' });
-    service.scheduleRefresh(60); // fire after 60-30 = 30s
+    service.scheduleRefresh(60); // skew=6, delay=54 000 ms
 
-    vi.advanceTimersByTime(29_000); // not yet
+    vi.advanceTimersByTime(53_999); // not yet
     controller.expectNone('/api/v1/auth/refresh');
 
-    vi.advanceTimersByTime(1_001); // fire at 30s
+    vi.advanceTimersByTime(1_001); // crosses 54 000 ms
     const refreshReq = controller.match('/api/v1/auth/refresh');
     expect(refreshReq.length).toBeGreaterThanOrEqual(1);
     refreshReq[0].flush({ access_token: 'new-tok', expires_in: 60, token_type: 'bearer' });
@@ -133,7 +156,10 @@ describe('AuthService.scheduleRefresh()', () => {
     // The /me call follows the refresh in _doSilentRefresh
     const meReq = controller.match('/api/v1/auth/me');
     meReq.forEach((r) =>
-      r.flush({ user_id: 'u', phone: '+91x', plan: 'free', created_at: '', last_login_at: null }),
+      r.flush({
+        user_id: 'u', phone: '+91x', plan: 'free', created_at: '',
+        last_login_at: null, onboarding_complete: false,
+      }),
     );
 
     controller.verify();
@@ -149,6 +175,7 @@ describe('AuthService.scheduleRefresh()', () => {
         AuthApiService,
         provideHttpClient(withFetch()),
         provideHttpClientTesting(),
+        provideRouter([{ path: 'login', children: [] }]),
       ],
     });
 
@@ -156,11 +183,92 @@ describe('AuthService.scheduleRefresh()', () => {
     const controller = TestBed.inject(HttpTestingController);
 
     service.setSession('tok', { phone: '+91x' });
-    service.scheduleRefresh(60);
+    service.scheduleRefresh(60); // delay=54 000 ms
     service.logout(); // cancels timer
 
     vi.advanceTimersByTime(60_000); // advance past the fire point
     controller.expectNone('/api/v1/auth/refresh');
+
+    controller.verify();
+    vi.useRealTimers();
+  });
+
+  // D-D clamp test: expiresIn=10 → skew=1, delayMs=max(9000,5000)=9000ms (>5000)
+  it('clamps delay to MIN_REFRESH_DELAY_MS=5000 for tiny TTL (expiresIn=2 → 5000ms floor)', () => {
+    vi.useFakeTimers();
+
+    TestBed.configureTestingModule({
+      providers: [
+        AuthService,
+        AuthApiService,
+        provideHttpClient(withFetch()),
+        provideHttpClientTesting(),
+        provideRouter([{ path: 'login', children: [] }]),
+      ],
+    });
+
+    const service    = TestBed.inject(AuthService);
+    const controller = TestBed.inject(HttpTestingController);
+
+    service.setSession('tok', { phone: '+91x' });
+    // expiresIn=2 → skew=0.2, raw=(2-0.2)*1000=1800ms → clamped to 5000ms
+    service.scheduleRefresh(2);
+
+    vi.advanceTimersByTime(4_999); // 4.999s — must NOT fire yet (floor=5000ms)
+    controller.expectNone('/api/v1/auth/refresh');
+
+    vi.advanceTimersByTime(1_001); // crosses 5000ms
+    const refreshReq = controller.match('/api/v1/auth/refresh');
+    expect(refreshReq.length).toBeGreaterThanOrEqual(1);
+    refreshReq[0].flush({ access_token: 'clamped-tok', expires_in: 900, token_type: 'bearer' });
+
+    const meReq = controller.match('/api/v1/auth/me');
+    meReq.forEach((r) =>
+      r.flush({
+        user_id: 'u', phone: '+91x', plan: 'free', created_at: '',
+        last_login_at: null, onboarding_complete: false,
+      }),
+    );
+
+    controller.verify();
+    vi.useRealTimers();
+  });
+
+  // Verify 900s TTL: skew=30, delay=870 000ms
+  it('expiresIn=900 → delayMs≈870 000ms (positive buffer, not zero)', () => {
+    vi.useFakeTimers();
+
+    TestBed.configureTestingModule({
+      providers: [
+        AuthService,
+        AuthApiService,
+        provideHttpClient(withFetch()),
+        provideHttpClientTesting(),
+        provideRouter([{ path: 'login', children: [] }]),
+      ],
+    });
+
+    const service    = TestBed.inject(AuthService);
+    const controller = TestBed.inject(HttpTestingController);
+
+    service.setSession('tok', { phone: '+91x' });
+    service.scheduleRefresh(900); // skew=30, delay=870 000ms
+
+    vi.advanceTimersByTime(869_999); // not yet
+    controller.expectNone('/api/v1/auth/refresh');
+
+    vi.advanceTimersByTime(1_001); // crosses 870 000ms
+    const refreshReq = controller.match('/api/v1/auth/refresh');
+    expect(refreshReq.length).toBeGreaterThanOrEqual(1);
+    refreshReq[0].flush({ access_token: 'long-tok', expires_in: 900, token_type: 'bearer' });
+
+    const meReq = controller.match('/api/v1/auth/me');
+    meReq.forEach((r) =>
+      r.flush({
+        user_id: 'u', phone: '+91x', plan: 'free', created_at: '',
+        last_login_at: null, onboarding_complete: false,
+      }),
+    );
 
     controller.verify();
     vi.useRealTimers();
@@ -170,7 +278,7 @@ describe('AuthService.scheduleRefresh()', () => {
 // ── setSession auto-pair (frozen-surface amendment 2026-06-12) ──────────────────
 
 describe('AuthService.setSession() auto-pair with scheduleRefresh', () => {
-  it('AUTO-schedules a refresh when expiresIn is provided', () => {
+  it('AUTO-schedules a refresh when expiresIn is provided (expiresIn=60 → 54 000ms)', () => {
     vi.useFakeTimers();
 
     TestBed.configureTestingModule({
@@ -179,6 +287,7 @@ describe('AuthService.setSession() auto-pair with scheduleRefresh', () => {
         AuthApiService,
         provideHttpClient(withFetch()),
         provideHttpClientTesting(),
+        provideRouter([{ path: 'login', children: [] }]),
       ],
     });
 
@@ -186,19 +295,22 @@ describe('AuthService.setSession() auto-pair with scheduleRefresh', () => {
     const controller = TestBed.inject(HttpTestingController);
 
     // 3-arg form: NO explicit scheduleRefresh() call by the caller.
-    service.setSession('tok', { phone: '+91x' }, 60); // fire at 60-30 = 30s
+    service.setSession('tok', { phone: '+91x' }, 60); // skew=6 → delay=54 000ms
 
-    vi.advanceTimersByTime(29_000);
+    vi.advanceTimersByTime(53_999);
     controller.expectNone('/api/v1/auth/refresh'); // not yet
 
-    vi.advanceTimersByTime(1_001); // 30s — auto-scheduled refresh fires
+    vi.advanceTimersByTime(1_001); // 54 000ms — auto-scheduled refresh fires
     const refreshReq = controller.match('/api/v1/auth/refresh');
     expect(refreshReq.length).toBeGreaterThanOrEqual(1);
     refreshReq[0].flush({ access_token: 'new-tok', expires_in: 60, token_type: 'bearer' });
 
     const meReq = controller.match('/api/v1/auth/me');
     meReq.forEach((r) =>
-      r.flush({ user_id: 'u', phone: '+91x', plan: 'free', created_at: '', last_login_at: null }),
+      r.flush({
+        user_id: 'u', phone: '+91x', plan: 'free', created_at: '',
+        last_login_at: null, onboarding_complete: false,
+      }),
     );
 
     controller.verify();
@@ -214,6 +326,7 @@ describe('AuthService.setSession() auto-pair with scheduleRefresh', () => {
         AuthApiService,
         provideHttpClient(withFetch()),
         provideHttpClientTesting(),
+        provideRouter([{ path: 'login', children: [] }]),
       ],
     });
 
@@ -241,6 +354,7 @@ describe('AuthService.setSession() auto-pair with scheduleRefresh', () => {
         AuthApiService,
         provideHttpClient(withFetch()),
         provideHttpClientTesting(),
+        provideRouter([{ path: 'login', children: [] }]),
       ],
     });
 
@@ -248,14 +362,17 @@ describe('AuthService.setSession() auto-pair with scheduleRefresh', () => {
     const controller = TestBed.inject(HttpTestingController);
 
     service.setSession('tok', { phone: '+91x' }); // no auto-schedule
-    service.scheduleRefresh(60);                   // explicit, still works
+    service.scheduleRefresh(60);                   // explicit: delay=54 000ms
 
-    vi.advanceTimersByTime(30_001);
+    vi.advanceTimersByTime(54_001); // crosses 54 000ms
     const refreshReq = controller.match('/api/v1/auth/refresh');
     expect(refreshReq.length).toBeGreaterThanOrEqual(1);
     refreshReq[0].flush({ access_token: 'n', expires_in: 60, token_type: 'bearer' });
     controller.match('/api/v1/auth/me').forEach((r) =>
-      r.flush({ user_id: 'u', phone: '+91x', plan: 'free', created_at: '', last_login_at: null }),
+      r.flush({
+        user_id: 'u', phone: '+91x', plan: 'free', created_at: '',
+        last_login_at: null, onboarding_complete: false,
+      }),
     );
 
     controller.verify();
@@ -384,5 +501,239 @@ describe('AuthService.refreshUser()', () => {
     expect(service.getToken()).toBe('keep-token');
     expect(service.currentUser()?.user_id).toBe('orig');
     expect(service.currentUser()?.onboarding_complete).toBe(false);
+  });
+});
+
+// ── refreshShared() — single-flight gate (stampede fix) ──────────────────────
+
+describe('AuthService.refreshShared() — single-flight gate', () => {
+  it('concurrent callers share ONE in-flight Observable — only one authApi.refresh() call', async () => {
+    const { service, controller } = setup();
+
+    // Subscribe twice simultaneously before flush — both should share the same Observable
+    let resolvedCount = 0;
+    const tokens: string[] = [];
+
+    service.refreshShared().subscribe((r) => {
+      resolvedCount++;
+      tokens.push(r.access_token);
+    });
+    service.refreshShared().subscribe((r) => {
+      resolvedCount++;
+      tokens.push(r.access_token);
+    });
+
+    // Exactly ONE HTTP call (single-flight)
+    const refreshRequests = controller.match('/api/v1/auth/refresh');
+    expect(refreshRequests.length).toBe(1);
+    refreshRequests[0].flush({ access_token: 'shared-fresh', expires_in: 900, token_type: 'bearer' });
+
+    // Both subscribers received the same token
+    expect(resolvedCount).toBe(2);
+    expect(tokens).toEqual(['shared-fresh', 'shared-fresh']);
+  });
+
+  it('resets _refreshInFlight after completion so next call starts a fresh refresh', async () => {
+    const { service, controller } = setup();
+
+    // First call
+    let firstToken = '';
+    service.refreshShared().subscribe((r) => { firstToken = r.access_token; });
+    const firstReqs = controller.match('/api/v1/auth/refresh');
+    expect(firstReqs.length).toBe(1);
+    firstReqs[0].flush({ access_token: 'token-A', expires_in: 900, token_type: 'bearer' });
+
+    expect(firstToken).toBe('token-A');
+
+    // Second call AFTER first completed — must start a NEW refresh, not replay stale
+    let secondToken = '';
+    service.refreshShared().subscribe((r) => { secondToken = r.access_token; });
+    const secondReqs = controller.match('/api/v1/auth/refresh');
+    expect(secondReqs.length).toBe(1); // new HTTP call
+    secondReqs[0].flush({ access_token: 'token-B', expires_in: 900, token_type: 'bearer' });
+
+    expect(secondToken).toBe('token-B');
+  });
+});
+
+// ── forceLogout() — logout-once cascade guard ─────────────────────────────────
+
+describe('AuthService.forceLogout() — logout-once guard', () => {
+  it('first call clears token + user and navigates to /login', () => {
+    const { service, router } = setup();
+    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+    service.setSession('tok', { phone: '+91x' });
+    expect(service.isAuthenticated()).toBe(true);
+
+    service.forceLogout();
+
+    expect(service.getToken()).toBeNull();
+    expect(service.isAuthenticated()).toBe(false);
+    expect(service.currentUser()).toBeNull();
+    expect(navigateSpy).toHaveBeenCalledOnce();
+    expect(navigateSpy).toHaveBeenCalledWith(['/login']);
+  });
+
+  it('subsequent calls are no-ops — navigate called ONLY ONCE no matter how many times called', () => {
+    const { service, router } = setup();
+    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+    service.setSession('tok', { phone: '+91x' });
+    service.forceLogout(); // first call — navigates
+    service.forceLogout(); // no-op
+    service.forceLogout(); // no-op
+
+    expect(navigateSpy).toHaveBeenCalledOnce(); // NOT 3 times
+  });
+
+  it('setSession re-arms the guard so forceLogout works again after re-login', () => {
+    const { service, router } = setup();
+    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+    service.setSession('tok-1', { phone: '+91x' });
+    service.forceLogout(); // first login window → logout
+
+    // Re-login
+    service.setSession('tok-2', { phone: '+91x' });
+    service.forceLogout(); // second login window → logout
+
+    // Both logins produced exactly one navigate each = 2 total
+    expect(navigateSpy).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ── _doSilentRefresh 401 → forceLogout (D-C fix) ─────────────────────────────
+
+describe('AuthService._doSilentRefresh() — refresh-401 → forceLogout (D-C fix)', () => {
+  it('silent refresh 401 → forceLogout() + navigate to /login (not silent EMPTY)', () => {
+    vi.useFakeTimers();
+
+    TestBed.configureTestingModule({
+      providers: [
+        AuthService,
+        AuthApiService,
+        provideHttpClient(withFetch()),
+        provideHttpClientTesting(),
+        provideRouter([{ path: 'login', children: [] }]),
+      ],
+    });
+
+    const service    = TestBed.inject(AuthService);
+    const controller = TestBed.inject(HttpTestingController);
+    const router     = TestBed.inject(Router);
+    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+    service.setSession('tok', { phone: '+91x' });
+    service.scheduleRefresh(60); // delay=54 000ms
+
+    vi.advanceTimersByTime(54_001); // fire silent refresh
+
+    // Silent refresh returns 401 (cookie revoked)
+    const refreshReq = controller.match('/api/v1/auth/refresh');
+    expect(refreshReq.length).toBeGreaterThanOrEqual(1);
+    refreshReq[0].flush(
+      { detail: 'Unauthorized' },
+      { status: 401, statusText: 'Unauthorized' },
+    );
+
+    // forceLogout() must have been called → token null + navigate
+    expect(service.getToken()).toBeNull();
+    expect(service.isAuthenticated()).toBe(false);
+    expect(navigateSpy).toHaveBeenCalledOnce();
+    expect(navigateSpy).toHaveBeenCalledWith(['/login']);
+
+    controller.verify();
+    vi.useRealTimers();
+  });
+
+  it('silent refresh non-401 error (5xx) does NOT call forceLogout (swallowed transiently)', () => {
+    vi.useFakeTimers();
+
+    TestBed.configureTestingModule({
+      providers: [
+        AuthService,
+        AuthApiService,
+        provideHttpClient(withFetch()),
+        provideHttpClientTesting(),
+        provideRouter([{ path: 'login', children: [] }]),
+      ],
+    });
+
+    const service    = TestBed.inject(AuthService);
+    const controller = TestBed.inject(HttpTestingController);
+    const router     = TestBed.inject(Router);
+    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+    service.setSession('tok', { phone: '+91x' });
+    service.scheduleRefresh(60);
+
+    vi.advanceTimersByTime(54_001); // fire silent refresh
+
+    const refreshReq = controller.match('/api/v1/auth/refresh');
+    expect(refreshReq.length).toBeGreaterThanOrEqual(1);
+    refreshReq[0].flush(
+      { detail: 'Internal Server Error' },
+      { status: 500, statusText: 'Internal Server Error' },
+    );
+
+    // 5xx is swallowed — token preserved, no navigation
+    expect(service.getToken()).toBe('tok');
+    expect(service.isAuthenticated()).toBe(true);
+    expect(navigateSpy).not.toHaveBeenCalled();
+
+    controller.verify();
+    vi.useRealTimers();
+  });
+});
+
+// ── bootstrap racing _doSilentRefresh → ONE authApi.refresh ───────────────────
+
+describe('AuthService — bootstrap racing _doSilentRefresh', () => {
+  it('bootstrap() + simultaneous scheduleRefresh fire → only ONE POST /auth/refresh', async () => {
+    vi.useFakeTimers();
+
+    TestBed.configureTestingModule({
+      providers: [
+        AuthService,
+        AuthApiService,
+        provideHttpClient(withFetch()),
+        provideHttpClientTesting(),
+        provideRouter([{ path: 'login', children: [] }]),
+      ],
+    });
+
+    const service    = TestBed.inject(AuthService);
+    const controller = TestBed.inject(HttpTestingController);
+
+    // Pre-arm a scheduled refresh that fires at t=0 (tiny TTL → 5000ms floor)
+    service.setSession('old-tok', { phone: '+91x' });
+    service.scheduleRefresh(2); // floor→5000ms
+
+    // Start bootstrap concurrently — both will call refreshShared()
+    const bootstrapPromise = service.bootstrap();
+
+    // Advance timers to fire the scheduled refresh simultaneously
+    vi.advanceTimersByTime(5_001);
+
+    // There must be EXACTLY ONE /auth/refresh request (single-flight gate)
+    const refreshRequests = controller.match('/api/v1/auth/refresh');
+    expect(refreshRequests.length).toBe(1);
+    refreshRequests[0].flush({ access_token: 'race-token', expires_in: 900, token_type: 'bearer' });
+
+    // bootstrap also triggers /me
+    const meReqs = controller.match('/api/v1/auth/me');
+    meReqs.forEach((r) =>
+      r.flush({
+        user_id: 'race-uuid', phone: '+91x', plan: 'free', created_at: '',
+        last_login_at: null, onboarding_complete: false,
+      }),
+    );
+
+    await bootstrapPromise;
+
+    expect(service.getToken()).toBe('race-token');
+    controller.verify();
+    vi.useRealTimers();
   });
 });
