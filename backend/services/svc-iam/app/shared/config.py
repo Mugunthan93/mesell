@@ -149,6 +149,19 @@ class Settings(BaseSettings):
     # ── Audit (PII scrubber salt) ──────────────────────────────────────────
     AUDIT_PII_SALT: str = ""
 
+    # ── Google Sign-In (google-auth feature, 2026-06-18) ───────────────────
+    # GOOGLE_OAUTH_CLIENT_ID is the OAuth Web client ID used as the `audience`
+    # for ID-token verification.  Modelled as a list (comma-split, like
+    # CORS_ALLOWED_ORIGINS) so a future Android/iOS native client ID can be
+    # added as a second accepted audience WITHOUT a config migration (design
+    # §D.2 / §I.5).  The client ID is public (not a secret) but kept in config
+    # for provenance uniformity.  Required ONLY when the feature flag is on
+    # (conditional validator below) so existing envs do not break at boot.
+    GOOGLE_OAUTH_CLIENT_ID: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    # Per-env rollout gate.  When False the /auth/google/verify route is NOT
+    # mounted (404), so the OpenAPI surface + §17 endpoint count are unchanged.
+    FEATURE_GOOGLE_AUTH_ENABLED: bool = False
+
     # ── Rate limits ────────────────────────────────────────────────────────
     RL_PER_IP_PER_MINUTE: int = 120  # DDoS-class default; per-route overrides
 
@@ -160,10 +173,14 @@ class Settings(BaseSettings):
     APP_ENV: Literal["development", "staging", "production"] = "development"
 
     # ── Validators ─────────────────────────────────────────────────────────
-    @field_validator("CORS_ALLOWED_ORIGINS", mode="before")
+    @field_validator("CORS_ALLOWED_ORIGINS", "GOOGLE_OAUTH_CLIENT_ID", mode="before")
     @classmethod
     def _parse_cors_origins(cls, v: object) -> object:
-        """Accept comma-separated string OR JSON list OR Python list."""
+        """Accept comma-separated string OR JSON list OR Python list.
+
+        Shared by CORS_ALLOWED_ORIGINS and GOOGLE_OAUTH_CLIENT_ID (the latter
+        is a list of accepted OAuth client-ID audiences, see config field doc).
+        """
         if isinstance(v, str):
             stripped = v.strip()
             if not stripped:
@@ -206,6 +223,24 @@ class Settings(BaseSettings):
             raise SystemExit(
                 f"FATAL: required env var(s) empty or unset: {joined} "
                 f"(see svc-iam shared/config.py REQUIRED_FIELDS)"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _require_google_client_id_when_enabled(self) -> "Settings":
+        """google-auth: GOOGLE_OAUTH_CLIENT_ID is required ONLY when the flag is on.
+
+        Conditional (not in REQUIRED_FIELDS) so existing envs that never enable
+        the feature boot cleanly.  When the flag IS on, an empty audience would
+        disable the single most important verification check (audience
+        confusion defence, design §G) — so fail fast.
+        """
+        if self.FEATURE_GOOGLE_AUTH_ENABLED and not self.GOOGLE_OAUTH_CLIENT_ID:
+            raise SystemExit(
+                "FATAL: FEATURE_GOOGLE_AUTH_ENABLED is true but "
+                "GOOGLE_OAUTH_CLIENT_ID is empty — the OAuth audience is "
+                "mandatory for ID-token verification (design §G audience "
+                "confusion defence)."
             )
         return self
 

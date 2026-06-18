@@ -182,6 +182,76 @@ class Msg91UnavailableError(IamError):
         super().__init__(detail=detail)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Google Sign-In errors (google-auth feature, 2026-06-18 — design §C.4)
+# ─────────────────────────────────────────────────────────────────────────────
+class GoogleTokenInvalidError(IamError):
+    """Raised when a Google ID-token fails verification.
+
+    Covers bad signature, wrong ``aud``, wrong ``iss``, expired, or malformed
+    (the library's ``ValueError``).  Maps to 401 / ``auth.google.token_invalid``.
+    The raw token is NEVER surfaced or logged.
+    """
+
+    code = "iam.google_token_invalid"
+    status_code = 401
+    validation_message_id = "auth.google.token_invalid"
+
+    def __init__(self, detail: str = "Google sign-in token is invalid or expired") -> None:
+        super().__init__(detail=detail)
+
+
+class GoogleEmailUnverifiedError(IamError):
+    """Raised when a Google ID-token's ``email_verified`` is not true.
+
+    The anti-spoofing gate for email-based account linking — we only link or
+    create on a Google-verified email.  Maps to 401 /
+    ``auth.google.email_unverified``.
+    """
+
+    code = "iam.google_email_unverified"
+    status_code = 401
+    validation_message_id = "auth.google.email_unverified"
+
+    def __init__(self, detail: str = "Your Google email is not verified") -> None:
+        super().__init__(detail=detail)
+
+
+class GoogleUnavailableError(IamError):
+    """Raised when Google's certificate endpoint is unreachable.
+
+    Analogous to :class:`Msg91UnavailableError` (a vendor outage), but here the
+    adapter RAISES (the §6.G default) rather than returning a bool.  Maps to
+    503 / ``auth.google.unavailable``.
+    """
+
+    code = "iam.google_unavailable"
+    status_code = 503
+    validation_message_id = "auth.google.unavailable"
+
+    def __init__(self, detail: str = "Google sign-in is temporarily unavailable") -> None:
+        super().__init__(detail=detail)
+
+
+class GoogleIdentityConflictError(IamError):
+    """Raised when a verified email belongs to a *different* ``google_sub``.
+
+    Design §E.3 edge case 4: two distinct Google accounts claim the same
+    verified email (should be impossible — Google enforces email uniqueness per
+    account).  We fail closed rather than hijack.  Maps to 409 /
+    ``auth.google.identity_conflict``.
+    """
+
+    code = "iam.google_identity_conflict"
+    status_code = 409
+    validation_message_id = "auth.google.identity_conflict"
+
+    def __init__(
+        self, detail: str = "This email is already linked to a different Google account"
+    ) -> None:
+        super().__init__(detail=detail)
+
+
 __all__ = [
     "IamError",
     "InvalidPhoneFormatError",
@@ -192,4 +262,8 @@ __all__ = [
     "RefreshInvalidError",
     "WebhookSignatureInvalidError",
     "Msg91UnavailableError",
+    "GoogleTokenInvalidError",
+    "GoogleEmailUnverifiedError",
+    "GoogleUnavailableError",
+    "GoogleIdentityConflictError",
 ]

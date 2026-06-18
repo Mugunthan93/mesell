@@ -12,7 +12,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from app.shared.models.user import User
 
 
 @dataclass(frozen=True)
@@ -148,6 +152,35 @@ class WebhookCaptureResult:
     audit_event_id: int
 
 
+@dataclass(frozen=True)
+class GoogleUpsertOutcome:
+    """Returned by ``repository.upsert_user_on_google_login`` (google-auth).
+
+    Carries the resolved ``User`` plus discriminator flags so the service can
+    emit the right audit events (design §E.2 / §F.3) and decide whether to
+    raise ``GoogleIdentityConflictError`` (the iam exceptions module).
+
+    Attributes:
+        user: The (new, linked, or returning) ``User`` ORM instance, flushed.
+            On ``conflict=True`` this is the existing email-owner row (the
+            service raises 409 and does NOT issue tokens for it).
+        linked: True when an existing phone user gained a Google identity
+            (rule 2) — triggers an ``auth.google.linked`` audit row.
+        created: True when a brand-new Google-only user was created (rule 3).
+        email_changed: True when a returning Google user's token email differs
+            from the stored email (rule 1 edge case 3) — info-logged, not
+            overwritten in V1.
+        conflict: True when the verified email belongs to a DIFFERENT
+            ``google_sub`` (edge case 4) — the service raises 409.
+    """
+
+    user: "User"
+    linked: bool
+    created: bool
+    email_changed: bool
+    conflict: bool
+
+
 __all__ = [
     "OtpRecord",
     "RefreshAllowlistEntry",
@@ -157,4 +190,5 @@ __all__ = [
     "RevokeResult",
     "UserProfile",
     "WebhookCaptureResult",
+    "GoogleUpsertOutcome",
 ]

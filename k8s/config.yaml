@@ -39,6 +39,15 @@ data:
   CORS_ALLOWED_ORIGINS: "https://dev.mesell.xyz"
   CORS_ALLOW_CREDENTIALS: "true"
 
+  # Google Sign-In (google-auth feature, 2026-06-18). OAuth Web client ID used as
+  # the ID-token `aud` (audience). PUBLIC value — NOT a secret, so it lives in this
+  # ConfigMap (never backend-secrets); embedded verbatim in the FE page. mesell-prod
+  # GIS web client — same id authorizes localhost:4200, mesell.xyz, www.mesell.xyz.
+  # The frontend pins the SAME id (environment.ts:googleOauthClientId) — FE/BE must
+  # stay in lockstep for `aud` verification. Comma-split list (future native client
+  # ID can be appended). Required ONLY when FEATURE_GOOGLE_AUTH_ENABLED is "true".
+  GOOGLE_OAUTH_CLIENT_ID: "378368872039-q0kkbbih1fj50ea25c0eefvb8679sid9.apps.googleusercontent.com"
+
   # Gemini
   GEMINI_MODEL: "gemini-2.5-flash"
 
@@ -66,6 +75,11 @@ data:
   # and the gated rollout begins disabled even in dev. Do NOT set this to "true"
   # until the founder lights the gated rollout. Staging overlay also carries "false".
   FEATURE_LIVE_PREVIEW_ENABLED: "false"
+  # google-auth SHIPS DARK — per-namespace flip is a later step. While "false" the
+  # /auth/google/verify route is NOT mounted (404), so the OpenAPI surface is
+  # unchanged. Do NOT set "true" until the founder lights the rollout. The OAuth
+  # client ID above is provisioned and ready for the flag-on path.
+  FEATURE_GOOGLE_AUTH_ENABLED: "false"
 
   # LangFuse (public key is non-secret per §5.D; secret key is in backend-secrets)
   LANGFUSE_PUBLIC_KEY: "pk-lf-disabled-v1"

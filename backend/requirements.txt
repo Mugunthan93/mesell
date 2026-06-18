@@ -10,6 +10,12 @@ alembic==1.13.2
 redis==5.0.8
 celery==5.4.0
 pyjwt==2.9.0
+# google-auth: PROMOTED transitive → DIRECT (google-auth feature, 2026-06-18).
+# Was previously pulled only transitively by google-generativeai / google-
+# cloud-storage; the iam module now imports it directly for Google ID-token
+# verification (app/modules/iam → adapters/google.py), so it must not depend on
+# the Gemini/GCS dependency graph staying put.  Pin matches the live transitive.
+google-auth==2.53.0
 google-generativeai==0.8.0
 rembg==2.0.59
 pillow==10.4.0
