@@ -120,6 +120,19 @@ try:
 
     app.include_router(iam_router)
     logger.info("svc-iam: iam router mounted")
+
+    # google-auth (2026-06-18): POST /api/v1/auth/google/verify lives on a
+    # SEPARATE router gated by FEATURE_GOOGLE_AUTH_ENABLED.  When the flag is
+    # off the route is NOT mounted (404), keeping the OpenAPI surface + §17
+    # count at 28 until enabled per env (dev → staging).
+    from app.router import google_router  # noqa: E402
+    from app.shared.config import settings as _settings  # noqa: E402
+
+    if _settings.FEATURE_GOOGLE_AUTH_ENABLED:
+        app.include_router(google_router)
+        logger.info("svc-iam: google-auth router mounted (flag on)")
+    else:
+        logger.info("svc-iam: google-auth router NOT mounted (flag off)")
 except ImportError:
     logger.warning(
         "svc-iam: app.router not yet present — iam routes NOT mounted "
