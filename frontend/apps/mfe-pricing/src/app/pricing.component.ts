@@ -1,25 +1,41 @@
-// TODO(slice-2): FULL COMPONENT REWRITE required for §12.M forward estimator.
-// This component was authored against §12.E (target_margin_pct request, seller_price /
-// commission_amount / gst_amount / profit_pct response fields, commission_missing 422 path).
-// Slice 1 (this file — service-builder) rewrote pricing.model.ts + pricing.service.ts to §12.M.
-// Slice 2 (component-builder) must:
-//   - Replace the form: meesho_price (required) + input_cost + commission_pct + return_rate_pct + mrp (optional)
-//   - Remove target_margin_pct form control + validator + error signal
-//   - Remove commission_missing error state + commissionMissingDetail signal
-//   - Update P&L table: replace seller_price/commission_amount/gst_amount/profit_pct with
-//     §12.M fields: referral_commission, shipping_charge, logistics_fee, fixed_fee, gst_on_fees,
-//     tcs, tds, rto_expected_loss, total_deductions, wdrp_price, estimated_payout,
-//     estimated_payout_wdrp, margin_pct, markup_pct
-//   - Update marginIsPositive computed: use estimated_payout (§12.M primary payout signal)
-//   - Update alert chips: new message_id keys pricing.alert.negative_payout / .low_margin / .shipping_dominates
-//   - Update PricingErrorState type: remove 'commission_missing'
-//   - Update _handleErrorShape: remove commission_missing case
-// The build of the full app is NOT green until slice-2 lands (the component references
-// dead model fields that TypeScript will flag in strict mode).
+/**
+ * pricing.component.ts — PricingComponent (§12.M forward estimator, 2026-06-18).
+ *
+ * Route: /catalogs/:id/pricing
+ * MFE:   mfe-pricing (standalone bootstrap + federated via shell)
+ *
+ * CONTRACT (§12.M):
+ *   Request primary:  meesho_price (listed selling price) — seller enters this.
+ *   Request inputs:   input_cost (required), commission_pct (default 4%), return_rate_pct (default 0%).
+ *   Request display:  mrp (optional struck-through reference).
+ *   Response hero:    estimated_payout ("You pocket ₹X").
+ *   Response 3-price: mrp (null → "—") | meesho_price | wdrp_price.
+ *   Response deductions table: referral_commission, shipping_charge, logistics_fee,
+ *     fixed_fee, gst_on_fees, tcs, tds, rto_expected_loss → total_deductions.
+ *   Response ratios:  margin_pct (% of meesho_price), markup_pct (% of input_cost).
+ *   Alerts (server):  NEGATIVE_PAYOUT→error, LOW_MARGIN→warning, SHIPPING_DOMINATES→info.
+ *
+ * DECISIONS:
+ *   DECISION-1: No local P&L math — server-calc only (R-W6-1, ruled 2026-06-11).
+ *   DECISION-2: Live recalc via form.valueChanges → debounceTime(350) → switchMap(calc).
+ *               "Calculate" button is kept as explicit fallback + a11y affordance.
+ *   DECISION-3: estimated_payout drives hero + positive/negative badge; profit drives
+ *               marginIsPositive (both are in the response; profit = payout - input_cost).
+ *
+ * DELETED vs §12.E component:
+ *   - target_margin_pct form control (request field removed in §12.M)
+ *   - targetMarginError() signal
+ *   - commission_missing error state + commissionMissingDetail signal (422 dead §12.M (4))
+ *   - _handleErrorShape 'commission_missing' case
+ *   - "Shipping not included in V1" disclaimer (shipping NOW in deduction breakdown)
+ *   - MRP as an output field only (§12.M: MRP is optional request input + echoed in response)
+ */
+
 import {
   AfterViewChecked,
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ElementRef,
   OnInit,
   ViewChild,
@@ -27,12 +43,14 @@ import {
   inject,
   signal,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   FormBuilder,
   ReactiveFormsModule,
   Validators,
 } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
+import { debounceTime, distinctUntilChanged, switchMap } from 'rxjs';
 
 import { MeeAlertBannerComponent }  from '@mesell/composites';
 import { MeeOfflineBannerComponent } from '@mesell/composites';
@@ -44,21 +62,29 @@ import { MeeInputComponent }         from '@mesell/ui-kit';
 
 import { formatRupee, parseDecimal } from './pricing.utils';
 import { PricingApiService }         from './pricing.service';
-import type { PriceCalcResponse, PriceCalcErrorShape, PriceCalcServerError } from './pricing.model';
+import type { PriceCalcRequest, PriceCalcResponse, PriceCalcErrorShape } from './pricing.model';
 import { ALERT_MESSAGES } from './pricing.model';
 
 // ── Error-state type (§3.1 degradation matrix) ──────────────────────────────
-// null   = initial / cleared
-// unavailable       = 404 (flag-off or product not found)
-// TODO(slice-2): remove 'commission_missing' — 422 path dead in §12.M (4)
-// validation         = 400 (Pydantic constraint violation)
-// server_error       = 5xx / EMPTY path
+// null          = initial / cleared
+// unavailable   = 404 (flag-off or product not found)
+// validation    = 400 (Pydantic constraint violation)
+// server_error  = 5xx / network error
+// commission_missing DELETED — 422 path dead in §12.M (4)
 export type PricingErrorState =
   | 'unavailable'
-  | 'commission_missing' // TODO(slice-2): DELETE — 422 commission_missing removed in §12.M (4)
   | 'validation'
   | 'server_error'
   | null;
+
+// ── Alert code → MeeAlertBanner variant mapping ──────────────────────────────
+// NEGATIVE_PAYOUT → error (red); LOW_MARGIN → warning (amber); SHIPPING_DOMINATES → info
+type AlertVariant = 'error' | 'warning' | 'info';
+const ALERT_VARIANT_MAP: Record<string, AlertVariant> = {
+  NEGATIVE_PAYOUT:    'error',
+  LOW_MARGIN:         'warning',
+  SHIPPING_DOMINATES: 'info',
+};
 
 @Component({
   selector: 'app-pricing',
@@ -78,12 +104,9 @@ export type PricingErrorState =
 
   // ─── Component-scoped CSS ─────────────────────────────────────────────────
   // All values use var(--mee-*) tokens. Zero hardcoded hex (lane guard).
-  // Undefined tokens defined locally in :host per wave6b dashboard-styler lesson.
-  // libs/design-tokens/_tokens.css is FROZEN — not touched here.
+  // --mee-color-surface-variant not in Layer 1 — local scope bridge only.
   styles: [`
     :host {
-      /* --mee-color-surface-variant missing from Layer 1 — local scope only.
-         Escalation: lead queues a frozen-surface Wave-A amendment. */
       --mee-color-surface-variant: #f2f6fa;
     }
 
@@ -100,7 +123,6 @@ export type PricingErrorState =
       animation: mee-pricing-spin 0.8s linear infinite;
     }
 
-    /* prefers-reduced-motion: halt the spinner, use opacity pulse instead */
     @media (prefers-reduced-motion: reduce) {
       .mee-pricing__spinner {
         animation: mee-pricing-fade 1.2s ease-in-out infinite;
@@ -117,11 +139,121 @@ export type PricingErrorState =
       50%       { opacity: 0.35; }
     }
 
-    /* ── P&L table ──────────────────────────────────────────────────────── */
+    /* ── Hero payout card ───────────────────────────────────────────────── */
+    .mee-pricing__hero {
+      padding: var(--mee-space-4);
+      border-radius: var(--mee-radius-md);
+      text-align: center;
+    }
+
+    .mee-pricing__hero--positive {
+      background: color-mix(in srgb, var(--mee-color-success) 10%, transparent);
+      border: 1px solid var(--mee-color-success);
+    }
+
+    .mee-pricing__hero--negative {
+      background: color-mix(in srgb, var(--mee-color-error) 10%, transparent);
+      border: 1px solid var(--mee-color-error);
+    }
+
+    .mee-pricing__hero-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--mee-color-on-surface-muted);
+      margin-bottom: var(--mee-space-1);
+    }
+
+    .mee-pricing__hero-amount {
+      font-size: 2rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      line-height: 1.1;
+    }
+
+    .mee-pricing__hero-amount--positive {
+      color: var(--mee-color-success);
+    }
+
+    .mee-pricing__hero-amount--negative {
+      color: var(--mee-color-error);
+    }
+
+    .mee-pricing__hero-wdrp {
+      font-size: 0.75rem;
+      color: var(--mee-color-on-surface-muted);
+      margin-top: var(--mee-space-1);
+    }
+
+    /* ── 3-price strip ──────────────────────────────────────────────────── */
+    .mee-pricing__price-strip {
+      display: flex;
+      gap: var(--mee-space-3);
+      justify-content: space-between;
+      padding: var(--mee-space-3) 0;
+      border-top: 1px solid var(--mee-color-outline);
+      border-bottom: 1px solid var(--mee-color-outline);
+    }
+
+    .mee-pricing__price-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex: 1;
+      gap: 2px;
+    }
+
+    .mee-pricing__price-item-label {
+      font-size: 0.6875rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--mee-color-on-surface-muted);
+    }
+
+    .mee-pricing__price-item-value {
+      font-size: 0.9375rem;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: var(--mee-color-on-surface);
+    }
+
+    .mee-pricing__price-item-value--null {
+      color: var(--mee-color-on-surface-muted);
+    }
+
+    /* ── Secondary ratios row (margin + markup) ─────────────────────────── */
+    .mee-pricing__ratios {
+      display: flex;
+      gap: var(--mee-space-4);
+      padding: var(--mee-space-2) 0;
+    }
+
+    .mee-pricing__ratio-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .mee-pricing__ratio-label {
+      font-size: 0.6875rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--mee-color-on-surface-muted);
+    }
+
+    .mee-pricing__ratio-value {
+      font-size: 0.875rem;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: var(--mee-color-on-surface);
+    }
+
+    /* ── Deduction breakdown table ──────────────────────────────────────── */
     .mee-pricing__table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.875rem; /* 14px */
+      font-size: 0.875rem;
     }
 
     .mee-pricing__table td {
@@ -129,14 +261,12 @@ export type PricingErrorState =
       vertical-align: middle;
     }
 
-    /* Label column: left-align, muted colour */
-    .mee-pricing__table .mee-pricing__table-label {
+    .mee-pricing__table-label {
       color: var(--mee-color-on-surface-muted);
       text-align: left;
     }
 
-    /* Value column: right-align, tabular numbers for rupee alignment */
-    .mee-pricing__table .mee-pricing__table-value {
+    .mee-pricing__table-value {
       color: var(--mee-color-on-surface);
       text-align: right;
       font-variant-numeric: tabular-nums;
@@ -144,31 +274,24 @@ export type PricingErrorState =
       white-space: nowrap;
     }
 
-    /* Body rows (non-profit) */
     .mee-pricing__row {
       border-bottom: 1px solid var(--mee-color-outline);
     }
 
-    /* Profit summary row — thicker border above, semibold text */
-    .mee-pricing__row--profit {
-      border-bottom: 2px solid var(--mee-color-outline);
-    }
-
-    .mee-pricing__row--profit .mee-pricing__table-label {
-      color: var(--mee-color-on-surface);
-      font-weight: 600;
-    }
-
-    .mee-pricing__row--profit .mee-pricing__table-value {
-      font-weight: 600;
-    }
-
-    /* Profit % row — last row, no bottom border */
-    .mee-pricing__row--profit-pct {
+    .mee-pricing__row--total {
+      border-top: 2px solid var(--mee-color-outline);
       border-bottom: none;
     }
 
-    /* Semantic colour classes (token-only, no hardcoded hex) */
+    .mee-pricing__row--total .mee-pricing__table-label {
+      color: var(--mee-color-on-surface);
+      font-weight: 700;
+    }
+
+    .mee-pricing__row--total .mee-pricing__table-value {
+      font-weight: 700;
+    }
+
     .mee-pricing__value--positive {
       color: var(--mee-color-success) !important;
     }
@@ -177,40 +300,14 @@ export type PricingErrorState =
       color: var(--mee-color-error) !important;
     }
 
-    /* 360px: ensure table label doesn't truncate — allow wrap */
     @media (max-width: 400px) {
       .mee-pricing__table-label {
         max-width: 140px;
         word-break: break-word;
       }
-
       .mee-pricing__table {
-        font-size: 0.8125rem; /* 13px at 360px */
+        font-size: 0.8125rem;
       }
-    }
-
-    /* ── Alert chips ────────────────────────────────────────────────────── */
-    .mee-pricing__alert-chip {
-      display: flex;
-      align-items: flex-start;
-      gap: var(--mee-space-2);
-      padding: var(--mee-space-2) var(--mee-space-3);
-      border-radius: var(--mee-radius-sm);
-      font-size: 0.8125rem; /* 13px */
-      line-height: 1.4;
-      min-height: 44px; /* WCAG 2.5.8 touch target */
-    }
-
-    .mee-pricing__alert-chip--warning {
-      background: var(--mee-color-warning-light);
-      color: var(--mee-color-warning);
-      border-left: 3px solid var(--mee-color-warning);
-    }
-
-    .mee-pricing__alert-chip--info {
-      background: var(--mee-color-info-light);
-      color: var(--mee-color-info);
-      border-left: 3px solid var(--mee-color-info);
     }
 
     /* ── Empty / first-visit state ──────────────────────────────────────── */
@@ -247,7 +344,7 @@ export type PricingErrorState =
       color: var(--mee-color-on-surface-muted);
     }
 
-    /* ── Form layout at 360px ───────────────────────────────────────────── */
+    /* ── Form layout ────────────────────────────────────────────────────── */
     .mee-pricing__form {
       display: flex;
       flex-direction: column;
@@ -255,17 +352,12 @@ export type PricingErrorState =
       padding: var(--mee-space-3);
     }
 
-    /* ── Result region wrapper — used for focus target ──────────────────── */
+    /* ── Result region wrapper ──────────────────────────────────────────── */
     .mee-pricing__result-region {
-      outline: none; /* focus ring suppressed for programmatic focus only */
+      outline: none;
     }
 
-    /* ── 44px minimum touch targets on interactive buttons ─────────────── */
-    .mee-pricing__calculate-area {
-      min-height: 44px;
-    }
-
-    /* ── Calculating state wrapper ─────────────────────────────────────── */
+    /* ── Calculating state ──────────────────────────────────────────────── */
     .mee-pricing__calculating {
       display: flex;
       align-items: center;
@@ -279,13 +371,6 @@ export type PricingErrorState =
       color: var(--mee-color-on-surface-muted);
     }
 
-    /* ── Disclaimer ─────────────────────────────────────────────────────── */
-    .mee-pricing__disclaimer {
-      font-size: 0.75rem;
-      color: var(--mee-color-on-surface-muted);
-      margin-top: var(--mee-space-2);
-    }
-
     /* ── Section headings ───────────────────────────────────────────────── */
     .mee-pricing__section-title {
       font-size: 0.9375rem;
@@ -294,12 +379,17 @@ export type PricingErrorState =
       margin-bottom: var(--mee-space-1);
     }
 
-    /* ── Results region top: badge + alerts row ─────────────────────────── */
+    /* ── Results footer badges + alerts ─────────────────────────────────── */
     .mee-pricing__results-footer {
       padding-top: var(--mee-space-3);
       display: flex;
       flex-direction: column;
       gap: var(--mee-space-2);
+    }
+
+    /* ── 44px touch targets ─────────────────────────────────────────────── */
+    .mee-pricing__calculate-area {
+      min-height: 44px;
     }
   `],
 
@@ -311,7 +401,7 @@ export type PricingErrorState =
 
       <mee-page-header
         title="Price Calculator"
-        subtitle="Enter your cost and target margin to calculate pricing"
+        subtitle="Enter your selling price to estimate your net payout"
       />
 
       <div class="flex flex-col gap-6 lg:flex-row lg:items-start">
@@ -326,7 +416,17 @@ export type PricingErrorState =
             >
               <h2 class="mee-pricing__section-title">Enter pricing details</h2>
 
-              <!-- COGS per unit — replaces retired MRP input (DECISION-1) -->
+              <!-- Meesho Price: primary forward-estimator input (§12.M) -->
+              <mee-input
+                label="Meesho Price (selling price)"
+                type="number"
+                prefix="&#8377;"
+                placeholder="e.g. 499"
+                formControlName="meesho_price"
+                [error]="meeshoPriceError()"
+              />
+
+              <!-- Input cost (COGS per unit) -->
               <mee-input
                 label="Input cost (COGS per unit)"
                 type="number"
@@ -336,18 +436,37 @@ export type PricingErrorState =
                 [error]="inputCostError()"
               />
 
-              <!-- TODO(slice-2): REPLACE with meesho_price input (§12.M primary field) + commission_pct + return_rate_pct inputs. DELETE target_margin_pct. -->
-              <!-- Target margin % — TODO(slice-2): DELETE — dead in §12.M -->
+              <!-- Referral commission % — seller-entered, default 4% -->
               <mee-input
-                label="Target margin %"
+                label="Referral commission %"
                 type="number"
                 suffix="%"
-                placeholder="e.g. 30"
-                formControlName="target_margin_pct"
-                [error]="targetMarginError()"
+                placeholder="e.g. 4"
+                formControlName="commission_pct"
+                [error]="commissionPctError()"
               />
 
-              <!-- Disabled when form invalid OR calculating in-flight (§4.4 disabled-submit) -->
+              <!-- Expected return rate % (RTO) — optional, default 0% -->
+              <mee-input
+                label="Expected return rate % (RTO)"
+                type="number"
+                suffix="%"
+                placeholder="e.g. 0"
+                formControlName="return_rate_pct"
+                [error]="returnRatePctError()"
+              />
+
+              <!-- MRP reference — optional display-only, does not drive payout -->
+              <mee-input
+                label="MRP (reference)"
+                type="number"
+                prefix="&#8377;"
+                placeholder="Optional struck-through price"
+                formControlName="mrp"
+                [error]="mrpError()"
+              />
+
+              <!-- Explicit Calculate button (a11y fallback; live recalc via valueChanges) -->
               <div class="mee-pricing__calculate-area">
                 <mee-button
                   label="Calculate"
@@ -361,32 +480,23 @@ export type PricingErrorState =
           </mee-card>
         </div>
 
-        <!-- P&L BREAKDOWN + ERROR STATES -->
+        <!-- RESULTS + ERROR STATES -->
         <div class="lg:w-3/5">
           <mee-card>
             <div class="p-3 space-y-4">
-              <h2 class="mee-pricing__section-title">P&amp;L Breakdown</h2>
+              <h2 class="mee-pricing__section-title">Your payout estimate</h2>
 
               <!--
-                Error banners: role="alert" + aria-live="assertive" is handled
-                inside MeeAlertBannerComponent (Wave 6A composites — verified).
-                Focus is moved programmatically to #resultRegion after any
-                state transition (calculate success, error) via _focusPending.
+                Error banners: role="alert" + aria-live="assertive" handled inside
+                MeeAlertBannerComponent. Focus shifts to #resultRegion after any
+                state transition via _focusPending (AfterViewChecked).
               -->
 
-              <!-- 404 — flag off or product not found. NO local math (DECISION-1) -->
+              <!-- 404 — flag off or product not found. NO local math (DECISION-1). -->
               @if (errorState() === 'unavailable') {
                 <mee-alert-banner
                   variant="error"
                   message="Price Calculator is unavailable. Please try again later or contact support."
-                />
-              }
-
-              <!-- TODO(slice-2): DELETE commission_missing banner — 422 path dead in §12.M (4). -->
-              @if (errorState() === 'commission_missing') {
-                <mee-alert-banner
-                  variant="warning"
-                  [message]="commissionMissingDetail()"
                 />
               }
 
@@ -398,7 +508,7 @@ export type PricingErrorState =
                 />
               }
 
-              <!-- 5xx / network — manual re-submit (export-lane pattern §3.2) -->
+              <!-- 5xx / network — manual re-submit (§3.2) -->
               @if (errorState() === 'server_error') {
                 <mee-alert-banner
                   variant="error"
@@ -407,11 +517,9 @@ export type PricingErrorState =
               }
 
               <!--
-                Calculating state spinner.
-                MeeSpinnerComponent is queued as a ui-kit amendment — NOT yet available.
-                FLAG: replace .mee-pricing__spinner with <mee-spinner /> when landed.
-                prefers-reduced-motion: CSS @media rule switches animation → opacity pulse.
-                aria-live="polite" + role="status" announces to screen readers.
+                Calculating spinner.
+                FLAG: replace .mee-pricing__spinner with <mee-spinner /> when ui-kit amendment lands.
+                prefers-reduced-motion: CSS @media switches animation → opacity pulse.
               -->
               @if (calculating()) {
                 <div
@@ -426,10 +534,9 @@ export type PricingErrorState =
               }
 
               <!--
-                P&L result table.
-                aria-live="polite" announces to screen readers when results arrive.
-                tabindex="-1" allows programmatic focus (AfterViewChecked → _focusPending).
-                Results focus is deferred one microtask to avoid CD-cycle conflicts.
+                Results region.
+                tabindex="-1" + programmatic focus after calc (AfterViewChecked → _focusPending).
+                aria-live="polite" announces new results to screen readers.
               -->
               <div
                 #resultRegion
@@ -442,123 +549,198 @@ export type PricingErrorState =
               >
 
                 @if (breakdown()) {
-                  <table
-                    class="mee-pricing__table"
-                    aria-label="P&L breakdown"
-                  >
-                    <thead class="sr-only">
-                      <tr>
-                        <th scope="col">Item</th>
-                        <th scope="col">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <!-- MRP: server-COMPUTED output. Not an input (DECISION-1). -->
-                      <tr class="mee-pricing__row">
-                        <td class="mee-pricing__table-label" scope="row">MRP (server-computed)</td>
-                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.mrp) }}</td>
-                      </tr>
-                      <tr class="mee-pricing__row">
-                        <td class="mee-pricing__table-label" scope="row">Meesho Price</td>
-                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.meesho_price) }}</td>
-                      </tr>
-                      <!-- TODO(slice-2): seller_price DEAD in §12.M — replace with estimated_payout + estimated_payout_wdrp rows -->
-                      <tr class="mee-pricing__row">
-                        <td class="mee-pricing__table-label" scope="row">Seller Price</td>
-                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.meesho_price) }}<!-- TODO(slice-2): use estimated_payout --></td>
-                      </tr>
-                      <!-- TODO(slice-2): commission_amount DEAD — use referral_commission; also add shipping_charge / logistics_fee / fixed_fee / gst_on_fees / tcs / tds / rto_expected_loss / total_deductions rows -->
-                      <tr class="mee-pricing__row">
-                        <td class="mee-pricing__table-label" scope="row">
-                          Commission ({{ breakdown()!.commission_pct }}%)
-                        </td>
-                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.referral_commission) }}<!-- TODO(slice-2): was commission_amount → now referral_commission --></td>
-                      </tr>
-                      <!-- TODO(slice-2): gst_amount DEAD — use gst_on_fees -->
-                      <tr class="mee-pricing__row">
-                        <td class="mee-pricing__table-label" scope="row">
-                          GST ({{ breakdown()!.gst_pct }}%)
-                        </td>
-                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.gst_on_fees) }}<!-- TODO(slice-2): was gst_amount → now gst_on_fees --></td>
-                      </tr>
-                      <!-- Profit row — semantic colour via CSS class (token-only, no inline hex) -->
-                      <tr class="mee-pricing__row mee-pricing__row--profit">
-                        <td class="mee-pricing__table-label" scope="row">Profit</td>
-                        <td
-                          class="mee-pricing__table-value"
-                          [class.mee-pricing__value--positive]="marginIsPositive()"
-                          [class.mee-pricing__value--negative]="!marginIsPositive()"
-                          [attr.aria-label]="'Profit: ' + formatRupeeLabel(breakdown()!.profit) + (marginIsPositive() ? ', positive' : ', negative')"
-                        >
-                          {{ formatRupeeLabel(breakdown()!.profit) }}
-                        </td>
-                      </tr>
-                      <!-- TODO(slice-2): profit_pct DEAD in §12.M — replace with margin_pct + markup_pct rows -->
-                      <tr class="mee-pricing__row mee-pricing__row--profit-pct">
-                        <td class="mee-pricing__table-label" scope="row">Margin %<!-- TODO(slice-2): was profit_pct → now margin_pct (% of meesho_price) --></td>
-                        <td
-                          class="mee-pricing__table-value"
-                          [class.mee-pricing__value--positive]="marginIsPositive()"
-                          [class.mee-pricing__value--negative]="!marginIsPositive()"
-                        >
-                          {{ breakdown()!.margin_pct }}%<!-- TODO(slice-2): was profit_pct → now margin_pct -->
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
 
-                  <!-- POSITIVE / NEGATIVE badge -->
+                  <!-- HERO: estimated_payout — "You pocket ₹X" -->
+                  <div
+                    class="mee-pricing__hero"
+                    [class.mee-pricing__hero--positive]="payoutIsPositive()"
+                    [class.mee-pricing__hero--negative]="!payoutIsPositive()"
+                    aria-label="Net payout"
+                  >
+                    <p class="mee-pricing__hero-label">You pocket</p>
+                    <p
+                      class="mee-pricing__hero-amount"
+                      [class.mee-pricing__hero-amount--positive]="payoutIsPositive()"
+                      [class.mee-pricing__hero-amount--negative]="!payoutIsPositive()"
+                      [attr.aria-label]="'Estimated payout: ' + formatRupeeLabel(breakdown()!.estimated_payout) + (payoutIsPositive() ? ', positive' : ', negative')"
+                    >
+                      {{ formatRupeeLabel(breakdown()!.estimated_payout) }}
+                    </p>
+                    <p class="mee-pricing__hero-wdrp">
+                      If returned defective, you'd get
+                      <strong>{{ formatRupeeLabel(breakdown()!.estimated_payout_wdrp) }}</strong>
+                    </p>
+                  </div>
+
+                  <!-- 3-PRICE STRIP: MRP (or —) · Meesho Price · WDRP -->
+                  <div class="mee-pricing__price-strip" aria-label="Price breakdown">
+                    <div class="mee-pricing__price-item">
+                      <span class="mee-pricing__price-item-label">MRP</span>
+                      <span
+                        class="mee-pricing__price-item-value"
+                        [class.mee-pricing__price-item-value--null]="!breakdown()!.mrp"
+                      >
+                        {{ breakdown()!.mrp ? formatRupeeLabel(breakdown()!.mrp!) : '—' }}
+                      </span>
+                    </div>
+                    <div class="mee-pricing__price-item">
+                      <span class="mee-pricing__price-item-label">Meesho Price</span>
+                      <span class="mee-pricing__price-item-value">
+                        {{ formatRupeeLabel(breakdown()!.meesho_price) }}
+                      </span>
+                    </div>
+                    <div class="mee-pricing__price-item">
+                      <span class="mee-pricing__price-item-label">WDRP</span>
+                      <span class="mee-pricing__price-item-value">
+                        {{ formatRupeeLabel(breakdown()!.wdrp_price) }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- SECONDARY RATIOS: Margin (% of meesho_price) · Markup (% of input_cost) -->
+                  <div class="mee-pricing__ratios">
+                    <div class="mee-pricing__ratio-item">
+                      <span class="mee-pricing__ratio-label">Margin</span>
+                      <span
+                        class="mee-pricing__ratio-value"
+                        [class.mee-pricing__value--positive]="marginIsPositive()"
+                        [class.mee-pricing__value--negative]="!marginIsPositive()"
+                      >
+                        {{ breakdown()!.margin_pct }}%
+                      </span>
+                    </div>
+                    <div class="mee-pricing__ratio-item">
+                      <span class="mee-pricing__ratio-label">Markup</span>
+                      <span
+                        class="mee-pricing__ratio-value"
+                        [class.mee-pricing__value--positive]="marginIsPositive()"
+                        [class.mee-pricing__value--negative]="!marginIsPositive()"
+                      >
+                        {{ breakdown()!.markup_pct }}%
+                      </span>
+                    </div>
+                  </div>
+
+                  <!-- DEDUCTION BREAKDOWN TABLE: "Where my money goes" -->
+                  <div>
+                    <h3 class="mee-pricing__section-title" style="font-size: 0.8125rem; margin-top: var(--mee-space-3)">
+                      Where your money goes
+                    </h3>
+                    <table
+                      class="mee-pricing__table"
+                      aria-label="P&L breakdown"
+                    >
+                      <thead class="sr-only">
+                        <tr>
+                          <th scope="col">Item</th>
+                          <th scope="col">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr class="mee-pricing__row">
+                          <td class="mee-pricing__table-label" scope="row">
+                            Referral commission ({{ breakdown()!.commission_pct }}%)
+                          </td>
+                          <td class="mee-pricing__table-value">
+                            {{ formatRupeeLabel(breakdown()!.referral_commission) }}
+                          </td>
+                        </tr>
+                        <tr class="mee-pricing__row">
+                          <td class="mee-pricing__table-label" scope="row">Shipping charge</td>
+                          <td class="mee-pricing__table-value">
+                            {{ formatRupeeLabel(breakdown()!.shipping_charge) }}
+                          </td>
+                        </tr>
+                        <tr class="mee-pricing__row">
+                          <td class="mee-pricing__table-label" scope="row">Logistics fee</td>
+                          <td class="mee-pricing__table-value">
+                            {{ formatRupeeLabel(breakdown()!.logistics_fee) }}
+                          </td>
+                        </tr>
+                        <tr class="mee-pricing__row">
+                          <td class="mee-pricing__table-label" scope="row">Fixed fee</td>
+                          <td class="mee-pricing__table-value">
+                            {{ formatRupeeLabel(breakdown()!.fixed_fee) }}
+                          </td>
+                        </tr>
+                        <tr class="mee-pricing__row">
+                          <td class="mee-pricing__table-label" scope="row">
+                            GST on fees ({{ breakdown()!.gst_pct }}%)
+                          </td>
+                          <td class="mee-pricing__table-value">
+                            {{ formatRupeeLabel(breakdown()!.gst_on_fees) }}
+                          </td>
+                        </tr>
+                        <tr class="mee-pricing__row">
+                          <td class="mee-pricing__table-label" scope="row">TCS</td>
+                          <td class="mee-pricing__table-value">
+                            {{ formatRupeeLabel(breakdown()!.tcs) }}
+                          </td>
+                        </tr>
+                        <tr class="mee-pricing__row">
+                          <td class="mee-pricing__table-label" scope="row">TDS</td>
+                          <td class="mee-pricing__table-value">
+                            {{ formatRupeeLabel(breakdown()!.tds) }}
+                          </td>
+                        </tr>
+                        <tr class="mee-pricing__row">
+                          <td class="mee-pricing__table-label" scope="row">
+                            RTO expected loss ({{ breakdown()!.return_rate_pct }}%)
+                          </td>
+                          <td class="mee-pricing__table-value">
+                            {{ formatRupeeLabel(breakdown()!.rto_expected_loss) }}
+                          </td>
+                        </tr>
+                        <!-- Total deductions — bold summary row -->
+                        <tr class="mee-pricing__row--total">
+                          <td class="mee-pricing__table-label" scope="row">Total deductions</td>
+                          <td class="mee-pricing__table-value">
+                            {{ formatRupeeLabel(breakdown()!.total_deductions) }}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <!-- POSITIVE / NEGATIVE badge + server alerts -->
                   <div class="mee-pricing__results-footer">
                     <div class="flex items-center gap-2">
                       <mee-badge
-                        [value]="marginIsPositive() ? 'POSITIVE' : 'NEGATIVE'"
-                        [severity]="marginIsPositive() ? 'success' : 'danger'"
+                        [value]="payoutIsPositive() ? 'POSITIVE' : 'NEGATIVE'"
+                        [severity]="payoutIsPositive() ? 'success' : 'danger'"
                       />
                     </div>
 
                     <!--
-                      Server-issued alert chips: LOW_MARGIN / HIGH_MRP_MULTIPLIER / THIN_PROFIT.
-                      Styled by severity via mee-pricing__alert-chip--warning/info classes
-                      (token-only, no hardcoded hex). MeeAlertBanner uses role="alert" internally;
-                      here we use a lighter chip variant to avoid stacking full alert banners.
-                      aria-label on the wrapper provides screen reader context.
+                      Server-issued alert banners via MeeAlertBannerComponent.
+                      NEGATIVE_PAYOUT → error (red)
+                      LOW_MARGIN      → warning (amber)
+                      SHIPPING_DOMINATES → info
+                      Copy resolved from ALERT_MESSAGES[message_id] ?? message_id.
                     -->
                     @if (breakdown()!.alerts.length > 0) {
-                      <div
-                        role="list"
-                        aria-label="Pricing alerts"
-                        class="flex flex-col gap-2"
-                      >
+                      <div role="list" aria-label="Pricing alerts" class="flex flex-col gap-2">
                         @for (alert of breakdown()!.alerts; track alert.code) {
-                          <div
-                            role="listitem"
-                            class="mee-pricing__alert-chip"
-                            [class.mee-pricing__alert-chip--warning]="alert.severity === 'warning'"
-                            [class.mee-pricing__alert-chip--info]="alert.severity === 'info'"
-                          >
-                            {{ resolveAlertMessage(alert.message_id) }}
+                          <div role="listitem">
+                            <mee-alert-banner
+                              [variant]="resolveAlertVariant(alert.code)"
+                              [message]="resolveAlertMessage(alert.message_id)"
+                            />
                           </div>
                         }
                       </div>
                     }
 
-                    <p class="mee-pricing__disclaimer">
-                      Shipping costs are not included in V1 calculations.
-                    </p>
                   </div>
 
                 } @else if (!calculating() && !errorState()) {
 
-                  <!--
-                    Empty / first-visit state.
-                    Shown when: no breakdown, not calculating, no error.
-                    Design: centred icon + heading + hint copy.
-                  -->
+                  <!-- Empty / first-visit state -->
                   <div class="mee-pricing__empty" aria-label="No results yet">
                     <div class="mee-pricing__empty-icon" aria-hidden="true">&#8377;</div>
                     <p class="mee-pricing__empty-title">Ready to calculate</p>
                     <p class="mee-pricing__empty-hint">
-                      Enter your input cost and target margin, then tap "Calculate".
+                      Enter your Meesho price and cost to see your payout.
                     </p>
                   </div>
 
@@ -585,10 +767,11 @@ export type PricingErrorState =
   `,
 })
 export class PricingComponent implements OnInit, AfterViewChecked {
-  private readonly fb      = inject(FormBuilder);
-  private readonly route   = inject(ActivatedRoute);
-  private readonly router  = inject(Router);
-  private readonly service = inject(PricingApiService);
+  private readonly fb         = inject(FormBuilder);
+  private readonly route      = inject(ActivatedRoute);
+  private readonly router     = inject(Router);
+  private readonly service    = inject(PricingApiService);
+  private readonly destroyRef = inject(DestroyRef);
 
   /** Reference to the P&L result region — used for programmatic focus after calculate. */
   @ViewChild('resultRegion') private resultRegionEl?: ElementRef<HTMLElement>;
@@ -596,23 +779,29 @@ export class PricingComponent implements OnInit, AfterViewChecked {
   /** Pending focus flag: set true after a calc completes/errors; consumed in AfterViewChecked. */
   private _focusPending = false;
 
+  private productId = '';
+
   readonly formatRupeeLabel    = formatRupee;
   readonly resolveAlertMessage = (messageId: string): string =>
     ALERT_MESSAGES[messageId] ?? messageId;
+  readonly resolveAlertVariant = (code: string): AlertVariant =>
+    ALERT_VARIANT_MAP[code] ?? 'info';
 
-  // TODO(slice-2): REWRITE FORM — §12.M forward estimator:
-  //   REMOVE target_margin_pct (dead in §12.M).
-  //   ADD meesho_price (primary required input, gt 0).
-  //   ADD commission_pct (optional, default 4, seller-entered).
-  //   ADD return_rate_pct (optional, default 0, seller-entered).
-  //   ADD mrp (optional display reference).
-  //   input_cost remains (required, gt 0).
+  // ── Reactive form (§12.M forward estimator) ─────────────────────────────
+  // meesho_price: primary required input (listed/selling price).
+  // input_cost:   required COGS per unit.
+  // commission_pct: optional, default "4", 0–100%.
+  // return_rate_pct: optional, default "0", 0–100%.
+  // mrp: optional display reference (does NOT drive payout — DECISION-1).
   readonly form = this.fb.group({
-    input_cost:        ['300',  [Validators.required, Validators.min(0.01)]],
-    target_margin_pct: ['30',   [Validators.required, Validators.min(0), Validators.max(500)]], // TODO(slice-2): DELETE
+    meesho_price:    ['',  [Validators.required, Validators.min(0.01)]],
+    input_cost:      ['',  [Validators.required, Validators.min(0.01)]],
+    commission_pct:  ['4', [Validators.required, Validators.min(0), Validators.max(100)]],
+    return_rate_pct: ['0', [Validators.min(0), Validators.max(100)]],
+    mrp:             ['',  [Validators.min(0.01)]],
   });
 
-  // P&L breakdown — null until successful server response; stays null on any error (R-W6-1).
+  // P&L breakdown — null until successful server response; stays null on error (R-W6-1).
   readonly breakdown = signal<PriceCalcResponse | null>(null);
 
   // True while HTTP POST is in-flight.
@@ -621,22 +810,28 @@ export class PricingComponent implements OnInit, AfterViewChecked {
   // Typed error state per §3.1 degradation matrix. null = no error.
   readonly errorState = signal<PricingErrorState>(null);
 
-  // TODO(slice-2): DELETE commissionMissingDetail signal — 422 path dead in §12.M (4).
-  readonly commissionMissingDetail = signal<string>('Pricing is not available for this category yet.');
-
   // Detail copy for 400 validation — set from server response.
   readonly validationDetail = signal<string>('Invalid pricing input.');
 
-  private productId = '';
+  // DECISION-3: estimated_payout drives payoutIsPositive (hero + badge).
+  // profit drives marginIsPositive (ratios colour). Both are present in §12.M response.
+  readonly payoutIsPositive = computed<boolean>(
+    () => parseDecimal(this.breakdown()?.estimated_payout ?? '0') > 0,
+  );
 
-  // TODO(slice-2): UPDATE marginIsPositive — use estimated_payout (§12.M primary output)
-  //   instead of profit. profit is still present but estimated_payout drives the NEGATIVE_PAYOUT alert.
-  // True when profit > 0 — drives badge + colour. Based on server profit (not retired net_margin).
   readonly marginIsPositive = computed<boolean>(
     () => parseDecimal(this.breakdown()?.profit ?? '0') > 0,
   );
 
-  // Inline field error signals — only show after user has touched the field.
+  // ── Field error signals (show only after touch) ──────────────────────────
+  readonly meeshoPriceError = computed<string | undefined>(() => {
+    const ctrl = this.form.controls.meesho_price;
+    if (!ctrl.touched || ctrl.valid) return undefined;
+    if (ctrl.hasError('required')) return 'Meesho price is required.';
+    if (ctrl.hasError('min'))      return 'Meesho price must be greater than 0.';
+    return 'Invalid Meesho price.';
+  });
+
   readonly inputCostError = computed<string | undefined>(() => {
     const ctrl = this.form.controls.input_cost;
     if (!ctrl.touched || ctrl.valid) return undefined;
@@ -645,51 +840,84 @@ export class PricingComponent implements OnInit, AfterViewChecked {
     return 'Invalid input cost.';
   });
 
-  // TODO(slice-2): DELETE targetMarginError + ADD meeshoPriceError (meesho_price is the new primary field)
-  readonly targetMarginError = computed<string | undefined>(() => {
-    const ctrl = this.form.controls.target_margin_pct;
+  readonly commissionPctError = computed<string | undefined>(() => {
+    const ctrl = this.form.controls.commission_pct;
     if (!ctrl.touched || ctrl.valid) return undefined;
-    if (ctrl.hasError('required')) return 'Target margin is required.';
-    if (ctrl.hasError('min'))      return 'Target margin cannot be negative.';
-    if (ctrl.hasError('max'))      return 'Target margin cannot exceed 500%.';
-    return 'Invalid target margin.';
+    if (ctrl.hasError('required')) return 'Commission % is required.';
+    if (ctrl.hasError('min'))      return 'Commission cannot be negative.';
+    if (ctrl.hasError('max'))      return 'Commission cannot exceed 100%.';
+    return 'Invalid commission %.';
+  });
+
+  readonly returnRatePctError = computed<string | undefined>(() => {
+    const ctrl = this.form.controls.return_rate_pct;
+    if (!ctrl.touched || ctrl.valid) return undefined;
+    if (ctrl.hasError('min')) return 'Return rate cannot be negative.';
+    if (ctrl.hasError('max')) return 'Return rate cannot exceed 100%.';
+    return 'Invalid return rate %.';
+  });
+
+  readonly mrpError = computed<string | undefined>(() => {
+    const ctrl = this.form.controls.mrp;
+    if (!ctrl.touched || ctrl.valid) return undefined;
+    if (ctrl.hasError('min')) return 'MRP must be greater than 0.';
+    return 'Invalid MRP.';
   });
 
   ngOnInit(): void {
     this.productId = this.route.snapshot.paramMap.get('id') ?? '';
+
+    // DECISION-2: live recalc — form.valueChanges → debounceTime(350) → switchMap(calc).
+    // Cancels in-flight request on every keystroke (switchMap last-write-wins semantics).
+    // Skips when form is invalid (required fields empty).
+    this.form.valueChanges
+      .pipe(
+        debounceTime(350),
+        distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe(() => {
+        if (this.form.valid) {
+          this._runCalc();
+        }
+      });
   }
 
   /**
    * After Angular updates the view: if a focus is pending (result or error arrived),
    * shift focus to the result region so screen readers announce the updated content.
-   * Deferred microtask avoids focusing during change-detection cycle.
-   * Pattern mirrors wave6b_onboarding_builder3_polish error-banner focus.
+   * Deferred microtask avoids NG0100 ExpressionChangedAfterChecked.
    */
   ngAfterViewChecked(): void {
     if (this._focusPending && this.resultRegionEl) {
       this._focusPending = false;
       const el = this.resultRegionEl.nativeElement;
-      // Defer to next microtask — avoids NG0100 ExpressionChangedAfterChecked
       Promise.resolve().then(() => el.focus());
     }
   }
 
-  // DECISION-1: NEVER compute locally. Server-calc only. No ApiClient retry (§3.2 defect + POST).
+  /**
+   * Explicit "Calculate" button handler — a11y fallback for live recalc.
+   * Also fires on first submit when the user hasn't triggered valueChanges yet.
+   * DECISION-1: NEVER compute locally. Server-calc only.
+   */
   onCalculate(): void {
     if (this.form.invalid) return;
+    this._runCalc();
+  }
 
+  onSaveContinue(): void {
+    void this.router.navigate(['/catalogs', this.productId, 'export']);
+  }
+
+  // ── Internal: runs the actual HTTP POST and wires up the state machine ───
+  private _runCalc(): void {
     this.calculating.set(true);
     this.errorState.set(null);
     this.breakdown.set(null);
 
-    // TODO(slice-2): REWRITE body construction — §12.M forward estimator:
-    //   REPLACE target_margin_pct with meesho_price as the primary field.
-    //   ADD commission_pct, return_rate_pct, mrp from new form controls.
-    const raw  = this.form.getRawValue();
-    const body = {
-      input_cost:        String(raw.input_cost ?? ''),
-      target_margin_pct: String(raw.target_margin_pct ?? ''), // TODO(slice-2): DELETE — replace with meesho_price
-    };
+    const raw = this.form.getRawValue();
+    const body = this._buildRequestBody(raw);
 
     this.service.calc(this.productId, body).subscribe({
       next: (result) => {
@@ -699,7 +927,6 @@ export class PricingComponent implements OnInit, AfterViewChecked {
         } else {
           this.breakdown.set(result);
         }
-        // Shift focus to result region after any calc outcome (success or error).
         this._focusPending = true;
       },
       error: () => {
@@ -709,34 +936,48 @@ export class PricingComponent implements OnInit, AfterViewChecked {
         this._focusPending = true;
       },
       complete: () => {
-        // Fires on EMPTY (401/5xx). Ensure calculating is cleared.
+        // Fires on EMPTY (401). Ensure calculating is cleared.
         this.calculating.set(false);
       },
     });
   }
 
-  onSaveContinue(): void {
-    void this.router.navigate(['/catalogs', this.productId, 'export']);
+  /** Builds a PriceCalcRequest from raw form values, omitting optional empty fields. */
+  private _buildRequestBody(raw: typeof this.form.value): PriceCalcRequest {
+    const body: PriceCalcRequest = {
+      meesho_price: String(raw.meesho_price ?? ''),
+      input_cost:   String(raw.input_cost ?? ''),
+    };
+
+    // commission_pct: always send (has a default; validator ensures it is present)
+    if (raw.commission_pct !== null && raw.commission_pct !== '') {
+      body.commission_pct = String(raw.commission_pct);
+    }
+
+    // return_rate_pct: send if non-empty (default "0" in form, but omit if cleared)
+    if (raw.return_rate_pct !== null && raw.return_rate_pct !== '') {
+      body.return_rate_pct = String(raw.return_rate_pct);
+    }
+
+    // mrp: optional — only send if user provided a value
+    if (raw.mrp !== null && raw.mrp !== '') {
+      body.mrp = String(raw.mrp);
+    }
+
+    return body;
   }
 
-  // TODO(slice-2): REWRITE _handleErrorShape — remove commission_missing case (dead §12.M).
+  /** Maps typed error shapes to PricingErrorState per §3.1 degradation matrix. */
   private _handleErrorShape(shape: PriceCalcErrorShape): void {
     switch (shape.kind) {
       case 'unavailable':
         this.errorState.set('unavailable');
-        break;
-      // TODO(slice-2): DELETE commission_missing case — PriceCalcCommissionMissingError type
-      //   is removed from PriceCalcErrorShape in §12.M. TypeScript will flag this as
-      //   an unreachable branch after slice-2 lands.
-      case 'commission_missing' as 'validation': // TEMPORARY CAST — keeps TS happy until slice-2
-        this.errorState.set('commission_missing');
         break;
       case 'validation':
         this.errorState.set('validation');
         this.validationDetail.set(shape.detail);
         break;
       case 'server_error':
-        // 5xx or network error — surface retry affordance banner (spec §3.1).
         this.errorState.set('server_error');
         break;
     }

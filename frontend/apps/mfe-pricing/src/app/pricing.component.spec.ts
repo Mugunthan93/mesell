@@ -1,7 +1,7 @@
 /**
  * pricing.component.spec.ts — PricingComponent + pricing.utils pure-function tests.
  *
- * §12.M UPDATE (slice-1, 2026-06-18):
+ * §12.M COMPLETE (slice-1 model/service + slice-2 component rework, 2026-06-18):
  *   REMOVED: PriceCalcCommissionMissingError import (type deleted in §12.M (4)).
  *   REMOVED: Tests for §12.E dead types (commission_missing, target_margin_pct,
  *     seller_price, commission_amount, gst_amount, profit_pct, THIN_PROFIT, HIGH_MRP_MULTIPLIER).
@@ -9,11 +9,8 @@
  *     (pricing.alert.negative_payout / .low_margin / .shipping_dominates).
  *   UPDATED: PriceCalcRequest tests → meesho_price + input_cost (not target_margin_pct).
  *   UPDATED: PriceCalcResponse tests → §12.M field set.
- *
- * TODO(slice-2): Component template + form rewrite will add:
- *   - meesho_price form control spec assertions
- *   - §12.M P&L table field coverage (wdrp_price, estimated_payout, total_deductions, etc.)
- *   - commission_missing error path tests DELETED
+ *   COMPONENT: meesho_price primary form control, live recalc via valueChanges → switchMap,
+ *     hero payout, 3-price strip, deduction table, server alerts — all reworked in slice-2.
  *
  * Pure-function tests only (no TestBed) per the proven mfe-pricing workaround
  * (Angular 21 + Vitest TestBed + PrimeNG NG_MOD_DEF crash risk).
@@ -464,8 +461,46 @@ describe('§4.4 inputCostError — field validation bounds (input_cost)', () => 
   });
 });
 
-// TODO(slice-2): Add meeshoPriceError tests when the form control is added.
-// TODO(slice-2): Replace targetMarginError tests with meeshoPriceError tests.
+describe('§4.4 meeshoPriceError — field validation bounds (meesho_price)', () => {
+  const testMeeshoPriceError = (
+    value: string | null,
+    touched: boolean,
+  ): string | undefined => {
+    if (!touched) return undefined;
+    if (value === null || value === '') return 'Meesho price is required.';
+    const n = parseFloat(value);
+    if (isNaN(n) || n < 0.01) return 'Meesho price must be greater than 0.';
+    return undefined;
+  };
+
+  it('returns undefined when field is not touched (pristine)', () => {
+    expect(testMeeshoPriceError('0', false)).toBeUndefined();
+  });
+
+  it('returns "Meesho price is required." when empty and touched', () => {
+    expect(testMeeshoPriceError('', true)).toBe('Meesho price is required.');
+  });
+
+  it('returns "Meesho price is required." when null and touched', () => {
+    expect(testMeeshoPriceError(null, true)).toBe('Meesho price is required.');
+  });
+
+  it('returns "must be greater than 0" for value 0', () => {
+    expect(testMeeshoPriceError('0', true)).toBe('Meesho price must be greater than 0.');
+  });
+
+  it('returns "must be greater than 0" for negative value', () => {
+    expect(testMeeshoPriceError('-50', true)).toBe('Meesho price must be greater than 0.');
+  });
+
+  it('returns undefined for value 0.01 (min boundary, valid)', () => {
+    expect(testMeeshoPriceError('0.01', true)).toBeUndefined();
+  });
+
+  it('returns undefined for a typical valid value e.g. 499', () => {
+    expect(testMeeshoPriceError('499', true)).toBeUndefined();
+  });
+});
 
 describe('§4.4 disabled-submit state (form.invalid || calculating)', () => {
   const isSubmitDisabled = (formInvalid: boolean, calculating: boolean): boolean =>
@@ -491,7 +526,7 @@ describe('§4.4 disabled-submit state (form.invalid || calculating)', () => {
 // ── §4.5 Error-state conditions ───────────────────────────────────────────────
 
 describe('§4.5 error-state copy — 404 unavailable (flag-off / product not found)', () => {
-  type PricingErrorState = 'unavailable' | 'commission_missing' | 'validation' | 'server_error' | null;
+  type PricingErrorState = 'unavailable' | 'validation' | 'server_error' | null;
 
   const isUnavailableBannerVisible = (state: PricingErrorState) => state === 'unavailable';
 
@@ -540,7 +575,7 @@ describe('§4.5 error-state copy — 400 validation', () => {
 });
 
 describe('§4.5 error-state copy — 5xx server_error', () => {
-  type PricingErrorState = 'unavailable' | 'commission_missing' | 'validation' | 'server_error' | null;
+  type PricingErrorState = 'unavailable' | 'validation' | 'server_error' | null;
 
   const isServerErrorBannerVisible = (state: PricingErrorState) => state === 'server_error';
 
@@ -555,7 +590,7 @@ describe('§4.5 error-state copy — 5xx server_error', () => {
   });
 
   it('server_error: service emits {kind:"server_error"} → _handleErrorShape sets errorState', () => {
-    type ErrorState = 'unavailable' | 'commission_missing' | 'validation' | 'server_error' | null;
+    type ErrorState = 'unavailable' | 'validation' | 'server_error' | null;
     let errorState: ErrorState = null;
     let calculating = true;
 
@@ -657,7 +692,7 @@ describe('§4.5 P&L table render — empty state vs result state', () => {
 });
 
 describe('§4.5 PricingErrorState type — null initial state', () => {
-  type PricingErrorState = 'unavailable' | 'commission_missing' | 'validation' | 'server_error' | null;
+  type PricingErrorState = 'unavailable' | 'validation' | 'server_error' | null;
 
   it('errorState starts as null (no error on initial load)', () => {
     const errorState: PricingErrorState = null;
