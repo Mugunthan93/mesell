@@ -4,6 +4,8 @@
 Angular 18 component specialist for MeeSell. Owns 10 page components + shared UI components. Standalone, OnPush, Reactive Forms, Tailwind + Material. Decentralized memory ecosystem.
 
 ## MEMORY.md Index
+- [Session 2026-06-18 — PR #287 slice-2 — PricingComponent §12.M rework](#pricing-slice-2)
+- [Session 2026-06-18 — PR #278 merge-gate fixes — image-uploader nav + th scope](#mll-pr278-fixes)
 - [Session 2026-06-15 — Section-3 Wave 2A.1 — mfe-catalog provideMeeUi bootstrap (GAP-3)](#s3-w2a1-providemeeui)
 - [Session 2026-06-10 — Wave 5 F12 Export + F11 pricing route EXECUTED](#wave5-f12-export)
 - [Session 2026-06-10 — Wave 5 F11 Pricing EXECUTED](#wave5-f11-pricing)
@@ -18,6 +20,116 @@ Angular 18 component specialist for MeeSell. Owns 10 page components + shared UI
 - [Session 2026-06-06 — Smart Picker Dispatch 1](#smart-picker-dispatch-1)
 - [Session 2026-06-06 — Auth Dispatch 1 — LandingComponent](#landing-dispatch-1)
 - [Session 2026-06-06 — Catalog Wave 2a — catalog-form service layer](#catalog-wave-2a)
+
+---
+
+## Session 2026-06-18 — PR #287 slice-2 — PricingComponent §12.M rework {#pricing-slice-2}
+
+### Task
+HYBRID step 2 (builder): Rewrite pricing.component.ts to the §12.M Price Calculator contract
+on branch feat/pricing-fe-rework. Worktree: /private/tmp/mesell-wt/pricing-fe-rework.
+
+### Route touched
+`/catalogs/:id/pricing` — mfe-pricing (standalone bootstrap + federated via shell)
+
+### Services consumed
+`PricingApiService` (from pricing.service.ts authored in slice 1) — inject() pattern, route-scoped provider.
+
+### §12.M contract changes implemented
+- PRIMARY input: meesho_price (selling price) → estimated_payout hero
+- DELETED: target_margin_pct, targetMarginError(), commission_missing error state
+- NEW inputs: commission_pct (default "4"), return_rate_pct (default "0"), mrp (optional)
+- HERO: estimated_payout "You pocket ₹X" — positive/negative badge + WDRP footnote
+- RATIOS: margin_pct (% of meesho_price = "Margin") + markup_pct (% of input_cost = "Markup")
+- 3-PRICE STRIP: mrp (null → "—") · meesho_price · wdrp_price
+- DEDUCTION TABLE: 8 rows + bold total_deductions (all from server response, DECISION-1)
+- ALERTS: server PriceCalcAlert[] mapped via ALERT_MESSAGES[message_id] to MeeAlertBanner
+- LIVE RECALC: form.valueChanges → debounceTime(350) → distinctUntilChanged → switchMap(calc)
+
+### Pattern: _buildRequestBody return type must be PriceCalcRequest not object
+- `_buildRequestBody` originally returned `object` — TypeScript strict allows this but
+  `PricingApiService.calc(productId, body)` expects `PriceCalcRequest` → TS2345 compile error.
+- Fix: change return type to `PriceCalcRequest`, build body as `PriceCalcRequest` directly
+  and use `body.commission_pct = ...` (dot notation) instead of `body['key'] = ...`
+- ALSO: add `PriceCalcRequest` to the `import type { ... }` from pricing.model.ts
+
+### Pattern: Worktree branch state (correctly checked out)
+- Slice-1 commit had already checked out `feat/pricing-fe-rework` as a tracking branch
+  (NOT a detached HEAD this time — git worktree was created by the coordinator correctly)
+- `git branch --show-current` → `feat/pricing-fe-rework`
+- `git push origin feat/pricing-fe-rework` pushes directly to the PR branch
+
+### Pattern: ng test mfe-pricing has no test target
+- `mfe-pricing` project in angular.json only has: build, serve, esbuild, serve-original
+- There is NO test target on mfe-pricing; tests are in the `frontend` project (ng test)
+- `ng test --include="..."` fails because NativeFederation build target is incompatible
+- Correct invocation for pricing specs only: `./node_modules/.bin/vitest run apps/mfe-pricing/src/app/pricing.component.spec.ts`
+- pricing.service.spec.ts requires @mesell/core path alias → cannot run via bare vitest;
+  runs correctly through `ng test` (Angular build resolves tsconfig paths)
+- pricing.component.spec.ts: 129/129 PASS (all pure-function, no TestBed, no path aliases)
+
+### Pattern: Pre-existing ng test build failures from mfe-auth/mfe-onboarding
+- `ng test` fails at build stage: TS2339 errors on OtpVerifyComponent, LoginComponent, SignupComponent
+  (errorMessage property missing from those components' public API)
+- These are pre-existing develop failures, NOT caused by mfe-pricing work
+- Pricing spec results confirmed clean via vitest direct invocation
+
+### Pattern: commission_missing cleanup in spec type aliases
+- Slice 1 updated ALERT_MESSAGES and model types but left local type aliases in spec describe blocks
+  using `type PricingErrorState = 'unavailable' | 'commission_missing' | ...`
+- Slice 2 task: remove `'commission_missing'` from those local aliases (4 occurrences)
+- Safe occurrences to KEEP: JSDoc file header, section separator comments, describe() labels —
+  these document the ABSENCE of commission_missing, not its presence as a live type value
+- Safe occurrences in component.ts: `*   - commission_missing...` lines in DELETED JSDoc block
+
+### Build result (2026-06-18 slice-2)
+- mfe-pricing build: GREEN — Application bundle generation complete, 3.618s, zero TS errors
+- pricing.component.spec.ts: 129/129 pass (7 added meeshoPriceError tests, TODO markers gone)
+- Commit: 5199ac2 on feat/pricing-fe-rework (pushed to PR #287)
+- STATUS_FRONTEND.md updated at /private/tmp/mesell-wt/pricing-fe-rework/docs/status/STATUS_FRONTEND.md
+
+---
+
+## Session 2026-06-18 — PR #278 merge-gate fixes — image-uploader nav + th scope {#mll-pr278-fixes}
+
+### Task
+Two small fixes on open PR #278 (feat/my-live-listings). Worktree: /private/tmp/mesell-wt/mll-fix.
+
+### Fix 1: dead preview navigation in image-uploader.component.ts
+- PR #278 deleted the `/catalogs/:id/preview` route from catalog.routes.ts.
+- image-uploader `onContinue()` still navigated to `['/catalogs', this.productId, 'preview']`.
+- FOUNDER DECISION: re-point to catalog list.
+- Catalog list route: `path: ''` in catalog.routes.ts → mounted at `catalogs` in shell → `/catalogs`.
+- Fix: `this.router.navigate(['/catalogs'])` (no productId, no 'preview' segment).
+- PATTERN: when a route is retired, always grep component event handlers for navigate() calls.
+
+### Fix 2: table a11y — scope="col" on <th> cells
+- Three desktop table `<th>` cells in live-listings.component.ts were missing `scope="col"`.
+- WCAG 1.3.1: header cells in a data table MUST have scope attribute.
+- Added `scope="col"` on Product / Product ID / View on Meesho headers.
+- Note: the precheck-report table inside image-uploader.component.ts already has `scope="col"`
+  on all three of its headers (Check / Result / Fix hint) — that table was already correct.
+
+### Fix 3: stale comment in shell app.routes.ts
+- The JSDoc on the `catalogs` child route listed `:id/preview` as one of the catalog pages.
+- Updated to remove the stale preview reference and note its retirement.
+
+### Pattern: worktree on detached HEAD from origin/<branch>
+- `git worktree add /path origin/feat/branch` creates a detached HEAD (not a tracking branch).
+- To commit and push: `git checkout -b local-name --track origin/feat/branch` inside the worktree.
+- Push: `git push origin local-name:feat/branch` maps local to the remote tracking branch.
+- This is the correct workflow whenever a second worktree is needed for the same remote branch
+  (because `feat/branch` is already checked out in another worktree).
+
+### Build/test results
+- mfe-catalog: GREEN (3.148s, 0 errors, 0 new warnings)
+- shell: GREEN (exit 0, 0 errors)
+- Full test suite: 1277/1277 PASS (79 files)
+- Grep sanity: 0 navigation calls to dead preview route
+
+### Commit
+- Branch: feat/my-live-listings (pushed via mll-fix-branch → origin/feat/my-live-listings)
+- Commit: 5a866ad
 
 ---
 
@@ -2564,3 +2676,77 @@ None. Layout primitives are purely structural (no services, no HTTP, no provider
 - Tests: 1162 passed / 1 failed (pre-existing app.spec.ts NG0201 MessageService)
 - New layout spec files: 7, new tests: 69
 - Contracts: All 5 CLEAN, exit 0 (FE-1/FE-2/FE-3/FE-4/FE-5 all OK)
+
+---
+
+## Session 2026-06-18 — My Live Listings (/catalogs/live) + Preview Retirement {#my-live-listings}
+
+### Route touched
+`/catalogs/live` — mfe-catalog `live-listings/`
+
+### Services consumed
+None. Fully client-side: xlsx parsed in-browser, localStorage for persistence.
+
+### Pattern: Dynamic xlsx import (lazy chunk, NOT initial bundle)
+- `const XLSX = await import('xlsx')` inside an async event handler
+- This is the ONLY correct pattern — static `import XLSX from 'xlsx'` at module scope
+  would add 609 kB to the initial bundle and violate the < 90s build / bundle budget.
+- Vitest spec does NOT need to mock the dynamic import — pure model functions test the
+  parsing logic without touching xlsx at all (xlsx is only called inside the component handler).
+- Build output confirms: `xlsx.YQ6mFXPTM0.js` appears in the LAZY chunk list (609 kB),
+  NOT in Initial chunk files. This is the correct proof that dynamic import is working.
+
+### Pattern: BigInt for safe large-integer base-36 conversion
+- Meesho product IDs can exceed `Number.MAX_SAFE_INTEGER` (2^53 - 1 = 9007199254740991)
+- `BigInt(productId).toString(36)` handles 15-18 digit IDs correctly
+- `Number(productId).toString(36)` WOULD silently corrupt large IDs (precision loss)
+- Spec pattern: `BigInt(largeId).toString(36)` in the spec itself to generate the expected value
+- Guard: `!/^\d+$/.test(productId)` before calling BigInt — BigInt throws on non-numeric input
+
+### Pattern: localStorage persistence for seller-owned data (no tokens)
+- `localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(parsed))` — store ONLY
+  `{ listings: LiveListing[], skippedCount: number }` — never tokens, never auth state
+- `hydrateFromLocalStorage()` called in `ngOnInit()` — restores state across page refreshes
+- All localStorage calls wrapped in try/catch — private mode or quota errors are silent
+- `localStorage.removeItem(key)` on Clear action — also wrapped in try/catch
+- Store only the serializable ParsedInventory shape, not the full component state signal set
+
+### Pattern: FE-2 compliance for icons in feature components
+- NEVER use `<i class="pi pi-*">` directly in feature component templates
+- ALWAYS use `<mee-icon name="semantic-name" />` which resolves via `ActiveIcons[name]`
+- Steps to add a new icon:
+  1. Add `'semantic-name': 'pi pi-actual-name'` to `MEE_ICONS` in `icon.registry.ts`
+  2. Add `'semantic-name': 'material-icons mi-equivalent'` to `MEE_ICONS_ALT`
+     (satisfies the `satisfies Record<MeeIconName, string>` constraint — TypeScript enforces key parity)
+  3. Import `MeeIconComponent` in the component's `imports[]`
+  4. Use `<mee-icon name="semantic-name" />` in the template
+- The FE-2 scanner (`tools/contracts/`) only allows raw `pi pi-` in `libs/ui-kit/icon/icon.registry.ts`
+
+### Pattern: Literal route before param route in CATALOG_ROUTES (R-SP5-2)
+- Routes: `'new'` at index 1, `'live'` at index 2, `':id/edit'` at index 3
+- If `'live'` were placed AFTER `':id/*'` routes, Angular's router would capture `live` as
+  the `:id` param segment and try to load the catalog form for id="live" — wrong behavior
+- Rule: all literal sub-paths (`new`, `live`) MUST be defined before `:id/*` param paths
+- Comment block in catalog.routes.ts explicitly documents this ordering requirement
+
+### Pattern: Unregistered git worktree — DO NOT use for production work
+- A prior session created the worktree with `git worktree add` but it was NOT registered
+  in git's worktree tracking (did not show in `git worktree list`)
+- Running `git worktree add /path` for the SAME path with the SAME branch creates a fresh checkout,
+  OVERWRITING all uncommitted changes in that directory
+- LESSON: always `git worktree list` BEFORE adding a worktree to check if the path is already in use
+- LESSON: uncommitted changes in an unregistered directory are invisible to git and WILL be lost
+  if `git worktree add` is called for the same path
+
+### Pattern: Meesho PDP URL construction
+- `https://www.meesho.com/{slug}/p/{base36(productId)}`
+- The slug is COSMETIC — Meesho resolves the product purely from the base-36 ID
+- Any slug value works; using `slugify(productName)` gives friendly/SEO-like URLs
+- base36 conversion REQUIRES BigInt for safety (see BigInt pattern above)
+
+### Build result (2026-06-18 My Live Listings)
+- mfe-catalog build: 3.628s GREEN — live-listings-component 12.39 kB / 3.11 kB gzip
+- xlsx lazy chunk: xlsx.YQ6mFXPTM0.js 609 kB (NOT in initial bundle — dynamic import confirmed)
+- frontend/shell build: 2.808s GREEN — 0 errors
+- 1277/1277 tests passing (79 test files) — 34 new tests in live-listings.model.spec.ts
+- PR #278: feat/my-live-listings → develop

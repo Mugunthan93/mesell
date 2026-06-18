@@ -1,0 +1,1 @@
+- [Meesho price-calculator fee/tax model](meesho-price-calc-fee-model.md) — definitive cracked model: 0% commission, flat fixed fee, buyer-paid shipping pass-through, TDS 0.1%, GST-TCS 0.5%, GST-on-shipping 18%, HSN→output-GST. Architecture: constants vs seller-input vs lookup tables.

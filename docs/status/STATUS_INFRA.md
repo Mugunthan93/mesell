@@ -2734,3 +2734,40 @@ Cost: ₹0/month (manifests + docs only; no GCP resource, no new IAM grant; the 
 Branch: feature/microservices-catalog/infra — pushed; push only, NO PR, NO merge (backend-coordinator runs the infra→integration merge gate per dispatch + HYBRID rule).
 Next action: backend-coordinator runs the merge gate against the LANDED svc-catalog backend tree (deferred-validation: re-derive COPY targets + entrypoint from the landed app/ once the svc branch pushes); founder D3 spend decision + dev-catalog-db-password before any deploy.
 =========
+
+=== UPDATE 2026-06-18: local dev-stack rebuild (mfe-catalog :4205) — STOPPED, no mutation ===
+Task: rebuild static mfe-catalog remote on :4205 after "PR #278 (My Live Listings) merged to develop".
+Phase: ops / local dev-stack serve (deploy-boundary serving of gitignored dist/).
+STOP — premise false + master tree dirty. Zero mutations made (no pull, no install, no build, no process killed).
+Finding 1 — PR #278 NOT on develop: origin/develop tip = 028096d (#277 UI-DS docs). #278 (5a866ad, branch feat/my-live-listings) exists only as an OPEN PR (refs/pull/278/head + /merge present in ls-remote; absent from origin/develop). master tree is 2 behind (only #276/#277, both UI-DS docs — no catalog feature). Rebuilding now would NOT ship "My Live Listings".
+Finding 2 — master tree dirty + pull.rebase=true: 20+ modified tracked files (incl mfe-catalog/* source, shell, ui-kit) + 2 untracked. `git pull --ff-only` exits 128 ("cannot pull with rebase: unstaged changes"). Safety contract permits ONLY ff-only pull in master tree (no stash/commit/reset) → cannot clear the block without violating it.
+Current serve state (read-only, untouched): :4205 served by node pid 2529 (existing stale build, NOT restarted); :4200 ng serve alive (HTTP 200).
+Needs founder/master-session decision: (a) merge PR #278 to develop (founder gate), AND (b) clean the master working tree (the modifying session must commit/stash its own changes — not infra's to touch).
+Board sweep: no infra Active-features row opened (task aborted at precondition). No inter-lead requests opened.
+Next action: re-run rebuild ONCE #278 is on origin/develop AND the master tree is clean enough for ff-only pull.
+=========
+
+=========
+## UPDATE — mesell-my-live-listings-infra-session-1 — 2026-06-18
+
+Task class: localhost dev-stack ops (single-agent fast mode, dev-only, ₹0 spend). Founder-approved.
+Phase: deploy-boundary serving role (not a playbook §; ng-serve process swap, no cluster/secrets/terraform).
+
+DONE — switched :4200 shell from DIRTY master tree → CLEAN develop worktree so "My Live Listings" nav appears.
+- Killed old :4200 ng serve pid 3765 (cwd=/Users/.../mesell/frontend, master tree, OLD code w/o nav item). Process-only kill; master tree's 20+ uncommitted source edits NEVER touched.
+- Started new ng serve from /private/tmp/mesell-wt/rebuild-4205/frontend (detached HEAD origin/develop tip 0087562, PR #278). New pid 65133, IPv6 [::1]:4200. Build GREEN ("Application bundle generation complete [3.648s]", Watch mode enabled). proxyConfig proxy.conf.json auto-applied via angular.json shell serve target (/api → :8000).
+
+VERIFY (all pass):
+- :4200 HTTP 200.
+- "My Live Listings" present in served shell chunk chunk-T57KXLHD.js (count=1). (NOTE: main.js is a 288-byte bootstrap stub in this native-federation build — nav lives in the lazy shell-component chunk, NOT main.js. Grepping main.js returns 0; that is expected, not a failure.)
+- /catalogs/live via :4200 = 200.
+- :4205 (pid 61644, static mfe-catalog) still alive, HTTP 200 — untouched.
+- :8000 (pid 13356/49654 uvicorn) still alive; proxy through :4200/api confirmed reaching backend (server: uvicorn, content-type: application/json on /api/v1/health). Backend health route = /health (200 direct).
+
+REVERT (switch :4200 back to founder's master-tree edits later):
+  kill 65133   # the worktree ng serve
+  cd /Users/mugunthansrinivasan/Project/mesell/frontend && ng serve frontend --port 4200
+
+Board sweep: no infra Active-features row opened (localhost ops, not a feature branch). Session-start + session-end sweep: zero rows stale 7+ days. No inter-lead requests opened.
+Next action: none — :4200 now serving clean develop. Reversible via the command above.
+=========

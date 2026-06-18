@@ -1088,3 +1088,74 @@ No NullPool engine, no SAVEPOINT, no _otp_client patching needed — svc has no 
 | Flag patch surface svc vs monolith | reference | svc: `app.router.settings`; monolith: `app.modules.dashboard.router.settings` |
 | Shim mock via monkeypatch.setattr | reference | `monkeypatch.setattr(catalog_client, "list_products", fn)` — patches module-level fn in-place; alias in service.py sees the patch |
 | Minimal svc fixture (no NullPool) | reference | override get_current_user + get_db only; no SAVEPOINT/Valkey patching for mocked-auth route tests |
+
+---
+
+## Session: 2026-06-18 — Postman v2.1 collection + regeneration scripts
+
+### Task summary
+Generated a versioned Postman v2.1 collection (31 requests / 25 paths / 30 operations) covering
+all V1 endpoints, plus an environment file and reproducible regeneration script.
+PR #282 open on branch `chore/postman-collection` targeting `develop`.
+
+### Full operation inventory (confirmed from live FastAPI app — 30 ops, 25 paths)
+IAM (6): POST /auth/otp/send, POST /auth/otp/verify, POST /auth/refresh, POST /auth/logout, GET /auth/me, POST /webhooks/razorpay
+Customer (5): GET /seller-profile, PATCH /seller-profile, PATCH /seller-profile/active-categories, PATCH /seller-profile/compliance/{super_id}, GET /seller-profile/required-fields
+Category (5): POST /categories/suggest, GET /categories/browse, GET /categories, GET /categories/{id}/schema, GET /categories/{id}/field-enum/{name}
+Catalog (7): POST /products, PATCH /products/{id}, GET /products/{id}, POST /products/{id}/autofill, GET /products/{id}/preview, GET /products/{id}/draft, DELETE /products/{id}
+Dashboard (1): GET /products (shared path with catalog POST)
+Image (2): POST /products/{id}/images, GET /products/{id}/images
+Pricing (1): POST /products/{id}/price-calc
+Export (2): POST /products/{product_id}/export-xlsx, GET /exports/{export_id}
+Health (1): GET /health
+TOTAL: 30 operations, 25 paths
+
+### config.py APP_ENV sentinel must be "development" not "dev"
+`APP_ENV` is `Literal["development", "staging", "production"]` — NOT "dev".
+The sentinel env injection in gen_openapi.py uses "development".
+
+### In-process import failure (SQLAlchemy annotation)
+`_dump_from_app()` failed with `"Could not resolve all types within mapped annotation: 'Mapped[str | None]'"`.
+This is a SQLAlchemy ORM annotation in one of the models that Python cannot resolve
+during fresh import without the full DB connectivity. The fallback to live server
+at `http://localhost:8000/openapi.json` worked successfully (server was running).
+The gen_openapi.py is designed to handle this gracefully — no fix needed until the
+SQLAlchemy annotation issue is resolved in the models.
+
+### Postman collection design decisions (locked)
+1. Collection-level auth: Bearer `{{access_token}}` — all requests inherit.
+2. Public endpoints override to `auth: {type: "noauth"}` — otp/send, otp/verify,
+   auth/refresh (cookie-only, no bearer needed), webhooks/razorpay, /health.
+3. OTP verify test script: auto-sets `{{access_token}}` via `pm.environment.set()`.
+4. Example bodies: all JSON request bodies use real example values (not empty).
+5. 9 folders: Auth / Seller Profile / Categories / Products / Images / Pricing /
+   Exports / Webhooks / Health.
+6. hand-authored file = `meesell.postman_collection.json` (primary import).
+   auto-generated file = `meesell_generated.postman_collection.json` (spec-accuracy ref).
+   The generator writes to the `_generated` filename to avoid overwriting the rich hand-authored one.
+
+### Regeneration pipeline
+`bash backend/scripts/gen_postman.sh` does:
+1. `gen_openapi.py` — in-process import with 18-var sentinel env; fallback to live server
+2. `npx openapi-to-postmanv2` — converts openapi.json to Postman v2.1
+
+### gen_postman.sh venv resolution (worktree aware)
+Worktrees do NOT get their own .venv — they share the main checkout's .venv.
+gen_postman.sh resolves: `backend/.venv/bin/python` (local) → `git rev-parse --show-toplevel/backend/.venv/bin/python` (main tree) → `python3`.
+
+### Files added
+- backend/postman/meesell.postman_collection.json (31 requests, schema v2.1.0)
+- backend/postman/meesell.postman_environment.json (base_url + empty access_token)
+- backend/postman/openapi.json (25 paths, 30 operations, from live server)
+- backend/postman/README.md
+- backend/scripts/gen_openapi.py
+- backend/scripts/gen_postman.sh
+
+### Memory entry index
+| Entry | Type | Summary |
+|---|---|---|
+| Postman collection 2026-06-18 | project | PR #282 open; 31 requests/9 folders/schema v2.1.0; no app code changed |
+| APP_ENV sentinel | reference | Must be "development" not "dev" in gen_openapi.py sentinel dict |
+| In-process import SQLAlchemy failure | reference | Mapped[str | None] annotation error; fallback to live server works correctly |
+| Postman collection auth design | reference | Collection-level Bearer + noauth on 5 public endpoints + OTP test script |
+| gen_postman.sh venv resolution | reference | Worktrees share .venv; use git rev-parse --show-toplevel to find it |

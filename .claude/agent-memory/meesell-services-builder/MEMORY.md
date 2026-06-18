@@ -1,5 +1,56 @@
 # Memory — meesell-services-builder
 
+## PR #285 gate R1/R2 doc reconciliation (2026-06-18, branch fix/pricing-engine-rework, worktree /private/tmp/mesell-wt/pricing-rework, commit 74ade7c)
+DOCS-ONLY merge-gate fix for the pricing-engine-rework PR. Two reconciliations downstream of the founder-approved §12.M Price Calculator forward-estimator rework:
+- **R1** V1_FEATURE_SPEC §Feature 7 amendment (L321): shipping prose said "₹70 bracketed by price band" → reworded to "₹30 for Meesho Price ≤ ₹1000, ₹70 above" to match implemented constants (SHIPPING_FLAT=₹30 ≤₹1000, SHIPPING_HIGH=₹70 >₹1000).
+- **R2** BACKEND_ARCHITECTURE §2.D matrix cell-count cascade (8→7 after `pricing→category` commission edge retired). Fixed: §2.D breakdown trailing "8 ✓"→"7 ✓" (L592, self-contradiction with its own "7 ✓" opener); §13 docstring/prose at L4156 (image.summary docstring), L4915, L5229, L5235, L5366; §16 at L6464 (heading), L6465, L6487, L6530, L6871. Each non-historical "8 ✓" → "7 ✓" + appended "(7 post-§12.M 2026-06-18; see §12.M)" cross-note.
+- **DELIBERATELY PRESERVED (not §2.D cell-count):** L590 amendment narrative "drops from 8 ✓ to 7 ✓" (historical before→after); L6530 "8 domain modules" (module count, not cell count); L6936 "28-count" (HTTP-route count — matches grep `8-count` loosely but unrelated).
+- §16.B.2: dropped the now-stale "6 distinct service methods" number (it was coupled to the retired get_commission method) → "distinct service methods" to avoid a fresh inconsistency without recomputing.
+- Verify grep `8 ✓\|exactly 8\|8-count\|8 allowed` → only L590 (historical) + L6936 (route count) survive — both confirmed unrelated to §2.D cell count.
+- LESSON: my Edit at L4156 added a line, shifting all later line numbers +1 — re-grep after each structural edit before relying on task-supplied line numbers. `git diff --stat` = exactly the 2 docs (15+/14-). Pushed, NOT merged.
+
+## i18n #280 LOCAL HOT-PATCH applied to master tree (2026-06-18, dev-only bridge)
+The running backend :8000 serves from the MASTER tree (uvicorn `.venv/bin/uvicorn app.main:app --port 8000 --reload`, PID 13356 at the time) which was BEHIND develop, so the merged #280 generic keys were absent → required-field 422s still rendered blank. Applied the #280 messages_en.py change DIRECTLY to the master-tree file (Edit only, NO git, NO restart) so `--reload` hot-loaded it as a temporary local bridge that reconciles cleanly when master is later pulled to develop.
+- Verified `git diff HEAD..b28ef2f -- backend/app/i18n/messages_en.py` = EXACTLY the 10-key additive generic block (missing/string_too_short/string_too_long/int_parsing/float_parsing/string_type/greater_than_equal/less_than_equal/greater_than/less_than) inserted after `validation.generic.invalid_url`. No other diff.
+- After Edit, `git show b28ef2f:.../messages_en.py | diff - <master file>` = IDENTICAL (byte-for-byte match to merged version).
+- Functional probe (master 3.11 venv as toolchain, dummy env): `resolve("validation.description.missing")` / `validation.product_name.missing` / `validation.generic.missing` all → "This field is required. Please fill it in." (Step-2b rewrite working).
+- `/health` healthy (postgres+valkey ok) before AND after; same PID alive → reload succeeded, no import error.
+- This added ONE benign file to the master-tree dirty set (mirrors merged #280). REVERT recipe if reload ever errors: restore the original (no generic-missing block after invalid_url, dict closes with `}` at the next line).
+
+## i18n generic-missing fallback (2026-06-18, branch fix/i18n-generic-missing, PR #280, worktree /private/tmp/mesell-wt/i18n-missing off develop@0087562)
+
+### Root cause + fix (NO code change — catalog keys only)
+Required-field 422s rendered BLANK. core/errors.py:179 builds the per-field id `validation.{field}.{constraint}`
+from the raw Pydantic-v2 error `type` string (missing required field → type="missing"). resolver.py Step-2b
+(L112-122) ALREADY rewrites any `validation.{field}.{rule}` → `validation.generic.{rule}` and returns it if present
+(resolved tier — no missing_key counter bump, no WARN). The generic key for the `missing` rule (and 9 Pydantic-native
+siblings) was simply ABSENT, so it fell through to verbatim-id return = blank UI. FIX = add the keys; the resolver
+needs no edit. This is the 4th key in this blank-error class (after q.missing / auth.token_missing / size_in_ltrs.invalid_enum_value).
+
+### Keys added to messages_en.py §5A.I generic block (after validation.generic.invalid_url)
+10 keys, all 3-segment `validation.generic.<rule>` (Contract-10 clean): missing, string_too_short, string_too_long,
+int_parsing, float_parsing, string_type, greater_than_equal, less_than_equal, greater_than, less_than. These are the
+raw Pydantic-v2 `type` strings (NOT the §11/§10 bespoke names like too_short). DO NOT add 2-segment keys. The bespoke
+`.missing` keys (validation.q.missing, catalog.draft.missing, pricing.commission.missing, export.front_image.missing,
+auth.token.missing) keep resolving at Step-2 unchanged — generic.missing never diverts them (Step-2 wins before Step-2b).
+auth.token_missing (2-segment, L_iam_1 deferred) untouched — Step-2b only fires for `validation.*` ids.
+
+### Pydantic-v2 type→generic mapping reference (for future blank-error triage)
+required field absent → "missing"; str len → "string_too_short"/"string_too_long"; int/float coerce →
+"int_parsing"/"float_parsing"; wrong str type → "string_type"; numeric bounds → "greater_than[_equal]"/"less_than[_equal]".
+The enum/url/too_long/invalid_type ones pre-existed. If a NEW blank-error class shows up, grep the Pydantic `type`
+string from the raised id's last segment and add `validation.generic.<that>` — never touch resolver.py.
+
+### Verify recipe (held: worktree has no .venv)
+Toolchain = master 3.11 venv `/Users/mugunthansrinivasan/Project/mesell/backend/.venv/bin/python3.11` against worktree.
+Pass dummy required env as EXPLICIT exports (one-line `env VAR=val` form choked on `GCS_CREDENTIALS_JSON={}` → use
+multi-line backslash exports). `pytest tests/test_i18n_generic_fallback.py tests/test_resolver_fallback.py
+tests/test_section2_i18n_contract.py` = 61 passed. test_section2_i18n_contract::test_all_registry_keys_are_three_segment
+IS the Contract-10 gate (runs locally, not just CI). STATUS_BACKEND.md updated in MASTER tree (NOT in the PR commit) to
+keep production diff = messages_en.py + test file only.
+
+---
+
 ## Agent Identity
 Business-logic specialist for MeeSell. Owns service layer (ai_engine call site, image_processor, quality_engine, pricing_engine, export_service, otp_service MSG91 portion, storage) + Celery workers. Decentralized memory ecosystem.
 
@@ -2131,29 +2182,78 @@ Run with `DEV_DATABASE_URL=postgresql+asyncpg://meesell:password@localhost:5432/
 Per-test transaction rolls back so the seeded categories aren't polluted. Result: 36 integration passed (incl.
 test_full_lifecycle), 110 unit passed, ruff clean.
 
-## Cross-field validation rule engine (2026-06-18, branch feat/catalog-field-dependency-rules, worktree /private/tmp/mesell-wt/field-dep-rules off develop@fd4331d)
+---
 
-### Scope
-20-rule compliance dependency engine for the V1 Fast Catalog Form — prevents Meesho portal rejections by gating status=ready on FSSAI/AYUSH/BIS/warranty/size/fabric/country-of-origin/HSN/kids-age-group/legal-metrology/battery dependencies. NEW backend/app/data/field_dependency_rules.json (single source of truth).
+## Price Calculator forward-estimator rework §12.M (2026-06-18, branch fix/pricing-engine-rework, PR #285, worktree /private/tmp/mesell-wt/pricing-rework off origin/develop@da588f3)
 
-### APPAREL super_id RESOLUTION (the Step-0 blocker — reusable lookup recipe)
-onboarding_extension_map in data/parsed/canonical_field_aliases.json does NOT include apparel/footwear. The authoritative super_id→super_name mapping lives in backend/app/data/meesho_category_tree.json (this is the seed SOURCE for categories.super_id — scripts/seed_categories.py reads leaf["super_id"] + super_name=path[0]). Extract recipe: load tree, iter leaves with is_leaf, group by str(super_id). RESOLVED: 10 Men Fashion, 11 Women Fashion, 29 Women, 13 Kids & Toys, 25 Kids, 26 Grocery, 16 Consumer Electronics, 17 Appliances, 19/36/37/14/88/34 beauty cluster, 75 Pet Supplies, 68 Sports. **Footwear has NO distinct super** — its leaves (Casual Shoes, Flip Flops, Sandals, Bellies, Boots) live INSIDE supers 10/11/13. So size_apparel/fabric_apparel category_match = [10,11,29,13,25]. NOT guessed — extracted from the seeded tree; recorded in JSON _meta.
+### Scope (founder-ratified rework + 2 locked-doc amendments + §2.D matrix edit)
+Pricing flipped from BACK-SOLVE (enter MRP + target_margin → derive MRP) to FORWARD (enter
+meesho_price → estimate net payout). Profit/margin are OUTPUTS; target_margin_pct REMOVED.
+Commission is now a SELLER INPUT (default 4%), NOT category.get_commission — so the entire
+pricing→category cross-module edge is RETIRED (§2.D 8 ✓ → 7 ✓), CommissionMissingError DELETED,
+the 422 path gone. Negative payout = 200-WITH-ALERT, never 400/422.
 
-### Engine design (catalog/service.py — tests reference these names)
-- _load_dependency_rules() at IMPORT time, fail-fast (dup-id + dot-in-id asserts). _ALL_DEPENDENCY_RULES + _RULES_BY_SUPER (indexed; "*" = universal). _applicable_rules(super_id) = universal + super-pinned. _predicate_met(rule, merged) dispatches eq/in/contains/any (category_required→always True; malformed value_conditional→False). _evaluate_dependency_rules(super_id, schema_index, merged_fields, enforce_required) → (hard:list[(msg_id,suffix)], soft:list[dict]).
-- **Inert-when-no-field:** rule skipped if target_field not in schema_index (rule library is global; each category carries a subset). This is WHY the existing Eye-Serum status=ready integration test is UNAFFECTED — that fixture schema (product_name/brand_name/application_area/product_description) carries NO cross-field target field.
-- **enforce_required = (request.status == "ready")** — ONLY True on the ready transition. severity=hard + enforce_required → hard violation; else demoted to soft advisory (logged, dropped). Autosave NEVER 422s.
-- Wired in patch_product: super_id + enforce_required computed once after fetch_schema_dto. Hard violations APPEND into the SAME `violations` list the per-field validator builds (per-field FIRST, cross-field after) — zero new exception type, carried by the existing `if violations: raise ValidationFailedError`. The status=ready completeness gate re-runs _evaluate against the FINAL merged fields (covers PATCH with no `fields`) + merges hard cross-field ids into the readiness rejection (first_id = first cross-field id when present, else validation.completeness.missing_compulsory).
+### The estimator (service._estimate_payout, pure Decimal ROUND_HALF_EVEN via _q)
+referral=price×commission%; shipping=bracketed flat; fee_base=referral+shipping+logistics+fixed;
+gst_on_fees=fee_base×18% (GST on FEES not MRP); tcs=price×1%; tds=price×0%;
+rto_expected_loss=return_rate%×(shipping+logistics); estimated_payout=price−Σdeductions;
+profit=payout−cost; margin_pct=profit/price; markup_pct=profit/cost (both 0-guard on zero denom).
+WDRP: wdrp_price=price−WDRP_DELTA, re-run estimator on it for estimated_payout_wdrp.
 
-### §16 import-boundary: category MUST NOT import catalog
-The /schema dependency_rules[] projection (Step 5) lives in category/service.py, which CANNOT import catalog/service (Contract 1 + import-linter). Solution: category loads the SAME field_dependency_rules.json INDEPENDENTLY (_load_dependency_rules_by_super / _applicable_rules_for_schema / _project_dependency_rules). Tiny ~15-line loader dup, but the JSON file is the single source of truth so no divergence. app.i18n is the other contract-safe shared home (only forbidden as a SOURCE importing export.domain in Contract 3), but inline-per-module was chosen to keep the task's exact test surface (engine fns in catalog/service).
-- fetch_schema_dto now also calls get_super_id (extra indexed SELECT per schema fetch — cheap) to pick the applicable rules. dependency_rules[] keys: id/type/if_field/if_operator/if_value/target_field/action/severity/message_id. description/category_match/error_message kept OUT (FE resolves text via message_id). SchemaResponse is extra="allow" → passes through, NO model edit.
+### CALIBRATION (the law — ₹106 → ₹47 real scraped settlement sample)
+Constants that pass TOLERANCE=3.00: SHIPPING_FLAT=30 (low band price≤1000), SHIPPING_HIGH=70
+(price>1000), SHIPPING_BRACKET=1000, DEFAULT_LOGISTICS_FEE=10, DEFAULT_FIXED_FEE=5,
+DEFAULT_COMMISSION_PCT=4, DEFAULT_GST_PCT=18, DEFAULT_TCS_PCT=1, DEFAULT_TDS_PCT=0, WDRP_DELTA=20.
+Result: estimate(106)=46.84 (residual −0.16); WDRP 86→27.98 (residual +0.98). NOTE the spec said
+"SHIPPING_FLAT=70 bracketed" but 70 on a ₹106 item crushes payout to ~17 — so I made 70 the HIGH
+band and 30 the calibration low band (documented in the constant docstrings + PR). Algebra to
+hit a target payout: deductions = 6.0632 + 1.18×(shipping+logistics+fixed) at price 106 (the
+1.18 = 1 + gst 18%; the 6.0632 = referral 4.24 + tcs 1.06 + gst-on-referral 0.7632).
 
-### get_super_id surface (new cross-module contract)
-category/repository.py get_super_id_uncached(db, category_id)->str|None (super_id is NOT-NULL indexed col idx_categories_super; None = no row). category/service.py get_super_id(category_id, db)->str|None (added to __all__). NOTE: the schema envelope (fetch_schema_uncached) does NOT carry super_id — it merges schema_jsonb + compliance_shape only. The pre-existing _resolve_super_id_for_category in catalog/service reads schema["super_id"] which would be None unless schema_jsonb embeds it; the new dedicated get_super_id is the correct super_id source.
+### HARD RULE §12.M (6) — grep-clean gate
+transfer_price / fetch-supplier-products / supplier.meesho.com MUST be ZERO under backend/app/
+and appear ONLY in tests/modules/pricing/test_estimator_calibration.py. GOTCHA: I first wrote
+those literal tokens into service.py's HARD-RULE docstring → grep-DIRTY. Reword any app/ docstring
+to NOT contain the literal tokens (say "the scraped settlement artifacts" instead). Docs/ are
+fine (gate is app/-scoped).
 
-### i18n: 20 validation.cross_field.<id> keys
-Added to messages_en.py VALIDATION_MESSAGES after the generic block. Each rule id is ONE i18n segment (snake_case, may contain underscores e.g. warranty_type_pair) so validation.cross_field.<id> is a valid 3-segment §5A.H key. Contract-10 scanner now passes 90 keys (was 70). "2 snake_case segments max" in the task = the id is a single dot-free segment, NOT ≤1 underscore.
+### Additive migration b7c2e1a9d3f4 (down_rev f31c75438e61 — was the head)
+12 nullable cols: estimated_payout, referral_commission, shipping_charge, logistics_fee,
+fixed_fee, gst_on_fees, tcs, tds, rto_expected_loss, return_rate_pct, markup_pct, wdrp_price.
+Legacy seller_price column RE-USED to store estimated_payout; legacy commission_pct RE-PURPOSED
+as the seller snapshot (no DDL change to those two). upgrade+downgrade both tested.
 
-### Test toolchain (worktree has NO .venv — reused recipe)
-Master 3.11 venv as toolchain: /Users/mugunthansrinivasan/Project/mesell/backend/.venv/bin/python3.11. conftest setdefaults DATABASE_URL (must end in _test)/VALKEY_URL/JWT_SECRET; pass the other ~13 REQUIRED_FIELDS as dummy env exports. **DO NOT set TEST_DATABASE_URL** — that activates the session-scoped autouse _provision_test_schema fixture which connects to Postgres (errors all tests on a laptop). Without it the fixture no-ops and pure-unit/mocked tests run. ruff at /opt/homebrew/bin/ruff. 28/28 new + 190 i18n/schema regression + 58 dto-mapper all green; DB-module suites blocked on missing tunnel only.
+### Test-harness gotchas (worktree has NO .venv)
+- Toolchain: master tree's 3.11 venv /Users/mugunthansrinivasan/Project/mesell/backend/.venv/bin/
+  python3.11 against worktree code; ruff at /opt/homebrew/bin/ruff.
+- DB: conftest REQUIRES a *_test DB whose name ends "_test" AND the connecting user must OWN
+  schema public (the schema-reset fixture does DROP SCHEMA public CASCADE). meesell_test was
+  owned by a different role → "must be owner of schema public". FIX: as local superuser
+  (mugunthansrinivasan, peer auth on :5432) CREATE DATABASE meesell_pricerework_test OWNER meesell;
+  then `create extension pgcrypto`. Pass TEST_DATABASE_URL=...meesell_pricerework_test + the full
+  ~20 dummy env (DATABASE_URL, VALKEY/TEST_VALKEY/CORE_TEST_VALKEY → redis://localhost:6379/15,
+  JWT_SECRET, REFRESH_TOKEN_PEPPER, MSG91_*, RAZORPAY_*, GEMINI_API_KEY, GCS_* incl
+  GCS_CREDENTIALS_JSON={}, LANGFUSE_*, AUDIT_PII_SALT, CORS_ALLOWED_ORIGINS). Drop the temp DBs
+  after.
+- E402: this repo has NO ruff config (defaults). The pricing test idiom `pytestmark = pytest.mark.X`
+  BEFORE the `from app...` import trips ruff E402. Put the import FIRST, pytestmark AFTER. (The
+  original files shipped with E402 because CI evidently doesn't ruff test files — but keep mine
+  clean.)
+- FLAKY shared-app bug (pre-existing, FIXED here): test_feature_flag.py's stub_pricing_client used
+  the module-level `app` + entered app.router.lifespan_context per test. The @rate_limit/@audit_event
+  decorators on the route touch the Valkey singleton EVEN on the 404 short-circuit; a singleton bound
+  to a prior function-loop → "Event loop is closed" → 500 on the 2nd patch-based flag test. FIX:
+  make stub_pricing_client depend on the conftest `use_live_valkey` fixture (resets+re-points the
+  singletons per function). Removing lifespan_context alone did NOT fix it (the singleton, not the
+  lifespan, was the loop-bound resource).
+
+### i18n
+4 pricing keys now: validation.price.invalid_input, pricing.alert.negative_payout,
+pricing.alert.low_margin, pricing.alert.shipping_dominates. Removed: pricing.commission.missing,
+pricing.alert.high_mrp_multiplier, pricing.alert.thin_profit. test_i18n_generic_fallback.py
+parametrizes bespoke .missing keys — had to drop pricing.commission.missing from that list.
+
+### Validation run (real output)
+70 passed (tests/modules/pricing + test_pricing_full_flow + test_i18n_generic_fallback) + 3
+(persistence). ruff clean. import-linter 27 kept/0 broken (removing pricing→category import is
+always allowed). Contracts 8/9/10 PASS. import smoke app routes 36. PR #285 → develop (NOT merged).

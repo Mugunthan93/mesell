@@ -1,213 +1,51 @@
 # STATUS — BACKEND
 
 ```
-=== UPDATE: 2026-06-19 (meesell-services-builder) — W4a apply chosen price to product ===
-Phase: V1 Feature 7 — Price Calculator rework, WAVE 4 step-1 (service slice)
-Branch: feature/price-calc-rework/w4-export (off origin/develop 8a1b9d3)
+=== UPDATE: 2026-06-18 (meesell-api-routes-builder) — Postman v2.1 collection + regeneration scripts ===
+Phase: V1 tooling/docs (no endpoint additions)
 Done:
-- pricing/service.py ADDITIVE: apply_price_to_product(user_id, product_id, selling_price, *, db)
-  -> None. The explicit "Use this price" action (founder G-W4-APPLY Option A — NEVER auto-saved
-  on calculate). Validates selling_price > 0 (InvalidPriceInputError, defensive — router also
-  enforces), quantizes to 2dp, then writes {meesho_price: price} into products.fields_jsonb by
-  REUSING catalog.service.patch_product (is_autosave=False) — ownership (M6) + per-field schema
-  validation + atomic JSONB || merge all reused, no new write surface.
-- Canonical: writes ONLY SELLING_PRICE_CANONICAL="meesho_price". mrp (strike-through MRP) is
-  deliberately UNTOUCHED — OPEN QUESTION flagged for api-routes/FE step (calculator yields one
-  chosen number; whether "apply" should also populate mrp is a product decision).
-- §16 constraint hit + resolved: Contract 4 FORBIDS pricing importing catalog.schemas, so
-  patch_product is fed a local duck-typed _PriceFieldsPatch (frozen dataclass exposing .fields
-  + .status only — patch_product reads exactly those). Keeps the call on the ALLOWED
-  pricing → catalog §2.D edge (line 590, locked 1 ✓) — NOT a new matrix cell.
-- tests: NEW tests/test_pricing_apply_price_service.py (8 tests, DB-free, patch_product mocked):
-  writes value under meesho_price; only-meesho_price-never-mrp; 2dp quantize; rejects 0/neg
-  (3 params) before any catalog call; ownership (ProductNotFoundError) + schema-422
-  (ValidationFailedError) bubble verbatim.
-Tests: 8 passed / 0 failed (apply suite); 31 passed across -k "pricing or price". ruff clean;
-  import-linter 27 kept / 0 broken (Contract 4.pricing KEPT); pricing.service imports clean.
-Hand-offs: ready for W4 step-2 (api-routes-builder) — add POST /products/{id}/apply-price +
-  ApplyPriceRequest(selling_price: Decimal) wrapping pricing_service.apply_price_to_product;
-  count toward §17 endpoint inventory. NOTE: api-routes-builder's W2-step3 dead-token grep gate
-  includes "mrp" — my service mentions mrp ONLY in docstrings/the open-question note + the
-  _PriceFieldsPatch never writes it; allowlist the docstring hits if that gate lands on this branch.
-Blockers: none. Next: hand to api-routes-builder.
-=========
-
-```
-=== UPDATE: 2026-06-19 (meesell-services-builder) — W2b settlement engine (census-confirmed) ===
-Phase: V1 Feature 7 — Price Calculator rework, WAVE 2 step-2 (service/engine slice)
-Branch: feature/price-calc-rework/w2-backend (off step-1 77479b1)
-Done:
-- domain.py REWRITTEN: NEW SettlementBreakdown (9 Decimal fields); PricingCalc remapped to
-  confirmed column set (selling_price/shipping/total_price/commission_pct/commission_fees/
-  gst_on_shipping/tds/tcs/estimated_bank_settlement/meesho_leaf_id); PricingAlert.code Literal
-  narrowed to ["NEGATIVE_SETTLEMENT"] only. DELETED PnLBreakdown.
-- service.py REWRITTEN: NEW pure _compute_settlement(*, selling_price, shipping, commission_pct);
-  NEW calculate() orchestration (ownership → get_product_meesho_leaf_id → get_shipping →
-  commission default/override → _compute_settlement → single-alert → insert_calc → response);
-  _generate_alerts down to one rule; _q now ROUND_HALF_UP. DELETED all wrong-model code:
-  WDRP_DELTA, SHIPPING_BRACKET/FLAT/HIGH, DEFAULT_GST/TCS/TDS/LOGISTICS/FIXED, _bracketed_shipping,
-  _estimate_payout, the 106→47 calibration docstring/constants. DEFAULT_COMMISSION_PCT now 0.
-- catalog/service.py ADDITIVE: get_product_meesho_leaf_id(product_id, user_id, *, db) -> str
-  (product → category_id → meesho_leaf_id, user-scoped, ProductNotFoundError on miss/cross-tenant).
-- category/service.py ADDITIVE: get_meesho_leaf_id(category_id, db) -> str | None (mirrors get_super_id).
-- category/repository.py ADDITIVE: get_meesho_leaf_id_uncached (mirrors get_super_id_uncached).
-- tests: NEW test_settlement_formula.py (9 tests incl. ₹61.78 real-order + 85.06 census + N=80
-  census-wide + single-alert). DELETED obsolete test_pnl_formula.py / test_alerts.py /
-  test_estimator_calibration.py (wrong-model pure-function tests).
-Tests: 9 passed / 0 failed (toolchain master .venv 3.11, no DB needed — pure arithmetic). ruff clean.
-       Dead-token grep over domain.py + service.py = ZERO.
-Migration: step-1 d4e5f6a7b8c9 (additive nullable columns) not applied locally — engine tests are
-           DB-free; alembic upgrade deferred to api-routes-builder / integration env.
+  - backend/postman/meesell.postman_collection.json — hand-authored Postman v2.1 collection:
+    31 requests, 9 folders (auth/seller-profile/categories/products/images/pricing/exports/webhooks/health),
+    schema v2.1.0 validated, collection-level Bearer {{access_token}}, noauth on 5 public endpoints,
+    OTP verify test script auto-sets {{access_token}}, runnable example bodies on all requests
+  - backend/postman/meesell.postman_environment.json — base_url=http://localhost:8000, empty access_token
+  - backend/postman/openapi.json — FastAPI-generated spec (25 paths, 30 operations, source=live server)
+  - backend/postman/README.md — import guide, Login flow, regen command, feature flag table
+  - backend/scripts/gen_openapi.py — in-process OpenAPI dump with 18-var sentinel env; live-server fallback
+  - backend/scripts/gen_postman.sh — one-command regen: dump openapi + npx openapi-to-postmanv2
+Tests: N/A (tooling only — no app code changed)
 In progress: none
 Blockers: none
-Next: W2 step-3 (api-routes-builder) — schemas.py (PriceCalcRequest.selling_price + new
-      PriceCalcResponse incl. disclaimer), repository.insert_calc new signature, router 422 mapping
-      for UnknownCategoryError, exceptions.CategoryPricingUnavailableError, router-level tests.
+Next: founder merges PR #282; gate confirmed
 Hand-offs:
-- api-routes-builder: my calculate() calls pricing_repo.insert_calc(db, product_id, selling_price,
-  shipping, total_price, commission_pct, commission_fees, gst_on_shipping, tds, tcs,
-  estimated_bank_settlement, meesho_leaf_id) and constructs PriceCalcResponse(selling_price, shipping,
-  total_price, commission_pct, commission_fees, gst_on_shipping, tds, tcs, estimated_bank_settlement,
-  disclaimer, alerts, calculated_at) + PriceCalcAlert(code="NEGATIVE_SETTLEMENT", message_id=
-  "pricing.alert.negative_settlement", severity="warning"). schemas.py + repository.py must match
-  these exactly or service.py won't link.
-- i18n owner (non-blocking): add pricing.alert.negative_settlement key; pricing.alert.negative_payout
-  is retired.
+  - founder: PR #282 (chore/postman-collection → develop) NOT merged — gate after review
+  - Regeneration: `bash backend/scripts/gen_postman.sh` from any directory
 =========
 
-=== UPDATE: 2026-06-19 (meesell-database-builder) — W2a pricing_calc confirmed-model columns ===
-Phase: price-calc-rework / W2 database slice (section-7)
+=== UPDATE: 2026-06-18 14:00 (meesell-services-builder) — i18n generic-missing fallback ===
+Phase: V1 validation-UX bug-fix (required-field 422s render BLANK)
+Session: mesell-i18n-generic-missing-backend-session-1 (HYBRID step 2/BUILD)
+  branch fix/i18n-generic-missing, worktree /private/tmp/mesell-wt/i18n-missing (off develop@0087562)
 Done:
-  - backend/app/shared/models/pricing_calc.py: added 7 new confirmed-model columns
-    (selling_price, shipping, total_price, commission_fees, gst_on_shipping,
-    estimated_bank_settlement, meesho_leaf_id) all nullable NUMERIC(10,2) or VARCHAR(16).
-    tcs + tds adopted from b7c2e1a9d3f4 with corrected semantics (no DDL change needed).
-    commission_pct reused from baseline (no DDL change).
-    All #285 wrong-model columns retained nullable with DEPRECATED comments per Q3 ruling.
-  - New additive migration d4e5f6a7b8c9 (down_rev=c2d3e4f5a6b7):
-    upgrade() adds 7 columns; downgrade() drops only those 7. NO drops of #285 columns.
-    Single head confirmed: d4e5f6a7b8c9.
-  - Ruff clean on both changed files.
-In progress: none (database slice complete)
-Blockers: none
-Next: W2 step-2 services-builder (service.py, domain.py, catalog accessor)
-Hand-offs:
-  - meesell-services-builder: pricing_calc model updated. Head=d4e5f6a7b8c9.
-    New confirmed columns available: selling_price, shipping, total_price,
-    commission_fees, gst_on_shipping, tds, tcs (reused), estimated_bank_settlement,
-    meesho_leaf_id. Branch: feature/price-calc-rework/w2-backend.
-    Apply migration before running service layer tests.
-=========
-
-=== UPDATE: 2026-06-19 (meesell-database-builder) — Price Calculator W1 data layer ===
-Phase: price-calculator-rework / W1 data layer (section-7)
-Done:
-  - backend/scripts/build_pricing_lookup.py: idempotent transform from census → lookup JSON
-    (hard-fails on error_rows!=0 / count!=3772 / any non-zero commission / any formula_ok!=True)
-  - backend/app/data/meesho_pricing_lookup.json: generated + committed; 3772 entries;
-    keyed by string meesho_leaf_id; schema {_meta, lookup}; anchor 10949→82 confirmed
-  - backend/app/modules/pricing/pricing_lookup.py: loader module with get_shipping(),
-    get_commission_default(), lookup_size(), UnknownCategoryError; @lru_cache(maxsize=1)
-  - backend/app/data/meesho_shipping_slabs.json: TOMBSTONED (_CLOSED note)
-  - backend/app/data/category_commissions.json: TOMBSTONED (_CLOSED note)
-  - backend/app/data/__init__.py: load_shipping_slabs() REMOVED; zero app/ callers confirmed
-  - backend/tests/modules/pricing/test_pricing_lookup.py: 12/12 tests pass; ruff clean
-  - No Alembic migration — W1 is pure data file + loader (no DB schema change)
-In progress: none (waiting for meesell-data-engineer merge-gate review — HYBRID step 3)
-Blockers: none
-Next: meesell-data-engineer merge-gate review (data-file spot-check + loader code review)
-Hand-offs:
-  - meesell-data-engineer (merge-gate, step-3): PR on feature/price-calc-rework/w1-data → develop.
-    Verify: 3 census entries match verbatim, _meta.total==3772, tombstones in place,
-    zero app/ refs to retired stubs (grep), gate-1 green (12/12).
-  - meesell-services-builder (W2): pricing_lookup.py loader ready at
-    app.modules.pricing.pricing_lookup. Call get_shipping(meesho_leaf_id) and
-    get_commission_default(meesho_leaf_id) from the W2 settlement formula.
-    Handle UnknownCategoryError → 422 in the router.
-=========
-
-```
-=== UPDATE: 2026-06-18 (meesell-services-builder) — export validation aggregation ===
-Phase: V1 Feature 9 Export — collect-all pre-enqueue validation
-Session: export-validation-aggregation, branch feat/export-validation-aggregation,
-  worktree /private/tmp/mesell-wt/export-validation off origin/develop@86dfb86 (PR #291)
-Done:
-  - export/exceptions.py: NEW ExportValidationFailedError (code export.validation_failed, 422,
-    msg-id export.validation.failed); carries failed_checks: list[dict[str,str]] of
-    {check_id, message_key}. Added to __all__. Existing 7 exceptions UNTOUCHED — worker pipeline
-    _run_export_pipeline still raises ProductNotReadyForExportError / FrontImageMissingError standalone.
-  - export/service.py initiate_export: validation section rewritten fail-fast → collect-all.
-    Step 1 ownership stays fail-fast 404 (NOT aggregated). Two checks aggregated in order:
-    quality_status (snapshot.validation_summary.status != "ready") + front_image_missing
-    (xlsx_with_images AND no idx==1/ready image). Raises ONE ExportValidationFailedError if any
-    fail. Post-enqueue (insert/Valkey hint/Celery delay/202) untouched. Docstring step list updated.
-  - core/errors.py _meesell_error_handler: additive — conditionally appends failed_checks to the
-    §4.F envelope ONLY when exc carries it (mirrors _pydantic_validation_handler's "errors"). Locked
-    keys (detail/code/validation_message_id/request_id) unchanged; NO error_code key added.
-  - i18n/messages_en.py: +3 keys export.validation.failed / export.check.quality_status /
-    export.check.front_image_missing (Contract-10 3-segment clean).
-  - NEW tests/test_export_validation_aggregation.py: 5 unit tests (pytestmark=pytest.mark.unit).
-    +2 tests in test_core_errors.py (failed_checks additive on 422 envelope + absent on plain
-    MeesellError).
-Tests: 5/5 new aggregation PASS; 8/8 test_core_errors PASS; 104/104 i18n id-regex (Contract 10) PASS.
-  Toolchain = master 3.11 venv vs worktree (no .venv); unset TEST_DATABASE_URL so the autouse
-  schema-provision fixture no-ops (pure-unit, no live Postgres). ruff clean on all 6 touched files.
+  - ROOT CAUSE (confirmed by SPEC): validation.{field}.missing had no generic fallback.
+    Resolver Step-2b (resolver.py:112-122) ALREADY derives validation.generic.{rule} for any
+    validation.{field}.{rule}; the missing-rule generic key was simply absent. No resolver change.
+  - messages_en.py: +10 keys in the §5A.I generic family block (after invalid_url):
+    validation.generic.{missing, string_too_short, string_too_long, int_parsing, float_parsing,
+    string_type, greater_than_equal, less_than_equal, greater_than, less_than}. All 3-segment
+    Contract-10 clean. Additive only; no existing key edited; auth.token_missing (L_iam_1) untouched;
+    bespoke .missing keys (q/catalog.draft/pricing.commission/export.front_image/auth.token) untouched.
+  - test_i18n_generic_fallback.py: +23 tests (13→36). Founder case description.missing→generic, zero
+    missing_key logs; parametrized per-field→generic for all shipped rules; bespoke-.missing-unchanged guard.
+Tests: 61 passed (test_i18n_generic_fallback + test_resolver_fallback + test_section2_i18n_contract);
+  Contract-10 3-segment gate green. ruff clean. Production diff = messages_en.py ONLY. Migration N/A.
 In progress: none
 Blockers: none
-Next: api-routes-builder — POST /products/{id}/export-xlsx now surfaces failed_checks[] on 422;
-  FE renders the per-item list.
+Next: founder merges PR #280; backend-coordinator HYBRID step-3 merge-gate review.
 Hand-offs:
-  - FE (frontend-coordinator): the export 422 body now carries an additive failed_checks[] array of
-    {check_id, message_key}; render each message_key via i18n as an itemized fix-list. check_id is
-    snake_case (quality_status, front_image_missing). Locked §4.F keys unchanged.
-  - api-routes-builder: no route signature change; ExportValidationFailedError flows through
-    register_error_handlers automatically (it is a MeesellError subclass).
-=========
-
-=== UPDATE: 2026-06-18 (meesell-services-builder) — cross-field validation rule engine ===
-Phase: V1 Fast Catalog Form — cross-field compliance dependency rules
-Session: field-dep-rules (HYBRID step 2/BUILD), branch feat/catalog-field-dependency-rules,
-  worktree /private/tmp/mesell-wt/field-dep-rules off origin/develop@fd4331d
-Done:
-  - NEW backend/app/data/field_dependency_rules.json: 20 hand-authored rules
-    (FSSAI/AYUSH/cosmetic/BIS/warranty/size/fabric/country-of-origin/HSN/kids-age-group/
-    legal-metrology/battery).
-  - APPAREL super_ids RESOLVED (not guessed): from backend/app/data/meesho_category_tree.json
-    (seed source for categories.super_id) — apparel/footwear/kids-clothing supers =
-    10 Men Fashion, 11 Women Fashion, 29 Women, 13 Kids & Toys, 25 Kids. Footwear has no
-    distinct super; leaves live inside 10/11/13. size_apparel + fabric_apparel filled with
-    [10,11,29,13,25]. Recorded in _meta.
-  - category/repository.py: +get_super_id_uncached(db, category_id) -> str|None (indexed
-    SELECT). category/service.py: +get_super_id() cross-module surface + dependency-rule
-    loader/projection helpers (self-contained; category does NOT import catalog per §16).
-  - category/service.fetch_schema_dto: appends dependency_rules[] for in-schema target rules
-    (SchemaResponse extra="allow" → no model change). description/category_match/error_message
-    kept OUT of FE projection.
-  - catalog/service.py: rule engine (_load_dependency_rules import-time fail-fast +
-    _applicable_rules + _predicate_met[eq/in/contains/any] + _evaluate_dependency_rules) wired
-    into patch_product. Hard cross-field violations append into the SAME violations list (zero
-    new exception type), enforced ONLY on status=ready (autosave never 422s). Ready completeness
-    gate re-runs against final merged fields + merges hard cross-field ids.
-  - i18n/messages_en.py: +20 validation.cross_field.<id> keys (3-segment, Contract-10 clean).
-  - NEW tests/test_catalog_dependency_rules.py: 28 tests (12 predicate-operator unit + engine
-    semantics + id/i18n contracts + 5 integration: ready+Grocery+missing-fssai→422,
-    autosave-never-422, ready-all-filled→200, /schema includes/omits rules).
-Tests: 28/28 new PASS. Regression: 190 PASS (messages_en regex, Contract-10 scanner 90 keys,
-  section2 i18n contract, per_field_shape, schema_envelope, resolver_fallback);
-  test_schema_dto_mapper 58 PASS (dependency_rules non-breaking). ruff clean (5 files).
-  import-smoke OK. DB-module suites not runnable here (no Postgres:5433/Valkey tunnel =
-  infra, not regression); verified by inspection that the Eye-Serum fixture schema carries
-  NO cross-field target field → all rules INERT → existing status=ready integration UNAFFECTED.
-In progress: none
-Blockers: none
-Next: backend-coordinator merge-gate review of PR.
-Hand-offs:
-  - api-routes-builder: no endpoint/schema change. status=ready PATCH now enforces compliance
-    hard rules (422 validation.cross_field.<id>); autosave unchanged. /categories/{id}/schema
-    grows dependency_rules[] (extra="allow").
-  - frontend: drive real-time compliance UX off schema.dependency_rules[] (resolve via
-    message_id; severity soft=advisory, hard=blocks Mark-Ready CTA).
-  - founder: review field_dependency_rules.json _meta.reviewed_by ("founder pending").
+  - founder: PR #280 (fix/i18n-generic-missing → develop) ready, NOT merged.
+  - frontend-coordinator: validation.{field}.missing 422s now resolve to a human string — the 4th
+    blank-error class (after q.missing/token_missing/size_in_ltrs.invalid_enum_value) is closed.
 =========
 
 === UPDATE: 2026-06-17 (meesell-services-builder) — catalog enum 422 false-reject + i18n generic fallback ===
@@ -7059,88 +6897,61 @@ Hand-offs:
     unchanged (verified: not in diff).
 =========
 
-=== UPDATE: 2026-06-18 — Price Calculator forward-estimator rework (§12.M) ===
-Phase: V1 Feature 7 — Price Calculator (forward payout estimator rework)
-Session: mesell-price-calculator-backend-session-1 (HYBRID step 2 — builder)
-Branch: fix/pricing-engine-rework → develop (PR #285) — DO NOT MERGE (founder merges; backend-coordinator gates step 3)
+=== UPDATE: 2026-06-18 17:10 ===
+Phase: V1 Feature 7 Price Calculator (forward-payout estimator rework, §12.M) — PR #285 RE-GATE round 2
+Session: mesell-price-calculator-backend-session-1
+Board sweep (session-start): Active-features rows all 2026-06-12/13/14 IST — none 7+ days stale as of
+  2026-06-18 against the MERGED-to-develop microservices rows (those are founder-gate-OPEN, not lead-stale).
+  NOTE: several microservices Active rows are stale-by-calendar (>4 days) but are FOUNDER-GATE-OPEN
+  (waiting on founder merge, not lead action) — not lead-actionable stale; left as-is. Recently-merged: no
+  rows aged past 14 days needing eviction this sweep. Inter-lead requests open: 1 (infra flag-parity flags,
+  unchanged).
 Done:
-  - Applied 2 founder-ratified locked-doc amendments + the §2.D matrix edit:
-    * V1_FEATURE_SPEC.md Feature 7 — appended forward-estimator amendment block.
-    * BACKEND_ARCHITECTURE.md §12.M — new sub-clause (formula, new PriceCalcRequest, alert
-      codes NEGATIVE_PAYOUT/LOW_MARGIN/SHIPPING_DOMINATES, CommissionMissingError removal,
-      additive reversible pricing_calcs migration, zero-Meesho-calls HARD RULE).
-    * BACKEND_ARCHITECTURE.md §2.D — retired the `pricing → category` commission row
-      (commission is now a seller input); total 8 ✓ → 7 ✓; §2 prose cross-note to §12.M.
-  - Service rework (app/modules/pricing/):
-    * schemas: new PriceCalcRequest (meesho_price primary, input_cost, commission_pct default
-      4% seller-input, return_rate_pct, optional mrp, 6 override_* fields; target_margin_pct
-      REMOVED) + new PriceCalcResponse (3 prices + full deduction breakdown + estimated_payout
-      + estimated_payout_wdrp + profit + margin_pct + markup_pct + alerts). extra="forbid".
-    * service: _compute_pnl → _estimate_payout (pure Decimal, ROUND_HALF_EVEN via _q). Full
-      deduction stack: referral, bracketed shipping, logistics, fixed, GST-on-fees, TCS, TDS,
-      RTO expected-loss. category.get_commission call DELETED. Negative payout = 200-with-alert.
-    * exceptions: CommissionMissingError deleted; InvalidPriceInputError (400) kept.
-    * domain/repository/router/__init__ updated; router drops the 422.
-    * i18n: dropped commission_missing/high_mrp_multiplier/thin_profit; added negative_payout/
-      shipping_dominates; kept low_margin + invalid_input. All 3-segment.
-  - ORM + migration: pricing_calc.py + alembic b7c2e1a9d3f4 (down_rev f31c75438e61) — 12 additive
-    nullable breakdown columns; commission_pct re-purposed as seller snapshot. upgrade+downgrade
-    both verified locally; single linear head, no divergence.
-  - Calibration: SHIPPING_FLAT=30 / SHIPPING_HIGH=70 / SHIPPING_BRACKET=1000 / LOGISTICS=10 /
-    FIXED=5 / COMMISSION=4 / GST=18 / TCS=1 / TDS=0 / WDRP_DELTA=20. _estimate_payout(106)=46.84
-    (residual -0.16, TOLERANCE 3.00); WDRP 86→27.98 (residual +0.98).
-  - Fixed a pre-existing shared-app event-loop isolation bug in the flag-test fixture
-    (added use_live_valkey dep so the @rate_limit/@audit_event Valkey singleton is reset per
-    test — was 500-ing the 2nd patch-based flag test with "Event loop is closed").
-Tests: 70 passed (tests/modules/pricing + test_pricing_full_flow + test_i18n_generic_fallback)
-  + 3 passed (test_pricing_persistence). ruff clean. import-linter 27 kept/0 broken.
-  Contracts 8/9/10 PASS. grep-clean: ZERO transfer_price/fetch-supplier-products/
-  supplier.meesho.com under app/ (6 hits in test_estimator_calibration.py only).
+  - RE-GATE (HYBRID step 3, round 2) of PR #285 (`fix/pricing-engine-rework` → develop). Verified the two
+    round-1 reject fixes landed in commit 74ade7c, and confirmed the fix is DOCS-ONLY.
+  - 74ade7c diff --stat = docs/BACKEND_ARCHITECTURE.md (27 lines) + docs/V1_FEATURE_SPEC.md (2 lines) ONLY.
+    No code / test / migration change. Code from round 1 (calibration, no-422, migration, alerts,
+    zero-Meesho-calls) NOT re-reviewed — untouched by this commit.
+  - R1 PASS — V1_FEATURE_SPEC.md Feature 7 amendment (PR-branch L321) now reads "shipping (₹30 for Meesho
+    Price ≤ ₹1000, ₹70 above)". The stale "₹70 bracketed" prose is GONE. Matches code + §12.M banding.
+  - R2 PASS — §2.D breakdown line (PR-branch L592) trailing assertion is now "7 ✓" (consistent with the
+    amendment that retired pricing→category). Task-specified grep `8 ✓\|exactly 8\|8-count\|8 allowed`
+    run against the PR-branch blob (git show fix/pricing-engine-rework:...) returns only L590 (the
+    before→after narrative "drops from 8 ✓ to 7 ✓" — explicitly allowed) and the 28-route-count line
+    (allowed). No surviving assertion claims the §2.D matrix has 8 cells as CURRENT FACT. The §13 (×4) and
+    §16 (×4) "8 ✓ / 8-count / 8 allowed" assertions are reconciled to "7 ✓" with a "(7 post-§12.M
+    2026-06-18; see §12.M)" cross-note. §16.D "8 domain modules" module count correctly PRESERVED (that is
+    a count of modules, not matrix cells).
+  - PROCESS NOTE: the local working tree is on `develop`; greps must target the PR-branch blob via
+    `git show fix/pricing-engine-rework:<path>` — a working-tree grep would falsely read the pre-fix develop
+    state (MEMORY gotcha class: verify against the branch under review, not HEAD).
+Pre-existing latent (RULING): builder flagged that the §2.D L592 per-source enumeration
+  (catalog 2 + image 1 + pricing 1 + dashboard 2 + export 4 = 10) does not match the asserted total (7),
+  and that the actual matrix TABLE has more ✓ cells than the stated count. CONFIRMED PRE-EXISTING: on
+  pre-PR develop the same line enumerated 2+1+2+2+4 = 11 while asserting "8 ✓", and the develop matrix table
+  also counts 11 ✓ cells. So the enumeration-vs-total AND table-vs-stated-count gaps both PRE-DATE this PR.
+  PR #285's edit to L592 was a faithful, internally-consistent decrement of exactly the two numbers it owned
+  (pricing source 2→1, grand total 8→7) reflecting the one retired pricing→category cell — it did NOT
+  introduce or widen the gap; it shifted it by one (11→10 enumeration, 8→7 assertion). RULING (doc owner):
+  this is a separate, OLDER whole-matrix accounting defect spanning §2.D + §13 + §16 AND the matrix table
+  itself, whose correct fix requires reconciling the table, the enumeration, and every "N ✓" assertion in
+  one pass — and it touches §7.3-LOCKED sections (founder approval). It must NOT block a PR that fixed its
+  actual round-1 reject reasons. FILED as a SEPARATE follow-up doc ticket (BE-DOC-2D-COUNT-1, below); NOT a
+  blocker for #285.
+VERDICT: APPROVE-FOR-FOUNDER. R1 + R2 both resolved; fix is docs-only; pre-existing latent ticketed.
+  The founder owns the `fix/pricing-engine-rework` → develop merge (D1) — I do NOT merge.
+Follow-up ticket FILED — BE-DOC-2D-COUNT-1 (P3, docs-only, separate PR): the §2.D cross-module ✓-cell
+  count is internally inconsistent across the matrix table, the L592 per-source enumeration, and the
+  §2/§13/§16 "N ✓" assertions. Determine the TRUE current ✓-cell count by counting the table rows post-§12.M
+  (table shows: catalog→customer,category; image→catalog; pricing→catalog; dashboard→customer,catalog;
+  export→customer,category,catalog,image = 10 ✓ cells in the table vs the asserted 7), then reconcile ALL
+  three surfaces in one pass. Touches §7.3-LOCKED §2.D/§13/§16 → FOUNDER approval required for the
+  amendment. Pre-dates PR #285; do not let it block #285.
 In progress: none
 Blockers: none
-Next: backend-coordinator merge-gate review (HYBRID step 3) of PR #285.
+Next: founder merges PR #285 to develop (D1). On merge, lead flips the board row to MERGED + Recently merged.
+  Schedule BE-DOC-2D-COUNT-1 as a standalone docs PR (founder-approval-gated, §7.3).
 Hand-offs:
-  - api-routes-builder: POST /products/{id}/price-calc request+response SHAPE changed (forward
-    estimator). 422 (pricing.commission.missing) REMOVED. Negative payout is 200-with-alert.
-  - frontend-coordinator: new wire shape — seller enters meesho_price (+ optional commission_pct
-    default 4%, return_rate_pct, mrp); response carries the full deduction breakdown + payout +
-    WDRP payout + margin/markup + alerts (NEGATIVE_PAYOUT/LOW_MARGIN/SHIPPING_DOMINATES).
-  - backend-coordinator: gate — confirm zero Meesho calls in app/, additive migration reversible,
-    §12.M + §2.D amendments match the founder ruling.
-=========
-
-=== UPDATE: 2026-06-18 — repair red CI Gate 1 unit tests (export validation aggregation drift) ===
-Phase: V1 Feature 8 (Export) — CI Gate 1 (`pytest -m "unit"`) repair
-Done: Fixed 5 RED export unit tests (develop RED 5+ merges). Root cause = TEST DRIFT, not code
-  regression. The export-validation-aggregation commit 464d914 reworked router-surface
-  `export.service.initiate_export` from fail-fast to collect-all: it now raises ONE aggregated
-  `ExportValidationFailedError` (422, validation_message_id=`export.validation.failed`, additive
-  `failed_checks[]`) instead of the per-check standalones `ProductNotReadyForExportError`
-  (`export.product.not_ready`) / `FrontImageMissingError` (`export.front_image.missing`). That commit
-  shipped a NEW 228-line suite (test_export_validation_aggregation.py, 5 green) + errors.py envelope
-  wiring + i18n keys, but did NOT update the 3 pre-existing per-check test files → they kept asserting
-  the OLD contract. (The per-check exceptions are NOT dead — `_run_export_pipeline` (worker path,
-  service.py:402-403) still raises them standalone; only the router surface aggregates.)
-  Updated 3 test files to the locked aggregated contract:
-    - tests/modules/export/test_front_image_check.py (3 tests → assert failed_checks ==
-      [{check_id:front_image_missing, message_key:export.check.front_image_missing}])
-    - tests/modules/export/test_product_status_check.py (draft test → assert failed_checks ==
-      [{check_id:quality_status, message_key:export.check.quality_status}]; now supplies a ready
-      front image so quality_status is the sole aggregate entry)
-    - tests/integration/test_export_blocked_by_failed_precheck.py (→ ExportValidationFailedError +
-      quality_status; ALSO now stubs image_service.list_images — the old fail-fast path never reached
-      the front-image check, so the test never mocked it; collect-all exposed a `'coroutine' has no
-      attribute 'all'` on the AsyncMock db hitting the real image repo).
-Tests: full `pytest -m "unit"` → 830 passed (was 825 passed / 5 export failed). The 5 export
-  failures are RESOLVED. NO production code changed — test-only diff (3 files).
-In progress: none.
-Blockers: none.
-Next: PR fix/export-unit-tests → develop. Do NOT merge (coordinator gate).
-Note (pre-existing, OUT of scope, NOT my regression — diff is export-only): 6 other unit tests fail on
-  my local toolchain run (catalog autofill `_Sentinel` db lacks .execute after fetch_schema_dto change;
-  dashboard/catalog flag-guard 500-vs-404; event-loop-closed). They are environment-specific to the
-  local master-venv toolchain run and untouched by this PR. Flagged for the catalog/flag owners.
-Hand-offs:
-  - backend-coordinator: merge-gate review of fix/export-unit-tests. Confirm test-only diff + the
-    aggregated contract is the intended one (464d914 + test_export_validation_aggregation.py).
+  - founder: APPROVE-FOR-FOUNDER on #285 — founder owns the develop merge gate (D1).
+  - founder: BE-DOC-2D-COUNT-1 follow-up will need §7.3 approval (LOCKED §2.D/§13/§16 amendment).
 =========
