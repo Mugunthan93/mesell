@@ -9,38 +9,38 @@ import {
 } from '@angular/core';
 import { Router } from '@angular/router';
 
-import { MeeBadgeComponent }        from '@mesell/ui-kit';
 import { MeeButtonComponent }       from '@mesell/ui-kit';
 import { MeeCardComponent }         from '@mesell/ui-kit';
 import { MeeIconComponent }         from '@mesell/ui-kit';
-import { MeeProgressBarComponent }  from '@mesell/ui-kit';
 import { PageHeaderComponent }      from '@mesell/composites';
 
 import {
   type ExportStatus,
-  type ValidationChecks,
-  type ValidationCheckItem,
-  SIMULATED_PASSING_CHECKS,
-  buildCheckItems,
-  allChecksPassed,
+  type ExportFailedCheck,
+  type ExportInitiatedResponse,
+  type ExportResponseDTO,
   canGenerate,
+  resolveCheckMessage,
 } from './export.model';
 
-/** Increment per tick (10 per 500 ms → 100% in ~5 s). */
-const PROGRESS_TICK = 10;
-/** Interval in milliseconds. */
-const TICK_INTERVAL_MS = 500;
+import {
+  ExportApiService,
+  type InitiateValidationError,
+  type InitiateErrorShape,
+} from './export.service';
+
+/** Polling interval in milliseconds. */
+const TICK_INTERVAL_MS = 2000;
 
 @Component({
   selector: 'app-export',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  providers: [ExportApiService],
   imports: [
-    MeeBadgeComponent,
     MeeButtonComponent,
     MeeCardComponent,
     MeeIconComponent,
-    MeeProgressBarComponent,
     PageHeaderComponent,
   ],
   styles: [`
@@ -90,53 +90,6 @@ const TICK_INTERVAL_MS = 500;
       font-weight: 600;
       color: var(--mee-color-on-surface);
       margin: 0;
-    }
-    .export-th-check {
-      text-align: left;
-      padding-block: var(--mee-space-1);
-      font-weight: 500;
-      width: 100%;
-    }
-    .export-th-result {
-      text-align: right;
-      padding-block: var(--mee-space-1);
-      font-weight: 500;
-      white-space: nowrap;
-      padding-left: var(--mee-space-3);
-    }
-    .export-td-check {
-      width: 100%;
-    }
-    .export-check-pass {
-      font-size: 14px;
-      color: var(--mee-color-success);
-      margin: 0;
-    }
-    .export-check-fail {
-      font-size: 14px;
-      color: var(--mee-color-error);
-      margin: 0;
-    }
-
-    /* ── Checklist table ─────────────────────────────────────────── */
-    .export-checklist-table thead th {
-      color: var(--mee-color-on-surface-muted);
-    }
-    .export-checklist-table tbody tr {
-      border-bottom: 1px solid var(--mee-color-outline);
-    }
-    .export-checklist-table tbody tr:hover {
-      background: var(--mee-color-bg);
-    }
-    .export-checklist-table td {
-      padding: var(--mee-space-3) 0;
-      color: var(--mee-color-on-surface);
-    }
-    .export-checklist-table td.result-col {
-      text-align: right;
-      width: 1px;
-      white-space: nowrap;
-      padding-left: var(--mee-space-3);
     }
 
     /* ── Idle state ──────────────────────────────────────────────── */
@@ -293,41 +246,18 @@ const TICK_INTERVAL_MS = 500;
                 Pre-export checklist
               </h2>
 
-              <table class="export-checklist-table" aria-label="Validation checklist">
-                <thead>
-                  <tr>
-                    <th class="export-th-check">
-                      Check
-                    </th>
-                    <th class="export-th-result">
-                      Result
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (check of checkItems(); track check.label) {
-                    <tr>
-                      <td class="export-td-check">
-                        {{ check.label }}
-                      </td>
-                      <td class="result-col">
-                        <mee-badge
-                          [value]="check.ok ? 'PASS' : 'FAIL'"
-                          [severity]="check.ok ? 'success' : 'danger'"
-                        />
-                      </td>
-                    </tr>
+              @if (failedChecks().length > 0) {
+                <ul class="space-y-2" aria-label="Items to resolve before export">
+                  @for (check of failedChecks(); track check.check_id) {
+                    <li class="flex items-start gap-2 text-sm" style="color: var(--mee-color-error)">
+                      <mee-icon name="warning" aria-hidden="true" />
+                      <span>{{ resolveMessage(check) }}</span>
+                    </li>
                   }
-                </tbody>
-              </table>
-
-              @if (allChecksPassed()) {
-                <p class="export-check-pass">
-                  All checks passed. Ready to generate export.
-                </p>
+                </ul>
               } @else {
-                <p class="export-check-fail">
-                  Some checks failed. Please fix issues before exporting.
+                <p class="text-sm" role="status" aria-live="polite" style="color: var(--mee-color-on-surface-muted)">
+                  No blocking issues detected. Click "Generate Export" to proceed.
                 </p>
               }
 
@@ -339,9 +269,8 @@ const TICK_INTERVAL_MS = 500;
             class="block"
             label="Generate Export"
             variant="primary"
-            icon="download"
             [fullWidth]="true"
-            [disabled]="!canGenerate()"
+            [disabled]="!canGenerateSignal()"
             [loading]="exportStatus() === 'processing'"
             (clicked)="onGenerate()"
           />
@@ -355,14 +284,9 @@ const TICK_INTERVAL_MS = 500;
             <mee-card>
               <div class="export-generating">
                 <p class="export-generating__label">
-                  <mee-icon name="spinner" />
+                  <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
                   Preparing your file&hellip;
                 </p>
-                <mee-progress-bar
-                  [value]="progress()"
-                  label="Generating&hellip;"
-                  [show_value]="true"
-                />
                 <p class="export-generating__hint">This usually takes a few seconds.</p>
               </div>
             </mee-card>
@@ -373,11 +297,11 @@ const TICK_INTERVAL_MS = 500;
             <mee-card>
               <div class="export-ready">
                 <div class="export-ready__banner">
-                  <mee-icon name="check-circle" />
+                  <i class="pi pi-check-circle" aria-hidden="true"></i>
                   <span>Your file is ready!</span>
                 </div>
                 <div class="export-ready__file">
-                  <mee-icon name="file-excel" />
+                  <i class="pi pi-file-excel" aria-hidden="true"></i>
                   <span class="export-ready__filename">{{ downloadUrl() ?? 'catalog.xlsx' }}</span>
                 </div>
                 <a
@@ -386,7 +310,7 @@ const TICK_INTERVAL_MS = 500;
                   class="export-download-btn"
                   aria-label="Download XLSX file"
                 >
-                  <mee-icon name="download" />
+                  <i class="pi pi-download" aria-hidden="true"></i>
                   Download XLSX
                 </a>
                 <mee-button
@@ -405,8 +329,8 @@ const TICK_INTERVAL_MS = 500;
             <mee-card>
               <div class="export-error">
                 <div class="export-error__banner">
-                  <mee-icon name="times-circle" />
-                  <span>Export failed. Please try again.</span>
+                  <i class="pi pi-times-circle" aria-hidden="true"></i>
+                  <span>{{ notReadyMessage() ?? 'Export failed. Please try again.' }}</span>
                 </div>
                 <mee-button
                   class="block"
@@ -424,7 +348,7 @@ const TICK_INTERVAL_MS = 500;
             <mee-card>
               <div class="export-idle">
                 <div class="export-idle__icon">
-                  <mee-icon name="file-export" />
+                  <i class="pi pi-file-export" aria-hidden="true"></i>
                 </div>
                 <p class="export-idle__title">Ready to export</p>
                 <p class="export-idle__hint">Your Meesho-format XLSX will be generated once all checks pass.</p>
@@ -440,76 +364,95 @@ const TICK_INTERVAL_MS = 500;
 })
 export class ExportComponent implements OnInit, OnDestroy {
   private readonly router = inject(Router);
+  private readonly exportApi = inject(ExportApiService);
 
   // ── State signals ──────────────────────────────────────────────────────────
 
-  readonly exportStatus  = signal<ExportStatus>('idle');
-  readonly progress      = signal<number>(0);
-  readonly downloadUrl   = signal<string | null>(null);
-  readonly exportId      = signal<string | null>(null);
+  readonly exportStatus    = signal<ExportStatus>('idle');
+  readonly downloadUrl     = signal<string | null>(null);
+  readonly exportId        = signal<string | null>(null);
+  readonly notReadyMessage = signal<string | null>(null);
 
-  /** All 4 validation checks (simulated as all-pass per journey step 10). */
-  readonly validationChecks = signal<ValidationChecks>(SIMULATED_PASSING_CHECKS);
+  /** Real failed checks populated from 422 body.failed_checks[]. Empty until a 422 occurs. */
+  readonly failedChecks = signal<ExportFailedCheck[]>([]);
 
   /** Interval handle stored for clearInterval on destroy / ready / retry. */
   private pollingIntervalId: ReturnType<typeof setInterval> | null = null;
 
   // ── Computed ───────────────────────────────────────────────────────────────
 
-  /** Flat list of check items for @for iteration. Delegates to pure function. */
-  readonly checkItems = computed<ValidationCheckItem[]>(
-    () => buildCheckItems(this.validationChecks())
-  );
-
-  /** All 4 checks must pass. Delegates to pure function. */
-  readonly allChecksPassed = computed<boolean>(
-    () => allChecksPassed(this.validationChecks())
-  );
-
   /**
-   * Generate button is enabled only when all checks pass AND status is idle.
-   * Delegates to pure function.
+   * Generate button is enabled only when status is idle.
+   * The real readiness gate is the backend 422 — button is always enabled at idle.
    */
-  readonly canGenerate = computed<boolean>(
-    () => canGenerate(this.exportStatus(), this.validationChecks())
+  readonly canGenerateSignal = computed<boolean>(
+    () => canGenerate(this.exportStatus())
   );
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   ngOnInit(): void {
-    // Validation checks are synchronous in V1 simulation — already initialised via signal default.
-    // In Wave 6, this would call GET /products/:id/export-validation.
+    // Route param reading would go here for real product ID injection.
+    // For V1: product ID read from ActivatedRoute in onGenerate().
   }
 
   ngOnDestroy(): void {
     this.clearPollInterval();
   }
 
+  // ── Public method for template ─────────────────────────────────────────────
+
+  /**
+   * Resolves a human-readable display message for a failed check.
+   * Delegates to pure function from export.model for testability.
+   */
+  resolveMessage(check: ExportFailedCheck): string {
+    return resolveCheckMessage(check);
+  }
+
   // ── Behaviours ─────────────────────────────────────────────────────────────
 
   /**
-   * Start simulated XLSX generation.
-   * State machine: idle → processing → ready (after ~5 s).
+   * Initiate XLSX export via backend. Wires real ExportApiService.
+   * State machine: idle → processing → ready | failed.
    */
   onGenerate(): void {
-    if (!this.canGenerate()) return;
+    if (!this.canGenerateSignal()) return;
 
+    // Clear any stale state from previous attempt.
+    this.notReadyMessage.set(null);
+    this.failedChecks.set([]);
     this.exportStatus.set('processing');
-    this.progress.set(0);
 
-    this.pollingIntervalId = setInterval(() => {
-      this.progress.update(p => p + PROGRESS_TICK);
+    // TODO(V1): read productId from ActivatedRoute snapshot.params['id']
+    // Using a placeholder for V1; coordinator wires route params.
+    const productId = 'current-product-id';
 
-      if (this.progress() >= 100) {
-        this.clearPollInterval();
-        this.exportStatus.set('ready');
-        // V1 simulation: real implementation reads the fresh 1 h GCS signed URL
-        // from ExportResponseDTO.xlsx_signed_url (GET /api/v1/exports/{export_id}).
-        const mockExportId = 'mock-export-' + Date.now();
-        this.downloadUrl.set(`https://storage.googleapis.com/mesell-exports/${mockExportId}.xlsx`);
-        this.exportId.set(mockExportId);
-      }
-    }, TICK_INTERVAL_MS);
+    this.exportApi.initiate(productId).subscribe({
+      next: (result: ExportInitiatedResponse | InitiateErrorShape) => {
+        if (!('kind' in result)) {
+          // HTTP 202 — export job queued; start polling
+          this.exportId.set(result.export_id);
+          this.startPollInterval(result.export_id);
+        } else if (result.kind === 'validation') {
+          const valErr = result as InitiateValidationError;
+          this.exportStatus.set('idle');
+          this.notReadyMessage.set(valErr.detail);
+          this.failedChecks.set(valErr.failedChecks);
+        } else {
+          // kind === 'unavailable' — flag-off or product not found
+          this.exportStatus.set('idle');
+          this.notReadyMessage.set('Export is currently unavailable. Please try again later.');
+          this.failedChecks.set([]);
+        }
+      },
+      error: () => {
+        // EMPTY from service — network/5xx; service already logged
+        this.exportStatus.set('idle');
+        this.notReadyMessage.set('Export could not be started. Please try again.');
+        this.failedChecks.set([]);
+      },
+    });
   }
 
   /**
@@ -527,8 +470,9 @@ export class ExportComponent implements OnInit, OnDestroy {
   onRetry(): void {
     this.clearPollInterval();
     this.exportStatus.set('idle');
-    this.progress.set(0);
     this.downloadUrl.set(null);
+    this.notReadyMessage.set(null);
+    this.failedChecks.set([]);
   }
 
   onBackToDashboard(): void {
@@ -536,6 +480,35 @@ export class ExportComponent implements OnInit, OnDestroy {
   }
 
   // ── Private helpers ────────────────────────────────────────────────────────
+
+  /**
+   * Start polling GET /api/v1/exports/{exportId} on a 2 s interval.
+   * Stops on terminal status (ready | failed) or ngOnDestroy.
+   */
+  private startPollInterval(exportId: string): void {
+    this.pollingIntervalId = setInterval(() => {
+      this.exportApi.poll(exportId).subscribe({
+        next: (pollResp: ExportResponseDTO) => {
+          if (pollResp.status === 'ready') {
+            this.clearPollInterval();
+            this.exportStatus.set('ready');
+            this.downloadUrl.set(pollResp.xlsx_signed_url);
+          } else if (pollResp.status === 'failed') {
+            this.clearPollInterval();
+            this.exportStatus.set('failed');
+            this.notReadyMessage.set(pollResp.error_message);
+          }
+          // 'pending': do nothing — poll loop continues
+        },
+        error: () => {
+          // ExportNotFoundError or unhandled throw — stop polling gracefully
+          this.clearPollInterval();
+          this.exportStatus.set('failed');
+          this.notReadyMessage.set('Export status could not be determined. Please retry.');
+        },
+      });
+    }, TICK_INTERVAL_MS);
+  }
 
   private clearPollInterval(): void {
     if (this.pollingIntervalId !== null) {

@@ -1,143 +1,46 @@
 /**
  * export.model.ts — pure-function and type-contract unit tests.
  *
- * Wave 6 Wave C lane 2 DELTA:
- * - REMOVED: nextProgress, isProgressComplete (no progress_pct on the wire)
- * - REMOVED: MOCK_DOWNLOAD_URL (retired — real signed URL from poll response)
- * - ADDED: isTerminalStatus (pure-function gate for the poll loop)
- * - UPDATED: retryState — no progress field (wire shape change)
- * - RETAINED: buildCheckItems, allChecksPassed, canGenerate (Option A display-only)
- * - RETAINED: SIMULATED_PASSING_CHECKS (display-only per GAP-1 Option A)
+ * PR #291 delta:
+ * - REMOVED: buildCheckItems, allChecksPassed, SIMULATED_PASSING_CHECKS, ValidationChecks
+ *   (simulated display-only checklist retired; real gate is backend 422 failed_checks[])
+ * - ADDED: ExportFailedCheck, EXPORT_CHECK_MESSAGES, EXPORT_CHECK_FALLBACK, resolveCheckMessage
+ * - UPDATED: canGenerate — now single-arg (status only), no checks parameter
+ * - RETAINED: isTerminalStatus, retryState, ExportWireStatus, ExportStatus
  *
  * TestBed is intentionally NOT used — pure functions have no Angular dependencies.
  */
 import { describe, it, expect } from 'vitest';
 
 import {
-  buildCheckItems,
-  allChecksPassed,
   canGenerate,
   isTerminalStatus,
   retryState,
-  SIMULATED_PASSING_CHECKS,
-  type ValidationChecks,
+  resolveCheckMessage,
+  EXPORT_CHECK_MESSAGES,
+  EXPORT_CHECK_FALLBACK,
+  type ExportFailedCheck,
   type ExportStatus,
   type ExportWireStatus,
 } from './export.model';
 
-// ── buildCheckItems ────────────────────────────────────────────────────────────
-
-describe('buildCheckItems', () => {
-  it('should return 4 items when all checks pass', () => {
-    const items = buildCheckItems(SIMULATED_PASSING_CHECKS);
-    expect(items).toHaveLength(4);
-  });
-
-  it('should set ok=true for each item when all pass', () => {
-    const items = buildCheckItems(SIMULATED_PASSING_CHECKS);
-    expect(items.every(i => i.ok)).toBe(true);
-  });
-
-  it('should set ok=false for title item when title_ok is false', () => {
-    const checks: ValidationChecks = { ...SIMULATED_PASSING_CHECKS, title_ok: false };
-    const items = buildCheckItems(checks);
-    const titleItem = items.find(i => i.label === 'Title filled');
-    expect(titleItem?.ok).toBe(false);
-  });
-
-  it('should set ok=false for category item when category_ok is false', () => {
-    const checks: ValidationChecks = { ...SIMULATED_PASSING_CHECKS, category_ok: false };
-    const items = buildCheckItems(checks);
-    const categoryItem = items.find(i => i.label === 'Category selected');
-    expect(categoryItem?.ok).toBe(false);
-  });
-
-  it('should set ok=false for fields item when fields_ok is false', () => {
-    const checks: ValidationChecks = { ...SIMULATED_PASSING_CHECKS, fields_ok: false };
-    const items = buildCheckItems(checks);
-    const fieldsItem = items.find(i => i.label === 'Compulsory fields');
-    expect(fieldsItem?.ok).toBe(false);
-  });
-
-  it('should set ok=false for images item when images_ok is false', () => {
-    const checks: ValidationChecks = { ...SIMULATED_PASSING_CHECKS, images_ok: false };
-    const items = buildCheckItems(checks);
-    const imagesItem = items.find(i => i.label === 'At least 1 image (pass)');
-    expect(imagesItem?.ok).toBe(false);
-  });
-
-  it('should expose labelled items (title, category, fields, images)', () => {
-    const items = buildCheckItems(SIMULATED_PASSING_CHECKS);
-    const labels = items.map(i => i.label);
-    expect(labels).toContain('Title filled');
-    expect(labels).toContain('Category selected');
-    expect(labels).toContain('Compulsory fields');
-    expect(labels).toContain('At least 1 image (pass)');
-  });
-});
-
-// ── allChecksPassed ────────────────────────────────────────────────────────────
-
-describe('allChecksPassed', () => {
-  it('should return true when all 4 checks are true', () => {
-    expect(allChecksPassed(SIMULATED_PASSING_CHECKS)).toBe(true);
-  });
-
-  it('should return false when title_ok is false', () => {
-    const checks: ValidationChecks = { ...SIMULATED_PASSING_CHECKS, title_ok: false };
-    expect(allChecksPassed(checks)).toBe(false);
-  });
-
-  it('should return false when category_ok is false', () => {
-    const checks: ValidationChecks = { ...SIMULATED_PASSING_CHECKS, category_ok: false };
-    expect(allChecksPassed(checks)).toBe(false);
-  });
-
-  it('should return false when fields_ok is false', () => {
-    const checks: ValidationChecks = { ...SIMULATED_PASSING_CHECKS, fields_ok: false };
-    expect(allChecksPassed(checks)).toBe(false);
-  });
-
-  it('should return false when images_ok is false', () => {
-    const checks: ValidationChecks = { ...SIMULATED_PASSING_CHECKS, images_ok: false };
-    expect(allChecksPassed(checks)).toBe(false);
-  });
-
-  it('should return false when all checks are false', () => {
-    const checks: ValidationChecks = {
-      title_ok: false, category_ok: false, fields_ok: false, images_ok: false,
-    };
-    expect(allChecksPassed(checks)).toBe(false);
-  });
-});
-
 // ── canGenerate ────────────────────────────────────────────────────────────────
 
 describe('canGenerate', () => {
-  it('should return true when status is idle and all checks pass', () => {
-    expect(canGenerate('idle', SIMULATED_PASSING_CHECKS)).toBe(true);
+  it('should return true when status is idle', () => {
+    expect(canGenerate('idle')).toBe(true);
   });
 
-  it('should return false when status is processing (even if checks pass)', () => {
-    expect(canGenerate('processing', SIMULATED_PASSING_CHECKS)).toBe(false);
+  it('should return false when status is processing', () => {
+    expect(canGenerate('processing')).toBe(false);
   });
 
-  it('should return false when status is ready (even if checks pass)', () => {
-    expect(canGenerate('ready', SIMULATED_PASSING_CHECKS)).toBe(false);
+  it('should return false when status is ready', () => {
+    expect(canGenerate('ready')).toBe(false);
   });
 
-  it('should return false when status is failed (even if checks pass)', () => {
-    expect(canGenerate('failed', SIMULATED_PASSING_CHECKS)).toBe(false);
-  });
-
-  it('should return false when status is idle but a check fails', () => {
-    const checks: ValidationChecks = { ...SIMULATED_PASSING_CHECKS, title_ok: false };
-    expect(canGenerate('idle', checks)).toBe(false);
-  });
-
-  it('should return false when both status is not idle and a check fails', () => {
-    const checks: ValidationChecks = { ...SIMULATED_PASSING_CHECKS, images_ok: false };
-    expect(canGenerate('processing', checks)).toBe(false);
+  it('should return false when status is failed', () => {
+    expect(canGenerate('failed')).toBe(false);
   });
 });
 
@@ -181,27 +84,84 @@ describe('retryState', () => {
   });
 });
 
-// ── SIMULATED_PASSING_CHECKS ───────────────────────────────────────────────────
+// ── resolveCheckMessage ────────────────────────────────────────────────────────
 
-describe('SIMULATED_PASSING_CHECKS (display-only per GAP-1 Option A)', () => {
-  it('should have title_ok: true', () => {
-    expect(SIMULATED_PASSING_CHECKS.title_ok).toBe(true);
+describe('resolveCheckMessage', () => {
+  it('should resolve export.check.quality_status to a non-empty string', () => {
+    const check: ExportFailedCheck = {
+      check_id: 'quality_status',
+      message_key: 'export.check.quality_status',
+    };
+    const msg = resolveCheckMessage(check);
+    expect(msg.length).toBeGreaterThan(0);
+    expect(msg).not.toBe(EXPORT_CHECK_FALLBACK);
+    expect(msg).toBe(EXPORT_CHECK_MESSAGES['export.check.quality_status']);
   });
 
-  it('should have category_ok: true', () => {
-    expect(SIMULATED_PASSING_CHECKS.category_ok).toBe(true);
+  it('should resolve export.check.front_image_missing to a non-empty string', () => {
+    const check: ExportFailedCheck = {
+      check_id: 'front_image_missing',
+      message_key: 'export.check.front_image_missing',
+    };
+    const msg = resolveCheckMessage(check);
+    expect(msg.length).toBeGreaterThan(0);
+    expect(msg).not.toBe(EXPORT_CHECK_FALLBACK);
+    expect(msg).toBe(EXPORT_CHECK_MESSAGES['export.check.front_image_missing']);
   });
 
-  it('should have fields_ok: true', () => {
-    expect(SIMULATED_PASSING_CHECKS.fields_ok).toBe(true);
+  it('should return EXPORT_CHECK_FALLBACK for unknown message_key (never blank)', () => {
+    const check: ExportFailedCheck = {
+      check_id: 'some_unknown_check',
+      message_key: 'export.check.unknown_key_xyz',
+    };
+    const msg = resolveCheckMessage(check);
+    expect(msg).toBe(EXPORT_CHECK_FALLBACK);
+    expect(msg.length).toBeGreaterThan(0);
   });
 
-  it('should have images_ok: true', () => {
-    expect(SIMULATED_PASSING_CHECKS.images_ok).toBe(true);
+  it('should return EXPORT_CHECK_FALLBACK for empty string message_key', () => {
+    const check: ExportFailedCheck = { check_id: 'x', message_key: '' };
+    const msg = resolveCheckMessage(check);
+    expect(msg).toBe(EXPORT_CHECK_FALLBACK);
   });
 
-  it('should pass allChecksPassed when used as-is', () => {
-    expect(allChecksPassed(SIMULATED_PASSING_CHECKS)).toBe(true);
+  it('EXPORT_CHECK_FALLBACK must not contain a raw message_key (no key bleed)', () => {
+    const check: ExportFailedCheck = {
+      check_id: 'x',
+      message_key: 'export.check.not_in_map',
+    };
+    const msg = resolveCheckMessage(check);
+    expect(msg).not.toContain('export.check.not_in_map');
+  });
+});
+
+// ── EXPORT_CHECK_MESSAGES contract ────────────────────────────────────────────
+
+describe('EXPORT_CHECK_MESSAGES', () => {
+  it('should have a non-empty entry for export.check.quality_status', () => {
+    expect(EXPORT_CHECK_MESSAGES['export.check.quality_status']).toBeTruthy();
+  });
+
+  it('should have a non-empty entry for export.check.front_image_missing', () => {
+    expect(EXPORT_CHECK_MESSAGES['export.check.front_image_missing']).toBeTruthy();
+  });
+
+  it('all entries should be non-empty strings (no blanks in map)', () => {
+    Object.values(EXPORT_CHECK_MESSAGES).forEach(msg => {
+      expect(msg.length).toBeGreaterThan(0);
+    });
+  });
+});
+
+// ── EXPORT_CHECK_FALLBACK contract ────────────────────────────────────────────
+
+describe('EXPORT_CHECK_FALLBACK', () => {
+  it('should be a non-empty string', () => {
+    expect(EXPORT_CHECK_FALLBACK.length).toBeGreaterThan(0);
+  });
+
+  it('should NOT contain a raw message key (acts as user-facing text only)', () => {
+    expect(EXPORT_CHECK_FALLBACK).not.toContain('export.check.');
   });
 });
 
@@ -227,23 +187,29 @@ describe('ExportWireStatus type contract', () => {
 // ── ExportStatus UI-local type exhaustion ──────────────────────────────────────
 
 describe('ExportStatus (UI-local)', () => {
-  it('idle is the initial state', () => {
+  it('idle is the only status where canGenerate returns true', () => {
+    const allStatuses: ExportStatus[] = ['idle', 'processing', 'ready', 'failed'];
+    const idleOnly = allStatuses.filter(s => canGenerate(s));
+    expect(idleOnly).toEqual(['idle']);
+  });
+
+  it('idle is the initial state (canGenerate returns true)', () => {
     const s: ExportStatus = 'idle';
-    expect(canGenerate(s, SIMULATED_PASSING_CHECKS)).toBe(true);
+    expect(canGenerate(s)).toBe(true);
   });
 
   it('processing prevents canGenerate', () => {
     const s: ExportStatus = 'processing';
-    expect(canGenerate(s, SIMULATED_PASSING_CHECKS)).toBe(false);
+    expect(canGenerate(s)).toBe(false);
   });
 
   it('ready prevents canGenerate', () => {
     const s: ExportStatus = 'ready';
-    expect(canGenerate(s, SIMULATED_PASSING_CHECKS)).toBe(false);
+    expect(canGenerate(s)).toBe(false);
   });
 
   it('failed prevents canGenerate', () => {
     const s: ExportStatus = 'failed';
-    expect(canGenerate(s, SIMULATED_PASSING_CHECKS)).toBe(false);
+    expect(canGenerate(s)).toBe(false);
   });
 });

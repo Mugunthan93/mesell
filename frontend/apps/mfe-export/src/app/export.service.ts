@@ -21,7 +21,7 @@
  *   POST initiate:
  *     401 → refreshInterceptor retries; if still 401, EMPTY (interceptor logged out; no crash)
  *     404 → flag-off OR product not found → of({ notReady: true, errorCode: 'export.unavailable' })
- *     422 → export.product_not_ready / export.front_image_missing → surface detail + error_code
+ *     422 → export.product_not_ready / export.front_image_missing → surface detail + code + failed_checks
  *     400 → bad request → EMPTY + console.error
  *     5xx → EMPTY + console.error (component will surface retry affordance)
  *   GET poll:
@@ -39,7 +39,7 @@ import { catchError, retry } from 'rxjs/operators';
 
 import { ApiClient } from '@mesell/core';
 
-import { ExportInitiatedResponse, ExportResponseDTO } from './export.model';
+import { ExportFailedCheck, ExportInitiatedResponse, ExportResponseDTO } from './export.model';
 
 // ── Endpoint paths (single source of truth) ────────────────────────────────────
 /** POST /api/v1/products/{product_id}/export-xlsx */
@@ -62,12 +62,14 @@ export class ExportNotFoundError extends Error {
 
 /**
  * Emitted by initiate() when the backend returns 422 export.product_not_ready or
- * export.front_image_missing. Component should surface the error_code to the user.
+ * export.front_image_missing. Component should surface the failed_checks[] to the user.
+ * errorCode reads body.code (locked §4.F field) — NOT body.error_code.
  */
 export interface InitiateValidationError {
   readonly kind: 'validation';
   readonly detail: string;
-  readonly error_code: string | null;
+  readonly errorCode: string | null;      // reads body.code (NOT body.error_code)
+  readonly failedChecks: ExportFailedCheck[];
 }
 
 /**
@@ -124,12 +126,17 @@ export class ExportApiService {
 
             case 422: {
               // export.product_not_ready / export.front_image_missing.
-              // Surface to the component as an actionable error shape (GAP-1 Option A real gate).
-              const body = err.error as { detail?: string; error_code?: string } | undefined;
+              // Surface failed_checks[] to the component as the actionable error shape (PR #291).
+              const body = err.error as {
+                detail?: string;
+                code?: string;                         // locked §4.F field
+                failed_checks?: ExportFailedCheck[];
+              } | undefined;
               const validation: InitiateValidationError = {
                 kind: 'validation',
                 detail: body?.detail ?? 'Product is not ready for export.',
-                error_code: body?.error_code ?? null,
+                errorCode: body?.code ?? null,         // reads .code not .error_code
+                failedChecks: body?.failed_checks ?? [],
               };
               return of(validation);
             }
