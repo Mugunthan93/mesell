@@ -21,7 +21,7 @@
         class="mee-bottom-nav__item"
         [attr.aria-label]="item.label"
       >
-        <i [class]="item.icon" aria-hidden="true"></i>
+        <i [class]="iconClass(item.icon)" aria-hidden="true"></i>
         <span class="mee-bottom-nav__label">{{ item.label }}</span>
       </a>
     }

@@ -12,7 +12,7 @@ import {
   Validators,
 } from '@angular/forms';
 import { Router } from '@angular/router';
-import { MeeCardComponent, MeeBadgeComponent, MeeInputComponent, MeeButtonComponent } from '@mesell/ui-kit';
+import { MeeCardComponent, MeeBadgeComponent, MeeInputComponent, MeeButtonComponent, MeeIconComponent } from '@mesell/ui-kit';
 import type { MeeBadgeSeverity } from '@mesell/ui-kit';
 import { AuthService } from '@mesell/core';
 
@@ -26,6 +26,7 @@ import { AuthService } from '@mesell/core';
     MeeBadgeComponent,
     MeeInputComponent,
     MeeButtonComponent,
+    MeeIconComponent,
   ],
   styles: [`
     :host {
@@ -285,15 +286,15 @@ import { AuthService } from '@mesell/core';
 
           <ul class="plan-features" aria-label="Plan features">
             <li class="plan-feature-item">
-              <i class="pi pi-check" aria-hidden="true"></i>
+              <mee-icon name="check" />
               50 products / month
             </li>
             <li class="plan-feature-item">
-              <i class="pi pi-check" aria-hidden="true"></i>
+              <mee-icon name="check" />
               AI autofill
             </li>
             <li class="plan-feature-item">
-              <i class="pi pi-check" aria-hidden="true"></i>
+              <mee-icon name="check" />
               XLSX export
             </li>
           </ul>
@@ -310,7 +311,7 @@ import { AuthService } from '@mesell/core';
         class="logout-btn"
         (click)="onLogout()"
       >
-        <i class="pi pi-sign-out" aria-hidden="true"></i>
+        <mee-icon name="logout" />
         Log out
       </button>
 

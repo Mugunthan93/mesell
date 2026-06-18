@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, inject, viewChild } from 
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { AuthService } from '@mesell/core';
-import { MeeMenuComponent } from '@mesell/ui-kit';
+import { MeeMenuComponent, MeeIconComponent } from '@mesell/ui-kit';
 import type { MeeMenuItem } from '@mesell/ui-kit';
 
 import { LayoutService } from '../layout.service';
@@ -11,7 +11,7 @@ import { LayoutService } from '../layout.service';
   selector: 'mee-topbar',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [CommonModule, RouterModule, MeeMenuComponent],
+  imports: [CommonModule, RouterModule, MeeMenuComponent, MeeIconComponent],
   template: `
     <header class="mee-topbar" role="banner">
       <button
@@ -20,7 +20,7 @@ import { LayoutService } from '../layout.service';
         (click)="layoutService.onMenuToggle()"
         aria-label="Toggle navigation menu"
       >
-        <i class="pi pi-bars" aria-hidden="true"></i>
+        <mee-icon name="menu" />
       </button>
 
       <a class="mee-topbar__brand" routerLink="/dashboard" aria-label="MeeSell home">
@@ -184,9 +184,9 @@ export class TopbarComponent {
   private readonly userMenu = viewChild.required<MeeMenuComponent>('userMenu');
 
   protected readonly userMenuItems: MeeMenuItem[] = [
-    { label: 'My Profile', icon: 'pi pi-user', routerLink: '/profile' },
+    { label: 'My Profile', icon: 'user', routerLink: '/profile' },
     { separator: true },
-    { label: 'Log out', icon: 'pi pi-sign-out', command: () => this.auth.logout() },
+    { label: 'Log out', icon: 'logout', command: () => this.auth.logout() },
   ];
 
   protected toggleUserMenu(event: Event): void {

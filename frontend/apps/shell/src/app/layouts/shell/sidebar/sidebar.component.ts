@@ -11,11 +11,14 @@ import { CommonModule } from '@angular/common';
 import { NavigationEnd, Router, RouterModule } from '@angular/router';
 import { Subscription, filter } from 'rxjs';
 
+import { meeIconClass } from '@mesell/ui-kit';
+import type { MeeIconName } from '@mesell/ui-kit';
+
 import { LayoutService } from '../layout.service';
 
 interface NavItem {
   label: string;
-  icon: string;
+  icon: MeeIconName;
   route: string;
 }
 
@@ -57,7 +60,7 @@ interface NavGroup {
                 [routerLink]="item.route"
                 routerLinkActive="mee-sidebar__item--active"
               >
-                <i [class]="item.icon" aria-hidden="true"></i>
+                <i [class]="iconClass(item.icon)" aria-hidden="true"></i>
                 <span>{{ item.label }}</span>
               </a>
             }
@@ -167,28 +170,31 @@ export class SidebarComponent implements OnInit, OnDestroy {
   protected readonly navGroups: NavGroup[] = [
     {
       label: 'Main',
-      items: [{ label: 'Home', icon: 'pi pi-home', route: '/dashboard' }],
+      items: [{ label: 'Home', icon: 'home', route: '/dashboard' }],
     },
     {
       label: 'Catalogs',
       items: [
-        { label: 'My Catalogs', icon: 'pi pi-list', route: '/catalogs' },
-        { label: 'New Product', icon: 'pi pi-plus', route: '/catalog/new' },
-        { label: 'Categories', icon: 'pi pi-tag', route: '/categories' },
+        { label: 'My Catalogs', icon: 'list', route: '/catalogs' },
+        { label: 'New Product', icon: 'add', route: '/catalog/new' },
+        { label: 'Categories', icon: 'tag', route: '/categories' },
       ],
     },
     {
       label: 'Tools',
       items: [
-        { label: 'Pricing', icon: 'pi pi-calculator', route: '/pricing' },
-        { label: 'Export', icon: 'pi pi-download', route: '/export' },
+        { label: 'Pricing', icon: 'calculator', route: '/pricing' },
+        { label: 'Export', icon: 'download', route: '/export' },
       ],
     },
     {
       label: 'Account',
-      items: [{ label: 'Profile', icon: 'pi pi-user', route: '/profile' }],
+      items: [{ label: 'Profile', icon: 'user', route: '/profile' }],
     },
   ];
+
+  /** Resolve a nav item's semantic icon name to its PrimeIcons class (FE-2: raw `pi pi-*` stays in the registry). */
+  protected readonly iconClass = (name: MeeIconName): string => meeIconClass(name);
 
   ngOnInit(): void {
     this.navSub = this.router.events
