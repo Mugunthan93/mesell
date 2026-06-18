@@ -43,4 +43,7 @@ export const MEE_ICONS_ALT = {
 
   // Internal ui-kit use
   warning:    'material-icons mi-warning',           // confirm-dialog warning icon
+
+  // Deep-link navigation
+  'external-link': 'material-icons mi-open_in_new',  // My Live Listings sidebar nav
 } satisfies Record<MeeIconName, string>;
