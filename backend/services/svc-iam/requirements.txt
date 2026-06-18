@@ -7,6 +7,8 @@
 #   * NO celery / openpyxl / rembg          (no worker, no image/export pipeline)
 #   * NO gemini / langfuse                   (no AI track)
 #   * NO google-cloud-storage                (no storage)
+#   * google-auth IS present (2026-06-18, google-auth feature) — ID-token
+#     verification ONLY; this is NOT the wider google-cloud / gemini graph.
 # iam IS the only service that ISSUES tokens (pyjwt — sign + verify), sends OTP
 # (httpx → MSG91 adapter), and verifies the Razorpay webhook HMAC (httpx).
 # iam is all-✗ in the call matrix (§0.4) — httpx is used ONLY for the MSG91 /
@@ -26,6 +28,14 @@ redis==5.0.8
 
 # ── Auth (HS256 sign + LOCAL verify — A2 / D7) ───────────────────────────
 pyjwt==2.9.0
+
+# ── Google Sign-In ID-token verification (google-auth feature, 2026-06-18) ──
+# NEW direct dependency: iam now verifies Google ID-tokens via
+# google.oauth2.id_token.verify_oauth2_token (adapters/google.py).  This is the
+# ONLY google library in svc-iam — added explicitly, NOT transitively.  Pinned
+# to the monolith's pin so behaviour is identical.  Brings cachetools / rsa /
+# pyasn1-modules transitively (no other google packages).
+google-auth==2.53.0
 
 # ── HTTP (MSG91 OTP-send adapter + Razorpay webhook verification) ────────
 httpx==0.27.0
