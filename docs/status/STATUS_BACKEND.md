@@ -1,6 +1,43 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-18 (meesell-services-builder) — export validation aggregation ===
+Phase: V1 Feature 9 Export — collect-all pre-enqueue validation
+Session: export-validation-aggregation, branch feat/export-validation-aggregation,
+  worktree /private/tmp/mesell-wt/export-validation off origin/develop@86dfb86 (PR #291)
+Done:
+  - export/exceptions.py: NEW ExportValidationFailedError (code export.validation_failed, 422,
+    msg-id export.validation.failed); carries failed_checks: list[dict[str,str]] of
+    {check_id, message_key}. Added to __all__. Existing 7 exceptions UNTOUCHED — worker pipeline
+    _run_export_pipeline still raises ProductNotReadyForExportError / FrontImageMissingError standalone.
+  - export/service.py initiate_export: validation section rewritten fail-fast → collect-all.
+    Step 1 ownership stays fail-fast 404 (NOT aggregated). Two checks aggregated in order:
+    quality_status (snapshot.validation_summary.status != "ready") + front_image_missing
+    (xlsx_with_images AND no idx==1/ready image). Raises ONE ExportValidationFailedError if any
+    fail. Post-enqueue (insert/Valkey hint/Celery delay/202) untouched. Docstring step list updated.
+  - core/errors.py _meesell_error_handler: additive — conditionally appends failed_checks to the
+    §4.F envelope ONLY when exc carries it (mirrors _pydantic_validation_handler's "errors"). Locked
+    keys (detail/code/validation_message_id/request_id) unchanged; NO error_code key added.
+  - i18n/messages_en.py: +3 keys export.validation.failed / export.check.quality_status /
+    export.check.front_image_missing (Contract-10 3-segment clean).
+  - NEW tests/test_export_validation_aggregation.py: 5 unit tests (pytestmark=pytest.mark.unit).
+    +2 tests in test_core_errors.py (failed_checks additive on 422 envelope + absent on plain
+    MeesellError).
+Tests: 5/5 new aggregation PASS; 8/8 test_core_errors PASS; 104/104 i18n id-regex (Contract 10) PASS.
+  Toolchain = master 3.11 venv vs worktree (no .venv); unset TEST_DATABASE_URL so the autouse
+  schema-provision fixture no-ops (pure-unit, no live Postgres). ruff clean on all 6 touched files.
+In progress: none
+Blockers: none
+Next: api-routes-builder — POST /products/{id}/export-xlsx now surfaces failed_checks[] on 422;
+  FE renders the per-item list.
+Hand-offs:
+  - FE (frontend-coordinator): the export 422 body now carries an additive failed_checks[] array of
+    {check_id, message_key}; render each message_key via i18n as an itemized fix-list. check_id is
+    snake_case (quality_status, front_image_missing). Locked §4.F keys unchanged.
+  - api-routes-builder: no route signature change; ExportValidationFailedError flows through
+    register_error_handlers automatically (it is a MeesellError subclass).
+=========
+
 === UPDATE: 2026-06-18 (meesell-services-builder) — cross-field validation rule engine ===
 Phase: V1 Fast Catalog Form — cross-field compliance dependency rules
 Session: field-dep-rules (HYBRID step 2/BUILD), branch feat/catalog-field-dependency-rules,

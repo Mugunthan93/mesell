@@ -71,6 +71,7 @@ from app.modules.export.exceptions import (
     ComplianceStrategyError,
     ExportEnumValidationError,
     ExportNotFoundError,
+    ExportValidationFailedError,
     FrontImageMissingError,
     ProductNotReadyForExportError,
     RoundTripValidationError,
@@ -156,31 +157,42 @@ async def initiate_export(
     Steps:
 
     1. ``catalog.service.assert_product_ownership`` — 404 if not owned.
-    2. ``catalog.service.get_product_for_export`` — verify
-       ``status='ready'``; else :class:`ProductNotReadyForExportError`.
-    3. If ``format='xlsx_with_images'``: verify
-       ``image.service.list_images`` shows at least 1 ready image with
-       ``idx=1``; else :class:`FrontImageMissingError`.
-    4. Repository insert + write Valkey format hint.
-    5. Enqueue Celery task ``"export.xlsx"`` via
-       ``celery_app.send_task`` (name-based per §16.C Rule 7).
-    6. Return :class:`ExportInitiatedResponse`.
+       This gate is FAIL-FAST and is NOT part of validation aggregation.
+    2. Collect-all validation (no early return per check):
+
+       * ``quality_status`` — ``catalog.service.get_product_for_export``
+         must report ``status='ready'``.
+       * ``front_image_missing`` — when ``format='xlsx_with_images'``,
+         ``image.service.list_images`` must show at least 1 ready image
+         with ``idx=1``.
+
+       If ANY check fails, raise a single
+       :class:`ExportValidationFailedError` carrying the full aggregated
+       ``failed_checks`` list (per export-validation-aggregation,
+       2026-06-18) — the frontend renders it as an itemized list.
+    3. Repository insert + write Valkey format hint.
+    4. Enqueue Celery task ``"export.xlsx"`` via the task's ``.delay()``
+       (name-bound per §16.C Rule 7).
+    5. Return :class:`ExportInitiatedResponse`.
     """
     fmt: Literal["xlsx_only", "xlsx_with_images"] = getattr(
         request, "format", "xlsx_with_images"
     )
 
-    # Step 1 — ownership gate.
+    # Step 1 — ownership gate (fail-fast 404, NOT aggregated).
     await catalog_service.assert_product_ownership(product_id, user_id, db=db)
 
-    # Step 2 — product readiness.
-    snapshot = await catalog_service.get_product_for_export(
-        product_id, user_id, db=db
-    )
-    if snapshot.validation_summary.status != "ready":
-        raise ProductNotReadyForExportError()
+    # Steps 2-3 — collect-all validation (no early return per check).
+    failed_checks: list[dict[str, str]] = []
 
-    # Step 3 — front-image gate (only for xlsx_with_images).
+    # Check: quality_status — product must be 'ready'.
+    snapshot = await catalog_service.get_product_for_export(product_id, user_id, db=db)
+    if snapshot.validation_summary.status != "ready":
+        failed_checks.append(
+            {"check_id": "quality_status", "message_key": "export.check.quality_status"}
+        )
+
+    # Check: front_image_missing — only when exporting with images.
     if fmt == "xlsx_with_images":
         images_payload = await image_service.list_images(
             user_id=user_id, product_id=product_id, db=db
@@ -192,7 +204,15 @@ async def initiate_export(
             for img in image_summaries
         )
         if not has_front_ready:
-            raise FrontImageMissingError()
+            failed_checks.append(
+                {
+                    "check_id": "front_image_missing",
+                    "message_key": "export.check.front_image_missing",
+                }
+            )
+
+    if failed_checks:
+        raise ExportValidationFailedError(failed_checks=failed_checks)
 
     # Step 4 — repository insert + Valkey hint.
     initiated_at = datetime.now(timezone.utc)

@@ -150,6 +150,12 @@ async def _meesell_error_handler(
         validation_message_id=exc.validation_message_id,
         detail=detail,
     )
+    # Additive: surface an aggregated checklist when the exception carries one
+    # (mirrors how _pydantic_validation_handler appends "errors").  The locked
+    # §4.F keys (detail/code/validation_message_id/request_id) are untouched.
+    failed_checks = getattr(exc, "failed_checks", None)
+    if failed_checks is not None:
+        envelope["failed_checks"] = failed_checks
     return JSONResponse(status_code=exc.status_code, content=envelope)
 
 
