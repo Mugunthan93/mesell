@@ -1,0 +1,226 @@
+<!-- @dsCard group="App Screens" name="Dashboard" subtitle="Catalog list · Stats · Quick actions" -->
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Plus Jakarta Sans',system-ui,sans-serif;background:#f0f5f9;height:100vh;display:flex}
+
+/* Shell */
+.sidebar{width:260px;background:#111c2d;display:flex;flex-direction:column;padding:0;flex-shrink:0;height:100vh}
+.sidebar-logo{padding:24px 20px 20px;border-bottom:1px solid rgba(255,255,255,.06)}
+.logo-mark{display:flex;align-items:center;gap:10px}
+.logo-icon{width:32px;height:32px;background:#F26B23;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff}
+.logo-text{font-size:18px;font-weight:700;color:#fff;letter-spacing:-.3px}
+.sidebar-nav{flex:1;padding:16px 12px;overflow-y:auto}
+.nav-group{margin-bottom:24px}
+.nav-group-label{font-size:10px;font-weight:600;color:#5a6a85;letter-spacing:.1em;text-transform:uppercase;padding:0 8px;margin-bottom:8px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;color:#9fafca;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px;transition:all .15s}
+.nav-item.active{background:rgba(242,107,35,.15);color:#F26B23}
+.nav-item:hover:not(.active){background:rgba(255,255,255,.05);color:#fff}
+.nav-icon{width:18px;height:18px;opacity:.8;flex-shrink:0}
+.sidebar-footer{padding:16px 12px;border-top:1px solid rgba(255,255,255,.06)}
+.user-row{display:flex;align-items:center;gap:10px}
+.avatar{width:32px;height:32px;background:#F26B23;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0}
+.user-info .name{font-size:13px;font-weight:600;color:#fff}
+.user-info .plan{font-size:11px;color:#5a6a85;margin-top:1px}
+
+/* Main */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:#fff;border-bottom:1px solid #e5eaef;padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.page-title{font-size:16px;font-weight:700;color:#2a3547}
+.topbar-actions{display:flex;align-items:center;gap:12px}
+.btn-primary{background:#F26B23;color:#fff;border:none;padding:8px 18px;border-radius:999px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;font-family:inherit}
+.btn-ghost{background:transparent;border:1px solid #e5eaef;color:#5a6a85;padding:8px 14px;border-radius:999px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit}
+.content{flex:1;overflow-y:auto;padding:28px 32px}
+
+/* Stats */
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:28px}
+.stat-card{background:#fff;border-radius:16px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,.08);display:flex;flex-direction:column;gap:4px}
+.stat-label{font-size:12px;font-weight:500;color:#5a6a85}
+.stat-value{font-size:28px;font-weight:800;color:#2a3547;line-height:1}
+.stat-sub{font-size:12px;color:#16A34A;font-weight:500;margin-top:4px}
+.stat-sub.warn{color:#D97706}
+.stat-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;margin-bottom:8px;font-size:16px}
+
+/* Table section */
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.section-title{font-size:14px;font-weight:700;color:#2a3547}
+.section-link{font-size:13px;color:#F26B23;font-weight:500;cursor:pointer}
+.table-card{background:#fff;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.08);overflow:hidden}
+table{width:100%;border-collapse:collapse}
+th{font-size:11px;font-weight:600;color:#5a6a85;text-transform:uppercase;letter-spacing:.06em;padding:12px 20px;text-align:left;background:#f8fafc;border-bottom:1px solid #e5eaef}
+td{font-size:13px;color:#2a3547;padding:14px 20px;border-bottom:1px solid #f0f5f9;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#fafbfc}
+.catalog-name{font-weight:600;color:#2a3547;margin-bottom:2px}
+.catalog-cat{font-size:12px;color:#5a6a85}
+.badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600}
+.badge-green{background:rgba(22,163,74,.1);color:#16A34A}
+.badge-amber{background:rgba(217,119,6,.1);color:#D97706}
+.badge-blue{background:rgba(37,99,235,.1);color:#2563EB}
+.badge-red{background:rgba(220,38,38,.1);color:#DC2626}
+.score{font-weight:700}
+.score-green{color:#16A34A}
+.score-amber{color:#D97706}
+.score-red{color:#DC2626}
+.row-actions{display:flex;gap:6px}
+.icon-btn{width:30px;height:30px;border-radius:8px;border:1px solid #e5eaef;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;color:#5a6a85}
+.icon-btn:hover{border-color:#F26B23;color:#F26B23}
+</style></head><body>
+
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-mark">
+      <div class="logo-icon">M</div>
+      <span class="logo-text">mesell</span>
+    </div>
+  </div>
+  <div class="sidebar-nav">
+    <div class="nav-group">
+      <div class="nav-group-label">Main</div>
+      <div class="nav-item active">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Dashboard
+      </div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label">Catalogs</div>
+      <div class="nav-item">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        My Catalogs
+      </div>
+      <div class="nav-item">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+        New Catalog
+      </div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label">Categories</div>
+      <div class="nav-item">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
+        Browse
+      </div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label">Account</div>
+      <div class="nav-item">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+        Profile
+      </div>
+      <div class="nav-item">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+        Subscription
+      </div>
+    </div>
+  </div>
+  <div class="sidebar-footer">
+    <div class="user-row">
+      <div class="avatar">M</div>
+      <div class="user-info">
+        <div class="name">Mugunthan S.</div>
+        <div class="plan">Pro Plan</div>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<div class="main">
+  <div class="topbar">
+    <div class="page-title">Dashboard</div>
+    <div class="topbar-actions">
+      <button class="btn-ghost">⬇ Export All</button>
+      <button class="btn-primary">+ New Catalog</button>
+    </div>
+  </div>
+  <div class="content">
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-icon" style="background:rgba(242,107,35,.1)">📦</div>
+        <div class="stat-label">Total SKUs</div>
+        <div class="stat-value">245</div>
+        <div class="stat-sub">↑ 18 this week</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:rgba(37,99,235,.1)">📋</div>
+        <div class="stat-label">Active Catalogs</div>
+        <div class="stat-value">12</div>
+        <div class="stat-sub">3 ready to export</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:rgba(22,163,74,.1)">⭐</div>
+        <div class="stat-label">Avg Quality Score</div>
+        <div class="stat-value" style="color:#16A34A">87</div>
+        <div class="stat-sub">↑ 4 pts from last month</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:rgba(217,119,6,.1)">📤</div>
+        <div class="stat-label">Exports This Month</div>
+        <div class="stat-value">8</div>
+        <div class="stat-sub warn">2 pending review</div>
+      </div>
+    </div>
+
+    <div class="section-header">
+      <div class="section-title">Recent Catalogs</div>
+      <div class="section-link">View all →</div>
+    </div>
+    <div class="table-card">
+      <table>
+        <thead>
+          <tr>
+            <th>Catalog</th>
+            <th>Category</th>
+            <th>SKUs</th>
+            <th>Quality</th>
+            <th>Status</th>
+            <th>Updated</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><div class="catalog-name">Summer Kurti Collection</div><div class="catalog-cat">Cotton · 24 colors</div></td>
+            <td>Women's Ethnic Wear</td><td>24</td>
+            <td class="score score-green">92/100</td>
+            <td><span class="badge badge-green">Ready</span></td>
+            <td style="color:#5a6a85;font-size:12px">2h ago</td>
+            <td><div class="row-actions"><div class="icon-btn">👁</div><div class="icon-btn">✏️</div><div class="icon-btn">⬇</div></div></td>
+          </tr>
+          <tr>
+            <td><div class="catalog-name">Men's Cotton T-Shirts</div><div class="catalog-cat">Round neck · 8 sizes</div></td>
+            <td>Men's T-Shirts</td><td>16</td>
+            <td class="score score-amber">74/100</td>
+            <td><span class="badge badge-amber">Review</span></td>
+            <td style="color:#5a6a85;font-size:12px">Yesterday</td>
+            <td><div class="row-actions"><div class="icon-btn">👁</div><div class="icon-btn">✏️</div><div class="icon-btn">⬇</div></div></td>
+          </tr>
+          <tr>
+            <td><div class="catalog-name">Kids Frock Set</div><div class="catalog-cat">Ages 2–8 · Party wear</div></td>
+            <td>Kids' Dresses</td><td>36</td>
+            <td class="score score-green">88/100</td>
+            <td><span class="badge badge-blue">Draft</span></td>
+            <td style="color:#5a6a85;font-size:12px">2 days ago</td>
+            <td><div class="row-actions"><div class="icon-btn">👁</div><div class="icon-btn">✏️</div><div class="icon-btn">⬇</div></div></td>
+          </tr>
+          <tr>
+            <td><div class="catalog-name">Lehenga Choli Set</div><div class="catalog-cat">Silk · Bridal</div></td>
+            <td>Women's Lehenga</td><td>12</td>
+            <td class="score score-red">51/100</td>
+            <td><span class="badge badge-red">Incomplete</span></td>
+            <td style="color:#5a6a85;font-size:12px">5 days ago</td>
+            <td><div class="row-actions"><div class="icon-btn">👁</div><div class="icon-btn">✏️</div><div class="icon-btn">⬇</div></div></td>
+          </tr>
+          <tr>
+            <td><div class="catalog-name">Palazzo Set</div><div class="catalog-cat">Rayon · Free size</div></td>
+            <td>Women's Bottoms</td><td>8</td>
+            <td class="score score-green">95/100</td>
+            <td><span class="badge badge-green">Ready</span></td>
+            <td style="color:#5a6a85;font-size:12px">1 week ago</td>
+            <td><div class="row-actions"><div class="icon-btn">👁</div><div class="icon-btn">✏️</div><div class="icon-btn">⬇</div></div></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</body></html>
