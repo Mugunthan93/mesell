@@ -277,6 +277,87 @@ VALIDATION_MESSAGES: dict[str, str] = {
     "validation.generic.less_than": (
         "This value is above the allowed maximum."
     ),
+    # ── Cross-field dependency rules (field_dependency_rules.json) ──────────
+    # 20 compliance rules; each id is 2 snake_case segments so
+    # ``validation.cross_field.<id>`` is a valid 3-segment §5A.H key.
+    "validation.cross_field.fssai_grocery": (
+        "Grocery products need your FSSAI license number. "
+        "Add it before marking this product ready."
+    ),
+    "validation.cross_field.fssai_petfood": (
+        "Pet food products need your FSSAI license number. "
+        "Add it before marking this product ready."
+    ),
+    "validation.cross_field.fssai_foodtype": (
+        "Food and edible products need your FSSAI license number. "
+        "Add it before marking this product ready."
+    ),
+    "validation.cross_field.ayush_beauty": (
+        "Ayurvedic and herbal products need an AYUSH license/registration "
+        "number. Add it before marking this product ready."
+    ),
+    "validation.cross_field.ayush_expiry": (
+        "Add the expiry date for the license/registration number you entered."
+    ),
+    "validation.cross_field.cosmetic_license": (
+        "Cosmetic and personal-care products need a license/registration "
+        "number. Add it before marking this product ready."
+    ),
+    "validation.cross_field.license_type_pair": (
+        "Tell us the type of this license/registration so buyers see the "
+        "right label."
+    ),
+    "validation.cross_field.bis_electronics": (
+        "This electronics item usually needs a BIS/ISI certification number. "
+        "Add it to reduce listing rejections."
+    ),
+    "validation.cross_field.bis_toys": (
+        "Toys usually need a BIS/ISI certification number. "
+        "Add it to reduce listing rejections."
+    ),
+    "validation.cross_field.bis_appliances": (
+        "Most appliances need a BIS/ISI certification number. "
+        "Add it to reduce listing rejections."
+    ),
+    "validation.cross_field.warranty_electronics": (
+        "Electronics and appliances need a warranty period. "
+        "Add it before marking this product ready."
+    ),
+    "validation.cross_field.warranty_type_pair": (
+        "Tell buyers the warranty type (manufacturer, seller, etc.) for the "
+        "warranty you entered."
+    ),
+    "validation.cross_field.size_apparel": (
+        "Apparel and footwear need a size. "
+        "Add it before marking this product ready."
+    ),
+    "validation.cross_field.fabric_apparel": (
+        "This apparel item needs a fabric composition. "
+        "Add it before marking this product ready."
+    ),
+    "validation.cross_field.country_origin": (
+        "Every product needs a Country of Origin. "
+        "Add it before marking this product ready."
+    ),
+    "validation.cross_field.hsn_all": (
+        "Every product needs an HSN code for GST. "
+        "Add it before marking this product ready."
+    ),
+    "validation.cross_field.legalmetro_weight": (
+        "Packaged goods that declare a net weight must also declare Country "
+        "of Origin. Add it before marking this product ready."
+    ),
+    "validation.cross_field.agegroup_kids": (
+        "Kids products need an age group. "
+        "Add it before marking this product ready."
+    ),
+    "validation.cross_field.nonreturn_reason": (
+        "Tell buyers why this product can't be returned."
+    ),
+    "validation.cross_field.battery_type_req": (
+        "You said this product needs batteries — add the battery type so "
+        "buyers know what to use."
+    ),
 }
 
 

@@ -67,8 +67,10 @@ DECISION FLAGS
 from __future__ import annotations
 
 import hashlib
+import json as _json
 import logging
 from datetime import datetime, timezone
+from pathlib import Path as _Path
 from typing import Any
 from uuid import UUID
 
@@ -117,6 +119,133 @@ _DEFAULT_AUTOFILL_CONFIDENCE = 0.9
 # service-level re-checks (the Pydantic layer already enforces).
 _DESCRIPTION_MIN = 1
 _DESCRIPTION_MAX = 2000
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cross-field dependency rule engine (field_dependency_rules.json)
+#
+# Prevents Meesho supplier-portal rejections by enforcing compliance
+# dependencies (FSSAI / AYUSH / BIS / warranty / size / fabric / country of
+# origin / HSN / kids age group / legal metrology) BEFORE a product is marked
+# ``status="ready"``.  Loaded + indexed once at import time (fail-fast on a
+# malformed file).  Hard violations join the SAME ``violations`` list the
+# per-field validator already builds — no new exception type.  ``enforce_required``
+# is True ONLY on the ``status="ready"`` transition; autosave never blocks.
+# ─────────────────────────────────────────────────────────────────────────────
+_RULES_FILE = _Path(__file__).parent.parent.parent / "data" / "field_dependency_rules.json"
+
+
+def _load_dependency_rules() -> tuple[list[dict], dict[str, list[dict]]]:
+    """Load and index dependency rules at import time. Fail-fast on malformed JSON."""
+    data = _json.loads(_RULES_FILE.read_text())
+    rules = data["rules"]
+    # Validate all rule ids are unique and dot-free (so
+    # ``validation.cross_field.{id}`` stays a valid 3-segment i18n key).
+    ids = [r["id"] for r in rules]
+    assert len(ids) == len(set(ids)), "Duplicate rule ids in field_dependency_rules.json"
+    assert all("." not in rid for rid in ids), "Rule ids must not contain dots"
+    # Index by super_id; "*" rules apply to every category.
+    by_super: dict[str, list[dict]] = {}
+    for rule in rules:
+        cm = rule["category_match"]
+        if cm == "*":
+            by_super.setdefault("*", []).append(rule)
+        else:
+            for sid in cm.get("super_id", []):
+                by_super.setdefault(str(sid), []).append(rule)
+    return rules, by_super
+
+
+_ALL_DEPENDENCY_RULES, _RULES_BY_SUPER = _load_dependency_rules()
+
+
+def _applicable_rules(super_id: str | None) -> list[dict]:
+    """Universal ("*") rules + the rules pinned to ``super_id`` (if any)."""
+    universal = _RULES_BY_SUPER.get("*", [])
+    specific = _RULES_BY_SUPER.get(str(super_id), []) if super_id else []
+    return universal + specific
+
+
+def _predicate_met(rule: dict, merged_fields: dict) -> bool:
+    """Evaluate the if_field/if_operator/if_value predicate.
+
+    Always True for ``category_required`` rules (they fire unconditionally
+    when the category matches).  For ``value_conditional`` rules, dispatches
+    on ``if_operator`` (eq / in / contains / any).  Returns False (skips the
+    rule) for a malformed value_conditional with no ``if_field`` or an
+    unknown operator.
+    """
+    if rule["type"] == "category_required":
+        return True
+    if_field = rule.get("if_field")
+    if not if_field:
+        return False  # malformed value_conditional — skip
+    value = merged_fields.get(if_field)
+    op = rule.get("if_operator")
+    if_value = rule.get("if_value")
+    if op == "eq":
+        return value == if_value
+    if op == "in":
+        return isinstance(if_value, list) and value in if_value
+    if op == "contains":
+        if isinstance(value, list):
+            return if_value in value
+        return isinstance(value, str) and str(if_value).lower() in value.lower()
+    if op == "any":
+        if value is None:
+            return False
+        if isinstance(value, str):
+            return value.strip() != ""
+        return bool(value)
+    return False
+
+
+def _evaluate_dependency_rules(
+    super_id: str | None,
+    schema_index: dict[str, dict],   # canonical_name -> field spec
+    merged_fields: dict,
+    enforce_required: bool,
+) -> tuple[list[tuple[str, str]], list[dict]]:
+    """Run the dependency rules for ``super_id`` against ``merged_fields``.
+
+    Returns ``(hard_violations, soft_advisories)``:
+
+    * ``hard_violations`` — list of ``(validation_message_id, suffix)``
+      tuples in the SAME shape the per-field validator produces, so they
+      append straight into the existing ``violations`` list.
+    * ``soft_advisories`` — list of rule dicts (severity="soft" hits, plus
+      hard hits that did not block because ``enforce_required`` was False).
+      For logging / the FE real-time UX; never raises.
+
+    A rule is INERT (skipped) when its ``target_field`` is not present in
+    this category's schema — the rule library is global but each category
+    only carries a subset of fields.  ``enforce_required`` is True only on
+    the ``status="ready"`` transition; on autosave it is False so a hard
+    rule degrades to an advisory and the request still passes.
+    """
+    hard: list[tuple[str, str]] = []
+    soft: list[dict] = []
+    for rule in _applicable_rules(super_id):
+        target = rule["target_field"]
+        # Skip if target field doesn't exist in this category's schema.
+        if target not in schema_index:
+            continue
+        if not _predicate_met(rule, merged_fields):
+            continue
+        action = rule["action"]
+        severity = rule.get("severity", "soft")
+        if action == "required":
+            val = merged_fields.get(target)
+            is_empty = val is None or (isinstance(val, str) and val.strip() == "")
+            if is_empty:
+                msg_id = f"validation.cross_field.{rule['id']}"
+                suffix = f"{target}: required by rule {rule['id']}"
+                if severity == "hard" and enforce_required:
+                    hard.append((msg_id, suffix))
+                else:
+                    soft.append(rule)
+        # hidden/unrequired actions are FE-only hints, never backend blocks
+    return hard, soft
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -516,11 +645,18 @@ async def patch_product(
     # ``_resolve_allowed_enums`` default every dropdown to "static" + []
     # and falsely reject valid category-enum values (e.g. "3.5").
     schema = await category_service.fetch_schema_dto(product_row.category_id, db=db)
+    schema_index = _index_schema_fields(schema)
+
+    # Cross-field dependency rules select on the category's ``super_id``.
+    # ``enforce_required`` is True ONLY on the ``status="ready"`` transition —
+    # autosave (no status, or status="draft") never blocks on a cross-field
+    # rule, so a half-filled draft always saves.
+    super_id = await category_service.get_super_id(product_row.category_id, db=db)
+    enforce_required = request.status == "ready"
 
     # Step 3 — per-field validation.
     patch_fields = request.fields or {}
     if patch_fields:
-        schema_index = _index_schema_fields(schema)
         # Resolve allowed enums up front so the dropdown checks have data.
         allowed_enums = await _resolve_allowed_enums(
             schema, product_row.category_id, db
@@ -541,6 +677,22 @@ async def patch_product(
             )
             if violation is not None:
                 violations.append(violation)
+        # Cross-field dependency rules evaluated against the MERGED fields
+        # (current at-rest JSONB + this patch).  Hard violations only land
+        # here when ``enforce_required`` is True (status="ready"); on autosave
+        # they are returned as soft advisories and dropped, so autosave never
+        # 422s.  These append into the SAME ``violations`` list — no new
+        # exception type.
+        merged_for_rules = {**(product_row.fields_jsonb or {}), **patch_fields}
+        hard_xfield, soft_xfield = _evaluate_dependency_rules(
+            super_id, schema_index, merged_for_rules, enforce_required
+        )
+        violations.extend(hard_xfield)
+        if soft_xfield:
+            logger.info(
+                "catalog.patch_product cross-field advisories product=%s super=%s rules=%s",
+                product_id, super_id, [r["id"] for r in soft_xfield],
+            )
         if violations:
             first_id, _ = violations[0]
             details = [suffix for _id, suffix in violations]
@@ -561,18 +713,36 @@ async def patch_product(
     if target_status == "ready":
         merged_fields = dict(product_row.fields_jsonb or {})
         completeness = _compute_completeness(merged_fields, schema)
-        # Any compulsory missing → 422.
-        if completeness.compulsory_filled < completeness.compulsory_total:
+        # Cross-field hard rules are re-evaluated against the FINAL merged
+        # fields (covers the case where the PATCH carried no ``fields`` — the
+        # per-field block above did not run — and catches dependencies that
+        # only resolve once every field is merged).  ``enforce_required`` is
+        # True here by construction (status="ready").
+        hard_xfield, _soft_xfield = _evaluate_dependency_rules(
+            super_id, schema_index, merged_fields, enforce_required=True
+        )
+        missing_compulsory = completeness.compulsory_total - completeness.compulsory_filled
+        # Any compulsory missing OR any cross-field hard violation → 422.
+        if missing_compulsory > 0 or hard_xfield:
+            details = [suffix for _id, suffix in hard_xfield]
+            if missing_compulsory > 0:
+                details.insert(0, f"missing_compulsory: {missing_compulsory}")
+            # Surface the most specific cross-field id when one exists; else
+            # the generic completeness id (preserves the prior contract for
+            # the plain "compulsory still empty" case).
+            first_id = (
+                hard_xfield[0][0]
+                if hard_xfield
+                else "validation.completeness.missing_compulsory"
+            )
             raise ValidationFailedError(
-                validation_message_id="validation.completeness.missing_compulsory",
+                validation_message_id=first_id,
                 detail=(
-                    f"{completeness.compulsory_total - completeness.compulsory_filled} "
-                    "required field(s) still empty."
+                    f"{missing_compulsory} required field(s) still empty."
+                    if missing_compulsory > 0
+                    else f"Compliance check failed: {details[0]}"
                 ),
-                details=[
-                    f"missing_compulsory: "
-                    f"{completeness.compulsory_total - completeness.compulsory_filled}"
-                ],
+                details=details,
             )
         product_row = await catalog_repo.update_status(
             db, user_id, product_id, "ready"

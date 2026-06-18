@@ -1,6 +1,52 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-18 (meesell-services-builder) — cross-field validation rule engine ===
+Phase: V1 Fast Catalog Form — cross-field compliance dependency rules
+Session: field-dep-rules (HYBRID step 2/BUILD), branch feat/catalog-field-dependency-rules,
+  worktree /private/tmp/mesell-wt/field-dep-rules off origin/develop@fd4331d
+Done:
+  - NEW backend/app/data/field_dependency_rules.json: 20 hand-authored rules
+    (FSSAI/AYUSH/cosmetic/BIS/warranty/size/fabric/country-of-origin/HSN/kids-age-group/
+    legal-metrology/battery).
+  - APPAREL super_ids RESOLVED (not guessed): from backend/app/data/meesho_category_tree.json
+    (seed source for categories.super_id) — apparel/footwear/kids-clothing supers =
+    10 Men Fashion, 11 Women Fashion, 29 Women, 13 Kids & Toys, 25 Kids. Footwear has no
+    distinct super; leaves live inside 10/11/13. size_apparel + fabric_apparel filled with
+    [10,11,29,13,25]. Recorded in _meta.
+  - category/repository.py: +get_super_id_uncached(db, category_id) -> str|None (indexed
+    SELECT). category/service.py: +get_super_id() cross-module surface + dependency-rule
+    loader/projection helpers (self-contained; category does NOT import catalog per §16).
+  - category/service.fetch_schema_dto: appends dependency_rules[] for in-schema target rules
+    (SchemaResponse extra="allow" → no model change). description/category_match/error_message
+    kept OUT of FE projection.
+  - catalog/service.py: rule engine (_load_dependency_rules import-time fail-fast +
+    _applicable_rules + _predicate_met[eq/in/contains/any] + _evaluate_dependency_rules) wired
+    into patch_product. Hard cross-field violations append into the SAME violations list (zero
+    new exception type), enforced ONLY on status=ready (autosave never 422s). Ready completeness
+    gate re-runs against final merged fields + merges hard cross-field ids.
+  - i18n/messages_en.py: +20 validation.cross_field.<id> keys (3-segment, Contract-10 clean).
+  - NEW tests/test_catalog_dependency_rules.py: 28 tests (12 predicate-operator unit + engine
+    semantics + id/i18n contracts + 5 integration: ready+Grocery+missing-fssai→422,
+    autosave-never-422, ready-all-filled→200, /schema includes/omits rules).
+Tests: 28/28 new PASS. Regression: 190 PASS (messages_en regex, Contract-10 scanner 90 keys,
+  section2 i18n contract, per_field_shape, schema_envelope, resolver_fallback);
+  test_schema_dto_mapper 58 PASS (dependency_rules non-breaking). ruff clean (5 files).
+  import-smoke OK. DB-module suites not runnable here (no Postgres:5433/Valkey tunnel =
+  infra, not regression); verified by inspection that the Eye-Serum fixture schema carries
+  NO cross-field target field → all rules INERT → existing status=ready integration UNAFFECTED.
+In progress: none
+Blockers: none
+Next: backend-coordinator merge-gate review of PR.
+Hand-offs:
+  - api-routes-builder: no endpoint/schema change. status=ready PATCH now enforces compliance
+    hard rules (422 validation.cross_field.<id>); autosave unchanged. /categories/{id}/schema
+    grows dependency_rules[] (extra="allow").
+  - frontend: drive real-time compliance UX off schema.dependency_rules[] (resolve via
+    message_id; severity soft=advisory, hard=blocks Mark-Ready CTA).
+  - founder: review field_dependency_rules.json _meta.reviewed_by ("founder pending").
+=========
+
 === UPDATE: 2026-06-17 (meesell-services-builder) — catalog enum 422 false-reject + i18n generic fallback ===
 Phase: V1 catalog-form bug-fix (PATCH/autofill 422 on valid category-enum value)
 Session: catalog-422-fix (HYBRID step 2/BUILD), branch fix/catalog-enum-422-i18n,
