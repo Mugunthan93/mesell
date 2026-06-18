@@ -26,4 +26,13 @@ export const environment: Environment = {
    * /api/v1/* to http://localhost:8000. In production the Ingress does the same.
    */
   apiBase: '',
+  /**
+   * DEV Google OAuth Web client id. Authorized JS origin = the shell dev origin
+   * (http://localhost:4200 — the user interacts with the shell, never the
+   * mfe-auth remote at :4206). Provisioned in GCP by infra (see handoff memo).
+   * mesell-prod GIS Web client — same id authorizes localhost:4200, mesell.xyz,
+   * and www.mesell.xyz. PUBLIC value (embedded in page) — not a secret.
+   * Backend pins the SAME id for ID-token `aud` verification (FE/BE lockstep).
+   */
+  googleOauthClientId: '378368872039-q0kkbbih1fj50ea25c0eefvb8679sid9.apps.googleusercontent.com',
 };

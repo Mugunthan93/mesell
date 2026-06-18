@@ -4,7 +4,17 @@ import { provideRouter, Router } from '@angular/router';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideHttpClient, withFetch } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
+import { GoogleIdentityService } from '@mesell/core';
 import { LoginComponent } from './login.component';
+
+/** Stub GIS so tests never inject the real script / hit the network. */
+class GisStub {
+  load = vi.fn(() => Promise.resolve());
+  initialize = vi.fn();
+  renderButton = vi.fn();
+  cancel = vi.fn();
+  isReady = vi.fn(() => true);
+}
 
 describe('LoginComponent', () => {
   let fixture: ComponentFixture<LoginComponent>;
@@ -19,9 +29,12 @@ describe('LoginComponent', () => {
         provideRouter([
           { path: 'otp-verify', children: [] },
           { path: 'login', children: [] },
+          { path: 'dashboard', children: [] },
+          { path: 'onboarding', children: [] },
         ]),
         provideHttpClient(withFetch()),
         provideHttpClientTesting(),
+        { provide: GoogleIdentityService, useClass: GisStub },
       ],
     }).compileComponents();
     fixture  = TestBed.createComponent(LoginComponent);
@@ -152,5 +165,81 @@ describe('LoginComponent', () => {
 
     // No error after success
     expect(comp.errorMessage()).toBeNull();
+  });
+
+  // ── Google sign-in path ─────────────────────────────────────────────────────
+
+  it('wires the GIS button on init: load → initialize → renderButton', () => {
+    const gis = TestBed.inject(GoogleIdentityService) as unknown as GisStub;
+    // ngAfterViewInit ran during the initial detectChanges in beforeEach.
+    expect(gis.load).toHaveBeenCalled();
+  });
+
+  it('onGoogleCredential happy-path: googleVerify → me → navigate to /dashboard', async () => {
+    const navigateSpy = vi.spyOn(router, 'navigate');
+
+    comp.onGoogleCredential('google-id-token');
+    expect(comp.googleLoading()).toBe(true);
+
+    const verifyReq = httpMock.expectOne('/api/v1/auth/google/verify');
+    expect(verifyReq.request.method).toBe('POST');
+    expect(verifyReq.request.body).toEqual({ credential: 'google-id-token' });
+    expect(verifyReq.request.withCredentials).toBe(true);
+    verifyReq.flush({ access_token: 'g-tok', expires_in: 3600, token_type: 'bearer' });
+
+    const meReq = httpMock.expectOne('/api/v1/auth/me');
+    meReq.flush({
+      user_id: 'g-user', phone: null, plan: 'free',
+      created_at: '2026-06-11T00:00:00Z', last_login_at: null,
+      onboarding_complete: true,
+    });
+
+    expect(comp.googleLoading()).toBe(false);
+    expect(navigateSpy).toHaveBeenCalledWith(['/dashboard']);
+  });
+
+  it('onGoogleCredential new-user: onboarding_complete:false → navigate to /onboarding', () => {
+    const navigateSpy = vi.spyOn(router, 'navigate');
+
+    comp.onGoogleCredential('cred');
+    httpMock.expectOne('/api/v1/auth/google/verify')
+      .flush({ access_token: 't', expires_in: 3600, token_type: 'bearer' });
+    httpMock.expectOne('/api/v1/auth/me').flush({
+      user_id: 'new', phone: null, plan: 'free',
+      created_at: '2026-06-11T00:00:00Z', last_login_at: null,
+      onboarding_complete: false,
+    });
+
+    expect(navigateSpy).toHaveBeenCalledWith(['/onboarding']);
+  });
+
+  it('onGoogleCredential 401 → "Google sign-in failed" banner, googleLoading reset', () => {
+    comp.onGoogleCredential('bad-cred');
+
+    const req = httpMock.expectOne('/api/v1/auth/google/verify');
+    req.flush({ detail: 'aud mismatch' }, { status: 401, statusText: 'Unauthorized' });
+
+    expect(comp.googleLoading()).toBe(false);
+    expect(comp.errorMessage()).toContain('Google sign-in failed');
+  });
+
+  it('onGoogleCredential 429 → rate-limit banner, googleLoading reset', () => {
+    comp.onGoogleCredential('cred');
+
+    const req = httpMock.expectOne('/api/v1/auth/google/verify');
+    req.flush({ detail: 'rl' }, { status: 429, statusText: 'Too Many Requests' });
+
+    expect(comp.googleLoading()).toBe(false);
+    expect(comp.errorMessage()).toContain('Too many attempts');
+  });
+
+  it('onGoogleCredential offline (status 0) → offline banner', () => {
+    comp.onGoogleCredential('cred');
+
+    const req = httpMock.expectOne('/api/v1/auth/google/verify');
+    req.error(new ProgressEvent('error'), { status: 0, statusText: 'Unknown Error' });
+
+    expect(comp.googleLoading()).toBe(false);
+    expect(comp.errorMessage()).toContain('offline');
   });
 });

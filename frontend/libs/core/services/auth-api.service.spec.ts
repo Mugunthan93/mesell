@@ -94,6 +94,35 @@ describe('AuthApiService.verifyOtp()', () => {
   });
 });
 
+// ── googleVerify ────────────────────────────────────────────────────────────────
+
+describe('AuthApiService.googleVerify()', () => {
+  it('POSTs to /api/v1/auth/google/verify with the credential body', () => {
+    const { service, controller } = setup();
+    const result: VerifyOtpResponse[] = [];
+
+    service.googleVerify('google-id-token-jwt').subscribe((r) => result.push(r));
+
+    const req = controller.expectOne('/api/v1/auth/google/verify');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ credential: 'google-id-token-jwt' });
+    req.flush({ access_token: 'g-tok', expires_in: 900, token_type: 'bearer' });
+
+    expect(result[0].access_token).toBe('g-tok');
+    expect(result[0].expires_in).toBe(900);
+  });
+
+  it('uses withCredentials: true (refresh cookie is set by backend, symmetric with verifyOtp)', () => {
+    const { service, controller } = setup();
+
+    service.googleVerify('cred').subscribe();
+
+    const req = controller.expectOne('/api/v1/auth/google/verify');
+    expect(req.request.withCredentials).toBe(true);
+    req.flush({ access_token: 't', expires_in: 900, token_type: 'bearer' });
+  });
+});
+
 // ── refresh ───────────────────────────────────────────────────────────────────
 
 describe('AuthApiService.refresh()', () => {
