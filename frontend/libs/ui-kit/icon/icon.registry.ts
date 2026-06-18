@@ -50,6 +50,9 @@ export const MEE_ICONS = {
   'file-excel':  'pi pi-file-excel',     // export "ready" XLSX file row
   'times-circle': 'pi pi-times-circle',  // export "failed" banner error mark
   'file-export': 'pi pi-file-export',    // export "idle" empty-state icon
+
+  // data-table
+  'ellipsis-v': 'pi pi-ellipsis-v',     // per-row kebab actions trigger
 } as const;
 
 export type MeeIconName = keyof typeof MEE_ICONS;

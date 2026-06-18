@@ -61,4 +61,7 @@ export const MEE_ICONS_ALT = {
   'file-excel':  'material-icons mi-description',     // export "ready" XLSX file row
   'times-circle': 'material-icons mi-cancel',        // export "failed" error mark
   'file-export': 'material-icons mi-file_download',   // export "idle" empty-state icon
+
+  // data-table
+  'ellipsis-v': 'material-icons mi-more_vert',       // per-row kebab actions trigger
 } satisfies Record<MeeIconName, string>;

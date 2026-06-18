@@ -24,6 +24,7 @@ export { MeeDrawerComponent }          from './drawer/drawer.component';
 export { MeeMenuComponent }            from './menu/menu.component';
 export { MeeMultiselectComponent }     from './multiselect/multiselect.component';
 export type { MeeShowErrorOn }         from './multiselect/multiselect.component';
+export { MeeDataTableComponent }       from './data-table/data-table.component';
 
 // Root bootstrap (PrimeNG providers + theme — sealed behind @mee/ui)
 export { provideMeeUi }                from './providers';
@@ -34,6 +35,16 @@ export type { MeeMenuItem }                                              from '.
 export type { MeeButtonVariant, MeeButtonSize }                         from './button/button.types';
 export type { MeeSelectOption }                                          from './select/select.types';
 export type { MeeColumn, MeeTablePageEvent, MeeTableSortEvent }         from './table/table.types';
+export type {
+  MeeDataTableColumn,
+  MeeDataTableTextColumn,
+  MeeDataTableStatusColumn,
+  MeeDataTableActionsColumn,
+  MeeDataTableBulkAction,
+  MeeDataTablePageEvent,
+  MeeDataTableSortEvent,
+  MeeDataTableBulkActionEvent,
+}                                                                        from './data-table/data-table.types';
 export type { MeeStep }                                                  from './steps/steps.types';
 export type { MeeBadgeSeverity }                                         from './badge/badge.types';
 export type { MeeSkeletonVariant }                                       from './skeleton/skeleton.types';
