@@ -1,5 +1,65 @@
 # STATUS — FRONTEND
 
+=== UPDATE: 2026-06-19 00:30 ===
+Phase: mfe-export — Tailwind-to-CSS-token migration + mobile responsive layout
+Done:
+  - export.component.ts: removed ALL Tailwind utility classes and inline style="" attributes from template
+  - Added 12 semantic CSS classes to styles: [...] block:
+      .export-page: max-width:900px, flex-col, gap+padding via tokens; padding: var(--mee-space-4) mobile / var(--mee-space-6) at >=768px
+      .export-layout: flex-col mobile; flex-row + align-items:flex-start at >=1024px
+      .export-left / .export-right: flex-col, gap var(--mee-space-4), min-width:0; 40%/60% split at >=1024px
+      .export-checklist-inner: padding var(--mee-space-2), flex-col, gap var(--mee-space-4)
+      .export-checklist-title: 15px/600 weight, color var(--mee-color-on-surface), margin:0
+      .export-th-check: text-align:left, padding-block var(--mee-space-1), font-weight:500, width:100%
+      .export-th-result: text-align:right, whitespace:nowrap, padding-left var(--mee-space-3)
+      .export-td-check: width:100%
+      .export-check-pass: 14px, color var(--mee-color-success), margin:0
+      .export-check-fail: 14px, color var(--mee-color-error), margin:0
+  - :host { display: block } added to styles block
+  - All existing CSS classes (export-idle, export-generating, export-ready, export-error, export-download-btn, export-checklist-table) left fully untouched
+  - Verification greps: ZERO Tailwind utility classes, ZERO inline style="" attributes remaining
+Build: tsc --noEmit --project apps/mfe-export/tsconfig.app.json: ZERO errors
+A11y:
+  - .export-check-pass uses var(--mee-color-success)=#16A34A on #ffffff: ~5.74:1 WCAG AA PASS
+  - .export-check-fail uses var(--mee-color-error)=#DC2626 on #ffffff: ~5.08:1 WCAG AA PASS
+  - .export-checklist-title uses var(--mee-color-on-surface)=#2a3547 on #ffffff: ~9.5:1 PASS
+  - aria-label="Validation checklist" on table preserved
+  - No semantic regressions
+Mobile (360px):
+  - .export-page: single column flex at all mobile widths; padding 16px (var(--mee-space-4))
+  - .export-layout: flex-col — checklist above status panel on mobile — correct stack order
+  - .export-left / .export-right: min-width:0 prevents flex child overflow at narrow widths
+  - Breakpoint: 1024px two-column (40%/60%) — matches prior lg: split exactly
+  - Shell .page-content provides bottom-nav clearance; no per-MFE pb added
+In progress: none
+Blockers: none
+Next: next assigned styling task
+Hand-offs:
+  - "export.component.ts: Tailwind → CSS-token migration complete. Page layout now in .export-page / .export-layout / .export-left / .export-right. component-builder: no impact on TypeScript, signals, or state logic."
+=========
+
+=== UPDATE: 2026-06-19 00:20 ===
+Phase: mfe-dashboard — mobile-first responsive pass (stat-grid 2-col + page padding fix)
+Done:
+  - Added @media (max-width: 639px) block to DashboardComponent inline styles
+  - .dash-page padding: var(--mee-space-6) at desktop → var(--mee-space-4) at <=639px (16px)
+  - .stat-grid: repeat(auto-fit, minmax(200px, 1fr)) at desktop → repeat(2, 1fr) at <=639px (2-col forced)
+  - .stat-grid gap reduced from var(--mee-space-4) → var(--mee-space-3) on mobile
+  - Inserted AFTER .stat-grid rule and BEFORE existing @media (min-width: 640px) .toolbar block
+  - No TypeScript logic, signal definitions, or template HTML changed
+Build: tsc --noEmit (mfe-dashboard): ZERO errors
+A11y: no changes — existing stat-card a11y (aria-label, aria-hidden icons) untouched
+Mobile (360px):
+  - At 360px with 2x16px padding = 328px content → 2 stat cards × (328px-var(--mee-space-3))/2 ≈ 155px each — fits cleanly
+  - All 4 stat cards visible above fold on typical Android screen
+  - var(--mee-space-3) gap between cards provides breathing room without wasting vertical space
+In progress: none
+Blockers: none
+Next: next assigned task
+Hand-offs:
+  - "DashboardComponent mobile layout fixed: stat-grid renders 2 columns at <=639px; dash-page padding reduced to 16px on mobile. component-builder: no logic changes needed, stat-card grid is purely CSS."
+=========
+
 === UPDATE: 2026-06-19 00:15 ===
 Phase: libs/composites — mee-empty-state + mee-loading-skeleton Tailwind-to-CSS-token migration
 Done:

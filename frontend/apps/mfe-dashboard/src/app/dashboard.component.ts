@@ -257,6 +257,17 @@ import { formatRelativeTime } from './dashboard.model';
       border: 0;
     }
 
+    /* ── Mobile-first responsive ──────────────────────────────────── */
+    @media (max-width: 639px) {
+      .dash-page {
+        padding: var(--mee-space-4);
+      }
+      .stat-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: var(--mee-space-3);
+      }
+    }
+
     /* DESKTOP — 640px+ */
     @media (min-width: 640px) {
       .toolbar {

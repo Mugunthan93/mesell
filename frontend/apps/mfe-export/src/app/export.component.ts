@@ -43,6 +43,80 @@ const TICK_INTERVAL_MS = 500;
     PageHeaderComponent,
   ],
   styles: [`
+    /* ── Page layout ─────────────────────────────────────────────── */
+    :host { display: block; }
+    .export-page {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: var(--mee-space-4);
+      display: flex;
+      flex-direction: column;
+      gap: var(--mee-space-6);
+    }
+    @media (min-width: 768px) {
+      .export-page { padding: var(--mee-space-6); }
+    }
+    .export-layout {
+      display: flex;
+      flex-direction: column;
+      gap: var(--mee-space-6);
+    }
+    .export-left,
+    .export-right {
+      display: flex;
+      flex-direction: column;
+      gap: var(--mee-space-4);
+      min-width: 0;
+    }
+    @media (min-width: 1024px) {
+      .export-layout {
+        flex-direction: row;
+        align-items: flex-start;
+      }
+      .export-left { width: 40%; }
+      .export-right { width: 60%; }
+    }
+
+    /* ── Checklist inner ─────────────────────────────────────────── */
+    .export-checklist-inner {
+      padding: var(--mee-space-2);
+      display: flex;
+      flex-direction: column;
+      gap: var(--mee-space-4);
+    }
+    .export-checklist-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--mee-color-on-surface);
+      margin: 0;
+    }
+    .export-th-check {
+      text-align: left;
+      padding-block: var(--mee-space-1);
+      font-weight: 500;
+      width: 100%;
+    }
+    .export-th-result {
+      text-align: right;
+      padding-block: var(--mee-space-1);
+      font-weight: 500;
+      white-space: nowrap;
+      padding-left: var(--mee-space-3);
+    }
+    .export-td-check {
+      width: 100%;
+    }
+    .export-check-pass {
+      font-size: 14px;
+      color: var(--mee-color-success);
+      margin: 0;
+    }
+    .export-check-fail {
+      font-size: 14px;
+      color: var(--mee-color-error);
+      margin: 0;
+    }
+
     /* ── Checklist table ─────────────────────────────────────────── */
     .export-checklist-table thead th {
       color: var(--mee-color-on-surface-muted);
@@ -198,7 +272,7 @@ const TICK_INTERVAL_MS = 500;
     }
   `],
   template: `
-    <div class="max-w-5xl mx-auto px-4 py-6 space-y-6">
+    <div class="export-page">
 
       <!-- Page Header -->
       <mee-page-header
@@ -207,24 +281,24 @@ const TICK_INTERVAL_MS = 500;
       />
 
       <!-- Main layout: stacked on mobile, 2-col on desktop -->
-      <div class="flex flex-col gap-6 lg:flex-row lg:items-start">
+      <div class="export-layout">
 
         <!-- LEFT: VALIDATION GATE -->
-        <div class="min-w-0 lg:w-2/5 space-y-4">
+        <div class="export-left">
           <mee-card>
-            <div class="p-2 space-y-4">
+            <div class="export-checklist-inner">
 
-              <h2 class="text-base font-semibold" style="color: var(--mee-color-on-surface)">
+              <h2 class="export-checklist-title">
                 Pre-export checklist
               </h2>
 
-              <table class="export-checklist-table w-full text-sm" aria-label="Validation checklist">
+              <table class="export-checklist-table" aria-label="Validation checklist">
                 <thead>
                   <tr>
-                    <th class="text-left py-1 font-medium w-full">
+                    <th class="export-th-check">
                       Check
                     </th>
-                    <th class="text-right py-1 font-medium w-px whitespace-nowrap pl-3">
+                    <th class="export-th-result">
                       Result
                     </th>
                   </tr>
@@ -232,7 +306,7 @@ const TICK_INTERVAL_MS = 500;
                 <tbody>
                   @for (check of checkItems(); track check.label) {
                     <tr>
-                      <td class="w-full">
+                      <td class="export-td-check">
                         {{ check.label }}
                       </td>
                       <td class="result-col">
@@ -247,11 +321,11 @@ const TICK_INTERVAL_MS = 500;
               </table>
 
               @if (allChecksPassed()) {
-                <p class="text-sm" style="color: var(--mee-color-success)">
+                <p class="export-check-pass">
                   All checks passed. Ready to generate export.
                 </p>
               } @else {
-                <p class="text-sm" style="color: var(--mee-color-error)">
+                <p class="export-check-fail">
                   Some checks failed. Please fix issues before exporting.
                 </p>
               }
@@ -273,7 +347,7 @@ const TICK_INTERVAL_MS = 500;
         </div>
 
         <!-- RIGHT: STATUS PANEL -->
-        <div class="min-w-0 lg:w-3/5 space-y-4">
+        <div class="export-right">
 
           <!-- State 2: Generating (job in progress) -->
           @if (exportStatus() === 'processing') {
