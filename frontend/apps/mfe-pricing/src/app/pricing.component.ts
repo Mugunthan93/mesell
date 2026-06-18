@@ -104,12 +104,9 @@ const ALERT_VARIANT_MAP: Record<string, AlertVariant> = {
 
   // ─── Component-scoped CSS ─────────────────────────────────────────────────
   // All values use var(--mee-*) tokens. Zero hardcoded hex (lane guard).
-  // --mee-color-surface-variant not in Layer 1 — local scope bridge only.
+  // --mee-color-surface-variant is declared in _tokens.css (Layer 1) — no
+  // local override needed.
   styles: [`
-    :host {
-      --mee-color-surface-variant: #f2f6fa;
-    }
-
     /* ── Spinner ────────────────────────────────────────────────────────── */
     /* MeeSpinnerComponent is a queued ui-kit amendment (NOT yet available).
        Local spinner bridge used until the ui-kit component lands. */
@@ -141,9 +138,10 @@ const ALERT_VARIANT_MAP: Record<string, AlertVariant> = {
 
     /* ── Hero payout card ───────────────────────────────────────────────── */
     .mee-pricing__hero {
-      padding: var(--mee-space-4);
+      padding: var(--mee-space-5) var(--mee-space-4);
       border-radius: var(--mee-radius-md);
       text-align: center;
+      margin-bottom: var(--mee-space-4);
     }
 
     .mee-pricing__hero--positive {
@@ -194,6 +192,7 @@ const ALERT_VARIANT_MAP: Record<string, AlertVariant> = {
       padding: var(--mee-space-3) 0;
       border-top: 1px solid var(--mee-color-outline);
       border-bottom: 1px solid var(--mee-color-outline);
+      margin-bottom: var(--mee-space-2);
     }
 
     .mee-pricing__price-item {
@@ -227,6 +226,9 @@ const ALERT_VARIANT_MAP: Record<string, AlertVariant> = {
       display: flex;
       gap: var(--mee-space-4);
       padding: var(--mee-space-2) 0;
+      padding-bottom: var(--mee-space-3);
+      border-bottom: 1px solid var(--mee-color-outline);
+      margin-bottom: var(--mee-space-3);
     }
 
     .mee-pricing__ratio-item {
@@ -250,12 +252,21 @@ const ALERT_VARIANT_MAP: Record<string, AlertVariant> = {
     }
 
     /* ── Deduction breakdown table ──────────────────────────────────────── */
+    /* Scroll wrapper prevents horizontal overflow on 360px — table stays legible. */
+    .mee-pricing__table-scroll {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
     .mee-pricing__table {
       width: 100%;
+      min-width: 240px;
       border-collapse: collapse;
       font-size: 0.875rem;
     }
 
+    /* <th scope="row"> and <td> both need consistent cell padding */
+    .mee-pricing__table th,
     .mee-pricing__table td {
       padding: var(--mee-space-2) 0;
       vertical-align: middle;
@@ -264,6 +275,7 @@ const ALERT_VARIANT_MAP: Record<string, AlertVariant> = {
     .mee-pricing__table-label {
       color: var(--mee-color-on-surface-muted);
       text-align: left;
+      font-weight: 400; /* th resets browser bold — keep weight same as body */
     }
 
     .mee-pricing__table-value {
@@ -292,21 +304,27 @@ const ALERT_VARIANT_MAP: Record<string, AlertVariant> = {
       font-weight: 700;
     }
 
-    .mee-pricing__value--positive {
-      color: var(--mee-color-success) !important;
+    /* No !important — selector specificity via .mee-pricing__ratio-value override */
+    .mee-pricing__ratio-value.mee-pricing__value--positive {
+      color: var(--mee-color-success);
     }
 
-    .mee-pricing__value--negative {
-      color: var(--mee-color-error) !important;
+    .mee-pricing__ratio-value.mee-pricing__value--negative {
+      color: var(--mee-color-error);
     }
 
+    /* ── 360px / small-phone responsive overrides ─────────────────────── */
     @media (max-width: 400px) {
       .mee-pricing__table-label {
-        max-width: 140px;
+        max-width: 150px;
         word-break: break-word;
       }
       .mee-pricing__table {
         font-size: 0.8125rem;
+      }
+      /* Tighten hero amount for very narrow screens */
+      .mee-pricing__hero-amount {
+        font-size: 1.625rem;
       }
     }
 
@@ -394,7 +412,7 @@ const ALERT_VARIANT_MAP: Record<string, AlertVariant> = {
   `],
 
   template: `
-    <div class="max-w-5xl mx-auto px-4 py-6 space-y-6">
+    <div class="max-w-5xl mx-auto px-3 sm:px-4 py-6 space-y-6">
 
       <!-- Offline banner (R-W6-1 degradation matrix) -->
       <mee-offline-banner />
@@ -623,83 +641,89 @@ const ALERT_VARIANT_MAP: Record<string, AlertVariant> = {
 
                   <!-- DEDUCTION BREAKDOWN TABLE: "Where my money goes" -->
                   <div>
-                    <h3 class="mee-pricing__section-title" style="font-size: 0.8125rem; margin-top: var(--mee-space-3)">
+                    <h3 id="deduction-table-heading" class="mee-pricing__section-title" style="font-size: 0.8125rem; margin-top: var(--mee-space-3)">
                       Where your money goes
                     </h3>
-                    <table
-                      class="mee-pricing__table"
-                      aria-label="P&L breakdown"
-                    >
-                      <thead class="sr-only">
-                        <tr>
-                          <th scope="col">Item</th>
-                          <th scope="col">Amount</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr class="mee-pricing__row">
-                          <td class="mee-pricing__table-label" scope="row">
-                            Referral commission ({{ breakdown()!.commission_pct }}%)
-                          </td>
-                          <td class="mee-pricing__table-value">
-                            {{ formatRupeeLabel(breakdown()!.referral_commission) }}
-                          </td>
-                        </tr>
-                        <tr class="mee-pricing__row">
-                          <td class="mee-pricing__table-label" scope="row">Shipping charge</td>
-                          <td class="mee-pricing__table-value">
-                            {{ formatRupeeLabel(breakdown()!.shipping_charge) }}
-                          </td>
-                        </tr>
-                        <tr class="mee-pricing__row">
-                          <td class="mee-pricing__table-label" scope="row">Logistics fee</td>
-                          <td class="mee-pricing__table-value">
-                            {{ formatRupeeLabel(breakdown()!.logistics_fee) }}
-                          </td>
-                        </tr>
-                        <tr class="mee-pricing__row">
-                          <td class="mee-pricing__table-label" scope="row">Fixed fee</td>
-                          <td class="mee-pricing__table-value">
-                            {{ formatRupeeLabel(breakdown()!.fixed_fee) }}
-                          </td>
-                        </tr>
-                        <tr class="mee-pricing__row">
-                          <td class="mee-pricing__table-label" scope="row">
-                            GST on fees ({{ breakdown()!.gst_pct }}%)
-                          </td>
-                          <td class="mee-pricing__table-value">
-                            {{ formatRupeeLabel(breakdown()!.gst_on_fees) }}
-                          </td>
-                        </tr>
-                        <tr class="mee-pricing__row">
-                          <td class="mee-pricing__table-label" scope="row">TCS</td>
-                          <td class="mee-pricing__table-value">
-                            {{ formatRupeeLabel(breakdown()!.tcs) }}
-                          </td>
-                        </tr>
-                        <tr class="mee-pricing__row">
-                          <td class="mee-pricing__table-label" scope="row">TDS</td>
-                          <td class="mee-pricing__table-value">
-                            {{ formatRupeeLabel(breakdown()!.tds) }}
-                          </td>
-                        </tr>
-                        <tr class="mee-pricing__row">
-                          <td class="mee-pricing__table-label" scope="row">
-                            RTO expected loss ({{ breakdown()!.return_rate_pct }}%)
-                          </td>
-                          <td class="mee-pricing__table-value">
-                            {{ formatRupeeLabel(breakdown()!.rto_expected_loss) }}
-                          </td>
-                        </tr>
-                        <!-- Total deductions — bold summary row -->
-                        <tr class="mee-pricing__row--total">
-                          <td class="mee-pricing__table-label" scope="row">Total deductions</td>
-                          <td class="mee-pricing__table-value">
-                            {{ formatRupeeLabel(breakdown()!.total_deductions) }}
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
+                    <!--
+                      Scroll wrapper: prevents horizontal overflow at 360px.
+                      min-width: 240px on table ensures readability without clipping.
+                    -->
+                    <div class="mee-pricing__table-scroll">
+                      <table
+                        class="mee-pricing__table"
+                        aria-labelledby="deduction-table-heading"
+                      >
+                        <thead class="sr-only">
+                          <tr>
+                            <th scope="col">Item</th>
+                            <th scope="col">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr class="mee-pricing__row">
+                            <th class="mee-pricing__table-label" scope="row">
+                              Referral commission ({{ breakdown()!.commission_pct }}%)
+                            </th>
+                            <td class="mee-pricing__table-value">
+                              {{ formatRupeeLabel(breakdown()!.referral_commission) }}
+                            </td>
+                          </tr>
+                          <tr class="mee-pricing__row">
+                            <th class="mee-pricing__table-label" scope="row">Shipping charge</th>
+                            <td class="mee-pricing__table-value">
+                              {{ formatRupeeLabel(breakdown()!.shipping_charge) }}
+                            </td>
+                          </tr>
+                          <tr class="mee-pricing__row">
+                            <th class="mee-pricing__table-label" scope="row">Logistics fee</th>
+                            <td class="mee-pricing__table-value">
+                              {{ formatRupeeLabel(breakdown()!.logistics_fee) }}
+                            </td>
+                          </tr>
+                          <tr class="mee-pricing__row">
+                            <th class="mee-pricing__table-label" scope="row">Fixed fee</th>
+                            <td class="mee-pricing__table-value">
+                              {{ formatRupeeLabel(breakdown()!.fixed_fee) }}
+                            </td>
+                          </tr>
+                          <tr class="mee-pricing__row">
+                            <th class="mee-pricing__table-label" scope="row">
+                              GST on fees ({{ breakdown()!.gst_pct }}%)
+                            </th>
+                            <td class="mee-pricing__table-value">
+                              {{ formatRupeeLabel(breakdown()!.gst_on_fees) }}
+                            </td>
+                          </tr>
+                          <tr class="mee-pricing__row">
+                            <th class="mee-pricing__table-label" scope="row">TCS</th>
+                            <td class="mee-pricing__table-value">
+                              {{ formatRupeeLabel(breakdown()!.tcs) }}
+                            </td>
+                          </tr>
+                          <tr class="mee-pricing__row">
+                            <th class="mee-pricing__table-label" scope="row">TDS</th>
+                            <td class="mee-pricing__table-value">
+                              {{ formatRupeeLabel(breakdown()!.tds) }}
+                            </td>
+                          </tr>
+                          <tr class="mee-pricing__row">
+                            <th class="mee-pricing__table-label" scope="row">
+                              RTO expected loss ({{ breakdown()!.return_rate_pct }}%)
+                            </th>
+                            <td class="mee-pricing__table-value">
+                              {{ formatRupeeLabel(breakdown()!.rto_expected_loss) }}
+                            </td>
+                          </tr>
+                          <!-- Total deductions — bold summary row -->
+                          <tr class="mee-pricing__row--total">
+                            <th class="mee-pricing__table-label" scope="row">Total deductions</th>
+                            <td class="mee-pricing__table-value">
+                              {{ formatRupeeLabel(breakdown()!.total_deductions) }}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
 
                   <!-- POSITIVE / NEGATIVE badge + server alerts -->
