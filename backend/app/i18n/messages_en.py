@@ -204,6 +204,16 @@ VALIDATION_MESSAGES: dict[str, str] = {
     "export.round_trip.mismatch": (
         "Export failed: data validation mismatch. Please re-run the export."
     ),
+    # ── export pre-enqueue validation aggregation (2026-06-18) ───────────
+    "export.validation.failed": (
+        "Your product can't be exported yet. Fix the items below and try again."
+    ),
+    "export.check.quality_status": (
+        "Your product isn't ready. Complete the required fields and resolve quality issues first."
+    ),
+    "export.check.front_image_missing": (
+        "A front image is required. Upload an image in slot 1 before exporting with images."
+    ),
     # ── §4.C tenancy (1 cross-cutting ID) ────────────────────────────────
     "tenancy.cross_user.access": (
         "You do not have access to this resource."

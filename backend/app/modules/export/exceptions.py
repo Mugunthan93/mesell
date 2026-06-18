@@ -113,6 +113,36 @@ class FrontImageMissingError(ExportError):
         super().__init__(detail=detail)
 
 
+class ExportValidationFailedError(ExportError):
+    """POST /products/{id}/export-xlsx — one or more pre-enqueue validation
+    checks failed. Carries the full aggregated checklist so the frontend can
+    render an itemized list (per export-validation-aggregation, 2026-06-18).
+
+    Unlike :class:`ProductNotReadyForExportError` /
+    :class:`FrontImageMissingError` (which the worker pipeline
+    ``_run_export_pipeline`` still raises standalone), this collect-all error
+    aggregates ALL failed router-surface checks into a single 422 so the UI
+    can render a per-item resolution list.  The additive ``failed_checks``
+    attribute is appended to the locked §4.F envelope by
+    ``core.errors._meesell_error_handler``.
+
+    ``failed_checks`` is ``list[dict[str, str]]`` where each dict is exactly
+    ``{"check_id": <snake_case str>, "message_key": <3-segment i18n key str>}``.
+    """
+
+    code = "export.validation_failed"
+    status_code = 422
+    validation_message_id = "export.validation.failed"
+
+    def __init__(
+        self,
+        failed_checks: list[dict[str, str]],
+        detail: str = "Export validation failed. Resolve the listed items and retry.",
+    ) -> None:
+        self.failed_checks = list(failed_checks)
+        super().__init__(detail=detail)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 500 — worker-internal (status='failed' + error_message + error_code)
 #
@@ -209,6 +239,7 @@ __all__ = [
     "ExportEnumValidationError",
     "ExportError",
     "ExportNotFoundError",
+    "ExportValidationFailedError",
     "FrontImageMissingError",
     "ProductNotReadyForExportError",
     "RoundTripValidationError",
