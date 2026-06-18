@@ -6,9 +6,11 @@
  * Key decisions:
  * - ExportInitiatedResponse.status is LITERAL 'pending' (NOT 'processing') — backend constant.
  * - ExportResponseDTO has NO progress_pct field — wire shape confirmed in spec §1.
- * - MOCK_DOWNLOAD_URL REMOVED — signed URL is read from ExportResponseDTO.xlsx_signed_url.
- * - SIMULATED_PASSING_CHECKS retained as DISPLAY-ONLY per GAP-1 Option A ruling;
- *   the real readiness gate is the 422 export.product_not_ready on initiate (R-W6-1).
+ * - SIMULATED_PASSING_CHECKS REMOVED — real readiness gate is the 422 failed_checks[]
+ *   returned by POST export-xlsx (PR #291, R-W6-1). ExportFailedCheck + resolveCheckMessage
+ *   replace the display-only checklist (GAP-1 Option A retired).
+ * - ValidationChecks / buildCheckItems / allChecksPassed REMOVED — simulated checklist retired.
+ * - canGenerate updated: gates only on status, not on simulated checks.
  * - nextProgress / isProgressComplete REMOVED — no progress_pct on the wire.
  * - retryState adjusted — no progress field.
  * - isTerminalStatus added as a pure-function gate for the poll loop.
@@ -86,66 +88,49 @@ export interface ExportResponseDTO {
  */
 export type ExportStatus = 'idle' | 'processing' | 'ready' | 'failed';
 
-// ── GAP-1 Option A — display-only checklist ─────────────────────────────────────
-// These checks are DISPLAY-ONLY constants, NOT backed by any backend endpoint.
-// The authoritative readiness gate is the 422 `export.product_not_ready` /
-// `export.front_image_missing` returned by POST export-xlsx (R-W6-1).
+// ── Real failed-checks (PR #291 — replaces GAP-1 Option A simulated checklist) ──
 
-export interface ValidationChecks {
-  title_ok: boolean;
-  category_ok: boolean;
-  fields_ok: boolean;
-  images_ok: boolean;
-}
-
-/** Validation check display item for the checklist UI. */
-export interface ValidationCheckItem {
-  label: string;
-  ok: boolean;
+/**
+ * A single failed check emitted by POST export-xlsx 422 response body.
+ * Backend emits this shape in the `failed_checks[]` array (PR #291).
+ */
+export interface ExportFailedCheck {
+  check_id: string;    // e.g. "quality_status"
+  message_key: string; // e.g. "export.check.quality_status"
 }
 
 /**
- * All 4 checks set to true for V1 simulation.
- * DISPLAY-ONLY — not backed by a backend endpoint (GAP-1 Option A ruling).
- * The real gate is POST export-xlsx 422 response.
+ * FE-local display strings for export failed-check message keys.
+ * Unknown keys fall back to EXPORT_CHECK_FALLBACK — never blank, never the raw key.
  */
-export const SIMULATED_PASSING_CHECKS: ValidationChecks = {
-  title_ok:    true,
-  category_ok: true,
-  fields_ok:   true,
-  images_ok:   true,
+export const EXPORT_CHECK_MESSAGES: Record<string, string> = {
+  'export.check.quality_status':
+    "Your product isn't ready. Complete the required fields and resolve quality issues first.",
+  'export.check.front_image_missing':
+    'A front image is required. Upload an image in slot 1 before exporting with images.',
 };
+
+/** Fallback message for any check_id not in EXPORT_CHECK_MESSAGES. */
+export const EXPORT_CHECK_FALLBACK = 'This item needs attention before you can export.';
+
+/**
+ * Resolves a human-readable message for a failed check.
+ * Falls back to EXPORT_CHECK_FALLBACK for unknown message_keys.
+ * Pure: no side-effects.
+ */
+export function resolveCheckMessage(check: ExportFailedCheck): string {
+  return EXPORT_CHECK_MESSAGES[check.message_key] ?? EXPORT_CHECK_FALLBACK;
+}
 
 // ── Pure functions (exported for unit testing without TestBed) ──────────────────
 
 /**
- * Returns the 4 validation check items for display in the checklist table.
- * Pure: no side-effects, always same output for same input.
- */
-export function buildCheckItems(checks: ValidationChecks): ValidationCheckItem[] {
-  return [
-    { label: 'Title filled',            ok: checks.title_ok },
-    { label: 'Category selected',       ok: checks.category_ok },
-    { label: 'Compulsory fields',       ok: checks.fields_ok },
-    { label: 'At least 1 image (pass)', ok: checks.images_ok },
-  ];
-}
-
-/**
- * Returns true when ALL 4 validation checks pass.
- * Pure: no side-effects.
- */
-export function allChecksPassed(checks: ValidationChecks): boolean {
-  return checks.title_ok && checks.category_ok && checks.fields_ok && checks.images_ok;
-}
-
-/**
  * Returns true when the Generate Export button should be enabled.
- * Requires status === 'idle' AND all checks passing.
+ * Gates on status === 'idle' only — the real readiness gate is the backend 422.
  * Pure: no side-effects.
  */
-export function canGenerate(status: ExportStatus, checks: ValidationChecks): boolean {
-  return status === 'idle' && allChecksPassed(checks);
+export function canGenerate(status: ExportStatus): boolean {
+  return status === 'idle';
 }
 
 /**
