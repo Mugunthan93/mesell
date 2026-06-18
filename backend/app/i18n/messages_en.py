@@ -18,7 +18,7 @@ in V1 per §5A.J).
 §5A.I English-string CONTENT is NOT locked — strings grow incrementally as
 each module is constructed. This V1 inventory ships the canonical ~50 IDs
 referenced by §7 (iam, 8) + §4.B (auth dep, 3) + §8 (customer, 6) + §9
-(category, 4) + §10 (catalog, 5) + §11 (image, 5) + §12 (pricing, 5) +
+(category, 4) + §10 (catalog, 5) + §11 (image, 5) + §12 (pricing, 4 — §12.M 2026-06-18) +
 §13 (dashboard, 1) + §14 (export, 7) + §4 (core, 4) plus the
 ``validation.body.*`` and ``validation.fields.*`` legals used by FastAPI
 body-validation error responses (§4.F handler).
@@ -163,21 +163,20 @@ VALIDATION_MESSAGES: dict[str, str] = {
     "image.not.found": (
         "We couldn't find that image. It may have been deleted."
     ),
-    # ── §12 pricing (5 module-specific IDs) ──────────────────────────────
+    # ── §12 pricing (4 module-specific IDs — §12.M 2026-06-18 rework) ─────
     "validation.price.invalid_input": (
         "Please enter a valid price greater than zero."
     ),
-    "pricing.commission.missing": (
-        "We couldn't load the commission rate for this category. Please try again later."
+    "pricing.alert.negative_payout": (
+        "At this price your estimated payout is negative. Raise your selling "
+        "price or lower your costs."
     ),
     "pricing.alert.low_margin": (
         "Your profit margin is below the safe threshold. Consider raising your selling price."
     ),
-    "pricing.alert.high_mrp_multiplier": (
-        "Your MRP is much higher than your cost. Verify this is the price you want to advertise."
-    ),
-    "pricing.alert.thin_profit": (
-        "Your profit per unit is low. Consider revising your cost or selling price."
+    "pricing.alert.shipping_dominates": (
+        "Shipping is the largest part of your deductions at this price. A higher "
+        "selling price spreads it thinner."
     ),
     # ── §13 dashboard (1 module-specific ID) ─────────────────────────────
     "validation.dashboard.invalid_pagination": (

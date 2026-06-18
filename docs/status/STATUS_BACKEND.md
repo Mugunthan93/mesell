@@ -6849,3 +6849,53 @@ Hand-offs:
   - backend-coordinator: merge-gate — confirm the 9 locked keys + schema_contract.py are
     unchanged (verified: not in diff).
 =========
+
+=== UPDATE: 2026-06-18 — Price Calculator forward-estimator rework (§12.M) ===
+Phase: V1 Feature 7 — Price Calculator (forward payout estimator rework)
+Session: mesell-price-calculator-backend-session-1 (HYBRID step 2 — builder)
+Branch: fix/pricing-engine-rework → develop (PR #285) — DO NOT MERGE (founder merges; backend-coordinator gates step 3)
+Done:
+  - Applied 2 founder-ratified locked-doc amendments + the §2.D matrix edit:
+    * V1_FEATURE_SPEC.md Feature 7 — appended forward-estimator amendment block.
+    * BACKEND_ARCHITECTURE.md §12.M — new sub-clause (formula, new PriceCalcRequest, alert
+      codes NEGATIVE_PAYOUT/LOW_MARGIN/SHIPPING_DOMINATES, CommissionMissingError removal,
+      additive reversible pricing_calcs migration, zero-Meesho-calls HARD RULE).
+    * BACKEND_ARCHITECTURE.md §2.D — retired the `pricing → category` commission row
+      (commission is now a seller input); total 8 ✓ → 7 ✓; §2 prose cross-note to §12.M.
+  - Service rework (app/modules/pricing/):
+    * schemas: new PriceCalcRequest (meesho_price primary, input_cost, commission_pct default
+      4% seller-input, return_rate_pct, optional mrp, 6 override_* fields; target_margin_pct
+      REMOVED) + new PriceCalcResponse (3 prices + full deduction breakdown + estimated_payout
+      + estimated_payout_wdrp + profit + margin_pct + markup_pct + alerts). extra="forbid".
+    * service: _compute_pnl → _estimate_payout (pure Decimal, ROUND_HALF_EVEN via _q). Full
+      deduction stack: referral, bracketed shipping, logistics, fixed, GST-on-fees, TCS, TDS,
+      RTO expected-loss. category.get_commission call DELETED. Negative payout = 200-with-alert.
+    * exceptions: CommissionMissingError deleted; InvalidPriceInputError (400) kept.
+    * domain/repository/router/__init__ updated; router drops the 422.
+    * i18n: dropped commission_missing/high_mrp_multiplier/thin_profit; added negative_payout/
+      shipping_dominates; kept low_margin + invalid_input. All 3-segment.
+  - ORM + migration: pricing_calc.py + alembic b7c2e1a9d3f4 (down_rev f31c75438e61) — 12 additive
+    nullable breakdown columns; commission_pct re-purposed as seller snapshot. upgrade+downgrade
+    both verified locally; single linear head, no divergence.
+  - Calibration: SHIPPING_FLAT=30 / SHIPPING_HIGH=70 / SHIPPING_BRACKET=1000 / LOGISTICS=10 /
+    FIXED=5 / COMMISSION=4 / GST=18 / TCS=1 / TDS=0 / WDRP_DELTA=20. _estimate_payout(106)=46.84
+    (residual -0.16, TOLERANCE 3.00); WDRP 86→27.98 (residual +0.98).
+  - Fixed a pre-existing shared-app event-loop isolation bug in the flag-test fixture
+    (added use_live_valkey dep so the @rate_limit/@audit_event Valkey singleton is reset per
+    test — was 500-ing the 2nd patch-based flag test with "Event loop is closed").
+Tests: 70 passed (tests/modules/pricing + test_pricing_full_flow + test_i18n_generic_fallback)
+  + 3 passed (test_pricing_persistence). ruff clean. import-linter 27 kept/0 broken.
+  Contracts 8/9/10 PASS. grep-clean: ZERO transfer_price/fetch-supplier-products/
+  supplier.meesho.com under app/ (6 hits in test_estimator_calibration.py only).
+In progress: none
+Blockers: none
+Next: backend-coordinator merge-gate review (HYBRID step 3) of PR #285.
+Hand-offs:
+  - api-routes-builder: POST /products/{id}/price-calc request+response SHAPE changed (forward
+    estimator). 422 (pricing.commission.missing) REMOVED. Negative payout is 200-with-alert.
+  - frontend-coordinator: new wire shape — seller enters meesho_price (+ optional commission_pct
+    default 4%, return_rate_pct, mrp); response carries the full deduction breakdown + payout +
+    WDRP payout + margin/markup + alerts (NEGATIVE_PAYOUT/LOW_MARGIN/SHIPPING_DOMINATES).
+  - backend-coordinator: gate — confirm zero Meesho calls in app/, additive migration reversible,
+    §12.M + §2.D amendments match the founder ruling.
+=========

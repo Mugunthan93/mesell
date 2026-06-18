@@ -21,14 +21,14 @@ Route invariants (§12.B + §4.B)
 Audit posture (§12.I + §4.G)
 ----------------------------
 1 write endpoint gets an explicit ``@audit_event`` decorator emitting
-``pricing.calculated`` on 2xx with payload ``{product_id, input_cost,
-mrp, profit_pct}``.  No PII per `MVP_ARCH §11.9`.
+``pricing.calculated`` on 2xx with payload ``{product_id, meesho_price,
+input_cost, estimated_payout, margin_pct}``.  No PII per `MVP_ARCH §11.9`.
 
 Rate-limit decorators (§4.G + §12.I)
 ------------------------------------
 * POST ``/products/{id}/price-calc`` — 600/h per-IP (lightweight
   stateless math; per-user limit would degrade typing-rapid-iteration
-  UX as sellers tweak ``target_margin_pct`` to converge on a price).
+  UX as sellers tweak ``meesho_price`` to converge on a target payout).
 
 Plan-guard
 ----------
@@ -80,18 +80,21 @@ async def price_calc(
     user: Annotated[CurrentUser, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PriceCalcResponse:
-    """§12.B.1 — POST /products/{id}/price-calc.
+    """§12.B.1 — POST /products/{id}/price-calc (forward estimator, §12.M).
 
     Status codes:
-      * 200 — calc completed successfully.
+      * 200 — calc completed successfully.  A negative estimated payout is
+        ALSO a 200 — it carries a ``NEGATIVE_PAYOUT`` alert (§12.M (4)),
+        NOT a 400.
       * 400 — ``validation.price.invalid_input`` (Pydantic catches
-        ``input_cost <= 0`` / ``target_margin_pct < 0`` / etc.; service
-        adds the V1.5 cross-field surface).
+        ``meesho_price <= 0`` / ``input_cost <= 0`` / out-of-range
+        percentages).
       * 401 — JWT missing/invalid (handled by §4.A auth middleware).
       * 404 — ``catalog.product.not_found`` from the §10.C
         ``assert_product_ownership`` cross-module ownership gate.
-      * 422 — ``pricing.commission.missing`` when the resolved category
-        has no usable commission rate.
+
+    Note (§12.M (4)): the legacy 422 ``pricing.commission.missing`` path
+    is REMOVED — commission is now a seller-entered input (default 4%).
     """
     # ── Feature flag guard (§3.2 / D2) ───────────────────────────────────
     if not settings.FEATURE_PRICE_CALCULATOR_ENABLED:

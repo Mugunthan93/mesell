@@ -4,10 +4,11 @@ Owner specialists: ``meesell-api-routes-builder`` (routes + Pydantic
 schemas) + ``meesell-services-builder`` (business logic, P&L calculator,
 alert generation) per BACKEND_ARCHITECTURE.md §12 (LOCKED 2026-06-05).
 
-A leaf-with-2-calls module on the cross-module graph (per §2.D matrix:
-``pricing → catalog`` for ownership + ``pricing → category`` for
-commission; both ✓).  Writes the ``pricing_calcs`` table exclusively
-(append-only audit trail per §12.B.1 step 8 + D4).
+A leaf-with-1-call module on the cross-module graph (per §2.D matrix as
+amended 2026-06-18: ``pricing → catalog`` for ownership ✓; the
+``pricing → category`` commission row is RETIRED per §12.M — commission
+is now a seller input).  Writes the ``pricing_calcs`` table exclusively
+(append-only audit trail).
 
 Per BACKEND_ARCHITECTURE.md §12 the module surfaces 1 endpoint:
 
