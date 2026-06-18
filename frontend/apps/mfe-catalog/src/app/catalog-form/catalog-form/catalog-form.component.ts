@@ -4,6 +4,11 @@
 // Renders a dynamic category-specific field form using mee-* UI Kit primitives.
 // Dynamic fields use Record<string,unknown> signal — NOT FormGroup (JSONB schema).
 // AI auto-fill highlights compulsory fields in yellow; autosaves on blur/change.
+//
+// Conditional Field UX (PR #290):
+//   schemaRules signal — populated from /schema dependency_rules[] (backend PR #290)
+//   fieldOverrides computed — evaluates rules against current field values (pure fn)
+//   activeSoftRules computed — soft rules currently firing (for recommendation banners)
 
 import {
   ChangeDetectionStrategy,
@@ -32,8 +37,10 @@ import {
   StatusBadgeComponent,
 } from '@mesell/composites';
 
-import type { AutofillResponse, FieldGroup, FieldSchema } from '../models/field-schema.model';
+import type { AutofillResponse, FieldGroup, FieldSchema, DependencyRuleDTO } from '../models/field-schema.model';
 import { CatalogFormApiService } from '../services/catalog-form-api.service';
+import { evaluateRules, getSoftRules } from '../catalog-form.rules';
+import type { DependencyRule, FieldOverride } from '../catalog-form.rules';
 
 @Component({
   selector: 'app-catalog-form',
@@ -178,6 +185,32 @@ import { CatalogFormApiService } from '../services/catalog-form-api.service';
       background-color: color-mix(in srgb, var(--mee-color-warning) 12%, transparent);
     }
 
+    /* ── Soft dependency-rule recommendation banner ─────────────────────── */
+    /* Shown below a field when a soft rule is currently firing for it.      */
+    .mee-soft-rule-banner {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--mee-space-2);
+      margin-top: var(--mee-space-1);
+      padding: var(--mee-space-2) var(--mee-space-3);
+      border-radius: var(--mee-radius-sm);
+      background-color: color-mix(in srgb, var(--mee-color-warning) 10%, transparent);
+      border: 1px solid color-mix(in srgb, var(--mee-color-warning) 40%, transparent);
+      /* Ensure the banner does not create a tap-target taller than the field itself;
+         min-height 44px applies to interactive controls — this is role=note (non-interactive) */
+    }
+    .mee-soft-rule-banner__icon {
+      flex-shrink: 0;
+      font-size: 0.875rem;
+      color: var(--mee-color-warning);
+      line-height: 1.4;
+    }
+    .mee-soft-rule-banner__text {
+      font-size: 0.8125rem;
+      color: var(--mee-color-on-surface-muted);
+      line-height: 1.4;
+    }
+
     /* ── Mobile only (≤639px): form nav sits above the shell bottom-tab ── */
     @media (max-width: 639px) {
       /* Shell bottom-tab is 60px tall. Raise the form nav above it. */
@@ -274,42 +307,53 @@ import { CatalogFormApiService } from '../services/catalog-form-api.service';
           @if (compulsoryOpen()) {
             <div class="mee-field-list" aria-label="Compulsory fields">
               @for (field of compulsoryFields(); track field.canonical_name) {
-                <div
-                  class="field-wrapper"
-                  [class.mee-ai-suggested]="isAiSuggested(field.canonical_name)"
-                  [class.mee-field--full]="field.primitive === 'text_long'"
-                >
-                  @switch (field.primitive) {
-                    @case ('text_long') {
-                      <mee-textarea
-                        [label]="field.display_name"
-                        [required]="field.required"
-                        [error]="getFieldError(field.canonical_name)"
-                        [hint]="field.help_text"
-                        [rows]="4"
-                        (blur)="onFieldBlur(field.canonical_name, $any($event))"
-                      />
+                @if (isFieldVisible(field.canonical_name)) {
+                  <div
+                    class="field-wrapper"
+                    [class.mee-ai-suggested]="isAiSuggested(field.canonical_name)"
+                    [class.mee-field--full]="field.primitive === 'text_long'"
+                  >
+                    @switch (field.primitive) {
+                      @case ('text_long') {
+                        <mee-textarea
+                          [label]="field.display_name"
+                          [required]="isFieldRequired(field)"
+                          [error]="getFieldError(field.canonical_name)"
+                          [hint]="field.help_text"
+                          [rows]="4"
+                          (blur)="onFieldBlur(field.canonical_name, $any($event))"
+                        />
+                      }
+                      @case ('enum') {
+                        <mee-select
+                          [label]="field.display_name"
+                          [options]="field.enum_options ?? []"
+                          [error]="getFieldError(field.canonical_name)"
+                          (value_change)="onFieldChange(field.canonical_name, $event)"
+                        />
+                      }
+                      @default {
+                        <mee-input
+                          [label]="field.display_name"
+                          [required]="isFieldRequired(field)"
+                          [error]="getFieldError(field.canonical_name)"
+                          [hint]="field.help_text"
+                          [type]="field.primitive === 'number' ? 'number' : 'text'"
+                          (blur)="onFieldBlur(field.canonical_name, $any($event))"
+                        />
+                      }
                     }
-                    @case ('enum') {
-                      <mee-select
-                        [label]="field.display_name"
-                        [options]="field.enum_options ?? []"
-                        [error]="getFieldError(field.canonical_name)"
-                        (value_change)="onFieldChange(field.canonical_name, $event)"
-                      />
+                    @let softRule = getActiveSoftRule(field.canonical_name);
+                    @if (softRule) {
+                      <div class="mee-soft-rule-banner"
+                           role="note"
+                           [attr.aria-label]="'Recommendation for ' + field.display_name">
+                        <span class="mee-soft-rule-banner__icon" aria-hidden="true">&#9432;</span>
+                        <span class="mee-soft-rule-banner__text">Recommended for this listing type</span>
+                      </div>
                     }
-                    @default {
-                      <mee-input
-                        [label]="field.display_name"
-                        [required]="field.required"
-                        [error]="getFieldError(field.canonical_name)"
-                        [hint]="field.help_text"
-                        [type]="field.primitive === 'number' ? 'number' : 'text'"
-                        (blur)="onFieldBlur(field.canonical_name, $any($event))"
-                      />
-                    }
-                  }
-                </div>
+                  </div>
+                }
               }
             </div>
           }
@@ -333,42 +377,53 @@ import { CatalogFormApiService } from '../services/catalog-form-api.service';
           @if (recommendedOpen()) {
             <div class="mee-field-list" aria-label="Recommended fields">
               @for (field of recommendedFields(); track field.canonical_name) {
-                <div
-                  class="field-wrapper"
-                  [class.mee-ai-suggested]="isAiSuggested(field.canonical_name)"
-                  [class.mee-field--full]="field.primitive === 'text_long'"
-                >
-                  @switch (field.primitive) {
-                    @case ('text_long') {
-                      <mee-textarea
-                        [label]="field.display_name"
-                        [required]="field.required"
-                        [error]="getFieldError(field.canonical_name)"
-                        [hint]="field.help_text"
-                        [rows]="4"
-                        (blur)="onFieldBlur(field.canonical_name, $any($event))"
-                      />
+                @if (isFieldVisible(field.canonical_name)) {
+                  <div
+                    class="field-wrapper"
+                    [class.mee-ai-suggested]="isAiSuggested(field.canonical_name)"
+                    [class.mee-field--full]="field.primitive === 'text_long'"
+                  >
+                    @switch (field.primitive) {
+                      @case ('text_long') {
+                        <mee-textarea
+                          [label]="field.display_name"
+                          [required]="isFieldRequired(field)"
+                          [error]="getFieldError(field.canonical_name)"
+                          [hint]="field.help_text"
+                          [rows]="4"
+                          (blur)="onFieldBlur(field.canonical_name, $any($event))"
+                        />
+                      }
+                      @case ('enum') {
+                        <mee-select
+                          [label]="field.display_name"
+                          [options]="field.enum_options ?? []"
+                          [error]="getFieldError(field.canonical_name)"
+                          (value_change)="onFieldChange(field.canonical_name, $event)"
+                        />
+                      }
+                      @default {
+                        <mee-input
+                          [label]="field.display_name"
+                          [required]="isFieldRequired(field)"
+                          [error]="getFieldError(field.canonical_name)"
+                          [hint]="field.help_text"
+                          [type]="field.primitive === 'number' ? 'number' : 'text'"
+                          (blur)="onFieldBlur(field.canonical_name, $any($event))"
+                        />
+                      }
                     }
-                    @case ('enum') {
-                      <mee-select
-                        [label]="field.display_name"
-                        [options]="field.enum_options ?? []"
-                        [error]="getFieldError(field.canonical_name)"
-                        (value_change)="onFieldChange(field.canonical_name, $event)"
-                      />
+                    @let softRule = getActiveSoftRule(field.canonical_name);
+                    @if (softRule) {
+                      <div class="mee-soft-rule-banner"
+                           role="note"
+                           [attr.aria-label]="'Recommendation for ' + field.display_name">
+                        <span class="mee-soft-rule-banner__icon" aria-hidden="true">&#9432;</span>
+                        <span class="mee-soft-rule-banner__text">Recommended for this listing type</span>
+                      </div>
                     }
-                    @default {
-                      <mee-input
-                        [label]="field.display_name"
-                        [required]="field.required"
-                        [error]="getFieldError(field.canonical_name)"
-                        [hint]="field.help_text"
-                        [type]="field.primitive === 'number' ? 'number' : 'text'"
-                        (blur)="onFieldBlur(field.canonical_name, $any($event))"
-                      />
-                    }
-                  }
-                </div>
+                  </div>
+                }
               }
             </div>
           }
@@ -392,37 +447,48 @@ import { CatalogFormApiService } from '../services/catalog-form-api.service';
           @if (optionalOpen()) {
             <div class="mee-field-list" aria-label="Optional fields">
               @for (field of optionalFields(); track field.canonical_name) {
-                <div
-                  class="field-wrapper"
-                  [class.mee-ai-suggested]="isAiSuggested(field.canonical_name)"
-                  [class.mee-field--full]="field.primitive === 'text_long'"
-                >
-                  @switch (field.primitive) {
-                    @case ('text_long') {
-                      <mee-textarea
-                        [label]="field.display_name"
-                        [required]="field.required"
-                        [rows]="4"
-                        (blur)="onFieldBlur(field.canonical_name, $any($event))"
-                      />
+                @if (isFieldVisible(field.canonical_name)) {
+                  <div
+                    class="field-wrapper"
+                    [class.mee-ai-suggested]="isAiSuggested(field.canonical_name)"
+                    [class.mee-field--full]="field.primitive === 'text_long'"
+                  >
+                    @switch (field.primitive) {
+                      @case ('text_long') {
+                        <mee-textarea
+                          [label]="field.display_name"
+                          [required]="isFieldRequired(field)"
+                          [rows]="4"
+                          (blur)="onFieldBlur(field.canonical_name, $any($event))"
+                        />
+                      }
+                      @case ('enum') {
+                        <mee-select
+                          [label]="field.display_name"
+                          [options]="field.enum_options ?? []"
+                          (value_change)="onFieldChange(field.canonical_name, $event)"
+                        />
+                      }
+                      @default {
+                        <mee-input
+                          [label]="field.display_name"
+                          [required]="isFieldRequired(field)"
+                          [type]="field.primitive === 'number' ? 'number' : 'text'"
+                          (blur)="onFieldBlur(field.canonical_name, $any($event))"
+                        />
+                      }
                     }
-                    @case ('enum') {
-                      <mee-select
-                        [label]="field.display_name"
-                        [options]="field.enum_options ?? []"
-                        (value_change)="onFieldChange(field.canonical_name, $event)"
-                      />
+                    @let softRule = getActiveSoftRule(field.canonical_name);
+                    @if (softRule) {
+                      <div class="mee-soft-rule-banner"
+                           role="note"
+                           [attr.aria-label]="'Recommendation for ' + field.display_name">
+                        <span class="mee-soft-rule-banner__icon" aria-hidden="true">&#9432;</span>
+                        <span class="mee-soft-rule-banner__text">Recommended for this listing type</span>
+                      </div>
                     }
-                    @default {
-                      <mee-input
-                        [label]="field.display_name"
-                        [required]="field.required"
-                        [type]="field.primitive === 'number' ? 'number' : 'text'"
-                        (blur)="onFieldBlur(field.canonical_name, $any($event))"
-                      />
-                    }
-                  }
-                </div>
+                  </div>
+                }
               }
             </div>
           }
@@ -486,9 +552,41 @@ export class CatalogFormComponent implements OnInit {
   readonly optionalOpen    = signal(false);
   readonly productId       = signal<string>('');
 
+  /**
+   * schemaRules — cross-field dependency rules from the /schema endpoint (PR #290).
+   * Populated when the schema loads; stays [] when the backend is pre-PR#290.
+   *
+   * Typed as DependencyRule[] (from catalog-form.rules.ts) because evaluateRules()
+   * and getSoftRules() accept DependencyRule[]. DependencyRuleDTO (field-schema.model.ts)
+   * has an identical shape — DependencyRuleDTO.message_id is string (required) while
+   * DependencyRule.message_id is string|undefined. The cast to DependencyRule[] in
+   * ngOnInit is safe (DependencyRuleDTO satisfies DependencyRule structurally).
+   */
+  readonly schemaRules = signal<DependencyRule[]>([]);
+
   // ── Computed ──────────────────────────────────────────────────────────────
+
+  /**
+   * fieldOverrides — map of { [target_field]: { required, visible } } derived from
+   * evaluating schemaRules[] against the current fieldValues.
+   *
+   * Pure computed — re-evaluates automatically when either schemaRules or fieldValues
+   * change. No manual effect() or event wiring needed.
+   */
+  readonly fieldOverrides = computed<Record<string, FieldOverride>>(() =>
+    evaluateRules(this.schemaRules(), this.fieldValues()),
+  );
+
+  /**
+   * activeSoftRules — soft-severity rules that are currently firing.
+   * Used to render yellow recommendation banners below fields.
+   */
+  readonly activeSoftRules = computed<DependencyRule[]>(() =>
+    getSoftRules(this.schemaRules(), this.fieldValues()),
+  );
+
   readonly productName = computed<string>(() => {
-    const v = this.fieldValues()['product_title'];
+    const v = this.fieldValues()['product_name'] ?? this.fieldValues()['product_title'];
     return (typeof v === 'string' && v) ? v : 'New Product';
   });
 
@@ -524,10 +622,13 @@ export class CatalogFormComponent implements OnInit {
       .pipe(debounceTime(10_000), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.performAutosave());
 
-    // Load schema (simulated)
-    this.apiSvc.getSchema(id).subscribe({
-      next: (groups) => {
-        this.schema.set(groups);
+    // Load schema + dependency rules (PR #290: getSchemaWithRules returns both)
+    this.apiSvc.getSchemaWithRules(id).subscribe({
+      next: (result: { groups: FieldGroup[]; rules: DependencyRuleDTO[] }) => {
+        this.schema.set(result.groups);
+        // DependencyRuleDTO is structurally a subtype of DependencyRule
+        // (both share all required fields; DTO.message_id is string vs Rule's string|undefined)
+        this.schemaRules.set(result.rules as DependencyRule[]);
         this.loading.set(false);
       },
       error: () => {
@@ -538,10 +639,51 @@ export class CatalogFormComponent implements OnInit {
   }
 
   // ── Public helpers ────────────────────────────────────────────────────────
+
   isAiSuggested(canonicalName: string): boolean {
     return canonicalName in this.aiSuggestions();
   }
 
+  /**
+   * isFieldVisible — returns true when the field should be rendered.
+   *
+   * A field is hidden only when a 'show' dependency rule targets it AND its
+   * predicate is NOT currently met. Fields with no show-rule are always visible.
+   * Default is true (no rule = visible).
+   */
+  isFieldVisible(canonicalName: string): boolean {
+    const override = this.fieldOverrides()[canonicalName];
+    return override?.visible ?? true;
+  }
+
+  /**
+   * isFieldRequired — returns whether the field is required (schema OR rule override).
+   *
+   * The schema-level required flag is the base. A dependency rule with action='required'
+   * that is currently firing can make an optional field required at runtime.
+   */
+  isFieldRequired(field: FieldSchema): boolean {
+    // Rule override takes precedence over schema default
+    const override = this.fieldOverrides()[field.canonical_name];
+    return override?.required ?? field.required;
+  }
+
+  /**
+   * getActiveSoftRule — returns the first firing soft rule targeting a given field,
+   * if any. Used to render a yellow recommendation chip below the field.
+   *
+   * Returns undefined when no soft rule is targeting this field.
+   */
+  getActiveSoftRule(canonicalName: string): DependencyRule | undefined {
+    return this.activeSoftRules().find((r: DependencyRule) => r.target_field === canonicalName);
+  }
+
+  /**
+   * getFieldError — returns a validation error message for a field, or undefined.
+   *
+   * Respects the fieldOverrides computed so fields made required by a rule are
+   * validated in the same pass as schema-required fields.
+   */
   getFieldError(canonicalName: string): string | undefined {
     const allFields = [
       ...this.compulsoryFields(),
@@ -549,7 +691,11 @@ export class CatalogFormComponent implements OnInit {
       ...this.optionalFields(),
     ];
     const field = allFields.find(f => f.canonical_name === canonicalName);
-    if (!field?.required) return undefined;
+    if (!field) return undefined;
+
+    // Use rule-augmented required state
+    const effectiveRequired = this.isFieldRequired(field);
+    if (!effectiveRequired) return undefined;
     return !this.fieldValues()[canonicalName]
       ? `${field.display_name} is required`
       : undefined;

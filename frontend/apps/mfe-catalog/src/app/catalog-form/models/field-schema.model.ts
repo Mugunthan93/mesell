@@ -111,6 +111,11 @@ export interface SchemaFieldDTO {
 /**
  * SchemaResponseDTO — exact wire shape from GET /api/v1/categories/{id}/schema.
  * Maps to backend category/schemas.py SchemaResponse (model_config extra="allow").
+ *
+ * Added in PR #290 (dependency_rules):
+ *   dependency_rules[] is appended by category/service.py _project_dependency_rules.
+ *   Only rules whose target_field exists in THIS category's schema are surfaced.
+ *   The array is absent on older backend versions (optional for forward-compat).
  */
 export interface SchemaResponseDTO {
   /** Flat list of field descriptors — NOT pre-grouped. */
@@ -127,6 +132,34 @@ export interface SchemaResponseDTO {
   main_sheet_label: string;
   /** 'standard' | 'collapsed' — layout hint. */
   compliance_shape: 'standard' | 'collapsed';
+  /**
+   * Cross-field dependency rules projected for this category (PR #290).
+   * Wire keys: id, type, if_field, if_operator, if_value, target_field,
+   *            action ("required"|"show"), severity ("hard"|"soft"), message_id.
+   * Optional — absent on pre-#290 backend versions.
+   */
+  dependency_rules?: SchemaRuleDTO[];
+}
+
+/**
+ * SchemaRuleDTO — one projected dependency rule from /schema.
+ * Wire shape from backend/app/modules/category/service.py _project_dependency_rules.
+ *
+ * Note: backend action value is "required" (not "require") — both are accepted
+ * by the TS interface to guard against spec/implementation divergence.
+ */
+export interface SchemaRuleDTO {
+  id: string;
+  type: 'category_required' | 'value_conditional';
+  if_field?: string | null;
+  if_operator?: 'eq' | 'in' | 'contains' | 'any' | null;
+  if_value?: unknown;
+  target_field: string;
+  /** Backend wire value: "required" or "show" */
+  action: string;
+  severity: 'hard' | 'soft';
+  /** Format: "validation.cross_field.{rule_id}" */
+  message_id: string;
 }
 
 /**
@@ -501,6 +534,63 @@ export function groupIntoSteps(fields: FieldSchema[]): WizardStep[] {
   }
 
   return steps;
+}
+
+// ── Dependency rules adapter (PR #290) ───────────────────────────────────────
+
+/**
+ * adaptDependencyRules — converts SchemaRuleDTO[] from the /schema wire payload
+ * into DependencyRule[] for the catalog-form rule evaluator.
+ *
+ * The backend wire key is "message_id"; the DependencyRule interface also accepts
+ * "error_message_key" as an alias. This adapter sets both fields for compat.
+ *
+ * Returns [] when dependency_rules is absent (pre-PR#290 backend versions).
+ * Pure function — no Angular, no side effects.
+ */
+export function adaptDependencyRules(dto: SchemaResponseDTO): DependencyRuleDTO[] {
+  const raw = dto.dependency_rules ?? [];
+  return raw.map(r => ({
+    id:                r.id,
+    type:              r.type,
+    if_field:          r.if_field,
+    if_operator:       r.if_operator as DependencyRuleDTO['if_operator'],
+    if_value:          r.if_value,
+    target_field:      r.target_field,
+    action:            r.action as DependencyRuleDTO['action'],
+    severity:          r.severity,
+    message_id:        r.message_id,
+    error_message_key: r.message_id,
+  }));
+}
+
+/**
+ * DependencyRuleDTO — the frontend-internal view-model for a dependency rule.
+ * Bridged from SchemaRuleDTO via adaptDependencyRules().
+ *
+ * This mirrors the DependencyRule interface from catalog-form.rules.ts — kept
+ * here as a re-export target so consumers can import from a single models path.
+ */
+export interface DependencyRuleDTO {
+  id: string;
+  type: 'category_required' | 'value_conditional';
+  if_field?: string | null;
+  if_operator?: 'eq' | 'in' | 'contains' | 'any' | null;
+  if_value?: unknown;
+  target_field: string;
+  action: 'required' | 'require' | 'show';
+  severity: 'hard' | 'soft';
+  message_id: string;
+  error_message_key: string;
+}
+
+/**
+ * SchemaWithRules — return type for getSchemaWithRules() in CatalogFormApiService.
+ * Adds the dependency_rules projection alongside the existing FieldGroup[] structure.
+ */
+export interface SchemaWithRules {
+  groups: FieldGroup[];
+  rules: DependencyRuleDTO[];
 }
 
 // ── Legacy alias ──────────────────────────────────────────────────────────────
