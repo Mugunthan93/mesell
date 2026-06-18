@@ -1,5 +1,35 @@
 # STATUS — FRONTEND
 
+=== UPDATE: 2026-06-18 17:45 ===
+Phase: mfe-pricing — §12.M Price Calculator forward-estimator (slice 2 / component rework)
+Done:
+  - Rewrote PricingComponent to §12.M forward-estimator contract (PR #287, commit 5199ac2)
+  - meesho_price is now the primary/required form input (selling price → estimated_payout)
+  - Removed: target_margin_pct form control + targetMarginError() signal
+  - Removed: commission_missing PricingErrorState, banner, signal, _handleErrorShape case
+  - Added: commission_pct (default "4", 0–100%) + return_rate_pct (default "0", 0–100%) inputs
+  - Added: optional mrp reference input (display-only, does not drive payout — DECISION-1)
+  - Live recalc: form.valueChanges → debounceTime(350) + distinctUntilChanged → switchMap(calc)
+  - Hero: estimated_payout "You pocket ₹X" with positive/negative badge + WDRP footnote
+  - Secondary ratios: margin_pct (Margin, % of meesho_price) + markup_pct (Markup, % of input_cost)
+  - 3-price strip: MRP (or "—") · Meesho Price · WDRP
+  - Deduction table: referral_commission(commission_pct%), shipping_charge, logistics_fee,
+    fixed_fee, gst_on_fees(gst_pct%), TCS, TDS, rto_expected_loss(return_rate_pct%), total_deductions
+  - Server alerts: NEGATIVE_PAYOUT→error, LOW_MARGIN→warning, SHIPPING_DOMINATES→info
+  - Deleted "Shipping not included in V1" disclaimer (shipping now in deduction table)
+  - Fixed _buildRequestBody return type: object → PriceCalcRequest (TS2345)
+  - Added PriceCalcRequest to import { type ... } from pricing.model
+  - Spec: removed all TODO(slice-2) markers; replaced commission_missing local type aliases;
+    added §4.4 meeshoPriceError test block (7 tests)
+Tests: 129/129 pass (vitest direct, pricing.component.spec.ts)
+Build: mfe-pricing GREEN — Application bundle generation complete, 3.618s, zero TS errors
+In progress: none
+Blockers: none
+Next: slice 3 (ui-styler — visual polish pass on PR #287)
+Hand-offs: PricingComponent slice-2 rework complete on feat/pricing-fe-rework @ 5199ac2
+  → ui-styler (slice 3): style polish pass on the new template; component contract frozen.
+=========
+
 === UPDATE: 2026-06-18 14:00 ===
 Phase: libs/ui-kit — mee-tree-select overhaul (CVA, lazy expand, server search, Tailwind residue fix)
 Done:
