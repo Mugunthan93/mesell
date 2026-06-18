@@ -35,7 +35,8 @@ export const environment: Environment = {
    * PROD Google OAuth Web client id. Authorized JS origin = the production app
    * (shell) origin. Provisioned in GCP by infra (see handoff memo). The backend
    * MUST pin this same id for ID-token `aud` verification.
-   * Placeholder until the prod OAuth client is provisioned.
+   * mesell-prod GIS Web client — same id authorizes localhost:4200, mesell.xyz,
+   * and www.mesell.xyz. PUBLIC value (embedded in page) — not a secret.
    */
-  googleOauthClientId: 'PROD_GOOGLE_WEB_CLIENT_ID.apps.googleusercontent.com',
+  googleOauthClientId: '378368872039-q0kkbbih1fj50ea25c0eefvb8679sid9.apps.googleusercontent.com',
 };

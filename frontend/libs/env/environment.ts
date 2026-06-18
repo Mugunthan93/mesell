@@ -30,7 +30,9 @@ export const environment: Environment = {
    * DEV Google OAuth Web client id. Authorized JS origin = the shell dev origin
    * (http://localhost:4200 — the user interacts with the shell, never the
    * mfe-auth remote at :4206). Provisioned in GCP by infra (see handoff memo).
-   * Placeholder until the dev OAuth client is provisioned.
+   * mesell-prod GIS Web client — same id authorizes localhost:4200, mesell.xyz,
+   * and www.mesell.xyz. PUBLIC value (embedded in page) — not a secret.
+   * Backend pins the SAME id for ID-token `aud` verification (FE/BE lockstep).
    */
-  googleOauthClientId: 'DEV_GOOGLE_WEB_CLIENT_ID.apps.googleusercontent.com',
+  googleOauthClientId: '378368872039-q0kkbbih1fj50ea25c0eefvb8679sid9.apps.googleusercontent.com',
 };
