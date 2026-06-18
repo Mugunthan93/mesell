@@ -1,6 +1,53 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-18 (meesell-api-routes-builder) — Postman v2.1 collection + regeneration scripts ===
+Phase: V1 tooling/docs (no endpoint additions)
+Done:
+  - backend/postman/meesell.postman_collection.json — hand-authored Postman v2.1 collection:
+    31 requests, 9 folders (auth/seller-profile/categories/products/images/pricing/exports/webhooks/health),
+    schema v2.1.0 validated, collection-level Bearer {{access_token}}, noauth on 5 public endpoints,
+    OTP verify test script auto-sets {{access_token}}, runnable example bodies on all requests
+  - backend/postman/meesell.postman_environment.json — base_url=http://localhost:8000, empty access_token
+  - backend/postman/openapi.json — FastAPI-generated spec (25 paths, 30 operations, source=live server)
+  - backend/postman/README.md — import guide, Login flow, regen command, feature flag table
+  - backend/scripts/gen_openapi.py — in-process OpenAPI dump with 18-var sentinel env; live-server fallback
+  - backend/scripts/gen_postman.sh — one-command regen: dump openapi + npx openapi-to-postmanv2
+Tests: N/A (tooling only — no app code changed)
+In progress: none
+Blockers: none
+Next: founder merges PR #282; gate confirmed
+Hand-offs:
+  - founder: PR #282 (chore/postman-collection → develop) NOT merged — gate after review
+  - Regeneration: `bash backend/scripts/gen_postman.sh` from any directory
+=========
+
+=== UPDATE: 2026-06-18 14:00 (meesell-services-builder) — i18n generic-missing fallback ===
+Phase: V1 validation-UX bug-fix (required-field 422s render BLANK)
+Session: mesell-i18n-generic-missing-backend-session-1 (HYBRID step 2/BUILD)
+  branch fix/i18n-generic-missing, worktree /private/tmp/mesell-wt/i18n-missing (off develop@0087562)
+Done:
+  - ROOT CAUSE (confirmed by SPEC): validation.{field}.missing had no generic fallback.
+    Resolver Step-2b (resolver.py:112-122) ALREADY derives validation.generic.{rule} for any
+    validation.{field}.{rule}; the missing-rule generic key was simply absent. No resolver change.
+  - messages_en.py: +10 keys in the §5A.I generic family block (after invalid_url):
+    validation.generic.{missing, string_too_short, string_too_long, int_parsing, float_parsing,
+    string_type, greater_than_equal, less_than_equal, greater_than, less_than}. All 3-segment
+    Contract-10 clean. Additive only; no existing key edited; auth.token_missing (L_iam_1) untouched;
+    bespoke .missing keys (q/catalog.draft/pricing.commission/export.front_image/auth.token) untouched.
+  - test_i18n_generic_fallback.py: +23 tests (13→36). Founder case description.missing→generic, zero
+    missing_key logs; parametrized per-field→generic for all shipped rules; bespoke-.missing-unchanged guard.
+Tests: 61 passed (test_i18n_generic_fallback + test_resolver_fallback + test_section2_i18n_contract);
+  Contract-10 3-segment gate green. ruff clean. Production diff = messages_en.py ONLY. Migration N/A.
+In progress: none
+Blockers: none
+Next: founder merges PR #280; backend-coordinator HYBRID step-3 merge-gate review.
+Hand-offs:
+  - founder: PR #280 (fix/i18n-generic-missing → develop) ready, NOT merged.
+  - frontend-coordinator: validation.{field}.missing 422s now resolve to a human string — the 4th
+    blank-error class (after q.missing/token_missing/size_in_ltrs.invalid_enum_value) is closed.
+=========
+
 === UPDATE: 2026-06-17 (meesell-services-builder) — catalog enum 422 false-reject + i18n generic fallback ===
 Phase: V1 catalog-form bug-fix (PATCH/autofill 422 on valid category-enum value)
 Session: catalog-422-fix (HYBRID step 2/BUILD), branch fix/catalog-enum-422-i18n,
@@ -6848,4 +6895,63 @@ Hand-offs:
     contract break — additive key only.
   - backend-coordinator: merge-gate — confirm the 9 locked keys + schema_contract.py are
     unchanged (verified: not in diff).
+=========
+
+=== UPDATE: 2026-06-18 17:10 ===
+Phase: V1 Feature 7 Price Calculator (forward-payout estimator rework, §12.M) — PR #285 RE-GATE round 2
+Session: mesell-price-calculator-backend-session-1
+Board sweep (session-start): Active-features rows all 2026-06-12/13/14 IST — none 7+ days stale as of
+  2026-06-18 against the MERGED-to-develop microservices rows (those are founder-gate-OPEN, not lead-stale).
+  NOTE: several microservices Active rows are stale-by-calendar (>4 days) but are FOUNDER-GATE-OPEN
+  (waiting on founder merge, not lead action) — not lead-actionable stale; left as-is. Recently-merged: no
+  rows aged past 14 days needing eviction this sweep. Inter-lead requests open: 1 (infra flag-parity flags,
+  unchanged).
+Done:
+  - RE-GATE (HYBRID step 3, round 2) of PR #285 (`fix/pricing-engine-rework` → develop). Verified the two
+    round-1 reject fixes landed in commit 74ade7c, and confirmed the fix is DOCS-ONLY.
+  - 74ade7c diff --stat = docs/BACKEND_ARCHITECTURE.md (27 lines) + docs/V1_FEATURE_SPEC.md (2 lines) ONLY.
+    No code / test / migration change. Code from round 1 (calibration, no-422, migration, alerts,
+    zero-Meesho-calls) NOT re-reviewed — untouched by this commit.
+  - R1 PASS — V1_FEATURE_SPEC.md Feature 7 amendment (PR-branch L321) now reads "shipping (₹30 for Meesho
+    Price ≤ ₹1000, ₹70 above)". The stale "₹70 bracketed" prose is GONE. Matches code + §12.M banding.
+  - R2 PASS — §2.D breakdown line (PR-branch L592) trailing assertion is now "7 ✓" (consistent with the
+    amendment that retired pricing→category). Task-specified grep `8 ✓\|exactly 8\|8-count\|8 allowed`
+    run against the PR-branch blob (git show fix/pricing-engine-rework:...) returns only L590 (the
+    before→after narrative "drops from 8 ✓ to 7 ✓" — explicitly allowed) and the 28-route-count line
+    (allowed). No surviving assertion claims the §2.D matrix has 8 cells as CURRENT FACT. The §13 (×4) and
+    §16 (×4) "8 ✓ / 8-count / 8 allowed" assertions are reconciled to "7 ✓" with a "(7 post-§12.M
+    2026-06-18; see §12.M)" cross-note. §16.D "8 domain modules" module count correctly PRESERVED (that is
+    a count of modules, not matrix cells).
+  - PROCESS NOTE: the local working tree is on `develop`; greps must target the PR-branch blob via
+    `git show fix/pricing-engine-rework:<path>` — a working-tree grep would falsely read the pre-fix develop
+    state (MEMORY gotcha class: verify against the branch under review, not HEAD).
+Pre-existing latent (RULING): builder flagged that the §2.D L592 per-source enumeration
+  (catalog 2 + image 1 + pricing 1 + dashboard 2 + export 4 = 10) does not match the asserted total (7),
+  and that the actual matrix TABLE has more ✓ cells than the stated count. CONFIRMED PRE-EXISTING: on
+  pre-PR develop the same line enumerated 2+1+2+2+4 = 11 while asserting "8 ✓", and the develop matrix table
+  also counts 11 ✓ cells. So the enumeration-vs-total AND table-vs-stated-count gaps both PRE-DATE this PR.
+  PR #285's edit to L592 was a faithful, internally-consistent decrement of exactly the two numbers it owned
+  (pricing source 2→1, grand total 8→7) reflecting the one retired pricing→category cell — it did NOT
+  introduce or widen the gap; it shifted it by one (11→10 enumeration, 8→7 assertion). RULING (doc owner):
+  this is a separate, OLDER whole-matrix accounting defect spanning §2.D + §13 + §16 AND the matrix table
+  itself, whose correct fix requires reconciling the table, the enumeration, and every "N ✓" assertion in
+  one pass — and it touches §7.3-LOCKED sections (founder approval). It must NOT block a PR that fixed its
+  actual round-1 reject reasons. FILED as a SEPARATE follow-up doc ticket (BE-DOC-2D-COUNT-1, below); NOT a
+  blocker for #285.
+VERDICT: APPROVE-FOR-FOUNDER. R1 + R2 both resolved; fix is docs-only; pre-existing latent ticketed.
+  The founder owns the `fix/pricing-engine-rework` → develop merge (D1) — I do NOT merge.
+Follow-up ticket FILED — BE-DOC-2D-COUNT-1 (P3, docs-only, separate PR): the §2.D cross-module ✓-cell
+  count is internally inconsistent across the matrix table, the L592 per-source enumeration, and the
+  §2/§13/§16 "N ✓" assertions. Determine the TRUE current ✓-cell count by counting the table rows post-§12.M
+  (table shows: catalog→customer,category; image→catalog; pricing→catalog; dashboard→customer,catalog;
+  export→customer,category,catalog,image = 10 ✓ cells in the table vs the asserted 7), then reconcile ALL
+  three surfaces in one pass. Touches §7.3-LOCKED §2.D/§13/§16 → FOUNDER approval required for the
+  amendment. Pre-dates PR #285; do not let it block #285.
+In progress: none
+Blockers: none
+Next: founder merges PR #285 to develop (D1). On merge, lead flips the board row to MERGED + Recently merged.
+  Schedule BE-DOC-2D-COUNT-1 as a standalone docs PR (founder-approval-gated, §7.3).
+Hand-offs:
+  - founder: APPROVE-FOR-FOUNDER on #285 — founder owns the develop merge gate (D1).
+  - founder: BE-DOC-2D-COUNT-1 follow-up will need §7.3 approval (LOCKED §2.D/§13/§16 amendment).
 =========

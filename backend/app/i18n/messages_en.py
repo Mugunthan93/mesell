@@ -244,6 +244,40 @@ VALIDATION_MESSAGES: dict[str, str] = {
     "validation.generic.invalid_url": (
         "Please enter a valid link starting with http:// or https://."
     ),
+    # Pydantic-v2 native rule strings (core/errors.py builds the per-field id
+    # ``validation.<field>.<type>`` from the raw Pydantic error ``type``).
+    # Without a generic entry these rendered BLANK in the UI (required-field
+    # 422s etc.). ``missing`` is the required-field rule (type="missing").
+    "validation.generic.missing": (
+        "This field is required. Please fill it in."
+    ),
+    "validation.generic.string_too_short": (
+        "This value is too short. Please add a little more."
+    ),
+    "validation.generic.string_too_long": (
+        "This value is too long. Please shorten it."
+    ),
+    "validation.generic.int_parsing": (
+        "Please enter a whole number for this field."
+    ),
+    "validation.generic.float_parsing": (
+        "Please enter a valid number for this field."
+    ),
+    "validation.generic.string_type": (
+        "This value has the wrong format for this field."
+    ),
+    "validation.generic.greater_than_equal": (
+        "This value is below the allowed minimum."
+    ),
+    "validation.generic.less_than_equal": (
+        "This value is above the allowed maximum."
+    ),
+    "validation.generic.greater_than": (
+        "This value is below the allowed minimum."
+    ),
+    "validation.generic.less_than": (
+        "This value is above the allowed maximum."
+    ),
 }
 
 

@@ -88,6 +88,118 @@ Angular 18 service specialist for MeeSell. Owns services + RxJS state + HttpClie
 - @primeuix/themes absent from mfe-auth + mfe-onboarding + shell remoteEntry.json
 - PR #203 updated; comment added: https://github.com/Mugunthan93/mesell/pull/203#issuecomment-4697814639
 
+## Session: auth-refresh-stampede fix (2026-06-18)
+
+**Branch/commit:** fix/auth-refresh-stampede @ 26a32ba
+**PR:** #281 (→ develop, IN REVIEW — coordinator merge-gate step 3)
+**Worktree:** /private/tmp/mesell-wt/auth-stampede
+
+### Root cause (confirmed by coordinator SPEC)
+- THREE callers called authApi.refresh() independently: refreshInterceptor (gated),
+  _doSilentRefresh (ungated), bootstrap() (ungated).
+- Rotating refresh cookies → 2nd+ concurrent refresh uses a revoked cookie → 401 cascade.
+- Secondary defects: D-A (_refreshToken$ never reset after success), D-B (_isRefreshing
+  never reset on logout), D-C (_doSilentRefresh swallowed 401 as EMPTY), D-D (Math.max(…,0)
+  allowed 0ms delay → immediate refire loop on tiny TTLs).
+
+### Fix (all 4 secondaries fixed)
+- AuthService.refreshShared(): ONLY path to POST /auth/refresh. Single-flight Observable
+  stored in _refreshInFlight. shareReplay({bufferSize:1, refCount:false}) so late subscribers
+  get the cached result. finalize() clears _refreshInFlight (D-A/D-B fixed by construction).
+- AuthService.forceLogout(): logout-once guard (_loggedOut bool). navigate(['/login']) ONCE.
+  Subsequent calls no-op. setSession() resets _loggedOut for new login windows.
+- _doSilentRefresh catchError: status===401 → forceLogout(); other errors swallowed (D-C fix).
+- scheduleRefresh delay: skew=min(30,expiresIn*0.1), delayMs=max((expiresIn-skew)*1000, 5000).
+  MIN_REFRESH_DELAY_MS=5000 prevents 0ms loop (D-D fix).
+  IMPORTANT: changed behavior — expiresIn=60 now fires at 54s (was 30s). Specs updated.
+- refreshInterceptor: thin — delegates to auth.refreshShared(), calls auth.forceLogout() on
+  refresh-401. Removed module-level _isRefreshing/_refreshToken$ entirely.
+
+### Test patterns
+- Tests (a)-(g) use lightweight mock AuthService with refreshShared as vi.fn() routing
+  to HttpClient so controller.expectOne('/api/v1/auth/refresh') still works.
+- Tests (d),(h),(i),(j),(k) use setupReal() with real AuthService + real AuthApiService —
+  REQUIRED to exercise actual shareReplay single-flight behavior. Mock AuthService cannot
+  replicate shareReplay semantics (each vi.fn() call creates a new Observable).
+- afterEach: only controller.verify() — NOT vi.useRealTimers() (no fake timers in interceptor specs).
+- Auth service specs: provideRouter required now (AuthService injects Router for forceLogout).
+
+### Key learnings
+**Mock vs real for single-flight tests:** If your test asserts "N concurrent callers → 1 HTTP call",
+  you MUST use the real service. A vi.fn() mock creates a new Observable per call — no sharing.
+  Only the real refreshShared() with shareReplay provides the single-flight guarantee.
+
+**shareReplay({refCount:false}) hazard:** refCount:true would re-subscribe the source when ref
+  count drops to 0 between emission and a late subscriber — producing a second HTTP call.
+  refCount:false keeps the multicast alive until finalize() clears it. This is the correct
+  pattern for a refresh gate.
+
+**finalize() placement:** finalize() must be OUTSIDE the shareReplay (piped after). If placed
+  inside, it fires for each subscriber's teardown, not once for the multicast source.
+
+**forceLogout() vs logout():** forceLogout = "involuntary logout, navigate once"; logout = "user
+  pressed logout button, caller handles navigation". Components calling explicit logout action
+  should call logout(); auth infra cascade paths call forceLogout().
+
+**D-D delay formula change is observable in specs:** Old formula (expiresIn-30)*1000 floor 0 gave
+  30s for expiresIn=60. New formula gives 54s. All existing timer-based specs needed update.
+
+**Build note:** ng build frontend exits 0 for core lib changes. The "ERRR Could not find xlsx"
+  is a pre-existing native-federation warning (xlsx is intentionally skipped dep). Not a new error.
+
+## Session: pricing-fe-rework slice 1 (2026-06-18)
+
+**Branch/commit:** feat/pricing-fe-rework @ eca463e
+**PR:** #287 (→ develop, open — do NOT merge, slices 2+3 follow)
+**Worktree:** /private/tmp/mesell-wt/pricing-fe-rework
+
+### Contract confirmed (backend fd4331d / PR #285 §12.M)
+
+PriceCalcRequest: meesho_price (primary), input_cost, commission_pct (default "4"),
+  return_rate_pct (default "0"), mrp (optional), override_shipping, override_logistics_fee,
+  override_fixed_fee, override_gst_pct, override_tcs_pct, override_tds_pct.
+  DEAD: target_margin_pct.
+
+PriceCalcResponse: mrp (nullable), meesho_price, wdrp_price, input_cost, commission_pct,
+  referral_commission, shipping_charge, logistics_fee, fixed_fee, gst_pct, gst_on_fees,
+  tcs, tds, return_rate_pct, rto_expected_loss, total_deductions, estimated_payout,
+  estimated_payout_wdrp, profit, margin_pct, markup_pct, alerts[], calculated_at.
+  DEAD: seller_price, commission_amount, gst_amount, profit_pct.
+
+Alert codes: NEGATIVE_PAYOUT | LOW_MARGIN | SHIPPING_DOMINATES.
+  DEAD: HIGH_MRP_MULTIPLIER, THIN_PROFIT.
+ALERT_MESSAGES keys: pricing.alert.negative_payout / .low_margin / .shipping_dominates.
+422 path: DEAD (§12.M (4)). PriceCalcCommissionMissingError DELETED.
+
+### Key learnings
+
+**Forward estimator contract shift:** §12.E was backward (input_cost+target_margin → mrp output).
+  §12.M is forward (meesho_price input → estimated_payout output). Model contracts are INVERSE.
+  component forms must be rebuilt top-to-bottom for this flip.
+
+**Pre-existing TS errors block ng test on origin/develop:** The worktree off origin/develop
+  has pre-existing TS errors in mfe-auth (errorMessage signal), mfe-onboarding, shell specs.
+  These errors are from modified working-tree files (shown in git status) that haven't been
+  pushed to origin. Pure-function pricing specs still run via bare vitest run.
+  Service specs (with @mesell/core) require ng test runner for tsconfig path resolution.
+  Strategy: confirm 0 mfe-pricing errors via tsc --noEmit + run component spec via vitest.
+
+**pricing.component.spec.ts must be updated in slice 1, not slice 2:**
+  The component spec imports model types directly. Removing PriceCalcCommissionMissingError
+  from the model breaks the spec compile immediately — must fix in the same slice as the model.
+  Pattern: always update the spec that imports the model IMMEDIATELY when the model changes.
+
+**TODO(slice-2) casting pattern for dead switch cases:**
+  When a union case is removed from a type (commission_missing deleted from PriceCalcErrorShape),
+  TypeScript raises an error on any switch case that matches it. Temporary fix until slice 2:
+  cast the dead case label: `case 'commission_missing' as 'validation':`. This compiles but
+  is clearly marked for deletion. Do not leave this in for longer than one slice.
+
+**vitest vs ng test resolution:** bare `vitest run <file>` resolves relative + rxjs imports
+  but NOT tsconfig path aliases (@mesell/*). ng test resolves everything via tsconfig.
+  For specs that only import from local files + standard libs: use bare vitest.
+  For specs that import @mesell/core ApiClient: must use ng test (fails when suite-wide TS errors block build).
+
 ## Session: boot-smoke CI gate — confirmed GREEN (2026-06-14)
 
 **Branch:** ci/frontend/boot-smoke @ 88e6262

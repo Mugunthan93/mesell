@@ -1,7 +1,186 @@
 # STATUS — FRONTEND
 
 **Owner:** meesell-frontend-coordinator (master session)
-**Last update:** 2026-06-17
+**Last update:** 2026-06-18
+
+=== UPDATE: 2026-06-18 18:05 ===
+Phase: feat/pricing-fe-rework — §12.M pricing page visual polish + a11y (session mesell-pricing-fe-rework-frontend-session-1, HYBRID STEP 2, SLICE 3 of 3)
+Agent: meesell-angular-ui-styler
+Branch: feat/pricing-fe-rework (worktree /private/tmp/mesell-wt/pricing-fe-rework)
+PR: #287 (open → develop — do NOT merge, coordinator merge-gate after slice 3)
+Commit: 312625e
+
+Done:
+  A11y fixes:
+    - <td scope="row"> → <th scope="row"> on all 9 deduction table label cells.
+      scope is ONLY valid on <th>; using it on <td> is a WCAG 1.3.1 violation.
+    - aria-labelledby="deduction-table-heading" on table; id on h3 heading.
+      Replaced inconsistent aria-label="P&L breakdown" (now label matches heading text).
+  Token discipline:
+    - Removed :host { --mee-color-surface-variant: #f2f6fa } — hardcoded hex
+      violates no-raw-hex lane guard; token already exists in _tokens.css (Layer 1).
+  CSS violations:
+    - Removed !important from .mee-pricing__value--positive/negative.
+      Replaced with doubled-class selector for specificity (no !important needed).
+  Responsive (360px):
+    - Outer container: px-4 → px-3 sm:px-4 (saves 4px per side on 360px).
+    - .mee-pricing__table-scroll overflow-x: auto wrapper — no horizontal overflow.
+    - Table min-width: 240px — amount column never squeezed.
+    - Hero font-size: capped to 1.625rem at ≤400px (prevents overflow of ₹XXX.XX).
+    - Table label max-width: 140px → 150px at ≤400px for better label readability.
+  Visual structure:
+    - Hero: padding expanded (space-5/space-4), margin-bottom space-4.
+    - Price strip: margin-bottom space-2.
+    - Ratios row: border-bottom + padding-bottom + margin-bottom (clean separator).
+    - Table: unified th/td padding rule (th cells previously unpadded).
+
+Build: mfe-pricing GREEN (3.581s, 206.89 kB, +1.68 kB delta — all CSS).
+Tests: 129/129 PASS (vitest direct, pure-function specs).
+A11y: scope=col on col headers (PASS), scope=row on th row headers (FIXED),
+  aria-labelledby on table (FIXED), role=status on spinner (PASS),
+  aria-label on hero amount (PASS), role=alert in alert-banner (PASS),
+  44px touch targets via mee-button internals (PASS).
+Mobile (360px): no horizontal overflow; hero readable; table scrolls within card.
+Screenshots: MFE remote cannot render standalone (needs shell + ActivatedRoute :id param).
+  Background color #f0f5f9 (--mee-color-bg) confirmed loading correctly via Playwright.
+  Full screenshots require shell + all MFE remotes running (documented caveat).
+Logic/contract: untouched — CSS and aria attributes only.
+In progress: nothing (slice 3 complete).
+Blockers: none.
+Next: coordinator merge-gate review (HYBRID STEP 3).
+Hand-offs:
+  Slice 3 complete. PR #287 (feat/pricing-fe-rework) is ready for meesell-frontend-coordinator
+  merge-gate review. All 3 slices shipped: model+service (slice 1), component (slice 2),
+  UI polish+a11y (slice 3).
+=========
+
+=== UPDATE: 2026-06-18 17:25 ===
+Phase: feat/pricing-fe-rework — §12.M forward estimator model+service rewrite (session mesell-pricing-fe-rework-frontend-session-1, HYBRID STEP 2, SLICE 1 of 3)
+Agent: meesell-angular-service-builder
+Branch: feat/pricing-fe-rework (worktree /private/tmp/mesell-wt/pricing-fe-rework)
+PR: #287 (open → develop — do NOT merge, coordinator merge-gate after slice 3)
+Commit: eca463e
+
+Done:
+  pricing.model.ts — FULL REWRITE to §12.M forward estimator contract (PR #285, fd4331d):
+    PriceCalcRequest: meesho_price (primary), input_cost, commission_pct (default "4"),
+      return_rate_pct (default "0"), mrp (optional display), 6 override fields.
+      target_margin_pct DELETED.
+    PriceCalcResponse: 3-price model (mrp nullable, meesho_price, wdrp_price), input_cost echo,
+      full deduction breakdown (commission_pct, referral_commission, shipping_charge, logistics_fee,
+      fixed_fee, gst_pct, gst_on_fees, tcs, tds, return_rate_pct, rto_expected_loss, total_deductions),
+      outputs (estimated_payout, estimated_payout_wdrp, profit, margin_pct, markup_pct), alerts, calculated_at.
+      Dead §12.E fields removed: seller_price, commission_amount, gst_amount, profit_pct.
+    AlertCode: NEGATIVE_PAYOUT + SHIPPING_DOMINATES (new); HIGH_MRP_MULTIPLIER + THIN_PROFIT DEAD.
+    ALERT_MESSAGES: new §12.M keys (pricing.alert.negative_payout / .low_margin / .shipping_dominates).
+    PriceCalcCommissionMissingError DELETED (422 path dead per §12.M (4)).
+    PriceCalcErrorShape now: unavailable | validation | server_error (no commission_missing).
+  pricing.service.ts — FULL REWRITE to §12.M contract:
+    Method calc() sends PriceCalcRequest (meesho_price primary).
+    Error matrix: 401→EMPTY, 404→unavailable, 400→validation, 5xx→server_error.
+    NO 422 branch (422 treated defensively as server_error — structurally impossible in §12.M).
+    NO retryOn503 (POST non-idempotent, §3.2 permanent rule).
+  pricing.service.spec.ts — FULL REWRITE to §12.M spec:
+    Asserts: exact URL /api/v1/products/{id}/price-calc; body has meesho_price/input_cost/
+      commission_pct/return_rate_pct/mrp; NEVER target_margin_pct; 200 maps NEW §12.M keys
+      (estimated_payout, estimated_payout_wdrp, margin_pct, markup_pct, wdrp_price,
+      total_deductions, referral_commission, etc.); §12.E dead keys absent (seller_price, etc.);
+      error matrix 401/404/400/5xx/network; 422 → server_error (dead path); no retryOn503;
+      override_shipping (not override_shipping_fee); NEGATIVE_PAYOUT alert on 200; null mrp.
+  pricing.component.spec.ts — UPDATED to §12.M:
+    Removed PriceCalcCommissionMissingError import (type deleted). Updated ALERT_MESSAGES tests
+      to §12.M keys. Updated PriceCalcRequest tests (meesho_price). Updated response tests.
+      §12.E dead field tests removed. 122/122 pure-function tests PASS (vitest run).
+  pricing.component.ts — TODO(slice-2) markers added throughout:
+    Dead template fields bridged to compile (commission_amount→referral_commission,
+    gst_amount→gst_on_fees, profit_pct→margin_pct, seller_price→meesho_price).
+    commission_missing case cast-guarded. Dead form control annotated for slice 2.
+    Component NOT fully rewritten — intentional, slice 2 owns it.
+
+Tests:
+  pricing.component.spec.ts: 122/122 PASS (vitest run — pure functions, no Angular runner).
+  pricing.service.spec.ts: 0 TypeScript errors (tsc --noEmit scoped to mfe-pricing).
+  ng test (full suite): BLOCKED by pre-existing TS errors on origin/develop in mfe-auth
+    (errorMessage signal drift), mfe-onboarding, shell — confirmed pre-existing, NOT introduced
+    by this slice. These were present on origin/develop before this PR.
+
+Build: TypeScript-clean for pricing files (0 mfe-pricing errors per tsc --noEmit).
+  Full ng build not run — pre-existing TS errors prevent bundle generation.
+
+Blockers: none in slice 1. Slice 2 (component) and slice 3 (styling) must land before merge.
+Next: meesell-angular-component-builder takes slice 2 (component rewrite) on this branch.
+Hand-offs:
+  PricingApiService.calc(productId, body: PriceCalcRequest): Observable<PriceCalcResponse|PriceCalcErrorShape>
+    — ready for component. Request must have meesho_price (string) + input_cost (string);
+    response carries estimated_payout (primary), margin_pct, markup_pct, wdrp_price, total_deductions.
+    Error union: unavailable | validation | server_error (no commission_missing).
+    meesho_price drives badge: parseDecimal(estimated_payout) > 0 for POSITIVE badge.
+  pricing.component.ts TODO(slice-2) markers: form needs meesho_price control (primary input);
+    delete target_margin_pct; add commission_pct + return_rate_pct optional controls;
+    update table rows to §12.M fields; delete commission_missing error path.
+=========
+
+=== UPDATE: 2026-06-18 11:35 ===
+Phase: fix/auth-refresh-stampede — single-flight refresh gate (session mesell-auth-refresh-stampede-frontend-session-1)
+Agent: meesell-angular-service-builder
+Branch: fix/auth-refresh-stampede (worktree /private/tmp/mesell-wt/auth-stampede)
+PR: #281 (open → develop — do NOT merge, coordinator merge-gate review in step 3)
+Commit: 26a32ba
+
+Done:
+  auth.service.ts — Added refreshShared() (single-flight Observable, shareReplay{bufferSize:1,
+    refCount:false} + finalize reset). Added forceLogout() (logout-once _loggedOut guard,
+    navigate exactly once). Fixed _doSilentRefresh() to call forceLogout() on 401 (D-C fix).
+    Fixed scheduleRefresh() delay formula: skew=min(30,expiresIn*0.1), floor=5000ms (D-D fix).
+    logout() clears _refreshInFlight. setSession() resets _loggedOut guard. Injected Router.
+  refresh.interceptor.ts — Thin rewrite: delegates to auth.refreshShared(), calls
+    auth.forceLogout() on refresh-401. Removed module-level _isRefreshing/_refreshToken$
+    (D-A/D-B fixed by construction). Removed AuthApiService + Router injections.
+  auth.service.spec.ts — Updated delay assertions to new D-D formula. Added provideRouter.
+    Added refreshShared single-flight, forceLogout logout-once, _doSilentRefresh 401→forceLogout,
+    bootstrap race, scheduleRefresh clamp test blocks.
+  refresh.interceptor.spec.ts — Updated mock with refreshShared/forceLogout. Added setupReal()
+    using real AuthService. Updated test (c) to assert forceLogout (not logout). Added
+    stampede tests h (20 concurrent → 1 refresh), i (gate resets), j (cascade → ONCE),
+    k (gate not wedged after cascade).
+
+Tests: 1291/1291 PASS (79 spec files, full suite). 0 failures.
+Build: shell GREEN (2.95s, 0 errors). tsc --noEmit: 0 errors.
+Grep proof: 0 live code references to _isRefreshing/_refreshToken$ in refresh.interceptor.ts
+  (one comment reference only).
+
+Blockers: none
+Next: meesell-frontend-coordinator merge-gate review (HYBRID STEP 3).
+Hand-offs: PR #281 ready for coordinator merge-gate. refreshShared()/forceLogout() are public
+  API on AuthService — any component that needs to force-logout (e.g. explicit logout button)
+  should call forceLogout() instead of logout() if navigation is desired.
+=========
+
+=== UPDATE: 2026-06-18 09:40 ===
+Phase: feat/my-live-listings — PR #278 merge-gate fixes (session mesell-my-live-listings-frontend-session-1)
+Agent: meesell-angular-component-builder
+Branch: feat/my-live-listings
+PR: #278 (open — do NOT merge)
+Commit: 5a866ad
+
+Done:
+  FIX 1 — image-uploader.component.ts onContinue(): re-pointed navigation from dead
+    ['/catalogs', this.productId, 'preview'] (route retired in this PR) to ['/catalogs']
+    (catalog list — the '' base path in catalog.routes.ts / CatalogListComponent).
+  FIX 2 — live-listings.component.ts: added scope="col" to all three desktop table <th>
+    header cells (Product / Product ID / View on Meesho).
+  COMMENT — shell app.routes.ts: updated the mfe-catalog child route JSDoc comment to
+    remove stale :id/preview reference and note the retirement.
+
+Tests: 1277/1277 PASS (79 test files). Full suite clean.
+Build: mfe-catalog GREEN (3.148s, 0 errors). shell GREEN (exit 0, 0 errors).
+Grep sanity: 0 navigation calls to dead preview route (grep -rn navigate.*preview, frontend/apps/**/*.ts).
+  (One JSDoc comment in shell.component.ts:86 mentions 'preview' as an excluded nav route — NOT a navigation call.)
+
+Blockers: none
+Next: Coordinator merge-gate review on PR #278; then founder merges.
+Hand-offs: PR #278 updated (force-push not needed — regular push updated the branch tip to 5a866ad).
+=========
 
 === UPDATE: 2026-06-17 08:55 ===
 Phase: UI-DS Phase 6a — mee-page padding scale (none|tight|default)

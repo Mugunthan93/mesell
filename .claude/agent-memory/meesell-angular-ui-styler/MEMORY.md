@@ -583,3 +583,67 @@ Tests: 1163/1164 PASS (73 files / 1 pre-existing app.spec.ts NG0201 failure — 
   Layout specs: 7 files, all PASS. Test count +1 (new cols=4 regression spec).
 tsc --noEmit: CLEAN (TSC_EXIT=0)
 Contracts: All 5 CLEAN exit 0 (FE-1/FE-2/FE-3/FE-4/FE-5)
+
+---
+
+## project: pricing_page_ui_polish (2026-06-18)
+
+Task: Slice 3 of 3 — UI styler polish + a11y pass on mfe-pricing page (§12.M forward estimator).
+Branch: feat/pricing-fe-rework @ 312625e
+PR: #287 (open → develop, not merged — awaiting coordinator merge-gate)
+Session: mesell-pricing-fe-rework-frontend-session-1
+
+### A11y findings + fixes
+
+FIXED VIOLATION: <td scope="row"> is invalid HTML.
+  The scope attribute is ONLY valid on <th> elements, never <td>.
+  9 label cells in the deduction breakdown table had scope="row" on <td> — axe/WCAG 1.3.1 violation.
+  Fix: changed all label <td> elements to <th scope="row">.
+  Side effect: browser default styles make <th> bold; must reset with font-weight: 400 in .mee-pricing__table-label.
+
+FIXED: aria-label="P&L breakdown" on <table> was inconsistent with h3 heading "Where your money goes".
+  Fix: added id="deduction-table-heading" to h3, used aria-labelledby on table (label-element association).
+  RULE: table aria label must match or reference the visible heading. Do not use aria-label that differs from visible heading text.
+
+CONFIRMED PASSING:
+  - role="status" + aria-label on spinner (polite live region).
+  - aria-live="polite" + aria-atomic on results region (programmatic focus via AfterViewChecked).
+  - aria-label on hero amount (announces positive/negative state to AT).
+  - role="alert" inside mee-alert-banner (assertive for error banners).
+  - 44px touch targets: mee-button [fullWidth] satisfies this internally.
+  - scope="col" on thead th cells: PASS (already correct).
+
+### Token discipline findings
+
+FIXED: :host { --mee-color-surface-variant: #f2f6fa } was a hardcoded hex override.
+  The token --mee-color-surface-variant is ALREADY declared in _tokens.css Layer 1 with the same value.
+  Removing the :host re-declaration eliminates the no-raw-hex violation.
+  RULE: always check _tokens.css before adding any :host custom property override.
+
+FIXED: !important on color utility classes (.mee-pricing__value--positive/negative).
+  No !important allowed in MeeSell CSS (hard constraint).
+  Fix: doubled-class selector (.mee-pricing__ratio-value.mee-pricing__value--positive) gives sufficient specificity.
+  RULE: never use !important — always reach for selector specificity (compound selectors, parent class, etc.).
+
+### Responsive patterns (360px)
+
+- Outer container: use px-3 sm:px-4 instead of px-4 for mobile-first. px-4 is 16px — fine at 640+. At 360px, px-3 (12px) frees 8px width.
+- Table: ALWAYS wrap in overflow-x: auto + -webkit-overflow-scrolling: touch for any table with ≥2 columns.
+  Use table min-width to prevent value column from being squeezed to illegible width.
+- Hero amount: cap font-size at ≤400px to prevent ₹XXX.XX from overflowing the card. 2rem → 1.625rem.
+
+### MFE screenshot caveat (2026-06-18)
+
+Standalone playwright screenshots of mfe-pricing dist show only the body background color (#f0f5f9).
+This is expected — the component is an Angular Module Federation remote. PricingComponent:
+  1. Requires ActivatedRoute to supply :id param (injected by shell router, absent standalone).
+  2. Requires shell to inject global design tokens CSS (styles.css not loaded from the remote dist).
+  3. Requires shell host to bootstrap the Angular app (main.ts in the remote is only for dev-serve).
+CONCLUSION: visual screenshots of pricing require the full shell + all MFE remotes running.
+DO NOT treat blank screenshots as a rendering failure — the background color loading proves CSS works.
+
+### Build result
+
+mfe-pricing build: GREEN (3.581s, 206.89 kB, +1.68 kB delta vs baseline 205.21 kB).
+Tests: 129/129 PASS (pure-function vitest).
+Logic/contract: untouched.

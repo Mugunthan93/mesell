@@ -1039,3 +1039,134 @@ Founder explicitly authorized merging PR #230 (`docs/section-parallel-model` →
 - `git` is at `/usr/bin/git` (system) AND `/opt/homebrew/bin/git`. Even after `export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"`, a multiline `for ... done` loop intermittently hit `(eval):N: command not found: git` — the eval shell lost resolution mid-loop. FIX: use the ABSOLUTE binary path `/usr/bin/git` (and `/opt/homebrew/bin/gh`) for EVERY invocation. This is more reliable than relying on PATH export across the zsh-eval wrapper. Single explicit commands per line beat a bash for-loop for this.
 
 **Discipline reaffirmed:** waited for all 5 gates to settle green before `gh pr merge --admin`; BLOCKED+MERGEABLE with in-progress required checks is not a fail. FF pull --ff-only with pre-existing unstaged memory edits in working tree still succeeds cleanly (untracked/unstaged changes don't block a FF that doesn't touch those paths). Cleanup: removed temp worktree, deleted local+remote `docs/centralize-dispatch-prompts`, pruned. Never touched main/staging or any feature/section-* branch.
+
+---
+
+## Local dev-stack rebuild — preflight gates (lesson, 2026-06-18)
+
+Dispatched to rebuild static `mfe-catalog` :4205 after "PR #278 (My Live Listings) merged to develop". STOPPED at Step 1 — premise false + tree dirty. ZERO mutations.
+
+**Two preflight gates that MUST both pass before any build/serve in the master tree:**
+1. **The PR is actually ON origin/develop.** Do NOT trust the dispatch claim. Verify: `git fetch origin develop` then `git log origin/develop --oneline | grep <feature>`. PR #278 (`5a866ad`, branch `feat/my-live-listings`) was only an OPEN PR (`refs/pull/278/head` present in `git ls-remote`, but origin/develop tip = `028096d` #277). GOTCHA: `git cat-file -t 5a866ad` returns "commit" because PR refs get fetched into the local object store — that does NOT mean it's merged. Check `git log origin/develop`, never `cat-file`.
+2. **The master tree is clean enough for `--ff-only`.** This repo has `pull.rebase=true` set locally, so `git pull --ff-only` STILL errors `cannot pull with rebase: unstaged changes` (exit 128) when the tree is dirty. The master-tree safety contract permits ONLY `git pull --ff-only origin develop` (no stash/commit/reset) — so a dirty tree is an unclearable block from my side. The modifying session must clean its own tree.
+
+**What I did right:** stopped, made zero mutations, did NOT kill the existing :4205 server (pid 2529 stale build left serving), did NOT force, recorded the STOP in STATUS_INFRA.md.
+
+**Scope note:** this ops rebuild (build → serve gitignored dist/ on a local port) is the deploy-boundary serving role, distinct from the 2026-06-08 DECLINED "scaffold frontend" dev task. Building/serving a built artifact = OK as a local ops task when founder-directed; running `ng new`/installing app deps as a feature-dev step = still NOT mine.
+
+---
+
+## Localhost dev-stack rebuild — mfe-catalog :4205 for PR #278 "My Live Listings" — 2026-06-18
+
+**Task class:** localhost dev-stack ops rebuild (single-agent fast mode, dev-only, ₹0 spend). Documented workflow pattern (master memory "localhost session rebuilds mfe-catalog"): static catalog remote on :4205 must be rebuilt after catalog feature merges because the shell :4200 federates to the STATIC build and won't pick up changes on refresh.
+
+**Outcome:** mfe-catalog rebuilt from clean worktree off origin/develop (tip `0087562`, PR #278). New :4205 serving fresh dist. `/catalogs/live` resolves 200 via shell. ₹0, no cluster/secrets/terraform touched, master tree's 20+ dirty edits NEVER touched.
+
+**Exact recipe that worked (reusable for any 420x remote rebuild):**
+1. `git -C <master> fetch origin develop` → confirm tip.
+2. `git -C <master> worktree add --detach /private/tmp/mesell-wt/rebuild-4205 origin/develop` (detached = read-only build, no branch, no commits). Confirm HEAD + feature dir exists.
+3. `cd /private/tmp/mesell-wt/rebuild-4205/frontend && pnpm install --config.dangerously-allow-all-builds=true` (~6s, picks up xlsx@0.18.5).
+4. `rm -rf dist/mfe-catalog` first (a STALE dist/ gets checked out with the worktree — mtimes = checkout time, NOT a real build; remove it so "fresh build" is provable by existence/mtime), then `nohup ./node_modules/.bin/ng build mfe-catalog > <log> 2>&1 & disown`. Build to a LOG FILE, not `| tail` (tail buffers until exit → zero incremental visibility; a log file lets you watch federation progress and diagnose a hang).
+5. Kill old :4205 (`lsof -nP -iTCP:4205 -sTCP:LISTEN -t` → kill), relaunch from frontend dir: `nohup node tools/boot-smoke/serve.js dist/mfe-catalog/browser 4205 > <log> 2>&1 & disown`.
+6. Verify: `curl -s -o /dev/null -w "%{http_code}" http://localhost:4205/` =200, remoteEntry.json =200, the feature chunk =200, the xlsx chunk =200, :4200 =200, AND `http://localhost:4200/catalogs/live` =200.
+
+**Build result (GREEN):** "Application bundle generation complete [3.291s]". Chunks confirmed in `dist/mfe-catalog/browser/`: `live-listings.component-OKYKU52J.js` + `chunk-F6YNRQX7.js` (live-listings-component 12.44kB) + `xlsx.E4BdgQhUHf.js` (609KB async chunk). Only warning = catalog-form CSS 52 bytes over 4kB budget (benign, not a failure). remoteEntry name=`mfe-catalog`, exposes `['./CatalogRoutes','./BrowseComponent']` — the `/live` route lives UNDER `./CatalogRoutes` (not a separate federation expose key; don't grep remoteEntry for "live-listings", it won't be there).
+
+**Direct-URL reachability (the founder-note check):** `http://localhost:4200/catalogs/live` returns 200 + the shell SPA HTML (`<title>Frontend</title>`, `app-root`). The shell on :4200 runs ng serve from the DIRTY master tree (old code) so the "My Live Listings" SIDEBAR NAV ITEM does NOT appear — but the route is reachable by direct URL because the shell delegates `/catalogs/*` to the rebuilt remote. Confirmed the live-listings chunk contains the #278 "View on Meesho"/"Live Listing" strings.
+
+**CRITICAL GOTCHA — native-federation `ng build` HANGS after completion on this box.** TWICE the `ng build mfe-catalog` process sat at 0.0% CPU / 22MB RSS and never self-exited. First attempt I mistook the cold federation-cache warm ("Building federation artefacts / This only needs to be done once") for a real stall and killed it prematurely. Reality: the build was fine; the process just doesn't terminate after writing output. DIAGNOSIS PROTOCOL: when `ng build` appears stuck, check (a) log file tail for "Application bundle generation complete" + "Output location", (b) `find dist/.../browser -newermt "-60 seconds"` = no recent writes, (c) `ps -o %cpu` = 0.0 twice 2s apart. If all three: the build is DONE, the wrapper is just hanging → `kill <pid>` (then `pkill -9` + clean its esbuild service `pkill -f "rebuild-4205/frontend/node_modules.*esbuild"`). dist survives the kill. Do NOT wait indefinitely; do NOT re-run (wastes ~minutes of federation warm).
+
+**Contention note:** a concurrent `ng serve mfe-catalog` from another worktree (`.claude/worktrees/design-figma-ui-screens`) + a sakai-ng esbuild were running. Box had 31% mem free (not OOM). The first build's apparent stall was the federation cold-cache step, not contention — but be aware multiple ng processes share esbuild service ports/state.
+
+**Toolchain:** node v22.15.0, pnpm 11.5.2, Angular 21.2.16 / @angular/build 21.2.14, native-federation 21.2.3. `/private/tmp` (NOT `/tmp`) explicit paths (macOS symlink). Worktree files root:wheel. serve.js at `frontend/tools/boot-smoke/serve.js` (3881 bytes), prints "serve.js: <dir> → http://127.0.0.1:<port> [SPA fallback ON]".
+
+**Cleanup deferred:** worktree `/private/tmp/mesell-wt/rebuild-4205` left IN PLACE — the :4205 serve.js (pid 61644) serves out of its dist/, so removing the worktree would break the running server. This is a long-lived serving worktree until the next rebuild supersedes it. (Same pattern as other 420x serving worktrees.)
+
+---
+
+## Localhost :4200 shell swap — DIRTY master tree → CLEAN develop worktree — 2026-06-18
+
+**Task class:** localhost dev-stack ops (single-agent fast mode, dev-only, ₹0). Founder-approved. The natural follow-up to the same-day :4205 mfe-catalog rebuild (memory above): after #278 merged to develop @ `0087562`, the SHELL on :4200 was still `ng serve` from the DIRTY master tree (old code, no "My Live Listings" nav). This task swaps the :4200 process to serve from the clean worktree so the nav item shows — WITHOUT disturbing the master tree's 20+ uncommitted source edits (fully reversible: it's just a process swap).
+
+**Recipe that worked (reusable — swap which tree :4200's ng serve runs from):**
+1. Confirm clean worktree: `git -C <wt> rev-parse HEAD` == `git -C <master> rev-parse origin/develop`, and `grep -rn "<nav label>" <wt>/frontend/apps/shell/src/`.
+2. Identify old :4200 owner: `lsof -nP -iTCP:4200 -sTCP:LISTEN` → pid; confirm cwd is the MASTER tree via `lsof -p <pid> -d cwd` (look for `/Users/.../mesell/frontend`). `ps -o command -p <pid>` shows `ng serve frontend --port 4200 (frontend)`.
+3. `kill <pid>` (process-only — NEVER git/stash/commit in the master tree; the founder's source edits stay in place). Confirm `:4200 free`.
+4. From `<wt>/frontend`: `nohup ./node_modules/.bin/ng serve frontend --port 4200 > /tmp/meesell-4200-cleanserve.log 2>&1 & disown`. proxyConfig is AUTO-applied (angular.json shell serve target has `"proxyConfig": "proxy.conf.json"` → `/api`→`localhost:8000`); no `--proxy-config` flag needed.
+5. Poll log for "Watch mode enabled" / "Application bundle generation complete" (NOT a hang this time — ng SERVE stays alive in watch mode, unlike ng BUILD which hangs-after-complete per the :4205 lesson). Federation cold-cache warm ("This only needs to be done once") fired first; benign.
+
+**VERIFICATION GOTCHA — grep the right chunk, not main.js.** In this Angular 21 native-federation shell, `main.js` is a 288-byte bootstrap STUB. The nav lives in the lazy `shell-component` chunk (e.g. `chunk-T57KXLHD.js`, name `shell-component`, ~11kB — find its hashed name in the ng serve build-output table in the log). `curl :4200/main.js | grep -c "My Live Listings"` = 0 (EXPECTED, not a failure). `curl :4200/chunk-T57KXLHD.js | grep -c "My Live Listings"` = 1 (the real proof). Also `:4200/catalogs/live` = 200.
+
+**Proxy reaching backend — how to prove it (vs ng serve SPA fallback):** `curl -D - :4200/api/v1/health` headers show `server: uvicorn` + `content-type: application/json` even on a 404 — that's FastAPI's own JSON 404, proving the proxy forwards to :8000 (SPA fallback would return HTML 200). Backend real health route = `/health` (200 direct on :8000), NOT `/api/v1/health` (404). Don't use /api/v1/health as a liveness check; use /health.
+
+**Ports after swap:** :4200 NEW pid 65133 (node, IPv6 [::1]:4200, clean develop). :4205 pid 61644 (static mfe-catalog, IPv4) UNTOUCHED, 200. :8000 pid 13356/49654 (uvicorn) UNTOUCHED.
+
+**REVERT to founder's master-tree edits later:** `kill <new-4200-pid>` then `cd /Users/mugunthansrinivasan/Project/mesell/frontend && ng serve frontend --port 4200`.
+
+**Scope note:** swapping which built tree an `ng serve` runs from = deploy-boundary serving role (OK as founder-directed local ops). Distinct from `ng new`/installing app deps as feature dev (NOT mine, 2026-06-08 DECLINE). No master-tree git ops, no cluster/secrets/terraform.
+
+---
+
+## Localhost dev-stack ADVANCE — rebuild-4205 worktree 0087562(#278) → b28ef2f(#281 auth fix) — 2026-06-18
+
+**Task class:** localhost dev-stack ops (single-agent fast mode, dev-only, ₹0). Founder-directed. Advance the EXISTING long-lived serving worktree `/private/tmp/mesell-wt/rebuild-4205` (which serves BOTH :4205 static mfe-catalog AND :4200 shell ng serve) from `0087562` (#278) to develop tip `b28ef2f` (#281 auth refresh-stampede fix + #278 My Live Listings), then restart both processes from it.
+
+**Outcome (all green):** worktree HEAD now `b28ef2f`. mfe-catalog rebuilt fresh. :4200 + :4205 restarted from the advanced tree. :8000 untouched. Master tree's 20+ dirty edits NEVER touched.
+
+**Pids (old→new):** :4200 65133→**89742** (node ng serve, IPv6 [::1], cwd=worktree). :4205 61644→**89622** (node serve.js static, IPv4). :8000 13356 master UNCHANGED (uvicorn `--reload` worker recycled 49654→89775 on its OWN — NOT me; never restart :8000).
+
+**HTTP:** :4200/=200, :4205/=200, :4200/catalogs/live=200, :4205/remoteEntry.json=200, :8000/health=200, :4200/api/v1/health proxy headers `server: uvicorn`+`application/json` (proxy→:8000 live).
+
+**Recipe (reusable to ADVANCE an existing serving worktree to a new develop tip — vs the from-scratch `worktree add` recipe above):**
+1. Preflight gate 1: `git -C <master> fetch origin develop`; `git merge-base --is-ancestor <newtip> origin/develop && echo ON` (don't trust `cat-file -t`, that's true for OPEN PR refs too).
+2. Worktree was CLEAN + detached → `git -C <wt> checkout <newtip>` works directly (no branch dance). Confirm HEAD + `grep -c refreshShared libs/core/services/auth.service.ts`.
+3. `pnpm install --config.dangerously-allow-all-builds=true` → "Already up to date" (no dep delta #278→#281).
+4. `rm -rf dist/mfe-catalog` (stale dist checked out with the prior HEAD) → `nohup ng build mfe-catalog > log 2>&1 &`. GREEN at "Application bundle generation complete [3.7s]". live-listings chunk `chunk-F6YNRQX7.js` (12.44kB) present. Native-federation HANG-after-complete recurred (pid 0.0% CPU, no recent dist writes) → killed wrapper + `pkill -9 -f "rebuild-4205/frontend/node_modules.*esbuild"`; dist survives.
+5. Kill old :4205 → `nohup node tools/boot-smoke/serve.js dist/mfe-catalog/browser 4205 &`.
+6. Kill old :4200 → `nohup ./node_modules/.bin/ng serve frontend --port 4200 &` (proxyConfig auto from angular.json). "Watch mode enabled" at poll 2 (~10s). shell-component chunk `chunk-T57KXLHD.js` (11.09kB).
+
+**CRITICAL — how to PROVE the auth fix is in the SERVED :4200 bundle when :4200 is `ng serve` (Vite dev mode), NOT a static build:** you CANNOT curl a static chunk by name for the symbol — Vite serves `@mesell/core` (the shared lib holding AuthService) as on-demand transformed modules over versioned ESM URLs the BROWSER requests, and it 403/404s arbitrary curl probes (`/@fs/...`=403 fs-allow guard, `/libs/core/...`=404) BY DESIGN. main.js is a 288-byte stub; the app chunks (`chunk-T57KXLHD.js` shell-component, `chunk-IYKZVWVP.js` bootstrap) do NOT inline the lib symbols → `grep refreshShared`=0 on all of them (EXPECTED, not a failure). The authoritative served-bundle proof for a Vite ng-serve shell is the CHAIN:
+   (a) ng serve process cwd == the advanced worktree: `lsof -a -p <pid> -d cwd` → `/private/tmp/mesell-wt/rebuild-4205/frontend`;
+   (b) that worktree's `libs/core/services/auth.service.ts` has `refreshShared`×6 + `forceLogout`×7;
+   (c) the served bootstrap chunk `chunk-IYKZVWVP.js` imports `from "@mesell/core"` (authGuard, jwtInterceptor) → core IS wired into the served graph.
+This is DIFFERENT from the static :4205 case where the built chunk file IS curl-able for the symbol. Report the count as the SOURCE count (6/7) + the cwd-chain proof, and state explicitly that grep-on-served-chunk=0 is expected for Vite dev mode.
+
+**Worktree left IN PLACE** (long-lived serving worktree; :4205 pid 89622 serves out of its dist/, :4200 pid 89742 ng-serves from it). Cleanup only when a future rebuild supersedes it.
+
+---
+
+## Founder-parked master-tree UI-refactor stash — MESELL_ALLOW_MASTER_GIT override — 2026-06-18
+
+**Task class:** founder-authorized master-tree git op (single-agent fast mode, dev-only, ₹0). Founder said "stash it now, deal with later." This DELIBERATELY OVERRIDES my standing master-tree contract ("ONLY git pull --ff-only; never stash/reset/checkout") — the documented escape hatch is the env var `MESELL_ALLOW_MASTER_GIT=1` prefixed on the git command.
+
+**NEW knowledge — the master-tree guard's escape hatch:** `MESELL_ALLOW_MASTER_GIT=1` is the intended override for deliberate, founder-approved master-tree git operations. Use it ONLY when explicitly authorized in the prompt. My memory previously only ever recorded the contract's RESTRICTION (ff-only, no stash) — this is the first time the escape hatch was exercised. The guard is presumably a pre-commit/pre-tooluse hook; the env var bypasses it for the one command it prefixes.
+
+**Exact command that worked (PATHSPEC stash — only the listed paths touched):**
+```
+MESELL_ALLOW_MASTER_GIT=1 git -C /Users/.../mesell stash push -m "<msg>" -- <path1> <path2> ... <path16>
+```
+Listing each path explicitly after `--` is the safety mechanism: a pathspec stash touches ONLY those paths, leaving every other dirty/untracked file in the working tree. This is how you surgically park a SUBSET of a dirty tree.
+
+**What got parked (16 paths):** the pre-existing UI refactor — `frontend/apps/{mfe-auth,mfe-catalog,mfe-dashboard,mfe-export,mfe-onboarding,mfe-pricing,shell}/...` components + `frontend/libs/{composites/auth-layout,ui-kit/input,ui-kit/textarea}` + `shell/public/federation.manifest.json` + shell layout (ts/html/css). New stash ref: **stash@{0}** with message "master-tree UI refactor + 43xx local-dev manifest — founder-parked 2026-06-18 (recover with stash apply)".
+
+**CRITICAL EXCLUSIONS (left in working tree, NOT stashed — pathspec made this trivial):**
+- `backend/app/i18n/messages_en.py` — LIVE i18n hot-patch the running --reload backend (:8000) is serving (`validation.generic.missing` fallback for required-field 422s, the 4th missing-key fix per master memory finding-i18n-generic-missing-gap). Stashing it would REVERT tonight's fix. Confirmed survived: `grep -c validation.generic.missing` = 1 BEFORE and AFTER.
+- `docs/status/STATUS_*.md` (4) + `.claude/agent-memory/*/MEMORY.md` (6) — current-session records.
+- untracked `.claude/statusline-monitor.sh`, `frontend/.claude/` — left alone (pathspec doesn't touch untracked anyway).
+
+**RECOVERY command (give to founder / for later):**
+```
+MESELL_ALLOW_MASTER_GIT=1 git -C /Users/.../mesell stash apply stash@{0}
+```
+Use `apply` (not `pop`) to keep the stash entry until confident. NOTE: stash refs SHIFT — `stash@{0}` is only valid until another stash is pushed (then it becomes `{1}`, `{2}`...). The repo already has 12 stashes (now 13). To recover later, match by the MESSAGE not the index: `git stash list | grep "founder-parked 2026-06-18"` → use that ref.
+
+**5-point verification (all PASS):**
+1. `git stash list` → new entry is stash@{0} with exact message.
+2. `git status -s` → none of the 16 paths modified (reverted to HEAD b6bda89/#275); messages_en.py + 4 STATUS + 6 MEMORY still ` M`.
+3. `grep -c validation.generic.missing messages_en.py` = 1 (hot-patch survived).
+4. `curl :8000/health` = healthy (--reload did NOT revert i18n — the file was never touched, so no reload fired on it).
+5. `curl :4200/` = 200, `:4205/` = 200 (those serve from the long-lived rebuild-4205 worktree, NOT the master tree — wholly unaffected by a master-tree stash).
+
+**CAVEAT recorded:** if a concurrent session had any of the 16 files open mid-edit, the stash reverted them ON DISK (their unsaved buffer would clobber on next save, OR their on-disk edits are now in stash@{0}). Recoverable via stash apply. Not observed this session (the :4200/:4205 servers run from a separate worktree, not the master tree).
+
+**Why the master tree is dirty at all:** the :4200 shell + :4205 mfe-catalog now serve from the `/private/tmp/mesell-wt/rebuild-4205` worktree (per the same-day shell-swap + advance memory entries). The master tree's 20+ uncommitted source edits are the founder's parked UI-refactor WIP — now formally stashed (the 16 FE paths) while the i18n/status/memory churn stays as live records.
