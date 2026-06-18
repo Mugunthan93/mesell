@@ -1,0 +1,3371 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "MeeSell API",
+    "description": "AI-powered operating system for Meesho suppliers",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/auth/otp/send": {
+      "post": {
+        "tags": [
+          "iam"
+        ],
+        "summary": "Send a 6-digit OTP to a phone number",
+        "description": "§7.B.1 contract.  Per-IP rate limit 3/h (decorator key=\"phone\" is a §V1.5 ask).",
+        "operationId": "otp_send_api_v1_auth_otp_send_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendOtpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendOtpResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/otp/verify": {
+      "post": {
+        "tags": [
+          "iam"
+        ],
+        "summary": "Verify OTP, mint access JWT, set refresh cookie",
+        "description": "§7.B.2 contract — issues access JWT (body) + refresh cookie (Set-Cookie).",
+        "operationId": "otp_verify_api_v1_auth_otp_verify_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyOtpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifyOtpResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "tags": [
+          "iam"
+        ],
+        "summary": "Atomically rotate refresh cookie and issue a new access JWT",
+        "description": "§7.B.3 contract.  On any 401 path the failure handler ALSO clears the cookie.\n\nThe 401-path clear-cookie behaviour is implemented via a try/except so\nthe §7.B.3 \"clear cookie on 401\" requirement is honoured without relying\non the global error handler (which has no view of this route's\n``response`` instance).",
+        "operationId": "auth_refresh_api_v1_auth_refresh_post",
+        "parameters": [
+          {
+            "name": "refresh_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Refresh Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [
+          "iam"
+        ],
+        "summary": "Revoke the refresh cookie (idempotent)",
+        "description": "§7.B.4 contract.  No rate limit (idempotent, no abuse vector).\n\nAlways returns 204 + clear-cookie, regardless of whether a cookie was\npresent.  The audit row is emitted by the service ONLY when a cookie\nwas actually present (so calling logout twice does not double-log).",
+        "operationId": "auth_logout_api_v1_auth_logout_post",
+        "parameters": [
+          {
+            "name": "refresh_token",
+            "in": "cookie",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Refresh Token"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "tags": [
+          "iam"
+        ],
+        "summary": "Return the authenticated user's profile",
+        "description": "§7.B.5 contract.  No rate limit (per-IP DDoS guard is the floor).\n\nNo audit event per documented absence — the JWT itself proves the user\nis active; logging every ``/me`` would flood the table.\n\n``onboarding_complete`` is a CUSTOMER-domain fact, sourced cleanly through\nthe customer module's public service surface\n(:func:`customer.service.get_onboarding_completeness` — the same seam\n``dashboard.service`` uses).  No customer ORM model is imported into iam.\nFor a brand-new seller with no profile row yet, that surface returns\n``onboarding_complete=False`` without raising (per customer §8.F), so the\npre-onboarding case is handled by the callee, not here.",
+        "operationId": "me_api_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/webhooks/razorpay": {
+      "post": {
+        "tags": [
+          "iam"
+        ],
+        "summary": "Capture a Razorpay webhook (V1: signature-verify + log)",
+        "description": "§7.B.6 contract.\n\nThe body is read as RAW bytes (NOT JSON-parsed at the FastAPI dependency\nlayer) — Pydantic parsing happens only AFTER HMAC signature verification\nsucceeds, per the V1 capture-only posture.",
+        "operationId": "razorpay_webhook_api_v1_webhooks_razorpay_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookCaptureResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/seller-profile": {
+      "get": {
+        "tags": [
+          "seller-profile"
+        ],
+        "summary": "Read current seller profile",
+        "description": "§8.B.1 — return the seller's current profile.\n\nReturns 200 + ``SellerProfileResponse`` when a profile row exists.\nReturns 404 ``customer.profile.not_found`` when no row exists (first-time\nseller); the frontend interprets this as a redirect to the onboarding wizard.\n\nNo per-route rate limit (per-IP DDoS floor only, per §8.B.1).",
+        "operationId": "get_seller_profile_api_v1_seller_profile_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SellerProfileResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "seller-profile"
+        ],
+        "summary": "Partial update of base profile fields (Legal Metrology + country_of_origin)",
+        "description": "§8.B.2 — upsert the 9 Legal Metrology fields + country_of_origin.\n\nSubset semantics: only fields present in the payload are updated.\nFirst PATCH creates the row; subsequent PATCHes update.\nRecomputes ``onboarding_complete`` on every call.\n\nRate limit: 60/h per user_id (§8.B.2).\nRaises 422 on pincode regex failure (Pydantic constraint or service defensive check).",
+        "operationId": "patch_seller_profile_api_v1_seller_profile_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchProfileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SellerProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/seller-profile/active-categories": {
+      "patch": {
+        "tags": [
+          "seller-profile"
+        ],
+        "summary": "Replace the seller's active super-category declarations entirely",
+        "description": "§8.B.3 — replace active_super_categories entirely (NOT additive).\n\nEvery super_id in the payload is validated against the global ``categories.super_id``\ndistinct set (cached read via ``core/cache.py``).  Unknown super_id(s) →\n422 ``validation.super_category.unknown``.\n\nRate limit: 60/h per user_id (§8.B.3).",
+        "operationId": "patch_active_categories_api_v1_seller_profile_active_categories_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchActiveCategoriesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SellerProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/seller-profile/compliance/{super_id}": {
+      "patch": {
+        "tags": [
+          "seller-profile"
+        ],
+        "summary": "Set the compliance extension payload for one declared super-category",
+        "description": "§8.B.4 — JSONB-merge the compliance extension for one super-category.\n\n``super_id`` is a path param (string — matches Meesho's string super_id convention).\n\nRaises 404 ``customer.super_category.not_declared`` when the super_id is not in\n``active_super_categories``.\nRaises 422 ``customer.compliance.missing_fields`` when required keys are absent.\n\nRate limit: 60/h per user_id (§8.B.4).",
+        "operationId": "patch_compliance_extension_api_v1_seller_profile_compliance__super_id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "super_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Super Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchComplianceExtensionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SellerProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/seller-profile/required-fields": {
+      "get": {
+        "tags": [
+          "seller-profile"
+        ],
+        "summary": "Return all required fields for the onboarding wizard",
+        "description": "§8.B.5 — drive the frontend onboarding wizard.\n\nReturns a ``RequiredFieldsResponse`` containing:\n\n- ``base_fields``: the 10 always-required fields as §5A.C FieldSpec dicts.\n- ``extension_fields``: per-declared-super_id compliance fields.\n- ``completed``: dot-notation path → bool completion map.\n\nResponse is cached 60 s per §4.D (key includes user_id + CACHE_VERSION).\nInvalidated on any PATCH to the profile.\n\nNo per-route rate limit (per-IP DDoS floor only; response is cached — §8.B.5).",
+        "operationId": "get_required_fields_api_v1_seller_profile_required_fields_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RequiredFieldsResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/categories/suggest": {
+      "post": {
+        "tags": [
+          "category"
+        ],
+        "summary": "AI-ranked Smart Category Picker — top-5 suggestions for a product description",
+        "description": "§9.B.1 — Smart Category Picker.\n\nReturns top-5 AI-ranked category suggestions for the seller's product\ndescription.  ``fallback_offered=True`` when the AI track cannot produce\nvalid suggestions (budget cap, retry exhaustion) — the frontend surfaces\nthe manual ``/browse`` UI in that case.\n\nRequest body: ``{\"q\": \"<product description (1–5000 chars)>\"}``\n\nAMENDMENT 2026-06-16 (founder ruling, finding #4):\nChanged from GET with ``?q=`` query param to POST with JSON body.\nReason: 5000-char descriptions in a GET query string risk browser/proxy\nURL-length limits.  Service call signature unchanged — ``body.q`` is\npassed as the ``q`` positional argument.  Response shape unchanged.\n\nPlan-guard ``smart_picker_hourly`` (100/h/user) is enforced INSIDE the\nservice (step 2 of the §9.B.1 pipeline), not in this handler.\n\nRate limit: 100 calls/h per user_id via ``@rate_limit`` decorator (§4.E).\n\nFeature flag: returns 404 when ``FEATURE_SMART_PICKER_ENABLED=false``\nper Master Plan §3.2 + FEATURE_PLAN.md D2.\n\nAI-ops note (FLAG — do NOT close until ai-coordinator reviews):\nThe service now receives up to 5000 chars in ``q``.  The Gemini prompt\nbudget for the picker prompt (``suggest_categories`` in ai_ops/prompts/)\nwas calibrated for ≤500 chars.  The meesell-ai-coordinator should verify\ntoken budget / truncation strategy for 5000-char inputs before staging\ncutover.",
+        "operationId": "suggest_categories_api_v1_categories_suggest_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuggestQuery",
+                "description": "Product description for AI category ranking"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/categories/browse": {
+      "get": {
+        "tags": [
+          "category"
+        ],
+        "summary": "pg_trgm-powered manual category browse with optional super-category filter",
+        "description": "§9.B.2 — Manual Browse fallback.\n\npg_trgm ILIKE against the 3 GIN indexes (path, leaf_name, super_name).\nResults ordered by similarity score; super_id filter narrows to one\nparent bucket.\n\nNo per-route rate limit (per-IP DDoS floor only — incremental typing\nis a legitimate burst pattern per §9.B.2).\n\nStatus codes: 200; 400 (``validation.browse.invalid_pagination``); 401.",
+        "operationId": "browse_categories_api_v1_categories_browse_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional search query (max 100 chars)",
+              "title": "Q"
+            },
+            "description": "Optional search query (max 100 chars)"
+          },
+          {
+            "name": "super_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional super-category filter",
+              "title": "Super Id"
+            },
+            "description": "Optional super-category filter"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Page size (1–100, default 20)",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Page size (1–100, default 20)"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Page offset (>=0, default 0)",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Page offset (>=0, default 0)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/categories": {
+      "get": {
+        "tags": [
+          "category"
+        ],
+        "summary": "Full hierarchical category tree (all super-categories + leaf children)",
+        "description": "§9.B.3 — Full category tree.\n\nReturns all 3,772 category leaves grouped under their super-categories.\nCached GLOBAL with TTL 1 h + ETag per §4.D + §6.6.\n\nETag behaviour:\n- Response includes ``ETag`` header on 200.\n- If the request sends ``If-None-Match`` matching the ETag, responds\n  304 Not Modified (no body).\n\nNo per-route rate limit (per-IP DDoS floor only).",
+        "operationId": "get_category_tree_api_v1_categories_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "if-none-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-None-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryTreeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/categories/{id}/schema": {
+      "get": {
+        "tags": [
+          "category"
+        ],
+        "summary": "Compiled wizard schema for a category (templates.schema_jsonb envelope)",
+        "description": "§9.B.4 — Compiled wizard schema.\n\nReturns the ``templates.schema_jsonb`` envelope per §5A.B verbatim\n(7 keys: ``fields[]``, ``compulsory_count``, ``optional_count``,\n``total_count``, ``wizard_step_count``, ``main_sheet_label``,\n``compliance_shape``).\n\nCached GLOBAL per ``category_id`` with TTL 1 h + ETag per §4.D + §6.6.\nPre-warmed for top-100 categories at startup.\n\nETag behaviour mirrors ``GET /categories`` (304 on match).\n\nCross-module consumers: ``catalog.service.validate_product`` (§2.4 + §16)\nand ``export.service.build_xlsx_sheet`` (§2.8) both call\n``category.service.fetch_schema`` directly — this HTTP surface is for\nthe frontend wizard and API clients.\n\nStatus codes: 200; 401; 404 (``category.lookup.not_found``).",
+        "operationId": "get_category_schema_api_v1_categories__id__schema_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          },
+          {
+            "name": "if-none-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-None-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SchemaResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/categories/{id}/field-enum/{name}": {
+      "get": {
+        "tags": [
+          "category"
+        ],
+        "summary": "Field-Enum lookup for Brand-pattern fields (canonical + meesho + labels)",
+        "description": "§9.B.5 — Field-Enum lookup.\n\nReturns the complete enum value list for a Brand-pattern field within a\ncategory.  Each ``EnumEntry`` carries:\n\n- ``canonical`` — used by catalog validator for input acceptance.\n- ``meesho``    — consumed by export adapter only; never rendered in wizard.\n- ``labels``    — ``{locale: label}``; V1 contains only ``\"en\"``.\n\nCached GLOBAL per ``(category_id, field_name)`` with TTL 1 h.  Single-flight\nmandatory per ``MVP_ARCH §6.8`` (enum payloads can be 50–200 KB each).\n\nStatus codes: 200; 401; 404 (``category.lookup.not_found`` if category_id\ninvalid; ``category.field_enum.not_found`` if field_name has no enum for\nthis category).",
+        "operationId": "get_field_enum_api_v1_categories__id__field_enum__name__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FieldEnumResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/products": {
+      "post": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Create a product (Feature 3 Fast Catalog Form)",
+        "description": "§10.B.1 — POST /products.\n\nPlan-guard ``product_count`` (100 active cap) is enforced INSIDE the\nservice (step 1 of the §10.B.1 flow), not in this handler.\n\nStatus codes: 201, 400, 401, 402 (rate-limit or plan-cap),\n404 (catalog / category not found), 422 (profile incomplete).",
+        "operationId": "create_product_api_v1_products_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProductRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "Paginated product listing (Feature 8 — Tracking Dashboard)",
+        "description": "§13.B.1 — GET /api/v1/products.\n\nComposes the seller's tracking-dashboard view by aggregating:\n\n* :func:`catalog.service.list_products` — paginated active products\n  (most-recently-updated first per §10.D).\n* :func:`customer.service.get_onboarding_completeness` — profile\n  completeness badge data.\n\nEmpty inventory returns 200 with ``products=[]`` + ``total=0`` (NOT 404\n— empty inventory is a valid state for first-time sellers).\n\nPer §13.A.1 amendment (2026-06-07): ``status_filter`` and ``search``\ndeferred to V1.5. V1 ships ``page`` + ``limit`` only.\n\nStatus codes: 200, 400 (``validation.dashboard.invalid_pagination`` —\nraised by Pydantic ``Query`` validators on out-of-range inputs), 401.\n\nNo audit event (read-only per §13.B + §4.G).\nNo plan_guard (§13.I lock — dashboard is one of 3 plan_guard-excluded\nmodules alongside customer + pricing).",
+        "operationId": "list_products_api_v1_products_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/products/{id}": {
+      "patch": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Update product fields (autosave + manual save)",
+        "description": "§10.B.2 — PATCH /products/{id}.\n\n``X-Autosave: true`` header signals autosave (vs manual \"Save\").\nWhen present, the service additionally upserts a ``product_drafts``\nrow per `MVP_ARCH §11.6`.\n\nStatus codes: 200, 400, 401, 404, 422.",
+        "operationId": "patch_product_api_v1_products__id__patch",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          },
+          {
+            "name": "x-autosave",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Autosave"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchProductRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Get a single product — returns category_id for CatalogForm reload (GAP-1 fix)",
+        "description": "§10.B.7 — GET /products/{id}.\n\nNo audit event (read-only per MVP_ARCH §11.3).\nNo feature flag — GAP-1 fix is unconditional.\n\nStatus codes: 200, 401, 404.",
+        "operationId": "get_product_api_v1_products__id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Soft-delete a product",
+        "description": "§10.B.5 — DELETE /products/{id}.\n\nStatus codes: 204, 401, 404.",
+        "operationId": "delete_product_api_v1_products__id__delete",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/products/{id}/autofill": {
+      "post": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "AI Auto-fill — Gemini-driven field suggestions",
+        "description": "§10.B.3 — POST /products/{id}/autofill.\n\nReturns 200 with ``fallback_offered=true`` when AI is unavailable\n(budget exhaustion, guardrail retry exhaustion).  503 is reserved\nfor unrecoverable Gemini SDK exhaustion beyond §6A's fallback\ncontract (raised inside the service as\n:class:`exceptions.AutofillFailedError`).\n\nPlan-guard ``ai_autofill_hourly`` (50/h/user) is enforced INSIDE\nthe service (step 2 of the §10.B.3 flow).\n\nFeature flag: returns 404 when ``FEATURE_AI_AUTOFILL_ENABLED=false``\nper Master Plan §3.2 + ai-autofill FEATURE_PLAN.md D2.  Reading\n``settings`` at request-time (not import-time) so tests can\nmonkeypatch the attribute and the guard reflects the override.\n\nStatus codes: 200 (success OR graceful fallback), 400, 401, 402,\n404, 422.",
+        "operationId": "autofill_product_api_v1_products__id__autofill_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AutofillRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AutofillResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/products/{id}/preview": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Live Product Preview — Feature 6 wizard view",
+        "description": "§10.B.4 — GET /products/{id}/preview.\n\nNo audit event (read-only per `MVP_ARCH §11.3`).\n\nStatus codes: 200, 401, 404.\nFeature flag: returns 404 with code ``feature.live_preview.disabled``\nwhen ``FEATURE_LIVE_PREVIEW_ENABLED=false`` (default False — gated rollout\nper Master Plan §3.2 + FEATURE_PLAN.md D3).",
+        "operationId": "get_product_preview_api_v1_products__id__preview_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductPreviewResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/products/{id}/draft": {
+      "get": {
+        "tags": [
+          "catalog"
+        ],
+        "summary": "Draft recovery — most recent autosave snapshot",
+        "description": "§10.B.6 — GET /products/{id}/draft.\n\nReturns 200 with the snapshot when a draft exists; 204 with no body\nwhen the product has never been autosaved.\n\nNo audit event (read-only).\n\nStatus codes: 200, 204, 401, 404.",
+        "operationId": "get_product_draft_api_v1_products__id__draft_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductDraftResponse"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "No draft snapshot exists for this product."
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/products/{id}/images": {
+      "post": {
+        "tags": [
+          "image"
+        ],
+        "summary": "Upload an image to a product slot (Feature 5)",
+        "description": "Persists the JPEG to GCS and enqueues the 5-step precheck pipeline. Returns 202 ACCEPTED; the client polls GET /products/{id}/images until status='ready' or 'failed_precheck'.",
+        "operationId": "upload_image_api_v1_products__id__images_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_image_api_v1_products__id__images_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageUploadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "image"
+        ],
+        "summary": "List images for a product with precheck status",
+        "description": "Returns up to 4 images for the product, ordered by slot index, with signed GCS URLs (TTL 1h) and verbatim precheck JSON for client-side rendering.",
+        "operationId": "list_images_api_v1_products__id__images_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImagesListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/products/{id}/price-calc": {
+      "post": {
+        "tags": [
+          "pricing"
+        ],
+        "summary": "Price Calculator (Feature 7) — deterministic P&L + alerts",
+        "description": "§12.B.1 — POST /products/{id}/price-calc.\n\nStatus codes:\n  * 200 — calc completed successfully.\n  * 400 — ``validation.price.invalid_input`` (Pydantic catches\n    ``input_cost <= 0`` / ``target_margin_pct < 0`` / etc.; service\n    adds the V1.5 cross-field surface).\n  * 401 — JWT missing/invalid (handled by §4.A auth middleware).\n  * 404 — ``catalog.product.not_found`` from the §10.C\n    ``assert_product_ownership`` cross-module ownership gate.\n  * 422 — ``pricing.commission.missing`` when the resolved category\n    has no usable commission rate.",
+        "operationId": "price_calc_api_v1_products__id__price_calc_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PriceCalcRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PriceCalcResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/products/{product_id}/export-xlsx": {
+      "post": {
+        "tags": [
+          "export"
+        ],
+        "summary": "Initiate Meesho XLSX export for a product (Feature 9)",
+        "description": "Validates product ownership + readiness + front-image availability, inserts an exports row with status='pending', and enqueues the 9-step Celery pipeline (task name 'export.xlsx'). Poll GET /exports/{id} until status='ready' or 'failed'. Rate limit: 10 requests/hour per user.",
+        "operationId": "initiate_export_api_v1_products__product_id__export_xlsx_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Product Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportInitiatedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/exports/{export_id}": {
+      "get": {
+        "tags": [
+          "export"
+        ],
+        "summary": "Poll export status and retrieve download URLs (Feature 9)",
+        "description": "Returns the current status of the export pipeline. When status='ready', ``xlsx_signed_url`` (and ``zip_signed_url`` for xlsx_with_images format) are populated with fresh GCS signed URLs valid for 1 hour — re-poll to refresh expired URLs. When status='failed', ``error_code`` and ``error_message`` are set. No audit event (read-only polling — §14.J).",
+        "operationId": "get_export_api_v1_exports__export_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "export_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Export Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "description": "Health check endpoint with PostgreSQL and Valkey connectivity.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AutofillRequest": {
+        "properties": {
+          "description": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Description"
+          },
+          "fields_to_fill": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fields To Fill"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "description"
+        ],
+        "title": "AutofillRequest",
+        "description": "POST /api/v1/products/{id}/autofill body per §10.B.3.\n\n* ``description`` 1..2000 chars per §10.E.\n* ``fields_to_fill`` optional allowlist of canonical names — default\n  ``None`` lets the AI fill all empty compulsory fields it has\n  confidence in."
+      },
+      "AutofillResponse": {
+        "properties": {
+          "suggestions": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/AutofillSuggestion"
+            },
+            "type": "object",
+            "title": "Suggestions"
+          },
+          "applied": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Applied"
+          },
+          "fallback_offered": {
+            "type": "boolean",
+            "title": "Fallback Offered",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "suggestions",
+          "applied"
+        ],
+        "title": "AutofillResponse",
+        "description": "200 response for §10.B.3.\n\nAlways HTTP 200 — even when ``fallback_offered=True`` (§9.B.1 +\n§6A.F precedent: budget exhaustion does NOT 503)."
+      },
+      "AutofillSuggestion": {
+        "properties": {
+          "value": {
+            "title": "Value"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence"
+          },
+          "source": {
+            "type": "string",
+            "const": "ai",
+            "title": "Source",
+            "default": "ai"
+          }
+        },
+        "type": "object",
+        "required": [
+          "value",
+          "confidence"
+        ],
+        "title": "AutofillSuggestion",
+        "description": "One field's AI suggestion per `MVP_ARCH §2.4` shape."
+      },
+      "Body_upload_image_api_v1_products__id__images_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "title": "File",
+            "description": "JPEG image, max 10 MB."
+          },
+          "idx": {
+            "type": "integer",
+            "title": "Idx",
+            "description": "Image slot index 1-4.",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_image_api_v1_products__id__images_post"
+      },
+      "BrowseResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/BrowseResultRow"
+            },
+            "type": "array",
+            "title": "Results"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "results",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "BrowseResponse",
+        "description": "Paginated response for GET /api/v1/categories/browse."
+      },
+      "BrowseResultRow": {
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Category Id"
+          },
+          "super_id": {
+            "type": "string",
+            "title": "Super Id"
+          },
+          "super_name": {
+            "type": "string",
+            "title": "Super Name"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "leaf_name": {
+            "type": "string",
+            "title": "Leaf Name"
+          },
+          "similarity": {
+            "type": "number",
+            "title": "Similarity"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category_id",
+          "super_id",
+          "super_name",
+          "path",
+          "leaf_name",
+          "similarity"
+        ],
+        "title": "BrowseResultRow",
+        "description": "One result row from the pg_trgm browse search.\n\n``similarity`` is the pg_trgm score 0.0–1.0.  In V1 the repository\nreports 0.0 (ordering is preserved by the SQL ORDER BY); lifting the\nscore end-to-end is a V1.5 refinement.\n\nReused inside ``SuperCategoryNode.leaves`` for the tree endpoint\n(``similarity`` is 0.0 in tree mode — not computed)."
+      },
+      "CategorySuggestion": {
+        "properties": {
+          "category_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Category Id"
+          },
+          "super_id": {
+            "type": "string",
+            "title": "Super Id"
+          },
+          "super_name": {
+            "type": "string",
+            "title": "Super Name"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "leaf_name": {
+            "type": "string",
+            "title": "Leaf Name"
+          },
+          "confidence": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category_id",
+          "super_id",
+          "super_name",
+          "path",
+          "leaf_name",
+          "confidence",
+          "reasons"
+        ],
+        "title": "CategorySuggestion",
+        "description": "One ranked category suggestion from the Smart Category Picker.\n\n``confidence`` is calibrated by ``picker.calibrate_confidence``\n(range 0.0–1.0).  ``reasons`` are short human-readable rationale\nstrings produced by the AI-track ranking pipeline."
+      },
+      "CategoryTreeResponse": {
+        "properties": {
+          "super_categories": {
+            "items": {
+              "$ref": "#/components/schemas/SuperCategoryNode"
+            },
+            "type": "array",
+            "title": "Super Categories"
+          }
+        },
+        "type": "object",
+        "required": [
+          "super_categories"
+        ],
+        "title": "CategoryTreeResponse",
+        "description": "Response envelope for GET /api/v1/categories (full tree)."
+      },
+      "CreateProductRequest": {
+        "properties": {
+          "catalog_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalog Id"
+          },
+          "category_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Category Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "category_id"
+        ],
+        "title": "CreateProductRequest",
+        "description": "POST /api/v1/products body per §10.B.1.\n\n* ``catalog_id`` ``None`` → service creates a default-named catalog\n  (``\"{seller_phone_last4}-Drafts-{YYYYMMDD-HHMM}\"``).  Non-null →\n  product is added to the existing catalog (404 if not owned).\n* ``name`` is the seller-visible product name; ``None`` lets the\n  wizard default to \"Untitled product\"."
+      },
+      "DashboardResponse": {
+        "properties": {
+          "products": {
+            "items": {
+              "$ref": "#/components/schemas/ProductListItem"
+            },
+            "type": "array",
+            "title": "Products"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "onboarding_completeness": {
+            "$ref": "#/components/schemas/ProfileCompletenessSummary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "products",
+          "total",
+          "page",
+          "limit",
+          "onboarding_completeness"
+        ],
+        "title": "DashboardResponse",
+        "description": "Wire shape for ``GET /api/v1/products`` (200 OK)."
+      },
+      "EnumEntry": {
+        "properties": {
+          "canonical": {
+            "type": "string",
+            "title": "Canonical"
+          },
+          "meesho": {
+            "type": "string",
+            "title": "Meesho"
+          },
+          "labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Labels"
+          }
+        },
+        "type": "object",
+        "required": [
+          "canonical",
+          "meesho",
+          "labels"
+        ],
+        "title": "EnumEntry",
+        "description": "One enum entry from ``field_enum_values``.\n\n``canonical`` — the canonical internal value used by the catalog\nvalidator for input acceptance.\n\n``meesho`` — the Meesho-format string consumed ONLY by the export\nadapter (§14 / M10); never rendered in the seller wizard.\n\n``labels`` — ``{locale: localised_label}``; V1 contains only ``\"en\"``."
+      },
+      "ExportInitiatedResponse": {
+        "properties": {
+          "export_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Export Id"
+          },
+          "status": {
+            "type": "string",
+            "const": "pending",
+            "title": "Status"
+          },
+          "enqueued_task_id": {
+            "type": "string",
+            "title": "Enqueued Task Id"
+          },
+          "initiated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Initiated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "export_id",
+          "status",
+          "enqueued_task_id",
+          "initiated_at"
+        ],
+        "title": "ExportInitiatedResponse",
+        "description": "POST /products/{id}/export-xlsx 202 response per §14.B.1."
+      },
+      "ExportRequest": {
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": [
+              "xlsx_only",
+              "xlsx_with_images"
+            ],
+            "title": "Format",
+            "default": "xlsx_with_images"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ExportRequest",
+        "description": "POST /products/{id}/export-xlsx body.\n\n``format`` defaults to ``\"xlsx_with_images\"`` — the primary Feature 9 UX\n(seller downloads sheet + image ZIP in one go).  ``\"xlsx_only\"`` is the\nV1.5+ bulk-export use case."
+      },
+      "ExportResponse": {
+        "properties": {
+          "export_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Export Id"
+          },
+          "product_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Product Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "ready",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "xlsx_only",
+              "xlsx_with_images"
+            ],
+            "title": "Format"
+          },
+          "xlsx_signed_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Xlsx Signed Url"
+          },
+          "zip_signed_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Zip Signed Url"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "initiated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Initiated At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "round_trip_validated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Round Trip Validated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "export_id",
+          "product_id",
+          "status",
+          "format",
+          "initiated_at"
+        ],
+        "title": "ExportResponse",
+        "description": "GET /exports/{id} 200 response per §14.B.2.\n\nField population rules:\n- ``xlsx_signed_url``: populated when ``status=\"ready\"``.\n- ``zip_signed_url``: populated when ``status=\"ready\"`` AND\n  ``format=\"xlsx_with_images\"``.\n- ``error_message`` / ``error_code``: populated when ``status=\"failed\"``.\n- ``completed_at``: always ``None`` in V1 (DDL has no column — D-flag in\n  services-builder memory; set at service layer when status=\"ready\"/\"failed\").\n- ``round_trip_validated``: ``True`` when ``status=\"ready\"`` (MVP_ARCH §5.7\n  invariant); ``None`` otherwise.  Derived from status at service layer per D1."
+      },
+      "FieldEnumResponse": {
+        "properties": {
+          "enum_entries": {
+            "items": {
+              "$ref": "#/components/schemas/EnumEntry"
+            },
+            "type": "array",
+            "title": "Enum Entries"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "truncated": {
+            "type": "boolean",
+            "title": "Truncated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enum_entries",
+          "total",
+          "truncated"
+        ],
+        "title": "FieldEnumResponse",
+        "description": "Response envelope for GET /api/v1/categories/{id}/field-enum/{name}."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ImageSummary": {
+        "properties": {
+          "image_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Image Id"
+          },
+          "idx": {
+            "type": "integer",
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Idx"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "ready",
+              "failed_precheck"
+            ],
+            "title": "Status"
+          },
+          "signed_url": {
+            "type": "string",
+            "title": "Signed Url",
+            "description": "GCS signed URL, TTL 1 h per §6.D + MVP_ARCH §10.8"
+          },
+          "precheck_jsonb": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Precheck Jsonb",
+            "description": "Structured 5-step precheck result — 5 keys: jpeg_valid, color_space, resolution_pass, white_background, watermark_check."
+          },
+          "is_front": {
+            "type": "boolean",
+            "title": "Is Front",
+            "description": "True iff idx == 1 — generated column per MVP_ARCH §2.5"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "color_space": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color Space",
+            "description": "'RGB' | 'CMYK' | 'Gray' — Pillow ``Image.mode``"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "image_id",
+          "idx",
+          "status",
+          "signed_url",
+          "is_front",
+          "created_at"
+        ],
+        "title": "ImageSummary",
+        "description": "Single image entry inside :class:`ImagesListResponse`.\n\nCarries:\n\n* domain identifiers (``image_id``, ``idx``),\n* lifecycle status (``status``, ``created_at``),\n* the seller-facing presigned URL (``signed_url``, TTL 1h),\n* the verbatim precheck JSON (``precheck_jsonb``) so the frontend\n  can render per-step pass/fail without a second roundtrip,\n* cached Pillow-read metadata (``width``, ``height``, ``color_space``)."
+      },
+      "ImageUploadResponse": {
+        "properties": {
+          "image_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Image Id"
+          },
+          "gcs_path": {
+            "type": "string",
+            "title": "Gcs Path",
+            "description": "GCS object path (no scheme), e.g. 'meesell-images/{user_id}/{product_id}/{idx}.jpg' per §6.D."
+          },
+          "status": {
+            "type": "string",
+            "const": "pending",
+            "title": "Status"
+          },
+          "idx": {
+            "type": "integer",
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Idx",
+            "description": "1-4 slot index"
+          },
+          "enqueued_task_id": {
+            "type": "string",
+            "title": "Enqueued Task Id",
+            "description": "Celery task id for client-side correlation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "image_id",
+          "gcs_path",
+          "status",
+          "idx",
+          "enqueued_task_id"
+        ],
+        "title": "ImageUploadResponse",
+        "description": "202 ACCEPTED response body per §11.B.1.\n\nReturned synchronously after the GCS write + ``product_images`` row\ninsert + Celery task enqueue.  The 5-step precheck pipeline runs\nasynchronously; the client polls\n``GET /api/v1/products/{id}/images`` until ``status == \"ready\"``.\n\n``enqueued_task_id`` is informational only — the polling endpoint is\nthe canonical way to discover precheck completion; the Celery task\nid is exposed for client-side correlation when debugging."
+      },
+      "ImagesListResponse": {
+        "properties": {
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/ImageSummary"
+            },
+            "type": "array",
+            "title": "Images"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ImagesListResponse",
+        "description": "200 OK response body for GET /api/v1/products/{id}/images per §11.B.2.\n\n``images`` is the per-product list ordered by ``idx`` ASC, length 0-4\nper `MVP_ARCH §0` premise #3 (4-slot uniform rule)."
+      },
+      "MeResponse": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "User Id"
+          },
+          "phone": {
+            "type": "string",
+            "title": "Phone"
+          },
+          "plan": {
+            "type": "string",
+            "const": "free",
+            "title": "Plan"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
+          "onboarding_complete": {
+            "type": "boolean",
+            "title": "Onboarding Complete",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "phone",
+          "plan",
+          "created_at"
+        ],
+        "title": "MeResponse",
+        "description": "``GET /api/v1/auth/me`` 200 body."
+      },
+      "PatchActiveCategoriesRequest": {
+        "properties": {
+          "active_super_categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Active Super Categories"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "active_super_categories"
+        ],
+        "title": "PatchActiveCategoriesRequest",
+        "description": "PATCH /seller-profile/active-categories body.\n\nReplaces the array entirely (NOT additive) per §8.B.3 — declares the\nseller's current sell-in scope.  ``min_length=1`` rejects empty arrays\nat schema time so the service never has to handle the \"scope reset\"\nedge case (frontend uses a separate delete-account flow for that)."
+      },
+      "PatchComplianceExtensionRequest": {
+        "properties": {},
+        "additionalProperties": true,
+        "type": "object",
+        "title": "PatchComplianceExtensionRequest",
+        "description": "PATCH /seller-profile/compliance/{super_id} body.\n\nPydantic schema accepts any dict shape; service-layer validates against\n:data:`.domain.COMPLIANCE_EXTENSION_MAP[super_id]` and raises\n:class:`.exceptions.ComplianceExtensionMissingFieldsError` (422\n``customer.compliance.missing_fields``) when required keys are absent.\n\n``extra=\"allow\"`` is intentional — the spec layer accepts forward-compat\noptional keys (e.g. metadata fields the frontend adds in V1.5) without\nrejecting the request; the service ignores keys not in the Spec's\nrequired + optional union."
+      },
+      "PatchProductRequest": {
+        "properties": {
+          "fields": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fields"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "draft",
+                  "ready"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PatchProductRequest",
+        "description": "PATCH /api/v1/products/{id} body per §10.B.2.\n\n* ``fields`` is a partial JSON patch — keys are canonical field names\n  per ``templates.schema_jsonb.fields[*].canonical_name`` (§5A.C\n  regex ``[a-z][a-z0-9_]*``), values are primitive payloads per the\n  field's ``primitive`` (§5A.D).\n* ``status`` is the optional state transition: omit to leave\n  unchanged; ``\"ready\"`` triggers full-schema completeness validation;\n  ``\"draft\"`` is the explicit revert.\n\nAt least one of ``fields`` / ``status`` MUST be present — the\nvalidator below rejects empty bodies with 400."
+      },
+      "PatchProfileRequest": {
+        "properties": {
+          "manufacturer_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manufacturer Name"
+          },
+          "manufacturer_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manufacturer Address"
+          },
+          "manufacturer_pincode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{6}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manufacturer Pincode"
+          },
+          "packer_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packer Name"
+          },
+          "packer_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packer Address"
+          },
+          "packer_pincode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{6}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packer Pincode"
+          },
+          "importer_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importer Name"
+          },
+          "importer_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importer Address"
+          },
+          "importer_pincode": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{6}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importer Pincode"
+          },
+          "country_of_origin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Country Of Origin"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PatchProfileRequest",
+        "description": "PATCH /seller-profile body — every field OPTIONAL (subset semantics).\n\nPincode regex ``^\\d{6}$`` per §8.E + master ruling on Indian 6-digit\nPIN.  Pydantic emits 422 ``validation.<field>.<constraint>`` envelopes\nvia :class:`app.core.errors._pydantic_validation_handler`; the\nconstraint segment maps to ``validation.pincode.invalid_format``\nthrough the i18n registry."
+      },
+      "PriceCalcAlert": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "LOW_MARGIN",
+              "HIGH_MRP_MULTIPLIER",
+              "THIN_PROFIT"
+            ],
+            "title": "Code"
+          },
+          "message_id": {
+            "type": "string",
+            "title": "Message Id",
+            "description": "validation_message_id per §5A.H — resolved client-side via i18n."
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "warning",
+              "info"
+            ],
+            "title": "Severity"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message_id",
+          "severity"
+        ],
+        "title": "PriceCalcAlert",
+        "description": "Wire-shape pricing alert.  See :class:`~app.modules.pricing.domain.PricingAlert`\nfor the internal dataclass that the service constructs and the router\nmaps to this Pydantic model."
+      },
+      "PriceCalcRequest": {
+        "properties": {
+          "input_cost": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$"
+              }
+            ],
+            "title": "Input Cost",
+            "description": "Cost of goods per unit, in INR."
+          },
+          "target_margin_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 500.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$"
+              }
+            ],
+            "title": "Target Margin Pct",
+            "description": "Desired profit margin as a percentage of input_cost.",
+            "default": "30"
+          },
+          "override_commission_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Commission Pct",
+            "description": "V1.5+ Pro override; V1 ignores this field."
+          },
+          "override_gst_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Gst Pct",
+            "description": "V1.5+ Pro override; V1 ignores this field."
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "input_cost"
+        ],
+        "title": "PriceCalcRequest",
+        "description": "Body for ``POST /api/v1/products/{id}/price-calc``.\n\nPer §12.B.1 + §12.E.  Pydantic validates the field constraints at the\nroute boundary; service-layer business-rule checks (V1.5) are\nsurfaced via :class:`~app.modules.pricing.exceptions.InvalidPriceInputError`."
+      },
+      "PriceCalcResponse": {
+        "properties": {
+          "mrp": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Mrp"
+          },
+          "meesho_price": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Meesho Price"
+          },
+          "seller_price": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Seller Price"
+          },
+          "commission_pct": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Commission Pct"
+          },
+          "commission_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Commission Amount"
+          },
+          "gst_pct": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Gst Pct"
+          },
+          "gst_amount": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Gst Amount"
+          },
+          "profit": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Profit"
+          },
+          "profit_pct": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Profit Pct"
+          },
+          "alerts": {
+            "items": {
+              "$ref": "#/components/schemas/PriceCalcAlert"
+            },
+            "type": "array",
+            "title": "Alerts"
+          },
+          "calculated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Calculated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mrp",
+          "meesho_price",
+          "seller_price",
+          "commission_pct",
+          "commission_amount",
+          "gst_pct",
+          "gst_amount",
+          "profit",
+          "profit_pct",
+          "alerts",
+          "calculated_at"
+        ],
+        "title": "PriceCalcResponse",
+        "description": "200-OK body for ``POST /api/v1/products/{id}/price-calc``.\n\nAll monetary values in INR with 2 decimal places (quantized\n``ROUND_HALF_EVEN`` per the §12.B.1 step 6 lock)."
+      },
+      "ProductDraftResponse": {
+        "properties": {
+          "fields": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Fields"
+          },
+          "last_updated": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Updated"
+          },
+          "autosave_count": {
+            "type": "integer",
+            "title": "Autosave Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fields",
+          "last_updated",
+          "autosave_count"
+        ],
+        "title": "ProductDraftResponse",
+        "description": "200 response for §10.B.6 (204 when no draft — empty body).\n\nDECISION FLAG §10-CATALOG-D1 (applied):\n    ``last_updated`` ← ``product_drafts.saved_at``.\n    ``fields`` ← ``draft_jsonb[\"fields\"]`` (wrapper).\n    ``autosave_count`` ← ``draft_jsonb[\"autosave_count\"]``.\n\nLegacy rows without the wrapper key coerce to\n``autosave_count=1`` and ``fields=<draft_jsonb>``."
+      },
+      "ProductListItem": {
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Product Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "category_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Category Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "ready"
+            ],
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id",
+          "name",
+          "category_id",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ProductListItem",
+        "description": "One row in the dashboard product listing.\n\nMaps from :class:`app.modules.catalog.domain.Product` per §13.B.4\nflow step 4 (composition). The ``id`` -> ``product_id`` rename happens\nat this boundary so the wire shape is dashboard-flavoured (sellers\nthink in \"products\", not \"catalog rows\")."
+      },
+      "ProductPreviewField": {
+        "properties": {
+          "canonical_name": {
+            "type": "string",
+            "title": "Canonical Name"
+          },
+          "display_label": {
+            "type": "string",
+            "title": "Display Label"
+          },
+          "value": {
+            "title": "Value"
+          },
+          "is_advanced": {
+            "type": "boolean",
+            "title": "Is Advanced"
+          }
+        },
+        "type": "object",
+        "required": [
+          "canonical_name",
+          "display_label",
+          "value",
+          "is_advanced"
+        ],
+        "title": "ProductPreviewField",
+        "description": "One row of the §10.B.4 preview composite."
+      },
+      "ProductPreviewResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "category_path": {
+            "type": "string",
+            "title": "Category Path"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/ProductPreviewField"
+            },
+            "type": "array",
+            "title": "Fields"
+          },
+          "image_urls": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Image Urls"
+          },
+          "compliance": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Compliance"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "ready"
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "category_path",
+          "fields",
+          "image_urls",
+          "compliance",
+          "status"
+        ],
+        "title": "ProductPreviewResponse",
+        "description": "200 response for §10.B.4.\n\n``fields`` is ordered per the schema's wizard-step composition (§5A.C).\n``compliance`` is the standard 9-key shape per §5A.F + V1 universal\ncollection rule (collapsed-shape transform happens in §14 export)."
+      },
+      "ProductResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "catalog_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Catalog Id"
+          },
+          "category_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Category Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "ready"
+            ],
+            "title": "Status"
+          },
+          "fields": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Fields"
+          },
+          "ai_suggestions": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Suggestions"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "catalog_id",
+          "category_id",
+          "name",
+          "status",
+          "fields",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ProductResponse",
+        "description": "201 / 200 response across §10.B.1 + §10.B.2 + §10.B.3.\n\n``fields`` mirrors ``products.fields_jsonb``;\n``ai_suggestions`` mirrors ``products.ai_suggestions_jsonb``."
+      },
+      "ProfileCompletenessSummary": {
+        "properties": {
+          "base_complete_count": {
+            "type": "integer",
+            "title": "Base Complete Count"
+          },
+          "base_total_count": {
+            "type": "integer",
+            "title": "Base Total Count"
+          },
+          "extension_complete_count": {
+            "type": "integer",
+            "title": "Extension Complete Count"
+          },
+          "extension_total_count": {
+            "type": "integer",
+            "title": "Extension Total Count"
+          },
+          "onboarding_complete": {
+            "type": "boolean",
+            "title": "Onboarding Complete"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_complete_count",
+          "base_total_count",
+          "extension_complete_count",
+          "extension_total_count",
+          "onboarding_complete"
+        ],
+        "title": "ProfileCompletenessSummary",
+        "description": "Customer profile completeness summary for the dashboard header strip.\n\nMaps 1:1 from :class:`app.modules.customer.domain.ProfileCompleteness`\nper §8.F. ``base_total_count`` is always 10 (the 10 base seller-profile\nfields per §8.F + ``MVP_ARCH §3.2``); the field is sent over the wire\nanyway so the frontend can render \"8 of 10\" without re-hardcoding the\ndenominator. ``extension_total_count`` varies by the seller's\n``active_super_categories`` per §8.B ``COMPLIANCE_EXTENSION_MAP``."
+      },
+      "RefreshResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In"
+          },
+          "token_type": {
+            "type": "string",
+            "const": "bearer",
+            "title": "Token Type",
+            "default": "bearer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "expires_in"
+        ],
+        "title": "RefreshResponse",
+        "description": "``POST /api/v1/auth/refresh`` 200 body.\n\nIdentical SHAPE to :class:`VerifyOtpResponse` but locked as a distinct\nmodel so the OpenAPI surface differentiates them (per §7.E note)."
+      },
+      "RequiredFieldsResponse": {
+        "properties": {
+          "base_fields": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Base Fields"
+          },
+          "extension_fields": {
+            "additionalProperties": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Extension Fields"
+          },
+          "completed": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Completed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "base_fields",
+          "extension_fields",
+          "completed"
+        ],
+        "title": "RequiredFieldsResponse",
+        "description": "GET /seller-profile/required-fields response.\n\n``base_fields`` uses the §5A.C ``FieldSpec`` contract verbatim so the\nfrontend renderer dispatches with the same convention it uses for the\ncatalog wizard (single rendering convention).\n\n``extension_fields`` is a dict keyed by ``super_id`` carrying the\nextension fields PER declared super.  Empty dict when the seller has\nnot yet declared any active super-categories.\n\n``completed`` maps each rendered field's path to a boolean — paths use\ndot notation::\n\n    - \"manufacturer_name\"                         (base field)\n    - \"country_of_origin\"                         (base field)\n    - \"ext.26.fssai_license_number\"               (Grocery extension)\n    - \"ext.19.license_registration_number\"        (Beauty extension)"
+      },
+      "SchemaResponse": {
+        "properties": {
+          "fields": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Fields"
+          },
+          "compulsory_count": {
+            "type": "integer",
+            "title": "Compulsory Count"
+          },
+          "optional_count": {
+            "type": "integer",
+            "title": "Optional Count"
+          },
+          "total_count": {
+            "type": "integer",
+            "title": "Total Count"
+          },
+          "wizard_step_count": {
+            "type": "integer",
+            "title": "Wizard Step Count"
+          },
+          "main_sheet_label": {
+            "type": "string",
+            "title": "Main Sheet Label"
+          },
+          "compliance_shape": {
+            "type": "string",
+            "enum": [
+              "standard",
+              "collapsed"
+            ],
+            "title": "Compliance Shape"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "fields",
+          "compulsory_count",
+          "optional_count",
+          "total_count",
+          "wizard_step_count",
+          "main_sheet_label",
+          "compliance_shape"
+        ],
+        "title": "SchemaResponse",
+        "description": "Pass-through of ``templates.schema_jsonb`` envelope per §5A.B.\n\n``extra='allow'`` ensures forward-compatible envelope evolutions\n(§5A amendments) do not break existing readers.\n\n``fields`` is typed as ``list[dict[str, Any]]`` following the precedent\nin ``app.modules.customer.schemas`` — see module docstring for the\nPython 3.11 TypedDict rationale.  ``test_per_field_shape_keys.py`` is\nthe conformance gate for the 9 §5A.C-locked per-field keys.\n\n``main_sheet_label`` is the Meesho header consumed by the export adapter\n(§14 / M10).  It is present in this response because the export path\nneeds it; the seller-facing wizard does NOT render this field."
+      },
+      "SellerProfileResponse": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "User Id"
+          },
+          "manufacturer_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manufacturer Name"
+          },
+          "manufacturer_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manufacturer Address"
+          },
+          "manufacturer_pincode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manufacturer Pincode"
+          },
+          "packer_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packer Name"
+          },
+          "packer_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packer Address"
+          },
+          "packer_pincode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packer Pincode"
+          },
+          "importer_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importer Name"
+          },
+          "importer_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importer Address"
+          },
+          "importer_pincode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Importer Pincode"
+          },
+          "country_of_origin": {
+            "type": "string",
+            "title": "Country Of Origin",
+            "default": "India"
+          },
+          "active_super_categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Active Super Categories"
+          },
+          "compliance_extensions": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Compliance Extensions"
+          },
+          "onboarding_complete": {
+            "type": "boolean",
+            "title": "Onboarding Complete",
+            "default": false
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SellerProfileResponse",
+        "description": "Returned by GET /seller-profile + PATCH /seller-profile +\nPATCH /seller-profile/active-categories + PATCH /seller-profile/compliance/{super_id}.\n\nPer §8.E — the 9 Legal Metrology fields are nullable in the wire shape\neven though 6 of them are NOT NULL in the ORM (the row only EXISTS\nonce those 6 are populated, so a response with all-null only happens\nin the cross-module ``get_profile_or_none`` path which the route maps\nto 404 anyway)."
+      },
+      "SendOtpRequest": {
+        "properties": {
+          "phone": {
+            "type": "string",
+            "pattern": "^\\+[1-9]\\d{1,14}$",
+            "title": "Phone",
+            "examples": [
+              "+919876543210"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "phone"
+        ],
+        "title": "SendOtpRequest",
+        "description": "``POST /api/v1/auth/otp/send`` body."
+      },
+      "SendOtpResponse": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "title": "Request Id",
+            "description": "MSG91 correlation ID — opaque to the client"
+          }
+        },
+        "type": "object",
+        "required": [
+          "request_id"
+        ],
+        "title": "SendOtpResponse",
+        "description": "``POST /api/v1/auth/otp/send`` 202 body."
+      },
+      "SuggestQuery": {
+        "properties": {
+          "q": {
+            "type": "string",
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Q"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "q"
+        ],
+        "title": "SuggestQuery",
+        "description": "JSON request body for POST /api/v1/categories/suggest.\n\n``q`` must have 1–5000 non-empty characters (after strip).  Pydantic\nenforces the character bounds; the service layer enforces the\nstrip-and-recheck rule.\n\nRaised from GET→POST (founder ruling 2026-06-16, finding #4): a 5000-char\ndescription in a GET query string risks browser/proxy URL-length limits\n(RFC 9110 RECOMMENDED max varies, de-facto ~8 KB).  POST JSON body has no\nsuch limit.  The field name ``q`` is preserved so existing callers that\nalready built request objects only need to change the HTTP verb and move\nthe value from query param to JSON body.\n\nvalidation_message_id on violation: ``validation.suggest_q.too_short_or_long``"
+      },
+      "SuggestResponse": {
+        "properties": {
+          "suggestions": {
+            "items": {
+              "$ref": "#/components/schemas/CategorySuggestion"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "title": "Suggestions"
+          },
+          "fallback_offered": {
+            "type": "boolean",
+            "title": "Fallback Offered"
+          }
+        },
+        "type": "object",
+        "required": [
+          "suggestions",
+          "fallback_offered"
+        ],
+        "title": "SuggestResponse",
+        "description": "Response envelope for GET /api/v1/categories/suggest.\n\n``fallback_offered=True`` signals the frontend to surface the manual\n/browse fallback per ``MVP_ARCH §5.1`` decision #8.  Always 200 — never\na 5xx for AI failures per §9.B.1 graceful-fallback contract."
+      },
+      "SuperCategoryNode": {
+        "properties": {
+          "super_id": {
+            "type": "string",
+            "title": "Super Id"
+          },
+          "super_name": {
+            "type": "string",
+            "title": "Super Name"
+          },
+          "leaves": {
+            "items": {
+              "$ref": "#/components/schemas/BrowseResultRow"
+            },
+            "type": "array",
+            "title": "Leaves"
+          }
+        },
+        "type": "object",
+        "required": [
+          "super_id",
+          "super_name",
+          "leaves"
+        ],
+        "title": "SuperCategoryNode",
+        "description": "One super-category bucket in the full hierarchical tree.\n\n``leaves`` reuse ``BrowseResultRow`` (similarity is 0.0 in tree mode)."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "VerifyOtpRequest": {
+        "properties": {
+          "phone": {
+            "type": "string",
+            "pattern": "^\\+[1-9]\\d{1,14}$",
+            "title": "Phone",
+            "examples": [
+              "+919876543210"
+            ]
+          },
+          "otp": {
+            "type": "string",
+            "pattern": "^\\d{6}$",
+            "title": "Otp",
+            "examples": [
+              "123456"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "phone",
+          "otp"
+        ],
+        "title": "VerifyOtpRequest",
+        "description": "``POST /api/v1/auth/otp/verify`` body."
+      },
+      "VerifyOtpResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In",
+            "description": "Seconds — matches ACCESS_TOKEN_TTL_SECONDS"
+          },
+          "token_type": {
+            "type": "string",
+            "const": "bearer",
+            "title": "Token Type",
+            "default": "bearer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "expires_in"
+        ],
+        "title": "VerifyOtpResponse",
+        "description": "``POST /api/v1/auth/otp/verify`` 200 body.\n\nThe refresh token is NOT in the body — it ships in the ``Set-Cookie``\nresponse header per §4.B FE-D5 amendment."
+      },
+      "WebhookCaptureResponse": {
+        "properties": {
+          "captured": {
+            "type": "boolean",
+            "title": "Captured",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "WebhookCaptureResponse",
+        "description": "``POST /api/v1/webhooks/razorpay`` 200 body."
+      }
+    },
+    "securitySchemes": {
+      "OAuth2PasswordBearer": {
+        "type": "oauth2",
+        "flows": {
+          "password": {
+            "scopes": {},
+            "tokenUrl": "/api/v1/auth/otp/verify"
+          }
+        }
+      }
+    }
+  }
+}
