@@ -491,7 +491,7 @@ describe('a11y: failed-checks list accessibility (PR #291)', () => {
   });
 
   it('each failed-check list item has mee-icon[name="warning"] (valid registry key)', () => {
-    // icon.registry.ts: warning = 'pi pi-exclamation-triangle' — valid MeeIconName
+    // icon.registry.ts: 'warning' resolves to the exclamation-triangle icon — valid MeeIconName
     const iconName = 'warning';
     expect(iconName).toBe('warning');
   });
