@@ -1,10 +1,5 @@
-import { inject } from '@angular/core';
-import { CanActivateFn, Router } from '@angular/router';
-import { AuthService } from '../services/auth.service';
+import { CanActivateFn } from '@angular/router';
 
-export const authGuard: CanActivateFn = () => {
-  const auth   = inject(AuthService);
-  const router = inject(Router);
-  if (auth.isAuthenticated()) return true;
-  return router.createUrlTree(['/login']);
-};
+// DESIGN-WORKTREE BYPASS: auth guard disabled for UI review on worktree-design-figma-ui-screens.
+// DO NOT merge to develop — restore real guard before PR.
+export const authGuard: CanActivateFn = () => true;

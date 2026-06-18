@@ -13,23 +13,48 @@ import type { MeeIconName } from '@mesell/ui-kit';
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MeeButtonComponent],
+  styles: [`
+    :host { display: block; }
+    .ph-root {
+      display: flex;
+      flex-direction: column;
+      gap: var(--mee-space-1);
+      padding-block: var(--mee-space-4);
+      border-bottom: 1px solid var(--mee-color-outline);
+    }
+    @media (min-width: 640px) {
+      .ph-root {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+      }
+    }
+    .ph-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .ph-title {
+      font-size: 24px;
+      font-weight: 700;
+      line-height: 1.2;
+      color: var(--mee-color-on-surface);
+      margin: 0;
+    }
+    .ph-subtitle {
+      font-size: 14px;
+      color: var(--mee-color-on-surface-muted);
+      margin: 0;
+    }
+  `],
   template: `
-    <div
-      class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between py-4"
-      style="border-bottom: 1px solid var(--mee-color-outline);"
-    >
+    <div class="ph-root">
       <!-- Title + subtitle -->
-      <div class="flex flex-col gap-0.5">
-        <h1
-          class="text-2xl font-bold leading-tight"
-          style="color: var(--mee-color-on-surface);"
-        >{{ title() }}</h1>
+      <div class="ph-text">
+        <h1 class="ph-title">{{ title() }}</h1>
 
         @if (subtitle()) {
-          <p
-            class="text-sm"
-            style="color: var(--mee-color-on-surface-muted);"
-          >{{ subtitle() }}</p>
+          <p class="ph-subtitle">{{ subtitle() }}</p>
         }
       </div>
 

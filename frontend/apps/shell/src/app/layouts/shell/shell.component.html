@@ -1,38 +1,29 @@
-<div class="shell-layout">
-  <!-- Desktop sidebar — chrome primitive; positioning via .sidebar-desktop (shell-owned).
-       Founder-approved 4 groups (Home / Catalogs / Categories / Account). -->
-  <mee-side-nav
-    class="sidebar-desktop"
-    brand="MeeSell"
-    [groups]="visibleNavGroups()"
-  />
+<div class="mee-layout" [ngClass]="layoutClass()">
+  <mee-topbar></mee-topbar>
+  <mee-sidebar></mee-sidebar>
 
-  <!-- Mobile sidebar overlay — shell owns the drawer; the side-nav is its content.
-       Closing on navigate keeps the original UX (tap a link → drawer closes). -->
-  <mee-drawer
-    [visible]="mobileSidebarVisible()"
-    (visibleChange)="mobileSidebarVisible.set($event)"
-    styleClass="mee-mobile-sidebar"
-    [modal]="true"
-  >
-    <mee-side-nav
-      brand="MeeSell"
-      [groups]="visibleNavGroups()"
-      (navigated)="mobileSidebarVisible.set(false)"
-    />
-  </mee-drawer>
+  <!-- Backdrop for mobile/overlay -->
+  @if (layoutService.isSidebarActive()) {
+    <div class="mee-layout__mask" (click)="layoutService.closeMobileMenu()"></div>
+  }
 
-  <!-- Main content area -->
-  <div class="shell-main">
-    <!-- Top header — chrome primitive; hamburger opens the mobile drawer,
-         the user menu is projected into the trailing actions region. -->
-    <mee-app-bar (menuToggle)="mobileSidebarVisible.set(true)">
-      <mee-user-menu [initials]="userInitials" [items]="userMenuItems" />
-    </mee-app-bar>
-
-    <!-- Page content — shell owns the <main> landmark -->
-    <main class="page-content">
-      <router-outlet />
-    </main>
+  <!-- Main content -->
+  <div class="mee-layout__main">
+    <router-outlet />
   </div>
+
+  <!-- Mobile bottom tab bar (≤639px) -->
+  <nav class="mee-bottom-nav" aria-label="Mobile navigation">
+    @for (item of bottomNavItems; track item.route) {
+      <a
+        [routerLink]="item.route"
+        routerLinkActive="mee-bottom-nav__item--active"
+        class="mee-bottom-nav__item"
+        [attr.aria-label]="item.label"
+      >
+        <i [class]="item.icon" aria-hidden="true"></i>
+        <span class="mee-bottom-nav__label">{{ item.label }}</span>
+      </a>
+    }
+  </nav>
 </div>

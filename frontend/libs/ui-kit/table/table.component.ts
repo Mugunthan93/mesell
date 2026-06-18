@@ -14,6 +14,18 @@ import type { MeeColumn, MeeTablePageEvent, MeeTableSortEvent } from './table.ty
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [TableModule],
+  styles: [`
+    :host { display: block; }
+    .mee-tr-row {
+      cursor: pointer;
+    }
+    ::ng-deep .mee-tr-row > td { min-height: 44px; }
+    .mee-td-empty {
+      text-align: center;
+      padding-block: var(--mee-space-8);
+      color: var(--mee-color-on-surface-muted);
+    }
+  `],
   template: `
     <p-table
       [value]="rows()"
@@ -39,8 +51,7 @@ import type { MeeColumn, MeeTablePageEvent, MeeTableSortEvent } from './table.ty
       </ng-template>
       <ng-template pTemplate="body" let-rowData>
         <tr
-          class="cursor-pointer"
-          style="min-height: 44px;"
+          class="mee-tr-row"
           (click)="row_click.emit(rowData)"
           tabindex="0"
           (keydown.enter)="row_click.emit(rowData)"
@@ -52,7 +63,7 @@ import type { MeeColumn, MeeTablePageEvent, MeeTableSortEvent } from './table.ty
       </ng-template>
       <ng-template pTemplate="emptymessage">
         <tr>
-          <td [attr.colspan]="columns().length" class="text-center py-8" style="color: var(--mee-color-on-surface-muted)">
+          <td [attr.colspan]="columns().length" class="mee-td-empty">
             {{ empty_message() }}
           </td>
         </tr>

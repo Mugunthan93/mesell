@@ -20,28 +20,84 @@ const COLOR_VAR_MAP: Record<StatCardColor, string> = {
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MeeCardComponent],
+  styles: [`
+    :host { display: block; }
+    .sc-body {
+      display: flex;
+      flex-direction: column;
+      gap: var(--mee-space-2);
+      padding: var(--mee-space-1);
+    }
+    .sc-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+    }
+    .sc-icon {
+      font-size: 48px;
+      width: 48px;
+      height: 48px;
+      line-height: 1;
+    }
+    .sc-trend {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: var(--mee-radius-full);
+    }
+    .sc-trend--positive {
+      color: var(--mee-color-success);
+      background: rgba(22, 163, 74, 0.12);
+    }
+    .sc-trend--negative {
+      color: var(--mee-color-error);
+      background: rgba(220, 38, 38, 0.12);
+    }
+    .sc-trend-icon {
+      font-size: 14px;
+      line-height: 1;
+    }
+    .sc-value {
+      font-size: 30px;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--mee-color-on-surface);
+      margin: 0;
+    }
+    .sc-label {
+      font-size: 14px;
+      line-height: 1.4;
+      color: var(--mee-color-on-surface-muted);
+      margin: 0;
+    }
+    .sc-trend-label {
+      font-size: 12px;
+      color: var(--mee-color-on-surface-muted);
+      margin: 0;
+    }
+  `],
   template: `
     <mee-card>
-      <div class="flex flex-col gap-2 p-1">
+      <div class="sc-body">
         <!-- Icon row + optional trend -->
-        <div class="flex items-start justify-between">
+        <div class="sc-header">
           <span
-            class="material-symbols-outlined"
+            class="material-symbols-outlined sc-icon"
             aria-hidden="true"
             [style.color]="accentColor()"
-            style="font-size:48px; width:48px; height:48px; line-height:1;"
           >{{ icon() }}</span>
 
           @if (trend() !== undefined && trend() !== null) {
             <span
-              class="inline-flex items-center gap-0.5 text-xs font-semibold px-2 py-0.5 rounded-full"
-              [class.text-green-700]="trendPositive()"
-              [class.bg-green-100]="trendPositive()"
-              [class.text-red-700]="!trendPositive()"
-              [class.bg-red-100]="!trendPositive()"
+              class="sc-trend"
+              [class.sc-trend--positive]="trendPositive()"
+              [class.sc-trend--negative]="!trendPositive()"
               [attr.aria-label]="trend_label() ?? 'trend'"
             >
-              <span class="material-symbols-outlined" aria-hidden="true" style="font-size:14px; line-height:1;">
+              <span class="material-symbols-outlined sc-trend-icon" aria-hidden="true">
                 {{ trendPositive() ? 'trending_up' : 'trending_down' }}
               </span>
               {{ trend()! > 0 ? '+' : '' }}{{ trend() }}%
@@ -50,19 +106,13 @@ const COLOR_VAR_MAP: Record<StatCardColor, string> = {
         </div>
 
         <!-- Value -->
-        <p
-          class="text-3xl font-bold leading-none"
-          style="color: var(--mee-color-on-surface);"
-        >{{ value() }}</p>
+        <p class="sc-value">{{ value() }}</p>
 
         <!-- Label + optional trend label -->
-        <p
-          class="text-sm leading-snug"
-          style="color: var(--mee-color-on-surface-muted);"
-        >{{ label() }}</p>
+        <p class="sc-label">{{ label() }}</p>
 
         @if (trend_label()) {
-          <p class="text-xs" style="color: var(--mee-color-on-surface-muted);">{{ trend_label() }}</p>
+          <p class="sc-trend-label">{{ trend_label() }}</p>
         }
       </div>
     </mee-card>

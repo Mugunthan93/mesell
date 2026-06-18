@@ -27,9 +27,27 @@ import type { MeeSelectOption } from './select.types';
       multi: true,
     },
   ],
+  styles: [`
+    :host { display: block; }
+    .mee-label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: var(--mee-space-1);
+      color: var(--mee-color-on-surface);
+    }
+    ::ng-deep p-select { display: block; width: 100%; }
+    ::ng-deep p-select .p-select { min-height: 44px; width: 100%; }
+    .mee-error {
+      display: block;
+      margin-top: var(--mee-space-1);
+      font-size: 12px;
+      color: var(--mee-color-error);
+    }
+  `],
   template: `
     @if (label()) {
-      <label class="block text-sm font-medium mb-1" style="color: var(--mee-color-on-surface)">
+      <label class="mee-label">
         {{ label() }}
       </label>
     }
@@ -41,11 +59,9 @@ import type { MeeSelectOption } from './select.types';
       optionValue="value"
       [ngModel]="innerValue()"
       (ngModelChange)="onSelectChange($event)"
-      class="w-full"
-      [style]="{ minHeight: '44px', width: '100%' }"
     />
     @if (error()) {
-      <small role="alert" style="color: var(--mee-color-error)" class="block mt-1 text-xs">
+      <small role="alert" class="mee-error">
         {{ error() }}
       </small>
     }

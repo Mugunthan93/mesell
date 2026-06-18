@@ -24,9 +24,22 @@ import { Password } from 'primeng/password';
       multi: true,
     },
   ],
+  styles: [`
+    :host { display: block; }
+    .mee-label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: var(--mee-space-1);
+      color: var(--mee-color-on-surface);
+    }
+    ::ng-deep p-password { display: block; width: 100%; }
+    ::ng-deep p-password .p-password { display: flex; width: 100%; min-height: 44px; }
+    ::ng-deep p-password .p-inputtext { min-height: 44px; width: 100%; flex: 1; }
+  `],
   template: `
     @if (label()) {
-      <label class="block text-sm font-medium mb-1" style="color: var(--mee-color-on-surface)">
+      <label class="mee-label">
         {{ label() }}
       </label>
     }
@@ -38,7 +51,6 @@ import { Password } from 'primeng/password';
       [toggleMask]="toggleMask()"
       [feedback]="feedback()"
       [fluid]="true"
-      [style]="{ minHeight: '44px' }"
     />
   `,
 })

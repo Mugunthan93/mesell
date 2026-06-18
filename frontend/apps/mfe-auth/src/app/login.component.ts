@@ -7,33 +7,20 @@ import {
 } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { catchError, EMPTY } from 'rxjs';
-import { HttpErrorResponse } from '@angular/common/http';
-import { AuthLayoutComponent, MeeAlertBannerComponent } from '@mesell/composites';
-// F-001: barrel import — subpaths are not in the federation import map at runtime
+import { AuthLayoutComponent } from '@mesell/composites';
 import { MeeInputComponent, MeeButtonComponent } from '@mesell/ui-kit';
-import { AuthApiService } from '@mesell/core';
 
 @Component({
   selector: 'mee-login',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AuthLayoutComponent, ReactiveFormsModule, RouterLink, MeeInputComponent, MeeButtonComponent, MeeAlertBannerComponent],
+  imports: [AuthLayoutComponent, ReactiveFormsModule, RouterLink, MeeInputComponent, MeeButtonComponent],
   template: `
     <mee-auth-layout>
       <h1>Welcome back</h1>
       <p class="subtitle">Enter your mobile number to continue</p>
 
-      <!-- Contextual error banner — offline state handled globally by AuthLayoutComponent -->
-      @if (errorMessage()) {
-        <mee-alert-banner
-          variant="error"
-          [message]="errorMessage()!"
-          class="banner-spacing"
-        />
-      }
-
-      <form [formGroup]="form" (ngSubmit)="onSubmit()">
+      <form class="auth-form" [formGroup]="form" (ngSubmit)="onSubmit()">
         <mee-input
           [label]="'Mobile Number'"
           [prefix]="'+91'"
@@ -46,7 +33,7 @@ import { AuthApiService } from '@mesell/core';
         <mee-button
           [label]="'Continue →'"
           [loading]="loading()"
-          [disabled]="form.invalid || loading()"
+          [disabled]="form.invalid"
           [fullWidth]="true"
           (clicked)="onSubmit()"
         />
@@ -63,47 +50,40 @@ import { AuthApiService } from '@mesell/core';
       font-size: 22px;
       font-weight: 700;
       color: var(--mee-color-on-surface);
-      margin-bottom: 4px;
+      margin-bottom: var(--mee-space-1);
     }
     .subtitle {
       font-size: 14px;
       color: var(--mee-color-on-surface-muted);
-      margin-bottom: 24px;
+      margin-bottom: var(--mee-space-6);
+    }
+    .auth-form {
+      display: flex;
+      flex-direction: column;
+      gap: var(--mee-space-4);
     }
     .footer-text {
       text-align: center;
-      font-size: 14px;
+      font-size: 13px;
       color: var(--mee-color-on-surface-muted);
-      margin-top: 20px;
+      margin-top: var(--mee-space-5);
     }
     .footer-text a {
       color: var(--mee-color-primary);
-      font-weight: 500;
+      font-weight: 600;
       cursor: pointer;
       text-decoration: none;
+      transition: color var(--mee-transition-fast);
     }
-    /* Ensure minimum 44px tap target on the footer link */
-    .footer-text a {
-      display: inline-block;
-      min-height: 44px;
-      line-height: 44px;
-    }
-    form > * + * { margin-top: 16px; }
-    /* Spacing below banner before the form */
-    .banner-spacing { margin-bottom: 16px; }
-
-    /* 360px — tighten heading so card fits */
-    @media (max-width: 400px) {
-      h1 { font-size: 20px; }
+    .footer-text a:hover {
+      text-decoration: underline;
     }
   `],
 })
 export class LoginComponent {
-  private readonly router   = inject(Router);
-  private readonly authApi  = inject(AuthApiService);
+  private readonly router = inject(Router);
 
-  readonly loading      = signal(false);
-  readonly errorMessage = signal<string | null>(null);
+  readonly loading = signal(false);
 
   readonly form = new FormGroup({
     phone: new FormControl('', [
@@ -119,32 +99,11 @@ export class LoginComponent {
   );
 
   onSubmit(): void {
-    if (this.form.invalid || this.loading()) return;
-    this.errorMessage.set(null);
+    if (this.form.invalid) return;
     this.loading.set(true);
-
-    // Normalise: form holds 10-digit raw value; backend requires E.164 (+91)
-    const raw   = this.form.get('phone')!.value ?? '';
-    const phone = '+91' + raw;
-
-    this.authApi.sendOtp(phone)
-      .pipe(
-        catchError((err: HttpErrorResponse) => {
-          this.loading.set(false);
-          if (err.status === 429) {
-            this.errorMessage.set('Too many attempts. Please try again later.');
-          } else if (err.status === 400) {
-            this.errorMessage.set('Invalid phone number. Please check and retry.');
-          } else {
-            this.errorMessage.set('Something went wrong. Please try again.');
-          }
-          return EMPTY;
-        }),
-      )
-      .subscribe(() => {
-        this.loading.set(false);
-        // Hand off phone via Router state so otp-verify can pre-fill/normalise
-        this.router.navigate(['/otp-verify'], { state: { phone } });
-      });
+    setTimeout(() => {
+      this.loading.set(false);
+      this.router.navigate(['/otp-verify']);
+    }, 1500);
   }
 }
