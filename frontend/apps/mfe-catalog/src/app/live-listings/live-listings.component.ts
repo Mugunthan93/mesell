@@ -164,14 +164,17 @@ type PageState = 'idle' | 'parsing' | 'parsed' | 'invalid-file' | 'all-skipped';
                     <th
                       class="text-left px-4 py-3 font-semibold"
                       style="color: var(--mee-color-on-surface); min-width: 280px;"
+                      scope="col"
                     >Product</th>
                     <th
                       class="text-left px-4 py-3 font-semibold"
                       style="color: var(--mee-color-on-surface); min-width: 120px;"
+                      scope="col"
                     >Product ID</th>
                     <th
                       class="text-left px-4 py-3 font-semibold"
                       style="color: var(--mee-color-on-surface); min-width: 160px;"
+                      scope="col"
                     >View on Meesho</th>
                   </tr>
                 </thead>
