@@ -267,6 +267,8 @@ Reference: `docs/VALIDATED_PAIN_POINTS.md` (themes T1–T6, new pains S3.x)
 
 **Effort estimate:** Backend 3 h · Frontend 10 h · **Total 13 h**
 
+**AMENDMENT 2026-06-18 — Live preview → My Live Listings (founder-ratified):** the entire feature above is superseded by the V1 implementation. The simulated three-surface pre-publish preview (feed thumbnail / product detail / mobile card mockup at route `/catalogs/:id/preview`, the `PreviewFeedComponent` / `PreviewDetailComponent` / `PreviewMobileComponent` CSS clones) is **replaced** by **"My Live Listings"** at route **`/catalogs/live`**. Rationale: the simulated mockup never reflected a seller's real listings; sellers want to see and reach their *actual* live Meesho products. New mechanics (V1, frontend-only — no backend, no scraping): the seller uploads their own Meesho "Inventory Update File" (XLSX); the app reads the **PRODUCT ID** and **PRODUCT NAME** columns and, per product, generates a public "View on Meesho" deep-link as `https://www.meesho.com/{slug}/p/{base36(product_id)}` where `{base36(product_id)}` is the product ID encoded in base-36 and `{slug}` is a cosmetic URL slug derived from the product name (the slug is decorative; only the base-36 ID segment is load-bearing for the link to resolve). V1 scope (a) = a **standalone view** of the parsed listings with their deep-links; matching uploaded listings back into MeeSell catalog records is **deferred to V2** (scope b). The old `/catalogs/:id/preview` route is **superseded** (removed from the V1 route set — see Section 6). Implemented on `develop` via PR #278 (merge SHA `0087562`). (End amendment.)
+
 ---
 
 ### Feature 7: Price Calculator
