@@ -309,18 +309,6 @@ import { formatRelativeTime } from './dashboard.model';
             icon="check_circle"
             color="green"
           />
-          <mee-stat-card
-            label="Exported"
-            [value]="statusCounts().exported"
-            icon="download"
-            color="purple"
-          />
-          <mee-stat-card
-            label="Live"
-            [value]="statusCounts().live"
-            icon="storefront"
-            color="orange"
-          />
         </div>
 
         <!-- Search + filter bar -->
@@ -340,8 +328,6 @@ import { formatRelativeTime } from './dashboard.model';
             <option value="">All Statuses</option>
             <option value="draft">Draft</option>
             <option value="ready">Ready</option>
-            <option value="exported">Exported</option>
-            <option value="live">Live</option>
           </select>
         </div>
 
@@ -361,14 +347,13 @@ import { formatRelativeTime } from './dashboard.model';
                 <thead>
                   <tr>
                     <th>Name</th>
-                    <th>Category</th>
                     <th>Status</th>
                     <th>Updated</th>
                     <th class="sr-only">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  @for (row of products(); track row.id) {
+                  @for (row of products(); track row.product_id) {
                     <tr
                       tabindex="0"
                       (click)="onRowClick(row)"
@@ -379,9 +364,6 @@ import { formatRelativeTime } from './dashboard.model';
                     >
                       <td>
                         <span class="cell-name" [title]="row.name">{{ row.name }}</span>
-                      </td>
-                      <td>
-                        <span class="cell-category" [title]="row.category_name">{{ row.category_name }}</span>
                       </td>
                       <td>
                         <mee-status-badge [status]="row.status" />
@@ -444,7 +426,7 @@ export class DashboardComponent implements OnInit {
   readonly loading      = signal(true);
   readonly products     = signal<ProductListItem[]>([]);
   readonly totalCount   = signal(0);
-  readonly statusCounts = signal<StatusCounts>({ draft: 0, ready: 0, exported: 0, live: 0 });
+  readonly statusCounts = signal<StatusCounts>({ draft: 0, ready: 0 });
   readonly page         = signal(1);
   readonly searchQuery  = signal('');
   readonly statusFilter = signal('');
@@ -480,7 +462,7 @@ export class DashboardComponent implements OnInit {
   }
 
   onRowClick(row: ProductListItem): void {
-    this.router.navigate(['/catalogs', row.id, 'edit']);
+    this.router.navigate(['/catalogs', row.product_id, 'edit']);
   }
 
   onStatusFilterChange(event: Event): void {
@@ -523,8 +505,7 @@ export class DashboardComponent implements OnInit {
       .loadProducts({
         page: this.page(),
         limit: this.pageSize,
-        status_filter: this.statusFilter() || undefined,
-        search: this.searchQuery() || undefined,
+        // status_filter and search are client-side only (A3 — server params are page+limit only).
       })
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
@@ -543,9 +524,9 @@ export class DashboardComponent implements OnInit {
   }
 
   private deleteProduct(row: ProductListItem): void {
-    this.api.deleteProduct(row.id).subscribe({
+    this.api.deleteProduct(row.product_id).subscribe({
       next: () => {
-        this.products.update(items => items.filter(p => p.id !== row.id));
+        this.products.update(items => items.filter(p => p.product_id !== row.product_id));
         this.totalCount.update(n => n - 1);
         const counts = this.api.deriveStatusCounts(this.products());
         this.statusCounts.set(counts);
