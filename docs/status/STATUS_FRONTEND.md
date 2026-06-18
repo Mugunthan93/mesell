@@ -1,7 +1,53 @@
 # STATUS — FRONTEND
 
 **Owner:** meesell-frontend-coordinator (master session)
-**Last update:** 2026-06-17
+**Last update:** 2026-06-18
+
+=== UPDATE: 2026-06-18 08:55 ===
+Phase: My Live Listings (/catalogs/live)
+Agent: meesell-angular-component-builder
+Branch: feat/my-live-listings
+
+Done:
+  NEW: frontend/apps/mfe-catalog/src/app/live-listings/live-listings.component.ts
+    Standalone OnPush, 5 page states (idle/parsing/parsed/invalid-file/all-skipped),
+    async import('xlsx') in onFilesSelected, localStorage persist/hydrate/clear,
+    desktop table + mobile card layouts, real <a> links with aria-labels, MeeIconComponent.
+  NEW: frontend/apps/mfe-catalog/src/app/live-listings/live-listings.model.ts
+    Pure TS: toBase36 (BigInt), slugify, buildMeeshoUrl, buildColumnIndexMap,
+    assertInventoryColumns, mapSheetToInventory, InvalidInventoryFileError.
+  NEW: frontend/apps/mfe-catalog/src/app/live-listings/live-listings.model.spec.ts
+    34 pure-function Vitest tests (NO TestBed), covers BigInt, slug, URL shape,
+    column map, validate, sheet parsing, skip/count logic.
+  EDITED: frontend/apps/mfe-catalog/src/app/catalog.routes.ts
+    Added `live` route (lazy LiveListingsComponent) at index 2 (before :id/*).
+    Removed `:id/preview` route + deleted preview/preview/ directory (3 files).
+  EDITED: frontend/apps/shell/src/app/layouts/shell/shell.component.ts
+    Added My Live Listings nav item (icon: external-link) to Catalogs group.
+  EDITED: frontend/libs/ui-kit/icon/icon.registry.ts
+    Added `'external-link': 'pi pi-external-link'` entry.
+  EDITED: frontend/libs/ui-kit/icon/icon.registry.alt.ts
+    Added `'external-link': 'material-icons mi-open_in_new'` entry (key-parity).
+  EDITED: frontend/package.json + pnpm-lock.yaml
+    Added xlsx 0.18.5 as a runtime dependency.
+
+Tests: 1277/1277 passed (79 test files) — full suite, 0 failures.
+Build (mfe-catalog): GREEN 3.628s — live-listings-component lazy chunk 12.39 kB / 3.11 kB gzip;
+  xlsx.YQ6mFXPTM0.js 609 kB lazy chunk (dynamic import confirmed NOT in initial bundle).
+  Pre-existing warning: catalog-form CSS budget +52 bytes (not our change).
+Build (frontend/shell): GREEN 2.808s — 0 errors.
+
+Grep gates: ALL 4 CLEAN
+  SIMULATED_PREVIEW/PreviewComponent/preview/preview: 0 matches
+  from 'primeng'/@primeuix in live-listings: 0 matches
+  static 'xlsx' import in component: 0 matches
+  pi pi-external-link outside registry: 0 matches (FE-2 clean)
+
+Blockers: none
+Next: PR open, awaiting coordinator merge-gate review
+Hand-offs: LiveListingsComponent ready at /catalogs/live; xlsx 0.18.5 in package.json.
+  Preview feature retired per founder approval (no backend dependency).
+=========
 
 === UPDATE: 2026-06-17 08:55 ===
 Phase: UI-DS Phase 6a — mee-page padding scale (none|tight|default)

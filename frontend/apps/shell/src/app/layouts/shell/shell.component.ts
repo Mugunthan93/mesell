@@ -98,9 +98,11 @@ export class ShellComponent {
       label: 'Catalogs',
       items: [
         // prefixMatch: /catalogs stays active on /catalogs/new AND /catalogs/:id/*
-        { label: 'All Catalogs',   route: '/catalogs',     icon: 'catalog', prefixMatch: true },
+        { label: 'All Catalogs',   route: '/catalogs',      icon: 'catalog', prefixMatch: true },
         // Accent CTA. Exact-match so it doesn't stay active on every /catalogs/* page.
-        { label: 'New Catalog',    route: '/catalogs/new', icon: 'add', accent: true },
+        { label: 'New Catalog',    route: '/catalogs/new',  icon: 'add', accent: true },
+        // Deep-link viewer — seller uploads their Inventory Update File to get live Meesho links.
+        { label: 'My Live Listings', route: '/catalogs/live', icon: 'external-link' },
       ],
     },
     {

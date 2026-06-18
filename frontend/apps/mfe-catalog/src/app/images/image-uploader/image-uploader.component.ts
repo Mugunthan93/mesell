@@ -536,7 +536,7 @@ export class ImageUploaderComponent implements OnInit, OnDestroy {
   }
 
   onContinue(): void {
-    void this.router.navigate(['/catalogs', this.productId, 'preview']);
+    void this.router.navigate(['/catalogs']);
   }
 
   // ── Polling (real — NOT simulation) ──────────────────────────────────────────

@@ -32,6 +32,9 @@ export const MEE_ICONS = {
 
   // Internal ui-kit use
   warning:    'pi pi-exclamation-triangle', // confirm-dialog ConfirmationService icon
+
+  // Deep-link navigation
+  'external-link': 'pi pi-external-link',  // My Live Listings sidebar nav (live Meesho links)
 } as const;
 
 export type MeeIconName = keyof typeof MEE_ICONS;
