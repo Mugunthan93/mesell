@@ -23,6 +23,8 @@ from app.modules.catalog import service as catalog_service
 from app.modules.catalog.exceptions import ValidationFailedError
 from app.modules.category import service as category_service
 
+pytestmark = pytest.mark.unit
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Test 1 — _predicate_met: each operator (eq, in, contains, any)
