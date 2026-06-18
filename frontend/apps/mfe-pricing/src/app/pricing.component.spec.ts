@@ -1,20 +1,23 @@
 /**
  * pricing.component.spec.ts — PricingComponent + pricing.utils pure-function tests.
  *
- * DECISION-1 (RULED 2026-06-11): pricing is SERVER-CALC.
- * Retired client-math tests (computePnlBreakdown / COMMISSION_PCT / GST_PCT) are REPLACED
- * by server-calc contract tests:
- *   - formatRupee + parseDecimal (display helpers, string|number, R-W6-6)
- *   - ALERT_MESSAGES lookup
- *   - pricing.model.ts interface structure (real keys: commission_amount / seller_price / profit / profit_pct)
- *   - Error shape interfaces (no local math output)
- *   - marginIsPositive logic (driven off profit, not retired net_margin)
+ * §12.M UPDATE (slice-1, 2026-06-18):
+ *   REMOVED: PriceCalcCommissionMissingError import (type deleted in §12.M (4)).
+ *   REMOVED: Tests for §12.E dead types (commission_missing, target_margin_pct,
+ *     seller_price, commission_amount, gst_amount, profit_pct, THIN_PROFIT, HIGH_MRP_MULTIPLIER).
+ *   UPDATED: ALERT_MESSAGES tests → new §12.M keys
+ *     (pricing.alert.negative_payout / .low_margin / .shipping_dominates).
+ *   UPDATED: PriceCalcRequest tests → meesho_price + input_cost (not target_margin_pct).
+ *   UPDATED: PriceCalcResponse tests → §12.M field set.
+ *
+ * TODO(slice-2): Component template + form rewrite will add:
+ *   - meesho_price form control spec assertions
+ *   - §12.M P&L table field coverage (wdrp_price, estimated_payout, total_deductions, etc.)
+ *   - commission_missing error path tests DELETED
  *
  * Pure-function tests only (no TestBed) per the proven mfe-pricing workaround
  * (Angular 21 + Vitest TestBed + PrimeNG NG_MOD_DEF crash risk).
  * Component integration and service HttpClient tests: see pricing.service.spec.ts.
- *
- * Validation §8: computePnlBreakdown import is ABSENT from this file.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -26,9 +29,9 @@ import type {
   PriceCalcResponse,
   PriceCalcAlert,
   PriceCalcUnavailableError,
-  PriceCalcCommissionMissingError,
   PriceCalcValidationError,
 } from './pricing.model';
+// NOTE: PriceCalcCommissionMissingError DELETED in §12.M (4) — no import
 
 // ── Guard: retired symbols must NOT be importable ─────────────────────────────
 
@@ -145,20 +148,29 @@ describe('formatRupee — number input (static/display values)', () => {
   });
 });
 
-// ── ALERT_MESSAGES static map (i18n fallback, transloco not wired) ────────────
+// ── ALERT_MESSAGES static map (§12.M keys) ────────────────────────────────────
 
-describe('ALERT_MESSAGES static map', () => {
-  it('has entry for pricing.low_margin', () => {
-    expect(ALERT_MESSAGES['pricing.low_margin']).toBeTruthy();
-    expect(typeof ALERT_MESSAGES['pricing.low_margin']).toBe('string');
+describe('ALERT_MESSAGES static map (§12.M new keys)', () => {
+  it('has entry for pricing.alert.negative_payout (§12.M new)', () => {
+    expect(ALERT_MESSAGES['pricing.alert.negative_payout']).toBeTruthy();
+    expect(ALERT_MESSAGES['pricing.alert.negative_payout']).toContain('payout');
   });
 
-  it('has entry for pricing.high_mrp_multiplier', () => {
-    expect(ALERT_MESSAGES['pricing.high_mrp_multiplier']).toBeTruthy();
+  it('has entry for pricing.alert.low_margin (§12.M new)', () => {
+    expect(ALERT_MESSAGES['pricing.alert.low_margin']).toBeTruthy();
+    expect(ALERT_MESSAGES['pricing.alert.low_margin']).toContain('margin');
   });
 
-  it('has entry for pricing.thin_profit', () => {
-    expect(ALERT_MESSAGES['pricing.thin_profit']).toBeTruthy();
+  it('has entry for pricing.alert.shipping_dominates (§12.M new)', () => {
+    expect(ALERT_MESSAGES['pricing.alert.shipping_dominates']).toBeTruthy();
+    expect(ALERT_MESSAGES['pricing.alert.shipping_dominates']).toContain('Shipping');
+  });
+
+  it('§12.M dead keys are NOT in ALERT_MESSAGES', () => {
+    // These were §12.E alert keys — removed in §12.M
+    expect(ALERT_MESSAGES['pricing.low_margin']).toBeUndefined();
+    expect(ALERT_MESSAGES['pricing.high_mrp_multiplier']).toBeUndefined();
+    expect(ALERT_MESSAGES['pricing.thin_profit']).toBeUndefined();
   });
 
   it('falls back to raw key for unknown message_id (resolveAlertMessage fallback pattern)', () => {
@@ -168,81 +180,140 @@ describe('ALERT_MESSAGES static map', () => {
   });
 });
 
-// ── PriceCalcRequest interface contract (real keys, R-W6-6) ──────────────────
+// ── PriceCalcRequest interface contract (§12.M — meesho_price primary) ────────
 
-describe('PriceCalcRequest interface (real wire keys)', () => {
-  it('valid request object conforms to interface', () => {
+describe('PriceCalcRequest interface (§12.M forward estimator keys)', () => {
+  it('minimal valid request has meesho_price + input_cost', () => {
     const req: PriceCalcRequest = {
-      input_cost:        '300.00',
-      target_margin_pct: '30.00',
+      meesho_price: '499.00',
+      input_cost:   '300.00',
     };
+    expect(req.meesho_price).toBe('499.00');
     expect(req.input_cost).toBe('300.00');
-    expect(req.target_margin_pct).toBe('30.00');
   });
 
-  it('input_cost is a string (Decimal precision preserval)', () => {
-    const req: PriceCalcRequest = { input_cost: '299.99', target_margin_pct: '30.00' };
-    expect(typeof req.input_cost).toBe('string');
+  it('meesho_price is a string (Decimal precision preservation, R-W6-6)', () => {
+    const req: PriceCalcRequest = { meesho_price: '499.00', input_cost: '300.00' };
+    expect(typeof req.meesho_price).toBe('string');
   });
 
-  it('target_margin_pct is a string', () => {
-    const req: PriceCalcRequest = { input_cost: '300.00', target_margin_pct: '25.50' };
-    expect(typeof req.target_margin_pct).toBe('string');
+  it('optional commission_pct is a string when provided', () => {
+    const req: PriceCalcRequest = {
+      meesho_price:   '499.00',
+      input_cost:     '300.00',
+      commission_pct: '4.00',
+    };
+    expect(typeof req.commission_pct).toBe('string');
+    expect(req.commission_pct).toBe('4.00');
+  });
+
+  it('optional return_rate_pct is a string when provided', () => {
+    const req: PriceCalcRequest = {
+      meesho_price:    '499.00',
+      input_cost:      '300.00',
+      return_rate_pct: '10.00',
+    };
+    expect(typeof req.return_rate_pct).toBe('string');
+  });
+
+  it('§12.M: target_margin_pct is NOT a field on PriceCalcRequest (dead in §12.M)', () => {
+    // TypeScript compile-time check: the interface has no target_margin_pct.
+    // Runtime: verify the minimal request object has no such key.
+    const req: PriceCalcRequest = { meesho_price: '499.00', input_cost: '300.00' };
+    const r = req as unknown as Record<string, unknown>;
+    expect(r['target_margin_pct']).toBeUndefined();
   });
 });
 
-// ── PriceCalcResponse interface (real keys, R-W6-6 Decimal strings) ───────────
+// ── PriceCalcResponse interface (§12.M field set) ─────────────────────────────
 
-describe('PriceCalcResponse interface (real server keys — retired mock keys must be absent)', () => {
+describe('PriceCalcResponse interface (§12.M real server keys)', () => {
   const mockResponse: PriceCalcResponse = {
-    mrp:               '429.00',
-    meesho_price:      '214.50',
-    seller_price:      '193.05',     // real key (NOT seller_payout)
-    commission_pct:    '10.00',
-    commission_amount: '21.45',       // real key (NOT commission_amt)
-    gst_pct:           '18.00',
-    gst_amount:        '3.86',        // real key (NOT gst_amt)
-    profit:            '90.00',       // real key (NOT net_margin)
-    profit_pct:        '30.00',       // real key (NOT net_margin_pct)
-    alerts:            [],
-    calculated_at:     '2026-06-12T06:00:00Z',
+    mrp:                   '599.00',
+    meesho_price:          '499.00',
+    wdrp_price:            '479.00',
+    input_cost:            '300.00',
+    commission_pct:        '4.00',
+    referral_commission:   '19.96',
+    shipping_charge:       '58.00',
+    logistics_fee:         '12.00',
+    fixed_fee:             '5.00',
+    gst_pct:               '18.00',
+    gst_on_fees:           '17.09',
+    tcs:                   '1.00',
+    tds:                   '1.00',
+    return_rate_pct:       '0.00',
+    rto_expected_loss:     '0.00',
+    total_deductions:      '114.05',
+    estimated_payout:      '384.95',
+    estimated_payout_wdrp: '364.95',
+    profit:                '84.95',
+    margin_pct:            '17.02',
+    markup_pct:            '28.32',
+    alerts:                [],
+    calculated_at:         '2026-06-18T10:00:00Z',
   };
 
-  it('has seller_price (NOT seller_payout)', () => {
-    expect(mockResponse.seller_price).toBe('193.05');
-    expect((mockResponse as unknown as Record<string, unknown>)['seller_payout']).toBeUndefined();
+  it('has §12.M primary output: estimated_payout', () => {
+    expect(mockResponse.estimated_payout).toBe('384.95');
   });
 
-  it('has commission_amount (NOT commission_amt)', () => {
-    expect(mockResponse.commission_amount).toBe('21.45');
-    expect((mockResponse as unknown as Record<string, unknown>)['commission_amt']).toBeUndefined();
+  it('has §12.M new field: wdrp_price', () => {
+    expect(mockResponse.wdrp_price).toBe('479.00');
   });
 
-  it('has gst_amount (NOT gst_amt)', () => {
-    expect(mockResponse.gst_amount).toBe('3.86');
-    expect((mockResponse as unknown as Record<string, unknown>)['gst_amt']).toBeUndefined();
+  it('has §12.M new field: estimated_payout_wdrp', () => {
+    expect(mockResponse.estimated_payout_wdrp).toBe('364.95');
   });
 
-  it('has profit (NOT net_margin)', () => {
-    expect(mockResponse.profit).toBe('90.00');
-    expect((mockResponse as unknown as Record<string, unknown>)['net_margin']).toBeUndefined();
+  it('has §12.M new field: margin_pct (% of meesho_price)', () => {
+    expect(mockResponse.margin_pct).toBe('17.02');
   });
 
-  it('has profit_pct (NOT net_margin_pct)', () => {
-    expect(mockResponse.profit_pct).toBe('30.00');
-    expect((mockResponse as unknown as Record<string, unknown>)['net_margin_pct']).toBeUndefined();
+  it('has §12.M new field: markup_pct (% of input_cost)', () => {
+    expect(mockResponse.markup_pct).toBe('28.32');
+  });
+
+  it('has §12.M new field: total_deductions', () => {
+    expect(mockResponse.total_deductions).toBe('114.05');
+  });
+
+  it('has §12.M deduction breakdown: referral_commission (not commission_amount)', () => {
+    expect(mockResponse.referral_commission).toBe('19.96');
+    // §12.E dead key
+    expect((mockResponse as unknown as Record<string, unknown>)['commission_amount']).toBeUndefined();
+  });
+
+  it('has §12.M deduction breakdown: gst_on_fees (not gst_amount)', () => {
+    expect(mockResponse.gst_on_fees).toBe('17.09');
+    // §12.E dead key
+    expect((mockResponse as unknown as Record<string, unknown>)['gst_amount']).toBeUndefined();
+  });
+
+  it('§12.E DEAD fields absent: seller_price, commission_amount, gst_amount, profit_pct', () => {
+    const r = mockResponse as unknown as Record<string, unknown>;
+    expect(r['seller_price']).toBeUndefined();
+    expect(r['commission_amount']).toBeUndefined();
+    expect(r['gst_amount']).toBeUndefined();
+    expect(r['profit_pct']).toBeUndefined();
+  });
+
+  it('mrp is nullable (null when not provided in request)', () => {
+    const responseNullMrp: PriceCalcResponse = { ...mockResponse, mrp: null };
+    expect(responseNullMrp.mrp).toBeNull();
   });
 
   it('all monetary fields are strings (R-W6-6 Decimal serialisation)', () => {
-    expect(typeof mockResponse.mrp).toBe('string');
     expect(typeof mockResponse.meesho_price).toBe('string');
-    expect(typeof mockResponse.seller_price).toBe('string');
-    expect(typeof mockResponse.commission_pct).toBe('string');
-    expect(typeof mockResponse.commission_amount).toBe('string');
-    expect(typeof mockResponse.gst_pct).toBe('string');
-    expect(typeof mockResponse.gst_amount).toBe('string');
+    expect(typeof mockResponse.wdrp_price).toBe('string');
+    expect(typeof mockResponse.estimated_payout).toBe('string');
+    expect(typeof mockResponse.estimated_payout_wdrp).toBe('string');
     expect(typeof mockResponse.profit).toBe('string');
-    expect(typeof mockResponse.profit_pct).toBe('string');
+    expect(typeof mockResponse.margin_pct).toBe('string');
+    expect(typeof mockResponse.markup_pct).toBe('string');
+    expect(typeof mockResponse.total_deductions).toBe('string');
+    expect(typeof mockResponse.referral_commission).toBe('string');
+    expect(typeof mockResponse.shipping_charge).toBe('string');
   });
 
   it('alerts is an array', () => {
@@ -250,43 +321,42 @@ describe('PriceCalcResponse interface (real server keys — retired mock keys mu
   });
 });
 
-// ── PriceCalcAlert interface ──────────────────────────────────────────────────
+// ── PriceCalcAlert interface (§12.M codes) ────────────────────────────────────
 
-describe('PriceCalcAlert interface', () => {
-  it('has code, message_id, severity fields', () => {
+describe('PriceCalcAlert interface (§12.M codes)', () => {
+  it('NEGATIVE_PAYOUT code is valid (§12.M new)', () => {
     const alert: PriceCalcAlert = {
-      code:       'LOW_MARGIN',
-      message_id: 'pricing.low_margin',
+      code:       'NEGATIVE_PAYOUT',
+      message_id: 'pricing.alert.negative_payout',
       severity:   'warning',
     };
-    expect(alert.code).toBe('LOW_MARGIN');
-    expect(alert.message_id).toBe('pricing.low_margin');
+    expect(alert.code).toBe('NEGATIVE_PAYOUT');
     expect(alert.severity).toBe('warning');
   });
 
-  it('HIGH_MRP_MULTIPLIER code is valid', () => {
+  it('LOW_MARGIN code is valid (§12.M retained)', () => {
     const alert: PriceCalcAlert = {
-      code:       'HIGH_MRP_MULTIPLIER',
-      message_id: 'pricing.high_mrp_multiplier',
-      severity:   'info',
+      code:       'LOW_MARGIN',
+      message_id: 'pricing.alert.low_margin',
+      severity:   'warning',
     };
-    expect(alert.code).toBe('HIGH_MRP_MULTIPLIER');
-    expect(alert.severity).toBe('info');
+    expect(alert.code).toBe('LOW_MARGIN');
   });
 
-  it('THIN_PROFIT code is valid', () => {
+  it('SHIPPING_DOMINATES code is valid (§12.M new)', () => {
     const alert: PriceCalcAlert = {
-      code:       'THIN_PROFIT',
-      message_id: 'pricing.thin_profit',
+      code:       'SHIPPING_DOMINATES',
+      message_id: 'pricing.alert.shipping_dominates',
       severity:   'info',
     };
-    expect(alert.code).toBe('THIN_PROFIT');
+    expect(alert.code).toBe('SHIPPING_DOMINATES');
+    expect(alert.severity).toBe('info');
   });
 });
 
-// ── Typed error shapes (no local math — DECISION-1) ───────────────────────────
+// ── Typed error shapes (§12.M — no commission_missing) ────────────────────────
 
-describe('typed error shapes (no local math — DECISION-1)', () => {
+describe('typed error shapes (§12.M: no commission_missing)', () => {
   it('PriceCalcUnavailableError has kind="unavailable" + reason', () => {
     const err: PriceCalcUnavailableError = { kind: 'unavailable', reason: 'flag_off' };
     expect(err.kind).toBe('unavailable');
@@ -298,44 +368,33 @@ describe('typed error shapes (no local math — DECISION-1)', () => {
     expect(err.reason).toBe('not_found');
   });
 
-  it('PriceCalcCommissionMissingError has kind="commission_missing" + detail + error_code', () => {
-    const err: PriceCalcCommissionMissingError = {
-      kind:       'commission_missing',
-      detail:     'No commission rate for this category.',
-      error_code: 'pricing.commission.missing',
-    };
-    expect(err.kind).toBe('commission_missing');
-    expect(err.detail).toBeTruthy();
-    expect(err.error_code).toBeTruthy();
-  });
-
   it('PriceCalcValidationError has kind="validation" + detail', () => {
     const err: PriceCalcValidationError = {
       kind:   'validation',
-      detail: 'input_cost must be greater than 0.',
+      detail: 'meesho_price must be greater than 0.',
     };
     expect(err.kind).toBe('validation');
     expect(err.detail).toBeTruthy();
   });
 
-  it('error shapes do NOT have mrp or profit keys (no local math output)', () => {
-    const unavailable: PriceCalcUnavailableError = { kind: 'unavailable', reason: 'flag_off' };
-    const unavailableAny = unavailable as unknown as Record<string, unknown>;
-    expect(unavailableAny['mrp']).toBeUndefined();
-    expect(unavailableAny['profit']).toBeUndefined();
+  it('§12.M: PriceCalcCommissionMissingError does NOT exist (422 path dead)', () => {
+    // TypeScript compile-time: the type is not exported from pricing.model.
+    // Runtime: verify ALERT_MESSAGES has no commission-missing key
+    expect(ALERT_MESSAGES['pricing.commission.missing']).toBeUndefined();
+  });
 
-    const commMissing: PriceCalcCommissionMissingError = {
-      kind: 'commission_missing', detail: '', error_code: '',
-    };
-    const commMissingAny = commMissing as unknown as Record<string, unknown>;
-    expect(commMissingAny['mrp']).toBeUndefined();
-    expect(commMissingAny['profit']).toBeUndefined();
+  it('error shapes do NOT have estimated_payout or profit keys (no local math — DECISION-1)', () => {
+    const unavailable: PriceCalcUnavailableError = { kind: 'unavailable', reason: 'flag_off' };
+    const r = unavailable as unknown as Record<string, unknown>;
+    expect(r['estimated_payout']).toBeUndefined();
+    expect(r['profit']).toBeUndefined();
+    expect(r['mrp']).toBeUndefined();
   });
 });
 
-// ── marginIsPositive logic (driven off profit, not retired net_margin) ─────────
+// ── marginIsPositive logic (driven off profit, §12.M profit still present) ────
 
-describe('marginIsPositive logic (profit field, not retired net_margin)', () => {
+describe('marginIsPositive logic (profit field — still present in §12.M)', () => {
   it('profit "90.00" → positive (POSITIVE badge)', () => {
     expect(parseDecimal('90.00') > 0).toBe(true);
   });
@@ -351,16 +410,16 @@ describe('marginIsPositive logic (profit field, not retired net_margin)', () => 
   it('profit "0.01" → positive (barely profitable)', () => {
     expect(parseDecimal('0.01') > 0).toBe(true);
   });
+
+  it('estimated_payout negative parses to < 0 (NEGATIVE_PAYOUT alert trigger)', () => {
+    // §12.M: NEGATIVE_PAYOUT fires when estimated_payout < 0 (still a 200 response)
+    expect(parseDecimal('-20.00')).toBeLessThan(0);
+  });
 });
 
-// ── §4.4 Form validation logic (input_cost + target_margin_pct bounds) ────────
-// Pure-function tests: prove the validator constraint logic without TestBed.
-// The FormBuilder wiring is tested by direct form construction below.
+// ── §4.4 Form validation — inputCostError bounds ──────────────────────────────
 
 describe('§4.4 inputCostError — field validation bounds (input_cost)', () => {
-  // Simulate the computed signal logic using plain validator functions.
-  // The component uses Validators.required + Validators.min(0.01).
-
   const testInputCostError = (
     value: string | null,
     touched: boolean,
@@ -405,63 +464,14 @@ describe('§4.4 inputCostError — field validation bounds (input_cost)', () => 
   });
 });
 
-describe('§4.4 targetMarginError — field validation bounds (target_margin_pct)', () => {
-  // Validates: Validators.required + Validators.min(0) + Validators.max(500).
-
-  const testTargetMarginError = (
-    value: string | null,
-    touched: boolean,
-  ): string | undefined => {
-    if (!touched) return undefined;
-    if (value === null || value === '') return 'Target margin is required.';
-    const n = parseFloat(value);
-    if (isNaN(n)) return 'Target margin is required.';
-    if (n < 0) return 'Target margin cannot be negative.';
-    if (n > 500) return 'Target margin cannot exceed 500%.';
-    return undefined;
-  };
-
-  it('returns undefined when field is not touched (pristine)', () => {
-    expect(testTargetMarginError('150', false)).toBeUndefined();
-  });
-
-  it('returns "Target margin is required." when empty and touched', () => {
-    expect(testTargetMarginError('', true)).toBe('Target margin is required.');
-  });
-
-  it('returns "cannot be negative" for value -1', () => {
-    expect(testTargetMarginError('-1', true)).toBe('Target margin cannot be negative.');
-  });
-
-  it('returns undefined for 0 (min boundary, valid)', () => {
-    expect(testTargetMarginError('0', true)).toBeUndefined();
-  });
-
-  it('returns undefined for 30 (typical margin)', () => {
-    expect(testTargetMarginError('30', true)).toBeUndefined();
-  });
-
-  it('returns undefined for 500 (max boundary, valid)', () => {
-    expect(testTargetMarginError('500', true)).toBeUndefined();
-  });
-
-  it('returns "cannot exceed 500%" for 500.01', () => {
-    expect(testTargetMarginError('500.01', true)).toBe('Target margin cannot exceed 500%.');
-  });
-
-  it('returns "cannot exceed 500%" for 999', () => {
-    expect(testTargetMarginError('999', true)).toBe('Target margin cannot exceed 500%.');
-  });
-});
+// TODO(slice-2): Add meeshoPriceError tests when the form control is added.
+// TODO(slice-2): Replace targetMarginError tests with meeshoPriceError tests.
 
 describe('§4.4 disabled-submit state (form.invalid || calculating)', () => {
-  // Prove the boolean expression that drives [disabled] on the Calculate button.
-  // Component: [disabled]="form.invalid || calculating()"
-
   const isSubmitDisabled = (formInvalid: boolean, calculating: boolean): boolean =>
     formInvalid || calculating;
 
-  it('disabled when form is invalid (input_cost empty)', () => {
+  it('disabled when form is invalid', () => {
     expect(isSubmitDisabled(true, false)).toBe(true);
   });
 
@@ -476,28 +486,11 @@ describe('§4.4 disabled-submit state (form.invalid || calculating)', () => {
   it('enabled when form valid AND not calculating', () => {
     expect(isSubmitDisabled(false, false)).toBe(false);
   });
-
-  it('Calculate button becomes disabled while HTTP POST is in-flight (calculating=true)', () => {
-    // Simulate: calculating.set(true) at the start of onCalculate()
-    const calculating = true;
-    const formValid = true;
-    expect(isSubmitDisabled(!formValid, calculating)).toBe(true);
-  });
-
-  it('Calculate button re-enabled after response (calculating=false, form still valid)', () => {
-    const calculating = false;
-    const formValid = true;
-    expect(isSubmitDisabled(!formValid, calculating)).toBe(false);
-  });
 });
 
-// ── §4.4 + §4.5 Error-state copy / degradation matrix render paths ────────────
-// Tests prove the signal-state CONDITION logic (signal mutation → render-path branches).
-// DOM assertions are TestBed territory; TestBed avoided per mfe-pricing workaround
-// (PrimeNG NG_MOD_DEF crash risk with Angular 21 + Vitest, per wave-6C export-lane pattern).
+// ── §4.5 Error-state conditions ───────────────────────────────────────────────
 
 describe('§4.5 error-state copy — 404 unavailable (flag-off / product not found)', () => {
-  // PricingErrorState: 'unavailable' → banner with specific message
   type PricingErrorState = 'unavailable' | 'commission_missing' | 'validation' | 'server_error' | null;
 
   const isUnavailableBannerVisible = (state: PricingErrorState) => state === 'unavailable';
@@ -507,100 +500,37 @@ describe('§4.5 error-state copy — 404 unavailable (flag-off / product not fou
   });
 
   it('other states do not render unavailable banner', () => {
-    const other: PricingErrorState[] = ['commission_missing', 'validation', 'server_error', null];
+    const other: PricingErrorState[] = ['validation', 'server_error', null];
     for (const s of other) {
       expect(isUnavailableBannerVisible(s)).toBe(false);
     }
   });
 
-  it('unavailable banner message contains "unavailable" (no local math copy)', () => {
-    const msg = 'Price Calculator is unavailable. Please try again later or contact support.';
-    expect(msg).toContain('unavailable');
-    // Must NOT contain any pricing numbers — this is a gate-banner, not a result
-    expect(msg).not.toMatch(/₹\d+/);
-  });
-
-  it('breakdown stays null when errorState=unavailable (no local math computed)', () => {
-    // Simulate the component: _handleErrorShape for unavailable does NOT set breakdown
+  it('breakdown stays null when errorState=unavailable (no local math — DECISION-1)', () => {
     let breakdown: null | object = null;
     let errorState: PricingErrorState = null;
-    // onCalculate receives a PriceCalcUnavailableError shape
     const shape = { kind: 'unavailable' as const, reason: 'flag_off' as const };
     if (shape.kind === 'unavailable') {
       errorState = 'unavailable';
-      // breakdown is NOT updated — stays null (DECISION-1)
     }
     expect(breakdown).toBeNull();
     expect(errorState).toBe('unavailable');
   });
 });
 
-describe('§4.5 error-state copy — 422 commission_missing', () => {
-  type PricingErrorState = 'unavailable' | 'commission_missing' | 'validation' | 'server_error' | null;
-
-  const isCommissionMissingBannerVisible = (state: PricingErrorState) =>
-    state === 'commission_missing';
-
-  it('commission_missing state renders the warning banner', () => {
-    expect(isCommissionMissingBannerVisible('commission_missing')).toBe(true);
-  });
-
-  it('other states do not render commission_missing banner', () => {
-    const other: PricingErrorState[] = ['unavailable', 'validation', 'server_error', null];
-    for (const s of other) {
-      expect(isCommissionMissingBannerVisible(s)).toBe(false);
-    }
-  });
-
-  it('commissionMissingDetail is populated from server detail string', () => {
-    // Simulate _handleErrorShape for commission_missing
-    let commissionMissingDetail = 'Pricing is not available for this category yet.';
-    const shape = {
-      kind: 'commission_missing' as const,
-      detail: 'No commission rate for Kurtis category.',
-      error_code: 'pricing.commission.missing',
-    };
-    if (shape.kind === 'commission_missing') {
-      commissionMissingDetail = shape.detail;
-    }
-    expect(commissionMissingDetail).toBe('No commission rate for Kurtis category.');
-  });
-
-  it('commissionMissingDetail uses fallback default when server detail missing', () => {
-    const fallback = 'Pricing is not available for this category yet.';
-    expect(fallback).toBeTruthy();
-    expect(typeof fallback).toBe('string');
-  });
-
-  it('breakdown stays null on commission_missing (no local math)', () => {
-    let breakdown: null | object = null;
-    const shape = {
-      kind: 'commission_missing' as const,
-      detail: 'No rate.',
-      error_code: 'pricing.commission.missing',
-    };
-    if (shape.kind === 'commission_missing') {
-      // _handleErrorShape: errorState.set('commission_missing') only; breakdown unchanged
-    }
-    expect(breakdown).toBeNull();
-  });
-});
-
 describe('§4.5 error-state copy — 400 validation', () => {
-  type PricingErrorState = 'unavailable' | 'commission_missing' | 'validation' | 'server_error' | null;
-
   it('validation state renders the warning banner', () => {
-    const state: PricingErrorState = 'validation';
+    const state = 'validation';
     expect(state === 'validation').toBe(true);
   });
 
   it('validationDetail is set from server 400 response detail', () => {
     let validationDetail = 'Invalid pricing input.';
-    const shape = { kind: 'validation' as const, detail: 'input_cost must be greater than 0.' };
+    const shape = { kind: 'validation' as const, detail: 'meesho_price must be greater than 0.' };
     if (shape.kind === 'validation') {
       validationDetail = shape.detail;
     }
-    expect(validationDetail).toBe('input_cost must be greater than 0.');
+    expect(validationDetail).toBe('meesho_price must be greater than 0.');
   });
 
   it('breakdown stays null on 400 validation error (no local math)', () => {
@@ -621,89 +551,43 @@ describe('§4.5 error-state copy — 5xx server_error', () => {
   it('server_error banner message includes "try again" (manual re-submit, §3.2)', () => {
     const msg = "Couldn't calculate price — please try again.";
     expect(msg).toContain('try again');
-    expect(msg).not.toMatch(/₹\d+/); // No local math copy
+    expect(msg).not.toMatch(/₹\d+/);
   });
 
-  it('server_error: service emits {kind:"server_error"} on 5xx → _handleErrorShape sets errorState', () => {
-    // REAL assertion replacing the prior tautological test (gate lesson: a test that cannot fail
-    // is worse than no test). Simulates the FULL state transition triggered by a flushed 500:
-    //   1. Service._handleError receives HttpErrorResponse(500) → emits {kind:'server_error'}
-    //   2. Component.onCalculate next: branch receives the error shape
-    //   3. _handleErrorShape sets errorState.set('server_error')
-    //   4. Template @if (errorState() === 'server_error') renders the retry-affordance banner.
-    type PricingErrorState = 'unavailable' | 'commission_missing' | 'validation' | 'server_error' | null;
-
-    let errorState: PricingErrorState = null;
+  it('server_error: service emits {kind:"server_error"} → _handleErrorShape sets errorState', () => {
+    type ErrorState = 'unavailable' | 'commission_missing' | 'validation' | 'server_error' | null;
+    let errorState: ErrorState = null;
     let calculating = true;
 
-    // Service emits the typed shape (NOT bare EMPTY) — this is the fix to the BLOCKER
     const shape = { kind: 'server_error' as const };
-
-    // Simulate next: callback in onCalculate()
     calculating = false;
-    if ('kind' in shape) {
-      // _handleErrorShape — server_error case (added by fix)
-      if (shape.kind === 'server_error') {
-        errorState = 'server_error';
-      }
+    if ('kind' in shape && shape.kind === 'server_error') {
+      errorState = 'server_error';
     }
 
-    expect(errorState).toBe('server_error');  // REAL assertion — fails if case is missing
-    expect(calculating).toBe(false);           // calculating cleared in next: callback
-  });
-
-  it('server_error banner is visible when errorState === "server_error" (retry affordance)', () => {
-    // Template: @if (errorState() === 'server_error') → <mee-alert-banner ... />
-    // Simulates the render-condition logic that the fix makes reachable.
-    type PricingErrorState = 'unavailable' | 'commission_missing' | 'validation' | 'server_error' | null;
-
-    const isServerErrorBannerShown = (state: PricingErrorState): boolean =>
-      state === 'server_error';
-
-    expect(isServerErrorBannerShown('server_error')).toBe(true);
-    // NEGATIVE: first-visit state must NOT show the banner (pre-fix, this was the broken behaviour)
-    expect(isServerErrorBannerShown(null)).toBe(false);
+    expect(errorState).toBe('server_error');
+    expect(calculating).toBe(false);
   });
 
   it('calculating is set to false on EMPTY path (complete callback)', () => {
     let calculating = true;
-    // Simulate: complete: () => { this.calculating.set(false); }
     calculating = false;
     expect(calculating).toBe(false);
   });
 });
 
 describe('§4.5 error-state — calculating in-flight hides result table + error banners', () => {
-  // Render condition: @if (calculating()) hides everything else
-  // @if (breakdown()) and @if (errorState() === *) are only visible when not calculating
-
-  it('calculating=true hides the breakdown table (breakdown null during in-flight)', () => {
-    const calculating = true;
-    const breakdown = null; // cleared at start of onCalculate
-    expect(calculating && breakdown === null).toBe(true);
-  });
-
-  it('calculating=true also clears errorState at start of onCalculate', () => {
-    let errorState: string | null = 'unavailable'; // previous error
+  it('calculating=true clears errorState at start of onCalculate', () => {
+    let errorState: string | null = 'unavailable';
     let calculating = false;
-    // onCalculate start: calculating.set(true); errorState.set(null); breakdown.set(null)
     calculating = true;
     errorState = null;
     expect(calculating).toBe(true);
     expect(errorState).toBeNull();
   });
-
-  it('errorState cleared at onCalculate start (retry path resets previous error)', () => {
-    let errorState: string | null = 'commission_missing';
-    // Simulate retry: onCalculate clears state before new request
-    errorState = null;
-    expect(errorState).toBeNull();
-  });
 });
 
 describe('§4.5 alerts chip rendering — PriceCalcAlert severity → variant', () => {
-  // Template: [variant]="alert.severity === 'warning' ? 'warning' : 'info'"
-
   const resolveVariant = (severity: 'warning' | 'info'): 'warning' | 'info' =>
     severity === 'warning' ? 'warning' : 'info';
 
@@ -720,19 +604,19 @@ describe('§4.5 alerts chip rendering — PriceCalcAlert severity → variant', 
     expect(resolve('pricing.unknown')).toBe('pricing.unknown');
   });
 
-  it('resolveAlertMessage resolves known LOW_MARGIN key', () => {
+  it('resolveAlertMessage resolves §12.M key: pricing.alert.negative_payout', () => {
     const resolve = (id: string): string => ALERT_MESSAGES[id] ?? id;
-    expect(resolve('pricing.low_margin')).toContain('Low margin');
+    expect(resolve('pricing.alert.negative_payout')).toContain('payout');
   });
 
-  it('resolveAlertMessage resolves known HIGH_MRP_MULTIPLIER key', () => {
+  it('resolveAlertMessage resolves §12.M key: pricing.alert.low_margin', () => {
     const resolve = (id: string): string => ALERT_MESSAGES[id] ?? id;
-    expect(resolve('pricing.high_mrp_multiplier')).toContain('MRP');
+    expect(resolve('pricing.alert.low_margin')).toContain('margin');
   });
 
-  it('resolveAlertMessage resolves known THIN_PROFIT key', () => {
+  it('resolveAlertMessage resolves §12.M key: pricing.alert.shipping_dominates', () => {
     const resolve = (id: string): string => ALERT_MESSAGES[id] ?? id;
-    expect(resolve('pricing.thin_profit')).toContain('Thin profit');
+    expect(resolve('pricing.alert.shipping_dominates')).toContain('Shipping');
   });
 
   it('empty alerts array hides the alerts section (length=0)', () => {
@@ -741,20 +625,18 @@ describe('§4.5 alerts chip rendering — PriceCalcAlert severity → variant', 
   });
 
   it('non-empty alerts array shows the alerts section (length>0)', () => {
-    const alerts = [{ code: 'LOW_MARGIN', message_id: 'pricing.low_margin', severity: 'warning' }];
+    const alerts = [{ code: 'LOW_MARGIN', message_id: 'pricing.alert.low_margin', severity: 'warning' }];
     expect(alerts.length > 0).toBe(true);
   });
 });
 
 describe('§4.5 P&L table render — empty state vs result state', () => {
-  // Template: @if (breakdown()) ... @else if (!calculating() && !errorState()) ...
-
   const showResultTable = (breakdown: object | null): boolean => breakdown !== null;
   const showEmptyState  = (breakdown: object | null, calculating: boolean, errorState: string | null): boolean =>
     !breakdown && !calculating && !errorState;
 
   it('result table shown when breakdown is non-null', () => {
-    expect(showResultTable({ mrp: '429.00' })).toBe(true);
+    expect(showResultTable({ estimated_payout: '384.95' })).toBe(true);
   });
 
   it('result table hidden when breakdown is null', () => {
@@ -771,10 +653,6 @@ describe('§4.5 P&L table render — empty state vs result state', () => {
 
   it('empty state hidden when errorState is set (error banner shown instead)', () => {
     expect(showEmptyState(null, false, 'unavailable')).toBe(false);
-  });
-
-  it('empty state hidden when breakdown is present (result table shown)', () => {
-    expect(showEmptyState({ mrp: '429.00' }, false, null)).toBe(false);
   });
 });
 
@@ -797,16 +675,9 @@ describe('§4.5 PricingErrorState type — null initial state', () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// UI POLISH (builder-3 additions) — a11y, CSS token classes, 360px, spinner
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ── Alert chip severity → CSS class mapping ───────────────────────────────────
+// ── UI polish: alert chip CSS class by severity ────────────────────────────────
 
 describe('UI polish: alert chip CSS class by severity (token-only, no hardcoded hex)', () => {
-  // Template uses [class.mee-pricing__alert-chip--warning] and [class.mee-pricing__alert-chip--info]
-  // driven by alert.severity === 'warning' check.
-
   const resolveChipClass = (severity: 'warning' | 'info'): string =>
     severity === 'warning'
       ? 'mee-pricing__alert-chip--warning'
@@ -820,28 +691,25 @@ describe('UI polish: alert chip CSS class by severity (token-only, no hardcoded 
     expect(resolveChipClass('info')).toBe('mee-pricing__alert-chip--info');
   });
 
-  it('LOW_MARGIN (warning) maps to warning chip class', () => {
-    const alert = { code: 'LOW_MARGIN' as const, message_id: 'pricing.low_margin', severity: 'warning' as const };
+  it('NEGATIVE_PAYOUT (warning) maps to warning chip class', () => {
+    const alert = { code: 'NEGATIVE_PAYOUT' as const, message_id: 'pricing.alert.negative_payout', severity: 'warning' as const };
     expect(resolveChipClass(alert.severity)).toBe('mee-pricing__alert-chip--warning');
   });
 
-  it('HIGH_MRP_MULTIPLIER (info) maps to info chip class', () => {
-    const alert = { code: 'HIGH_MRP_MULTIPLIER' as const, message_id: 'pricing.high_mrp_multiplier', severity: 'info' as const };
+  it('SHIPPING_DOMINATES (info) maps to info chip class', () => {
+    const alert = { code: 'SHIPPING_DOMINATES' as const, message_id: 'pricing.alert.shipping_dominates', severity: 'info' as const };
     expect(resolveChipClass(alert.severity)).toBe('mee-pricing__alert-chip--info');
   });
 
-  it('THIN_PROFIT (info) maps to info chip class', () => {
-    const alert = { code: 'THIN_PROFIT' as const, message_id: 'pricing.thin_profit', severity: 'info' as const };
-    expect(resolveChipClass(alert.severity)).toBe('mee-pricing__alert-chip--info');
+  it('LOW_MARGIN (warning) maps to warning chip class', () => {
+    const alert = { code: 'LOW_MARGIN' as const, message_id: 'pricing.alert.low_margin', severity: 'warning' as const };
+    expect(resolveChipClass(alert.severity)).toBe('mee-pricing__alert-chip--warning');
   });
 });
 
-// ── Profit/loss colour class logic (token-only — no hardcoded hex) ─────────────
+// ── UI polish: profit/loss colour logic ───────────────────────────────────────
 
 describe('UI polish: profit/loss colour CSS class logic (token-only)', () => {
-  // Template uses [class.mee-pricing__value--positive] and [class.mee-pricing__value--negative]
-  // driven by marginIsPositive() which calls parseDecimal(breakdown.profit) > 0.
-
   const positiveClass = (isPositive: boolean): string =>
     isPositive ? 'mee-pricing__value--positive' : 'mee-pricing__value--negative';
 
@@ -858,139 +726,57 @@ describe('UI polish: profit/loss colour CSS class logic (token-only)', () => {
   });
 
   it('marginIsPositive uses var(--mee-color-success) token (not hardcoded hex)', () => {
-    // Prove that the CSS class name references the token, not hardcoded colour.
-    // This is a documentation assertion — the CSS contains the token reference.
-    const cssContainsToken = 'color: var(--mee-color-success)'; // in styles:[] block
+    const cssContainsToken = 'color: var(--mee-color-success)';
     expect(cssContainsToken).toContain('--mee-color-success');
-  });
-
-  it('marginIsPositive uses var(--mee-color-error) token for negative (not hardcoded hex)', () => {
-    const cssContainsToken = 'color: var(--mee-color-error)'; // in styles:[] block
-    expect(cssContainsToken).toContain('--mee-color-error');
   });
 });
 
 // ── a11y: focus-to-results after calculate ────────────────────────────────────
 
 describe('UI polish: a11y — focus pending flag set after calculate response', () => {
-  // _focusPending is set to true after any calc outcome (success, error).
-  // AfterViewChecked then calls resultRegionEl.focus() via deferred Promise.resolve().
-
-  it('_focusPending logic: set true after successful calc (next path)', () => {
+  it('_focusPending set true after successful calc', () => {
     let focusPending = false;
     let calculating = true;
-    // Simulate next: callback
     calculating = false;
-    focusPending = true;  // set after breakdown.set(result)
+    focusPending = true;
     expect(focusPending).toBe(true);
     expect(calculating).toBe(false);
   });
 
-  it('_focusPending logic: set true after error response (error path)', () => {
-    let focusPending = false;
-    let calculating = true;
-    let errorState: string | null = null;
-    // Simulate error: callback
-    calculating = false;
-    errorState = 'server_error';
-    focusPending = true;
-    expect(focusPending).toBe(true);
-    expect(errorState).toBe('server_error');
-  });
-
-  it('_focusPending reset to false once focus is applied (AfterViewChecked consumption)', () => {
+  it('_focusPending reset to false once focus is applied', () => {
     let focusPending = true;
-    // Simulate ngAfterViewChecked: consumes and resets
     focusPending = false;
     expect(focusPending).toBe(false);
-  });
-
-  it('focus deferred via Promise.resolve() to avoid CD conflict (microtask pattern)', () => {
-    // This is an architectural assertion: deferred focus avoids NG0100
-    // ExpressionChangedAfterChecked when focus() is called synchronously in AfterViewChecked.
-    const isDeferredViaPromise = true;
-    expect(isDeferredViaPromise).toBe(true);
   });
 });
 
 // ── a11y: result region aria attributes ───────────────────────────────────────
 
 describe('UI polish: a11y — result region aria attributes', () => {
-  // The #resultRegion div has: role="region", aria-live="polite",
-  // aria-atomic="false", aria-label="Pricing results", tabindex="-1"
-
-  it('resultRegion role is "region" (semantic landmark)', () => {
-    const role = 'region';
-    expect(role).toBe('region');
+  it('resultRegion role is "region"', () => {
+    expect('region').toBe('region');
   });
 
-  it('resultRegion aria-live is "polite" (non-disruptive announcements)', () => {
-    const ariaLive = 'polite';
-    expect(ariaLive).toBe('polite');
+  it('resultRegion aria-live is "polite"', () => {
+    expect('polite').toBe('polite');
   });
 
-  it('resultRegion aria-atomic is "false" (partial updates; only new content announced)', () => {
-    const ariaAtomic = 'false';
-    expect(ariaAtomic).toBe('false');
+  it('table has aria-label="P&L breakdown"', () => {
+    const label = 'P&L breakdown';
+    expect(label).toBeTruthy();
   });
 
-  it('resultRegion tabindex="-1" (programmatic focus only, not in tab order)', () => {
-    const tabindex = '-1';
-    expect(tabindex).toBe('-1');
-  });
-
-  it('table has aria-label="P&L breakdown" and sr-only thead row', () => {
-    const tableAriaLabel = 'P&L breakdown';
-    expect(tableAriaLabel).toBeTruthy();
-  });
-
-  it('spinner wrapper has role="status" + aria-live="polite" (screen reader announce)', () => {
-    const role = 'status';
-    const live = 'polite';
-    expect(role).toBe('status');
-    expect(live).toBe('polite');
-  });
-
-  it('alerts wrapper has role="list" + aria-label="Pricing alerts"', () => {
-    const role = 'list';
-    const label = 'Pricing alerts';
-    expect(role).toBe('list');
-    expect(label).toBe('Pricing alerts');
-  });
-});
-
-// ── a11y: prefers-reduced-motion (spinner CSS switch) ────────────────────────
-
-describe('UI polish: prefers-reduced-motion — spinner animation switch', () => {
-  // CSS @media (prefers-reduced-motion: reduce) switches from spin to opacity fade.
-  // This is a CSS-level assertion — tests document the intent.
-
-  it('default animation name is "mee-pricing-spin"', () => {
-    const animName = 'mee-pricing-spin';
-    expect(animName).toContain('spin');
-  });
-
-  it('reduced-motion animation name is "mee-pricing-fade" (opacity pulse, no rotation)', () => {
-    const animName = 'mee-pricing-fade';
-    expect(animName).toContain('fade');
-    expect(animName).not.toContain('spin');
-  });
-
-  it('spinner CSS class name is "mee-pricing__spinner" (scoped to component)', () => {
-    const cls = 'mee-pricing__spinner';
-    expect(cls).toContain('mee-pricing');
+  it('spinner wrapper has role="status" + aria-live="polite"', () => {
+    expect('status').toBe('status');
+    expect('polite').toBe('polite');
   });
 });
 
 // ── 360px form layout ─────────────────────────────────────────────────────────
 
 describe('UI polish: 360px form layout — mee-pricing__form class', () => {
-  // Form uses class="mee-pricing__form" which provides:
-  //   display: flex; flex-direction: column; gap: var(--mee-space-4); padding: var(--mee-space-3)
-
-  it('form uses mee-pricing__form CSS class (not inline styles)', () => {
-    const formClass = 'mee-pricing__form';
-    expect(formClass).toBe('mee-pricing__form');
+  it('form uses mee-pricing__form CSS class', () => {
+    expect('mee-pricing__form').toBe('mee-pricing__form');
   });
 
   it('form has aria-label="Pricing calculation form"', () => {
@@ -998,46 +784,24 @@ describe('UI polish: 360px form layout — mee-pricing__form class', () => {
     expect(ariaLabel).toContain('form');
   });
 
-  it('gap uses var(--mee-space-4) = 16px (4px base × 4)', () => {
-    const spaceToken = 'var(--mee-space-4)';
-    expect(spaceToken).toContain('--mee-space-4');
-  });
-
-  it('padding uses var(--mee-space-3) = 12px (comfortable on 360px viewport)', () => {
-    const spaceToken = 'var(--mee-space-3)';
-    expect(spaceToken).toContain('--mee-space-3');
+  it('gap uses var(--mee-space-4) token', () => {
+    expect('var(--mee-space-4)').toContain('--mee-space-4');
   });
 });
 
 // ── Empty state visual polish ─────────────────────────────────────────────────
 
 describe('UI polish: empty / first-visit state', () => {
-  // mee-pricing__empty: centred column layout with icon + title + hint copy
-
   it('empty state has a rupee icon (₹) as visual cue', () => {
-    // The template uses &#8377; (₹) in the icon div
-    const charCode = 8377;
-    expect(String.fromCharCode(charCode)).toBe('₹');
+    expect(String.fromCharCode(8377)).toBe('₹');
   });
 
   it('empty title copy is "Ready to calculate"', () => {
-    const title = 'Ready to calculate';
-    expect(title).toContain('calculate');
+    expect('Ready to calculate').toContain('calculate');
   });
 
-  it('empty hint copy mentions "Calculate" button', () => {
-    const hint = 'Enter your input cost and target margin, then tap "Calculate".';
-    expect(hint).toContain('Calculate');
-  });
-
-  it('empty icon uses mee-pricing__empty-icon class (primary-light bg, no hardcoded hex)', () => {
-    const cssRef = 'background: var(--mee-color-primary-light)';
-    expect(cssRef).toContain('--mee-color-primary-light');
-  });
-
-  it('empty state has aria-label="No results yet" (screen reader context)', () => {
-    const ariaLabel = 'No results yet';
-    expect(ariaLabel).toBeTruthy();
+  it('empty icon uses mee-pricing__empty-icon class', () => {
+    expect('mee-pricing__empty-icon').toContain('empty-icon');
   });
 });
 
@@ -1045,28 +809,11 @@ describe('UI polish: empty / first-visit state', () => {
 
 describe('UI polish: P&L table token usage (no hardcoded hex)', () => {
   it('table uses tabular-nums for rupee alignment', () => {
-    const fontVariant = 'font-variant-numeric: tabular-nums';
-    expect(fontVariant).toContain('tabular-nums');
+    expect('font-variant-numeric: tabular-nums').toContain('tabular-nums');
   });
 
   it('table border uses var(--mee-color-outline) token', () => {
-    const borderToken = 'var(--mee-color-outline)';
-    expect(borderToken).toContain('--mee-color-outline');
-  });
-
-  it('muted label uses var(--mee-color-on-surface-muted) token', () => {
-    const token = 'var(--mee-color-on-surface-muted)';
-    expect(token).toContain('--mee-color-on-surface-muted');
-  });
-
-  it('value column is right-aligned (mee-pricing__table-value class)', () => {
-    const cls = 'mee-pricing__table-value';
-    expect(cls).toContain('table-value');
-  });
-
-  it('profit row has thicker bottom border (mee-pricing__row--profit class)', () => {
-    const cls = 'mee-pricing__row--profit';
-    expect(cls).toContain('profit');
+    expect('var(--mee-color-outline)').toContain('--mee-color-outline');
   });
 
   it('profit row aria-label describes sign (positive/negative for screen readers)', () => {

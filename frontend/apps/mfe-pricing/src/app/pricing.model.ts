@@ -1,33 +1,64 @@
 /**
- * pricing.model.ts — Wire-contract DTOs for POST /api/v1/products/{id}/price-calc (#25).
+ * pricing.model.ts — Wire-contract DTOs for POST /api/v1/products/{id}/price-calc.
  *
- * R-W6-6 (Decimal wire-type, CONFIRMED 2026-06-12):
+ * SOURCE OF TRUTH: backend/app/modules/pricing/schemas.py (§12.M amendment 2026-06-18,
+ * PR #285, commit fd4331d). Field names confirmed by direct schema inspection.
+ *
+ * R-W6-6 (Decimal wire-type, CONFIRMED 2026-06-12 / §12.M upheld):
  *   Pydantic v2 + FastAPI serialise Python Decimal → JSON STRING by default.
- *   Backend has NO json_encoders / float coercion (grep confirmed, 2026-06-12).
- *   Therefore all monetary/pct fields in PriceCalcResponse are typed `string`.
- *   Parse for arithmetic: Number(res.profit) — for display use formatRupee(res.mrp).
- *   Flip to number only on evidence of a different serialised shape (R-W6-6 protocol).
+ *   Backend has NO json_encoders / float coercion.
+ *   Therefore ALL monetary/pct fields in request and response are typed `string`.
+ *   Parse for arithmetic: parseDecimal() from pricing.utils.ts
+ *   Display: formatRupee() from pricing.utils.ts
+ *   These helpers are KEPT (pure display/arithmetic — no local P&L math, DECISION-1).
  *
- * DECISION-1 (RULED 2026-06-11, MASTER_PLAN §7):
- *   Pricing is SERVER-CALC. PnlBreakdown + mock PriceCalcRequest{mrp, target_margin}
- *   are DEAD. computePnlBreakdown / COMMISSION_PCT / GST_PCT are DEAD.
+ * DECISION-1 (RULED 2026-06-11, §12.M 2026-06-18):
+ *   Pricing is SERVER-CALC — FORWARD estimator mode.
+ *   Seller enters meesho_price (the listed price); backend returns estimated_payout.
+ *   target_margin_pct is DEAD (removed in §12.M). computePnlBreakdown / local math = DEAD.
  *   Any local-math fallback = AUTO-REJECT.
+ *
+ * §12.M (4): 422 pricing.commission.missing path REMOVED. Commission is now a
+ *   seller-entered input (default 4%). PriceCalcCommissionMissingError DELETED.
  */
 
 // ─── Request ──────────────────────────────────────────────────────────────────
 
 /**
- * Body for POST /api/v1/products/{id}/price-calc (endpoint #25).
- * Pydantic accepts both JSON string and number for Decimal fields; sending as string
- * avoids IEEE-754 float rounding (e.g. 299.99 → "299.99" preserves 2dp precision).
- * V1.5 overrides (override_commission_pct / override_gst_pct) are omitted — backend
- * extra="forbid" accepts their absence (optional fields with defaults).
+ * Body for POST /api/v1/products/{id}/price-calc (§12.M forward estimator).
+ *
+ * Primary inputs: meesho_price + input_cost (both required, gt 0).
+ * Seller-entered estimator inputs: commission_pct (default "4"), return_rate_pct (default "0").
+ * Optional display reference: mrp (struck-through; does NOT drive payout).
+ * Optional per-request overrides: override_shipping / _logistics_fee / _fixed_fee /
+ *   _gst_pct / _tcs_pct / _tds_pct (all nullable).
+ *
+ * Sending as Decimal strings avoids IEEE-754 float rounding (R-W6-6).
+ * Backend extra="forbid" — only known fields accepted; omitted optional fields are fine.
  */
 export interface PriceCalcRequest {
-  /** COGS per unit, INR (gt 0, 2dp). Replaces the retired FE-input `mrp`. */
+  /** Listed/selling price on Meesho, INR (gt 0, 2dp) — primary payout driver. */
+  meesho_price: string;
+  /** Cost of goods per unit, INR (gt 0, 2dp) — drives profit + markup. */
   input_cost: string;
-  /** Desired profit margin as % of input_cost (ge 0, le 500, 2dp). Default 30. */
-  target_margin_pct: string;
+  /** Meesho referral commission %, seller-entered (default "4", ge 0, le 100, 2dp). */
+  commission_pct?: string;
+  /** Expected return rate %, drives RTO expected-loss term (default "0", ge 0, le 100, 2dp). */
+  return_rate_pct?: string;
+  /** Struck-through reference price (display-only; does NOT drive payout, optional). */
+  mrp?: string;
+  /** Override bracketed shipping charge (INR, ge 0, 2dp). */
+  override_shipping?: string;
+  /** Override logistics fee (INR, ge 0, 2dp). */
+  override_logistics_fee?: string;
+  /** Override fixed/closing fee (INR, ge 0, 2dp). */
+  override_fixed_fee?: string;
+  /** Override GST % applied to fees (ge 0, le 100, 2dp). */
+  override_gst_pct?: string;
+  /** Override TCS % (ge 0, le 100, 2dp). */
+  override_tcs_pct?: string;
+  /** Override TDS % (ge 0, le 100, 2dp). */
+  override_tds_pct?: string;
 }
 
 // ─── Alert ────────────────────────────────────────────────────────────────────
@@ -35,51 +66,94 @@ export interface PriceCalcRequest {
 /** Severity literal for server-issued pricing alerts. */
 export type AlertSeverity = 'warning' | 'info';
 
-/** Alert code literal — matches backend Literal["LOW_MARGIN", "HIGH_MRP_MULTIPLIER", "THIN_PROFIT"]. */
-export type AlertCode = 'LOW_MARGIN' | 'HIGH_MRP_MULTIPLIER' | 'THIN_PROFIT';
+/**
+ * Alert code literal — matches backend Literal["NEGATIVE_PAYOUT", "LOW_MARGIN", "SHIPPING_DOMINATES"].
+ * §12.M (3): HIGH_MRP_MULTIPLIER + THIN_PROFIT are DEAD; replaced by NEGATIVE_PAYOUT + SHIPPING_DOMINATES.
+ */
+export type AlertCode = 'NEGATIVE_PAYOUT' | 'LOW_MARGIN' | 'SHIPPING_DOMINATES';
 
 /**
  * PriceCalcAlert — wire shape from PriceCalcResponse.alerts[].
- * message_id is a validation_message_id key (spec §5A.H) resolved client-side.
- * transloco is NOT wired in V1 (Wave-2B drop) — render via ALERT_MESSAGES map or raw key.
- * i18n chore deferred to post-Wave-D.
+ * message_id is a validation_message_id key (spec §5A.H) resolved client-side via ALERT_MESSAGES.
  */
 export interface PriceCalcAlert {
   code: AlertCode;
-  /** Stable i18n key (e.g. "pricing.low_margin") — render via ALERT_MESSAGES. */
+  /** Stable i18n key (e.g. "pricing.alert.negative_payout") — resolved via ALERT_MESSAGES. */
   message_id: string;
   severity: AlertSeverity;
 }
 
-// ─── Response ────────────────────────────────────────────────────────────────
+// ─── Response ─────────────────────────────────────────────────────────────────
 
 /**
- * 200-OK body for POST /api/v1/products/{id}/price-calc.
+ * 200-OK body for POST /api/v1/products/{id}/price-calc (§12.M forward estimator).
  *
  * ALL monetary / pct fields are Decimal-serialised as JSON strings (R-W6-6 confirmed).
- * Parse with Number() for arithmetic comparisons. Use formatRupee(field) for display.
- * MRP is a SERVER-COMPUTED output — it was a FE input in the retired mock.
+ * Parse with parseDecimal() for arithmetic. Use formatRupee() for display.
+ *
+ * A negative estimated_payout does NOT cause a 4xx — it returns 200 with
+ * a NEGATIVE_PAYOUT alert (§12.M (4)).
+ *
+ * Field layout mirrors backend PriceCalcResponse exactly (schemas.py §12.M):
+ *   3-price model → mrp (nullable), meesho_price, wdrp_price
+ *   Seller cost echo → input_cost
+ *   Deduction breakdown → commission_pct, referral_commission, shipping_charge,
+ *     logistics_fee, fixed_fee, gst_pct, gst_on_fees, tcs, tds,
+ *     return_rate_pct, rto_expected_loss, total_deductions
+ *   Outputs → estimated_payout, estimated_payout_wdrp, profit, margin_pct, markup_pct
  */
 export interface PriceCalcResponse {
-  /** Server-computed MRP (selling price), INR. Was a FE input — now a RESULT. */
-  mrp: string;
-  /** Meesho net price (after Meesho's share). */
+  // ── 3-price model ───────────────────────────────────────────────────────
+  /** Struck-through reference price (echoed from request; null if not provided). */
+  mrp: string | null;
+  /** Listed/selling price on Meesho, INR. */
   meesho_price: string;
-  /** Seller payout (what the seller actually receives). */
-  seller_price: string;
-  /** Commission rate resolved from category commission table (NOT hardcoded). */
+  /** Wrong/Defective Return Price = meesho_price minus WDRP_DELTA. */
+  wdrp_price: string;
+
+  // ── Seller cost (echo) ──────────────────────────────────────────────────
+  /** Cost of goods per unit, INR (echoed from request). */
+  input_cost: string;
+
+  // ── Deduction breakdown ─────────────────────────────────────────────────
+  /** Referral commission rate %. */
   commission_pct: string;
-  /** Commission amount, INR (was commission_amt in retired PnlBreakdown). */
-  commission_amount: string;
-  /** GST rate resolved from category table (NOT hardcoded). */
+  /** Referral commission amount, INR. */
+  referral_commission: string;
+  /** Bracketed shipping charge, INR. */
+  shipping_charge: string;
+  /** Logistics fee, INR. */
+  logistics_fee: string;
+  /** Fixed/closing fee, INR. */
+  fixed_fee: string;
+  /** GST % applied to fees. */
   gst_pct: string;
-  /** GST amount, INR (was gst_amt in retired PnlBreakdown). */
-  gst_amount: string;
-  /** Profit, INR (was net_margin in retired PnlBreakdown). Positive = profitable. */
+  /** GST on fees, INR. */
+  gst_on_fees: string;
+  /** TCS amount, INR. */
+  tcs: string;
+  /** TDS amount, INR. */
+  tds: string;
+  /** Expected return rate %. */
+  return_rate_pct: string;
+  /** RTO expected loss, INR (return_rate x wdrp deduction). */
+  rto_expected_loss: string;
+  /** Sum of all deductions, INR. */
+  total_deductions: string;
+
+  // ── Outputs ─────────────────────────────────────────────────────────────
+  /** Net payout to seller at meesho_price, INR. May be negative (NEGATIVE_PAYOUT alert). */
+  estimated_payout: string;
+  /** Net payout at wdrp_price (worst-case return scenario), INR. */
+  estimated_payout_wdrp: string;
+  /** Profit = estimated_payout minus input_cost, INR. */
   profit: string;
-  /** Profit as % of input_cost (was net_margin_pct in retired PnlBreakdown). */
-  profit_pct: string;
-  /** Server-issued pricing alerts (LOW_MARGIN / HIGH_MRP_MULTIPLIER / THIN_PROFIT). */
+  /** Profit as % of meesho_price. */
+  margin_pct: string;
+  /** Profit as % of input_cost. */
+  markup_pct: string;
+
+  /** Server-issued pricing alerts. */
   alerts: PriceCalcAlert[];
   /** ISO-8601 datetime string of when this calculation was performed. */
   calculated_at: string;
@@ -90,27 +164,18 @@ export interface PriceCalcResponse {
 /**
  * 404: flag off (FEATURE_PRICE_CALCULATOR_ENABLED=false) OR product not found / cross-tenant.
  * The breakdown stays null; component renders "Price Calculator unavailable" banner.
- * NO local-math fallback (DECISION-1 + R-W6-1).
+ * NO local-math fallback (DECISION-1).
  */
 export interface PriceCalcUnavailableError {
   kind: 'unavailable';
-  /** 'flag_off' when FEATURE_PRICE_CALCULATOR_ENABLED=false; 'not_found' otherwise. */
+  /** 'flag_off' when FEATURE_PRICE_CALCULATOR_ENABLED=false; 'not_found' for cross-tenant/404. */
   reason: 'flag_off' | 'not_found';
 }
 
 /**
- * 422: pricing.commission.missing — category has no usable commission rate.
- * Component renders "Pricing isn't available for this category yet" + detail.
- */
-export interface PriceCalcCommissionMissingError {
-  kind: 'commission_missing';
-  detail: string;
-  error_code: string;
-}
-
-/**
- * 400: validation.price.invalid_input — Pydantic constraint violation (e.g. input_cost<=0).
- * The form validators should prevent most; surface if server returns 400.
+ * 400: validation.price.invalid_input — Pydantic constraint violation (meesho_price<=0, etc.).
+ * Form validators prevent most; surface if server returns 400.
+ * §12.M: 422 commission.missing is DEAD — this is the only non-200 business error now.
  */
 export interface PriceCalcValidationError {
   kind: 'validation';
@@ -127,22 +192,29 @@ export interface PriceCalcServerError {
   kind: 'server_error';
 }
 
-/** Union of typed non-throwing error shapes emitted by PricingApiService.calc(). */
+/**
+ * Union of typed non-throwing error shapes emitted by PricingApiService.calc().
+ * §12.M: PriceCalcCommissionMissingError DELETED (422 path removed in §12.M (4)).
+ */
 export type PriceCalcErrorShape =
   | PriceCalcUnavailableError
-  | PriceCalcCommissionMissingError
   | PriceCalcValidationError
   | PriceCalcServerError;
 
-// ─── i18n: static alert message map (transloco not wired — Wave-2B drop) ─────
+// ─── i18n: static alert message map ──────────────────────────────────────────
 
 /**
- * Static fallback for PriceCalcAlert.message_id resolution.
- * transloco chore deferred to post-Wave-D. Do NOT invent arbitrary copy.
+ * FE-local fallback for PriceCalcAlert.message_id resolution.
+ * Backend en.json is missing these keys (§12.M alert codes not yet seeded in i18n).
  * Component renders: ALERT_MESSAGES[alert.message_id] ?? alert.message_id.
+ *
+ * Keys mirror backend message_ids per §5A.H convention:
+ *   pricing.alert.negative_payout / pricing.alert.low_margin / pricing.alert.shipping_dominates
+ *
+ * §12.M DEAD keys: pricing.low_margin / pricing.high_mrp_multiplier / pricing.thin_profit REMOVED.
  */
 export const ALERT_MESSAGES: Record<string, string> = {
-  'pricing.low_margin':          'Low margin — consider adjusting your cost or margin target.',
-  'pricing.high_mrp_multiplier': 'MRP seems high relative to input cost.',
-  'pricing.thin_profit':         'Thin profit — shipping and returns may reduce profitability.',
+  'pricing.alert.negative_payout':    "You'd lose money at this price — your payout is below zero.",
+  'pricing.alert.low_margin':         'Low margin — under 10%. Consider raising the price or cutting cost.',
+  'pricing.alert.shipping_dominates': 'Shipping is eating your margin — common on low-priced items.',
 };

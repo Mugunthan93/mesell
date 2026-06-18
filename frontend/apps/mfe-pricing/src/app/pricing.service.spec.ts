@@ -1,13 +1,23 @@
 /**
- * pricing.service.spec.ts — PricingApiService tests.
+ * pricing.service.spec.ts — PricingApiService tests (§12.M forward estimator).
  *
- * Validation §8 requirements:
+ * CONTRACT CONFIRMED: backend/app/modules/pricing/schemas.py (PR #285, commit fd4331d).
+ *
+ * Validation requirements (§12.M):
  *   - URL asserted EXACTLY: /api/v1/products/{id}/price-calc
- *   - Request body keys: input_cost + target_margin_pct (NOT mrp / target_margin)
- *   - Response → breakdown mapping: real keys (commission_amount / seller_price / profit / profit_pct)
- *   - Full error matrix: 401/404/422/400/5xx → typed shapes or EMPTY; NEVER local math
- *   - NO retryOn503 usage
- *   - Decimal wire-type: string fields parsed correctly (R-W6-6)
+ *   - Request body required keys: meesho_price + input_cost (NEVER target_margin_pct)
+ *   - Optional request keys: commission_pct, return_rate_pct, mrp (all pass-through)
+ *   - Response maps §12.M NEW keys:
+ *       estimated_payout, estimated_payout_wdrp, margin_pct, markup_pct,
+ *       wdrp_price, total_deductions, referral_commission, shipping_charge,
+ *       logistics_fee, fixed_fee, gst_on_fees, tcs, tds, rto_expected_loss
+ *   - §12.E DEAD keys NOT on type: seller_price, commission_amount, gst_amount, profit_pct
+ *   - Alert codes: NEGATIVE_PAYOUT / LOW_MARGIN / SHIPPING_DOMINATES
+ *     (§12.M dead: THIN_PROFIT / HIGH_MRP_MULTIPLIER)
+ *   - Error matrix: 401→EMPTY / 404→unavailable / 400→validation / 5xx→server_error
+ *   - NO 422 branch: 422 treated as server_error (§12.M (4): 422 path is dead)
+ *   - NO retryOn503: exactly ONE request per call (POST non-idempotent, §3.2)
+ *   - Decimal wire-type: all monetary/pct fields are string (R-W6-6)
  */
 
 import { describe, it, expect, afterEach } from 'vitest';
@@ -29,32 +39,72 @@ import type { PriceCalcRequest, PriceCalcResponse } from './pricing.model';
 const PRODUCT_ID = 'prod-uuid-001';
 const ENDPOINT   = `/api/v1/products/${PRODUCT_ID}/price-calc`;
 
-const VALID_REQUEST: PriceCalcRequest = {
-  input_cost:        '300.00',
-  target_margin_pct: '30.00',
+/** Minimal valid request — only required fields. */
+const VALID_REQUEST_MINIMAL: PriceCalcRequest = {
+  meesho_price: '499.00',
+  input_cost:   '300.00',
 };
 
-/** Server 200-OK response (all Decimal fields as strings — R-W6-6). */
+/** Request with optional seller-estimator fields. */
+const VALID_REQUEST_FULL: PriceCalcRequest = {
+  meesho_price:    '499.00',
+  input_cost:      '300.00',
+  commission_pct:  '4.00',
+  return_rate_pct: '10.00',
+  mrp:             '599.00',
+};
+
+/**
+ * Server 200-OK response — §12.M field set (all Decimal fields as strings, R-W6-6).
+ * NEW fields vs §12.E: wdrp_price, estimated_payout, estimated_payout_wdrp, margin_pct,
+ *   markup_pct, total_deductions, referral_commission, shipping_charge, logistics_fee,
+ *   fixed_fee, gst_on_fees, tcs, tds, rto_expected_loss.
+ * DEAD vs §12.E: seller_price, commission_amount, gst_amount, profit_pct.
+ */
 const MOCK_RESPONSE: PriceCalcResponse = {
-  mrp:               '429.00',
-  meesho_price:      '214.50',
-  seller_price:      '193.05',
-  commission_pct:    '10.00',
-  commission_amount: '21.45',
-  gst_pct:           '18.00',
-  gst_amount:        '3.86',
-  profit:            '90.00',
-  profit_pct:        '30.00',
-  alerts:            [],
-  calculated_at:     '2026-06-12T06:00:00Z',
+  mrp:                   '599.00',
+  meesho_price:          '499.00',
+  wdrp_price:            '479.00',
+  input_cost:            '300.00',
+  commission_pct:        '4.00',
+  referral_commission:   '19.96',
+  shipping_charge:       '58.00',
+  logistics_fee:         '12.00',
+  fixed_fee:             '5.00',
+  gst_pct:               '18.00',
+  gst_on_fees:           '17.09',
+  tcs:                   '1.00',
+  tds:                   '1.00',
+  return_rate_pct:       '0.00',
+  rto_expected_loss:     '0.00',
+  total_deductions:      '114.05',
+  estimated_payout:      '384.95',
+  estimated_payout_wdrp: '364.95',
+  profit:                '84.95',
+  margin_pct:            '17.02',
+  markup_pct:            '28.32',
+  alerts:                [],
+  calculated_at:         '2026-06-18T10:00:00Z',
 };
 
-/** Server 200-OK with alerts. */
+/** Response with NEGATIVE_PAYOUT alert — §12.M new alert; 200, not a 4xx. */
+const MOCK_RESPONSE_NEGATIVE_PAYOUT: PriceCalcResponse = {
+  ...MOCK_RESPONSE,
+  estimated_payout: '-20.00',
+  profit:           '-320.00',
+  margin_pct:       '-4.01',
+  markup_pct:       '-6.67',
+  alerts: [
+    { code: 'NEGATIVE_PAYOUT', message_id: 'pricing.alert.negative_payout', severity: 'warning' },
+  ],
+};
+
+/** Response with LOW_MARGIN + SHIPPING_DOMINATES (§12.M new alert codes). */
 const MOCK_RESPONSE_WITH_ALERTS: PriceCalcResponse = {
   ...MOCK_RESPONSE,
   alerts: [
-    { code: 'LOW_MARGIN', message_id: 'pricing.low_margin', severity: 'warning' },
-    { code: 'THIN_PROFIT', message_id: 'pricing.thin_profit', severity: 'info' },
+    { code: 'LOW_MARGIN',         message_id: 'pricing.alert.low_margin',          severity: 'warning' },
+    { code: 'SHIPPING_DOMINATES', message_id: 'pricing.alert.shipping_dominates',   severity: 'info'    },
   ],
 };
 
@@ -75,76 +125,148 @@ function setup() {
   };
 }
 
-// ── Happy path ────────────────────────────────────────────────────────────────
+// ── Happy path ─────────────────────────────────────────────────────────────────
 
-describe('PricingApiService — happy path', () => {
+describe('PricingApiService — happy path (§12.M forward estimator)', () => {
   afterEach(() => TestBed.inject(HttpTestingController).verify());
 
   it('sends POST to the exact /price-calc URL', () => {
     const { service, controller } = setup();
-    service.calc(PRODUCT_ID, VALID_REQUEST).subscribe();
+    service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL).subscribe();
 
     const req = controller.expectOne(ENDPOINT);
     expect(req.request.method).toBe('POST');
     req.flush(MOCK_RESPONSE);
   });
 
-  it('sends body with input_cost and target_margin_pct — NOT mrp or target_margin', () => {
+  it('sends body with meesho_price and input_cost — §12.M primary required fields', () => {
     const { service, controller } = setup();
-    service.calc(PRODUCT_ID, VALID_REQUEST).subscribe();
+    service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL).subscribe();
 
-    const req = controller.expectOne(ENDPOINT);
-    expect(req.request.body).toEqual({
-      input_cost:        '300.00',
-      target_margin_pct: '30.00',
-    });
-    // Ensure retired keys are NOT present
-    expect(req.request.body).not.toHaveProperty('mrp');
-    expect(req.request.body).not.toHaveProperty('target_margin');
+    const req  = controller.expectOne(ENDPOINT);
+    const body = req.request.body as Record<string, unknown>;
+    expect(body['meesho_price']).toBe('499.00');
+    expect(body['input_cost']).toBe('300.00');
     req.flush(MOCK_RESPONSE);
   });
 
-  it('emits PriceCalcResponse on 200 with correct real keys', async () => {
+  it('§12.M: NEVER sends target_margin_pct (dead field removed in §12.M)', () => {
     const { service, controller } = setup();
-    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST);
+    service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL).subscribe();
+
+    const req  = controller.expectOne(ENDPOINT);
+    const body = req.request.body as Record<string, unknown>;
+    // target_margin_pct is DEAD in §12.M — must never appear in the request body
+    expect(body).not.toHaveProperty('target_margin_pct');
+    req.flush(MOCK_RESPONSE);
+  });
+
+  it('passes optional commission_pct + return_rate_pct + mrp when provided', () => {
+    const { service, controller } = setup();
+    service.calc(PRODUCT_ID, VALID_REQUEST_FULL).subscribe();
+
+    const req  = controller.expectOne(ENDPOINT);
+    const body = req.request.body as Record<string, unknown>;
+    expect(body['commission_pct']).toBe('4.00');
+    expect(body['return_rate_pct']).toBe('10.00');
+    expect(body['mrp']).toBe('599.00');
+    req.flush(MOCK_RESPONSE);
+  });
+
+  it('emits PriceCalcResponse on 200 with §12.M NEW output fields', async () => {
+    const { service, controller } = setup();
+    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL);
     const promise = firstValueFrom(result$);
 
     controller.expectOne(ENDPOINT).flush(MOCK_RESPONSE);
     const result = await promise;
 
-    expect(result).toMatchObject({
-      mrp:               '429.00',
-      meesho_price:      '214.50',
-      seller_price:      '193.05',     // real key (not seller_payout)
-      commission_pct:    '10.00',
-      commission_amount: '21.45',       // real key (not commission_amt)
-      gst_pct:           '18.00',
-      gst_amount:        '3.86',        // real key (not gst_amt)
-      profit:            '90.00',       // real key (not net_margin)
-      profit_pct:        '30.00',       // real key (not net_margin_pct)
-      alerts:            [],
-    });
+    if ('kind' in result) throw new Error('Expected PriceCalcResponse, got error shape');
+
+    // §12.M primary outputs
+    expect(result.estimated_payout).toBe('384.95');
+    expect(result.estimated_payout_wdrp).toBe('364.95');
+    expect(result.margin_pct).toBe('17.02');
+    expect(result.markup_pct).toBe('28.32');
+    expect(result.wdrp_price).toBe('479.00');
+    expect(result.total_deductions).toBe('114.05');
+
+    // §12.M new deduction breakdown fields
+    expect(result.referral_commission).toBe('19.96');
+    expect(result.shipping_charge).toBe('58.00');
+    expect(result.logistics_fee).toBe('12.00');
+    expect(result.fixed_fee).toBe('5.00');
+    expect(result.gst_on_fees).toBe('17.09');
+    expect(result.tcs).toBe('1.00');
+    expect(result.tds).toBe('1.00');
+    expect(result.rto_expected_loss).toBe('0.00');
+
+    // Common fields still present
+    expect(result.profit).toBe('84.95');
+    expect(result.meesho_price).toBe('499.00');
+    expect(result.input_cost).toBe('300.00');
+    expect(result.mrp).toBe('599.00');
+    expect(result.commission_pct).toBe('4.00');
+    expect(result.alerts).toHaveLength(0);
   });
 
-  it('emits PriceCalcResponse with alerts on 200', async () => {
+  it('§12.E dead fields not on response type (TypeScript enforces; runtime confirms fixture)', async () => {
     const { service, controller } = setup();
-    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST);
+    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL);
+    const promise = firstValueFrom(result$);
+
+    controller.expectOne(ENDPOINT).flush(MOCK_RESPONSE);
+    const result = await promise;
+
+    if ('kind' in result) throw new Error('Expected PriceCalcResponse');
+    // These keys do not exist on the §12.M interface or fixture
+    const r = result as unknown as Record<string, unknown>;
+    expect(r['seller_price']).toBeUndefined();
+    expect(r['commission_amount']).toBeUndefined();
+    expect(r['gst_amount']).toBeUndefined();
+    expect(r['profit_pct']).toBeUndefined();
+  });
+
+  it('NEGATIVE_PAYOUT on negative payout returns 200 with alert — not a 4xx (§12.M (4))', async () => {
+    const { service, controller } = setup();
+    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL);
+    const promise = firstValueFrom(result$);
+
+    controller.expectOne(ENDPOINT).flush(MOCK_RESPONSE_NEGATIVE_PAYOUT);
+    const result = await promise;
+
+    // Must be PriceCalcResponse (not an error shape) — 200 with alert
+    if ('kind' in result) throw new Error('Expected PriceCalcResponse, not an error');
+    expect(result.estimated_payout).toBe('-20.00');
+    expect(result.alerts).toHaveLength(1);
+    expect(result.alerts[0].code).toBe('NEGATIVE_PAYOUT');
+    expect(result.alerts[0].message_id).toBe('pricing.alert.negative_payout');
+    expect(result.alerts[0].severity).toBe('warning');
+  });
+
+  it('emits §12.M new alert codes: LOW_MARGIN + SHIPPING_DOMINATES', async () => {
+    const { service, controller } = setup();
+    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL);
     const promise = firstValueFrom(result$);
 
     controller.expectOne(ENDPOINT).flush(MOCK_RESPONSE_WITH_ALERTS);
     const result = await promise;
 
-    if ('kind' in result) throw new Error('Expected PriceCalcResponse, got error shape');
+    if ('kind' in result) throw new Error('Expected PriceCalcResponse');
     expect(result.alerts).toHaveLength(2);
     expect(result.alerts[0].code).toBe('LOW_MARGIN');
     expect(result.alerts[0].severity).toBe('warning');
-    expect(result.alerts[1].code).toBe('THIN_PROFIT');
+    expect(result.alerts[1].code).toBe('SHIPPING_DOMINATES');
     expect(result.alerts[1].severity).toBe('info');
+    // §12.M dead alert codes must not appear
+    const codes = result.alerts.map((a) => a.code);
+    expect(codes).not.toContain('THIN_PROFIT');
+    expect(codes).not.toContain('HIGH_MRP_MULTIPLIER');
   });
 
   it('Decimal string fields are strings (R-W6-6 — NOT numbers)', async () => {
     const { service, controller } = setup();
-    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST);
+    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL);
     const promise = firstValueFrom(result$);
 
     controller.expectOne(ENDPOINT).flush(MOCK_RESPONSE);
@@ -152,39 +274,54 @@ describe('PricingApiService — happy path', () => {
 
     if ('kind' in result) throw new Error('Expected PriceCalcResponse');
     // All monetary/pct fields MUST be strings (Pydantic v2 Decimal → JSON string)
-    expect(typeof result.mrp).toBe('string');
     expect(typeof result.meesho_price).toBe('string');
-    expect(typeof result.seller_price).toBe('string');
-    expect(typeof result.commission_pct).toBe('string');
-    expect(typeof result.commission_amount).toBe('string');
-    expect(typeof result.gst_pct).toBe('string');
-    expect(typeof result.gst_amount).toBe('string');
+    expect(typeof result.wdrp_price).toBe('string');
+    expect(typeof result.input_cost).toBe('string');
+    expect(typeof result.estimated_payout).toBe('string');
+    expect(typeof result.estimated_payout_wdrp).toBe('string');
     expect(typeof result.profit).toBe('string');
-    expect(typeof result.profit_pct).toBe('string');
+    expect(typeof result.margin_pct).toBe('string');
+    expect(typeof result.markup_pct).toBe('string');
+    expect(typeof result.total_deductions).toBe('string');
+    expect(typeof result.commission_pct).toBe('string');
+    expect(typeof result.referral_commission).toBe('string');
+    expect(typeof result.shipping_charge).toBe('string');
   });
 
-  it('does NOT add Authorization header manually (jwtInterceptor owns auth, Wave A)', () => {
+  it('mrp is null when not provided in request (nullable field)', async () => {
     const { service, controller } = setup();
-    service.calc(PRODUCT_ID, VALID_REQUEST).subscribe();
+    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL);
+    const promise = firstValueFrom(result$);
+
+    const responseWithNullMrp: PriceCalcResponse = { ...MOCK_RESPONSE, mrp: null };
+    controller.expectOne(ENDPOINT).flush(responseWithNullMrp);
+    const result = await promise;
+
+    if ('kind' in result) throw new Error('Expected PriceCalcResponse');
+    expect(result.mrp).toBeNull();
+  });
+
+  it('does NOT add Authorization header manually (jwtInterceptor owns auth)', () => {
+    const { service, controller } = setup();
+    service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL).subscribe();
 
     const req = controller.expectOne(ENDPOINT);
-    // In TestBed without jwtInterceptor, no Authorization header should be set by the service itself
     expect(req.request.headers.has('Authorization')).toBe(false);
     req.flush(MOCK_RESPONSE);
   });
 });
 
-// ── Error matrix (R-W6-1, DECISION-1) ────────────────────────────────────────
+// ── Error matrix ──────────────────────────────────────────────────────────────
 
-describe('PricingApiService — error matrix (DECISION-1: no local math fallback)', () => {
+describe('PricingApiService — error matrix (§12.M degradation matrix, DECISION-1)', () => {
   afterEach(() => TestBed.inject(HttpTestingController).verify());
 
   it('401 → EMPTY (refreshInterceptor logout path; no emission)', async () => {
     const { service, controller } = setup();
-    let emitted = false;
+    let emitted   = false;
     let completed = false;
 
-    service.calc(PRODUCT_ID, VALID_REQUEST).subscribe({
+    service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL).subscribe({
       next:     () => { emitted = true; },
       complete: () => { completed = true; },
     });
@@ -195,30 +332,30 @@ describe('PricingApiService — error matrix (DECISION-1: no local math fallback
     );
 
     expect(emitted).toBe(false);
-    expect(completed).toBe(true);  // EMPTY completes silently
+    expect(completed).toBe(true); // EMPTY completes silently
   });
 
   it('404 → emits PriceCalcUnavailableError with kind="unavailable"', async () => {
     const { service, controller } = setup();
-    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST);
+    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL);
     const promise = firstValueFrom(result$);
 
     controller.expectOne(ENDPOINT).flush(
-      { detail: 'Feature disabled.' },
+      { detail: 'Price Calculator is disabled in this environment' },
       { status: 404, statusText: 'Not Found' },
     );
 
     const result = await promise;
     expect(result).toMatchObject({ kind: 'unavailable' });
-    // Breakdown key must NOT be present — no local math computed
-    const resultAny = result as unknown as Record<string, unknown>;
-    expect(resultAny['mrp']).toBeUndefined();
-    expect(resultAny['profit']).toBeUndefined();
+    // No breakdown keys — DECISION-1
+    const r = result as unknown as Record<string, unknown>;
+    expect(r['estimated_payout']).toBeUndefined();
+    expect(r['profit']).toBeUndefined();
   });
 
-  it('404 with "not found" in detail → reason="not_found"', async () => {
+  it('404 with "not found" detail → reason="not_found" (cross-tenant ownership gate)', async () => {
     const { service, controller } = setup();
-    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST);
+    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL);
     const promise = firstValueFrom(result$);
 
     controller.expectOne(ENDPOINT).flush(
@@ -233,13 +370,13 @@ describe('PricingApiService — error matrix (DECISION-1: no local math fallback
     expect(result.reason).toBe('not_found');
   });
 
-  it('404 without "not found" detail → reason="flag_off"', async () => {
+  it('404 without "not found" detail → reason="flag_off" (FEATURE_PRICE_CALCULATOR_ENABLED=false)', async () => {
     const { service, controller } = setup();
-    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST);
+    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL);
     const promise = firstValueFrom(result$);
 
     controller.expectOne(ENDPOINT).flush(
-      { detail: 'Feature disabled.' },
+      { detail: 'Price Calculator is disabled in this environment' },
       { status: 404, statusText: 'Not Found' },
     );
 
@@ -250,69 +387,64 @@ describe('PricingApiService — error matrix (DECISION-1: no local math fallback
     expect(result.reason).toBe('flag_off');
   });
 
-  it('422 → emits PriceCalcCommissionMissingError with kind="commission_missing"', async () => {
-    const { service, controller } = setup();
-    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST);
-    const promise = firstValueFrom(result$);
-
-    controller.expectOne(ENDPOINT).flush(
-      { detail: 'No commission rate for category.', error_code: 'pricing.commission.missing' },
-      { status: 422, statusText: 'Unprocessable Entity' },
-    );
-
-    const result = await promise;
-    expect(result).toMatchObject({
-      kind:       'commission_missing',
-      detail:     'No commission rate for category.',
-      error_code: 'pricing.commission.missing',
-    });
-    // No local math computed — no breakdown keys
-    const resultAny = result as unknown as Record<string, unknown>;
-    expect(resultAny['mrp']).toBeUndefined();
-    expect(resultAny['profit']).toBeUndefined();
-  });
-
-  it('422 with no error body → uses fallback detail string', async () => {
-    const { service, controller } = setup();
-    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST);
-    const promise = firstValueFrom(result$);
-
-    controller.expectOne(ENDPOINT).flush(null, { status: 422, statusText: 'Unprocessable Entity' });
-
-    const result = await promise;
-    if (!('kind' in result) || result.kind !== 'commission_missing') {
-      throw new Error('Expected commission_missing');
-    }
-    expect(result.detail).toBeTruthy();    // fallback string
-    expect(result.error_code).toBeTruthy(); // fallback code
-  });
-
   it('400 → emits PriceCalcValidationError with kind="validation"', async () => {
     const { service, controller } = setup();
-    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST);
+    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL);
     const promise = firstValueFrom(result$);
 
     controller.expectOne(ENDPOINT).flush(
-      { detail: 'input_cost must be greater than 0.' },
+      { detail: 'meesho_price must be greater than 0.' },
       { status: 400, statusText: 'Bad Request' },
     );
 
     const result = await promise;
     expect(result).toMatchObject({
       kind:   'validation',
-      detail: 'input_cost must be greater than 0.',
+      detail: 'meesho_price must be greater than 0.',
     });
-    // No local math computed — no breakdown keys
-    const resultAny = result as unknown as Record<string, unknown>;
-    expect(resultAny['mrp']).toBeUndefined();
-    expect(resultAny['profit']).toBeUndefined();
+    // No breakdown keys — DECISION-1
+    const r = result as unknown as Record<string, unknown>;
+    expect(r['estimated_payout']).toBeUndefined();
+    expect(r['profit']).toBeUndefined();
   });
 
-  it('500 → emits {kind:"server_error"} (explicit error shape; component renders retry banner)', async () => {
-    // REAL assertion: 5xx must NOT silently swallow into EMPTY — spec §3.1 mandates
-    // explicit error + retry affordance. Service emits PriceCalcServerError shape.
+  it('400 with no error body → uses fallback detail string', async () => {
     const { service, controller } = setup();
-    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST);
+    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL);
+    const promise = firstValueFrom(result$);
+
+    controller.expectOne(ENDPOINT).flush(null, { status: 400, statusText: 'Bad Request' });
+    const result = await promise;
+
+    if (!('kind' in result) || result.kind !== 'validation') {
+      throw new Error('Expected validation error');
+    }
+    expect(result.detail).toBeTruthy(); // fallback string
+  });
+
+  it('§12.M (4): 422 is DEAD — treated as server_error (not commission_missing)', async () => {
+    // 422 pricing.commission.missing removed in §12.M — commission is seller-entered.
+    // If a 422 reaches the service (should never happen), it falls to catch-all → server_error.
+    const { service, controller } = setup();
+    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL);
+    const promise = firstValueFrom(result$);
+
+    controller.expectOne(ENDPOINT).flush(
+      { detail: 'Unprocessable Entity (should never occur in §12.M).' },
+      { status: 422, statusText: 'Unprocessable Entity' },
+    );
+
+    const result = await promise;
+    // Must be server_error — NOT commission_missing (type deleted in §12.M)
+    expect(result).toMatchObject({ kind: 'server_error' });
+    if ('kind' in result) {
+      expect(result.kind).not.toBe('commission_missing');
+    }
+  });
+
+  it('500 → emits {kind:"server_error"} — explicit shape, not EMPTY (spec §3.1 retry affordance)', async () => {
+    const { service, controller } = setup();
+    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL);
     const promise = firstValueFrom(result$);
 
     controller.expectOne(ENDPOINT).flush(
@@ -321,21 +453,18 @@ describe('PricingApiService — error matrix (DECISION-1: no local math fallback
     );
 
     const result = await promise;
-    // Must emit the typed server_error shape — not EMPTY (EMPTY would have thrown in firstValueFrom)
+    // Must emit server_error — NOT EMPTY (EMPTY would throw in firstValueFrom)
     expect(result).toMatchObject({ kind: 'server_error' });
-    // Breakdown keys must NOT be present — no local math (DECISION-1)
-    const resultAny = result as unknown as Record<string, unknown>;
-    expect(resultAny['mrp']).toBeUndefined();
-    expect(resultAny['profit']).toBeUndefined();
+    const r = result as unknown as Record<string, unknown>;
+    expect(r['estimated_payout']).toBeUndefined();
+    expect(r['profit']).toBeUndefined();
   });
 
-  it('503 → emits {kind:"server_error"} (5xx; no auto-retry — ApiClient retryOn503 is defective)', async () => {
-    // 503 follows the same path as 500: emit server_error. No retry (§3.2 POST non-idempotent).
+  it('503 → emits {kind:"server_error"} (5xx; no auto-retry — POST non-idempotent, §3.2)', async () => {
     const { service, controller } = setup();
-    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST);
+    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL);
     const promise = firstValueFrom(result$);
 
-    // Only ONE request expected — no retry (ApiClient retryOn503 is NOT used)
     controller.expectOne(ENDPOINT).flush(
       { detail: 'Service Unavailable' },
       { status: 503, statusText: 'Service Unavailable' },
@@ -346,10 +475,8 @@ describe('PricingApiService — error matrix (DECISION-1: no local math fallback
   });
 
   it('network/non-HTTP error → emits {kind:"server_error"} (spec §3.1 retry affordance)', async () => {
-    // Network drop (e.g. offline, DNS failure) reaches _handleError with a non-HttpErrorResponse.
-    // Must emit server_error so the component renders the retry banner — NOT bare EMPTY.
     const { service, controller } = setup();
-    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST);
+    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL);
     const promise = firstValueFrom(result$);
 
     // Simulate network error via HttpTestingController.error()
@@ -357,87 +484,116 @@ describe('PricingApiService — error matrix (DECISION-1: no local math fallback
 
     const result = await promise;
     expect(result).toMatchObject({ kind: 'server_error' });
-    // Breakdown keys must NOT be present
-    const resultAny = result as unknown as Record<string, unknown>;
-    expect(resultAny['mrp']).toBeUndefined();
-    expect(resultAny['profit']).toBeUndefined();
+    const r = result as unknown as Record<string, unknown>;
+    expect(r['estimated_payout']).toBeUndefined();
+    expect(r['profit']).toBeUndefined();
   });
 });
 
 // ── No retryOn503 guard ───────────────────────────────────────────────────────
 
-describe('PricingApiService — no retryOn503 (spec §3.2)', () => {
+describe('PricingApiService — no retryOn503 (§3.2 POST non-idempotent)', () => {
   afterEach(() => TestBed.inject(HttpTestingController).verify());
 
   it('sends exactly ONE request on 503 (no auto-retry)', () => {
     const { service, controller } = setup();
-    service.calc(PRODUCT_ID, VALID_REQUEST).subscribe();
+    service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL).subscribe();
 
-    // expectOne() would throw if more than one request is dispatched
+    // expectOne() throws if more than one request dispatched
     const req = controller.expectOne(ENDPOINT);
     req.flush({ detail: 'Service Unavailable' }, { status: 503, statusText: 'Service Unavailable' });
     // controller.verify() in afterEach confirms no extra requests
   });
 });
 
-// ── Decimal string parsing (R-W6-6) ──────────────────────────────────────────
+// ── §12.M request body contract ──────────────────────────────────────────────
 
-describe('PricingApiService — Decimal-string parsing for arithmetic (R-W6-6)', () => {
+describe('PricingApiService — §12.M request body contract (dead keys absent)', () => {
   afterEach(() => TestBed.inject(HttpTestingController).verify());
 
-  it('profit as string "90.00" is parseable to 90 (parseDecimal)', async () => {
+  it('minimal request has meesho_price + input_cost only — no extra fields injected', () => {
     const { service, controller } = setup();
-    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST);
+    service.calc(PRODUCT_ID, { meesho_price: '399.00', input_cost: '200.00' }).subscribe();
+
+    const req  = controller.expectOne(ENDPOINT);
+    const body = req.request.body as Record<string, unknown>;
+
+    // Required fields present
+    expect(body['meesho_price']).toBe('399.00');
+    expect(body['input_cost']).toBe('200.00');
+
+    // §12.M DEAD key
+    expect(body).not.toHaveProperty('target_margin_pct');
+
+    // Optional fields not in minimal request
+    expect(body).not.toHaveProperty('commission_pct');
+    expect(body).not.toHaveProperty('return_rate_pct');
+    expect(body).not.toHaveProperty('mrp');
+
+    req.flush(MOCK_RESPONSE);
+  });
+
+  it('override_shipping (not override_shipping_fee) is the correct field name', () => {
+    const { service, controller } = setup();
+    service.calc(PRODUCT_ID, {
+      meesho_price:      '499.00',
+      input_cost:        '300.00',
+      override_shipping: '45.00',
+    }).subscribe();
+
+    const req  = controller.expectOne(ENDPOINT);
+    const body = req.request.body as Record<string, unknown>;
+    expect(body['override_shipping']).toBe('45.00');
+    // Incorrect alias must NOT be used
+    expect(body).not.toHaveProperty('override_shipping_fee');
+
+    req.flush(MOCK_RESPONSE);
+  });
+});
+
+// ── Decimal string parsing (R-W6-6) ──────────────────────────────────────────
+
+describe('PricingApiService — Decimal-string fields for arithmetic (R-W6-6)', () => {
+  afterEach(() => TestBed.inject(HttpTestingController).verify());
+
+  it('estimated_payout "384.95" is parseable to positive number', async () => {
+    const { service, controller } = setup();
+    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL);
     const promise = firstValueFrom(result$);
 
     controller.expectOne(ENDPOINT).flush(MOCK_RESPONSE);
     const result = await promise;
 
     if ('kind' in result) throw new Error('Expected PriceCalcResponse');
-    // parseDecimal("90.00") === 90 (positive profit)
-    const profit = parseFloat(result.profit);
-    expect(profit).toBe(90);
-    expect(profit).toBeGreaterThan(0); // marginIsPositive would be true
+    const payout = parseFloat(result.estimated_payout);
+    expect(payout).toBeGreaterThan(0);
+    expect(payout).toBeCloseTo(384.95, 2);
   });
 
-  it('negative profit string "-50.00" parses to negative (NEGATIVE badge)', async () => {
+  it('negative estimated_payout "-20.00" parses to negative (NEGATIVE_PAYOUT badge)', async () => {
     const { service, controller } = setup();
-    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST);
+    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL);
     const promise = firstValueFrom(result$);
 
-    const negativeResponse: PriceCalcResponse = { ...MOCK_RESPONSE, profit: '-50.00' };
-    controller.expectOne(ENDPOINT).flush(negativeResponse);
+    controller.expectOne(ENDPOINT).flush(MOCK_RESPONSE_NEGATIVE_PAYOUT);
     const result = await promise;
 
     if ('kind' in result) throw new Error('Expected PriceCalcResponse');
-    expect(parseFloat(result.profit)).toBeLessThan(0);
+    expect(parseFloat(result.estimated_payout)).toBeLessThan(0);
   });
-});
 
-// ── Request body contract (retired keys must NOT appear) ──────────────────────
-
-describe('PricingApiService — request body contract (retired keys must be absent)', () => {
-  afterEach(() => TestBed.inject(HttpTestingController).verify());
-
-  it('request body has ONLY input_cost and target_margin_pct', () => {
+  it('margin_pct and markup_pct are distinct string fields (§12.M split from single profit_pct)', async () => {
     const { service, controller } = setup();
-    service.calc(PRODUCT_ID, { input_cost: '200.00', target_margin_pct: '25.00' }).subscribe();
+    const result$ = service.calc(PRODUCT_ID, VALID_REQUEST_MINIMAL);
+    const promise = firstValueFrom(result$);
 
-    const req = controller.expectOne(ENDPOINT);
-    const body = req.request.body as Record<string, unknown>;
+    controller.expectOne(ENDPOINT).flush(MOCK_RESPONSE);
+    const result = await promise;
 
-    // REQUIRED keys present
-    expect(body['input_cost']).toBe('200.00');
-    expect(body['target_margin_pct']).toBe('25.00');
-
-    // RETIRED keys must NOT be present
-    expect(body).not.toHaveProperty('mrp');
-    expect(body).not.toHaveProperty('target_margin');
-
-    // V1.5 overrides must NOT be sent
-    expect(body).not.toHaveProperty('override_commission_pct');
-    expect(body).not.toHaveProperty('override_gst_pct');
-
-    req.flush(MOCK_RESPONSE);
+    if ('kind' in result) throw new Error('Expected PriceCalcResponse');
+    expect(typeof result.margin_pct).toBe('string');
+    expect(typeof result.markup_pct).toBe('string');
+    // They are distinct values: margin = % of meesho_price, markup = % of input_cost
+    expect(result.margin_pct).not.toBe(result.markup_pct);
   });
 });

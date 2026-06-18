@@ -1,3 +1,21 @@
+// TODO(slice-2): FULL COMPONENT REWRITE required for §12.M forward estimator.
+// This component was authored against §12.E (target_margin_pct request, seller_price /
+// commission_amount / gst_amount / profit_pct response fields, commission_missing 422 path).
+// Slice 1 (this file — service-builder) rewrote pricing.model.ts + pricing.service.ts to §12.M.
+// Slice 2 (component-builder) must:
+//   - Replace the form: meesho_price (required) + input_cost + commission_pct + return_rate_pct + mrp (optional)
+//   - Remove target_margin_pct form control + validator + error signal
+//   - Remove commission_missing error state + commissionMissingDetail signal
+//   - Update P&L table: replace seller_price/commission_amount/gst_amount/profit_pct with
+//     §12.M fields: referral_commission, shipping_charge, logistics_fee, fixed_fee, gst_on_fees,
+//     tcs, tds, rto_expected_loss, total_deductions, wdrp_price, estimated_payout,
+//     estimated_payout_wdrp, margin_pct, markup_pct
+//   - Update marginIsPositive computed: use estimated_payout (§12.M primary payout signal)
+//   - Update alert chips: new message_id keys pricing.alert.negative_payout / .low_margin / .shipping_dominates
+//   - Update PricingErrorState type: remove 'commission_missing'
+//   - Update _handleErrorShape: remove commission_missing case
+// The build of the full app is NOT green until slice-2 lands (the component references
+// dead model fields that TypeScript will flag in strict mode).
 import {
   AfterViewChecked,
   ChangeDetectionStrategy,
@@ -32,12 +50,12 @@ import { ALERT_MESSAGES } from './pricing.model';
 // ── Error-state type (§3.1 degradation matrix) ──────────────────────────────
 // null   = initial / cleared
 // unavailable       = 404 (flag-off or product not found)
-// commission_missing = 422 (no commission rate for category)
+// TODO(slice-2): remove 'commission_missing' — 422 path dead in §12.M (4)
 // validation         = 400 (Pydantic constraint violation)
 // server_error       = 5xx / EMPTY path
 export type PricingErrorState =
   | 'unavailable'
-  | 'commission_missing'
+  | 'commission_missing' // TODO(slice-2): DELETE — 422 commission_missing removed in §12.M (4)
   | 'validation'
   | 'server_error'
   | null;
@@ -318,7 +336,8 @@ export type PricingErrorState =
                 [error]="inputCostError()"
               />
 
-              <!-- Target margin % — replaces retired target_margin (INR) -->
+              <!-- TODO(slice-2): REPLACE with meesho_price input (§12.M primary field) + commission_pct + return_rate_pct inputs. DELETE target_margin_pct. -->
+              <!-- Target margin % — TODO(slice-2): DELETE — dead in §12.M -->
               <mee-input
                 label="Target margin %"
                 type="number"
@@ -363,7 +382,7 @@ export type PricingErrorState =
                 />
               }
 
-              <!-- 422 — category has no usable commission rate -->
+              <!-- TODO(slice-2): DELETE commission_missing banner — 422 path dead in §12.M (4). -->
               @if (errorState() === 'commission_missing') {
                 <mee-alert-banner
                   variant="warning"
@@ -443,21 +462,24 @@ export type PricingErrorState =
                         <td class="mee-pricing__table-label" scope="row">Meesho Price</td>
                         <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.meesho_price) }}</td>
                       </tr>
+                      <!-- TODO(slice-2): seller_price DEAD in §12.M — replace with estimated_payout + estimated_payout_wdrp rows -->
                       <tr class="mee-pricing__row">
                         <td class="mee-pricing__table-label" scope="row">Seller Price</td>
-                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.seller_price) }}</td>
+                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.meesho_price) }}<!-- TODO(slice-2): use estimated_payout --></td>
                       </tr>
+                      <!-- TODO(slice-2): commission_amount DEAD — use referral_commission; also add shipping_charge / logistics_fee / fixed_fee / gst_on_fees / tcs / tds / rto_expected_loss / total_deductions rows -->
                       <tr class="mee-pricing__row">
                         <td class="mee-pricing__table-label" scope="row">
                           Commission ({{ breakdown()!.commission_pct }}%)
                         </td>
-                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.commission_amount) }}</td>
+                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.referral_commission) }}<!-- TODO(slice-2): was commission_amount → now referral_commission --></td>
                       </tr>
+                      <!-- TODO(slice-2): gst_amount DEAD — use gst_on_fees -->
                       <tr class="mee-pricing__row">
                         <td class="mee-pricing__table-label" scope="row">
                           GST ({{ breakdown()!.gst_pct }}%)
                         </td>
-                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.gst_amount) }}</td>
+                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.gst_on_fees) }}<!-- TODO(slice-2): was gst_amount → now gst_on_fees --></td>
                       </tr>
                       <!-- Profit row — semantic colour via CSS class (token-only, no inline hex) -->
                       <tr class="mee-pricing__row mee-pricing__row--profit">
@@ -471,14 +493,15 @@ export type PricingErrorState =
                           {{ formatRupeeLabel(breakdown()!.profit) }}
                         </td>
                       </tr>
+                      <!-- TODO(slice-2): profit_pct DEAD in §12.M — replace with margin_pct + markup_pct rows -->
                       <tr class="mee-pricing__row mee-pricing__row--profit-pct">
-                        <td class="mee-pricing__table-label" scope="row">Profit %</td>
+                        <td class="mee-pricing__table-label" scope="row">Margin %<!-- TODO(slice-2): was profit_pct → now margin_pct (% of meesho_price) --></td>
                         <td
                           class="mee-pricing__table-value"
                           [class.mee-pricing__value--positive]="marginIsPositive()"
                           [class.mee-pricing__value--negative]="!marginIsPositive()"
                         >
-                          {{ breakdown()!.profit_pct }}%
+                          {{ breakdown()!.margin_pct }}%<!-- TODO(slice-2): was profit_pct → now margin_pct -->
                         </td>
                       </tr>
                     </tbody>
@@ -577,10 +600,16 @@ export class PricingComponent implements OnInit, AfterViewChecked {
   readonly resolveAlertMessage = (messageId: string): string =>
     ALERT_MESSAGES[messageId] ?? messageId;
 
-  // Form: input_cost (COGS) + target_margin_pct (%). MRP slider + mrp input = DEAD (DECISION-1).
+  // TODO(slice-2): REWRITE FORM — §12.M forward estimator:
+  //   REMOVE target_margin_pct (dead in §12.M).
+  //   ADD meesho_price (primary required input, gt 0).
+  //   ADD commission_pct (optional, default 4, seller-entered).
+  //   ADD return_rate_pct (optional, default 0, seller-entered).
+  //   ADD mrp (optional display reference).
+  //   input_cost remains (required, gt 0).
   readonly form = this.fb.group({
     input_cost:        ['300',  [Validators.required, Validators.min(0.01)]],
-    target_margin_pct: ['30',   [Validators.required, Validators.min(0), Validators.max(500)]],
+    target_margin_pct: ['30',   [Validators.required, Validators.min(0), Validators.max(500)]], // TODO(slice-2): DELETE
   });
 
   // P&L breakdown — null until successful server response; stays null on any error (R-W6-1).
@@ -592,7 +621,7 @@ export class PricingComponent implements OnInit, AfterViewChecked {
   // Typed error state per §3.1 degradation matrix. null = no error.
   readonly errorState = signal<PricingErrorState>(null);
 
-  // Detail copy for 422 commission_missing — set from server response.
+  // TODO(slice-2): DELETE commissionMissingDetail signal — 422 path dead in §12.M (4).
   readonly commissionMissingDetail = signal<string>('Pricing is not available for this category yet.');
 
   // Detail copy for 400 validation — set from server response.
@@ -600,6 +629,8 @@ export class PricingComponent implements OnInit, AfterViewChecked {
 
   private productId = '';
 
+  // TODO(slice-2): UPDATE marginIsPositive — use estimated_payout (§12.M primary output)
+  //   instead of profit. profit is still present but estimated_payout drives the NEGATIVE_PAYOUT alert.
   // True when profit > 0 — drives badge + colour. Based on server profit (not retired net_margin).
   readonly marginIsPositive = computed<boolean>(
     () => parseDecimal(this.breakdown()?.profit ?? '0') > 0,
@@ -614,6 +645,7 @@ export class PricingComponent implements OnInit, AfterViewChecked {
     return 'Invalid input cost.';
   });
 
+  // TODO(slice-2): DELETE targetMarginError + ADD meeshoPriceError (meesho_price is the new primary field)
   readonly targetMarginError = computed<string | undefined>(() => {
     const ctrl = this.form.controls.target_margin_pct;
     if (!ctrl.touched || ctrl.valid) return undefined;
@@ -650,10 +682,13 @@ export class PricingComponent implements OnInit, AfterViewChecked {
     this.errorState.set(null);
     this.breakdown.set(null);
 
+    // TODO(slice-2): REWRITE body construction — §12.M forward estimator:
+    //   REPLACE target_margin_pct with meesho_price as the primary field.
+    //   ADD commission_pct, return_rate_pct, mrp from new form controls.
     const raw  = this.form.getRawValue();
     const body = {
       input_cost:        String(raw.input_cost ?? ''),
-      target_margin_pct: String(raw.target_margin_pct ?? ''),
+      target_margin_pct: String(raw.target_margin_pct ?? ''), // TODO(slice-2): DELETE — replace with meesho_price
     };
 
     this.service.calc(this.productId, body).subscribe({
@@ -684,14 +719,17 @@ export class PricingComponent implements OnInit, AfterViewChecked {
     void this.router.navigate(['/catalogs', this.productId, 'export']);
   }
 
+  // TODO(slice-2): REWRITE _handleErrorShape — remove commission_missing case (dead §12.M).
   private _handleErrorShape(shape: PriceCalcErrorShape): void {
     switch (shape.kind) {
       case 'unavailable':
         this.errorState.set('unavailable');
         break;
-      case 'commission_missing':
+      // TODO(slice-2): DELETE commission_missing case — PriceCalcCommissionMissingError type
+      //   is removed from PriceCalcErrorShape in §12.M. TypeScript will flag this as
+      //   an unreachable branch after slice-2 lands.
+      case 'commission_missing' as 'validation': // TEMPORARY CAST — keeps TS happy until slice-2
         this.errorState.set('commission_missing');
-        this.commissionMissingDetail.set(shape.detail);
         break;
       case 'validation':
         this.errorState.set('validation');
@@ -699,8 +737,6 @@ export class PricingComponent implements OnInit, AfterViewChecked {
         break;
       case 'server_error':
         // 5xx or network error — surface retry affordance banner (spec §3.1).
-        // Service emits this shape instead of bare EMPTY so the component can render
-        // the "Couldn't calculate — please try again" banner.
         this.errorState.set('server_error');
         break;
     }
