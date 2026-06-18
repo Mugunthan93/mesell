@@ -30,6 +30,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { signal, computed } from '@angular/core';
+import { Subject } from 'rxjs';
+import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import type {
   MeeDataTableColumn,
   MeeDataTableBulkAction,
@@ -302,8 +304,6 @@ describe('MeeDataTableComponent — scenario 3: search_change emits after deboun
     // This scenario tests the RxJS debounce behaviour.
     // We test the logic inline to avoid TestBed.
     let emitted: string[] = [];
-    const { debounceTime, distinctUntilChanged } = require('rxjs/operators');
-    const { Subject } = require('rxjs');
     const trigger$ = new Subject<string>();
     trigger$.pipe(debounceTime(300), distinctUntilChanged())
       .subscribe((v: string) => emitted.push(v));
@@ -315,8 +315,6 @@ describe('MeeDataTableComponent — scenario 3: search_change emits after deboun
 
   it('emits after 300ms debounce window', () => {
     let emitted: string[] = [];
-    const { debounceTime, distinctUntilChanged } = require('rxjs/operators');
-    const { Subject } = require('rxjs');
     const trigger$ = new Subject<string>();
     trigger$.pipe(debounceTime(300), distinctUntilChanged())
       .subscribe((v: string) => emitted.push(v));
@@ -329,8 +327,6 @@ describe('MeeDataTableComponent — scenario 3: search_change emits after deboun
 
   it('only emits the last value when typing rapidly', () => {
     let emitted: string[] = [];
-    const { debounceTime, distinctUntilChanged } = require('rxjs/operators');
-    const { Subject } = require('rxjs');
     const trigger$ = new Subject<string>();
     trigger$.pipe(debounceTime(300), distinctUntilChanged())
       .subscribe((v: string) => emitted.push(v));
