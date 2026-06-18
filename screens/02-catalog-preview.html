@@ -1,0 +1,153 @@
+<!-- @dsCard group="App Screens" name="Catalog Preview" subtitle="SKU list · Meesho preview · Actions" -->
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Plus Jakarta Sans',system-ui,sans-serif;background:#f0f5f9;height:100vh;display:flex}
+.sidebar{width:260px;background:#111c2d;display:flex;flex-direction:column;padding:0;flex-shrink:0;height:100vh}
+.sidebar-logo{padding:24px 20px 20px;border-bottom:1px solid rgba(255,255,255,.06)}
+.logo-mark{display:flex;align-items:center;gap:10px}
+.logo-icon{width:32px;height:32px;background:#F26B23;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff}
+.logo-text{font-size:18px;font-weight:700;color:#fff}
+.sidebar-nav{flex:1;padding:16px 12px}
+.nav-group{margin-bottom:24px}
+.nav-group-label{font-size:10px;font-weight:600;color:#5a6a85;letter-spacing:.1em;text-transform:uppercase;padding:0 8px;margin-bottom:8px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;color:#9fafca;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px}
+.nav-item.active{background:rgba(242,107,35,.15);color:#F26B23}
+.nav-icon{width:18px;height:18px;flex-shrink:0}
+.sidebar-footer{padding:16px 12px;border-top:1px solid rgba(255,255,255,.06)}
+.user-row{display:flex;align-items:center;gap:10px}
+.avatar{width:32px;height:32px;background:#F26B23;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff}
+.user-info .name{font-size:13px;font-weight:600;color:#fff}
+.user-info .plan{font-size:11px;color:#5a6a85}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:#fff;border-bottom:1px solid #e5eaef;padding:0 24px;height:60px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.breadcrumb{display:flex;align-items:center;gap:6px;font-size:13px;color:#5a6a85}
+.breadcrumb-sep{color:#e5eaef}
+.breadcrumb-current{color:#2a3547;font-weight:600}
+.topbar-actions{display:flex;align-items:center;gap:8px}
+.btn-primary{background:#F26B23;color:#fff;border:none;padding:8px 16px;border-radius:999px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn-ghost{background:transparent;border:1px solid #e5eaef;color:#5a6a85;padding:8px 12px;border-radius:999px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit}
+.body-split{flex:1;display:flex;overflow:hidden}
+
+/* SKU list */
+.sku-panel{width:300px;border-right:1px solid #e5eaef;background:#fff;display:flex;flex-direction:column;flex-shrink:0}
+.sku-search{padding:14px 16px;border-bottom:1px solid #f0f5f9}
+.search-input{width:100%;border:1.5px solid #e5eaef;border-radius:7px;padding:8px 12px;font-size:13px;font-family:inherit;outline:none;color:#2a3547}
+.sku-list{flex:1;overflow-y:auto}
+.sku-item{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #f8fafc;cursor:pointer;transition:background .1s}
+.sku-item:hover{background:#fafbfc}
+.sku-item.active{background:rgba(242,107,35,.06);border-left:3px solid #F26B23}
+.sku-thumb{width:48px;height:48px;border-radius:8px;background:#f0f5f9;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;border:1px solid #e5eaef}
+.sku-info{flex:1;min-width:0}
+.sku-name{font-size:13px;font-weight:600;color:#2a3547;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sku-meta{font-size:11px;color:#9fafca;margin-top:2px}
+.sku-score{font-size:12px;font-weight:700;flex-shrink:0}
+.score-green{color:#16A34A}
+.score-amber{color:#D97706}
+
+/* Preview panel */
+.preview-panel{flex:1;overflow-y:auto;background:#f0f5f9;padding:24px}
+.preview-label{font-size:11px;font-weight:700;color:#9fafca;letter-spacing:.08em;text-transform:uppercase;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.preview-card{background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.08);max-width:520px;margin:0 auto}
+.preview-images{display:grid;grid-template-columns:1fr 80px;gap:8px;padding:16px 16px 12px;background:#fff}
+.main-img{background:#f8f8f8;border-radius:8px;height:280px;display:flex;align-items:center;justify-content:center;font-size:60px;border:1px solid #e5eaef}
+.thumb-col{display:flex;flex-direction:column;gap:6px}
+.thumb{width:74px;height:74px;background:#f0f5f9;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:22px;border:1px solid #e5eaef;cursor:pointer}
+.thumb.active{border-color:#F26B23}
+.preview-info{padding:16px}
+.meesho-badge{font-size:11px;color:#F26B23;font-weight:700;letter-spacing:.04em;margin-bottom:6px}
+.product-name{font-size:16px;font-weight:700;color:#1a1a1a;line-height:1.4;margin-bottom:8px}
+.rating-row{display:flex;align-items:center;gap:6px;margin-bottom:10px}
+.stars{color:#F9A825;font-size:13px}
+.rating-text{font-size:12px;color:#666}
+.price-row{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}
+.price-main{font-size:24px;font-weight:800;color:#1a1a1a}
+.price-mrp{font-size:14px;color:#999;text-decoration:line-through}
+.price-off{font-size:13px;color:#16A34A;font-weight:700}
+.detail-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.detail-chip{background:#f5f5f5;border-radius:6px;padding:5px 10px;font-size:12px;color:#444}
+.detail-chip.selected{background:#fff3ec;color:#F26B23;border:1px solid #F26B23}
+.desc-text{font-size:13px;color:#555;line-height:1.6;margin-bottom:14px}
+.add-to-cart{width:100%;background:#F26B23;color:#fff;border:none;padding:12px;border-radius:999px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px}
+.buy-now{width:100%;background:#fff;color:#F26B23;border:1.5px solid #F26B23;padding:12px;border-radius:999px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit}
+</style></head><body>
+
+<nav class="sidebar">
+  <div class="sidebar-logo"><div class="logo-mark"><div class="logo-icon">M</div><span class="logo-text">mesell</span></div></div>
+  <div class="sidebar-nav">
+    <div class="nav-group"><div class="nav-group-label">Main</div>
+      <div class="nav-item"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard</div>
+    </div>
+    <div class="nav-group"><div class="nav-group-label">Catalogs</div>
+      <div class="nav-item active"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>My Catalogs</div>
+    </div>
+  </div>
+  <div class="sidebar-footer"><div class="user-row"><div class="avatar">M</div><div class="user-info"><div class="name">Mugunthan S.</div><div class="plan">Pro Plan</div></div></div></div>
+</nav>
+
+<div class="main">
+  <div class="topbar">
+    <div class="breadcrumb"><span>My Catalogs</span><span class="breadcrumb-sep">›</span><span class="breadcrumb-current">Summer Kurti Collection</span></div>
+    <div class="topbar-actions">
+      <button class="btn-ghost">✏️ Edit</button>
+      <button class="btn-ghost">⭐ Quality Check</button>
+      <button class="btn-primary">⬇ Export CSV</button>
+    </div>
+  </div>
+  <div class="body-split">
+    <div class="sku-panel">
+      <div class="sku-search"><input class="search-input" placeholder="Search SKUs…" type="text"></div>
+      <div class="sku-list">
+        <div class="sku-item active"><div class="sku-thumb">👗</div><div class="sku-info"><div class="sku-name">Red Cotton Kurti XS</div><div class="sku-meta">SKU-001 · Red · XS</div></div><div class="sku-score score-green">92</div></div>
+        <div class="sku-item"><div class="sku-thumb">👗</div><div class="sku-info"><div class="sku-name">Red Cotton Kurti S</div><div class="sku-meta">SKU-002 · Red · S</div></div><div class="sku-score score-green">92</div></div>
+        <div class="sku-item"><div class="sku-thumb">👗</div><div class="sku-info"><div class="sku-name">Blue Cotton Kurti M</div><div class="sku-meta">SKU-007 · Blue · M</div></div><div class="sku-score score-amber">74</div></div>
+        <div class="sku-item"><div class="sku-thumb">👗</div><div class="sku-info"><div class="sku-name">Green Cotton Kurti L</div><div class="sku-meta">SKU-013 · Green · L</div></div><div class="sku-score score-green">88</div></div>
+        <div class="sku-item"><div class="sku-thumb">👗</div><div class="sku-info"><div class="sku-name">Yellow Cotton Kurti XL</div><div class="sku-meta">SKU-019 · Yellow · XL</div></div><div class="sku-score score-green">91</div></div>
+        <div class="sku-item"><div class="sku-thumb">👗</div><div class="sku-info"><div class="sku-name">Pink Cotton Kurti 2XL</div><div class="sku-meta">SKU-023 · Pink · 2XL</div></div><div class="sku-score score-green">89</div></div>
+      </div>
+    </div>
+    <div class="preview-panel">
+      <div class="preview-label">📱 How it looks on Meesho</div>
+      <div class="preview-card">
+        <div class="preview-images">
+          <div class="main-img">👗</div>
+          <div class="thumb-col">
+            <div class="thumb active">👗</div>
+            <div class="thumb">🔴</div>
+            <div class="thumb">📐</div>
+          </div>
+        </div>
+        <div class="preview-info">
+          <div class="meesho-badge">MEESHO</div>
+          <div class="product-name">Cotton Straight Kurti for Women — Red, XS</div>
+          <div class="rating-row"><span class="stars">★★★★☆</span><span class="rating-text">4.2 (1,240 ratings)</span></div>
+          <div class="price-row">
+            <span class="price-main">₹ 599</span>
+            <span class="price-mrp">₹ 899</span>
+            <span class="price-off">33% off</span>
+          </div>
+          <div class="detail-chips">
+            <div class="detail-chip selected">Red</div>
+            <div class="detail-chip">Blue</div>
+            <div class="detail-chip">Green</div>
+            <div class="detail-chip">+5 more</div>
+          </div>
+          <div class="detail-chips">
+            <div class="detail-chip selected">XS</div>
+            <div class="detail-chip">S</div>
+            <div class="detail-chip">M</div>
+            <div class="detail-chip">L</div>
+            <div class="detail-chip">XL</div>
+            <div class="detail-chip">2XL</div>
+            <div class="detail-chip">3XL</div>
+          </div>
+          <div class="desc-text">Comfortable cotton straight kurti in vibrant colors. Machine washable. Perfect for everyday wear and festive occasions.</div>
+          <button class="add-to-cart">Add to Cart</button>
+          <button class="buy-now">Buy Now</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body></html>

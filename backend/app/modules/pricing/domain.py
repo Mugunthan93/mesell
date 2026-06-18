@@ -1,27 +1,21 @@
 """``pricing`` internal domain types — frozen dataclasses.
 
-Per BACKEND_ARCHITECTURE.md §12.F (LOCKED 2026-06-05).
-
-This file is the NEW home of :class:`PricingAlert` — the §0.E latent bug
-resolution.  The legacy ``backend/app/schemas/pricing.py`` was deleted in
-the §G3 gap pass; the legacy ``backend/app/services/pricing_engine.py``
-was deleted at §12 construction time (this dispatch) per §12.A.  The new
-:class:`PricingAlert` here replaces both — and is the single canonical
-home of the alert dataclass per §3.C ``modules/<X>/domain.py``.
+Per BACKEND_ARCHITECTURE.md §12.F (LOCKED 2026-06-05) as superseded by the
+**§12.M AMENDMENT 2026-06-18 — Price Calculator forward-estimator rework**.
 
 The objects defined here are NOT Pydantic models — they never cross the
-HTTP boundary.  The router serialises them to Pydantic wire-shape models
-(``PriceCalcResponse`` / ``PriceCalcAlert`` in ``schemas.py``) via
-straight field-mapping.
+HTTP boundary.  The service serialises them to Pydantic wire-shape models
+(:class:`~app.modules.pricing.schemas.PriceCalcResponse` /
+:class:`~app.modules.pricing.schemas.PriceCalcAlert`) via straight
+field-mapping.
 
-Locked alert rules (§12.F + §12.J test #4)
-------------------------------------------
-* ``LOW_MARGIN``         — ``profit_pct < 10``                — severity ``warning``
-* ``HIGH_MRP_MULTIPLIER``— ``mrp / input_cost > 3``           — severity ``warning``
-* ``THIN_PROFIT``        — ``profit < 50`` (INR)              — severity ``info``
+Locked alert rules (§12.M (3))
+------------------------------
+* ``NEGATIVE_PAYOUT``    — ``estimated_payout < 0``                    — severity ``warning``
+* ``LOW_MARGIN``         — ``margin_pct < 10``                        — severity ``warning``
+* ``SHIPPING_DOMINATES`` — ``shipping > 40% of total_deductions``     — severity ``info``
 
-Multiple alerts may fire simultaneously (e.g. low ``input_cost`` + low
-``target_margin_pct`` → both ``THIN_PROFIT`` and ``LOW_MARGIN``).
+Multiple alerts may fire simultaneously.
 """
 
 from __future__ import annotations
@@ -40,42 +34,49 @@ from uuid import UUID
 class PricingCalc:
     """Mirrors a ``pricing_calcs`` row — returned by repository methods.
 
-    DECISION FLAG §12-PRICING-D4 — DDL is the law
-    --------------------------------------------
-    The actual ``pricing_calcs`` DDL (Wave 1 LOCKED) carries structured
-    monetary columns (``mrp / meesho_price / seller_price /
-    commission_pct / gst_pct / margin / margin_pct / created_at``) — NOT
-    the ``{user_id, input_jsonb, output_jsonb, calculated_at}`` shape
-    quoted in §12.B.1 step 8 prose.  We honor the DDL.
-
-    Tenant isolation is enforced through the product → catalog → user FK
-    chain per the ORM model docstring; the service layer always asserts
+    Per §12.M (5) the table gained additive nullable breakdown columns and
+    re-purposed ``commission_pct`` as the seller-entered commission
+    snapshot.  Tenant isolation is enforced through the product → catalog →
+    user FK chain; the service layer always asserts
     ``catalog.assert_product_ownership(product_id, user_id)`` BEFORE any
-    pricing_calcs read or write.
+    ``pricing_calcs`` read or write.
     """
 
     id: UUID
     product_id: UUID
-    mrp: Decimal
+    mrp: Decimal | None
     meesho_price: Decimal
+    # Legacy ``seller_price`` column re-used as the estimated payout snapshot.
     seller_price: Decimal
     commission_pct: Decimal
     gst_pct: Decimal
     margin: Decimal
-    """Absolute profit (seller_price − input_cost) — DDL column name
-    ``margin`` per the §5.E ORM registry."""
+    """Absolute profit (estimated_payout − input_cost) — DDL column ``margin``."""
     margin_pct: Decimal
-    """Profit percentage (margin / input_cost × 100) — DDL column name
-    ``margin_pct`` per the §5.E ORM registry."""
+    """Margin percentage (profit / meesho_price × 100) — DDL column ``margin_pct``."""
+    # §12.M (5) additive nullable breakdown columns.
+    estimated_payout: Decimal | None
+    referral_commission: Decimal | None
+    shipping_charge: Decimal | None
+    logistics_fee: Decimal | None
+    fixed_fee: Decimal | None
+    gst_on_fees: Decimal | None
+    tcs: Decimal | None
+    tds: Decimal | None
+    rto_expected_loss: Decimal | None
+    return_rate_pct: Decimal | None
+    markup_pct: Decimal | None
+    wdrp_price: Decimal | None
     created_at: datetime
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PnLBreakdown — internal output of _compute_pnl.
+# PnLBreakdown — internal output of _estimate_payout.
 # ─────────────────────────────────────────────────────────────────────────────
 @dataclass(frozen=True)
 class PnLBreakdown:
-    """Internal — output of the deterministic :func:`_compute_pnl` function.
+    """Internal — output of the deterministic forward estimator
+    :func:`_estimate_payout`.
 
     Not Pydantic; never crosses HTTP.  Consumed by
     :func:`_generate_alerts` and serialized into ``PriceCalcResponse`` at
@@ -85,37 +86,42 @@ class PnLBreakdown:
     quantization (``ROUND_HALF_EVEN``) — never :class:`float`.
     """
 
-    mrp: Decimal
     meesho_price: Decimal
-    seller_price: Decimal
+    input_cost: Decimal
     commission_pct: Decimal
-    commission_amount: Decimal
+    referral_commission: Decimal
+    shipping_charge: Decimal
+    logistics_fee: Decimal
+    fixed_fee: Decimal
     gst_pct: Decimal
-    gst_amount: Decimal
+    gst_on_fees: Decimal
+    tcs: Decimal
+    tds: Decimal
+    return_rate_pct: Decimal
+    rto_expected_loss: Decimal
+    total_deductions: Decimal
+    estimated_payout: Decimal
     profit: Decimal
-    profit_pct: Decimal
+    margin_pct: Decimal
+    markup_pct: Decimal
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# PricingAlert — REPLACES the deleted legacy schemas/pricing.PricingAlert.
+# PricingAlert
 # ─────────────────────────────────────────────────────────────────────────────
 @dataclass(frozen=True)
 class PricingAlert:
-    """Internal alert dataclass — REPLACES the legacy
-    ``backend/app/schemas/pricing.PricingAlert`` (deleted in session 2 gap
-    pass; §0.E latent bug resolution per §12.A).
+    """Internal alert dataclass.
 
     Lives in ``modules/pricing/domain.py`` per the §3.C per-module
-    canonical 7-file subtree.
-
-    The router maps each ``PricingAlert`` to a wire-shape
-    ``PriceCalcAlert`` in ``schemas.py`` via straight field copy
+    canonical 7-file subtree.  The service maps each ``PricingAlert`` to a
+    wire-shape ``PriceCalcAlert`` in ``schemas.py`` via straight field copy
     (``code`` / ``message_id`` / ``severity``).
     """
 
-    code: Literal["LOW_MARGIN", "HIGH_MRP_MULTIPLIER", "THIN_PROFIT"]
+    code: Literal["NEGATIVE_PAYOUT", "LOW_MARGIN", "SHIPPING_DOMINATES"]
     message_id: str
-    """``validation_message_id`` per §5A.H — e.g. ``pricing.alert.low_margin``."""
+    """``validation_message_id`` per §5A.H — e.g. ``pricing.alert.negative_payout``."""
     severity: Literal["warning", "info"]
 
 

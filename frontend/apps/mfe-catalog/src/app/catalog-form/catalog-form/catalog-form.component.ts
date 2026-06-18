@@ -1,27 +1,23 @@
-// catalog-form.component.ts — Wizard Refactor (multi-step wizard)
-// Route: /catalogs/:id/edit
-// Replaces 3-accordion layout with a step_id-driven multi-step wizard.
+// features/catalog-form/catalog-form/catalog-form.component.ts
+// Wave 5 — F8: Catalog Form
+// Route: /catalogs/:id/edit (shell child, auth-guarded)
+// Renders a dynamic category-specific field form using mee-* UI Kit primitives.
+// Dynamic fields use Record<string,unknown> signal — NOT FormGroup (JSONB schema).
+// AI auto-fill highlights compulsory fields in yellow; autosaves on blur/change.
 //
-// Spec items implemented:
-//   A — groupIntoSteps() groups fields by step_id in STEP_ORDER, required-first within step
-//   B — Basics step: "Required" block + collapsible "More details" for optional fields
-//   C — mee-steps horizontal stepper, sticky bottom nav bar, 44px touch targets
-//   D — Next gating: blocks only when current step has unfilled required fields
-//   E — Dropdowns: lazy per-step enum load on stepEnter(); enumCache preserved
-//   F — Photos step: ImageUploaderComponent (reused), non-blocking front-photo warning
-//   G — Preserved: categoryIdMissing, GAP-1, getDraft, autosave (10s), autofill overlay, OnPush, a11y
+// Conditional Field UX (PR #290):
+//   schemaRules signal — populated from /schema dependency_rules[] (backend PR #290)
+//   fieldOverrides computed — evaluates rules against current field values (pure fn)
+//   activeSoftRules computed — soft rules currently firing (for recommendation banners)
 
 import {
-  AfterViewInit,
   ChangeDetectionStrategy,
   Component,
   computed,
   DestroyRef,
-  ElementRef,
   inject,
   OnInit,
   signal,
-  ViewChild,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -33,34 +29,18 @@ import {
   MeeInputComponent,
   MeeSelectComponent,
   MeeTextareaComponent,
-  MeeStepsComponent,
   MeeToastService,
 } from '@mesell/ui-kit';
-import type { MeeStep } from '@mesell/ui-kit';
 import {
   LoadingSkeletonComponent,
   PageHeaderComponent,
   StatusBadgeComponent,
-  MeeAlertBannerComponent,
-  MeeOfflineBannerComponent,
 } from '@mesell/composites';
 
-import { ImageUploaderComponent } from '../../images/image-uploader/image-uploader.component';
-
-import type {
-  FieldSchema,
-  AutofillResponse,
-  ProductDetailResponse,
-} from '../services/catalog-form-api.service';
+import type { AutofillResponse, FieldGroup, FieldSchema, DependencyRuleDTO } from '../models/field-schema.model';
 import { CatalogFormApiService } from '../services/catalog-form-api.service';
-import type { EnumEntryDTO, FieldGroup } from '../services/catalog-form-api.service';
-import type { WizardStep } from '../models/field-schema.model';
-import { groupIntoSteps } from '../models/field-schema.model';
-import {
-  canAdvanceFromStep,
-  hasPhotosStepFrontMissing,
-  stepRequiredFieldErrors,
-} from '../catalog-form.model';
+import { evaluateRules, getSoftRules } from '../catalog-form.rules';
+import type { DependencyRule, FieldOverride } from '../catalog-form.rules';
 
 @Component({
   selector: 'app-catalog-form',
@@ -72,113 +52,123 @@ import {
     MeeInputComponent,
     MeeSelectComponent,
     MeeTextareaComponent,
-    MeeStepsComponent,
     LoadingSkeletonComponent,
     PageHeaderComponent,
     StatusBadgeComponent,
-    MeeAlertBannerComponent,
-    MeeOfflineBannerComponent,
-    ImageUploaderComponent,
   ],
   styles: [`
-    /* ── Host layout ──────────────────────────────────────────────────── */
+    /* ── Host ─────────────────────────────────────────────────────────── */
     :host { display: block; }
 
-    /* ── Wizard page wrapper: mobile-first 360px → desktop ────────────── */
-    .mee-wizard-page {
+    /* ── Page wrapper: mobile-first 360px baseline ─────────────────────── */
+    .mee-form-page {
       max-width: 100%;
       margin: 0 auto;
       padding: var(--mee-space-4);
-      padding-bottom: 80px; /* reserve space for sticky bottom bar */
+      /* Default mobile: form-nav (64px) sits above shell bottom-tab (60px),
+         so page only needs to clear the form-nav itself.
+         The @media ≤639px override below sets the correct combined value.
+         On tablet+ (≥640px) the shell bottom-tab is gone. */
+      padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
     }
 
     /* ── Sticky bottom navigation bar ─────────────────────────────────── */
-    .mee-wizard-nav {
+    .mee-form-nav {
       position: fixed;
+      /* Default (tablet+): sit at bottom, no shell bottom-tab present */
       bottom: 0;
       left: 0;
       right: 0;
-      z-index: 100;
+      z-index: 110; /* above shell bottom-tab (z-index:100) */
       display: flex;
       align-items: center;
       justify-content: space-between;
       padding: var(--mee-space-3) var(--mee-space-4);
       background: var(--mee-color-surface);
       border-top: 1px solid var(--mee-color-outline);
+      box-shadow: var(--mee-shadow-sm);
       min-height: 64px;
     }
-    .mee-wizard-nav__step-label {
+    .mee-form-nav__status {
       font-size: 0.8125rem;
       color: var(--mee-color-on-surface-muted);
     }
-    .mee-wizard-nav__actions {
+    .mee-form-nav__status--error {
+      color: var(--mee-color-error);
+    }
+    .mee-form-nav__actions {
       display: flex;
       gap: var(--mee-space-2);
       align-items: center;
     }
 
-    /* ── Stepper header region ─────────────────────────────────────────── */
-    .mee-stepper-region {
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
+    /* ── AI fill button: full-width on mobile ──────────────────────────── */
+    .mee-ai-fill-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--mee-space-2);
+      margin-top: var(--mee-space-3);
       margin-bottom: var(--mee-space-5);
-      /* Hide scrollbar but keep scroll functionality */
-      scrollbar-width: none;
     }
-    .mee-stepper-region::-webkit-scrollbar { display: none; }
 
-    /* ── Step content card ─────────────────────────────────────────────── */
-    .mee-step-content {
+    /* ── Section card wrapper ──────────────────────────────────────────── */
+    .mee-section-card {
       background: var(--mee-color-surface);
+      border: 1px solid var(--mee-color-outline);
       border-radius: var(--mee-radius-md);
-      padding: var(--mee-space-5);
-    }
-    .mee-step-title {
-      font-size: 1.0625rem;
-      font-weight: 600;
-      color: var(--mee-color-on-surface);
+      box-shadow: var(--mee-shadow-sm);
+      padding: var(--mee-space-5) var(--mee-space-6);
       margin-bottom: var(--mee-space-4);
     }
 
-    /* ── Fields layout within a step ──────────────────────────────────── */
-    .mee-step-fields {
-      display: flex;
-      flex-direction: column;
-      gap: var(--mee-space-4);
-    }
-
-    /* Full-width spanner: text_long (textarea) fields always occupy both columns */
-    .mee-field--full {
-      grid-column: 1 / -1;
-    }
-
-    /* ── "More details" sub-section (Basics step B) ───────────────────── */
-    .mee-more-details-toggle {
+    /* ── Accordion section toggle ──────────────────────────────────────── */
+    .section-toggle {
       display: flex;
       width: 100%;
       align-items: center;
       justify-content: space-between;
-      padding: 10px 0;
-      margin-top: var(--mee-space-3);
-      font-size: 0.875rem;
-      font-weight: 500;
-      color: var(--mee-color-on-surface-muted);
+      padding: var(--mee-space-1) 0 var(--mee-space-3);
+      font-size: 1rem;
+      font-weight: 600;
+      text-align: left;
       background: none;
       border: none;
-      border-top: 1px solid var(--mee-color-outline);
+      border-bottom: 1px solid var(--mee-color-outline);
       cursor: pointer;
+      /* 44px minimum touch target */
       min-height: 44px;
-      text-align: left;
+      color: var(--mee-color-on-surface);
     }
-    .mee-more-details-toggle:focus-visible {
+    .section-toggle:focus-visible {
       outline: 2px solid var(--mee-color-primary);
       outline-offset: 2px;
+      border-radius: var(--mee-radius-sm);
     }
-    .mee-more-details-fields {
+    .section-toggle__chevron {
+      font-size: 0.75rem;
+      font-weight: 400;
+      color: var(--mee-color-on-surface-muted);
+    }
+
+    /* ── Field list: single column on mobile (flex) ────────────────────── */
+    .mee-field-list {
       display: flex;
       flex-direction: column;
       gap: var(--mee-space-4);
-      padding-top: var(--mee-space-3);
+      padding-top: var(--mee-space-4);
+    }
+
+    /* ── Loading skeleton stack ────────────────────────────────────────── */
+    .form-fields-stack {
+      display: flex;
+      flex-direction: column;
+      gap: var(--mee-space-4);
+    }
+
+    /* Full-width spanner: text_long (textarea) fields span both columns on grid */
+    .mee-field--full {
+      grid-column: 1 / -1;
     }
 
     /* ── AI-suggested field highlight ─────────────────────────────────── */
@@ -191,109 +181,60 @@ import {
       border-radius: var(--mee-radius-sm);
       outline: 1px solid var(--mee-color-warning);
       outline-offset: 2px;
-      background-color: var(--mee-color-warning-light);
+      /* Tint derived from the warning token via low-alpha overlay (no new token needed) */
+      background-color: color-mix(in srgb, var(--mee-color-warning) 12%, transparent);
     }
 
-    /* ── Autofill suggestion overlay ──────────────────────────────────── */
-    .mee-autofill-overlay {
-      background: var(--mee-color-warning-light);
-      border: 1px solid var(--mee-color-warning);
-      border-radius: var(--mee-radius-md);
-      padding: var(--mee-space-3);
-      margin-bottom: var(--mee-space-4);
-    }
-    .mee-autofill-overlay__heading {
-      font-size: 0.875rem;
-      font-weight: 500;
-      color: var(--mee-color-on-surface);
-      margin-bottom: var(--mee-space-2);
-    }
-    .suggestion-row {
+    /* ── Soft dependency-rule recommendation banner ─────────────────────── */
+    /* Shown below a field when a soft rule is currently firing for it.      */
+    .mee-soft-rule-banner {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: var(--mee-space-2);
-      padding: 6px 0;
-      border-bottom: 1px solid var(--mee-color-outline);
-      min-height: 44px;
-    }
-    .suggestion-row:last-child { border-bottom: none; }
-    .suggestion-row__canonical {
-      font-size: 0.8125rem;
-      color: var(--mee-color-on-surface-muted);
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-    .suggestion-row__value {
-      font-size: 0.875rem;
-      font-weight: 500;
-      flex: 1;
-      padding: 0 var(--mee-space-2);
-      color: var(--mee-color-on-surface);
-      word-break: break-word;
-    }
-    .suggestion-row__actions {
-      display: flex;
-      gap: var(--mee-space-1);
-      flex-shrink: 0;
-    }
-
-    /* ── Autosave status indicator ─────────────────────────────────────── */
-    .mee-autosave-status {
-      font-size: 0.8125rem;
-      color: var(--mee-color-on-surface-muted);
-    }
-    .mee-autosave-status--error { color: var(--mee-color-error); }
-
-    /* ── Photos warning banner ─────────────────────────────────────────── */
-    .mee-photos-warning {
-      margin-bottom: var(--mee-space-3);
-    }
-
-    /* ── Error/missing-category banner ────────────────────────────────── */
-    .mee-error-region {
-      margin-top: var(--mee-space-4);
-    }
-    .mee-error-cta {
-      display: flex;
-      justify-content: center;
-      margin-top: var(--mee-space-4);
-    }
-
-    /* ── Loading skeleton region ───────────────────────────────────────── */
-    .mee-skeleton-region {
-      display: flex;
-      flex-direction: column;
-      gap: var(--mee-space-5);
-    }
-    .mee-skeleton-section {
-      display: flex;
-      flex-direction: column;
-      gap: var(--mee-space-3);
-    }
-    .mee-skeleton-heading {
-      height: 44px;
+      margin-top: var(--mee-space-1);
+      padding: var(--mee-space-2) var(--mee-space-3);
       border-radius: var(--mee-radius-sm);
-      background: var(--mee-color-outline);
-      width: 40%;
-      animation: mee-pulse 1.5s ease-in-out infinite;
+      background-color: color-mix(in srgb, var(--mee-color-warning) 10%, transparent);
+      border: 1px solid color-mix(in srgb, var(--mee-color-warning) 40%, transparent);
+      /* Ensure the banner does not create a tap-target taller than the field itself;
+         min-height 44px applies to interactive controls — this is role=note (non-interactive) */
+    }
+    .mee-soft-rule-banner__icon {
+      flex-shrink: 0;
+      font-size: 0.875rem;
+      color: var(--mee-color-warning);
+      line-height: 1.4;
+    }
+    .mee-soft-rule-banner__text {
+      font-size: 0.8125rem;
+      color: var(--mee-color-on-surface-muted);
+      line-height: 1.4;
     }
 
-    @keyframes mee-pulse {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0.45; }
+    /* ── Mobile only (≤639px): form nav sits above the shell bottom-tab ── */
+    @media (max-width: 639px) {
+      /* Shell bottom-tab is 60px tall. Raise the form nav above it. */
+      .mee-form-nav {
+        bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+      }
+      /* Page padding-bottom = form-nav height (64px) + shell bottom-tab (60px) + safe area */
+      .mee-form-page {
+        padding-bottom: calc(64px + 60px + env(safe-area-inset-bottom, 0px));
+      }
     }
 
-    /* ── Tablet+ ───────────────────────────────────────────────────────── */
+    /* ── Tablet+ (≥768px): 2-col field grid ───────────────────────────── */
     @media (min-width: 768px) {
-      .mee-wizard-page {
+      .mee-form-page {
         max-width: 42rem;
         padding: var(--mee-space-6) var(--mee-space-8);
-        padding-bottom: 88px;
+        /* On tablet+ there's no shell bottom-tab (640px+ hides it).
+           Only the sticky form nav (64px) needs clearance. */
+        padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
       }
 
-      /* Two-column field grid — required block and optional ("More details") block */
-      .mee-step-fields,
-      .mee-more-details-fields {
+      /* Two-column field grid on tablet+ */
+      .mee-field-list {
         display: grid;
         grid-template-columns: 1fr 1fr;
         column-gap: var(--mee-space-6);
@@ -301,711 +242,517 @@ import {
       }
     }
 
-    /* ── Desktop ───────────────────────────────────────────────────────── */
+    /* ── Desktop (≥1280px) ─────────────────────────────────────────────── */
     @media (min-width: 1280px) {
-      .mee-wizard-page {
+      .mee-form-page {
         max-width: 64rem;
         padding: var(--mee-space-8) var(--mee-space-10);
-        padding-bottom: 88px;
-      }
-      .mee-wizard-layout {
-        display: grid;
-        grid-template-columns: 1fr 20rem;
-        gap: var(--mee-space-8);
-        align-items: start;
-      }
-      .mee-wizard-sidebar {
-        position: sticky;
-        top: var(--mee-space-4);
+        padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
       }
     }
   `],
   template: `
-    <!-- a11y: categoryIdMissing error banner ref for programmatic focus -->
-    <div #errorRegionRef>
+    <div class="mee-form-page">
 
-    <div class="mee-wizard-page">
-      <mee-offline-banner />
+      <!-- Page Header -->
+      <mee-page-header
+        [title]="productName()"
+        [subtitle]="categoryPath()"
+      />
 
-      <!-- categoryIdMissing: critical error state — GAP-1 hard-reload path -->
-      @if (categoryIdMissing()) {
-        <div class="mee-error-region"
-             role="alert"
-             aria-live="assertive"
-             aria-atomic="true"
-             tabindex="-1">
-          <mee-alert-banner
-            variant="error"
-            message="Cannot load form: product category not found. Return to the dashboard and try again." />
-          <div class="mee-error-cta">
-            <mee-button label="Return to dashboard" variant="secondary" (clicked)="onBack()" />
-          </div>
+      <!-- Status badge + AI fill button -->
+      <div class="mee-ai-fill-row">
+        <mee-status-badge [status]="'draft'" />
+        <mee-button
+          label="AI fill"
+          variant="secondary"
+          icon="sparkles"
+          [loading]="autofilling()"
+          [disabled]="loading()"
+          (clicked)="onAutofill()"
+          aria-label="Fill fields with AI suggestions"
+        />
+      </div>
+
+      <!-- Loading skeleton -->
+      @if (loading()) {
+        <div class="form-fields-stack"
+             role="status"
+             aria-live="polite"
+             aria-label="Loading product form fields, please wait">
+          <mee-loading-skeleton variant="text" [lines]="3" />
+          <mee-loading-skeleton variant="text" [lines]="3" />
+          <mee-loading-skeleton variant="text" [lines]="2" />
         </div>
       }
 
-      @if (!categoryIdMissing()) {
-        <!-- Page header -->
-        <mee-page-header [title]="productName()" [subtitle]="categoryPath()" />
+      <!-- Schema field groups -->
+      @if (!loading()) {
 
-        <!-- Inline error banner -->
-        @if (errorMessage()) {
-          <div class="mb-4"
-               role="alert"
-               aria-live="assertive"
-               aria-atomic="true"
-               tabindex="-1"
-               #inlineErrorRef>
-            <mee-alert-banner variant="error" [message]="errorMessage()!" />
-            <div class="flex justify-end mt-2">
-              <mee-button label="Retry" variant="ghost" (clicked)="onRetry()" />
-            </div>
-          </div>
-        }
+        <!-- Compulsory section -->
+        <section aria-labelledby="compulsory-heading" class="mee-section-card">
+          <button
+            type="button"
+            id="compulsory-heading"
+            class="section-toggle"
+            (click)="compulsoryOpen.set(!compulsoryOpen())"
+            [attr.aria-expanded]="compulsoryOpen()"
+          >
+            <span>Compulsory ({{ compulsoryFields().length }})</span>
+            <span class="section-toggle__chevron" aria-hidden="true">
+              {{ compulsoryOpen() ? '▲' : '▼' }}
+            </span>
+          </button>
 
-        <!-- Status bar + AI fill button -->
-        <div class="flex items-center justify-between mt-3 mb-4">
-          <mee-status-badge [status]="'draft'" />
-          <mee-button
-            label="AI fill"
-            variant="secondary"
-            icon="sparkles"
-            [loading]="autofilling()"
-            [disabled]="loading() || autofillUnavailable()"
-            (clicked)="onAutofill()"
-            aria-label="Fill fields with AI suggestions" />
-        </div>
-
-        <!-- Loading skeleton -->
-        @if (loading()) {
-          <div class="mee-skeleton-region"
-               role="status"
-               aria-live="polite"
-               aria-label="Loading product form fields, please wait">
-            <div class="mee-skeleton-section">
-              <div class="mee-skeleton-heading" aria-hidden="true"></div>
-              <mee-loading-skeleton variant="text" [lines]="4" />
-            </div>
-            <div class="mee-skeleton-section">
-              <div class="mee-skeleton-heading" aria-hidden="true"></div>
-              <mee-loading-skeleton variant="text" [lines]="3" />
-            </div>
-          </div>
-        }
-
-        @if (!loading()) {
-          <!-- ── Stepper header (horizontally scrollable on mobile) ──── -->
-          <div class="mee-stepper-region" aria-label="Form progress">
-            <mee-steps
-              [steps]="meeStepItems()"
-              [active_index]="activeStepIndex()"
-              (active_index_change)="onStepChange($event)"
-            />
-          </div>
-
-          <!-- ── Desktop 2-col layout wrapper ──────────────────────────── -->
-          <div class="mee-wizard-layout">
-
-            <!-- Left: active step content -->
-            <div>
-              <!-- Photos step — special: render ImageUploaderComponent -->
-              @if (isPhotosStep()) {
-                <div class="mee-step-content">
-                  <h2 class="mee-step-title">Photos</h2>
-                  <!-- Non-blocking front-photo warning (spec §F) -->
-                  @if (showPhotosWarning()) {
-                    <div class="mee-photos-warning"
-                         role="alert"
-                         aria-live="polite">
-                      <mee-alert-banner
-                        variant="warning"
-                        message="Add your main photo before exporting — the front image (slot 1) is required for export." />
-                    </div>
-                  }
-                  <!-- Reuse the existing ImageUploaderComponent from /images page -->
-                  <app-image-uploader />
-                </div>
-              }
-
-              <!-- Generic field-renderer step -->
-              @if (!isPhotosStep()) {
-                <div class="mee-step-content"
-                     [attr.aria-label]="activeStep()?.label + ' fields'"
-                     role="region">
-                  <h2 class="mee-step-title">{{ activeStep()?.label }}</h2>
-
-                  <!-- enum loading state for this step -->
-                  @if (stepEnumsLoading()) {
-                    <div role="status" aria-live="polite" aria-label="Loading dropdown options" class="mb-4">
-                      <mee-loading-skeleton variant="text" [lines]="2" />
-                    </div>
-                  }
-
-                  <!-- Required fields block -->
-                  @let requiredFields = activeStepRequiredFields();
-                  @if (requiredFields.length > 0) {
-                    <div class="mee-step-fields" aria-label="Required fields">
-                      @for (field of requiredFields; track field.canonical_name) {
-                        <div class="field-wrapper"
-                             [class.mee-ai-suggested]="isAiSuggested(field.canonical_name)"
-                             [class.mee-field--full]="field.primitive === 'text_long'">
-                          @switch (field.primitive) {
-                            @case ('text_long') {
-                              <mee-textarea
-                                [label]="field.display_name"
-                                [required]="field.required"
-                                [error]="getFieldError(field.canonical_name)"
-                                [hint]="field.help_text"
-                                [rows]="4"
-                                (blur)="onFieldBlur(field.canonical_name, $any($event))" />
-                            }
-                            @case ('select') {
-                              <mee-select
-                                [label]="field.display_name"
-                                [options]="getFieldOptions(field)"
-                                [error]="getFieldError(field.canonical_name)"
-                                (value_change)="onFieldChange(field.canonical_name, $event)" />
-                            }
-                            @default {
-                              <mee-input
-                                [label]="field.display_name"
-                                [required]="field.required"
-                                [error]="getFieldError(field.canonical_name)"
-                                [hint]="field.help_text"
-                                [type]="field.primitive === 'number' ? 'number' : 'text'"
-                                (blur)="onFieldBlur(field.canonical_name, $any($event))" />
-                            }
-                          }
-                        </div>
+          @if (compulsoryOpen()) {
+            <div class="mee-field-list" aria-label="Compulsory fields">
+              @for (field of compulsoryFields(); track field.canonical_name) {
+                @if (isFieldVisible(field.canonical_name)) {
+                  <div
+                    class="field-wrapper"
+                    [class.mee-ai-suggested]="isAiSuggested(field.canonical_name)"
+                    [class.mee-field--full]="field.primitive === 'text_long'"
+                  >
+                    @switch (field.primitive) {
+                      @case ('text_long') {
+                        <mee-textarea
+                          [label]="field.display_name"
+                          [required]="isFieldRequired(field)"
+                          [error]="getFieldError(field.canonical_name)"
+                          [hint]="field.help_text"
+                          [rows]="4"
+                          (blur)="onFieldBlur(field.canonical_name, $any($event))"
+                        />
                       }
-                    </div>
-                  }
-
-                  <!-- "More details" collapsible section (spec §B): optional fields -->
-                  @let optionalFields = activeStepOptionalFields();
-                  @if (optionalFields.length > 0) {
-                    <button
-                      type="button"
-                      class="mee-more-details-toggle"
-                      (click)="toggleMoreDetails()"
-                      [attr.aria-expanded]="moreDetailsOpen()"
-                      aria-controls="more-details-panel">
-                      <span>{{ moreDetailsOpen() ? 'Hide' : 'More details' }} ({{ optionalFields.length }})</span>
-                      <span aria-hidden="true">{{ moreDetailsOpen() ? '▲' : '▼' }}</span>
-                    </button>
-                    @if (moreDetailsOpen()) {
-                      <div id="more-details-panel" class="mee-more-details-fields">
-                        @for (field of optionalFields; track field.canonical_name) {
-                          <div class="field-wrapper"
-                               [class.mee-ai-suggested]="isAiSuggested(field.canonical_name)"
-                               [class.mee-field--full]="field.primitive === 'text_long'">
-                            @switch (field.primitive) {
-                              @case ('text_long') {
-                                <mee-textarea
-                                  [label]="field.display_name"
-                                  [required]="field.required"
-                                  [error]="getFieldError(field.canonical_name)"
-                                  [hint]="field.help_text"
-                                  [rows]="4"
-                                  (blur)="onFieldBlur(field.canonical_name, $any($event))" />
-                              }
-                              @case ('select') {
-                                <mee-select
-                                  [label]="field.display_name"
-                                  [options]="getFieldOptions(field)"
-                                  [error]="getFieldError(field.canonical_name)"
-                                  (value_change)="onFieldChange(field.canonical_name, $event)" />
-                              }
-                              @default {
-                                <mee-input
-                                  [label]="field.display_name"
-                                  [required]="field.required"
-                                  [error]="getFieldError(field.canonical_name)"
-                                  [hint]="field.help_text"
-                                  [type]="field.primitive === 'number' ? 'number' : 'text'"
-                                  (blur)="onFieldBlur(field.canonical_name, $any($event))" />
-                              }
-                            }
-                          </div>
-                        }
+                      @case ('enum') {
+                        <mee-select
+                          [label]="field.display_name"
+                          [options]="field.enum_options ?? []"
+                          [error]="getFieldError(field.canonical_name)"
+                          (value_change)="onFieldChange(field.canonical_name, $event)"
+                        />
+                      }
+                      @default {
+                        <mee-input
+                          [label]="field.display_name"
+                          [required]="isFieldRequired(field)"
+                          [error]="getFieldError(field.canonical_name)"
+                          [hint]="field.help_text"
+                          [type]="field.primitive === 'number' ? 'number' : 'text'"
+                          (blur)="onFieldBlur(field.canonical_name, $any($event))"
+                        />
+                      }
+                    }
+                    @let softRule = getActiveSoftRule(field.canonical_name);
+                    @if (softRule) {
+                      <div class="mee-soft-rule-banner"
+                           role="note"
+                           [attr.aria-label]="'Recommendation for ' + field.display_name">
+                        <span class="mee-soft-rule-banner__icon" aria-hidden="true">&#9432;</span>
+                        <span class="mee-soft-rule-banner__text">Recommended for this listing type</span>
                       </div>
                     }
-                  }
-                </div>
-              }
-            </div>
-
-            <!-- Right: autofill overlay + sidebar (desktop) -->
-            <div class="mee-wizard-sidebar">
-              <!-- Autofill suggestion overlay -->
-              @if (!loading() && hasSuggestions()) {
-                <div class="mee-autofill-overlay"
-                     role="region"
-                     aria-label="AI suggestions — review and apply or dismiss each field">
-                  <p class="mee-autofill-overlay__heading">AI suggestions — review and apply</p>
-                  @for (entry of suggestionEntries(); track entry.canonical) {
-                    <div class="suggestion-row">
-                      <span class="suggestion-row__canonical">{{ entry.canonical }}</span>
-                      <span class="suggestion-row__value">{{ entry.value }}</span>
-                      <div class="suggestion-row__actions">
-                        <mee-button
-                          label="Apply"
-                          variant="secondary"
-                          [attr.aria-label]="'Apply AI suggestion for ' + entry.canonical"
-                          (clicked)="applySuggestion(entry.canonical)" />
-                        <mee-button
-                          label="Dismiss"
-                          variant="ghost"
-                          [attr.aria-label]="'Dismiss AI suggestion for ' + entry.canonical"
-                          (clicked)="dismissSuggestion(entry.canonical)" />
-                      </div>
-                    </div>
-                  }
-                  <div class="flex justify-end mt-2">
-                    <mee-button
-                      label="Dismiss all"
-                      variant="ghost"
-                      aria-label="Dismiss all AI suggestions"
-                      (clicked)="dismissAllSuggestions()" />
                   </div>
-                </div>
-              }
-
-              <!-- AI autofill fallback -->
-              @if (fallbackOffered()) {
-                <div class="mb-3">
-                  <mee-alert-banner
-                    variant="warning"
-                    message="AI couldn't fill — try adding more product details before using AI fill." />
-                </div>
+                }
               }
             </div>
+          }
+        </section>
 
-          </div><!-- /mee-wizard-layout -->
-        }
+        <!-- Recommended section -->
+        <section aria-labelledby="recommended-heading" class="mee-section-card">
+          <button
+            type="button"
+            id="recommended-heading"
+            class="section-toggle"
+            (click)="recommendedOpen.set(!recommendedOpen())"
+            [attr.aria-expanded]="recommendedOpen()"
+          >
+            <span>Recommended ({{ recommendedFields().length }})</span>
+            <span class="section-toggle__chevron" aria-hidden="true">
+              {{ recommendedOpen() ? '▲' : '▼' }}
+            </span>
+          </button>
+
+          @if (recommendedOpen()) {
+            <div class="mee-field-list" aria-label="Recommended fields">
+              @for (field of recommendedFields(); track field.canonical_name) {
+                @if (isFieldVisible(field.canonical_name)) {
+                  <div
+                    class="field-wrapper"
+                    [class.mee-ai-suggested]="isAiSuggested(field.canonical_name)"
+                    [class.mee-field--full]="field.primitive === 'text_long'"
+                  >
+                    @switch (field.primitive) {
+                      @case ('text_long') {
+                        <mee-textarea
+                          [label]="field.display_name"
+                          [required]="isFieldRequired(field)"
+                          [error]="getFieldError(field.canonical_name)"
+                          [hint]="field.help_text"
+                          [rows]="4"
+                          (blur)="onFieldBlur(field.canonical_name, $any($event))"
+                        />
+                      }
+                      @case ('enum') {
+                        <mee-select
+                          [label]="field.display_name"
+                          [options]="field.enum_options ?? []"
+                          [error]="getFieldError(field.canonical_name)"
+                          (value_change)="onFieldChange(field.canonical_name, $event)"
+                        />
+                      }
+                      @default {
+                        <mee-input
+                          [label]="field.display_name"
+                          [required]="isFieldRequired(field)"
+                          [error]="getFieldError(field.canonical_name)"
+                          [hint]="field.help_text"
+                          [type]="field.primitive === 'number' ? 'number' : 'text'"
+                          (blur)="onFieldBlur(field.canonical_name, $any($event))"
+                        />
+                      }
+                    }
+                    @let softRule = getActiveSoftRule(field.canonical_name);
+                    @if (softRule) {
+                      <div class="mee-soft-rule-banner"
+                           role="note"
+                           [attr.aria-label]="'Recommendation for ' + field.display_name">
+                        <span class="mee-soft-rule-banner__icon" aria-hidden="true">&#9432;</span>
+                        <span class="mee-soft-rule-banner__text">Recommended for this listing type</span>
+                      </div>
+                    }
+                  </div>
+                }
+              }
+            </div>
+          }
+        </section>
+
+        <!-- Optional section -->
+        <section aria-labelledby="optional-heading" class="mee-section-card">
+          <button
+            type="button"
+            id="optional-heading"
+            class="section-toggle"
+            (click)="optionalOpen.set(!optionalOpen())"
+            [attr.aria-expanded]="optionalOpen()"
+          >
+            <span>Optional ({{ optionalFields().length }})</span>
+            <span class="section-toggle__chevron" aria-hidden="true">
+              {{ optionalOpen() ? '▲' : '▼' }}
+            </span>
+          </button>
+
+          @if (optionalOpen()) {
+            <div class="mee-field-list" aria-label="Optional fields">
+              @for (field of optionalFields(); track field.canonical_name) {
+                @if (isFieldVisible(field.canonical_name)) {
+                  <div
+                    class="field-wrapper"
+                    [class.mee-ai-suggested]="isAiSuggested(field.canonical_name)"
+                    [class.mee-field--full]="field.primitive === 'text_long'"
+                  >
+                    @switch (field.primitive) {
+                      @case ('text_long') {
+                        <mee-textarea
+                          [label]="field.display_name"
+                          [required]="isFieldRequired(field)"
+                          [rows]="4"
+                          (blur)="onFieldBlur(field.canonical_name, $any($event))"
+                        />
+                      }
+                      @case ('enum') {
+                        <mee-select
+                          [label]="field.display_name"
+                          [options]="field.enum_options ?? []"
+                          (value_change)="onFieldChange(field.canonical_name, $event)"
+                        />
+                      }
+                      @default {
+                        <mee-input
+                          [label]="field.display_name"
+                          [required]="isFieldRequired(field)"
+                          [type]="field.primitive === 'number' ? 'number' : 'text'"
+                          (blur)="onFieldBlur(field.canonical_name, $any($event))"
+                        />
+                      }
+                    }
+                    @let softRule = getActiveSoftRule(field.canonical_name);
+                    @if (softRule) {
+                      <div class="mee-soft-rule-banner"
+                           role="note"
+                           [attr.aria-label]="'Recommendation for ' + field.display_name">
+                        <span class="mee-soft-rule-banner__icon" aria-hidden="true">&#9432;</span>
+                        <span class="mee-soft-rule-banner__text">Recommended for this listing type</span>
+                      </div>
+                    }
+                  </div>
+                }
+              }
+            </div>
+          }
+        </section>
+
       }
-    </div><!-- /mee-wizard-page -->
-    </div><!-- /#errorRegionRef -->
+    </div>
 
-    <!-- ── Sticky bottom nav bar (spec §C) ───────────────────────────────── -->
-    @if (!categoryIdMissing() && !loading()) {
-      <nav class="mee-wizard-nav" aria-label="Step navigation">
-        <!-- Step indicator + autosave status -->
-        <div>
-          <div class="mee-wizard-nav__step-label">
-            Step {{ activeStepIndex() + 1 }} of {{ wizardSteps().length }}
-          </div>
-          <span
-            role="status"
-            aria-live="polite"
-            aria-atomic="true"
-            [class]="autosaveStatusClass()">
-            {{ autosaveStatusLabel() }}
-          </span>
-        </div>
-        <!-- Back / Next / Save & Finish actions -->
-        <div class="mee-wizard-nav__actions">
-          @if (activeStepIndex() > 0) {
-            <mee-button
-              label="Back"
-              variant="ghost"
-              (clicked)="onBack()"
-              aria-label="Go to previous step" />
-          } @else {
-            <mee-button
-              label="Dashboard"
-              variant="ghost"
-              (clicked)="onDashboard()"
-              aria-label="Return to dashboard" />
+    <!-- Sticky bottom navigation bar — outside page wrapper so it overlays correctly -->
+    @if (!loading()) {
+      <nav class="mee-form-nav" aria-label="Form navigation">
+        <!-- Autosave status indicator -->
+        <span
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          [class]="saveStatus() === 'error' ? 'mee-form-nav__status mee-form-nav__status--error' : 'mee-form-nav__status'">
+          @switch (saveStatus()) {
+            @case ('saving') { Saving... }
+            @case ('saved')  { Saved }
+            @case ('error')  { Save failed }
+            @default { &nbsp; }
           }
-          @if (isLastStep()) {
-            <mee-button
-              label="Save & finish"
-              variant="primary"
-              (clicked)="onNext()"
-              aria-label="Save and finish — navigate to images" />
-          } @else {
-            <mee-button
-              label="Next"
-              variant="primary"
-              [disabled]="!canAdvance()"
-              (clicked)="onNextStep()"
-              [attr.aria-label]="canAdvance() ? 'Next step' : 'Fill required fields to continue'" />
-          }
+        </span>
+
+        <!-- Back / Next actions -->
+        <div class="mee-form-nav__actions">
+          <mee-button
+            label="Back"
+            variant="ghost"
+            (clicked)="onBack()"
+            aria-label="Return to dashboard"
+          />
+          <mee-button
+            label="Images"
+            icon="forward"
+            (clicked)="onNext()"
+            aria-label="Continue to images"
+          />
         </div>
       </nav>
     }
   `,
 })
-export class CatalogFormComponent implements OnInit, AfterViewInit {
+export class CatalogFormComponent implements OnInit {
   private readonly route      = inject(ActivatedRoute);
   private readonly router     = inject(Router);
   private readonly apiSvc     = inject(CatalogFormApiService);
   private readonly toast      = inject(MeeToastService);
   private readonly destroyRef = inject(DestroyRef);
 
-  /** Template ref for the error region — focused on mount when categoryIdMissing. */
-  @ViewChild('errorRegionRef') private readonly errorRegionRef?: ElementRef<HTMLElement>;
+  // ── Signals ───────────────────────────────────────────────────────────────
+  readonly loading         = signal(true);
+  readonly schema          = signal<FieldGroup[]>([]);
+  readonly fieldValues     = signal<Record<string, unknown>>({});
+  readonly aiSuggestions   = signal<Record<string, unknown>>({});
+  readonly saveStatus      = signal<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  readonly autofilling     = signal(false);
+  readonly compulsoryOpen  = signal(true);
+  readonly recommendedOpen = signal(false);
+  readonly optionalOpen    = signal(false);
+  readonly productId       = signal<string>('');
 
-  // ── State signals ──────────────────────────────────────────────────────────────
-  readonly loading             = signal(true);
-  readonly schema              = signal<FieldGroup[]>([]);
-  readonly fieldValues         = signal<Record<string, unknown>>({});
-  readonly aiSuggestions       = signal<AutofillResponse['suggestions']>({});
-  readonly saveStatus          = signal<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  readonly autofilling         = signal(false);
-  readonly autofillUnavailable = signal(false);
-  readonly fallbackOffered     = signal(false);
-  readonly productId           = signal<string>('');
-  readonly categoryId          = signal<string | null>(null);
-  readonly categoryIdMissing   = signal(false);
-  readonly errorMessage        = signal<string | null>(null);
-  readonly enumCache           = signal<Record<string, Array<{ label: string; value: string }>>>({});
-  readonly stepEnumsLoading    = signal(false);
-  /** Active wizard step index (0-based). */
-  readonly activeStepIndex     = signal(0);
-  /** Whether the "More details" collapsible section is open in the current step. */
-  readonly moreDetailsOpen     = signal(false);
-  /** Whether the front image (slot 1) has been uploaded — for photos warning. */
-  readonly hasFrontImage       = signal(false);
+  /**
+   * schemaRules — cross-field dependency rules from the /schema endpoint (PR #290).
+   * Populated when the schema loads; stays [] when the backend is pre-PR#290.
+   *
+   * Typed as DependencyRule[] (from catalog-form.rules.ts) because evaluateRules()
+   * and getSoftRules() accept DependencyRule[]. DependencyRuleDTO (field-schema.model.ts)
+   * has an identical shape — DependencyRuleDTO.message_id is string (required) while
+   * DependencyRule.message_id is string|undefined. The cast to DependencyRule[] in
+   * ngOnInit is safe (DependencyRuleDTO satisfies DependencyRule structurally).
+   */
+  readonly schemaRules = signal<DependencyRule[]>([]);
 
-  private readonly autosaveTrigger$ = new Subject<void>();
+  // ── Computed ──────────────────────────────────────────────────────────────
 
-  // ── Computed ───────────────────────────────────────────────────────────────────
+  /**
+   * fieldOverrides — map of { [target_field]: { required, visible } } derived from
+   * evaluating schemaRules[] against the current fieldValues.
+   *
+   * Pure computed — re-evaluates automatically when either schemaRules or fieldValues
+   * change. No manual effect() or event wiring needed.
+   */
+  readonly fieldOverrides = computed<Record<string, FieldOverride>>(() =>
+    evaluateRules(this.schemaRules(), this.fieldValues()),
+  );
+
+  /**
+   * activeSoftRules — soft-severity rules that are currently firing.
+   * Used to render yellow recommendation banners below fields.
+   */
+  readonly activeSoftRules = computed<DependencyRule[]>(() =>
+    getSoftRules(this.schemaRules(), this.fieldValues()),
+  );
 
   readonly productName = computed<string>(() => {
-    const v = this.fieldValues()['product_name'];
+    const v = this.fieldValues()['product_name'] ?? this.fieldValues()['product_title'];
     return (typeof v === 'string' && v) ? v : 'New Product';
   });
 
+  // categoryPath is Wave 6 — simulated for Wave 5
   readonly categoryPath = computed<string>(() => 'Fashion > Women > Ethnic > Kurti');
 
-  /**
-   * wizardSteps — all fields from the schema grouped by step_id into WizardStep[].
-   * The 'photos' step is synthesised by ImageUploaderComponent (fields array is empty).
-   * Only non-empty steps (or the photos step when it should appear) are included.
-   */
-  readonly wizardSteps = computed<WizardStep[]>(() => {
-    const allFields: FieldSchema[] = this.schema().flatMap(g => g.fields);
-    return groupIntoSteps(allFields);
-  });
-
-  /** Steps as MeeStep[] for the mee-steps component. */
-  readonly meeStepItems = computed<MeeStep[]>(() =>
-    this.wizardSteps().map(s => ({ label: s.label })),
+  readonly compulsoryFields = computed<FieldSchema[]>(() =>
+    this.schema().find(g => g.group === 'compulsory')?.fields ?? []
   );
 
-  /** The active WizardStep object. */
-  readonly activeStep = computed<WizardStep | undefined>(() =>
-    this.wizardSteps()[this.activeStepIndex()],
+  readonly recommendedFields = computed<FieldSchema[]>(() =>
+    this.schema().find(g => g.group === 'recommended')?.fields ?? []
   );
 
-  /** True when the current step is the 'photos' step (renders ImageUploaderComponent). */
-  readonly isPhotosStep = computed<boolean>(() =>
-    this.activeStep()?.id === 'photos',
+  readonly optionalFields = computed<FieldSchema[]>(() =>
+    this.schema().find(g => g.group === 'optional')?.fields ?? []
   );
 
-  /** True when the active step is the last step in the wizard. */
-  readonly isLastStep = computed<boolean>(() =>
-    this.activeStepIndex() === this.wizardSteps().length - 1,
+  readonly isFormComplete = computed<boolean>(() =>
+    this.compulsoryFields().every(f => !!this.fieldValues()[f.canonical_name])
   );
 
-  /** Required fields for the active step. */
-  readonly activeStepRequiredFields = computed<FieldSchema[]>(() =>
-    (this.activeStep()?.fields ?? []).filter((f: FieldSchema) => f.required),
-  );
+  // ── Autosave Subject ──────────────────────────────────────────────────────
+  private readonly autosaveTrigger$ = new Subject<void>();
 
-  /** Optional fields for the active step. */
-  readonly activeStepOptionalFields = computed<FieldSchema[]>(() =>
-    (this.activeStep()?.fields ?? []).filter((f: FieldSchema) => !f.required),
-  );
-
-  /**
-   * canAdvance — whether the Next button is enabled.
-   * Blocks only when current step has unfilled required fields.
-   * Photos step never blocks (warn-only). Steps with requiredCount===0 are freely skippable.
-   */
-  readonly canAdvance = computed<boolean>(() =>
-    canAdvanceFromStep(this.activeStep(), this.fieldValues()),
-  );
-
-  /**
-   * showPhotosWarning — non-blocking warning when on photos step without front image.
-   */
-  readonly showPhotosWarning = computed<boolean>(() =>
-    hasPhotosStepFrontMissing(this.activeStep()?.id ?? '', this.hasFrontImage()),
-  );
-
-  readonly suggestionEntries = computed<Array<{ canonical: string; value: unknown }>>(() =>
-    Object.entries(this.aiSuggestions()).map(([canonical, s]) => ({ canonical, value: s.value })),
-  );
-
-  readonly hasSuggestions = computed<boolean>(() => this.suggestionEntries().length > 0);
-
-  readonly autosaveStatusLabel = computed<string>(() => {
-    switch (this.saveStatus()) {
-      case 'saving': return 'Saving...';
-      case 'saved':  return 'Saved';
-      case 'error':  return 'Save failed';
-      default:       return '';
-    }
-  });
-
-  readonly autosaveStatusClass = computed<string>(() =>
-    this.saveStatus() === 'error'
-      ? 'mee-autosave-status mee-autosave-status--error'
-      : 'mee-autosave-status',
-  );
-
-  // ── Lifecycle ──────────────────────────────────────────────────────────────────
-
-  ngAfterViewInit(): void {
-    // Focus management handled in ngOnInit callback (async — see Wave 2B notes).
-  }
-
-  /**
-   * resolveInitOutcome — pure helper for ngOnInit() product-fetch resolution.
-   * GAP-1: reads category_id from GET /products/{id} (not router nav state).
-   */
-  resolveInitOutcome(product: ProductDetailResponse | null): { categoryId: string | null; missing: boolean } {
-    if (!product) return { categoryId: null, missing: true };
-    const catId = product.category_id;
-    if (!catId) return { categoryId: null, missing: true };
-    return { categoryId: catId, missing: false };
-  }
-
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
   ngOnInit(): void {
     const id = (this.route.snapshot.params['id'] as string | undefined) ?? 'new';
     this.productId.set(id);
 
-    this.apiSvc.getProduct(id).subscribe({
-      next: (product) => {
-        const outcome = this.resolveInitOutcome(product);
-        if (outcome.missing) {
-          this.categoryIdMissing.set(true);
-          this.loading.set(false);
-          Promise.resolve().then(() => {
-            this.errorRegionRef?.nativeElement?.focus();
-          });
-          return;
-        }
+    // Wire autosave pipeline in ngOnInit (DestroyRef injected explicitly — not constructor)
+    this.autosaveTrigger$
+      .pipe(debounceTime(10_000), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.performAutosave());
 
-        const catId = outcome.categoryId!;
-        this.categoryId.set(catId);
-
-        this.autosaveTrigger$
-          .pipe(debounceTime(10_000), takeUntilDestroyed(this.destroyRef))
-          .subscribe(() => this.performAutosave());
-
-        this.apiSvc.getDraft(id).subscribe({
-          next: (draft) => {
-            if (draft?.fields && Object.keys(draft.fields).length > 0) {
-              this.fieldValues.set(draft.fields);
-            }
-            this.loadSchema(catId);
-          },
-          error: () => this.loadSchema(catId),
-        });
-      },
-      error: (err: { status?: number }) => {
-        this.errorMessage.set(
-          err.status === 401
-            ? 'Session expired. Please log in again.'
-            : 'Failed to load product. Please retry.',
-        );
+    // Load schema + dependency rules (PR #290: getSchemaWithRules returns both)
+    this.apiSvc.getSchemaWithRules(id).subscribe({
+      next: (result: { groups: FieldGroup[]; rules: DependencyRuleDTO[] }) => {
+        this.schema.set(result.groups);
+        // DependencyRuleDTO is structurally a subtype of DependencyRule
+        // (both share all required fields; DTO.message_id is string vs Rule's string|undefined)
+        this.schemaRules.set(result.rules as DependencyRule[]);
         this.loading.set(false);
-      },
-    });
-  }
-
-  private loadSchema(categoryId: string): void {
-    this.apiSvc.getSchema(categoryId).subscribe({
-      next: (groups) => {
-        if (groups.length === 0) {
-          this.errorMessage.set('Could not load form fields. Check connection and retry.');
-        }
-        this.schema.set(groups);
-        this.loading.set(false);
-        // Spec §E: load enums for the first step lazily on schema load
-        this.loadStepEnums(categoryId, 0);
       },
       error: () => {
-        this.errorMessage.set('Failed to load product fields. Please retry.');
         this.loading.set(false);
+        this.toast.error('Failed to load product schema. Please refresh.');
       },
     });
   }
 
-  /**
-   * loadStepEnums — lazily loads API enum options for all needs_api_enum fields
-   * in the given step. Called when a step becomes active.
-   * Spec §E: lazy per-step loading; enumCache deduplicates repeat visits.
-   */
-  private loadStepEnums(categoryId: string, stepIndex: number): void {
-    const steps = this.wizardSteps();
-    const step = steps[stepIndex];
-    if (!step) return;
-
-    const fieldsNeedingEnum = step.fields.filter(
-      (f: FieldSchema) => f.needs_api_enum && f.api_enum_field_name && !this.enumCache()[f.canonical_name],
-    );
-
-    if (fieldsNeedingEnum.length === 0) return;
-
-    this.stepEnumsLoading.set(true);
-    let pending = fieldsNeedingEnum.length;
-
-    for (const field of fieldsNeedingEnum) {
-      this.apiSvc
-        .getFieldEnum(categoryId, field.api_enum_field_name!)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe(entries => {
-          const opts = entries.map((e: EnumEntryDTO) => ({
-            label: e.meesho || e.canonical,
-            value: e.canonical,
-          }));
-          this.enumCache.update(cache => ({ ...cache, [field.canonical_name]: opts }));
-          pending--;
-          if (pending === 0) this.stepEnumsLoading.set(false);
-        });
-    }
-  }
-
-  // ── Step navigation ───────────────────────────────────────────────────────────
-
-  /**
-   * onStepChange — called when the user clicks a stepper header item.
-   * Allows free navigation (clicking any step header); canAdvance is only
-   * enforced by the Next button.
-   */
-  onStepChange(index: number): void {
-    const catId = this.categoryId();
-    this.activeStepIndex.set(index);
-    this.moreDetailsOpen.set(false);
-    if (catId) this.loadStepEnums(catId, index);
-  }
-
-  onNextStep(): void {
-    const nextIndex = this.activeStepIndex() + 1;
-    if (nextIndex >= this.wizardSteps().length) return;
-    this.onStepChange(nextIndex);
-  }
-
-  toggleMoreDetails(): void {
-    this.moreDetailsOpen.update(v => !v);
-  }
-
-  // ── Public helpers ────────────────────────────────────────────────────────────
-
-  getFieldOptions(field: FieldSchema): Array<{ label: string; value: string }> {
-    return field.needs_api_enum
-      ? (this.enumCache()[field.canonical_name] ?? [])
-      : (field.enum_options ?? []);
-  }
+  // ── Public helpers ────────────────────────────────────────────────────────
 
   isAiSuggested(canonicalName: string): boolean {
     return canonicalName in this.aiSuggestions();
   }
 
+  /**
+   * isFieldVisible — returns true when the field should be rendered.
+   *
+   * A field is hidden only when a 'show' dependency rule targets it AND its
+   * predicate is NOT currently met. Fields with no show-rule are always visible.
+   * Default is true (no rule = visible).
+   */
+  isFieldVisible(canonicalName: string): boolean {
+    const override = this.fieldOverrides()[canonicalName];
+    return override?.visible ?? true;
+  }
+
+  /**
+   * isFieldRequired — returns whether the field is required (schema OR rule override).
+   *
+   * The schema-level required flag is the base. A dependency rule with action='required'
+   * that is currently firing can make an optional field required at runtime.
+   */
+  isFieldRequired(field: FieldSchema): boolean {
+    // Rule override takes precedence over schema default
+    const override = this.fieldOverrides()[field.canonical_name];
+    return override?.required ?? field.required;
+  }
+
+  /**
+   * getActiveSoftRule — returns the first firing soft rule targeting a given field,
+   * if any. Used to render a yellow recommendation chip below the field.
+   *
+   * Returns undefined when no soft rule is targeting this field.
+   */
+  getActiveSoftRule(canonicalName: string): DependencyRule | undefined {
+    return this.activeSoftRules().find((r: DependencyRule) => r.target_field === canonicalName);
+  }
+
+  /**
+   * getFieldError — returns a validation error message for a field, or undefined.
+   *
+   * Respects the fieldOverrides computed so fields made required by a rule are
+   * validated in the same pass as schema-required fields.
+   */
   getFieldError(canonicalName: string): string | undefined {
-    const allFields: FieldSchema[] = this.schema().flatMap(g => g.fields);
+    const allFields = [
+      ...this.compulsoryFields(),
+      ...this.recommendedFields(),
+      ...this.optionalFields(),
+    ];
     const field = allFields.find(f => f.canonical_name === canonicalName);
-    if (!field?.required) return undefined;
-    return !this.fieldValues()[canonicalName] ? `${field.display_name} is required` : undefined;
+    if (!field) return undefined;
+
+    // Use rule-augmented required state
+    const effectiveRequired = this.isFieldRequired(field);
+    if (!effectiveRequired) return undefined;
+    return !this.fieldValues()[canonicalName]
+      ? `${field.display_name} is required`
+      : undefined;
   }
 
-  // ── Autofill overlay handlers ─────────────────────────────────────────────────
-
-  applySuggestion(canonical: string): void {
-    const suggestion = this.aiSuggestions()[canonical];
-    if (suggestion) this.fieldValues.update(cur => ({ ...cur, [canonical]: suggestion.value }));
-    this.dismissSuggestion(canonical);
-  }
-
-  dismissSuggestion(canonical: string): void {
-    this.aiSuggestions.update(cur => { const { [canonical]: _, ...rest } = cur; return rest; });
-  }
-
-  dismissAllSuggestions(): void {
-    this.aiSuggestions.set({});
-    this.fallbackOffered.set(false);
-  }
-
-  // ── Event handlers ────────────────────────────────────────────────────────────
-
+  // ── Event handlers ────────────────────────────────────────────────────────
   onFieldBlur(canonicalName: string, value: string): void {
     this.fieldValues.update(cur => ({ ...cur, [canonicalName]: value }));
-    if (canonicalName in this.aiSuggestions()) this.dismissSuggestion(canonicalName);
+    this.clearAiSuggestionIfPresent(canonicalName);
     this.autosaveTrigger$.next();
   }
 
   onFieldChange(canonicalName: string, value: unknown): void {
     this.fieldValues.update(cur => ({ ...cur, [canonicalName]: value }));
-    if (canonicalName in this.aiSuggestions()) this.dismissSuggestion(canonicalName);
+    this.clearAiSuggestionIfPresent(canonicalName);
     this.autosaveTrigger$.next();
   }
 
   onAutofill(): void {
-    const description = this.fieldValues()['product_name'];
-    if (typeof description !== 'string' || !description.trim()) {
-      this.toast.error('Add a product name first — autofill needs it.');
-      return;
-    }
     this.autofilling.set(true);
-    this.fallbackOffered.set(false);
-    this.aiSuggestions.set({});
+    // Backend autofill requires a non-empty description (1..2000 chars). Seed it
+    // from the current product name in V1 simulation.
+    const description = this.productName();
     this.apiSvc.autofill(this.productId(), description).subscribe({
       next: (resp: AutofillResponse) => {
-        this.aiSuggestions.set(resp.suggestions);
-        if (resp.fallback_offered && Object.keys(resp.suggestions).length === 0) {
-          this.fallbackOffered.set(true);
-        }
+        // resp.suggestions is Record<string, AutofillSuggestion>; flatten to the
+        // raw values map for the field-values signal + suggestion overlay.
+        const values: Record<string, unknown> = Object.fromEntries(
+          Object.entries(resp.suggestions).map(([k, s]) => [k, s.value]),
+        );
+        this.aiSuggestions.set(values);
+        this.fieldValues.update(cur => ({ ...cur, ...values }));
         this.autofilling.set(false);
       },
-      error: (err: { status?: number }) => {
+      error: () => {
         this.autofilling.set(false);
-        if (err.status === 402) {
-          this.toast.error('AI fill quota reached. Upgrade your plan to continue.');
-        } else if (err.status === 404) {
-          this.autofillUnavailable.set(true);
-          this.toast.error('AI fill is not available in your current plan.');
-        } else {
-          this.toast.error('AI fill failed. Please try again.');
-        }
+        this.toast.error('AI fill failed. Please try again.');
       },
     });
   }
 
-  onRetry(): void {
-    const catId = this.categoryId();
-    if (!catId) {
-      this.categoryIdMissing.set(false);
-      this.errorMessage.set(null);
-      this.loading.set(true);
-      this.ngOnInit();
-      return;
-    }
-    this.errorMessage.set(null);
-    this.loading.set(true);
-    this.loadSchema(catId);
-  }
-
   onBack(): void {
-    const prevIndex = this.activeStepIndex() - 1;
-    if (prevIndex >= 0) {
-      this.onStepChange(prevIndex);
-    }
-  }
-
-  onDashboard(): void {
     void this.router.navigate(['/dashboard']);
   }
 
-  /** Last step primary action: navigate to /images (existing behaviour). */
   onNext(): void {
     void this.router.navigate(['/catalogs', this.productId(), 'images']);
   }
 
-  // ── Private ───────────────────────────────────────────────────────────────────
+  // ── Private ───────────────────────────────────────────────────────────────
+  private clearAiSuggestionIfPresent(canonicalName: string): void {
+    if (!(canonicalName in this.aiSuggestions())) return;
+    this.aiSuggestions.update(cur => {
+      const { [canonicalName]: _removed, ...rest } = cur;
+      return rest;
+    });
+  }
 
   private performAutosave(): void {
     this.saveStatus.set('saving');
@@ -1015,6 +762,7 @@ export class CatalogFormComponent implements OnInit, AfterViewInit {
         setTimeout(() => {
           if (this.saveStatus() === 'saved') this.saveStatus.set('idle');
         }, 3000);
+        this.toast.success('Saved');
       },
       error: () => {
         this.saveStatus.set('error');

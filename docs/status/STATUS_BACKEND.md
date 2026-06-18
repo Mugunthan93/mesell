@@ -46,6 +46,87 @@ Hand-offs:
   - founder: PR #280 (fix/i18n-generic-missing → develop) ready, NOT merged.
   - frontend-coordinator: validation.{field}.missing 422s now resolve to a human string — the 4th
     blank-error class (after q.missing/token_missing/size_in_ltrs.invalid_enum_value) is closed.
+=== UPDATE: 2026-06-18 (meesell-services-builder) — export validation aggregation ===
+Phase: V1 Feature 9 Export — collect-all pre-enqueue validation
+Session: export-validation-aggregation, branch feat/export-validation-aggregation,
+  worktree /private/tmp/mesell-wt/export-validation off origin/develop@86dfb86 (PR #291)
+Done:
+  - export/exceptions.py: NEW ExportValidationFailedError (code export.validation_failed, 422,
+    msg-id export.validation.failed); carries failed_checks: list[dict[str,str]] of
+    {check_id, message_key}. Added to __all__. Existing 7 exceptions UNTOUCHED — worker pipeline
+    _run_export_pipeline still raises ProductNotReadyForExportError / FrontImageMissingError standalone.
+  - export/service.py initiate_export: validation section rewritten fail-fast → collect-all.
+    Step 1 ownership stays fail-fast 404 (NOT aggregated). Two checks aggregated in order:
+    quality_status (snapshot.validation_summary.status != "ready") + front_image_missing
+    (xlsx_with_images AND no idx==1/ready image). Raises ONE ExportValidationFailedError if any
+    fail. Post-enqueue (insert/Valkey hint/Celery delay/202) untouched. Docstring step list updated.
+  - core/errors.py _meesell_error_handler: additive — conditionally appends failed_checks to the
+    §4.F envelope ONLY when exc carries it (mirrors _pydantic_validation_handler's "errors"). Locked
+    keys (detail/code/validation_message_id/request_id) unchanged; NO error_code key added.
+  - i18n/messages_en.py: +3 keys export.validation.failed / export.check.quality_status /
+    export.check.front_image_missing (Contract-10 3-segment clean).
+  - NEW tests/test_export_validation_aggregation.py: 5 unit tests (pytestmark=pytest.mark.unit).
+    +2 tests in test_core_errors.py (failed_checks additive on 422 envelope + absent on plain
+    MeesellError).
+Tests: 5/5 new aggregation PASS; 8/8 test_core_errors PASS; 104/104 i18n id-regex (Contract 10) PASS.
+  Toolchain = master 3.11 venv vs worktree (no .venv); unset TEST_DATABASE_URL so the autouse
+  schema-provision fixture no-ops (pure-unit, no live Postgres). ruff clean on all 6 touched files.
+In progress: none
+Blockers: none
+Next: api-routes-builder — POST /products/{id}/export-xlsx now surfaces failed_checks[] on 422;
+  FE renders the per-item list.
+Hand-offs:
+  - FE (frontend-coordinator): the export 422 body now carries an additive failed_checks[] array of
+    {check_id, message_key}; render each message_key via i18n as an itemized fix-list. check_id is
+    snake_case (quality_status, front_image_missing). Locked §4.F keys unchanged.
+  - api-routes-builder: no route signature change; ExportValidationFailedError flows through
+    register_error_handlers automatically (it is a MeesellError subclass).
+=========
+
+=== UPDATE: 2026-06-18 (meesell-services-builder) — cross-field validation rule engine ===
+Phase: V1 Fast Catalog Form — cross-field compliance dependency rules
+Session: field-dep-rules (HYBRID step 2/BUILD), branch feat/catalog-field-dependency-rules,
+  worktree /private/tmp/mesell-wt/field-dep-rules off origin/develop@fd4331d
+Done:
+  - NEW backend/app/data/field_dependency_rules.json: 20 hand-authored rules
+    (FSSAI/AYUSH/cosmetic/BIS/warranty/size/fabric/country-of-origin/HSN/kids-age-group/
+    legal-metrology/battery).
+  - APPAREL super_ids RESOLVED (not guessed): from backend/app/data/meesho_category_tree.json
+    (seed source for categories.super_id) — apparel/footwear/kids-clothing supers =
+    10 Men Fashion, 11 Women Fashion, 29 Women, 13 Kids & Toys, 25 Kids. Footwear has no
+    distinct super; leaves live inside 10/11/13. size_apparel + fabric_apparel filled with
+    [10,11,29,13,25]. Recorded in _meta.
+  - category/repository.py: +get_super_id_uncached(db, category_id) -> str|None (indexed
+    SELECT). category/service.py: +get_super_id() cross-module surface + dependency-rule
+    loader/projection helpers (self-contained; category does NOT import catalog per §16).
+  - category/service.fetch_schema_dto: appends dependency_rules[] for in-schema target rules
+    (SchemaResponse extra="allow" → no model change). description/category_match/error_message
+    kept OUT of FE projection.
+  - catalog/service.py: rule engine (_load_dependency_rules import-time fail-fast +
+    _applicable_rules + _predicate_met[eq/in/contains/any] + _evaluate_dependency_rules) wired
+    into patch_product. Hard cross-field violations append into the SAME violations list (zero
+    new exception type), enforced ONLY on status=ready (autosave never 422s). Ready completeness
+    gate re-runs against final merged fields + merges hard cross-field ids.
+  - i18n/messages_en.py: +20 validation.cross_field.<id> keys (3-segment, Contract-10 clean).
+  - NEW tests/test_catalog_dependency_rules.py: 28 tests (12 predicate-operator unit + engine
+    semantics + id/i18n contracts + 5 integration: ready+Grocery+missing-fssai→422,
+    autosave-never-422, ready-all-filled→200, /schema includes/omits rules).
+Tests: 28/28 new PASS. Regression: 190 PASS (messages_en regex, Contract-10 scanner 90 keys,
+  section2 i18n contract, per_field_shape, schema_envelope, resolver_fallback);
+  test_schema_dto_mapper 58 PASS (dependency_rules non-breaking). ruff clean (5 files).
+  import-smoke OK. DB-module suites not runnable here (no Postgres:5433/Valkey tunnel =
+  infra, not regression); verified by inspection that the Eye-Serum fixture schema carries
+  NO cross-field target field → all rules INERT → existing status=ready integration UNAFFECTED.
+In progress: none
+Blockers: none
+Next: backend-coordinator merge-gate review of PR.
+Hand-offs:
+  - api-routes-builder: no endpoint/schema change. status=ready PATCH now enforces compliance
+    hard rules (422 validation.cross_field.<id>); autosave unchanged. /categories/{id}/schema
+    grows dependency_rules[] (extra="allow").
+  - frontend: drive real-time compliance UX off schema.dependency_rules[] (resolve via
+    message_id; severity soft=advisory, hard=blocks Mark-Ready CTA).
+  - founder: review field_dependency_rules.json _meta.reviewed_by ("founder pending").
 =========
 
 === UPDATE: 2026-06-17 (meesell-services-builder) — catalog enum 422 false-reject + i18n generic fallback ===
@@ -6954,4 +7035,52 @@ Next: founder merges PR #285 to develop (D1). On merge, lead flips the board row
 Hand-offs:
   - founder: APPROVE-FOR-FOUNDER on #285 — founder owns the develop merge gate (D1).
   - founder: BE-DOC-2D-COUNT-1 follow-up will need §7.3 approval (LOCKED §2.D/§13/§16 amendment).
+=== UPDATE: 2026-06-18 — Price Calculator forward-estimator rework (§12.M) ===
+Phase: V1 Feature 7 — Price Calculator (forward payout estimator rework)
+Session: mesell-price-calculator-backend-session-1 (HYBRID step 2 — builder)
+Branch: fix/pricing-engine-rework → develop (PR #285) — DO NOT MERGE (founder merges; backend-coordinator gates step 3)
+Done:
+  - Applied 2 founder-ratified locked-doc amendments + the §2.D matrix edit:
+    * V1_FEATURE_SPEC.md Feature 7 — appended forward-estimator amendment block.
+    * BACKEND_ARCHITECTURE.md §12.M — new sub-clause (formula, new PriceCalcRequest, alert
+      codes NEGATIVE_PAYOUT/LOW_MARGIN/SHIPPING_DOMINATES, CommissionMissingError removal,
+      additive reversible pricing_calcs migration, zero-Meesho-calls HARD RULE).
+    * BACKEND_ARCHITECTURE.md §2.D — retired the `pricing → category` commission row
+      (commission is now a seller input); total 8 ✓ → 7 ✓; §2 prose cross-note to §12.M.
+  - Service rework (app/modules/pricing/):
+    * schemas: new PriceCalcRequest (meesho_price primary, input_cost, commission_pct default
+      4% seller-input, return_rate_pct, optional mrp, 6 override_* fields; target_margin_pct
+      REMOVED) + new PriceCalcResponse (3 prices + full deduction breakdown + estimated_payout
+      + estimated_payout_wdrp + profit + margin_pct + markup_pct + alerts). extra="forbid".
+    * service: _compute_pnl → _estimate_payout (pure Decimal, ROUND_HALF_EVEN via _q). Full
+      deduction stack: referral, bracketed shipping, logistics, fixed, GST-on-fees, TCS, TDS,
+      RTO expected-loss. category.get_commission call DELETED. Negative payout = 200-with-alert.
+    * exceptions: CommissionMissingError deleted; InvalidPriceInputError (400) kept.
+    * domain/repository/router/__init__ updated; router drops the 422.
+    * i18n: dropped commission_missing/high_mrp_multiplier/thin_profit; added negative_payout/
+      shipping_dominates; kept low_margin + invalid_input. All 3-segment.
+  - ORM + migration: pricing_calc.py + alembic b7c2e1a9d3f4 (down_rev f31c75438e61) — 12 additive
+    nullable breakdown columns; commission_pct re-purposed as seller snapshot. upgrade+downgrade
+    both verified locally; single linear head, no divergence.
+  - Calibration: SHIPPING_FLAT=30 / SHIPPING_HIGH=70 / SHIPPING_BRACKET=1000 / LOGISTICS=10 /
+    FIXED=5 / COMMISSION=4 / GST=18 / TCS=1 / TDS=0 / WDRP_DELTA=20. _estimate_payout(106)=46.84
+    (residual -0.16, TOLERANCE 3.00); WDRP 86→27.98 (residual +0.98).
+  - Fixed a pre-existing shared-app event-loop isolation bug in the flag-test fixture
+    (added use_live_valkey dep so the @rate_limit/@audit_event Valkey singleton is reset per
+    test — was 500-ing the 2nd patch-based flag test with "Event loop is closed").
+Tests: 70 passed (tests/modules/pricing + test_pricing_full_flow + test_i18n_generic_fallback)
+  + 3 passed (test_pricing_persistence). ruff clean. import-linter 27 kept/0 broken.
+  Contracts 8/9/10 PASS. grep-clean: ZERO transfer_price/fetch-supplier-products/
+  supplier.meesho.com under app/ (6 hits in test_estimator_calibration.py only).
+In progress: none
+Blockers: none
+Next: backend-coordinator merge-gate review (HYBRID step 3) of PR #285.
+Hand-offs:
+  - api-routes-builder: POST /products/{id}/price-calc request+response SHAPE changed (forward
+    estimator). 422 (pricing.commission.missing) REMOVED. Negative payout is 200-with-alert.
+  - frontend-coordinator: new wire shape — seller enters meesho_price (+ optional commission_pct
+    default 4%, return_rate_pct, mrp); response carries the full deduction breakdown + payout +
+    WDRP payout + margin/markup + alerts (NEGATIVE_PAYOUT/LOW_MARGIN/SHIPPING_DOMINATES).
+  - backend-coordinator: gate — confirm zero Meesho calls in app/, additive migration reversible,
+    §12.M + §2.D amendments match the founder ruling.
 =========

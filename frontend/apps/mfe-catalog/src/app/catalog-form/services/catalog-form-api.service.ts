@@ -74,6 +74,9 @@ import {
   AutofillResponse,
   FieldGroup,
   adaptSchemaResponse,
+  adaptDependencyRules,
+  SchemaWithRules,
+  DependencyRuleDTO,
 } from '../models/field-schema.model';
 
 // ── Endpoint path constants (single source of truth, R-W6-1) ──────────────────
@@ -114,6 +117,30 @@ export class CatalogFormApiService {
           // 404: schema not found OR FEATURE_CATALOG_FORM_ENABLED=false → graceful empty
           // 5xx: server unavailable → graceful empty + component shows retry affordance
           return of([] as FieldGroup[]);
+        }),
+      );
+  }
+
+  /**
+   * getSchemaWithRules — same as getSchema but also returns the dependency_rules[]
+   * from the /schema response envelope (added in PR #290).
+   *
+   * Returns { groups: FieldGroup[], rules: DependencyRuleDTO[] }.
+   * rules[] is [] when the backend does not include dependency_rules (pre-PR#290).
+   *
+   * Error handling mirrors getSchema (same endpoint, same error matrix).
+   */
+  getSchemaWithRules(categoryId: string): Observable<SchemaWithRules> {
+    return this.api
+      .get<SchemaResponseDTO>(`${CATEGORIES_PATH}/${categoryId}/schema`)
+      .pipe(
+        map((dto: SchemaResponseDTO) => ({
+          groups: adaptSchemaResponse(dto),
+          rules:  adaptDependencyRules(dto),
+        })),
+        catchError((err: HttpErrorResponse) => {
+          if (err.status === 401) throw err;
+          return of({ groups: [] as FieldGroup[], rules: [] as DependencyRuleDTO[] });
         }),
       );
   }
@@ -270,5 +297,7 @@ export type {
   AutofillSuggestion,
   FieldGroup,
   FieldSchema,
+  SchemaWithRules,
+  DependencyRuleDTO,
 } from '../models/field-schema.model';
-export { adaptSchemaResponse, adaptSchemaField, mapPrimitiveToWidget } from '../models/field-schema.model';
+export { adaptSchemaResponse, adaptSchemaField, mapPrimitiveToWidget, adaptDependencyRules } from '../models/field-schema.model';

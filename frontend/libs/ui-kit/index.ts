@@ -22,6 +22,9 @@ export { MeePasswordInputComponent }   from './password-input/password-input.com
 export { MeeTextareaComponent }        from './textarea/textarea.component';
 export { MeeDrawerComponent }          from './drawer/drawer.component';
 export { MeeMenuComponent }            from './menu/menu.component';
+export { MeeMultiselectComponent }     from './multiselect/multiselect.component';
+export type { MeeShowErrorOn }         from './multiselect/multiselect.component';
+export { MeeDataTableComponent }       from './data-table/data-table.component';
 
 // Root bootstrap (PrimeNG providers + theme — sealed behind @mee/ui)
 export { provideMeeUi }                from './providers';
@@ -32,6 +35,16 @@ export type { MeeMenuItem }                                              from '.
 export type { MeeButtonVariant, MeeButtonSize }                         from './button/button.types';
 export type { MeeSelectOption }                                          from './select/select.types';
 export type { MeeColumn, MeeTablePageEvent, MeeTableSortEvent }         from './table/table.types';
+export type {
+  MeeDataTableColumn,
+  MeeDataTableTextColumn,
+  MeeDataTableStatusColumn,
+  MeeDataTableActionsColumn,
+  MeeDataTableBulkAction,
+  MeeDataTablePageEvent,
+  MeeDataTableSortEvent,
+  MeeDataTableBulkActionEvent,
+}                                                                        from './data-table/data-table.types';
 export type { MeeStep }                                                  from './steps/steps.types';
 export type { MeeBadgeSeverity }                                         from './badge/badge.types';
 export type { MeeSkeletonVariant }                                       from './skeleton/skeleton.types';
@@ -39,8 +52,15 @@ export type { MeeFileUploadEvent }                                       from '.
 export type { MeeTreeNode }                                              from './tree-select/tree-select.component';
 export type { MeeConfirmConfig }                                         from './confirm-dialog/confirm-dialog.component';
 export type { MeeIconName }                                              from './icon/icon.registry';
+export { meeIconClass }                                                  from './icon/icon.registry';
 
 // Aggregators (for component imports — NOT providers)
 // Use MEE_FORM / MEE_OVERLAY / etc. in a standalone component's imports:[].
 // MeeToastService + MeeConfirmService are providers — they live in provideMeeUi().
 export { MEE_FORM, MEE_OVERLAY, MEE_FEEDBACK, MEE_DATA, MEE_COMMON, MEE_FILE, MEE_UI_ALL } from './aggregators';
+
+// Phase 7 — swap-proof seam (alt preset + alt icon registry + selector)
+// These are additive exports — live defaults (MeeSellPreset, MEE_ICONS) remain unchanged.
+export { MeeSellAltPreset } from './theme.alt';
+export { MEE_ICONS_ALT }    from './icon/icon.registry.alt';
+export { ActiveIcons }      from './icon/icon.selector';

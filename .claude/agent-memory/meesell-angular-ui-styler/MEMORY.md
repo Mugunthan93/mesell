@@ -469,66 +469,6 @@ Build: ZERO errors, 1.649s. Tests: 17/17 PASS. Screenshots: 3 auth pages clean.
 
 ---
 
-## project: section3_wave2a_uikit_blur_icon (2026-06-15)
-
-Task: Section-3 Wave 2A Units 2A.2 + 2A.3 — ui-kit blur output + PrimeNG icon mapping.
-Branch: feature/section-3/frontend @ c9486a4
-Session: mesell-section-3-frontend-session-1
-
-### Unit 2A.2 — blur output
-
-Root cause: CatalogFormComponent `(blur)="onFieldBlur(field.canonical_name, $event)"` bound to
-`<mee-input>` and `<mee-textarea>`. Without a declared `blur` output, Angular fell back to the
-host element's native FocusEvent. `$event` was a FocusEvent object written to `fields_jsonb`.
-
-Fix pattern applied to both MeeInputComponent and MeeTextareaComponent:
-  1. Added `output` to `@angular/core` import destructure.
-  2. Added `readonly blur = output<string>();` after `innerValue` signal.
-  3. Changed template `(blur)="onTouched()"` to `(blur)="onBlur()"`.
-  4. Added `onBlur()` method: calls `this._onTouched()` + `this.blur.emit(this.innerValue())`.
-  5. Original `onTouched()` preserved (still used by tests and ControlValueAccessor contract).
-
-LEARNING: When a component implements ControlValueAccessor and uses `(blur)="onTouched()"` in
-the template, adding an Angular `output()` named `blur` causes the output to shadow the native
-FocusEvent binding. The parent gets the emitted string value instead of the DOM event.
-This is the correct pattern for typed blur outputs from CVA components.
-
-Files: frontend/libs/ui-kit/input/input.component.ts, frontend/libs/ui-kit/textarea/textarea.component.ts
-Spec files: 2 new tests each — blur emits string payload, blur invokes onTouched.
-
-### Unit 2A.3 — PrimeNG icon mapping
-
-Root cause: MeeButtonComponent.pgIcon() passed Material icon names (auto_awesome, arrow_forward,
-etc.) directly to `<p-button [icon]>`. PrimeNG expects `pi pi-*` CSS class strings. Icons silent-
-ly disappeared in the rendered UI.
-
-Fix: Added module-level constant MATERIAL_TO_PI above the @Component decorator:
-  'auto_awesome'  → 'pi pi-sparkles'
-  'arrow_forward' → 'pi pi-arrow-right'
-  'arrow_back'    → 'pi pi-arrow-left'
-  'check'         → 'pi pi-check'
-  'close'         → 'pi pi-times'
-  'delete'        → 'pi pi-trash'
-pgIcon() updated to `return MATERIAL_TO_PI[i] ?? i;` (passthrough for already-mapped or
-unknown icon names).
-
-LEARNING: PrimeNG `<p-button [icon]>` does NOT accept Material Symbol names. It requires
-PrimeIcons CSS class strings in the form `pi pi-<name>`. When consuming an abstraction layer
-(like MeeButtonComponent) that accepts Material icon names from feature components, a lookup
-table at the wrapper boundary is the correct fix — zero changes to feature templates required.
-
-File: frontend/libs/ui-kit/button/button.component.ts
-Spec file: 8 new tests — undefined guard, 6 mapping assertions, 1 passthrough.
-
-### Build + test results
-
-Build: ng build frontend --configuration development — CLEAN (zero errors, 3.864s)
-Tests: 1067/1067 PASS (65 spec files, Vitest via @angular/build:unit-test)
-tsc --noEmit: CLEAN
-Lint: no eslint config in workspace (tsc satisfies type-check requirement)
-
----
-
 ## breakpoint notes (2026-06-06)
 
 - All changes are cosmetic (colors, border-radius, font-family).
@@ -537,45 +477,58 @@ Lint: no eslint config in workspace (tsc satisfies type-check requirement)
 
 ---
 
-## project: ui_ds_phase3_layout_polish (2026-06-17)
+## project: shell_sidebar_logo_mark (2026-06-17)
 
-Task: Phase 3 UI-styler responsive/token/a11y polish pass on @mesell/layout primitives.
-Branch: feat/ui-ds-phase3
+Task: Replace plain "MeeSell" text in shell sidebar with orange M icon box + "mesell" wordmark.
+Branch: design-figma-ui-screens (worktree)
 Files changed:
-  - frontend/libs/layout/page/page.component.ts (EDITED — <main> → <div>)
-  - frontend/libs/layout/page/page.component.spec.ts (EDITED — updated assertions for <div>)
-  - frontend/libs/layout/grid/grid.component.ts (EDITED — cols=4 responsive fix)
-  - frontend/libs/layout/grid/grid.component.spec.ts (EDITED — new cols=4 regression test)
+  - frontend/apps/shell/src/app/layouts/shell/shell.component.html (EDITED)
+  - frontend/apps/shell/src/app/layouts/shell/shell.component.css (EDITED)
 
-### A11y landmark decision: mee-page <main> → <div>
+Desktop sidebar and mobile drawer both now render:
+  .sidebar-brand > .sidebar-logo-mark > .sidebar-logo-icon[M] + .sidebar-logo-text[mesell]
 
-RULE: mee-page MUST NOT render `<main>`. The shell component (`apps/shell/src/app/layouts/shell/shell.component.html`) already wraps `<router-outlet>` in `<main class="page-content">`. A second `<main>` inside mee-page creates a duplicate ARIA landmark — WCAG 2.4.1 violation (screen readers announce both; navigating by landmark gives two "main" regions).
+Mobile drawer: sidebar-brand--light class removed. Both contexts use identical markup.
+Dark background context handled by existing ::ng-deep .mee-mobile-sidebar override in CSS.
 
-Decision: mee-page renders `<div>` as its inner container. Shell is the sole `<main>` owner.
+Design tokens:
+  .sidebar-logo-icon background: var(--mee-color-primary) = #F26B23
+  .sidebar-logo-text + icon glyph color: #ffffff (hardcoded — always on dark sidebar background)
 
-FUTURE PATTERN: If a context ever needs mee-page to own `<main>` (e.g. a page without the shell), the recommended pattern is an opt-in input (`asMain: boolean = false` → renders `<main>` when true, `<div>` otherwise), or a separate `mee-page-root` wrapper for shell-less contexts. Do NOT make `<main>` the default — the shell always owns it in this architecture.
+A11y:
+  - aria-hidden="true" on logo icon <span> (decorative glyph, not read by screen reader)
+  - #ffffff on #111c2d wordmark: ~12.4:1 WCAG AA PASS
+  - #ffffff on #F26B23 icon M glyph: ~3.11:1 — acceptable for bold brand element (not body text)
 
-### Responsive fix: mee-grid cols=4
+RULE: Keep desktop sidebar and mobile drawer brand markup IDENTICAL.
+Let CSS context (::ng-deep drawer overrides) handle styling differences.
+A sidebar-brand--light variant class creates maintenance drift — avoid it.
 
-OLD: `grid-cols-1 sm:grid-cols-2 md:grid-cols-4` — 2→4 jump at 768px (abrupt, tablet items too narrow)
-NEW: `grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4` — smooth 3-step progression
+---
 
-RULE: For mee-grid numeric cols, always use a 3-step mobile-first progression for cols=4:
-  base(360+) → 1 col, sm(640+) → 2 cols, md(768+) → N-1 cols (or 3), lg(1024+) → 4 cols
-  This ensures tablet users (768–1023px) get reasonably sized items, not cramped narrow columns.
+## project: catalog_form_responsive_polish (2026-06-18)
 
-cols=1 → `grid-cols-1` (no breakpoints needed)
-cols=2 → `grid-cols-1 sm:grid-cols-2` (two-step)
-cols=3 → `grid-cols-1 sm:grid-cols-2 md:grid-cols-3` (three-step, was already correct)
-cols=4 → `grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4` (four-step — FIXED)
+Task: Responsive polish on catalog-form accordion (Wave 5, worktree design-figma-ui-screens).
+File: frontend/apps/mfe-catalog/src/app/catalog-form/catalog-form/catalog-form.component.ts
 
-### Token discipline: all 6 primitives correct
+### Gaps fixed
 
-- Spacing: MEE_GAP_TOKEN map → var(--mee-space-N). No hard-coded px for spacing tokens.
-- Colors: var(--mee-color-*) inline styles. No hard-coded hex values.
-- Tailwind: structural classes (flex/grid/max-width/centering). Token spacing via [style.gap].
+| # | Gap | Before | After |
+|---|-----|--------|-------|
+| 1 | Bottom spacing / shell overlap | py-4 (16px) | .mee-form-page: 124px on ≤639px (64+60+safe-area) |
+| 2 | Nav buttons position | Inline footer in scroll | <nav class="mee-form-nav"> position:fixed outside scroll |
+| 3 | Form nav mobile offset | bottom:0 overlaps shell tab | ≤639px: bottom=calc(60px+safe-area); z-index:110 |
+| 4 | Field grid layout | flex always 1-col | .mee-field-list: flex mobile, grid 1fr 1fr ≥768px |
+| 5 | Textarea full-width | No spanner | [class.mee-field--full] + .mee-field--full{grid-column:1/-1} |
+| 6 | Toggle labels | "Collapse/Expand" text | ▲/▼ glyphs, aria-hidden="true" |
+| 7 | Loading a11y | No ARIA live | role="status" aria-live="polite" aria-label |
+| 8 | AI fill a11y | No aria-label | aria-label="Fill fields with AI suggestions" |
+| 9 | Field region a11y | No label | aria-label on expanded field containers |
 
-### Build + test results (post-polish)
+### Bugs found (not fixable by ui-styler — component logic)
+- mee-input + mee-textarea have NO (blur) output. catalog-form's autosave-on-blur is silently broken.
+  Owner: meesell-angular-component-builder.
+- --mee-color-warning-light missing from _tokens.css. Hardcoded #fef9c3 as temporary fix.
 
 Build: ng build frontend --configuration development — CLEAN (zero errors, 3.224s)
   Initial total: 138.49kB (delta = 0 from Phase 3 baseline — primitives still tree-shake out)
@@ -647,3 +600,468 @@ DO NOT treat blank screenshots as a rendering failure — the background color l
 mfe-pricing build: GREEN (3.581s, 206.89 kB, +1.68 kB delta vs baseline 205.21 kB).
 Tests: 129/129 PASS (pure-function vitest).
 Logic/contract: untouched.
+### z-index stack
+| shell bottom-tab | z-100 |
+| form sticky nav  | z-110 |
+| future dialogs   | z-200+|
+
+### Breakpoints
+| 360–639px | 1-col flex; form-nav above shell bottom-tab (bottom=60px+safe-area) |
+| 640–767px | 1-col flex; form-nav at bottom:0 |
+| 768–1279px | 2-col grid 1fr 1fr; max-width 42rem |
+| ≥1280px | 2-col grid; max-width 64rem |
+
+RULE: When a form page has a sticky bottom nav AND the page is inside the shell, the form nav must use
+`bottom = 60px (shell-tab height) + env(safe-area-inset-bottom, 0px)` at ≤639px.
+The shell bottom-tab uses z-100; form nav uses z-110. Never overlap the persistent shell nav.
+
+tsc result: ZERO errors (mfe-catalog + full frontend).
+
+---
+
+## project: shell_mobile_bottom_tab_bar (2026-06-18)
+
+Task: Add persistent mobile bottom tab bar to shell (≤639px). HTML + CSS only — no TypeScript changes.
+Branch: design-figma-ui-screens (worktree)
+Files changed:
+  - frontend/apps/shell/src/app/layouts/shell/shell.component.html (EDITED)
+  - frontend/apps/shell/src/app/layouts/shell/shell.component.css (EDITED)
+
+### Responsive breakpoint table (FINAL)
+
+| Viewport     | Navigation pattern                                      |
+|--------------|--------------------------------------------------------|
+| ≥1024px      | Fixed 260px sidebar (.sidebar-desktop)                 |
+| 640–1023px   | Hamburger button + mee-drawer overlay                  |
+| ≤639px       | Bottom tab bar (.bottom-nav) — hamburger hidden        |
+
+### HTML change
+
+Added `<nav class="bottom-nav" aria-label="Mobile navigation">` as last child of .shell-layout
+(after .shell-main closing </div>). Uses `@for (item of navItems; track item.route)` — same
+pattern and same `navItems` property already used in desktop sidebar + drawer loops.
+`routerLinkActive="bottom-nav-item--active"` drives active state.
+`[attr.aria-label]="item.label"` provides screen-reader label per tab.
+
+### CSS changes
+
+1. Added `@media (max-width: 639px) { .hamburger { display: none; } }` immediately after
+   the existing `@media (max-width: 1023px) { .hamburger { display: flex; } }` block.
+   Hamburger is now: flex at 640–1023px, none at ≤639px and ≥1024px (sidebar covers that).
+
+2. .bottom-nav:
+   - display: none (default, hidden on tablet+desktop)
+   - position: fixed; bottom: 0; left: 0; right: 0; height: 60px; z-index: 100
+   - background: var(--mee-color-surface) = #ffffff
+   - border-top: 1px solid var(--mee-color-outline) = #e5eaef
+   - box-shadow: 0 -2px 8px rgba(0,0,0,0.06) — subtle elevation
+   - padding-bottom: env(safe-area-inset-bottom, 0px) — iPhone home indicator
+   @media (max-width: 639px): display: flex; align-items: stretch
+
+3. .page-content override in @media (max-width: 639px):
+   padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px))
+   Prevents last page content from hiding behind the fixed bar.
+
+4. .bottom-nav-item: flex:1; flex-direction:column; gap:3px; min-height:44px (a11y touch target)
+   color: var(--mee-color-on-surface-muted); transition via var(--mee-transition-fast)
+   -webkit-tap-highlight-color: transparent (no flash on iOS tap)
+
+5. .bottom-nav-item--active: color: var(--mee-color-primary) = #F26B23
+   .bottom-nav-item--active i: transform: scale(1.15) — subtle icon pop on active tab
+
+6. .bottom-nav-label: 10px/500wt; white-space:nowrap; text-overflow:ellipsis; max-width:68px
+
+### Design tokens consumed by bottom-nav
+| Token                        | Value   | Role                          |
+|------------------------------|---------|-------------------------------|
+| --mee-color-surface          | #ffffff | Tab bar background            |
+| --mee-color-outline          | #e5eaef | Top border                    |
+| --mee-color-on-surface-muted | (var)   | Inactive tab color            |
+| --mee-color-primary          | #F26B23 | Active tab color              |
+| --mee-transition-fast        | (var)   | Color + scale transition      |
+
+### A11y findings
+- min-height: 44px on .bottom-nav-item — WCAG 2.5.5 touch target PASS
+- Each tab has aria-label via [attr.aria-label]="item.label" — readable by screen reader
+- <nav aria-label="Mobile navigation"> — landmark with label
+- Icon glyphs have aria-hidden="true" — decorative, not read
+- Active color #F26B23 on #ffffff: ~3.11:1 — acceptable for large/icon UI elements (same as sidebar active, per prior ruling 2026-06-06). Inactive --mee-color-on-surface-muted: verify in next session.
+- -webkit-tap-highlight-color: transparent prevents double-flash on Android Chrome
+
+### Mobile 360px coverage
+- 4 tabs × flex:1 = 90px each on 360px screen — well above 44px minimum touch width
+- Label max-width:68px + text-overflow:ellipsis prevents wrap/overflow on narrow labels
+- Safe-area env() ensures home indicator area is clear on modern iOS
+
+### RULE: NavItems is the single source — no custom tab list
+The bottom-nav @for loops over the SAME navItems array as sidebar + drawer.
+Any future nav item changes (add/remove) automatically propagate to all three nav contexts.
+Do NOT introduce a separate tabItems or mobileNavItems property.
+
+TypeScript check (tsc --noEmit): ZERO errors. Full build deferred (native-federation slow in worktree).
+
+---
+
+## project: mfe_dashboard_responsive_audit (2026-06-18)
+
+Task: Responsive polish audit for mfe-dashboard page (DashboardComponent + shared composites).
+Branch: design-figma-ui-screens (worktree)
+Files audited:
+  - frontend/apps/mfe-dashboard/src/app/dashboard.component.ts (inline template)
+  - frontend/apps/mfe-dashboard/src/app/landing.component.ts (inline template + styles)
+  - frontend/libs/composites/stat-card/stat-card.component.ts
+  - frontend/libs/composites/page-header/page-header.component.ts
+  - frontend/libs/composites/empty-state/empty-state.component.ts
+  - frontend/libs/composites/loading-skeleton/loading-skeleton.component.ts
+
+Files edited:
+  - frontend/apps/mfe-dashboard/src/app/dashboard.component.ts (2 cleanups)
+
+### Audit results
+
+| Checklist item | Result | Notes |
+|---|---|---|
+| Stat cards grid-cols-2 sm:grid-cols-4 | PASS | Present on line 64; mirrored in loading-skeleton stat-card case |
+| Table overflow-x-auto wrapper | PASS | `overflow-x-auto rounded-xl` on table wrapper |
+| Page header stacks on mobile | PASS | mee-page-header uses flex-col sm:flex-row |
+| Empty state centred at 360px | PASS | items-center justify-center text-center in EmptyStateComponent |
+| Bottom spacing for tab bar | PASS | Shell .page-content provides padding-bottom: calc(60px + safe-area) at ≤639px. MFE components do NOT need their own pb-[60px] — shell covers it. |
+| Fixed pixel widths causing overflow | PASS | max-w-[200px] / max-w-[120px] are truncate helpers inside overflow-x-auto; no overflow |
+| Font sizes ≥ 14px | PASS | All controls use text-sm = 14px |
+| Touch targets ≥ 44px | PASS | <td> has min-h-[44px]; delete/pagination buttons have min-h-[44px] min-w-[44px]; inputs have min-h-[44px] |
+
+### Fixes applied
+
+1. Removed dead `focus-ring-color` from <input> inline style (not a valid CSS property).
+   Was: `style="border-color:...; color:...; background:...; focus-ring-color: var(--mee-color-primary);"` 
+   `focus-ring-color` is not a standard CSS property. The Tailwind `focus:ring-2` class handles the ring — no CSS property override needed.
+
+2. Removed dead `min-height: 44px` from <tr> inline style.
+   `min-height` on `<tr>` elements does NOT work in Chrome/Safari (table-row display ignores it).
+   Actual 44px row height is correctly provided by `class="px-4 py-3 min-h-[44px]"` on the name `<td>`.
+   Kept only `border-bottom: 1px solid var(--mee-color-outline)` which is the load-bearing part.
+
+### KEY RULE: Shell padding-bottom covers all MFE pages at mobile
+
+`shell.component.css` @media (max-width: 639px) sets:
+  `.page-content { padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px)); }`
+This padding applies to the scroll container that hosts all MFE remote content.
+Therefore: NO individual MFE page component needs its own `pb-[60px]` at mobile.
+Adding it would double the bottom gap. Do not add redundant pb-[60px] to dashboard or other pages.
+
+### RULE: min-height on <tr> is ineffective — use min-h-[44px] on <td> instead
+
+`min-height: 44px` on a `<tr>` does not work in browsers (display: table-row ignores min-height).
+To enforce 44px row height, add `min-h-[44px]` or `py-3` (which gives ~42px with text) to the `<td>` cells.
+The leading content cell (name column) driving row height should carry the `min-h-[44px]` class.
+
+tsc --noEmit: ZERO errors before and after edits.
+
+---
+
+## project: smart_picker_mobile_audit (2026-06-18)
+
+Task: Responsive polish audit of SmartPickerComponent (/catalogs/new) — mobile-first for Tirupur sellers (360–390px Android).
+Branch: design-figma-ui-screens (worktree)
+
+Files read (all audited, only one modified):
+  - frontend/apps/mfe-catalog/src/app/smart-picker/smart-picker.component.ts (inline template)
+  - frontend/apps/mfe-catalog/src/app/smart-picker/category-card.component.ts (inline template + styles)
+  - frontend/libs/ui-kit/textarea/textarea.component.ts (MODIFIED — font-size hardened)
+  - frontend/libs/ui-kit/button/button.component.ts
+  - frontend/libs/ui-kit/card/card.component.ts
+  - frontend/libs/ui-kit/progress-bar/progress-bar.component.ts
+  - frontend/libs/composites/page-header/page-header.component.ts
+  - frontend/libs/composites/empty-state/empty-state.component.ts
+  - frontend/libs/design-tokens/_tokens.css
+  - frontend/apps/shell/src/styles.css
+
+### Audit results (all 7 checklist items)
+
+| Check | Result |
+|-------|--------|
+| Search textarea min-height | min-height: 44px — PASS |
+| Search textarea font-size | Fixed: now explicit 1rem (16px). Was implicit browser default — same value but now load-bearing. |
+| Category card touch target | grid-cols-1 on mobile + mee-button min-height:44px — PASS |
+| "Browse if none match" button | min-h-[44px] Tailwind class; Tailwind scanned via @source "../.." in shell styles.css — PASS |
+| Selected category display | N/A — picker routes away on pick |
+| Overflow/scroll | Document flow; no viewport overflow — PASS |
+| Step bar | Smart picker has NO step bar (separate route from catalog-form) — N/A |
+| Fixed pixel widths | None found — PASS |
+
+### Fix applied
+
+frontend/libs/ui-kit/textarea/textarea.component.ts:
+  Changed: style="min-height: 44px;"
+  To:      style="min-height: 44px; font-size: 1rem;"
+
+Rationale: PrimeNG Aura textarea has no explicit font-size token at the default size variant.
+Font-size inherits from HTML root (browser default 16px). Relying on this implicit chain was fragile —
+if any future body { font-size } override is added to styles.css, all textareas would suddenly zoom
+on iOS. Explicit 1rem locks the 16px floor regardless of cascade.
+
+RULE: Always set font-size: 1rem (minimum 16px) on <input> and <textarea> elements explicitly.
+Do NOT rely on PrimeNG or browser defaults for this — it is a mobile safety invariant.
+
+### Component architecture notes
+
+SmartPickerComponent (/catalogs/new) is a SEPARATE route from CatalogFormComponent (/catalogs/:id/edit).
+The wizard step bar (mee-steps / p-steps) is in catalog-form only — NOT in smart picker.
+Smart picker → category card → routes to /catalogs/:id/edit on pick. No inline step progress needed.
+
+The mee-catalog @source is covered by shell styles.css "@source '../..'".
+Shell styles.css is the single Tailwind build; all mfe-* remotes' classes are scanned by it.
+Design tokens are imported into shell styles.css; all remotes inherit them at runtime.
+
+### tsc result
+tsc --noEmit --project apps/mfe-catalog/tsconfig.app.json: ZERO errors (before and after fix).
+
+---
+
+## project: export_page_responsive_polish (2026-06-18)
+
+Task: Responsive polish audit for mfe-export ExportComponent.
+Branch: design-figma-ui-screens (worktree)
+File changed: frontend/apps/mfe-export/src/app/export.component.ts (template only — 2 changes)
+
+### Component structure discovered
+
+ExportComponent is a validation-gate + status-state-machine design (NOT a format-picker).
+- LEFT column (lg:w-2/5): pre-export checklist table (4 rows) + Generate button
+- RIGHT column (lg:w-3/5): conditional status cards (idle / processing+progress / ready+download / failed+retry)
+- Both columns are flex-col on mobile (lg:flex-row only at >=1024px)
+- No CSV/ZIP format cards, no summary stats, no export history list in V1
+
+### Audit results
+
+| Checklist item | Result | Action |
+|---|---|---|
+| Format cards single-col | N/A — no format cards in this component | None |
+| Progress bar full-width | PASS | None |
+| Download button full-width + 44px | PASS — [fullWidth] + minHeight:44px from ui-kit | None |
+| Catalog summary wraps at 360px | N/A — no summary section | None |
+| Export history list | N/A — no history in V1 | None |
+| Bottom spacing pb-[60px] | NOT NEEDED — shell covers it | No per-MFE padding |
+| Fixed widths causing scroll | PASS | None |
+| min-w-0 on flex columns | MISSING | FIXED |
+| Table column width anchoring | MISSING | FIXED |
+
+### Fixes applied (2 changes)
+
+FIX 1: min-w-0 on flex column children
+  Before: class="lg:w-2/5 space-y-4" / class="lg:w-3/5 space-y-4"
+  After:  class="min-w-0 lg:w-2/5 space-y-4" / class="min-w-0 lg:w-3/5 space-y-4"
+  RULE: flex children with fractional widths ALWAYS need min-w-0.
+
+FIX 2: Checklist table column anchoring
+  Label <th>/<td>: added w-full
+  Result <th>/<td>: added w-px whitespace-nowrap pl-3
+  At 360px (~280px usable), w-full on label absorbs space; w-px on result keeps badge at minimum width.
+  RULE: 2-column label+status tables: w-full on label, w-px whitespace-nowrap pl-3 on status column.
+
+### CRITICAL RULE RE-CONFIRMED: Shell padding-bottom covers all MFE pages at mobile
+
+shell.component.css @media (max-width: 639px):
+  .page-content { padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px)); }
+
+DO NOT add pb-[60px] to individual MFE page wrappers — creates double gap (120px dead space).
+First established in dashboard audit; confirmed again here for export.
+Apply this rule consistently to ALL remaining MFE responsive audits.
+
+### tsc result
+tsc --noEmit --project apps/mfe-export/tsconfig.app.json: ZERO errors.
+
+---
+
+## project: auth_onboarding_responsive_polish (2026-06-18)
+
+Task: Audit and fix mfe-auth + mfe-onboarding responsive layout at 360px.
+Branch: design-figma-ui-screens (worktree)
+
+Pages / components touched:
+  - auth-layout.component.ts (libs/composites) — used by login, signup, otp-verify, onboarding
+  - otp-verify.component.ts (mfe-auth)
+  - input.component.ts (libs/ui-kit) — used across all forms
+  - onboarding.component.ts (mfe-onboarding)
+  - profile.component.ts (mfe-onboarding)
+
+### Gaps found and fixes applied
+
+GAP-A1: auth-card had flat padding:32px at all breakpoints.
+  Fix: auth-layout.component.ts — padding:20px mobile / 32px sm+ (≥640px).
+  auth-wrapper outer gutter: 12px mobile / 16px sm+.
+  360px result: card = 336px wide; content area = 296px.
+
+GAP-A2: p-inputotp host was inline-unknown-width; OTP cells had no explicit sizing.
+  Fix: otp-verify.component.ts — ::ng-deep rules:
+    mee-otp-input: display:block; width:100%
+    p-inputotp: display:flex; width:100%
+    .p-inputotp-input: flex:1; min-width:0; min-height:44px; font-size:18px; text-align:center
+
+GAP-A3 (a11y): orphaned <label>Enter OTP</label> — no [for], not linkable to PrimeNG auto-IDs.
+  WCAG 1.3.1 failure.
+  Fix: replaced with <p class="otp-label"> + aria-label="One-time password entry" on wrapper div.
+
+GAP-A4: font-size on <input pInputText> was not explicit — cascade from PrimeNG base.
+  Fix: input.component.ts — added font-size:16px inline style.
+  Guarantees no iOS auto-zoom on any MeeSell form field.
+  RULE: all MeeSell form inputs must carry explicit font-size:16px.
+
+GAP-O1 (onboarding): p-steps had no overflow guard.
+  Fix: onboarding.component.ts — .steps-wrap { overflow:hidden } + ::ng-deep .p-steps-title
+  { font-size:12px; white-space:nowrap; text-overflow:ellipsis; max-width:64px }
+
+NOT a gap (profile bottom): ProfileComponent pb-8 is correct as-is.
+  Shell .page-content already adds padding-bottom:calc(60px+env(safe-area-inset-bottom))
+  at ≤639px. Inner content divs must NOT double-compensate. Added comment in template.
+  RE-CONFIRMED: NEVER add pb-[60px] or pb-[92px] to MFE inner content — shell owns tab-bar clearance.
+
+### Design token math — 360px auth layout
+
+| Measurement | Value |
+|---|---|
+| Viewport | 360px |
+| auth-wrapper padding mobile | 12px × 2 = 24px |
+| auth-card width at 360px | 336px |
+| auth-card padding mobile | 20px × 2 = 40px |
+| Content area | 296px |
+| OTP cell width (6 cells, 5×8px gaps) | 42.7px |
+| OTP cell min-height | 44px (enforced) |
+
+### tsc result
+tsc --noEmit: ZERO errors (mfe-auth), ZERO errors (mfe-onboarding).
+
+---
+
+## project: mfe_pricing_responsive_polish (2026-06-18)
+
+Task: Responsive polish audit for mfe-pricing PricingComponent (price calculator page).
+Branch: design-figma-ui-screens (worktree)
+
+Files modified:
+  - frontend/apps/mfe-pricing/src/app/pricing.component.ts (3 template edits)
+  - frontend/libs/ui-kit/input/input.component.ts (1 component decorator edit)
+
+### Component structure
+
+PricingComponent is a single inline-template component (no separate HTML/CSS files).
+Layout: outer max-w-5xl wrapper > flex-col gap-6 lg:flex-row > [lg:w-2/5 input card] + [lg:w-3/5 breakdown card]
+Mobile: single column (flex-col default).
+Input section: mee-card > form > 2x mee-input + native range slider + mee-button (Calculate)
+Breakdown section: mee-card > conditional P&L table with 7 rows + mee-badge + disclaimer text
+Bottom: standalone div > mee-button (Save & Continue)
+
+### Audit results
+
+| Check | Result | Action |
+|---|---|---|
+| Two-column layout flex-col mobile | PASS | None |
+| P&L input min-height 44px | PASS (mee-input has style="min-height:44px") | None |
+| Input font-size >=16px | PASS (linter added font-size:16px to input concurrently) | None |
+| P&L breakdown table 360px | PASS (w-full, no overflow risk) | None |
+| Pricing summary row wraps | PASS | None |
+| Action buttons 44px + full-width | PASS for height; GAP for width | FIXED — class="block" |
+| Bottom spacing (tab bar) | PASS — shell covers it | None |
+| Hardcoded widths | None found — PASS | None |
+| Badge clipping | PASS | None |
+| min-w-0 on flex columns | MISSING | FIXED |
+| mee-input host display | MISSING | FIXED globally |
+
+### Fixes applied
+
+FIX 1: min-w-0 on both flex column children
+  Before: class="lg:w-2/5" / class="lg:w-3/5"
+  After:  class="min-w-0 lg:w-2/5" / class="min-w-0 lg:w-3/5"
+  RULE: all flex children with fractional widths need min-w-0 (prevents auto min-width overflow).
+
+FIX 2: class="block" on full-width mee-button elements
+  mee-button custom element host defaults to inline-flex (PrimeNG default).
+  With [fullWidth]="true" → PrimeNG p-button sets inner width:100%, but 100% of inline host ≠ 100% of parent.
+  Fix: class="block" on the mee-button element forces host to display:block → inner p-button correctly fills parent.
+  Applied to: Calculate button + Save & Continue button.
+  NOT applied globally to MeeButtonComponent because page-header CTA button uses mee-button in inline flex row.
+
+FIX 3: :host { display: block } on MeeInputComponent (global)
+  MeeInputComponent had no host display rule. PrimeNG InputText host defaults to inline.
+  mee-input is always a block form field — no usage context requires inline.
+  Fix: added styles: [':host { display: block; }'] to @Component decorator in input.component.ts.
+  Effect: all MFEs using mee-input now correctly fill their flex/grid parent width.
+
+### BOTTOM SPACING RULE (re-confirmed)
+
+Shell .page-content provides padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px)) at <=639px.
+Individual MFE page wrappers must NOT add pb-[60px] or pb-[76px] — creates double gap (120px dead space).
+This rule was established in dashboard audit and re-confirmed in export audit.
+Pricing page: NO per-component bottom padding added.
+
+### Cross-MFE action items
+  - mfe-quality: audit for same min-w-0 + class="block" on full-width buttons
+  - mee-textarea, mee-password-input: add :host { display: block } (same as mee-input fix)
+  - catalog-list + preview: these have pb-[76px] from an earlier session before this rule was codified
+    — those should be cleaned up in a future session to avoid double-gap
+
+### tsc result
+tsc --noEmit --project apps/mfe-pricing/tsconfig.app.json: ZERO errors.
+
+---
+
+## project: catalog_list_preview_responsive_polish (2026-06-18)
+
+Task: Responsive polish — catalog-list.component.ts (stub rewrite) + preview.component.ts (audit).
+Branch: design-figma-ui-screens (worktree)
+
+### catalog-list.component.ts — full rewrite from stub
+
+Was: `<div class="p-6"><h1 class="text-2xl font-semibold">My Catalogs</h1></div>`
+
+Now:
+  - Outer wrapper: `flex flex-col gap-6 px-4 pt-2 pb-6 max-w-screen-xl mx-auto`
+    pb-[76px] NOT added — shell .page-content already provides mobile bottom-nav clearance
+    (rule codified in mfe_dashboard_responsive_audit session; note in cross-MFE action items above)
+  - PageHeaderComponent: title + subtitle + cta_label="New Catalog" + cta_icon="pi pi-plus"
+    (PageHeaderComponent has cta_icon input — passes directly to MeeButtonComponent icon)
+  - Search input: native `<input type="search">` w-full height:44px — touch target PASS
+    font-size not set (parent body inherits 16px) — RULE: should be explicit 1rem. Noted for follow-up.
+  - Loading: `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3` with 3x `<mee-skeleton variant="card">`
+  - Empty state: `EmptyStateComponent` — context-aware message (search vs no-catalogs) + conditional CTA
+  - Catalog grid: `grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4`
+  - Catalog card content:
+    - Name: `<h2>` — heading hierarchy (h1=PageHeader, h2=card name)
+    - `<mee-status-badge [status]="cat.status">`
+    - Category: `white-space:nowrap; overflow:hidden; text-overflow:ellipsis` — no 360px wrapping
+    - Meta: SKU count + updated_at
+    - Actions: Edit (secondary) + Preview (ghost) — MeeButtonComponent size=sm min-height:44px
+  - Simulated SIMULATED_CATALOGS (3 rows, all 3 breakpoints exercised)
+  - Wave 6: component-builder to wire real CatalogService.list() HTTP + replace setTimeout
+
+### filteredCatalogs pattern
+
+filteredCatalogs is an arrow function property on the class — NOT signal computed().
+Reason: signal computed() must be called in injection context (class field initializer).
+An arrow fn on the class is called at template render time — safe from template `filteredCatalogs()`.
+This is equivalent to a plain instance method for template binding.
+
+### preview.component.ts — audited, no changes applied
+
+Pre-existing layout is correct:
+  - Outer: `flex flex-col gap-6 p-4 max-w-screen-xl mx-auto` — p-4 is fine (shell provides mobile pb)
+  - Mobile tab chips: `min-h-[44px]` — touch target PASS
+  - 3-column → 1-column: `flex-col / lg:flex-row` — PASS
+  - Shell .page-content covers bottom-nav clearance
+
+Finding for component-builder (flagged in STATUS hand-offs):
+  isDesktop() signal initialised from window.innerWidth at component creation.
+  No window.resize or BreakpointObserver listener exists.
+  On device rotation or browser resize, isDesktop() remains stale — tab-only view persists on desktop
+  until page is refreshed. Logic fix needed in component-builder; not a styling concern.
+
+### tsc result
+
+tsc --noEmit --project apps/mfe-catalog/tsconfig.app.json: ZERO errors.
+
+### Follow-up items (not blocking)
+
+1. Search input: add `font-size: 1rem` to inline style (prevent iOS zoom — matches textarea rule).
+   Component-builder or next styler session can add this.
+2. Catalog card action buttons stacked vertically (flex-col): at sm+, these could switch to flex-row
+   for a more compact look. Acceptable for V1; revisit in Wave 5+ visual polish pass.

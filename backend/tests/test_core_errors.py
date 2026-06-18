@@ -8,6 +8,7 @@ from httpx import ASGITransport, AsyncClient
 from pydantic import BaseModel, Field
 
 from app.core.errors import MeesellError, _resolve_message_id, register_error_handlers
+from app.modules.export.exceptions import ExportValidationFailedError
 
 pytestmark = pytest.mark.unit
 
@@ -43,6 +44,21 @@ def _make_app() -> FastAPI:
     @app.get("/boom")
     async def _route_boom() -> dict:
         raise ValueError("kaboom inside route")
+
+    @app.post("/export-validation")
+    async def _route_export_validation() -> dict:
+        raise ExportValidationFailedError(
+            failed_checks=[
+                {
+                    "check_id": "quality_status",
+                    "message_key": "export.check.quality_status",
+                },
+                {
+                    "check_id": "front_image_missing",
+                    "message_key": "export.check.front_image_missing",
+                },
+            ]
+        )
 
     return app
 
@@ -146,3 +162,41 @@ def test_i18n_resolver_wired() -> None:
         _resolve_message_id("nope.totally.unknown", fallback="Human readable")
         == "Human readable"
     )
+
+
+# ── 7. failed_checks is additive on the 422 envelope ──────────────────────
+@pytest.mark.asyncio
+async def test_export_validation_failed_checks_additive() -> None:
+    """ExportValidationFailedError appends an additive ``failed_checks`` field
+    to the locked §4.F envelope without disturbing the locked keys."""
+    expected_checks = [
+        {"check_id": "quality_status", "message_key": "export.check.quality_status"},
+        {
+            "check_id": "front_image_missing",
+            "message_key": "export.check.front_image_missing",
+        },
+    ]
+    app = _make_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as ac:
+        resp = await ac.post("/export-validation")
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body["code"] == "export.validation_failed"
+    assert body["failed_checks"] == expected_checks
+    # All locked §4.F keys present.
+    for key in ("detail", "code", "validation_message_id", "request_id"):
+        assert key in body
+
+
+# ── 8. plain MeesellError → NO failed_checks key (field is conditional) ────
+@pytest.mark.asyncio
+async def test_plain_error_has_no_failed_checks_key() -> None:
+    """A MeesellError without a ``failed_checks`` attribute must produce an
+    envelope WITHOUT the ``failed_checks`` key — proving it is additive."""
+    app = _make_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as ac:
+        resp = await ac.post("/dummy")
+    body = resp.json()
+    assert "failed_checks" not in body

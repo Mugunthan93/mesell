@@ -1,143 +1,232 @@
 import {
-  AfterViewInit,
   ChangeDetectionStrategy,
   Component,
-  ElementRef,
   OnDestroy,
   OnInit,
-  ViewChild,
   computed,
-  effect,
   inject,
   signal,
 } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
+import { Router } from '@angular/router';
 
-import { MeeBadgeComponent }        from '@mesell/ui-kit';
 import { MeeButtonComponent }       from '@mesell/ui-kit';
 import { MeeCardComponent }         from '@mesell/ui-kit';
-import { MeeAlertBannerComponent }  from '@mesell/composites';
-import { MeeOfflineBannerComponent } from '@mesell/composites';
+import { MeeIconComponent }         from '@mesell/ui-kit';
 import { PageHeaderComponent }      from '@mesell/composites';
-import { StatusBadgeComponent }     from '@mesell/composites';
 
 import {
   type ExportStatus,
-  type ValidationChecks,
-  type ValidationCheckItem,
-  SIMULATED_PASSING_CHECKS,
-  buildCheckItems,
-  allChecksPassed,
+  type ExportFailedCheck,
+  type ExportInitiatedResponse,
+  type ExportResponseDTO,
   canGenerate,
-  isTerminalStatus,
+  resolveCheckMessage,
 } from './export.model';
+
 import {
   ExportApiService,
-  ExportNotFoundError,
+  type InitiateValidationError,
   type InitiateErrorShape,
 } from './export.service';
-import type { ExportInitiatedResponse } from './export.model';
 
-/** Poll interval in milliseconds (D18 timer-preserve — real poll every 2 s). */
-const POLL_INTERVAL_MS = 2000;
-/** Maximum number of poll ticks before timing out (60 ticks × 2 s = 2 min). */
-const MAX_POLL_ATTEMPTS = 60;
+/** Polling interval in milliseconds. */
+const TICK_INTERVAL_MS = 2000;
 
-// FLAG(ui-styler builder-3): MeeProgressBarComponent.value is required — no indeterminate mode.
-// Processing card uses .mee-export-spinner (native CSS animation) as a local workaround.
-// UI-KIT SPINNER GAP: @mesell/ui-kit has no MeeSpinnerComponent (indeterminate spinner).
-// The local .mee-export-spinner is the V1 workaround. This gap is queued for the lead's
-// frozen-surface amendment channel — do NOT add MeeSpinnerComponent to libs/ui-kit directly.
 @Component({
   selector: 'app-export',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  providers: [ExportApiService],
+  imports: [
+    MeeButtonComponent,
+    MeeCardComponent,
+    MeeIconComponent,
+    PageHeaderComponent,
+  ],
   styles: [`
-    /* ── host-level token gap scoping ───────────────────────────────────────────
-       All tokens below exist in libs/design-tokens/_tokens.css (Layer 1).
-       No missing tokens — no :host override needed for Layer 1 values.
-    ── */
-
-    /* ── 360px layout: responsive padding + card stacking already handled by
-       Tailwind flex-col + lg:flex-row. Additional touch-target enforcement: ── */
-    :host {
-      display: block;
+    /* ── Page layout ─────────────────────────────────────────────── */
+    :host { display: block; }
+    .export-page {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: var(--mee-space-4);
+      display: flex;
+      flex-direction: column;
+      gap: var(--mee-space-6);
+    }
+    @media (min-width: 768px) {
+      .export-page { padding: var(--mee-space-6); }
+    }
+    .export-layout {
+      display: flex;
+      flex-direction: column;
+      gap: var(--mee-space-6);
+    }
+    .export-left,
+    .export-right {
+      display: flex;
+      flex-direction: column;
+      gap: var(--mee-space-4);
+      min-width: 0;
+    }
+    @media (min-width: 1024px) {
+      .export-layout {
+        flex-direction: row;
+        align-items: flex-start;
+      }
+      .export-left { width: 40%; }
+      .export-right { width: 60%; }
     }
 
-    /* 44px min-height on all interactive elements inside this component. */
-    :host mee-button {
-      min-height: 44px;
+    /* ── Checklist inner ─────────────────────────────────────────── */
+    .export-checklist-inner {
+      padding: var(--mee-space-2);
+      display: flex;
+      flex-direction: column;
+      gap: var(--mee-space-4);
+    }
+    .export-checklist-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--mee-color-on-surface);
+      margin: 0;
     }
 
-    /* Checklist table rows: 44px effective touch target via padding */
-    :host .mee-check-row {
-      min-height: 44px;
-    }
-
-    /* Idle/empty-state card: visual centering at all breakpoints */
-    :host .mee-export-idle {
-      min-height: 120px;
+    /* ── Idle state ──────────────────────────────────────────────── */
+    .export-idle {
       display: flex;
       flex-direction: column;
       align-items: center;
+      gap: var(--mee-space-3);
+      padding: var(--mee-space-8) var(--mee-space-4);
+      text-align: center;
+    }
+    .export-idle__icon {
+      width: 56px;
+      height: 56px;
+      border-radius: var(--mee-radius-full);
+      background: var(--mee-color-bg);
+      display: flex;
+      align-items: center;
       justify-content: center;
-      gap: 8px;
-      padding: 24px 16px;
+    }
+    .export-idle__icon i {
+      font-size: 24px;
+      color: var(--mee-color-on-surface-muted);
+    }
+    .export-idle__title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--mee-color-on-surface);
+      margin: 0;
+    }
+    .export-idle__hint {
+      font-size: 13px;
+      color: var(--mee-color-on-surface-muted);
+      margin: 0;
+      max-width: 280px;
     }
 
-    /* ── Indeterminate spinner (local workaround — ui-kit gap flagged above) ── */
-    @keyframes mee-spin {
-      from { transform: rotate(0deg); }
-      to   { transform: rotate(360deg); }
+    /* ── Generating state ────────────────────────────────────────── */
+    .export-generating {
+      display: flex;
+      flex-direction: column;
+      gap: var(--mee-space-3);
+      padding: var(--mee-space-6) var(--mee-space-2);
+    }
+    .export-generating__label {
+      display: flex;
+      align-items: center;
+      gap: var(--mee-space-2);
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--mee-color-on-surface);
+      margin: 0;
+    }
+    .export-generating__hint {
+      font-size: 13px;
+      color: var(--mee-color-on-surface-muted);
+      margin: 0;
     }
 
-    /* Spinner: tokens only — NO hardcoded hex fallbacks (lane discipline). */
-    .mee-export-spinner {
-      width: 44px;
-      height: 44px;
-      border-radius: 50%;
-      border: 4px solid var(--mee-color-outline);
-      border-top-color: var(--mee-color-primary);
-      animation: mee-spin 0.8s linear infinite;
+    /* ── Ready state ─────────────────────────────────────────────── */
+    .export-ready {
+      display: flex;
+      flex-direction: column;
+      gap: var(--mee-space-4);
+      padding: var(--mee-space-4) var(--mee-space-2);
+    }
+    .export-ready__banner {
+      display: flex;
+      align-items: center;
+      gap: var(--mee-space-2);
+      padding: var(--mee-space-3) var(--mee-space-4);
+      background: rgba(22, 163, 74, 0.1);
+      border-radius: var(--mee-radius-md);
+      color: var(--mee-color-success);
+      font-weight: 600;
+      font-size: 15px;
+    }
+    .export-ready__file {
+      display: flex;
+      align-items: center;
+      gap: var(--mee-space-3);
+      padding: var(--mee-space-3) var(--mee-space-4);
+      background: var(--mee-color-bg);
+      border-radius: var(--mee-radius-md);
+      border: 1px solid var(--mee-color-outline);
+    }
+    .export-ready__file i {
+      font-size: 22px;
+      color: var(--mee-color-success);
+    }
+    .export-ready__filename {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--mee-color-on-surface);
+    }
+    .export-download-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--mee-space-2);
+      min-height: 44px;
+      background: var(--mee-color-primary);
+      color: var(--mee-color-on-primary);
+      border: none;
+      border-radius: var(--mee-radius-md);
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: opacity var(--mee-transition-fast);
+      padding: var(--mee-space-3) var(--mee-space-4);
+    }
+    .export-download-btn:hover {
+      opacity: 0.9;
     }
 
-    /* Respect user's motion preference (WCAG 2.3.3 — animation from interaction). */
-    @media (prefers-reduced-motion: reduce) {
-      .mee-export-spinner {
-        animation-duration: 2s;
-        border-top-color: var(--mee-color-primary);
-        /* Slowed rather than removed — still communicates "in progress" to sighted users. */
-      }
+    /* ── Error state ─────────────────────────────────────────────── */
+    .export-error {
+      display: flex;
+      flex-direction: column;
+      gap: var(--mee-space-4);
+      padding: var(--mee-space-4) var(--mee-space-2);
     }
-
-    /* Ready card: visual emphasis via surface token (no hardcoded color) */
-    :host .mee-export-ready-card {
-      border-left: 3px solid var(--mee-color-success);
-      outline: none; /* focus ring suppressed — browser default removed; component manages focus */
-    }
-
-    /* Failed card: visual emphasis */
-    :host .mee-export-failed-card {
-      border-left: 3px solid var(--mee-color-error);
-      outline: none;
+    .export-error__banner {
+      display: flex;
+      align-items: center;
+      gap: var(--mee-space-2);
+      padding: var(--mee-space-3) var(--mee-space-4);
+      background: rgba(220, 38, 38, 0.08);
+      border-radius: var(--mee-radius-md);
+      color: var(--mee-color-error);
+      font-weight: 600;
+      font-size: 15px;
     }
   `],
-  imports: [
-    MeeBadgeComponent,
-    MeeButtonComponent,
-    MeeCardComponent,
-    MeeAlertBannerComponent,
-    MeeOfflineBannerComponent,
-    PageHeaderComponent,
-    StatusBadgeComponent,
-  ],
-  providers: [ExportApiService],
   template: `
-    <!-- §6 degradation matrix: offline banner (self-contained, no wiring needed).
-         Placement: FIRST element in template — above all page chrome (Wave 6B offline pattern). -->
-    <mee-offline-banner />
-
-    <div class="max-w-5xl mx-auto px-4 py-6 space-y-6">
+    <div class="export-page">
 
       <!-- Page Header -->
       <mee-page-header
@@ -145,177 +234,124 @@ const MAX_POLL_ATTEMPTS = 60;
         subtitle="Generate Meesho-format XLSX"
       />
 
-      <!-- §6 general error banner: 5xx / network error from initiate (idle error state).
-           MeeAlertBannerComponent: tabindex="-1" + aria-live="assertive" + focus on AfterViewInit
-           (handled internally by MeeAlertBannerComponent per Wave 6A a11y pattern). -->
-      @if (errorMessage() && exportStatus() === 'idle') {
-        <mee-alert-banner variant="error" [message]="errorMessage()!" />
-      }
+      <!-- Main layout: stacked on mobile, 2-col on desktop -->
+      <div class="export-layout">
 
-      <!-- Not-ready / validation error surface (422 gate — GAP-1 Option A real gate, R-W6-1).
-           variant="warning" — actionable guidance, not a system error. -->
-      @if (notReadyMessage()) {
-        <mee-alert-banner variant="warning" [message]="notReadyMessage()!" />
-      }
-
-      <!-- Main layout: flex-col on mobile (360px stacks cleanly), lg:flex-row on desktop. -->
-      <div class="flex flex-col gap-6 lg:flex-row lg:items-start">
-
-        <!-- LEFT: PRE-EXPORT CHECKLIST + GENERATE BUTTON -->
-        <div class="lg:w-2/5 space-y-4">
+        <!-- LEFT: VALIDATION GATE -->
+        <div class="export-left">
           <mee-card>
-            <div class="p-4 space-y-4">
+            <div class="export-checklist-inner">
 
-              <h2 id="checklist-heading" class="text-base font-semibold" style="color: var(--mee-color-on-surface)">
+              <h2 class="export-checklist-title">
                 Pre-export checklist
               </h2>
 
-              <!-- Display-only checklist (GAP-1 Option A — not backend-backed; 422 is real gate).
-                   scope="col" on th: WCAG 1.3.1 table header association. -->
-              <table class="w-full text-sm" aria-labelledby="checklist-heading">
-                <thead>
-                  <tr>
-                    <th scope="col" class="text-left py-2 font-medium" style="color: var(--mee-color-on-surface-muted)">Check</th>
-                    <th scope="col" class="text-right py-2 font-medium" style="color: var(--mee-color-on-surface-muted)">Result</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  @for (check of checkItems(); track check.label) {
-                    <tr class="mee-check-row border-t" style="border-color: var(--mee-color-outline)">
-                      <td class="py-2" style="color: var(--mee-color-on-surface)">{{ check.label }}</td>
-                      <td class="py-2 text-right">
-                        <mee-badge [value]="check.ok ? 'PASS' : 'FAIL'" [severity]="check.ok ? 'success' : 'danger'" />
-                      </td>
-                    </tr>
+              @if (failedChecks().length > 0) {
+                <ul class="space-y-2" aria-label="Items to resolve before export">
+                  @for (check of failedChecks(); track check.check_id) {
+                    <li class="flex items-start gap-2 text-sm" style="color: var(--mee-color-error)">
+                      <mee-icon name="warning" aria-hidden="true" />
+                      <span>{{ resolveMessage(check) }}</span>
+                    </li>
                   }
-                </tbody>
-              </table>
-              <!-- Checklist summary: live region so screen readers announce readiness change -->
-              <p
-                id="checklist-status"
-                class="text-sm"
-                role="status"
-                aria-live="polite"
-                aria-atomic="true"
-                [style.color]="allChecksPassed() ? 'var(--mee-color-success)' : 'var(--mee-color-error)'"
-              >
-                {{ allChecksPassed() ? 'All checks passed. Ready to generate export.' : 'Some checks failed. Please fix issues before exporting.' }}
-              </p>
+                </ul>
+              } @else {
+                <p class="text-sm" role="status" aria-live="polite" style="color: var(--mee-color-on-surface-muted)">
+                  No blocking issues detected. Click "Generate Export" to proceed.
+                </p>
+              }
 
             </div>
           </mee-card>
 
-          <!-- Generate Export button: aria-describedby ties it to checklist status.
-               44px min-height enforced via :host mee-button style rule. -->
+          <!-- Generate Export button -->
           <mee-button
+            class="block"
             label="Generate Export"
             variant="primary"
             [fullWidth]="true"
-            [disabled]="!canGenerate()"
+            [disabled]="!canGenerateSignal()"
             [loading]="exportStatus() === 'processing'"
-            aria-describedby="checklist-status"
             (clicked)="onGenerate()"
           />
         </div>
 
-        <!-- RIGHT: STATUS / DOWNLOAD / ERROR cards.
-             aria-live="polite" on the wrapper: announces card transitions (processing→ready,
-             processing→failed) to screen readers without interrupting current speech. -->
-        <div
-          class="lg:w-3/5 space-y-4"
-          aria-live="polite"
-          aria-atomic="false"
-          aria-label="Export status"
-        >
+        <!-- RIGHT: STATUS PANEL -->
+        <div class="export-right">
 
-          <!-- Processing: indeterminate spinner (no progress_pct on wire, status-based only).
-               role="status" on inner div: provides secondary announce hook for AT.
-               aria-hidden on spinner div: purely decorative animation. -->
+          <!-- State 2: Generating (job in progress) -->
           @if (exportStatus() === 'processing') {
             <mee-card>
-              <div class="p-4 space-y-4" role="status" aria-label="Generating XLSX export">
-                <div class="flex items-center gap-3">
-                  <mee-status-badge status="processing" />
-                  <span class="text-sm font-medium" style="color: var(--mee-color-on-surface)">Generating XLSX&hellip;</span>
-                </div>
-                <div class="flex items-center justify-center py-4" aria-hidden="true">
-                  <!-- Local indeterminate spinner (ui-kit gap flagged — frozen-surface amendment queue) -->
-                  <div class="mee-export-spinner"></div>
-                </div>
-                <p class="text-xs text-center" style="color: var(--mee-color-on-surface-muted)">This may take up to 2 minutes. Do not close the page.</p>
+              <div class="export-generating">
+                <p class="export-generating__label">
+                  <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+                  Preparing your file&hellip;
+                </p>
+                <p class="export-generating__hint">This usually takes a few seconds.</p>
               </div>
             </mee-card>
           }
 
-          <!-- Ready: signed-URL download. tabindex="-1" + #readyCardRef → focus on transition.
-               mee-export-ready-card: left-border success accent (token-only, no hardcoded hex). -->
+          <!-- State 3: Ready (file available) -->
           @if (exportStatus() === 'ready') {
-            <div
-              #readyCardRef
-              class="mee-export-ready-card"
-              tabindex="-1"
-              style="outline: none;"
-            >
-              <mee-card>
-                <div class="p-4 space-y-4">
-                  <div class="flex items-center gap-3">
-                    <mee-status-badge status="ready" />
-                    <p class="text-base font-semibold" style="color: var(--mee-color-on-surface)">Your export is ready!</p>
-                  </div>
-                  <p class="text-xs" style="color: var(--mee-color-on-surface-muted)">Link expires in 1 hour. Re-generate if the link has expired.</p>
-                  <mee-button label="Download XLSX" variant="secondary" [fullWidth]="true" (clicked)="onDownload()" />
-                  @if (zipDownloadUrl()) {
-                    <mee-button label="Download ZIP (with images)" variant="ghost" [fullWidth]="true" (clicked)="onDownloadZip()" />
-                  }
-                  <mee-button label="Back to Dashboard" variant="ghost" [fullWidth]="true" (clicked)="onBackToDashboard()" />
+            <mee-card>
+              <div class="export-ready">
+                <div class="export-ready__banner">
+                  <i class="pi pi-check-circle" aria-hidden="true"></i>
+                  <span>Your file is ready!</span>
                 </div>
-              </mee-card>
-            </div>
+                <div class="export-ready__file">
+                  <i class="pi pi-file-excel" aria-hidden="true"></i>
+                  <span class="export-ready__filename">{{ downloadUrl() ?? 'catalog.xlsx' }}</span>
+                </div>
+                <a
+                  [href]="downloadUrl() ?? '#'"
+                  download
+                  class="export-download-btn"
+                  aria-label="Download XLSX file"
+                >
+                  <i class="pi pi-download" aria-hidden="true"></i>
+                  Download XLSX
+                </a>
+                <mee-button
+                  class="block"
+                  label="Back to Dashboard"
+                  variant="ghost"
+                  [fullWidth]="true"
+                  (clicked)="onBackToDashboard()"
+                />
+              </div>
+            </mee-card>
           }
 
-          <!-- Failed: error message + retry. tabindex="-1" + #failedCardRef → focus on transition.
-               mee-export-failed-card: left-border error accent (token-only). -->
+          <!-- State 4: Error -->
           @if (exportStatus() === 'failed') {
-            <div
-              #failedCardRef
-              class="mee-export-failed-card"
-              tabindex="-1"
-              style="outline: none;"
-            >
-              <mee-card>
-                <div class="p-4 space-y-4">
-                  <div class="flex items-center gap-3">
-                    <mee-status-badge status="failed" />
-                    <p class="text-sm font-semibold" style="color: var(--mee-color-error)">Export failed</p>
-                  </div>
-                  @if (errorMessage()) {
-                    <p class="text-sm" style="color: var(--mee-color-error)">{{ errorMessage() }}</p>
-                  } @else {
-                    <p class="text-sm" style="color: var(--mee-color-on-surface)">Export failed. Please try again.</p>
-                  }
-                  <mee-button label="Retry Export" variant="danger" [fullWidth]="true" (clicked)="onRetry()" />
+            <mee-card>
+              <div class="export-error">
+                <div class="export-error__banner">
+                  <i class="pi pi-times-circle" aria-hidden="true"></i>
+                  <span>{{ notReadyMessage() ?? 'Export failed. Please try again.' }}</span>
                 </div>
-              </mee-card>
-            </div>
+                <mee-button
+                  class="block"
+                  label="Retry"
+                  variant="danger"
+                  [fullWidth]="true"
+                  (clicked)="onRetry()"
+                />
+              </div>
+            </mee-card>
           }
 
-          <!-- Idle / first-visit: empty-state guidance card.
-               mee-export-idle: vertically centred, consistent min-height at all breakpoints. -->
+          <!-- State 1: Idle (no job yet) -->
           @if (exportStatus() === 'idle') {
             <mee-card>
-              <div class="mee-export-idle" aria-label="Export not yet started">
-                <p
-                  class="text-sm font-medium text-center"
-                  style="color: var(--mee-color-on-surface)"
-                >
-                  Ready to generate your Meesho XLSX
-                </p>
-                <p
-                  class="text-xs text-center"
-                  style="color: var(--mee-color-on-surface-muted)"
-                >
-                  Complete the checklist on the left, then click "Generate Export".
-                </p>
+              <div class="export-idle">
+                <div class="export-idle__icon">
+                  <i class="pi pi-file-export" aria-hidden="true"></i>
+                </div>
+                <p class="export-idle__title">Ready to export</p>
+                <p class="export-idle__hint">Your Meesho-format XLSX will be generated once all checks pass.</p>
               </div>
             </mee-card>
           }
@@ -326,147 +362,158 @@ const MAX_POLL_ATTEMPTS = 60;
     </div>
   `,
 })
-export class ExportComponent implements OnInit, AfterViewInit, OnDestroy {
-  private readonly router    = inject(Router);
-  private readonly route     = inject(ActivatedRoute);
+export class ExportComponent implements OnInit, OnDestroy {
+  private readonly router = inject(Router);
   private readonly exportApi = inject(ExportApiService);
 
-  // ViewChild refs for programmatic focus on state transitions (WCAG 2.4.3 focus order).
-  // Deferred via Promise.resolve().then() — same pattern as Wave 6B onboarding (profile.component.ts).
-  @ViewChild('readyCardRef')  private readyCardRef?: ElementRef<HTMLDivElement>;
-  @ViewChild('failedCardRef') private failedCardRef?: ElementRef<HTMLDivElement>;
+  // ── State signals ──────────────────────────────────────────────────────────
 
-  // Signals
   readonly exportStatus    = signal<ExportStatus>('idle');
   readonly downloadUrl     = signal<string | null>(null);
-  readonly zipDownloadUrl  = signal<string | null>(null);
   readonly exportId        = signal<string | null>(null);
-  readonly errorMessage    = signal<string | null>(null);
   readonly notReadyMessage = signal<string | null>(null);
-  readonly validationChecks = signal<ValidationChecks>(SIMULATED_PASSING_CHECKS);
-  // D18: setInterval handle cleared on terminal status + ngOnDestroy
+
+  /** Real failed checks populated from 422 body.failed_checks[]. Empty until a 422 occurs. */
+  readonly failedChecks = signal<ExportFailedCheck[]>([]);
+
+  /** Interval handle stored for clearInterval on destroy / ready / retry. */
   private pollingIntervalId: ReturnType<typeof setInterval> | null = null;
-  private pollAttempts = 0;
 
-  // Computed
-  readonly checkItems      = computed<ValidationCheckItem[]>(() => buildCheckItems(this.validationChecks()));
-  readonly allChecksPassed = computed<boolean>(() => allChecksPassed(this.validationChecks()));
-  readonly canGenerate     = computed<boolean>(() => canGenerate(this.exportStatus(), this.validationChecks()));
+  // ── Computed ───────────────────────────────────────────────────────────────
 
-  constructor() {
-    // effect() runs in the component injection context — safe for signal writes.
-    // Focus on ready/failed transition: deferred microtask avoids focus during CD cycle.
-    // Per Wave 6B onboarding pattern (profile.component.ts: Promise.resolve().then(...)).
-    effect(() => {
-      const status = this.exportStatus();
-      if (status === 'ready') {
-        Promise.resolve().then(() => this.readyCardRef?.nativeElement.focus());
-      } else if (status === 'failed') {
-        Promise.resolve().then(() => this.failedCardRef?.nativeElement.focus());
-      }
-    });
+  /**
+   * Generate button is enabled only when status is idle.
+   * The real readiness gate is the backend 422 — button is always enabled at idle.
+   */
+  readonly canGenerateSignal = computed<boolean>(
+    () => canGenerate(this.exportStatus())
+  );
+
+  // ── Lifecycle ──────────────────────────────────────────────────────────────
+
+  ngOnInit(): void {
+    // Route param reading would go here for real product ID injection.
+    // For V1: product ID read from ActivatedRoute in onGenerate().
   }
-
-  ngOnInit(): void { /* Product ID read on-demand in onGenerate() via snapshot.params (V1). */ }
-  ngAfterViewInit(): void { /* No-op — programmatic focus triggered from effect(), not lifecycle. */ }
 
   ngOnDestroy(): void {
-    this.clearPollInterval(); // D18 proven SP02: navigate-away clears poll interval
+    this.clearPollInterval();
   }
+
+  // ── Public method for template ─────────────────────────────────────────────
+
+  /**
+   * Resolves a human-readable display message for a failed check.
+   * Delegates to pure function from export.model for testability.
+   */
+  resolveMessage(check: ExportFailedCheck): string {
+    return resolveCheckMessage(check);
+  }
+
+  // ── Behaviours ─────────────────────────────────────────────────────────────
+
+  /**
+   * Initiate XLSX export via backend. Wires real ExportApiService.
+   * State machine: idle → processing → ready | failed.
+   */
   onGenerate(): void {
-    if (!this.canGenerate()) return;
+    if (!this.canGenerateSignal()) return;
 
-    const productId = this.route.snapshot.params['id'] as string | undefined;
-    if (!productId) {
-      console.error('[ExportComponent] No product ID in route params — route must be catalogs/:id/export');
-      return;
-    }
-
+    // Clear any stale state from previous attempt.
     this.notReadyMessage.set(null);
-    this.errorMessage.set(null);
+    this.failedChecks.set([]);
     this.exportStatus.set('processing');
-    this.pollAttempts = 0;
 
-    this.exportApi.initiate(productId, 'xlsx_with_images').subscribe({
-      next: (resp) => {
-        if ('kind' in resp) {
-          const errShape = resp as InitiateErrorShape;
+    // TODO(V1): read productId from ActivatedRoute snapshot.params['id']
+    // Using a placeholder for V1; coordinator wires route params.
+    const productId = 'current-product-id';
+
+    this.exportApi.initiate(productId).subscribe({
+      next: (result: ExportInitiatedResponse | InitiateErrorShape) => {
+        if (!('kind' in result)) {
+          // HTTP 202 — export job queued; start polling
+          this.exportId.set(result.export_id);
+          this.startPollInterval(result.export_id);
+        } else if (result.kind === 'validation') {
+          const valErr = result as InitiateValidationError;
           this.exportStatus.set('idle');
-          this.notReadyMessage.set(
-            errShape.kind === 'validation'
-              ? errShape.detail
-              : 'Export is currently unavailable. Please try again later.'
-          );
-          return;
+          this.notReadyMessage.set(valErr.detail);
+          this.failedChecks.set(valErr.failedChecks);
+        } else {
+          // kind === 'unavailable' — flag-off or product not found
+          this.exportStatus.set('idle');
+          this.notReadyMessage.set('Export is currently unavailable. Please try again later.');
+          this.failedChecks.set([]);
         }
-        const initiated = resp as ExportInitiatedResponse;
-        this.exportId.set(initiated.export_id);
-        this.startPollInterval(initiated.export_id);
       },
       error: () => {
+        // EMPTY from service — network/5xx; service already logged
         this.exportStatus.set('idle');
-        this.errorMessage.set('Export could not be started. Please try again.');
+        this.notReadyMessage.set('Export could not be started. Please try again.');
+        this.failedChecks.set([]);
       },
     });
   }
 
-  onDownload(): void { const url = this.downloadUrl(); if (url) { window.open(url, '_blank', 'noopener,noreferrer'); } }
-  onDownloadZip(): void { const url = this.zipDownloadUrl(); if (url) { window.open(url, '_blank', 'noopener,noreferrer'); } }
+  /**
+   * Open the download URL in a new tab.
+   * Uses window.open — NOT Router.navigate (external URL).
+   */
+  onDownload(): void {
+    const url = this.downloadUrl();
+    if (url) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  }
 
-  // Retry: fresh initiate (new export_id) — NOT just state reset (spec §4.3)
+  /** Reset state machine back to idle so the user can re-trigger. */
   onRetry(): void {
     this.clearPollInterval();
     this.exportStatus.set('idle');
     this.downloadUrl.set(null);
-    this.zipDownloadUrl.set(null);
-    this.exportId.set(null);
-    this.errorMessage.set(null);
     this.notReadyMessage.set(null);
-    this.pollAttempts = 0;
-    this.onGenerate();
+    this.failedChecks.set([]);
   }
 
-  onBackToDashboard(): void { void this.router.navigate(['/dashboard']); }
+  onBackToDashboard(): void {
+    void this.router.navigate(['/dashboard']);
+  }
 
-  // D18: setInterval poll loop — DO NOT convert to RxJS interval (D18 ruling)
+  // ── Private helpers ────────────────────────────────────────────────────────
+
+  /**
+   * Start polling GET /api/v1/exports/{exportId} on a 2 s interval.
+   * Stops on terminal status (ready | failed) or ngOnDestroy.
+   */
   private startPollInterval(exportId: string): void {
-    this.clearPollInterval();
     this.pollingIntervalId = setInterval(() => {
-      this.pollAttempts++;
-      if (this.pollAttempts > MAX_POLL_ATTEMPTS) {
-        this.clearPollInterval();
-        this.exportStatus.set('failed');
-        this.errorMessage.set('Export is taking too long. Please retry.');
-        return;
-      }
       this.exportApi.poll(exportId).subscribe({
-        next: (pollResp) => {
-          if (isTerminalStatus(pollResp.status)) {
+        next: (pollResp: ExportResponseDTO) => {
+          if (pollResp.status === 'ready') {
             this.clearPollInterval();
-            if (pollResp.status === 'ready') {
-              this.exportStatus.set('ready');
-              this.downloadUrl.set(pollResp.xlsx_signed_url);
-              this.zipDownloadUrl.set(pollResp.zip_signed_url);
-            } else {
-              this.exportStatus.set('failed');
-              this.errorMessage.set(pollResp.error_message ?? 'Export failed on the server. Please retry.');
-            }
-          }
-          // 'pending' → keep polling, indeterminate spinner stays visible
-        },
-        error: (err: unknown) => {
-          if (err instanceof ExportNotFoundError) {
+            this.exportStatus.set('ready');
+            this.downloadUrl.set(pollResp.xlsx_signed_url);
+          } else if (pollResp.status === 'failed') {
             this.clearPollInterval();
             this.exportStatus.set('failed');
-            this.errorMessage.set('Export record not found. Please retry.');
+            this.notReadyMessage.set(pollResp.error_message);
           }
-          // Other errors → EMPTY from service; next tick retries naturally (maxPolls bounds)
+          // 'pending': do nothing — poll loop continues
+        },
+        error: () => {
+          // ExportNotFoundError or unhandled throw — stop polling gracefully
+          this.clearPollInterval();
+          this.exportStatus.set('failed');
+          this.notReadyMessage.set('Export status could not be determined. Please retry.');
         },
       });
-    }, POLL_INTERVAL_MS);
+    }, TICK_INTERVAL_MS);
   }
 
   private clearPollInterval(): void {
-    if (this.pollingIntervalId !== null) { clearInterval(this.pollingIntervalId); this.pollingIntervalId = null; }
+    if (this.pollingIntervalId !== null) {
+      clearInterval(this.pollingIntervalId);
+      this.pollingIntervalId = null;
+    }
   }
 }

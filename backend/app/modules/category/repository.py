@@ -298,6 +298,25 @@ async def get_commission_uncached(
     return result.scalar_one_or_none()
 
 
+async def get_super_id_uncached(
+    db: AsyncSession,
+    category_id: UUID,
+) -> str | None:
+    """Return the Meesho ``super_id`` string for a category, or ``None``.
+
+    Used by the cross-field dependency rule engine
+    (``catalog.service._evaluate_dependency_rules``) to select the
+    applicable rules.  ``super_id`` is a NOT-NULL indexed column on
+    ``categories`` (``idx_categories_super``); ``None`` here means the
+    ``category_id`` row does not exist (no row → ``scalar_one_or_none``).
+    Never raises — the caller treats ``None`` as "no super-specific rules"
+    so a missing/unknown category degrades to universal rules only.
+    """
+    stmt = select(CategoryORM.super_id).where(CategoryORM.id == category_id)
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
 async def assert_category_exists_uncached(
     db: AsyncSession,
     category_id: UUID,
@@ -323,6 +342,7 @@ __all__ = [
     "fetch_field_enum_uncached",
     "fetch_schema_uncached",
     "get_commission_uncached",
+    "get_super_id_uncached",
     "list_super_id_distinct",
     "search_via_trigram",
 ]

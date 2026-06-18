@@ -1,13 +1,20 @@
 /**
- * catalog-form.model.ts — Wave 5 F8
+ * catalog-form.model.ts — Wave 5 F8 / Conditional Field UX
  *
  * Pure-function business logic extracted from CatalogFormComponent.
  * Decorator-free — safe to import in Vitest without TestBed.
  *
  * This file establishes the semantic contract for the 6 required dispatch-gate tests.
+ *
+ * Added in Conditional Field UX PR:
+ *   - DependencyRule: re-exported from catalog-form.rules.ts for single-import convenience
+ *   - FieldOverride: re-exported from catalog-form.rules.ts
  */
 
 import type { FieldGroup, FieldSchema, WizardStep } from './models/field-schema.model';
+
+// Re-export DependencyRule and FieldOverride so callers have one import point.
+export type { DependencyRule, FieldOverride } from './catalog-form.rules';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 

@@ -1,0 +1,127 @@
+{
+  "global": {
+    "color": {
+      "primary": {
+        "50":  { "value": "#fff3ec", "type": "color", "description": "Primary tint 50" },
+        "100": { "value": "#ffddc4", "type": "color", "description": "Primary tint 100" },
+        "200": { "value": "#ffbd94", "type": "color", "description": "Primary tint 200" },
+        "300": { "value": "#ff9b60", "type": "color", "description": "Primary tint 300" },
+        "400": { "value": "#ff8040", "type": "color", "description": "Primary tint 400" },
+        "500": { "value": "#F26B23", "type": "color", "description": "PRIMARY — Mesell Orange" },
+        "600": { "value": "#d45a18", "type": "color", "description": "Primary shade 600" },
+        "700": { "value": "#b04a10", "type": "color", "description": "Primary shade 700" },
+        "800": { "value": "#8c3b0b", "type": "color", "description": "Primary shade 800" },
+        "900": { "value": "#6e2e07", "type": "color", "description": "Primary shade 900" },
+        "950": { "value": "#4a1d03", "type": "color", "description": "Primary shade 950" }
+      },
+      "brand": {
+        "orange":     { "value": "#F26B23", "type": "color", "description": "--mee-color-primary" },
+        "navy":       { "value": "#111c2d", "type": "color", "description": "--mee-color-sidebar (dark anchor)" },
+        "on-primary": { "value": "#FFFFFF", "type": "color", "description": "Text on primary orange" }
+      },
+      "surface": {
+        "page":     { "value": "#f0f5f9", "type": "color", "description": "--mee-color-bg" },
+        "card":     { "value": "#ffffff", "type": "color", "description": "--mee-color-surface" },
+        "variant":  { "value": "#f2f6fa", "type": "color", "description": "--mee-color-surface-variant" },
+        "0":  { "value": "#ffffff", "type": "color" },
+        "50": { "value": "#f0f5f9", "type": "color" },
+        "100":{ "value": "#e8eef4", "type": "color" },
+        "200":{ "value": "#dde5ef", "type": "color" },
+        "300":{ "value": "#cdd7e5", "type": "color" },
+        "400":{ "value": "#b0bdd0", "type": "color" },
+        "500":{ "value": "#8a9ab5", "type": "color" },
+        "600":{ "value": "#6b7fa0", "type": "color" },
+        "700":{ "value": "#506080", "type": "color" },
+        "800":{ "value": "#384463", "type": "color" },
+        "900":{ "value": "#2a3547", "type": "color" },
+        "950":{ "value": "#1a2338", "type": "color" }
+      },
+      "text": {
+        "primary": { "value": "#2a3547", "type": "color", "description": "--mee-color-on-surface" },
+        "muted":   { "value": "#5a6a85", "type": "color", "description": "--mee-color-on-surface-muted" },
+        "sidebar":  { "value": "#9fafca", "type": "color", "description": "--mee-color-sidebar-text" },
+        "on-dark":  { "value": "#ffffff", "type": "color" }
+      },
+      "semantic": {
+        "error":          { "value": "#DC2626", "type": "color", "description": "--mee-color-error" },
+        "error-light":    { "value": "rgba(220, 38, 38, 0.10)", "type": "color" },
+        "success":        { "value": "#16A34A", "type": "color", "description": "--mee-color-success" },
+        "success-light":  { "value": "rgba(22, 163, 74, 0.10)", "type": "color" },
+        "warning":        { "value": "#D97706", "type": "color", "description": "--mee-color-warning" },
+        "warning-light":  { "value": "rgba(217, 119, 6, 0.10)", "type": "color" },
+        "info":           { "value": "#2563EB", "type": "color", "description": "--mee-color-info" },
+        "info-light":     { "value": "rgba(37, 99, 235, 0.10)", "type": "color" }
+      },
+      "border": {
+        "default": { "value": "#e5eaef", "type": "color", "description": "--mee-color-outline" },
+        "variant": { "value": "#dfe5ef", "type": "color", "description": "--mee-color-outline-variant" }
+      }
+    },
+
+    "typography": {
+      "fontFamily": {
+        "base":     { "value": "Plus Jakarta Sans", "type": "fontFamilies" },
+        "fallback": { "value": "Inter, system-ui, -apple-system, sans-serif", "type": "fontFamilies" }
+      },
+      "fontSize": {
+        "caption": { "value": "11", "type": "fontSizes" },
+        "label":   { "value": "12", "type": "fontSizes" },
+        "body-sm": { "value": "13", "type": "fontSizes" },
+        "body":    { "value": "14", "type": "fontSizes" },
+        "body-lg": { "value": "16", "type": "fontSizes" },
+        "h3":      { "value": "18", "type": "fontSizes" },
+        "h2":      { "value": "22", "type": "fontSizes" },
+        "h1":      { "value": "28", "type": "fontSizes" },
+        "display": { "value": "36", "type": "fontSizes" }
+      },
+      "fontWeight": {
+        "light":     { "value": "300", "type": "fontWeights" },
+        "regular":   { "value": "400", "type": "fontWeights" },
+        "medium":    { "value": "500", "type": "fontWeights" },
+        "semibold":  { "value": "600", "type": "fontWeights" },
+        "bold":      { "value": "700", "type": "fontWeights" },
+        "extrabold": { "value": "800", "type": "fontWeights" }
+      },
+      "lineHeight": {
+        "tight":   { "value": "1.1", "type": "lineHeights" },
+        "snug":    { "value": "1.2", "type": "lineHeights" },
+        "normal":  { "value": "1.4", "type": "lineHeights" },
+        "relaxed": { "value": "1.6", "type": "lineHeights" }
+      }
+    },
+
+    "spacing": {
+      "1":  { "value": "4",  "type": "spacing", "description": "--mee-space-1" },
+      "2":  { "value": "8",  "type": "spacing", "description": "--mee-space-2" },
+      "3":  { "value": "12", "type": "spacing", "description": "--mee-space-3" },
+      "4":  { "value": "16", "type": "spacing", "description": "--mee-space-4" },
+      "5":  { "value": "20", "type": "spacing", "description": "--mee-space-5" },
+      "6":  { "value": "24", "type": "spacing", "description": "--mee-space-6" },
+      "8":  { "value": "32", "type": "spacing", "description": "--mee-space-8" },
+      "10": { "value": "40", "type": "spacing", "description": "--mee-space-10" }
+    },
+
+    "borderRadius": {
+      "sm":   { "value": "7",   "type": "borderRadius", "description": "--mee-radius-sm — inputs, selects" },
+      "md":   { "value": "16",  "type": "borderRadius", "description": "--mee-radius-md — cards, dialogs" },
+      "lg":   { "value": "18",  "type": "borderRadius", "description": "--mee-radius-lg — large cards" },
+      "full": { "value": "999", "type": "borderRadius", "description": "--mee-radius-full — buttons, pills, chips" }
+    },
+
+    "boxShadow": {
+      "sm": { "value": { "x": "0", "y": "1", "blur": "3",  "spread": "0", "color": "rgba(0,0,0,0.08)", "type": "dropShadow" }, "type": "boxShadow", "description": "--mee-shadow-sm" },
+      "md": { "value": { "x": "0", "y": "4", "blur": "12", "spread": "0", "color": "rgba(0,0,0,0.10)", "type": "dropShadow" }, "type": "boxShadow", "description": "--mee-shadow-md" },
+      "lg": { "value": { "x": "0", "y": "8", "blur": "24", "spread": "0", "color": "rgba(0,0,0,0.12)", "type": "dropShadow" }, "type": "boxShadow", "description": "--mee-shadow-lg" }
+    },
+
+    "transition": {
+      "fast":  { "value": "150ms ease", "type": "other", "description": "--mee-transition-fast — hover, focus" },
+      "base":  { "value": "250ms ease", "type": "other", "description": "--mee-transition-base — panel, expand" },
+      "slow":  { "value": "400ms ease", "type": "other", "description": "--mee-transition-slow — page, drawer" }
+    }
+  },
+
+  "$metadata": {
+    "tokenSetOrder": ["global"]
+  }
+}

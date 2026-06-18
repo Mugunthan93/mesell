@@ -1,0 +1,1128 @@
+{
+  "info": {
+    "_postman_id": "meesell-api-v1-collection",
+    "name": "MeeSell API v1",
+    "description": "MeeSell API — 30 operations across 25 paths. Run Auth > Login (dev) first to auto-set {{access_token}}. Dev OTP bypass: otp=000000. See backend/postman/README.md.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "description": "Authentication endpoints.",
+      "item": [
+        {
+          "name": "Login (dev)",
+          "description": "Run 1-OTP Send then 2-OTP Verify. Verify test script auto-sets {{access_token}}.",
+          "item": [
+            {
+              "name": "1 - OTP Send",
+              "request": {
+                "auth": {
+                  "type": "noauth"
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/auth/otp/send",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "otp",
+                    "send"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"+919876543210\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Send 6-digit OTP to phone (S7.B.1). Rate limit: 3/h per IP."
+              },
+              "response": []
+            },
+            {
+              "name": "2 - OTP Verify (auto-sets token)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "// Auto-set {{access_token}} from the verify response.",
+                      "// Dev OTP bypass: otp=000000 (DEV_OTP_BYPASS_CODE on backend).",
+                      "if (pm.response.code === 200) {",
+                      "    const body = pm.response.json();",
+                      "    if (body.access_token) {",
+                      "        pm.environment.set('access_token', body.access_token);",
+                      "        console.log('access_token set (' + body.expires_in + 's)');",
+                      "    }",
+                      "} else {",
+                      "    console.warn('OTP verify failed. Status:', pm.response.code);",
+                      "}"
+                    ]
+                  }
+                }
+              ],
+              "request": {
+                "auth": {
+                  "type": "noauth"
+                },
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/v1/auth/otp/verify",
+                  "host": [
+                    "{{base_url}}"
+                  ],
+                  "path": [
+                    "api",
+                    "v1",
+                    "auth",
+                    "otp",
+                    "verify"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"phone\": \"+919876543210\",\n  \"otp\": \"000000\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "description": "Verify OTP and receive access JWT (S7.B.2). Test script auto-sets {{access_token}}. Dev bypass: otp=000000. Refresh token in HttpOnly Set-Cookie (FE-D5)."
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/refresh",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Atomically rotate refresh cookie and issue new access JWT (S7.B.3). Reads refresh_token from HttpOnly cookie. Rate limit: 60/h."
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/logout",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Revoke refresh cookie server-side (S7.B.4). Idempotent. Returns 204."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Current User (me)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Return authenticated user profile (S7.B.5). Returns user_id, phone, plan, onboarding_complete."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Seller Profile",
+      "description": "Onboarding — read, update, active categories, compliance.",
+      "item": [
+        {
+          "name": "Get Seller Profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller-profile",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller-profile"
+              ]
+            },
+            "description": "Read seller profile (S8.B.1). Returns 404 customer.profile.not_found for first-time sellers."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Seller Profile (base fields)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller-profile",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller-profile"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"business_name\": \"Ravi Textiles\",\n  \"gstin\": \"27AAAAA0000A1Z5\",\n  \"country_of_origin\": \"India\",\n  \"manufacturer_name\": \"Ravi Textiles Pvt Ltd\",\n  \"manufacturer_address\": \"123 MG Road, Mumbai, MH 400001\",\n  \"packer_name\": \"Ravi Textiles Pvt Ltd\",\n  \"packer_address\": \"123 MG Road, Mumbai, MH 400001\",\n  \"importer_name\": null,\n  \"importer_address\": null,\n  \"pincode\": \"400001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Partial update base profile fields (S8.B.2). Subset semantics. First PATCH creates row. Rate limit: 60/h per user."
+          },
+          "response": []
+        },
+        {
+          "name": "Set Active Super-Categories",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller-profile/active-categories",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller-profile",
+                "active-categories"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"active_super_categories\": [\"26\", \"19\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Replace active super-categories entirely (S8.B.3). NOT additive. Rate limit: 60/h per user."
+          },
+          "response": []
+        },
+        {
+          "name": "Set Compliance Extension",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller-profile/compliance/:super_id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller-profile",
+                "compliance",
+                ":super_id"
+              ],
+              "variable": [
+                {
+                  "key": "super_id",
+                  "value": "26",
+                  "description": "Super-category ID"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fabric_content\": \"100% Cotton\",\n  \"care_instructions\": \"Machine wash cold\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Set compliance extension for one super-category (S8.B.4). JSONB-merge. Rate limit: 60/h per user."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Required Fields (onboarding wizard)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/seller-profile/required-fields",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "seller-profile",
+                "required-fields"
+              ]
+            },
+            "description": "Return required fields for onboarding wizard (S8.B.5). base_fields + extension_fields + completed map."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Categories",
+      "description": "Smart Picker, browse, tree, schema, field-enum.",
+      "item": [
+        {
+          "name": "Smart Category Picker (AI suggest)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/categories/suggest",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                "suggest"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"q\": \"Women's cotton kurti with floral print, regular fit, round neck, 3/4 sleeves, S/M/L/XL\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "AI-ranked top-5 category suggestions (S9.B.1). q up to 5000 chars. fallback_offered=true when AI unavailable. Rate limit: 100/h. Requires FEATURE_SMART_PICKER_ENABLED=true."
+          },
+          "response": []
+        },
+        {
+          "name": "Browse Categories (manual)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/categories/browse?q=kurti&limit=20&offset=0",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                "browse"
+              ],
+              "query": [
+                {
+                  "key": "q",
+                  "value": "kurti",
+                  "description": "Optional search (max 100 chars)"
+                },
+                {
+                  "key": "super_id",
+                  "value": "",
+                  "description": "Optional super-category filter",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "pg_trgm manual browse (S9.B.2). Fallback when Smart Picker returns fallback_offered=true."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Category Tree (full)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "If-None-Match",
+                "value": "",
+                "description": "ETag for 304 caching",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/categories",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories"
+              ]
+            },
+            "description": "Full hierarchical category tree (S9.B.3). 3,772 leaves. ETags + 1h cache."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Category Schema",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "If-None-Match",
+                "value": "",
+                "description": "ETag for 304 caching",
+                "disabled": true
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/categories/:id/schema",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                ":id",
+                "schema"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "46677c24-0000-0000-0000-000000000000",
+                  "description": "Category UUID from suggest/browse"
+                }
+              ]
+            },
+            "description": "Compiled wizard schema (S9.B.4). 7 keys: fields[], counts, wizard_step_count, main_sheet_label, compliance_shape. ETag + 1h cache."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Field Enum Values",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/categories/:id/field-enum/:name",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "categories",
+                ":id",
+                "field-enum",
+                ":name"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "46677c24-0000-0000-0000-000000000000",
+                  "description": "Category UUID"
+                },
+                {
+                  "key": "name",
+                  "value": "size_in_ltrs",
+                  "description": "Canonical field name"
+                }
+              ]
+            },
+            "description": "Field-Enum lookup (S9.B.5). Returns canonical + meesho + labels per entry."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Products",
+      "description": "Product CRUD + AI autofill + preview + draft recovery.",
+      "item": [
+        {
+          "name": "Create Product",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category_id\": \"46677c24-0000-0000-0000-000000000000\",\n  \"name\": \"Cotton Kurti Women\",\n  \"catalog_id\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create product (S10.B.1). catalog_id=null auto-creates catalog. Returns 201. Plan-guard: 100 active cap. Rate limit: 20/h per user."
+          },
+          "response": []
+        },
+        {
+          "name": "List Products (dashboard)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products?page=1&limit=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Paginated product listing Feature 8 (S13.B.1). Returns products[], total, page, limit, onboarding_completeness. Rate limit: 600/h."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Product",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{product_id}}",
+                  "description": "Product UUID"
+                }
+              ]
+            },
+            "description": "Get single product (S10.B.7 GAP-1). Returns category_id for CatalogForm reload. Rate limit: 600/h per IP."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Product (autosave)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Autosave",
+                "value": "true",
+                "description": "Writes a product_drafts snapshot"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{product_id}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fields\": {\n    \"product_name\": \"Cotton Kurti Women Floral Print\",\n    \"description\": \"Beautiful 100% cotton kurti with floral print design\",\n    \"fabric\": \"Cotton\",\n    \"size\": \"M\"\n  },\n  \"status\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Update product fields (S10.B.2). X-Autosave:true writes draft snapshot. status=ready triggers completeness validation. Rate limit: 600/h per IP."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Product (status to ready)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{product_id}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fields\": null,\n  \"status\": \"ready\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Transition product to ready status (S10.B.2). Triggers full compulsory-field validation. Returns 422 validation.{field}.missing if any are absent."
+          },
+          "response": []
+        },
+        {
+          "name": "AI Auto-fill",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:id/autofill",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                ":id",
+                "autofill"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{product_id}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Beautiful 100% cotton kurti with floral print design, regular fit, round neck, 3/4 sleeves. Available in sizes S, M, L, XL.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Gemini-driven field suggestions Feature 4 (S10.B.3). Suggestions NOT auto-applied. fallback_offered=true when AI unavailable. Rate limit: 50/h per user. Requires FEATURE_AI_AUTOFILL_ENABLED=true."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Product Preview",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:id/preview",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                ":id",
+                "preview"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{product_id}}"
+                }
+              ]
+            },
+            "description": "Live Product Preview Feature 6 (S10.B.4). Requires FEATURE_LIVE_PREVIEW_ENABLED=true (default FALSE). Rate limit: 600/h."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Product Draft (recovery)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:id/draft",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                ":id",
+                "draft"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{product_id}}"
+                }
+              ]
+            },
+            "description": "Draft recovery (S10.B.6). Returns 200 + snapshot or 204 No Content when no draft exists. Rate limit: 600/h."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Product",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{product_id}}"
+                }
+              ]
+            },
+            "description": "Soft-delete a product (S10.B.5). Returns 204. Rate limit: 60/h per user."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Images",
+      "description": "Multipart image upload + precheck pipeline polling.",
+      "item": [
+        {
+          "name": "Upload Image",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:id/images",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                ":id",
+                "images"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{product_id}}"
+                }
+              ]
+            },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": "JPEG image max 10 MB"
+                },
+                {
+                  "key": "idx",
+                  "value": "1",
+                  "type": "text",
+                  "description": "Image slot 1-4"
+                }
+              ]
+            },
+            "description": "Upload image Feature 5 (S11.B.1). multipart/form-data: file (JPEG max 10MB) + idx (1-4). Returns 202. Poll GET images until ready. Rate limit: 10/min. Requires FEATURE_IMAGE_PRECHECK_ENABLED=true."
+          },
+          "response": []
+        },
+        {
+          "name": "List Product Images",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:id/images",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                ":id",
+                "images"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{product_id}}"
+                }
+              ]
+            },
+            "description": "List product images (S11.B.2). Up to 4 images with signed GCS URLs (TTL 1h) and precheck JSON. Rate limit: 600/h."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Pricing",
+      "description": "Deterministic P&L calculator with Meesho commission slabs.",
+      "item": [
+        {
+          "name": "Calculate Price",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:id/price-calc",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                ":id",
+                "price-calc"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "{{product_id}}",
+                  "description": "Product UUID for commission rate lookup"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"input_cost\": 250.00,\n  \"target_margin_pct\": 30\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Price Calculator Feature 7 (S12.B.1). Returns mrp, meesho_price, seller_price, commission_pct, gst_pct, profit, profit_pct + alerts. Rate limit: 600/h. Requires FEATURE_PRICE_CALCULATOR_ENABLED=true."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Exports",
+      "description": "XLSX export pipeline — initiate + poll status.",
+      "item": [
+        {
+          "name": "Initiate XLSX Export",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/products/:product_id/export-xlsx",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "products",
+                ":product_id",
+                "export-xlsx"
+              ],
+              "variable": [
+                {
+                  "key": "product_id",
+                  "value": "{{product_id}}",
+                  "description": "Product UUID (must be status=ready)"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"format\": \"xlsx_with_images\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Initiate XLSX export Feature 9 (S14.B.1). format: xlsx_with_images (default) or xlsx_only. Returns 202 + export_id. Product must be ready. Rate limit: 10/h. Requires FEATURE_XLSX_EXPORT_ENABLED=true."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Export Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/exports/:export_id",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "exports",
+                ":export_id"
+              ],
+              "variable": [
+                {
+                  "key": "export_id",
+                  "value": "{{export_id}}",
+                  "description": "Export UUID from initiate response"
+                }
+              ]
+            },
+            "description": "Poll export status (S14.B.2). Returns status + xlsx_signed_url (when ready) + zip_signed_url (xlsx_with_images) + error_code (when failed). Re-poll to refresh signed URLs (TTL 1h)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Webhooks",
+      "description": "Inbound webhooks.",
+      "item": [
+        {
+          "name": "Razorpay Webhook",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Razorpay-Signature",
+                "value": "{{razorpay_webhook_signature}}",
+                "description": "HMAC-SHA256 of raw body using RAZORPAY_WEBHOOK_SECRET"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/webhooks/razorpay",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "webhooks",
+                "razorpay"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event\": \"payment.captured\",\n  \"payload\": {\n    \"payment\": {\n      \"entity\": {\n        \"id\": \"pay_test_123\",\n        \"amount\": 49900,\n        \"currency\": \"INR\",\n        \"status\": \"captured\"\n      }\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Razorpay webhook capture V1 (S7.B.6). HMAC-SHA256 signature verify + log. Returns 200 {captured: true}."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "description": "Health check.",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Health check. Returns status + checks {postgres, valkey}. No auth required."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

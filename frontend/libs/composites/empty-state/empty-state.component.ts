@@ -12,24 +12,38 @@ import { MeeButtonComponent } from '@mesell/ui-kit';
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MeeButtonComponent],
+  styles: [`
+    :host { display: block; }
+    .es-root {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: var(--mee-space-4);
+      padding: var(--mee-space-10) var(--mee-space-4);
+      text-align: center;
+    }
+    .es-icon {
+      font-size: 64px;
+      color: var(--mee-color-on-surface-muted);
+    }
+    .es-message {
+      font-size: 16px;
+      max-width: 280px;
+      color: var(--mee-color-on-surface-muted);
+      margin: 0;
+    }
+  `],
   template: `
-    <div
-      class="flex flex-col items-center justify-center gap-4 py-12 px-4 text-center"
-      role="status"
-      [attr.aria-label]="message()"
-    >
+    <div class="es-root" role="status" [attr.aria-label]="message()">
       <!-- Icon -->
       <span
-        class="material-symbols-outlined"
+        class="material-symbols-outlined es-icon"
         aria-hidden="true"
-        style="font-size:64px; color: var(--mee-color-on-surface-muted);"
       >{{ icon() }}</span>
 
       <!-- Message -->
-      <p
-        class="text-base max-w-xs"
-        style="color: var(--mee-color-on-surface-muted);"
-      >{{ message() }}</p>
+      <p class="es-message">{{ message() }}</p>
 
       <!-- Optional CTA -->
       @if (hasCta()) {

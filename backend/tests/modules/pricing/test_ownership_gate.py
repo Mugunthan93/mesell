@@ -42,8 +42,8 @@ class TestOwnershipGate:
         leak-protection rule — the API does NOT distinguish "no such
         product" from "exists but owned by someone else"."""
         request = PriceCalcRequest(
+            meesho_price=Decimal("500"),
             input_cost=Decimal("100"),
-            target_margin_pct=Decimal("30"),
         )
 
         with pytest.raises(ProductNotFoundError):
@@ -61,13 +61,14 @@ class TestOwnershipGate:
         the ownership gate passes (and the calc completes; verified by
         the integration tests, not asserted here)."""
         request = PriceCalcRequest(
+            meesho_price=Decimal("500"),
             input_cost=Decimal("100"),
-            target_margin_pct=Decimal("30"),
         )
 
-        # We expect this to succeed — but the service does I/O against
-        # category.get_commission which uses cache helpers.  This test
-        # only asserts that the ownership-gate exception is NOT raised.
+        # We expect this to succeed.  Per §12.M commission is a seller
+        # input (default 4%), NOT a category lookup — the calc is pure
+        # arithmetic after the ownership gate.  This test only asserts the
+        # ownership-gate exception is NOT raised.
         try:
             response = await pricing_service.calculate(
                 user_id=user.id,
@@ -80,10 +81,11 @@ class TestOwnershipGate:
                 f"ownership-gate falsely raised for owned product: {exc}"
             )
 
-        # If we got a response, at least confirm the shape is sane.
-        assert response.commission_pct == Decimal("15.00"), (
-            "priced_category seeds commission_pct=15.00; pricing should "
-            f"echo it on the response — got {response.commission_pct}"
+        # If we got a response, confirm the seller-input commission default
+        # (4%) is echoed — proving the §12.M commission-as-input contract.
+        assert response.commission_pct == Decimal("4.00"), (
+            "§12.M: commission defaults to the seller-input 4% — pricing "
+            f"should echo it on the response — got {response.commission_pct}"
         )
 
     async def test_nonexistent_product_raises_product_not_found(
@@ -95,8 +97,8 @@ class TestOwnershipGate:
         import uuid
 
         request = PriceCalcRequest(
+            meesho_price=Decimal("500"),
             input_cost=Decimal("100"),
-            target_margin_pct=Decimal("30"),
         )
 
         with pytest.raises(ProductNotFoundError):

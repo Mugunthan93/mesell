@@ -55,14 +55,15 @@ export const routes: Routes = [
         loadComponent: loadRemoteWithFallback('mfe-dashboard', './DashboardComponent'),
       },
       {
-        // MF Sub-Plan 05 — mfe-catalog remote (apps/mfe-catalog/). The 5-page catalog
-        // funnel (list, new/smart-picker, :id/edit, :id/images, :id/preview) now lives in
-        // one Native-Federation remote exposing a Routes ARRAY (./CatalogRoutes) — the
-        // FIRST routes-expose (D31). The shell collapses its 5 separate catalogs* children
+        // MF Sub-Plan 05 — mfe-catalog remote (apps/mfe-catalog/). The catalog pages
+        // (list, new/smart-picker, :id/edit, :id/images, live) now live in one
+        // Native-Federation remote exposing a Routes ARRAY (./CatalogRoutes) — the
+        // FIRST routes-expose (D31). The shell collapses its catalogs* children
         // into this ONE loadChildren (the strangler-fig win). The :id param flows through
         // the shell outlet into the remote routes unchanged. CatalogFormApiService stays
         // route-scoped inside the remote's catalog.routes.ts (D32). D12 fallback degrades
         // the whole sub-tree to RemoteFailureComponent on remote-load failure.
+        // NOTE: :id/preview route retired in feat/my-live-listings (PR #278).
         path: 'catalogs',
         loadChildren: loadRemoteRoutesWithFallback('mfe-catalog', './CatalogRoutes'),
       },

@@ -10,14 +10,33 @@ import { ProgressBar } from 'primeng/progressbar';
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ProgressBar],
+  styles: [`
+    :host { display: block; }
+    .mee-pb-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: var(--mee-space-1);
+    }
+    .mee-pb-label {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--mee-color-on-surface);
+    }
+    .mee-pb-value {
+      font-size: 14px;
+      color: var(--mee-color-on-surface-muted);
+    }
+    ::ng-deep .p-progressbar { min-height: 8px; }
+  `],
   template: `
     @if (label()) {
-      <div class="flex justify-between items-center mb-1">
-        <span class="text-sm font-medium" style="color: var(--mee-color-on-surface)">
+      <div class="mee-pb-header">
+        <span class="mee-pb-label">
           {{ label() }}
         </span>
         @if (show_value()) {
-          <span class="text-sm" style="color: var(--mee-color-on-surface-muted)">
+          <span class="mee-pb-value">
             {{ value() }}%
           </span>
         }
@@ -26,7 +45,6 @@ import { ProgressBar } from 'primeng/progressbar';
     <p-progressbar
       [value]="value()"
       [showValue]="!label() && show_value()"
-      style="min-height: 8px;"
     />
   `,
 })

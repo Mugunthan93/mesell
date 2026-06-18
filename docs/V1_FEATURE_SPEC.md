@@ -267,6 +267,8 @@ Reference: `docs/VALIDATED_PAIN_POINTS.md` (themes T1–T6, new pains S3.x)
 
 **Effort estimate:** Backend 3 h · Frontend 10 h · **Total 13 h**
 
+**AMENDMENT 2026-06-18 — Live preview → My Live Listings (founder-ratified):** the entire feature above is superseded by the V1 implementation. The simulated three-surface pre-publish preview (feed thumbnail / product detail / mobile card mockup at route `/catalogs/:id/preview`, the `PreviewFeedComponent` / `PreviewDetailComponent` / `PreviewMobileComponent` CSS clones) is **replaced** by **"My Live Listings"** at route **`/catalogs/live`**. Rationale: the simulated mockup never reflected a seller's real listings; sellers want to see and reach their *actual* live Meesho products. New mechanics (V1, frontend-only — no backend, no scraping): the seller uploads their own Meesho "Inventory Update File" (XLSX); the app reads the **PRODUCT ID** and **PRODUCT NAME** columns and, per product, generates a public "View on Meesho" deep-link as `https://www.meesho.com/{slug}/p/{base36(product_id)}` where `{base36(product_id)}` is the product ID encoded in base-36 and `{slug}` is a cosmetic URL slug derived from the product name (the slug is decorative; only the base-36 ID segment is load-bearing for the link to resolve). V1 scope (a) = a **standalone view** of the parsed listings with their deep-links; matching uploaded listings back into MeeSell catalog records is **deferred to V2** (scope b). The old `/catalogs/:id/preview` route is **superseded** (removed from the V1 route set — see Section 6). Implemented on `develop` via PR #278 (merge SHA `0087562`). (End amendment.)
+
 ---
 
 ### Feature 7: Price Calculator
@@ -312,6 +314,14 @@ Reference: `docs/VALIDATED_PAIN_POINTS.md` (themes T1–T6, new pains S3.x)
 - RTO/shipping deferred to V1.5 (note in UI: "Shipping not included in V1")
 
 **Effort estimate:** Backend 4 h · Frontend 5 h · **Total 9 h**
+
+**AMENDMENT 2026-06-18 — Price Calculator forward-estimator rework (founder-ratified):** the entire Feature 7 direction is superseded. The calculator now runs **forward** — the seller enters a **Meesho Price** (the listed price) and the backend estimates the **net payout**, instead of entering an MRP and back-solving a target margin. Profit and margin are *outputs*, never inputs; `target_margin_pct` is REMOVED.
+- **3-price model:** MRP (struck-through reference), Meesho Price (the listed/selling price — primary input, drives payout), WDRP (Wrong/Defective Return Price). Payout is driven by Meesho Price, not MRP.
+- **Commission is a seller input (default 4%)**, NOT a category lookup — Meesho's referral commission is dynamic and not stored per category; the old "commission from categories.commission_pct" sourcing and "category missing commission → fallback/400" edge cases are superseded (no per-category commission, no commission-missing failure).
+- **Full deduction stack now INCLUDED (reverses the V1.5 deferral):** shipping (₹30 for Meesho Price ≤ ₹1000, ₹70 above), logistics, fixed/closing fee, GST 18% on the fees (not on MRP), TCS 1%, TDS, and an RTO expected-loss term from a seller `return_rate_pct`. Reverses both "RTO/shipping deferred to V1.5" and "Shipping not included in V1".
+- **Deterministic + calibrated estimator:** pure arithmetic, no AI, no live Meesho calls. Calibrated against a real scraped settlement sample (₹106 Meesho price → ₹47 payout). The scraped transfer_price is calibration-only.
+- **Breakdown shows:** MRP (reference), Meesho Price, Referral Commission, Shipping, Logistics, Fixed Fee, GST-on-Fees, TCS, TDS, RTO Expected-Loss, Estimated Payout, Profit (= payout − cost), Margin % (= profit/meesho_price), Markup % (= profit/input_cost). Negative-payout → red alert in the 200 response (not a 400).
+(End amendment.)
 
 ---
 

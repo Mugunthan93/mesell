@@ -18,7 +18,7 @@ in V1 per §5A.J).
 §5A.I English-string CONTENT is NOT locked — strings grow incrementally as
 each module is constructed. This V1 inventory ships the canonical ~50 IDs
 referenced by §7 (iam, 8) + §4.B (auth dep, 3) + §8 (customer, 6) + §9
-(category, 4) + §10 (catalog, 5) + §11 (image, 5) + §12 (pricing, 5) +
+(category, 4) + §10 (catalog, 5) + §11 (image, 5) + §12 (pricing, 4 — §12.M 2026-06-18) +
 §13 (dashboard, 1) + §14 (export, 7) + §4 (core, 4) plus the
 ``validation.body.*`` and ``validation.fields.*`` legals used by FastAPI
 body-validation error responses (§4.F handler).
@@ -163,21 +163,20 @@ VALIDATION_MESSAGES: dict[str, str] = {
     "image.not.found": (
         "We couldn't find that image. It may have been deleted."
     ),
-    # ── §12 pricing (5 module-specific IDs) ──────────────────────────────
+    # ── §12 pricing (4 module-specific IDs — §12.M 2026-06-18 rework) ─────
     "validation.price.invalid_input": (
         "Please enter a valid price greater than zero."
     ),
-    "pricing.commission.missing": (
-        "We couldn't load the commission rate for this category. Please try again later."
+    "pricing.alert.negative_payout": (
+        "At this price your estimated payout is negative. Raise your selling "
+        "price or lower your costs."
     ),
     "pricing.alert.low_margin": (
         "Your profit margin is below the safe threshold. Consider raising your selling price."
     ),
-    "pricing.alert.high_mrp_multiplier": (
-        "Your MRP is much higher than your cost. Verify this is the price you want to advertise."
-    ),
-    "pricing.alert.thin_profit": (
-        "Your profit per unit is low. Consider revising your cost or selling price."
+    "pricing.alert.shipping_dominates": (
+        "Shipping is the largest part of your deductions at this price. A higher "
+        "selling price spreads it thinner."
     ),
     # ── §13 dashboard (1 module-specific ID) ─────────────────────────────
     "validation.dashboard.invalid_pagination": (
@@ -204,6 +203,16 @@ VALIDATION_MESSAGES: dict[str, str] = {
     ),
     "export.round_trip.mismatch": (
         "Export failed: data validation mismatch. Please re-run the export."
+    ),
+    # ── export pre-enqueue validation aggregation (2026-06-18) ───────────
+    "export.validation.failed": (
+        "Your product can't be exported yet. Fix the items below and try again."
+    ),
+    "export.check.quality_status": (
+        "Your product isn't ready. Complete the required fields and resolve quality issues first."
+    ),
+    "export.check.front_image_missing": (
+        "A front image is required. Upload an image in slot 1 before exporting with images."
     ),
     # ── §4.C tenancy (1 cross-cutting ID) ────────────────────────────────
     "tenancy.cross_user.access": (
@@ -277,6 +286,87 @@ VALIDATION_MESSAGES: dict[str, str] = {
     ),
     "validation.generic.less_than": (
         "This value is above the allowed maximum."
+    ),
+    # ── Cross-field dependency rules (field_dependency_rules.json) ──────────
+    # 20 compliance rules; each id is 2 snake_case segments so
+    # ``validation.cross_field.<id>`` is a valid 3-segment §5A.H key.
+    "validation.cross_field.fssai_grocery": (
+        "Grocery products need your FSSAI license number. "
+        "Add it before marking this product ready."
+    ),
+    "validation.cross_field.fssai_petfood": (
+        "Pet food products need your FSSAI license number. "
+        "Add it before marking this product ready."
+    ),
+    "validation.cross_field.fssai_foodtype": (
+        "Food and edible products need your FSSAI license number. "
+        "Add it before marking this product ready."
+    ),
+    "validation.cross_field.ayush_beauty": (
+        "Ayurvedic and herbal products need an AYUSH license/registration "
+        "number. Add it before marking this product ready."
+    ),
+    "validation.cross_field.ayush_expiry": (
+        "Add the expiry date for the license/registration number you entered."
+    ),
+    "validation.cross_field.cosmetic_license": (
+        "Cosmetic and personal-care products need a license/registration "
+        "number. Add it before marking this product ready."
+    ),
+    "validation.cross_field.license_type_pair": (
+        "Tell us the type of this license/registration so buyers see the "
+        "right label."
+    ),
+    "validation.cross_field.bis_electronics": (
+        "This electronics item usually needs a BIS/ISI certification number. "
+        "Add it to reduce listing rejections."
+    ),
+    "validation.cross_field.bis_toys": (
+        "Toys usually need a BIS/ISI certification number. "
+        "Add it to reduce listing rejections."
+    ),
+    "validation.cross_field.bis_appliances": (
+        "Most appliances need a BIS/ISI certification number. "
+        "Add it to reduce listing rejections."
+    ),
+    "validation.cross_field.warranty_electronics": (
+        "Electronics and appliances need a warranty period. "
+        "Add it before marking this product ready."
+    ),
+    "validation.cross_field.warranty_type_pair": (
+        "Tell buyers the warranty type (manufacturer, seller, etc.) for the "
+        "warranty you entered."
+    ),
+    "validation.cross_field.size_apparel": (
+        "Apparel and footwear need a size. "
+        "Add it before marking this product ready."
+    ),
+    "validation.cross_field.fabric_apparel": (
+        "This apparel item needs a fabric composition. "
+        "Add it before marking this product ready."
+    ),
+    "validation.cross_field.country_origin": (
+        "Every product needs a Country of Origin. "
+        "Add it before marking this product ready."
+    ),
+    "validation.cross_field.hsn_all": (
+        "Every product needs an HSN code for GST. "
+        "Add it before marking this product ready."
+    ),
+    "validation.cross_field.legalmetro_weight": (
+        "Packaged goods that declare a net weight must also declare Country "
+        "of Origin. Add it before marking this product ready."
+    ),
+    "validation.cross_field.agegroup_kids": (
+        "Kids products need an age group. "
+        "Add it before marking this product ready."
+    ),
+    "validation.cross_field.nonreturn_reason": (
+        "Tell buyers why this product can't be returned."
+    ),
+    "validation.cross_field.battery_type_req": (
+        "You said this product needs batteries — add the battery type so "
+        "buyers know what to use."
     ),
 }
 

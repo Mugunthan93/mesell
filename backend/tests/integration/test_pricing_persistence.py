@@ -151,8 +151,8 @@ class TestPricingCalcsPersistence:
             user_id=user.id,
             product_id=product.id,
             request=PriceCalcRequest(
-                input_cost=Decimal("100"),
-                target_margin_pct=Decimal("30"),
+                meesho_price=Decimal("106"),
+                input_cost=Decimal("40"),
             ),
             db=db_session,
         )
@@ -170,20 +170,27 @@ class TestPricingCalcsPersistence:
         )
         row = rows[0]
 
-        # Every structured column reflects the response.
-        assert row.mrp == response.mrp
+        # Every structured column reflects the forward-estimator response.
         assert row.meesho_price == response.meesho_price
-        assert row.seller_price == response.seller_price
-        assert row.commission_pct == response.commission_pct
+        assert row.estimated_payout == response.estimated_payout
+        # Legacy seller_price column re-used as the estimated-payout snapshot.
+        assert row.seller_price == response.estimated_payout
+        assert row.commission_pct == response.commission_pct  # seller input
         assert row.gst_pct == response.gst_pct
-        assert row.margin == response.profit, (
-            f"Audit column 'margin' must equal computed 'profit'; "
-            f"got margin={row.margin}, profit={response.profit}"
-        )
-        assert row.margin_pct == response.profit_pct, (
-            f"Audit column 'margin_pct' must equal computed 'profit_pct'; "
-            f"got margin_pct={row.margin_pct}, profit_pct={response.profit_pct}"
-        )
+        assert row.margin == response.profit
+        assert row.margin_pct == response.margin_pct
+        assert row.markup_pct == response.markup_pct
+        # Additive §12.M breakdown columns persisted.
+        assert row.referral_commission == response.referral_commission
+        assert row.shipping_charge == response.shipping_charge
+        assert row.logistics_fee == response.logistics_fee
+        assert row.fixed_fee == response.fixed_fee
+        assert row.gst_on_fees == response.gst_on_fees
+        assert row.tcs == response.tcs
+        assert row.tds == response.tds
+        assert row.rto_expected_loss == response.rto_expected_loss
+        assert row.return_rate_pct == response.return_rate_pct
+        assert row.wdrp_price == response.wdrp_price
         # created_at is server-set.
         assert row.created_at is not None
 
@@ -214,13 +221,13 @@ class TestPricingCalcsPersistence:
 
         # Three sequential calcs in DISTINCT transactions — last one
         # wins in get_last_calc but ALL persist as separate rows.
-        for target_pct in (Decimal("10"), Decimal("20"), Decimal("50")):
+        for price in (Decimal("200"), Decimal("300"), Decimal("500")):
             await pricing_service.calculate(
                 user_id=user.id,
                 product_id=product.id,
                 request=PriceCalcRequest(
+                    meesho_price=price,
                     input_cost=Decimal("100"),
-                    target_margin_pct=target_pct,
                 ),
                 db=db_session,
             )
@@ -241,13 +248,13 @@ class TestPricingCalcsPersistence:
             f"calcs, got {len(rows)}.  Service must INSERT each calc, "
             f"never UPDATE."
         )
-        # Each row's seller_price reflects its input — proves they are
-        # distinct calcs, not duplicate writes.
+        # Each row's seller_price (= estimated_payout snapshot) reflects its
+        # input price — proves they are distinct calcs, not duplicate writes.
         seller_prices = sorted(r.seller_price for r in rows)
         assert seller_prices == [
-            Decimal("110.00"),  # 100 × (1 + 10/100)
-            Decimal("120.00"),  # 100 × (1 + 20/100)
-            Decimal("150.00"),  # 100 × (1 + 50/100)
+            Decimal("135.46"),  # payout(meesho_price=200)
+            Decimal("229.74"),  # payout(meesho_price=300)
+            Decimal("418.30"),  # payout(meesho_price=500)
         ]
 
         # Savepoint isolation (per-test SAVEPOINT inside ONE outer transaction)
@@ -260,9 +267,9 @@ class TestPricingCalcsPersistence:
 
         base = datetime(2026, 1, 1, tzinfo=timezone.utc)
         ts_by_price = {
-            Decimal("110.00"): base,                          # oldest
-            Decimal("120.00"): base + timedelta(seconds=1),
-            Decimal("150.00"): base + timedelta(seconds=2),   # newest
+            Decimal("135.46"): base,                          # oldest (price 200)
+            Decimal("229.74"): base + timedelta(seconds=1),   # price 300
+            Decimal("418.30"): base + timedelta(seconds=2),   # newest (price 500)
         }
         for r in rows:
             r.created_at = ts_by_price[r.seller_price]
@@ -275,9 +282,9 @@ class TestPricingCalcsPersistence:
             db=db_session,
         )
         assert latest is not None
-        assert latest.seller_price == Decimal("150.00"), (
-            f"get_last_calc should return the most recent (target_pct=50%, "
-            f"seller_price=150); got seller_price={latest.seller_price}"
+        assert latest.seller_price == Decimal("418.30"), (
+            f"get_last_calc should return the most recent (meesho_price=500, "
+            f"payout=418.30); got seller_price={latest.seller_price}"
         )
 
     async def test_get_last_calc_returns_none_for_no_history(

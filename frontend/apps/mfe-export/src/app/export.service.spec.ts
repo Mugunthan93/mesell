@@ -159,33 +159,62 @@ describe('ExportApiService', () => {
       expect(emitted?.error_code).toBe('export.unavailable');
     });
 
-    it('should emit InitiateValidationError shape on 422 with detail + error_code', () => {
+    it('should emit InitiateValidationError shape on 422 with detail + code + failed_checks', () => {
       let emitted: InitiateValidationError | undefined;
       service.initiate(PRODUCT_ID).subscribe((r) => {
         if ('kind' in r && r.kind === 'validation') emitted = r as InitiateValidationError;
       });
       const req = controller.expectOne(`/api/v1/products/${PRODUCT_ID}/export-xlsx`);
       req.flush(
-        { detail: 'Product is not ready for export.', error_code: 'export.product_not_ready' },
+        {
+          detail: 'Product is not ready for export.',
+          code: 'export.product_not_ready',           // backend emits `code`, NOT `error_code`
+          failed_checks: [
+            { check_id: 'quality_status', message_key: 'export.check.quality_status' },
+          ],
+        },
         { status: 422, statusText: 'Unprocessable Entity' },
       );
       expect(emitted).toBeDefined();
       expect(emitted?.kind).toBe('validation');
       expect(emitted?.detail).toBe('Product is not ready for export.');
-      expect(emitted?.error_code).toBe('export.product_not_ready');
+      expect(emitted?.errorCode).toBe('export.product_not_ready');   // reads body.code
+      expect(emitted?.failedChecks).toHaveLength(1);
+      expect(emitted?.failedChecks[0].check_id).toBe('quality_status');
     });
 
-    it('should emit InitiateValidationError with front_image_missing error_code on 422', () => {
+    it('should emit InitiateValidationError with front_image_missing code on 422', () => {
       let emitted: InitiateValidationError | undefined;
       service.initiate(PRODUCT_ID).subscribe((r) => {
         if ('kind' in r && r.kind === 'validation') emitted = r as InitiateValidationError;
       });
       const req = controller.expectOne(`/api/v1/products/${PRODUCT_ID}/export-xlsx`);
       req.flush(
-        { detail: 'Front image is missing.', error_code: 'export.front_image_missing' },
+        {
+          detail: 'Front image is missing.',
+          code: 'export.front_image_missing',         // backend emits `code`, NOT `error_code`
+          failed_checks: [
+            { check_id: 'front_image_missing', message_key: 'export.check.front_image_missing' },
+          ],
+        },
         { status: 422, statusText: 'Unprocessable Entity' },
       );
-      expect(emitted?.error_code).toBe('export.front_image_missing');
+      expect(emitted?.errorCode).toBe('export.front_image_missing');  // reads body.code
+      expect(emitted?.failedChecks).toHaveLength(1);
+    });
+
+    it('should emit InitiateValidationError with empty failedChecks when body.failed_checks absent', () => {
+      let emitted: InitiateValidationError | undefined;
+      service.initiate(PRODUCT_ID).subscribe((r) => {
+        if ('kind' in r && r.kind === 'validation') emitted = r as InitiateValidationError;
+      });
+      const req = controller.expectOne(`/api/v1/products/${PRODUCT_ID}/export-xlsx`);
+      req.flush(
+        { detail: 'Not ready.' },                    // no code, no failed_checks
+        { status: 422, statusText: 'Unprocessable Entity' },
+      );
+      expect(emitted?.errorCode).toBeNull();
+      expect(emitted?.failedChecks).toEqual([]);
     });
 
     it('should return EMPTY on 400', () => {

@@ -437,11 +437,11 @@ The Module Catalog is the **ownership map** for specialists. When the founder di
 **NOT responsible for:** the commission percentage itself (read from the `category` snapshot — `pricing` does not own that data); ownership verification (delegates to `catalog`); the latent `pricing_engine.py` import bug surfaced in `§0.E` — its resolution is a Feature 7 construction-phase task, NOT a baseline blocker.
 
 **Database tables — WRITE-OWNS:** `pricing_calcs`.
-**Database tables — READS-FROM:** `products` via `catalog.service` (ownership verification); `categories` via `category.service` (commission lookup).
+**Database tables — READS-FROM:** `products` via `catalog.service` (ownership verification). _(Post-2026-06-18 §12.M amendment: the `categories` commission read is RETIRED — commission is now a seller input.)_
 
 **Cross-module dependencies (service calls only, per §16):**
 - Calls `catalog.service.assert_product_ownership(product_id, user_id)` before any calc — same isolation gate as `image`.
-- Calls `category.service.get_commission(category_id)` to read `commission_pct` snapshot.
+- ~~Calls `category.service.get_commission(category_id)` to read `commission_pct` snapshot.~~ **RETIRED 2026-06-18 (see §12.M)** — commission is a seller-entered input (default 4%), not a per-category lookup.
 
 **Adapters used:** none.
 
@@ -583,11 +583,13 @@ The matrix below codifies the §16 inter-module rule. Rows are the **caller** mo
 | **category**  | ✗   | ✗        | —        | ✗       | ✗     | ✗       | ✗         | ✗      |
 | **catalog**   | ✗   | ✓        | ✓        | —       | ✗     | ✗       | ✗         | ✗      |
 | **image**     | ✗   | ✗        | ✗        | ✓       | —     | ✗       | ✗         | ✗      |
-| **pricing**   | ✗   | ✗        | ✓        | ✓       | ✗     | —       | ✗         | ✗      |
+| **pricing**   | ✗   | ✗        | ✗        | ✓       | ✗     | —       | ✗         | ✗      |
 | **dashboard** | ✗   | ✓        | ✗        | ✓       | ✗     | ✗       | —         | ✗      |
 | **export**    | ✗   | ✓        | ✓        | ✓       | ✓     | ✗       | ✗         | —      |
 
-**Total allowed cross-module service calls: 8 ✓.** Breakdown — `catalog` → `customer`, `category` (2); `image` → `catalog` (1); `pricing` → `category`, `catalog` (2); `dashboard` → `customer`, `catalog` (2); `export` → `customer`, `category`, `catalog`, `image` (4). Note: `dashboard` may optionally call `image.service.summary`, `pricing.service.summary`, `export.service.summary` for richer status hydration per §2.7 — those reads were left as **optional** in the module description (not as `✓` in the matrix) to keep the matrix tight; if the founder elevates them to required, they flip to `✓` and the count rises to 11. As authored, the matrix locks **8 ✓** — the minimum service-graph that satisfies V1.
+**AMENDMENT 2026-06-18 (founder-ratified — see §12.M):** the `pricing → category` row (`category.service.get_commission` for `commission_pct`) is **RETIRED**. Per the Price Calculator forward-estimator rework, commission is a seller-entered input (default 4%), not a per-category lookup — Meesho's referral commission is dynamic and not stored per category. The matrix `pricing → category` cell flips from `✓` to `✗`; the total cross-module service-call count drops from 8 ✓ to **7 ✓**. The `pricing → catalog` row (`assert_product_ownership`) is UNCHANGED. (End amendment.)
+
+**Total allowed cross-module service calls (post-2026-06-18 amendment): 7 ✓.** Breakdown — `catalog` → `customer`, `category` (2); `image` → `catalog` (1); `pricing` → `catalog` (1 — was 2 before the §12.M commission-input rework); `dashboard` → `customer`, `catalog` (2); `export` → `customer`, `category`, `catalog`, `image` (4). Note: `dashboard` may optionally call `image.service.summary`, `pricing.service.summary`, `export.service.summary` for richer status hydration per §2.7 — those reads were left as **optional** in the module description (not as `✓` in the matrix) to keep the matrix tight; if the founder elevates them to required, they flip to `✓` and the count rises to 11. As authored, the matrix locks **7 ✓** (7 post-§12.M 2026-06-18; see §12.M) — the minimum service-graph that satisfies V1.
 
 **Cross-cutting note on `iam`.** The all-`✗` row for `iam` is intentional: `iam`'s contract surface to other modules is the `get_current_user` dependency in `core/auth.py`, which participates in the middleware chain — it is NOT a module-to-module service call and therefore does not appear as `✓` here. Per `§2.1`, `iam` is a leaf module on the cross-module graph.
 
@@ -4151,8 +4153,9 @@ async def summary(
     product_ids: list[UUID],
 ) -> dict[UUID, ImageStatusSummary]:
     """OPTIONAL cross-module call from dashboard per §2.D matrix note.
-    Locked here as available API surface — dashboard kept at 8 cross-module
-    calls in §2 matrix without this elevation, but §13 may opt in.
+    Locked here as available API surface — dashboard kept at 7 cross-module
+    calls in §2 matrix (7 post-§12.M 2026-06-18; see §12.M) without this
+    elevation, but §13 may opt in.
     Returns per-product image status summary for dashboard cards."""
 ```
 
@@ -4854,6 +4857,54 @@ Network of records on extraction: copy `pricing_calcs` rows by `user_id` in batc
 - Razorpay subscription pricing (V1.5 — iam module per §7).
 - The legacy `services/pricing_engine.py` — gets DELETED at §12 specialist construction time, not "patched"; the new `modules/pricing/service.py` is the replacement (§0.E + §12.A resolution path).
 
+### 12.M AMENDMENT 2026-06-18 — Price Calculator forward-estimator rework (founder-ratified)
+
+**Founder ruling 2026-06-18 (founder Mugunthan, §7.3 founder-ratified amendment to the §12 LOCKED spec):** the entire §12 direction is superseded by a **forward** estimator. The seller enters a **Meesho Price** (the listed price); the backend estimates the **net payout**. Profit and margin are *outputs*, never inputs. The §12.B.1 back-solve-from-MRP-and-target-margin formula, the §12.C `target_margin_pct` input, and the §12-PRICING-D1/D2/D3 commission-sourcing flags are retired and replaced as follows. This amendment is the new law for §12; §12.B–§12.L prose is read THROUGH this amendment where they conflict.
+
+**(1) New forward estimator formula** (`pricing/service.py` `_estimate_payout`, pure Decimal, `ROUND_HALF_EVEN` via `_q`):
+
+```
+referral_commission = meesho_price × commission_pct / 100
+shipping            = bracketed flat (SHIPPING_FLAT when meesho_price ≤ SHIPPING_BRACKET, else SHIPPING_HIGH)
+logistics_fee       = DEFAULT_LOGISTICS_FEE
+fixed_fee           = DEFAULT_FIXED_FEE
+fee_base            = referral_commission + shipping + logistics_fee + fixed_fee
+gst_on_fees         = fee_base × gst_pct / 100            (GST on the FEES, not on MRP)
+tcs                 = meesho_price × tcs_pct / 100
+tds                 = meesho_price × tds_pct / 100
+rto_expected_loss   = return_rate_pct / 100 × (shipping + logistics_fee)
+total_deductions    = referral_commission + shipping + logistics_fee + fixed_fee
+                      + gst_on_fees + tcs + tds + rto_expected_loss
+estimated_payout    = meesho_price − total_deductions
+profit              = estimated_payout − input_cost
+margin_pct          = profit / meesho_price × 100         (0 when meesho_price == 0)
+markup_pct          = profit / input_cost × 100           (0 when input_cost == 0)
+```
+
+All monetary surfaces quantize to 2 dp with banker's rounding (`ROUND_HALF_EVEN`). The estimator is **calibrated to the real scraped settlement sample ₹106 Meesho price → ₹47 payout** (calibration-only — see HARD RULE below). WDRP payout is computed by re-running `_estimate_payout` on `wdrp_price = meesho_price − WDRP_DELTA` (`WDRP_DELTA ≈ 20`, reconciled against the real sample wdrp 86 vs meesho 106).
+
+**(2) New `PriceCalcRequest`** (`pricing/schemas.py`, `extra="forbid"`):
+- `meesho_price: Decimal` — PRIMARY input (the listed/selling price; drives payout).
+- `input_cost: Decimal` — cost of goods (drives profit + markup).
+- `commission_pct: Decimal = 4` — **seller input**, default 4% (NOT a category lookup).
+- `return_rate_pct: Decimal = 0` — seller-entered expected return rate, drives `rto_expected_loss`.
+- `mrp: Decimal | None = None` — optional struck-through reference (display-only; does NOT drive payout).
+- Tunable per-request override fields: `override_shipping`, `override_logistics_fee`, `override_fixed_fee`, `override_gst_pct`, `override_tcs_pct`, `override_tds_pct` (all optional; default to the named constants).
+- **`target_margin_pct` is REMOVED.**
+
+**(3) Alert codes** → `Literal["NEGATIVE_PAYOUT", "LOW_MARGIN", "SHIPPING_DOMINATES"]`. `HIGH_MRP_MULTIPLIER` and `THIN_PROFIT` are **retired**.
+- `NEGATIVE_PAYOUT` — `estimated_payout < 0` — severity `warning` — `pricing.alert.negative_payout`. Negative payout is a **200-with-alert** (red alert in the response), NEVER a 400.
+- `LOW_MARGIN` — `margin_pct < 10` — severity `warning` — `pricing.alert.low_margin` (retained).
+- `SHIPPING_DOMINATES` — `shipping > 40% of total_deductions` — severity `info` — `pricing.alert.shipping_dominates`.
+
+**(4) `CommissionMissingError` REMOVED.** The `category.service.get_commission(category_id)` cross-module call and the 422 (`pricing.commission.missing`) path are **DELETED** — commission is now a seller input, so there is no missing-commission failure mode. `InvalidPriceInputError` (400, `validation.price.invalid_input`) is RETAINED for malformed input. A negative payout does NOT raise — it returns 200 with the `NEGATIVE_PAYOUT` alert.
+
+**(5) Additive `pricing_calcs` migration** (reversible — `upgrade()` + `downgrade()`): new **nullable** breakdown columns `estimated_payout`, `referral_commission`, `shipping_charge`, `logistics_fee`, `fixed_fee`, `gst_on_fees`, `tcs`, `tds`, `rto_expected_loss`, `return_rate_pct`, `markup_pct`, `wdrp_price`. The legacy `commission_pct` column is **re-purposed** as the seller-entered commission snapshot (no longer a category snapshot). All columns nullable so the migration is purely additive over existing rows.
+
+**(6) HARD RULE — production estimator makes ZERO Meesho calls.** The estimator is pure arithmetic with no AI and no live Meesho/supplier calls. The scraped `transfer_price` / `fetch-supplier-products` / `supplier.meesho.com` artifacts are **calibration-only** and appear ONLY in `backend/tests/modules/pricing/test_estimator_calibration.py` — ZERO occurrences anywhere under `backend/app/`. The §19 grep gate treats any `app/` hit as a hard failure.
+
+(End amendment.)
+
 ---
 
 ## Section 13 — Module: `dashboard`
@@ -4862,13 +4913,13 @@ STATUS: LOCKED (2026-06-05) — AMENDED 2026-06-07 (see §13.A.1 — filter/sear
 
 ### 13.A Preamble
 
-§13 specifies the `dashboard` module — the seller's tracking view for Feature 8 (Tracking Dashboard) per `docs/V1_FEATURE_SPEC.md` Feature 8. **Owner specialists:** `meesell-api-routes-builder` (route handler + Pydantic schemas) + `meesell-services-builder` (read-aggregation composition logic) per §2.7. **NO AI track collaboration** — pure read aggregation with no Gemini call, no `ai_ops` invocation, no prompt-engineer participation. **Leaf module on the cross-module call graph** per §2.D: dashboard → customer ✓, dashboard → catalog ✓; every other cell is `✗` per the founder ruling that kept the matrix at exactly 8 ✓ (no elevation in V1 to image / pricing / export `summary()` opt-ins).
+§13 specifies the `dashboard` module — the seller's tracking view for Feature 8 (Tracking Dashboard) per `docs/V1_FEATURE_SPEC.md` Feature 8. **Owner specialists:** `meesell-api-routes-builder` (route handler + Pydantic schemas) + `meesell-services-builder` (read-aggregation composition logic) per §2.7. **NO AI track collaboration** — pure read aggregation with no Gemini call, no `ai_ops` invocation, no prompt-engineer participation. **Leaf module on the cross-module call graph** per §2.D: dashboard → customer ✓, dashboard → catalog ✓; every other cell is `✗` per the founder ruling that kept the matrix at exactly 7 ✓ (7 post-§12.M 2026-06-18; see §12.M) (no elevation in V1 to image / pricing / export `summary()` opt-ins).
 
 `dashboard` is **the purest demonstration of the modular monolith discipline** described in §2.7's preamble. It owns ZERO tables (the only domain module besides `core/` — and `core/` is not a domain module — with no DDL footprint at all per `MVP_ARCH §2`). It has NO `repository.py` file in its subtree (a structural deviation from the §3.C canonical per-module 7-file layout, locked here explicitly so the absence reads as intentional design — not omission). It reads NOTHING directly — every data access flows through `catalog.service.list_products(...)` and `customer.service.get_onboarding_completeness(...)` per §10.C + §8.C, which themselves own the `scope_to_user(user_id)` enforcement at their respective repository layers per §4.C. Dashboard's role is purely **composing** pre-scoped, pre-validated, pre-shaped results from the two consumed services into a single wire-shaped `DashboardResponse`.
 
 When V1.5 extraction lands per §21, dashboard becomes its own **BFF (backend-for-frontend) pod** with **zero data-layer migration** — every cross-module Python call simply swaps in-process invocation for HTTP. There are no Alembic migrations to detach, no foreign-key cascade to redirect, no row-level locks to coordinate. The extraction reduces to: change `from app.modules.catalog.service import list_products` to `httpx.AsyncClient().get(CATALOG_SVC_URL + "/products?...")`, plus a service-discovery config change. This is why dashboard (alongside `export` per §2.8) is one of the **easiest V1.5 extractions** in the codebase, in contrast to `catalog` which is the hardest per §10.K.
 
-Surfaces **1 endpoint** in V1, which is the **only listing GET in the §0.C 27-endpoint contract** (note: `GET /api/v1/products` belongs to dashboard, not catalog — per §2.7 ownership lock; `catalog` owns CREATE/PATCH/AUTOFILL/PREVIEW/DELETE/DRAFT-RECOVER but not the LIST). §13 does NOT specify any table DDL (dashboard owns NONE — see §13.L scope-out), does NOT specify any repository methods (NO repository file exists for dashboard — see §13.D), does NOT specify the §14 `export.service.summary()` opt-in for richer status badges (forward-referenced to V1.5 amendment if/when founder elevates the §2.D matrix beyond 8 ✓).
+Surfaces **1 endpoint** in V1, which is the **only listing GET in the §0.C 27-endpoint contract** (note: `GET /api/v1/products` belongs to dashboard, not catalog — per §2.7 ownership lock; `catalog` owns CREATE/PATCH/AUTOFILL/PREVIEW/DELETE/DRAFT-RECOVER but not the LIST). §13 does NOT specify any table DDL (dashboard owns NONE — see §13.L scope-out), does NOT specify any repository methods (NO repository file exists for dashboard — see §13.D), does NOT specify the §14 `export.service.summary()` opt-in for richer status badges (forward-referenced to V1.5 amendment if/when founder elevates the §2.D matrix beyond 7 ✓ (7 post-§12.M 2026-06-18; see §12.M)).
 
 ### 13.A.1 AMENDMENT 2026-06-07 — filter/search deferred to V1.5
 
@@ -5176,13 +5227,13 @@ Per §19, the dashboard module's test surface is the lightest in the codebase: 3
 
 ### 13.K Extraction notes
 
-`dashboard` is the **purest** demonstration of the modular monolith extraction discipline because it owns no tables AND has no repository file. Extraction in V1.5 reduces to swapping in-process Python calls for HTTP calls with **zero data-layer migration**. Per §21's recommended extraction order, dashboard is one of the easiest extractions (alongside `export` per §2.8); both can extract independently of the spine — `catalog` is the hardest per §10.K and extracts last. The extraction shape: a `dashboard` BFF pod that holds the FastAPI route + Pydantic schemas + composition logic, and makes `httpx.AsyncClient` calls to `catalog-svc` and `customer-svc` for the underlying data. V1.5 may also opt into the OPTIONAL summary endpoints (`image.service.summary` per §11.C, `pricing.service.summary` per §12.C, `export.service.summary` from §14 forthcoming) for richer per-product status badges (e.g., "watermark detected" / "thin margin" / "exported last week"); that opt-in elevates the §2.D matrix from 8 ✓ to 11 ✓ at §13 amendment time (NOT now per the founder ruling kept at the §2 lock).
+`dashboard` is the **purest** demonstration of the modular monolith extraction discipline because it owns no tables AND has no repository file. Extraction in V1.5 reduces to swapping in-process Python calls for HTTP calls with **zero data-layer migration**. Per §21's recommended extraction order, dashboard is one of the easiest extractions (alongside `export` per §2.8); both can extract independently of the spine — `catalog` is the hardest per §10.K and extracts last. The extraction shape: a `dashboard` BFF pod that holds the FastAPI route + Pydantic schemas + composition logic, and makes `httpx.AsyncClient` calls to `catalog-svc` and `customer-svc` for the underlying data. V1.5 may also opt into the OPTIONAL summary endpoints (`image.service.summary` per §11.C, `pricing.service.summary` per §12.C, `export.service.summary` from §14 forthcoming) for richer per-product status badges (e.g., "watermark detected" / "thin margin" / "exported last week"); that opt-in elevates the §2.D matrix from 7 ✓ (7 post-§12.M 2026-06-18; see §12.M) to 11 ✓ at §13 amendment time (NOT now per the founder ruling kept at the §2 lock).
 
 ### 13.L What §13 does NOT cover
 
 - **The DDL of any table** — dashboard owns NONE. See `MVP_ARCH §2` for the 13-table schema; none of them are dashboard's.
 - **Any repository methods** — there is no `modules/dashboard/repository.py` file. This absence is structural per §13.D, not an omission. The §19 CI linter must allowlist dashboard as a documented exception to the per-module subtree completeness check.
-- **The optional cross-module `summary()` integrations** — `image.service.summary` (§11.C OPTIONAL), `pricing.service.summary` (§12.C OPTIONAL), `export.service.summary` (§14 OPTIONAL when authored). The founder ruling at §2 kept the §2.D matrix at exactly 8 ✓; these surfaces exist on the producer side but dashboard does NOT call them in V1. V1.5 amendment can elevate the matrix; not §13's job to pre-empt that.
+- **The optional cross-module `summary()` integrations** — `image.service.summary` (§11.C OPTIONAL), `pricing.service.summary` (§12.C OPTIONAL), `export.service.summary` (§14 OPTIONAL when authored). The founder ruling at §2 kept the §2.D matrix at exactly 7 ✓ (7 post-§12.M 2026-06-18; see §12.M); these surfaces exist on the producer side but dashboard does NOT call them in V1. V1.5 amendment can elevate the matrix; not §13's job to pre-empt that.
 - **The exact English message strings** for the 1 dashboard-specific `validation_message_id` (`validation.dashboard.invalid_pagination`) — that copy lands in `backend/app/i18n/messages_en.py` during the `services-builder` construction dispatch.
 - **The frontend dashboard component rendering** — owned by `meesell-frontend-coordinator` + `meesell-angular-component-builder` in `FRONTEND_ARCHITECTURE.md`. §13 specifies the wire shape only.
 - **Aggregation-heavy reports or analytics dashboards** (e.g., monthly revenue rollups, per-category conversion funnels) — V1.5+ feature; not in the §0.C 27-endpoint contract; not §13's scope.
@@ -5313,7 +5364,7 @@ async def summary(
     product_ids: list[UUID],
 ) -> dict[UUID, ExportStatusSummary]:
     """OPTIONAL — for dashboard V1.5 elevation per §2.D matrix note.
-    Surface exists; dashboard does NOT call in V1 (matrix kept at 8 ✓).
+    Surface exists; dashboard does NOT call in V1 (matrix kept at 7 ✓ post-§12.M 2026-06-18; see §12.M).
     Returns the latest export per product for richer status badges."""
 ```
 
@@ -6409,9 +6460,9 @@ Per the §3.K decision-tree heuristic ("when a reader asks 'who is allowed to ca
 
 ---
 
-### 16.B The 8 allowed cross-module service calls (consolidated from §2.D)
+### 16.B The 7 allowed cross-module service calls (consolidated from §2.D)
 
-The §2.D matrix locks **exactly 8 ✓ cells** of cross-module dependency. Each ✓ cell corresponds to one call site (caller → callee). The table below enumerates every allowed call, the canonical method signature, the purpose, and the locking section.
+The §2.D matrix locks **exactly 7 ✓ cells** (7 post-§12.M 2026-06-18; see §12.M) of cross-module dependency. Each ✓ cell corresponds to one call site (caller → callee). The table below enumerates every allowed call, the canonical method signature, the purpose, and the locking section.
 
 | # | Caller | Callee | Method (service-layer surface) | Purpose | Locked at |
 |---|--------|--------|--------------------------------|---------|-----------|
@@ -6433,7 +6484,7 @@ The §2.D matrix locks **exactly 8 ✓ cells** of cross-module dependency. Each 
 | 8c | `category` | `category.service.fetch_schema(category_id)` + `category.service.get_field_enum(category_id, name)` | Resolve canonical → Meesho-raw enum codes per F2.4 `for_xlsx_export` | §9.C + §14.B.1 |
 | 8d | `image` | `image.service.list_images(product_id, user_id)` | Retrieve image URL list for ZIP download + bundling in export pipeline | §11.C + §14.B.1 |
 
-**§16.B.2 The 8-count is the matrix count, not the service-method count.** The 4 callee modules (`customer`, `category`, `catalog`, `image`) expose **6 distinct service methods** across all 8 ✓ cells — some methods are shared by multiple callers:
+**§16.B.2 The 7-count is the matrix count, not the service-method count (7 post-§12.M 2026-06-18; see §12.M).** The 4 callee modules (`customer`, `category`, `catalog`, `image`) expose distinct service methods across all 7 ✓ cells — some methods are shared by multiple callers:
 - `catalog.service.assert_product_ownership` is consumed by image (call #3), pricing (call #4) → counted twice in the matrix, exists once on the catalog service surface.
 - `category.service.fetch_schema` is consumed by catalog (call #2), export (call #8c) → counted twice, exists once.
 
@@ -6476,7 +6527,7 @@ The **rule of thumb**: a `domain.py` dataclass is public iff at least one `servi
 
 ### 16.D Cross-cutting layer exception (`core/`, `shared/`, `adapters/`, `ai_ops/`, `i18n/`)
 
-The §2.D matrix lists 8 ✓ cells among the **8 domain modules only**. The 5 non-domain top-level layers per §3.A (`core/`, `shared/`, `adapters/`, `ai_ops/`, `i18n/`) are NOT in the matrix — they are the cross-cutting glue layer with different import rules.
+The §2.D matrix lists 7 ✓ cells (7 post-§12.M 2026-06-18; see §12.M) among the **8 domain modules only**. The 5 non-domain top-level layers per §3.A (`core/`, `shared/`, `adapters/`, `ai_ops/`, `i18n/`) are NOT in the matrix — they are the cross-cutting glue layer with different import rules.
 
 **§16.D.1 `core/` and `shared/` and `i18n/` are freely importable.** Every domain module MAY freely import from these 3 layers without matrix authorization. The §19 CI linter does not flag these imports.
 - `core/auth.py`, `core/tenancy.py`, `core/cache.py`, `core/plan_guard.py`, `core/errors.py`, `core/middleware.py` per §4.
@@ -6817,7 +6868,7 @@ Extracting catalog FIRST would require simultaneously updating every dependent m
 - **The acceptance checklist** (§22) — V1 done criteria.
 - **The risk register** (§22A) — cross-module risks + mitigations (e.g. "what if a developer bypasses the linter? — answer: the audit-trail review-checklist catches the import in PR review per §19").
 
-A reviewer evaluating §16 asks: "are the 8 allowed calls correctly mapped to the §2.D matrix, are the 4 file-level rules executable as written, are the 2 documented exceptions traceable to their original locking sections, does the V1.5 extraction preserve call sites without rewrite?" — NOT "should the linter be import-linter or a custom AST tool?" (that's §19's question) or "in what order should modules extract?" (the order is locked at §21, summarized at §16.H).
+A reviewer evaluating §16 asks: "are the 7 allowed calls correctly mapped to the §2.D matrix (7 post-§12.M 2026-06-18; see §12.M), are the 4 file-level rules executable as written, are the 2 documented exceptions traceable to their original locking sections, does the V1.5 extraction preserve call sites without rewrite?" — NOT "should the linter be import-linter or a custom AST tool?" (that's §19's question) or "in what order should modules extract?" (the order is locked at §21, summarized at §16.H).
 
 ---
 

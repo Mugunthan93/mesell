@@ -8,54 +8,43 @@ import {
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Router } from '@angular/router';
-import { catchError, EMPTY, switchMap } from 'rxjs';
-import { HttpErrorResponse } from '@angular/common/http';
-import { AuthLayoutComponent, MeeAlertBannerComponent } from '@mesell/composites';
-import { AuthService, AuthApiService } from '@mesell/core';
-// F-001: barrel import — subpaths are not in the federation import map at runtime
+import { AuthLayoutComponent } from '@mesell/composites';
+import { AuthService } from '@mesell/core';
 import { MeeOtpInputComponent, MeeButtonComponent } from '@mesell/ui-kit';
 
 @Component({
   selector: 'mee-otp-verify',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AuthLayoutComponent, RouterLink, MeeOtpInputComponent, MeeButtonComponent, MeeAlertBannerComponent],
+  imports: [AuthLayoutComponent, RouterLink, MeeOtpInputComponent, MeeButtonComponent],
   template: `
     <mee-auth-layout>
       <h1>Verify your number</h1>
-      <p class="subtitle">We sent a 6-digit code to {{ maskedPhone() }}</p>
+      <p class="subtitle">We sent a 6-digit code to your mobile</p>
 
-      <!-- Contextual error banner — offline state handled globally by AuthLayoutComponent -->
-      @if (errorMessage()) {
-        <mee-alert-banner
-          variant="error"
-          [message]="errorMessage()!"
-          class="banner-spacing"
-        />
-      }
-
-      <div class="otp-section">
-        <label [id]="otpLabelId">Enter OTP</label>
+      <div class="otp-section" aria-label="One-time password entry">
+        <!-- Not a <label> — OTP cells each get their own aria-label from PrimeNG.
+             Use a <p> to avoid an orphaned label that fails WCAG 1.3.1. -->
+        <p class="otp-label">Enter OTP</p>
         <mee-otp-input
           [length]="6"
           [disabled]="loading()"
-          [attr.aria-labelledby]="otpLabelId"
           (completed)="onOtpCompleted($event)"
         />
         @if (otpValue().length > 0 && otpValue().length < 6) {
-          <span class="error-text" role="alert" aria-live="polite">Enter the 6-digit OTP</span>
+          <span class="error-text" role="alert">Enter the 6-digit OTP</span>
         }
       </div>
 
       <mee-button
         [label]="'Verify OTP'"
         [loading]="loading()"
-        [disabled]="otpValue().length < 6 || loading()"
+        [disabled]="otpValue().length < 6"
         [fullWidth]="true"
         (clicked)="onSubmit()"
       />
 
-      <div class="resend-area" aria-live="polite" aria-atomic="true">
+      <div class="resend-area">
         @if (countdown() > 0) {
           <span class="countdown-text">Resend code in {{ countdown() }}s</span>
         } @else {
@@ -74,103 +63,86 @@ import { MeeOtpInputComponent, MeeButtonComponent } from '@mesell/ui-kit';
       font-size: 22px;
       font-weight: 700;
       color: var(--mee-color-on-surface);
-      margin-bottom: 4px;
+      margin-bottom: var(--mee-space-1);
     }
     .subtitle {
       font-size: 14px;
       color: var(--mee-color-on-surface-muted);
-      margin-bottom: 24px;
+      margin-bottom: var(--mee-space-6);
     }
-    label {
+    .otp-label {
       display: block;
       font-size: 14px;
       font-weight: 500;
-      margin-bottom: 6px;
+      margin-bottom: var(--mee-space-2);
       color: var(--mee-color-on-surface);
     }
-    .otp-section { margin-top: 16px; }
+    .otp-section { margin-top: var(--mee-space-4); }
+    /* Make mee-otp-input host and PrimeNG wrapper fill the card width.
+       At 360px (card content ≈ 288px after 20px padding): 6 cells with 8px gaps =
+       (288 - 5*8) / 6 = (288-40)/6 = 41.3px per cell — above the 44px threshold only
+       when browser renders fractionally. Enforce minimum via flex:1 per cell. */
+    ::ng-deep mee-otp-input { display: block; width: 100%; }
+    ::ng-deep mee-otp-input p-inputotp { display: block; width: 100%; }
+    ::ng-deep mee-otp-input .p-inputotp { display: flex; width: 100%; }
+    ::ng-deep mee-otp-input .p-inputotp-input {
+      flex: 1;
+      min-width: 0;
+      min-height: 44px;
+      font-size: 18px;
+      font-weight: 600;
+      text-align: center;
+    }
     .error-text {
       display: block;
       font-size: 12px;
       color: var(--mee-color-error);
-      margin-top: 4px;
+      margin-top: var(--mee-space-1);
     }
     .footer-text {
       text-align: center;
-      font-size: 14px;
+      font-size: 13px;
       color: var(--mee-color-on-surface-muted);
-      margin-top: 20px;
+      margin-top: var(--mee-space-5);
     }
     .footer-text a {
       color: var(--mee-color-primary);
-      font-weight: 500;
+      font-weight: 600;
       cursor: pointer;
       text-decoration: none;
+      transition: color var(--mee-transition-fast);
     }
-    /* Ensure minimum 44px tap target on footer + resend links */
-    .footer-text a,
-    .resend-link {
-      min-height: 44px;
+    .footer-text a:hover {
+      text-decoration: underline;
     }
-    .footer-text a {
-      display: inline-block;
-      line-height: 44px;
-    }
-    .otp-section + * { margin-top: 16px; }
+    .otp-section + * { margin-top: var(--mee-space-4); }
     .resend-area {
       text-align: center;
-      margin-top: 16px;
-      font-size: 14px;
+      margin-top: var(--mee-space-4);
+      font-size: 13px;
     }
     .countdown-text { color: var(--mee-color-on-surface-muted); }
     .resend-link {
       color: var(--mee-color-primary);
       font-weight: 500;
       cursor: pointer;
+      min-height: 44px;
       display: inline-flex;
       align-items: center;
-    }
-    /* Spacing below banner before the OTP input */
-    .banner-spacing { margin-bottom: 16px; }
-
-    /* 360px — tighten heading so card fits */
-    @media (max-width: 400px) {
-      h1 { font-size: 20px; }
     }
   `],
 })
 export class OtpVerifyComponent implements OnInit, OnDestroy {
-  private readonly router   = inject(Router);
-  private readonly auth     = inject(AuthService);
-  private readonly authApi  = inject(AuthApiService);
+  private readonly router = inject(Router);
+  private readonly auth   = inject(AuthService);
 
-  readonly loading      = signal(false);
-  readonly countdown    = signal(30);
-  readonly otpValue     = signal<string>('');
-  readonly errorMessage = signal<string | null>(null);
-
-  /** Unique ID for aria-labelledby wiring on the OTP input */
-  readonly otpLabelId = `mee-otp-label-${Math.random().toString(36).slice(2)}`;
-
-  /** Phone received from Router state (login/signup → navigate with state: { phone }) */
-  private _phone: string = '';
+  readonly loading   = signal(false);
+  readonly countdown = signal(30);
+  readonly otpValue  = signal<string>('');
 
   private intervalId?: ReturnType<typeof setInterval>;
 
   ngOnInit(): void {
-    // Read phone from Router navigation state.
-    // Navigation state is present when arriving from login/signup.
-    // If directly visiting this URL (no state), redirect to /login (§5.2 spec).
-    const nav = this.router.getCurrentNavigation();
-    const phone = (nav?.extras?.state as { phone?: string })?.phone
-      ?? (window.history.state as { phone?: string })?.phone;
-
-    if (!phone) {
-      // Direct URL visit with no state — redirect to login
-      this.router.navigate(['/login']);
-      return;
-    }
-    this._phone = phone;
     this.startCountdown();
   }
 
@@ -183,78 +155,23 @@ export class OtpVerifyComponent implements OnInit, OnDestroy {
   }
 
   resendOtp(): void {
-    if (!this._phone) return;
-    this.errorMessage.set(null);
-    this.authApi.sendOtp(this._phone)
-      .pipe(
-        catchError(() => {
-          this.errorMessage.set('Failed to resend OTP. Please try again.');
-          return EMPTY;
-        }),
-      )
-      .subscribe(() => {
-        this.countdown.set(30);
-        clearInterval(this.intervalId);
-        this.startCountdown();
-      });
+    this.countdown.set(30);
+    clearInterval(this.intervalId);
+    this.startCountdown();
   }
 
   onSubmit(): void {
-    if (this.otpValue().length < 6 || this.loading()) return;
-    this.errorMessage.set(null);
+    if (this.otpValue().length < 6) return;
     this.loading.set(true);
-
-    // Critical order per spec handoff:
-    // 1. verifyOtp() success → (2) auth.setSession(token, user) → (3) auth.scheduleRefresh → (4) navigate
-    this.authApi.verifyOtp(this._phone, this.otpValue())
-      .pipe(
-        switchMap((resp) => {
-          // Hydrate user from /me before calling setSession
-          return this.authApi.me().pipe(
-            catchError(() => {
-              // /me failed — use a minimal user with phone only (graceful fallback)
-              this.auth.setSession(resp.access_token, { phone: this._phone });
-              this.auth.scheduleRefresh(resp.expires_in);
-              this.loading.set(false);
-              this.router.navigate(['/dashboard']);
-              return EMPTY;
-            }),
-            switchMap((meResp) => {
-              // Full hydration: set session with real user data from /me
-              this.auth.setSession(resp.access_token, {
-                phone: meResp.phone,
-                user_id: meResp.user_id,
-                plan: meResp.plan,
-                created_at: meResp.created_at,
-                last_login_at: meResp.last_login_at,
-              });
-              this.auth.scheduleRefresh(resp.expires_in);
-              this.loading.set(false);
-              this.router.navigate(['/dashboard']);
-              return EMPTY;
-            }),
-          );
-        }),
-        catchError((err: HttpErrorResponse) => {
-          this.loading.set(false);
-          if (err.status === 400 || err.status === 401) {
-            this.errorMessage.set('Invalid or expired code. Please try again.');
-          } else if (err.status === 429) {
-            this.errorMessage.set('Too many attempts. Please wait before retrying.');
-          } else {
-            this.errorMessage.set('Something went wrong. Please try again.');
-          }
-          return EMPTY;
-        }),
-      )
-      .subscribe();
-  }
-
-  maskedPhone(): string {
-    if (!this._phone) return 'your mobile';
-    // Show last 4 digits only: e.g. +91XXXXXX1234
-    const digits = this._phone.replace(/\D/g, '');
-    return '+' + digits.slice(0, 2) + 'XXXXXX' + digits.slice(-4);
+    setTimeout(() => {
+      this.loading.set(false);
+      this.auth.setSession('mock-token', {
+        id: 1,
+        name: 'Seller',
+        phone: '+91XXXXXXXXXX',
+      });
+      this.router.navigate(['/dashboard']);
+    }, 1500);
   }
 
   private startCountdown(): void {
