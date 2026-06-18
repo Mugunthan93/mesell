@@ -114,6 +114,12 @@ def test_i18n_subset_carries_iam_ids():
         "auth.msg91.unavailable",
         "auth.refresh.invalid",
         "auth.webhook.signature_invalid",
+        # google-auth (2026-06-18) — 5 new IDs
+        "validation.credential.invalid_format",
+        "auth.google.token_invalid",
+        "auth.google.email_unverified",
+        "auth.google.unavailable",
+        "auth.google.identity_conflict",
     }
     auth_token_ids = {"auth.token.missing", "auth.token.expired", "auth.user.not_found"}
     cross_cutting = {
@@ -125,8 +131,9 @@ def test_i18n_subset_carries_iam_ids():
     assert iam_ids <= keys
     assert auth_token_ids <= keys
     assert cross_cutting <= keys
-    # subset only — the full 55-ID monolith registry is NOT vendored
-    assert len(keys) == len(iam_ids | auth_token_ids | cross_cutting) == 14
+    # subset only — the full monolith registry is NOT vendored.
+    # 14 original + 5 google-auth = 19.
+    assert len(keys) == len(iam_ids | auth_token_ids | cross_cutting) == 19
 
 
 def test_i18n_resolver_resolves_an_iam_id():
@@ -191,6 +198,8 @@ def test_domain_eight_frozen_dataclasses():
         "RevokeResult",
         "UserProfile",
         "WebhookCaptureResult",
+        # google-auth (2026-06-18)
+        "GoogleUpsertOutcome",
     ]
     assert set(domain.__all__) == set(names)
     for n in names:
@@ -213,6 +222,11 @@ def test_exceptions_nine_class_iam_error_hierarchy():
         "RefreshInvalidError",
         "WebhookSignatureInvalidError",
         "Msg91UnavailableError",
+        # google-auth (2026-06-18)
+        "GoogleTokenInvalidError",
+        "GoogleEmailUnverifiedError",
+        "GoogleUnavailableError",
+        "GoogleIdentityConflictError",
     ]
     assert set(exc.__all__) == set(classes)
     assert issubclass(exc.IamError, MeesellError)
@@ -225,16 +239,55 @@ def test_exceptions_nine_class_iam_error_hierarchy():
 
 # ── byte-for-byte vendor parity vs the monolith (the §16.G invariant) ───────
 def test_iam_owned_files_are_byte_identical_to_monolith():
-    """repository / domain / exceptions vendor byte-for-byte (path-stable imports)."""
+    """domain / exceptions vendor byte-for-byte (path-stable imports).
+
+    google-auth (2026-06-18): ``repository.py`` is NO LONGER byte-identical —
+    it gained a domain import (``GoogleUpsertOutcome``) whose package path
+    differs between the flat svc-iam layout (``app.domain``) and the nested
+    monolith layout (``app.modules.iam.domain``).  This is the SAME import-path
+    divergence that ``service.py`` / ``router.py`` already carry (and that
+    their dedicated import-only-diff tests allow).  ``repository.py`` is now
+    covered by ``test_repository_diff_is_import_only`` below.  ``domain.py``
+    and ``exceptions.py`` remain fully byte-identical (their cross-tree refs
+    are path-neutral).
+    """
     import pathlib
 
     svc_root = pathlib.Path(__file__).resolve().parents[1] / "app"
     # backend/services/svc-iam/app -> backend/app/modules/iam
     mono_root = svc_root.parents[2] / "app" / "modules" / "iam"
-    for fname in ("repository.py", "domain.py", "exceptions.py"):
+    for fname in ("domain.py", "exceptions.py"):
         svc_txt = (svc_root / fname).read_text()
         mono_txt = (mono_root / fname).read_text()
         assert svc_txt == mono_txt, f"{fname} drifted from the monolith vendor source"
+
+
+def test_repository_diff_is_import_only():
+    """repository.py differs from the monolith ONLY on import-path lines.
+
+    google-auth: the sole legitimate divergence is the ``GoogleUpsertOutcome``
+    import (``app.domain`` vs ``app.modules.iam.domain``).  Strip lines that
+    contain a domain-import path on either side; the remainder MUST be
+    byte-identical (the linking algorithm + DPDP no-op preserved verbatim).
+    """
+    import pathlib
+
+    svc_root = pathlib.Path(__file__).resolve().parents[1] / "app"
+    mono_root = svc_root.parents[2] / "app" / "modules" / "iam"
+
+    def _strip_import_lines(text: str) -> list[str]:
+        out = []
+        for line in text.splitlines():
+            if "import GoogleUpsertOutcome" in line:
+                continue  # the one divergent import line
+            out.append(line)
+        return out
+
+    svc_lines = _strip_import_lines((svc_root / "repository.py").read_text())
+    mono_lines = _strip_import_lines((mono_root / "repository.py").read_text())
+    assert svc_lines == mono_lines, (
+        "repository.py has non-import drift between svc-iam and the monolith"
+    )
 
 
 def test_no_extracted_clients_and_no_request_context_mw():
