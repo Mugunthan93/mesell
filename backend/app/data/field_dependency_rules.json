@@ -1,0 +1,217 @@
+{
+  "_meta": {
+    "version": 1,
+    "source": "hand-authored from canonical_field_aliases.json onboarding_extension_map",
+    "key_regex_note": "rule_id is 2 snake_case segments max, no dots — so validation.cross_field.{id} is a valid 3-segment i18n key",
+    "reviewed_by": "founder pending",
+    "apparel_super_id_resolution": "RESOLVED 2026-06-18 from backend/app/data/meesho_category_tree.json (the seed source for the categories.super_id column): apparel/footwear/kids-clothing supers are 10 (Men Fashion), 11 (Women Fashion), 29 (Women), 13 (Kids & Toys), 25 (Kids). Footwear has no distinct super — its leaves (Casual Shoes, Flip Flops, Sandals, Bellies, Boots) live inside supers 10/11/13, so size/fabric rules attach to those supers. NOT guessed — extracted directly from the seeded tree."
+  },
+  "rules": [
+    {
+      "id": "fssai_grocery",
+      "type": "category_required",
+      "description": "FSSAI license number compulsory for all Grocery (super 26) products",
+      "category_match": {"super_id": ["26"]},
+      "if_field": null, "if_operator": null, "if_value": null,
+      "target_field": "fssai_license_number",
+      "action": "required", "severity": "hard",
+      "error_message": "Grocery products need your FSSAI license number. Add it before marking this product ready."
+    },
+    {
+      "id": "fssai_petfood",
+      "type": "value_conditional",
+      "description": "FSSAI required for Pet Supplies (super 75) when product_type contains food",
+      "category_match": {"super_id": ["75"]},
+      "if_field": "product_type", "if_operator": "contains", "if_value": "food",
+      "target_field": "fssai_license_number",
+      "action": "required", "severity": "hard",
+      "error_message": "Pet food products need your FSSAI license number. Add it before marking this product ready."
+    },
+    {
+      "id": "fssai_foodtype",
+      "type": "value_conditional",
+      "description": "Universal: product_type names a food category",
+      "category_match": "*",
+      "if_field": "product_type", "if_operator": "in",
+      "if_value": ["food", "grocery", "snack", "beverage", "health drink", "supplement", "edible"],
+      "target_field": "fssai_license_number",
+      "action": "required", "severity": "hard",
+      "error_message": "Food and edible products need your FSSAI license number. Add it before marking this product ready."
+    },
+    {
+      "id": "ayush_beauty",
+      "type": "value_conditional",
+      "description": "AYUSH/Ayurvedic products in Beauty cluster need a license registration number",
+      "category_match": {"super_id": ["19", "36", "37", "14", "88", "34"]},
+      "if_field": "product_type", "if_operator": "in",
+      "if_value": ["ayurvedic", "ayush", "herbal", "traditional medicine", "unani", "siddha"],
+      "target_field": "license_registration_number",
+      "action": "required", "severity": "hard",
+      "error_message": "Ayurvedic and herbal products need an AYUSH license/registration number. Add it before marking this product ready."
+    },
+    {
+      "id": "ayush_expiry",
+      "type": "value_conditional",
+      "description": "When a license number is provided, its expiry date is required",
+      "category_match": {"super_id": ["19", "36", "37", "14", "88", "34", "17"]},
+      "if_field": "license_registration_number", "if_operator": "any", "if_value": null,
+      "target_field": "license_expiry_date",
+      "action": "required", "severity": "hard",
+      "error_message": "Add the expiry date for the license/registration number you entered."
+    },
+    {
+      "id": "cosmetic_license",
+      "type": "value_conditional",
+      "description": "Cosmetics/personal-care products in Beauty cluster need a license registration number",
+      "category_match": {"super_id": ["19", "36", "37", "14", "88", "34"]},
+      "if_field": "product_type", "if_operator": "in",
+      "if_value": ["cosmetic", "cosmetics", "personal care", "skincare", "makeup", "lipstick", "cream", "serum"],
+      "target_field": "license_registration_number",
+      "action": "required", "severity": "hard",
+      "error_message": "Cosmetic and personal-care products need a license/registration number. Add it before marking this product ready."
+    },
+    {
+      "id": "license_type_pair",
+      "type": "value_conditional",
+      "description": "When a license number is provided, its type is required",
+      "category_match": {"super_id": ["19", "36", "37", "14", "88", "34", "17"]},
+      "if_field": "license_registration_number", "if_operator": "any", "if_value": null,
+      "target_field": "license_registration_type",
+      "action": "required", "severity": "soft",
+      "error_message": "Tell us the type of this license/registration so buyers see the right label."
+    },
+    {
+      "id": "bis_electronics",
+      "type": "value_conditional",
+      "description": "BIS/ISI advisory for regulated Consumer Electronics (super 16)",
+      "category_match": {"super_id": ["16"]},
+      "if_field": "product_type", "if_operator": "in",
+      "if_value": ["power bank", "charger", "adapter", "led", "battery", "cable"],
+      "target_field": "bis_isi_certification_number",
+      "action": "required", "severity": "soft",
+      "error_message": "This electronics item usually needs a BIS/ISI certification number. Add it to reduce listing rejections."
+    },
+    {
+      "id": "bis_toys",
+      "type": "value_conditional",
+      "description": "BIS/ISI advisory for Kids & Toys (super 13) toy SKUs",
+      "category_match": {"super_id": ["13"]},
+      "if_field": "product_type", "if_operator": "in",
+      "if_value": ["toy", "toys", "ride-on", "soft toy"],
+      "target_field": "bis_isi_certification_number",
+      "action": "required", "severity": "soft",
+      "error_message": "Toys usually need a BIS/ISI certification number. Add it to reduce listing rejections."
+    },
+    {
+      "id": "bis_appliances",
+      "type": "value_conditional",
+      "description": "BIS/ISI advisory for Appliances (super 17)",
+      "category_match": {"super_id": ["17"]},
+      "if_field": "product_type", "if_operator": "any", "if_value": null,
+      "target_field": "bis_isi_certification_number",
+      "action": "required", "severity": "soft",
+      "error_message": "Most appliances need a BIS/ISI certification number. Add it to reduce listing rejections."
+    },
+    {
+      "id": "warranty_electronics",
+      "type": "category_required",
+      "description": "Warranty period required for Consumer Electronics (16) and Appliances (17)",
+      "category_match": {"super_id": ["16", "17"]},
+      "if_field": null, "if_operator": null, "if_value": null,
+      "target_field": "warranty_period",
+      "action": "required", "severity": "hard",
+      "error_message": "Electronics and appliances need a warranty period. Add it before marking this product ready."
+    },
+    {
+      "id": "warranty_type_pair",
+      "type": "value_conditional",
+      "description": "When warranty period is set, warranty type is required",
+      "category_match": {"super_id": ["16", "17"]},
+      "if_field": "warranty_period", "if_operator": "any", "if_value": null,
+      "target_field": "warranty_type",
+      "action": "required", "severity": "soft",
+      "error_message": "Tell buyers the warranty type (manufacturer, seller, etc.) for the warranty you entered."
+    },
+    {
+      "id": "size_apparel",
+      "type": "category_required",
+      "description": "Size required for apparel/footwear/kids-clothing — super_ids resolved 2026-06-18 from meesho_category_tree.json: 10 Men Fashion, 11 Women Fashion, 29 Women, 13 Kids & Toys, 25 Kids (footwear leaves live inside these supers).",
+      "category_match": {"super_id": ["10", "11", "29", "13", "25"]},
+      "if_field": null, "if_operator": null, "if_value": null,
+      "target_field": "size",
+      "action": "required", "severity": "hard",
+      "error_message": "Apparel and footwear need a size. Add it before marking this product ready."
+    },
+    {
+      "id": "fabric_apparel",
+      "type": "value_conditional",
+      "description": "Fabric composition required for stitched apparel — super_ids resolved 2026-06-18 from meesho_category_tree.json: 10 Men Fashion, 11 Women Fashion, 29 Women, 13 Kids & Toys, 25 Kids.",
+      "category_match": {"super_id": ["10", "11", "29", "13", "25"]},
+      "if_field": "product_type", "if_operator": "in",
+      "if_value": ["saree", "sarees", "suit", "salwar suit", "kurti", "kurtis", "top", "tops", "dress", "lehenga"],
+      "target_field": "fabric",
+      "action": "required", "severity": "hard",
+      "error_message": "This apparel item needs a fabric composition. Add it before marking this product ready."
+    },
+    {
+      "id": "country_origin",
+      "type": "category_required",
+      "description": "Country of Origin required for ALL categories",
+      "category_match": "*",
+      "if_field": null, "if_operator": null, "if_value": null,
+      "target_field": "country_of_origin",
+      "action": "required", "severity": "hard",
+      "error_message": "Every product needs a Country of Origin. Add it before marking this product ready."
+    },
+    {
+      "id": "hsn_all",
+      "type": "category_required",
+      "description": "HSN code required for ALL categories (GST compliance)",
+      "category_match": "*",
+      "if_field": null, "if_operator": null, "if_value": null,
+      "target_field": "hsn_code",
+      "action": "required", "severity": "hard",
+      "error_message": "Every product needs an HSN code for GST. Add it before marking this product ready."
+    },
+    {
+      "id": "legalmetro_weight",
+      "type": "value_conditional",
+      "description": "Country of origin required when net weight is declared",
+      "category_match": "*",
+      "if_field": "net_weight_grams", "if_operator": "any", "if_value": null,
+      "target_field": "country_of_origin",
+      "action": "required", "severity": "hard",
+      "error_message": "Packaged goods that declare a net weight must also declare Country of Origin. Add it before marking this product ready."
+    },
+    {
+      "id": "agegroup_kids",
+      "type": "value_conditional",
+      "description": "Age group required when gender = Kids",
+      "category_match": "*",
+      "if_field": "gender", "if_operator": "eq", "if_value": "Kids",
+      "target_field": "age_group",
+      "action": "required", "severity": "hard",
+      "error_message": "Kids products need an age group. Add it before marking this product ready."
+    },
+    {
+      "id": "nonreturn_reason",
+      "type": "value_conditional",
+      "description": "Non-returnable reason required when is_returnable = No",
+      "category_match": "*",
+      "if_field": "is_returnable", "if_operator": "eq", "if_value": "No",
+      "target_field": "non_returnable_reason",
+      "action": "required", "severity": "soft",
+      "error_message": "Tell buyers why this product can't be returned."
+    },
+    {
+      "id": "battery_type_req",
+      "type": "value_conditional",
+      "description": "Battery type required when battery_required = Yes",
+      "category_match": {"super_id": ["16", "13", "17"]},
+      "if_field": "battery_required", "if_operator": "eq", "if_value": "Yes",
+      "target_field": "battery_type",
+      "action": "required", "severity": "soft",
+      "error_message": "You said this product needs batteries — add the battery type so buyers know what to use."
+    }
+  ]
+}

@@ -66,8 +66,10 @@ fallback_offered=True)`` with HTTP 200 — never raise — when any of:
 from __future__ import annotations
 
 import hashlib
+import json as _json
 import logging
 from decimal import Decimal
+from pathlib import Path as _Path
 from typing import Any
 from uuid import UUID
 
@@ -110,6 +112,70 @@ _PLAN_FREE = "free"
 
 # Smart Picker top-K
 _SUGGEST_TOP_K = 5
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cross-field dependency rules — /schema FE projection
+#
+# The rule library (``app/data/field_dependency_rules.json``) is the SINGLE
+# source of truth, also loaded by the catalog rule engine
+# (``catalog.service._evaluate_dependency_rules``).  Category loads it
+# independently (rather than importing catalog, which §16 forbids) ONLY to
+# materialise the read-only ``dependency_rules[]`` projection on the /schema
+# response so the frontend can drive real-time compliance UX without a second
+# round-trip.  This module never EVALUATES rules — it only projects the rules
+# whose ``target_field`` exists in a category's schema.
+# ─────────────────────────────────────────────────────────────────────────────
+_RULES_FILE = _Path(__file__).parent.parent.parent / "data" / "field_dependency_rules.json"
+
+
+def _load_dependency_rules_by_super() -> dict[str, list[dict]]:
+    """Load + index the dependency rules by ``super_id`` ("*" = universal)."""
+    data = _json.loads(_RULES_FILE.read_text())
+    by_super: dict[str, list[dict]] = {}
+    for rule in data["rules"]:
+        cm = rule["category_match"]
+        if cm == "*":
+            by_super.setdefault("*", []).append(rule)
+        else:
+            for sid in cm.get("super_id", []):
+                by_super.setdefault(str(sid), []).append(rule)
+    return by_super
+
+
+_RULES_BY_SUPER = _load_dependency_rules_by_super()
+
+
+def _applicable_rules_for_schema(super_id: str | None) -> list[dict]:
+    """Universal ("*") rules + rules pinned to ``super_id`` (if any)."""
+    universal = _RULES_BY_SUPER.get("*", [])
+    specific = _RULES_BY_SUPER.get(str(super_id), []) if super_id else []
+    return universal + specific
+
+
+def _project_dependency_rules(
+    super_id: str | None, schema_field_names: set[str]
+) -> list[dict[str, Any]]:
+    """FE projection of the applicable rules whose target field is in-schema.
+
+    Keeps the wire-facing keys only (``description`` / ``category_match`` /
+    ``error_message`` stay OUT — the FE resolves text via ``message_id``).
+    """
+    return [
+        {
+            "id": r["id"],
+            "type": r["type"],
+            "if_field": r.get("if_field"),
+            "if_operator": r.get("if_operator"),
+            "if_value": r.get("if_value"),
+            "target_field": r["target_field"],
+            "action": r["action"],
+            "severity": r.get("severity", "soft"),
+            "message_id": f"validation.cross_field.{r['id']}",
+        }
+        for r in _applicable_rules_for_schema(super_id)
+        if r["target_field"] in schema_field_names
+    ]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -625,7 +691,20 @@ async def fetch_schema_dto(category_id: UUID, db: AsyncSession) -> dict:
         CategoryNotFoundError: when ``category_id`` not in ``categories``.
     """
     rich_envelope = await fetch_schema(category_id, db=db)
-    return _map_envelope_to_dto(rich_envelope)
+    envelope = _map_envelope_to_dto(rich_envelope)
+    # Append the read-only cross-field rule projection so the wizard can drive
+    # real-time compliance UX without a second round-trip.  Only rules whose
+    # ``target_field`` exists in THIS category's schema are surfaced.
+    super_id = await get_super_id(category_id, db=db)
+    schema_field_names = {
+        str(f["canonical_name"])
+        for f in (envelope.get("fields") or [])
+        if isinstance(f, dict) and f.get("canonical_name")
+    }
+    envelope["dependency_rules"] = _project_dependency_rules(
+        super_id, schema_field_names
+    )
+    return envelope
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -710,6 +789,20 @@ async def get_commission(category_id: UUID, db: AsyncSession) -> Decimal:
     return commission
 
 
+async def get_super_id(category_id: UUID, db: AsyncSession) -> str | None:
+    """Cross-module call from the catalog cross-field rule engine (§10).
+
+    Returns the Meesho ``super_id`` string for ``category_id`` (used to
+    select the applicable dependency rules in
+    ``catalog.service._evaluate_dependency_rules``), or ``None`` when the
+    category row is absent.  Never raises — an unknown category degrades to
+    universal-rules-only at the call site.  Not cached: a single indexed
+    ``super_id`` SELECT is cheap relative to the rule evaluation it gates,
+    and the value never changes for a given seeded category.
+    """
+    return await category_repo.get_super_id_uncached(db, category_id)
+
+
 async def list_super_categories(db: AsyncSession) -> list[SuperCategoryInfo]:
     """Cross-module call from ``customer.service.set_active_categories`` (§8.C).
 
@@ -763,6 +856,7 @@ __all__ = [
     "get_category_tree",
     "get_commission",
     "get_field_enum",
+    "get_super_id",
     "list_super_categories",
     "suggest_categories",
 ]
