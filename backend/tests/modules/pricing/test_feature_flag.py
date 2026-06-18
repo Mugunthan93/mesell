@@ -79,18 +79,32 @@ async def _stub_get_current_user() -> CurrentUser:
 
 
 @pytest_asyncio.fixture(loop_scope="function")
-async def stub_pricing_client():
-    """ASGI client with stub auth override; NO DB/Valkey required.
+async def stub_pricing_client(use_live_valkey):
+    """ASGI client with stub auth override.
 
     Only ``get_current_user`` is overridden — the DB override is left out
     intentionally.  The flag-guard tests fire BEFORE any DB call, so DB
     access is irrelevant for the flag-disabled assertions.
+
+    Depends on ``use_live_valkey`` so the module-level Valkey singletons are
+    reset + re-pointed at the live test Valkey per function — the
+    ``@rate_limit`` / ``@audit_event`` decorators on the route touch Valkey
+    even on the 404 short-circuit path, and a singleton bound to a PRIOR
+    test's (now-closed) event loop would otherwise raise "Event loop is
+    closed" → 500 on the second patch-based test (an ordering-dependent
+    shared-singleton artifact, independent of the §12.M rework).
     """
+    # NOTE: we intentionally do NOT enter ``app.router.lifespan_context`` here.
+    # The flag-disabled tests fire the guard BEFORE any DB/Valkey call, so they
+    # need no startup.  Entering+exiting the lifespan on the shared module-level
+    # ``app`` once per test disposed the shared DB engine on the FIRST test's
+    # shutdown, making every SUBSEQUENT patch-based flag test 500 on a disposed
+    # engine (an ordering-dependent shared-app bug, independent of the §12.M
+    # rework).  Dropping the lifespan keeps each flag test self-contained.
     app.dependency_overrides[get_current_user] = _stub_get_current_user
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
-        async with app.router.lifespan_context(app):
-            yield ac
+        yield ac
     app.dependency_overrides.pop(get_current_user, None)
 
 
@@ -116,7 +130,7 @@ async def test_price_calc_returns_404_when_flag_disabled(stub_pricing_client):
 
         response = await stub_pricing_client.post(
             f"/api/v1/products/{_STUB_PRODUCT_ID}/price-calc",
-            json={"input_cost": "100.00"},
+            json={"meesho_price": "500.00", "input_cost": "100.00"},
         )
 
     assert response.status_code == 404, (
@@ -141,7 +155,7 @@ async def test_price_calc_flag_off_404_body_is_json(stub_pricing_client):
 
         response = await stub_pricing_client.post(
             f"/api/v1/products/{_STUB_PRODUCT_ID}/price-calc",
-            json={"input_cost": "250.00", "target_margin_pct": "35"},
+            json={"meesho_price": "750.00", "input_cost": "250.00"},
         )
 
     assert response.status_code == 404
@@ -177,7 +191,7 @@ async def test_price_calc_route_reachable_when_flag_enabled(stub_pricing_client)
     """
     response = await stub_pricing_client.post(
         f"/api/v1/products/{_STUB_PRODUCT_ID}/price-calc",
-        json={"input_cost": "100.00"},
+        json={"meesho_price": "500.00", "input_cost": "100.00"},
     )
 
     # The flag-guard 404 must NOT appear when the flag is enabled.

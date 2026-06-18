@@ -78,32 +78,34 @@ async def insert_calc(
     db: AsyncSession,
     *,
     product_id: UUID,
-    mrp: Decimal,
     meesho_price: Decimal,
-    seller_price: Decimal,
+    estimated_payout: Decimal,
     commission_pct: Decimal,
     gst_pct: Decimal,
     margin: Decimal,
     margin_pct: Decimal,
+    mrp: Decimal | None = None,
+    markup_pct: Decimal | None = None,
+    referral_commission: Decimal | None = None,
+    shipping_charge: Decimal | None = None,
+    logistics_fee: Decimal | None = None,
+    fixed_fee: Decimal | None = None,
+    gst_on_fees: Decimal | None = None,
+    tcs: Decimal | None = None,
+    tds: Decimal | None = None,
+    rto_expected_loss: Decimal | None = None,
+    return_rate_pct: Decimal | None = None,
+    wdrp_price: Decimal | None = None,
 ) -> PricingCalc:
-    """INSERT a new ``pricing_calcs`` row.
+    """INSERT a new ``pricing_calcs`` row (forward estimator, §12.M).
 
-    Called from :func:`service.calculate` step 8.  Tenancy gate is
-    enforced upstream — the ``product_id`` MUST belong to the calling
-    user (verified by ``catalog.assert_product_ownership`` before the
-    insert).
+    Called from :func:`service.calculate`.  Tenancy gate is enforced
+    upstream — the ``product_id`` MUST belong to the calling user
+    (verified by ``catalog.assert_product_ownership`` before the insert).
 
-    Args:
-        db: Async session bound to the request transaction.
-        product_id: FK to ``products.id`` (validated upstream).
-        mrp: Maximum Retail Price (quantized to 2 dp).
-        meesho_price: Listing price on Meesho (V1: equal to MRP).
-        seller_price: Amount Meesho remits net of commission + GST.
-        commission_pct: Commission rate applied (from
-            ``category.get_commission``).
-        gst_pct: GST rate applied (V1: constant 18%).
-        margin: Absolute profit in INR (seller_price − input_cost).
-        margin_pct: Profit as percentage of input_cost.
+    The legacy ``seller_price`` column now stores ``estimated_payout``
+    and ``commission_pct`` is the seller-entered snapshot (§12.M (5)).
+    The additive breakdown columns are nullable.
 
     Returns:
         The inserted :class:`PricingCalc` domain dataclass — caller
@@ -113,11 +115,24 @@ async def insert_calc(
         product_id=product_id,
         mrp=mrp,
         meesho_price=meesho_price,
-        seller_price=seller_price,
+        # Legacy column re-used as the estimated payout snapshot.
+        seller_price=estimated_payout,
         commission_pct=commission_pct,
         gst_pct=gst_pct,
         margin=margin,
         margin_pct=margin_pct,
+        estimated_payout=estimated_payout,
+        markup_pct=markup_pct,
+        referral_commission=referral_commission,
+        shipping_charge=shipping_charge,
+        logistics_fee=logistics_fee,
+        fixed_fee=fixed_fee,
+        gst_on_fees=gst_on_fees,
+        tcs=tcs,
+        tds=tds,
+        rto_expected_loss=rto_expected_loss,
+        return_rate_pct=return_rate_pct,
+        wdrp_price=wdrp_price,
     )
     db.add(row)
     await db.flush()
@@ -175,6 +190,18 @@ def _orm_to_domain(row: PricingCalcORM) -> PricingCalc:
         gst_pct=row.gst_pct,
         margin=row.margin,
         margin_pct=row.margin_pct,
+        estimated_payout=row.estimated_payout,
+        referral_commission=row.referral_commission,
+        shipping_charge=row.shipping_charge,
+        logistics_fee=row.logistics_fee,
+        fixed_fee=row.fixed_fee,
+        gst_on_fees=row.gst_on_fees,
+        tcs=row.tcs,
+        tds=row.tds,
+        rto_expected_loss=row.rto_expected_loss,
+        return_rate_pct=row.return_rate_pct,
+        markup_pct=row.markup_pct,
+        wdrp_price=row.wdrp_price,
         created_at=row.created_at,
     )
 

@@ -219,7 +219,8 @@ def test_q_missing_still_resolves_unchanged() -> None:
     [
         "validation.q.missing",
         "catalog.draft.missing",
-        "pricing.commission.missing",
+        # ``pricing.commission.missing`` REMOVED 2026-06-18 (§12.M — commission
+        # is now a seller input; the missing-commission failure mode is gone).
         "export.front_image.missing",
         "auth.token.missing",
     ],

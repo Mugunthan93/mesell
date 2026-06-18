@@ -437,11 +437,11 @@ The Module Catalog is the **ownership map** for specialists. When the founder di
 **NOT responsible for:** the commission percentage itself (read from the `category` snapshot — `pricing` does not own that data); ownership verification (delegates to `catalog`); the latent `pricing_engine.py` import bug surfaced in `§0.E` — its resolution is a Feature 7 construction-phase task, NOT a baseline blocker.
 
 **Database tables — WRITE-OWNS:** `pricing_calcs`.
-**Database tables — READS-FROM:** `products` via `catalog.service` (ownership verification); `categories` via `category.service` (commission lookup).
+**Database tables — READS-FROM:** `products` via `catalog.service` (ownership verification). _(Post-2026-06-18 §12.M amendment: the `categories` commission read is RETIRED — commission is now a seller input.)_
 
 **Cross-module dependencies (service calls only, per §16):**
 - Calls `catalog.service.assert_product_ownership(product_id, user_id)` before any calc — same isolation gate as `image`.
-- Calls `category.service.get_commission(category_id)` to read `commission_pct` snapshot.
+- ~~Calls `category.service.get_commission(category_id)` to read `commission_pct` snapshot.~~ **RETIRED 2026-06-18 (see §12.M)** — commission is a seller-entered input (default 4%), not a per-category lookup.
 
 **Adapters used:** none.
 
@@ -583,11 +583,13 @@ The matrix below codifies the §16 inter-module rule. Rows are the **caller** mo
 | **category**  | ✗   | ✗        | —        | ✗       | ✗     | ✗       | ✗         | ✗      |
 | **catalog**   | ✗   | ✓        | ✓        | —       | ✗     | ✗       | ✗         | ✗      |
 | **image**     | ✗   | ✗        | ✗        | ✓       | —     | ✗       | ✗         | ✗      |
-| **pricing**   | ✗   | ✗        | ✓        | ✓       | ✗     | —       | ✗         | ✗      |
+| **pricing**   | ✗   | ✗        | ✗        | ✓       | ✗     | —       | ✗         | ✗      |
 | **dashboard** | ✗   | ✓        | ✗        | ✓       | ✗     | ✗       | —         | ✗      |
 | **export**    | ✗   | ✓        | ✓        | ✓       | ✓     | ✗       | ✗         | —      |
 
-**Total allowed cross-module service calls: 8 ✓.** Breakdown — `catalog` → `customer`, `category` (2); `image` → `catalog` (1); `pricing` → `category`, `catalog` (2); `dashboard` → `customer`, `catalog` (2); `export` → `customer`, `category`, `catalog`, `image` (4). Note: `dashboard` may optionally call `image.service.summary`, `pricing.service.summary`, `export.service.summary` for richer status hydration per §2.7 — those reads were left as **optional** in the module description (not as `✓` in the matrix) to keep the matrix tight; if the founder elevates them to required, they flip to `✓` and the count rises to 11. As authored, the matrix locks **8 ✓** — the minimum service-graph that satisfies V1.
+**AMENDMENT 2026-06-18 (founder-ratified — see §12.M):** the `pricing → category` row (`category.service.get_commission` for `commission_pct`) is **RETIRED**. Per the Price Calculator forward-estimator rework, commission is a seller-entered input (default 4%), not a per-category lookup — Meesho's referral commission is dynamic and not stored per category. The matrix `pricing → category` cell flips from `✓` to `✗`; the total cross-module service-call count drops from 8 ✓ to **7 ✓**. The `pricing → catalog` row (`assert_product_ownership`) is UNCHANGED. (End amendment.)
+
+**Total allowed cross-module service calls (post-2026-06-18 amendment): 7 ✓.** Breakdown — `catalog` → `customer`, `category` (2); `image` → `catalog` (1); `pricing` → `catalog` (1 — was 2 before the §12.M commission-input rework); `dashboard` → `customer`, `catalog` (2); `export` → `customer`, `category`, `catalog`, `image` (4). Note: `dashboard` may optionally call `image.service.summary`, `pricing.service.summary`, `export.service.summary` for richer status hydration per §2.7 — those reads were left as **optional** in the module description (not as `✓` in the matrix) to keep the matrix tight; if the founder elevates them to required, they flip to `✓` and the count rises to 11. As authored, the matrix locks **8 ✓** — the minimum service-graph that satisfies V1.
 
 **Cross-cutting note on `iam`.** The all-`✗` row for `iam` is intentional: `iam`'s contract surface to other modules is the `get_current_user` dependency in `core/auth.py`, which participates in the middleware chain — it is NOT a module-to-module service call and therefore does not appear as `✓` here. Per `§2.1`, `iam` is a leaf module on the cross-module graph.
 
@@ -4853,6 +4855,54 @@ Network of records on extraction: copy `pricing_calcs` rows by `user_id` in batc
 - Any AI-based price suggestion — pricing is deterministic; V1.5 may add AI margin guidance but that workload is deferred and is NOT in the §6A locked `Literal["smart_picker", "autofill", "watermark"]` workload set.
 - Razorpay subscription pricing (V1.5 — iam module per §7).
 - The legacy `services/pricing_engine.py` — gets DELETED at §12 specialist construction time, not "patched"; the new `modules/pricing/service.py` is the replacement (§0.E + §12.A resolution path).
+
+### 12.M AMENDMENT 2026-06-18 — Price Calculator forward-estimator rework (founder-ratified)
+
+**Founder ruling 2026-06-18 (founder Mugunthan, §7.3 founder-ratified amendment to the §12 LOCKED spec):** the entire §12 direction is superseded by a **forward** estimator. The seller enters a **Meesho Price** (the listed price); the backend estimates the **net payout**. Profit and margin are *outputs*, never inputs. The §12.B.1 back-solve-from-MRP-and-target-margin formula, the §12.C `target_margin_pct` input, and the §12-PRICING-D1/D2/D3 commission-sourcing flags are retired and replaced as follows. This amendment is the new law for §12; §12.B–§12.L prose is read THROUGH this amendment where they conflict.
+
+**(1) New forward estimator formula** (`pricing/service.py` `_estimate_payout`, pure Decimal, `ROUND_HALF_EVEN` via `_q`):
+
+```
+referral_commission = meesho_price × commission_pct / 100
+shipping            = bracketed flat (SHIPPING_FLAT when meesho_price ≤ SHIPPING_BRACKET, else SHIPPING_HIGH)
+logistics_fee       = DEFAULT_LOGISTICS_FEE
+fixed_fee           = DEFAULT_FIXED_FEE
+fee_base            = referral_commission + shipping + logistics_fee + fixed_fee
+gst_on_fees         = fee_base × gst_pct / 100            (GST on the FEES, not on MRP)
+tcs                 = meesho_price × tcs_pct / 100
+tds                 = meesho_price × tds_pct / 100
+rto_expected_loss   = return_rate_pct / 100 × (shipping + logistics_fee)
+total_deductions    = referral_commission + shipping + logistics_fee + fixed_fee
+                      + gst_on_fees + tcs + tds + rto_expected_loss
+estimated_payout    = meesho_price − total_deductions
+profit              = estimated_payout − input_cost
+margin_pct          = profit / meesho_price × 100         (0 when meesho_price == 0)
+markup_pct          = profit / input_cost × 100           (0 when input_cost == 0)
+```
+
+All monetary surfaces quantize to 2 dp with banker's rounding (`ROUND_HALF_EVEN`). The estimator is **calibrated to the real scraped settlement sample ₹106 Meesho price → ₹47 payout** (calibration-only — see HARD RULE below). WDRP payout is computed by re-running `_estimate_payout` on `wdrp_price = meesho_price − WDRP_DELTA` (`WDRP_DELTA ≈ 20`, reconciled against the real sample wdrp 86 vs meesho 106).
+
+**(2) New `PriceCalcRequest`** (`pricing/schemas.py`, `extra="forbid"`):
+- `meesho_price: Decimal` — PRIMARY input (the listed/selling price; drives payout).
+- `input_cost: Decimal` — cost of goods (drives profit + markup).
+- `commission_pct: Decimal = 4` — **seller input**, default 4% (NOT a category lookup).
+- `return_rate_pct: Decimal = 0` — seller-entered expected return rate, drives `rto_expected_loss`.
+- `mrp: Decimal | None = None` — optional struck-through reference (display-only; does NOT drive payout).
+- Tunable per-request override fields: `override_shipping`, `override_logistics_fee`, `override_fixed_fee`, `override_gst_pct`, `override_tcs_pct`, `override_tds_pct` (all optional; default to the named constants).
+- **`target_margin_pct` is REMOVED.**
+
+**(3) Alert codes** → `Literal["NEGATIVE_PAYOUT", "LOW_MARGIN", "SHIPPING_DOMINATES"]`. `HIGH_MRP_MULTIPLIER` and `THIN_PROFIT` are **retired**.
+- `NEGATIVE_PAYOUT` — `estimated_payout < 0` — severity `warning` — `pricing.alert.negative_payout`. Negative payout is a **200-with-alert** (red alert in the response), NEVER a 400.
+- `LOW_MARGIN` — `margin_pct < 10` — severity `warning` — `pricing.alert.low_margin` (retained).
+- `SHIPPING_DOMINATES` — `shipping > 40% of total_deductions` — severity `info` — `pricing.alert.shipping_dominates`.
+
+**(4) `CommissionMissingError` REMOVED.** The `category.service.get_commission(category_id)` cross-module call and the 422 (`pricing.commission.missing`) path are **DELETED** — commission is now a seller input, so there is no missing-commission failure mode. `InvalidPriceInputError` (400, `validation.price.invalid_input`) is RETAINED for malformed input. A negative payout does NOT raise — it returns 200 with the `NEGATIVE_PAYOUT` alert.
+
+**(5) Additive `pricing_calcs` migration** (reversible — `upgrade()` + `downgrade()`): new **nullable** breakdown columns `estimated_payout`, `referral_commission`, `shipping_charge`, `logistics_fee`, `fixed_fee`, `gst_on_fees`, `tcs`, `tds`, `rto_expected_loss`, `return_rate_pct`, `markup_pct`, `wdrp_price`. The legacy `commission_pct` column is **re-purposed** as the seller-entered commission snapshot (no longer a category snapshot). All columns nullable so the migration is purely additive over existing rows.
+
+**(6) HARD RULE — production estimator makes ZERO Meesho calls.** The estimator is pure arithmetic with no AI and no live Meesho/supplier calls. The scraped `transfer_price` / `fetch-supplier-products` / `supplier.meesho.com` artifacts are **calibration-only** and appear ONLY in `backend/tests/modules/pricing/test_estimator_calibration.py` — ZERO occurrences anywhere under `backend/app/`. The §19 grep gate treats any `app/` hit as a hard failure.
+
+(End amendment.)
 
 ---
 

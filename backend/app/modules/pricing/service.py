@@ -1,56 +1,44 @@
-"""``pricing`` service layer — P&L calculator + cross-module orchestration.
+"""``pricing`` service layer — forward payout estimator + cross-module
+orchestration.
 
-Per BACKEND_ARCHITECTURE.md §12.C (LOCKED 2026-06-05).
+Per BACKEND_ARCHITECTURE.md §12.C (LOCKED 2026-06-05) as superseded by the
+**§12.M AMENDMENT 2026-06-18 — Price Calculator forward-estimator rework
+(founder-ratified)**.
+
+Forward estimator (§12.M)
+-------------------------
+The seller enters a **Meesho Price** (the listed price); the backend
+estimates the **net payout**.  Profit and margin are *outputs*, never
+inputs.  ``target_margin_pct`` is removed; ``commission_pct`` is a
+**seller input** (default 4%), NOT a per-category lookup.
 
 Public surface
 --------------
-
-Route-internal (driven by §12.B.1):
-
-* :func:`calculate` — main endpoint surface; locked flow per §12.B.1
-  steps 2-9.
-
-Cross-module surfaces (consumed via ``from app.modules.pricing import
-service as pricing_service``):
-
-* :func:`get_last_calc` — consumed by ``dashboard.service.summary``
-  (§13 OPTIONAL — same posture as ``image.service.summary`` per §11.C).
-  V1 dashboard does NOT call this per the §2.D matrix lock at 8 ✓.
+* :func:`calculate` — main endpoint surface (forward estimator).
+* :func:`get_last_calc` — cross-module read (dashboard OPTIONAL per §13;
+  V1 dashboard does NOT call this).
 
 Cross-module imports (strict allowlist per §3.G + §16)
 ------------------------------------------------------
-This module imports ``from app.modules.catalog import service`` and
-``from app.modules.category import service`` ONLY.  It NEVER imports
-``app.modules.catalog.repository`` or ``app.modules.category.repository``.
-It NEVER imports ``app.adapters.gemini`` — pricing is deterministic math
-per §6A + §12.H (no AI in V1).
+This module imports ``from app.modules.catalog import service`` ONLY (the
+``assert_product_ownership`` gate).  Per §12.M the ``category`` commission
+import is RETIRED.  It NEVER imports ``app.adapters.gemini`` — pricing is
+deterministic math.
 
-DECISION FLAGS
---------------
-§12-PRICING-D1 — :func:`category.service.get_commission` returns
-    ``Decimal("0.00")`` (not ``None``) when commission is unseeded; this
-    service treats the zero return as the missing-signal and raises
-    :class:`CommissionMissingError`.  See exceptions module docstring.
+HARD RULE (§12.M (6))
+---------------------
+The production estimator makes ZERO Meesho/supplier calls — it is pure
+arithmetic.  The scraped settlement artifacts used to calibrate it are
+referenced ONLY in ``tests/modules/pricing/test_estimator_calibration.py``
+and never under ``app/`` (a CI grep gate enforces this).
 
-§12-PRICING-D2 — The §12.J test #3 golden ``mrp ≈ 151.52`` is
-    inconsistent with the §12.B.1 step 6 locked formula.  The formula
-    (back-solve from ``seller_price = mrp − commission − GST-on-commission``)
-    yields ``mrp = 130 / (1 − 0.15 − 0.18 × 0.15) = 130 / 0.823 ≈ 157.96``
-    for the fixture ``(input_cost=100, target_margin_pct=30,
-    commission_pct=15, gst_pct=18)``.  Follow the locked formula; the
-    unit test asserts ``Decimal("157.96")``.
-
-§12-PRICING-D3 — 3 exception classes per §12.G (PricingError +
-    InvalidPriceInputError + CommissionMissingError).  Master prompt's
-    "5 classes" tally counted the 5 i18n keys (which include 3 alert
-    codes; alerts are NOT exceptions per §12.F).
-
-§12-PRICING-D4 — ``pricing_calcs`` DDL (Wave 1 LOCKED) has structured
-    columns (mrp / meesho_price / seller_price / commission_pct /
-    gst_pct / margin / margin_pct / created_at) — NOT
-    ``{user_id, input_jsonb, output_jsonb, calculated_at}`` per §12.B.1
-    step 8.  Persistence uses structured columns; tenancy is via
-    product → user FK chain + service-layer ownership gate.
+Calibration (§12.M (1))
+-----------------------
+The named constants below are calibrated against the real scraped
+settlement sample ``meesho_price=106 → estimated_payout≈47``.  With the
+defaults below the estimator yields ``106 → 46.84`` (residual −0.16) and
+the WDRP band ``86 → 27.98`` (residual +0.98) — both inside the test
+``TOLERANCE = Decimal("3.00")``.
 """
 
 from __future__ import annotations
@@ -63,10 +51,8 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.catalog import service as catalog_service
-from app.modules.category import service as category_service
 from app.modules.pricing import repository as pricing_repo
 from app.modules.pricing.domain import PnLBreakdown, PricingAlert, PricingCalc
-from app.modules.pricing.exceptions import CommissionMissingError
 from app.modules.pricing.schemas import (
     PriceCalcAlert,
     PriceCalcRequest,
@@ -77,28 +63,46 @@ logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Constants (§12.B.1 step 6 + §12.F)
+# Named constants (§12.M (1)) — calibrated to ₹106 → ₹47
 # ─────────────────────────────────────────────────────────────────────────────
-DEFAULT_GST_PCT: Decimal = Decimal("18")
-"""V1 default GST rate.  V1.5 may make this per-category via the
-``override_gst_pct`` Pro-tier request field per §12.E."""
-
-_TWO_PLACES = Decimal("0.01")
-"""Quantization template — 2 decimal places, banker's rounding
-(``ROUND_HALF_EVEN``) per the §12.B.1 step 6 lock + CLAUDE.md numeric
-precision rule."""
-
 _HUNDRED = Decimal("100")
+_TWO_PLACES = Decimal("0.01")
+"""Quantization template — 2 dp, banker's rounding (``ROUND_HALF_EVEN``)."""
 
-# Alert thresholds (§12.F + §12.J test #4).
+# Shipping is bracketed by price band.
+SHIPPING_BRACKET: Decimal = Decimal("1000")
+"""Price threshold (INR) separating the low and high shipping bands."""
+SHIPPING_FLAT: Decimal = Decimal("30")
+"""<calibration> Shipping (INR) for ``meesho_price <= SHIPPING_BRACKET``.
+Tuned so the estimator reproduces the real sample ₹106 → ₹47."""
+SHIPPING_HIGH: Decimal = Decimal("70")
+"""Shipping (INR) for ``meesho_price > SHIPPING_BRACKET`` — Meesho's
+standard ₹70 forward shipping for higher-value parcels."""
+
+DEFAULT_COMMISSION_PCT: Decimal = Decimal("4")
+"""Seller-input default referral commission % (§12.M (2))."""
+DEFAULT_GST_PCT: Decimal = Decimal("18")
+"""GST % charged on the FEES (not on MRP)."""
+DEFAULT_TCS_PCT: Decimal = Decimal("1")
+"""Tax-collected-at-source % on the Meesho price."""
+DEFAULT_TDS_PCT: Decimal = Decimal("0")
+"""Tax-deducted-at-source % on the Meesho price (0 by default in V1)."""
+
+DEFAULT_LOGISTICS_FEE: Decimal = Decimal("10")
+"""<calibration> Logistics fee (INR) — tuned to the ₹106 → ₹47 sample."""
+DEFAULT_FIXED_FEE: Decimal = Decimal("5")
+"""<calibration> Fixed/closing fee (INR) — tuned to the ₹106 → ₹47 sample."""
+
+WDRP_DELTA: Decimal = Decimal("20")
+"""Wrong/Defective Return Price offset (INR): ``wdrp_price = meesho_price
+− WDRP_DELTA``.  Reconciled against the real sample (wdrp 86 vs meesho
+106 ≈ ₹20)."""
+
+# Alert thresholds (§12.M (3)).
 _LOW_MARGIN_THRESHOLD_PCT: Decimal = Decimal("10")
-"""``profit_pct < 10`` → ``LOW_MARGIN``."""
-
-_HIGH_MRP_MULTIPLIER: Decimal = Decimal("3")
-"""``mrp / input_cost > 3`` → ``HIGH_MRP_MULTIPLIER``."""
-
-_THIN_PROFIT_THRESHOLD: Decimal = Decimal("50")
-"""``profit < 50`` (INR) → ``THIN_PROFIT``."""
+"""``margin_pct < 10`` → ``LOW_MARGIN``."""
+_SHIPPING_DOMINATES_FRACTION: Decimal = Decimal("0.40")
+"""``shipping > 40% of total_deductions`` → ``SHIPPING_DOMINATES``."""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -111,98 +115,122 @@ async def calculate(
     *,
     db: AsyncSession,
 ) -> PriceCalcResponse:
-    """Main endpoint surface — locked flow per §12.B.1 steps 2-9.
+    """Main endpoint surface — forward payout estimator per §12.M.
 
     Steps:
-      2. Assert product ownership (cross-module via catalog).
-      3. Load the product to obtain ``category_id``.
-      4. Fetch commission for that category (cross-module via category).
-      5. If commission resolves to zero → raise
-         :class:`CommissionMissingError` (D1).
-      6. Compute the P&L breakdown deterministically (no I/O).
-      7. Generate alerts from the breakdown.
-      8. Persist to ``pricing_calcs`` (append-only audit row per D4).
-      9. Return the wire-shape response.
+      1. Assert product ownership (cross-module via catalog).
+      2. Estimate the payout deterministically (no I/O, no Meesho calls).
+      3. Estimate the WDRP-band payout.
+      4. Generate alerts from the breakdown.
+      5. Persist to ``pricing_calcs`` (append-only audit row).
+      6. Return the wire-shape response.
 
     Raises:
         ProductNotFoundError: from
             :func:`catalog.service.assert_product_ownership` (404).
-        CommissionMissingError: when the category has no usable
-            commission (422).
+        InvalidPriceInputError: for malformed cross-field input (400).
+
+    A negative ``estimated_payout`` does NOT raise — it returns 200 with a
+    ``NEGATIVE_PAYOUT`` alert (§12.M (4)).
     """
-    # Step 2 — cross-module ownership gate (M6).
+    # Step 1 — cross-module ownership gate (M6).
     await catalog_service.assert_product_ownership(product_id, user_id, db=db)
 
-    # Step 3 — load product to obtain category_id (single-row read).
-    # We re-use the catalog repository surface indirectly: the call
-    # above already validated ownership; we now need the category_id.
-    # Per §16 + §3.G we MUST NOT touch catalog.repository directly.  The
-    # cleanest cross-module read for category_id is to call
-    # `get_product_for_export` (overkill — it builds a full snapshot)
-    # OR to call a leaner helper.  Catalog does not expose a bare
-    # `get_category_id(product_id)` surface in V1; the bare ORM query
-    # would require importing catalog.repository which violates §16.
-    #
-    # Resolution: read the product row via ``db.get`` on the shared ORM
-    # model — this is a read of the *shared* ORM, not a cross-module
-    # repository call, and the §16 invariant explicitly permits shared
-    # model use across modules (the violation is calling another
-    # module's *repository*).  Tenancy is already established by step 2.
-    from app.shared.models.product import Product as ProductORM  # noqa: PLC0415
-
-    product = await db.get(ProductORM, product_id)
-    if product is None or product.deleted_at is not None:
-        # Defensive — step 2 already validated; this catches a TOCTOU
-        # race where the product was soft-deleted between the gate and
-        # the read.  Surface as a clean ProductNotFoundError via the
-        # catalog exception so the envelope is identical.
-        from app.modules.catalog.exceptions import ProductNotFoundError  # noqa: PLC0415
-        raise ProductNotFoundError()
-
-    category_id = product.category_id
-
-    # Step 4 — fetch commission (cross-module via category service).
-    commission_pct = await category_service.get_commission(category_id, db=db)
-
-    # Step 5 — D1: §9 returns Decimal("0.00") for the missing case.
-    if commission_pct == Decimal("0.00"):
-        raise CommissionMissingError()
-
-    # Step 6 — deterministic P&L (V1 ignores override_* fields per §12.E).
-    breakdown = _compute_pnl(
-        input_cost=request.input_cost,
-        target_margin_pct=request.target_margin_pct,
-        commission_pct=commission_pct,
-        gst_pct=DEFAULT_GST_PCT,
+    # Resolve the seller-entered + tunable estimator inputs.
+    commission_pct = request.commission_pct
+    gst_pct = request.override_gst_pct if request.override_gst_pct is not None else DEFAULT_GST_PCT
+    tcs_pct = request.override_tcs_pct if request.override_tcs_pct is not None else DEFAULT_TCS_PCT
+    tds_pct = request.override_tds_pct if request.override_tds_pct is not None else DEFAULT_TDS_PCT
+    logistics_fee = (
+        request.override_logistics_fee
+        if request.override_logistics_fee is not None
+        else DEFAULT_LOGISTICS_FEE
+    )
+    fixed_fee = (
+        request.override_fixed_fee
+        if request.override_fixed_fee is not None
+        else DEFAULT_FIXED_FEE
     )
 
-    # Step 7 — alerts from the deterministic breakdown.
-    alerts = _generate_alerts(breakdown, input_cost=request.input_cost)
+    # Step 2 — forward estimator for the listed Meesho price.
+    breakdown = _estimate_payout(
+        meesho_price=request.meesho_price,
+        input_cost=request.input_cost,
+        commission_pct=commission_pct,
+        return_rate_pct=request.return_rate_pct,
+        gst_pct=gst_pct,
+        tcs_pct=tcs_pct,
+        tds_pct=tds_pct,
+        logistics_fee=logistics_fee,
+        fixed_fee=fixed_fee,
+        override_shipping=request.override_shipping,
+    )
 
-    # Step 8 — append-only audit row.
+    # Step 3 — WDRP-band payout (re-run the estimator on the lower price).
+    wdrp_price = _q(request.meesho_price - WDRP_DELTA)
+    wdrp_breakdown = _estimate_payout(
+        meesho_price=wdrp_price,
+        input_cost=request.input_cost,
+        commission_pct=commission_pct,
+        return_rate_pct=request.return_rate_pct,
+        gst_pct=gst_pct,
+        tcs_pct=tcs_pct,
+        tds_pct=tds_pct,
+        logistics_fee=logistics_fee,
+        fixed_fee=fixed_fee,
+        override_shipping=request.override_shipping,
+    )
+
+    # Step 4 — alerts from the deterministic breakdown.
+    alerts = _generate_alerts(breakdown)
+
+    # Step 5 — append-only audit row.
     persisted = await pricing_repo.insert_calc(
         db,
         product_id=product_id,
-        mrp=breakdown.mrp,
+        mrp=request.mrp,
         meesho_price=breakdown.meesho_price,
-        seller_price=breakdown.seller_price,
+        estimated_payout=breakdown.estimated_payout,
         commission_pct=breakdown.commission_pct,
         gst_pct=breakdown.gst_pct,
         margin=breakdown.profit,
-        margin_pct=breakdown.profit_pct,
+        margin_pct=breakdown.margin_pct,
+        markup_pct=breakdown.markup_pct,
+        referral_commission=breakdown.referral_commission,
+        shipping_charge=breakdown.shipping_charge,
+        logistics_fee=breakdown.logistics_fee,
+        fixed_fee=breakdown.fixed_fee,
+        gst_on_fees=breakdown.gst_on_fees,
+        tcs=breakdown.tcs,
+        tds=breakdown.tds,
+        rto_expected_loss=breakdown.rto_expected_loss,
+        return_rate_pct=breakdown.return_rate_pct,
+        wdrp_price=wdrp_price,
     )
 
-    # Step 9 — compose wire response.
+    # Step 6 — compose wire response.
     return PriceCalcResponse(
-        mrp=breakdown.mrp,
+        mrp=request.mrp,
         meesho_price=breakdown.meesho_price,
-        seller_price=breakdown.seller_price,
+        wdrp_price=wdrp_price,
+        input_cost=breakdown.input_cost,
         commission_pct=breakdown.commission_pct,
-        commission_amount=breakdown.commission_amount,
+        referral_commission=breakdown.referral_commission,
+        shipping_charge=breakdown.shipping_charge,
+        logistics_fee=breakdown.logistics_fee,
+        fixed_fee=breakdown.fixed_fee,
         gst_pct=breakdown.gst_pct,
-        gst_amount=breakdown.gst_amount,
+        gst_on_fees=breakdown.gst_on_fees,
+        tcs=breakdown.tcs,
+        tds=breakdown.tds,
+        return_rate_pct=breakdown.return_rate_pct,
+        rto_expected_loss=breakdown.rto_expected_loss,
+        total_deductions=breakdown.total_deductions,
+        estimated_payout=breakdown.estimated_payout,
+        estimated_payout_wdrp=wdrp_breakdown.estimated_payout,
         profit=breakdown.profit,
-        profit_pct=breakdown.profit_pct,
+        margin_pct=breakdown.margin_pct,
+        markup_pct=breakdown.markup_pct,
         alerts=[
             PriceCalcAlert(
                 code=a.code,
@@ -227,16 +255,9 @@ async def get_last_calc(
     """Return the most recent ``pricing_calcs`` row for ``product_id`` or
     ``None`` if no calc has been run yet.
 
-    Consumed by ``dashboard.service.summary`` per §13 (OPTIONAL — same
-    posture as ``image.service.summary`` per §11.C).  V1 dashboard does
-    NOT call this (the §2.D matrix is kept at 8 ✓ per the founder
-    ruling — see §13.K).  V1.5 dashboard amendment may opt in for
-    "low margin" badges per §13 prose.
-
-    Tenancy is enforced twice:
-      1. Service layer — assert product ownership upstream.
-      2. Repository layer — JOIN through ``products`` with
-         ``Product.user_id == user_id`` per §12-PRICING-D4.
+    Consumed by ``dashboard.service.summary`` per §13 (OPTIONAL).  V1
+    dashboard does NOT call this.  Tenancy enforced twice: service-layer
+    ownership assert + repository-layer JOIN through ``products``.
     """
     await catalog_service.assert_product_ownership(product_id, user_id, db=db)
     return await pricing_repo.find_latest_by_product(db, user_id, product_id)
@@ -245,86 +266,122 @@ async def get_last_calc(
 # ─────────────────────────────────────────────────────────────────────────────
 # Internal helpers — pure functions, unit-tested in isolation
 # ─────────────────────────────────────────────────────────────────────────────
-def _compute_pnl(
+def _bracketed_shipping(meesho_price: Decimal) -> Decimal:
+    """Bracketed flat shipping per the §12.M (1) price band:
+    ``SHIPPING_FLAT`` when ``meesho_price <= SHIPPING_BRACKET`` else
+    ``SHIPPING_HIGH``."""
+    if meesho_price <= SHIPPING_BRACKET:
+        return SHIPPING_FLAT
+    return SHIPPING_HIGH
+
+
+def _estimate_payout(
     *,
+    meesho_price: Decimal,
     input_cost: Decimal,
-    target_margin_pct: Decimal,
-    commission_pct: Decimal,
-    gst_pct: Decimal,
+    commission_pct: Decimal = DEFAULT_COMMISSION_PCT,
+    return_rate_pct: Decimal = Decimal("0"),
+    gst_pct: Decimal = DEFAULT_GST_PCT,
+    tcs_pct: Decimal = DEFAULT_TCS_PCT,
+    tds_pct: Decimal = DEFAULT_TDS_PCT,
+    logistics_fee: Decimal = DEFAULT_LOGISTICS_FEE,
+    fixed_fee: Decimal = DEFAULT_FIXED_FEE,
+    override_shipping: Decimal | None = None,
 ) -> PnLBreakdown:
-    """The locked P&L algorithm per §12.B.1 step 6.
+    """The locked forward estimator per §12.M (1).
 
-    Deterministic, pure function, NO side effects, NO DB, NO I/O.  All
-    monetary values quantize to 2 dp via banker's rounding
-    (``ROUND_HALF_EVEN``).
+    Deterministic, pure function, NO side effects, NO DB, NO I/O, NO
+    Meesho calls.  All monetary values quantize to 2 dp via banker's
+    rounding (``ROUND_HALF_EVEN``).
 
-    Formula:
+    Formula::
 
-    * ``seller_price = input_cost × (1 + target_margin_pct/100)``
-    * ``mrp = seller_price / (1 − commission_pct/100 − (gst_pct/100) × (commission_pct/100))``
-    * ``commission_amount = mrp × commission_pct / 100``
-    * ``gst_amount = commission_amount × gst_pct / 100``  (GST charged
-      on commission, not on full MRP — Meesho's seller-fee structure)
-    * ``meesho_price = mrp`` (V1; V1.5 may differentiate)
-    * ``profit = seller_price − input_cost``
-    * ``profit_pct = profit / input_cost × 100``
+        referral_commission = meesho_price × commission_pct / 100
+        shipping            = bracketed flat (override if supplied)
+        fee_base            = referral + shipping + logistics + fixed
+        gst_on_fees         = fee_base × gst_pct / 100   (GST on FEES, not MRP)
+        tcs                 = meesho_price × tcs_pct / 100
+        tds                 = meesho_price × tds_pct / 100
+        rto_expected_loss   = return_rate_pct / 100 × (shipping + logistics)
+        total_deductions    = referral + shipping + logistics + fixed
+                              + gst_on_fees + tcs + tds + rto_expected_loss
+        estimated_payout    = meesho_price − total_deductions
+        profit              = estimated_payout − input_cost
+        margin_pct          = profit / meesho_price × 100   (0 when price == 0)
+        markup_pct          = profit / input_cost × 100     (0 when cost == 0)
 
-    Per §12-PRICING-D2: the golden value in §12.J test #3 prose is
-    inconsistent with this formula; the formula is the lock.
+    Calibrated to the real scraped sample ``meesho_price=106 → ≈47``.
     """
-    seller_price = _q(input_cost * (Decimal("1") + target_margin_pct / _HUNDRED))
+    referral_commission = _q(meesho_price * commission_pct / _HUNDRED)
+    shipping = override_shipping if override_shipping is not None else _bracketed_shipping(meesho_price)
+    fee_base = referral_commission + shipping + logistics_fee + fixed_fee
+    gst_on_fees = _q(fee_base * gst_pct / _HUNDRED)
+    tcs = _q(meesho_price * tcs_pct / _HUNDRED)
+    tds = _q(meesho_price * tds_pct / _HUNDRED)
+    rto_expected_loss = _q(return_rate_pct / _HUNDRED * (shipping + logistics_fee))
 
-    denom = Decimal("1") - commission_pct / _HUNDRED - (
-        gst_pct / _HUNDRED
-    ) * (commission_pct / _HUNDRED)
-    # Defensive: in V1 denom is always > 0 because commission_pct ∈ [0, 100]
-    # and gst_pct = 18 keep the denominator positive.  The guard is here
-    # so a future V1.5 override surface that allows high commission +
-    # high GST cannot silently divide by zero.
-    if denom <= Decimal("0"):
-        # Surface a clear error rather than ZeroDivisionError or a
-        # nonsensical negative MRP.  This is reachable only via the
-        # V1.5 override fields when used with extreme combinations.
-        from app.modules.pricing.exceptions import InvalidPriceInputError  # noqa: PLC0415
-        raise InvalidPriceInputError(
-            "Commission + GST combine to a non-positive denominator; "
-            "the resulting MRP would be undefined or negative.",
-        )
+    total_deductions = _q(
+        referral_commission
+        + shipping
+        + logistics_fee
+        + fixed_fee
+        + gst_on_fees
+        + tcs
+        + tds
+        + rto_expected_loss
+    )
+    estimated_payout = _q(meesho_price - total_deductions)
+    profit = _q(estimated_payout - input_cost)
 
-    mrp = _q(seller_price / denom)
-    commission_amount = _q(mrp * commission_pct / _HUNDRED)
-    gst_amount = _q(commission_amount * gst_pct / _HUNDRED)
-    meesho_price = mrp
-    profit = _q(seller_price - input_cost)
-    profit_pct = _q(profit / input_cost * _HUNDRED)
+    margin_pct = (
+        _q(profit / meesho_price * _HUNDRED) if meesho_price > Decimal("0") else Decimal("0.00")
+    )
+    markup_pct = (
+        _q(profit / input_cost * _HUNDRED) if input_cost > Decimal("0") else Decimal("0.00")
+    )
 
     return PnLBreakdown(
-        mrp=mrp,
-        meesho_price=meesho_price,
-        seller_price=seller_price,
+        meesho_price=_q(meesho_price),
+        input_cost=_q(input_cost),
         commission_pct=_q(commission_pct),
-        commission_amount=commission_amount,
+        referral_commission=referral_commission,
+        shipping_charge=_q(shipping),
+        logistics_fee=_q(logistics_fee),
+        fixed_fee=_q(fixed_fee),
         gst_pct=_q(gst_pct),
-        gst_amount=gst_amount,
+        gst_on_fees=gst_on_fees,
+        tcs=tcs,
+        tds=tds,
+        return_rate_pct=_q(return_rate_pct),
+        rto_expected_loss=rto_expected_loss,
+        total_deductions=total_deductions,
+        estimated_payout=estimated_payout,
         profit=profit,
-        profit_pct=profit_pct,
+        margin_pct=margin_pct,
+        markup_pct=markup_pct,
     )
 
 
-def _generate_alerts(
-    breakdown: PnLBreakdown,
-    *,
-    input_cost: Decimal,
-) -> list[PricingAlert]:
-    """Apply the 3 locked alert rules per §12.F to the breakdown.
+def _generate_alerts(breakdown: PnLBreakdown) -> list[PricingAlert]:
+    """Apply the 3 locked alert rules per §12.M (3) to the breakdown.
 
     Pure function — no side effects, no I/O.  Multiple alerts may fire
-    simultaneously (per §12.F).
+    simultaneously.
     """
     alerts: list[PricingAlert] = []
 
-    # Rule 1 — LOW_MARGIN: profit_pct strictly less than 10.
-    if breakdown.profit_pct < _LOW_MARGIN_THRESHOLD_PCT:
+    # Rule 1 — NEGATIVE_PAYOUT: estimated payout strictly below zero.
+    if breakdown.estimated_payout < Decimal("0"):
+        alerts.append(
+            PricingAlert(
+                code="NEGATIVE_PAYOUT",
+                message_id="pricing.alert.negative_payout",
+                severity="warning",
+            )
+        )
+
+    # Rule 2 — LOW_MARGIN: margin_pct strictly less than 10.
+    if breakdown.margin_pct < _LOW_MARGIN_THRESHOLD_PCT:
         alerts.append(
             PricingAlert(
                 code="LOW_MARGIN",
@@ -333,40 +390,25 @@ def _generate_alerts(
             )
         )
 
-    # Rule 2 — HIGH_MRP_MULTIPLIER: mrp / input_cost strictly greater than 3.
-    # Guard for input_cost == 0 (Pydantic ``gt=0`` should prevent this, but
-    # we guard defensively because this helper accepts a Decimal that
-    # bypasses the schema gate in unit tests).
-    if input_cost > Decimal("0"):
-        multiplier = breakdown.mrp / input_cost
-        if multiplier > _HIGH_MRP_MULTIPLIER:
+    # Rule 3 — SHIPPING_DOMINATES: shipping > 40% of total deductions.
+    if breakdown.total_deductions > Decimal("0"):
+        shipping_fraction = breakdown.shipping_charge / breakdown.total_deductions
+        if shipping_fraction > _SHIPPING_DOMINATES_FRACTION:
             alerts.append(
                 PricingAlert(
-                    code="HIGH_MRP_MULTIPLIER",
-                    message_id="pricing.alert.high_mrp_multiplier",
-                    severity="warning",
+                    code="SHIPPING_DOMINATES",
+                    message_id="pricing.alert.shipping_dominates",
+                    severity="info",
                 )
             )
-
-    # Rule 3 — THIN_PROFIT: profit (INR) strictly less than 50.
-    if breakdown.profit < _THIN_PROFIT_THRESHOLD:
-        alerts.append(
-            PricingAlert(
-                code="THIN_PROFIT",
-                message_id="pricing.alert.thin_profit",
-                severity="info",
-            )
-        )
 
     return alerts
 
 
 def _q(value: Decimal) -> Decimal:
-    """Quantize a Decimal to 2 dp with banker's rounding.
-
-    Centralised so every monetary surface in this module is rounded
-    identically per §12.B.1 step 6 + CLAUDE.md numeric precision rule.
-    """
+    """Quantize a Decimal to 2 dp with banker's rounding
+    (``ROUND_HALF_EVEN``).  Centralised so every monetary surface rounds
+    identically per the §12.M lock + CLAUDE.md numeric precision rule."""
     return value.quantize(_TWO_PLACES, rounding=ROUND_HALF_EVEN)
 
 
@@ -375,7 +417,17 @@ __all__ = [
     "get_last_calc",
     # Pure-function exports for unit-tests (NOT part of the cross-module
     # surface — §16 callers must use ``calculate`` / ``get_last_calc``).
-    "_compute_pnl",
+    "_estimate_payout",
     "_generate_alerts",
+    "_bracketed_shipping",
+    "DEFAULT_COMMISSION_PCT",
     "DEFAULT_GST_PCT",
+    "DEFAULT_TCS_PCT",
+    "DEFAULT_TDS_PCT",
+    "DEFAULT_LOGISTICS_FEE",
+    "DEFAULT_FIXED_FEE",
+    "SHIPPING_FLAT",
+    "SHIPPING_HIGH",
+    "SHIPPING_BRACKET",
+    "WDRP_DELTA",
 ]

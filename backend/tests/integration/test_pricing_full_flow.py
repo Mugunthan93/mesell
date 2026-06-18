@@ -1,19 +1,13 @@
-"""Pricing-module integration test #1 — Full create-product → set-category
-→ price-calc flow.
+"""Pricing-module integration test #1 — Full product → price-calc flow.
 
-Per BACKEND_ARCHITECTURE.md §12.J:
-
-    Full create-product → set-category → price-calc flow.  Response
-    ``commission_pct`` equals the seeded category ``commission_pct``.
-    Validates end-to-end §10 + §9 + §12 cross-module wiring.
+Per BACKEND_ARCHITECTURE.md §12.M AMENDMENT 2026-06-18 (forward estimator).
 
 Service-level integration: invokes the cross-module call graph end-to-end
-(catalog ownership gate → catalog DB read for category_id → category
-commission read → pricing math → pricing_calcs INSERT → response
-assembly).  HTTP-level coverage is delegated to the §15 contract suite
-that exercises the full middleware chain — this test focuses on the
-cross-module wiring identified in §2.D row "pricing → catalog" + "pricing
-→ category".
+(catalog ownership gate → forward payout estimator → pricing_calcs INSERT
+→ response assembly).  Per §12.M the ``pricing → category`` commission
+read is RETIRED — commission is a seller input.  HTTP-level coverage is
+delegated to the §15 contract suite; this test focuses on the
+``pricing → catalog`` ownership wiring + the forward estimator output.
 """
 
 from __future__ import annotations
@@ -121,20 +115,18 @@ async def _seed_product_direct(
 # ─────────────────────────────────────────────────────────────────────────────
 # Test
 # ─────────────────────────────────────────────────────────────────────────────
-class TestFullCreateProductToPriceCalc:
-    """End-to-end §10 + §9 + §12 cross-module wiring."""
+class TestFullProductToPriceCalc:
+    """End-to-end §10 (ownership) + §12.M (forward estimator) wiring."""
 
-    async def test_response_commission_pct_equals_seeded_category(
+    async def test_forward_estimator_full_response_shape(
         self, db_session, use_live_valkey
     ):
-        """Seed a category with a known ``commission_pct``; create a
-        product against it; run price-calc; assert response
-        ``commission_pct`` equals the seed.
+        """Create a product; run the forward price-calc; assert the full
+        response shape against the §12.M estimator.
 
-        Cross-module wiring asserted:
+        Wiring asserted:
           * §10 catalog.assert_product_ownership — pass (same-user).
-          * §9 category.get_commission — returns the seeded Decimal.
-          * §12 pricing.calculate — composes the response.
+          * §12.M pricing.calculate — composes the forward response.
         """
         # ── Seed ───────────────────────────────────────────────────────
         user = await _seed_user_minimal(db_session, phone="+915550013001")
@@ -142,7 +134,7 @@ class TestFullCreateProductToPriceCalc:
             db_session,
             meesho_leaf_id="99100",
             leaf_name="Integration Test Leaf",
-            commission_pct=Decimal("15.00"),
+            commission_pct=Decimal("15.00"),  # ignored by §12.M — seller input wins
             schema_hash="integ-pricing-cat-0001",
         )
         catalog = await _seed_catalog_direct(
@@ -155,10 +147,10 @@ class TestFullCreateProductToPriceCalc:
             category_id=category.id,
         )
 
-        # ── Price-calc ─────────────────────────────────────────────────
+        # ── Price-calc (forward) ───────────────────────────────────────
         request = PriceCalcRequest(
-            input_cost=Decimal("100"),
-            target_margin_pct=Decimal("30"),
+            meesho_price=Decimal("106"),
+            input_cost=Decimal("40"),
         )
         response = await pricing_service.calculate(
             user_id=user.id,
@@ -167,30 +159,25 @@ class TestFullCreateProductToPriceCalc:
             db=db_session,
         )
 
-        # ── Assert ─────────────────────────────────────────────────────
-        # The §12.J test #1 lock: response commission_pct equals seeded.
-        assert response.commission_pct == Decimal("15.00"), (
-            f"Cross-module commission propagation failed: "
-            f"seeded category.commission_pct=15.00, response.commission_pct="
-            f"{response.commission_pct}"
-        )
-        # Sanity — full response shape matches the locked formula.
-        assert response.seller_price == Decimal("130.00")
-        assert response.mrp == Decimal("157.96")  # §12-PRICING-D2
-        assert response.meesho_price == response.mrp  # V1 lock
-        assert response.profit == Decimal("30.00")
-        assert response.profit_pct == Decimal("30.00")
-        # Alerts: profit < 50 → THIN_PROFIT fires.
+        # ── Assert — calibrated estimator output ───────────────────────
+        assert response.meesho_price == Decimal("106.00")
+        assert response.commission_pct == Decimal("4.00")  # seller-input default
+        assert response.estimated_payout == Decimal("46.84")  # calibration
+        assert response.profit == Decimal("6.84")  # 46.84 − 40
+        assert response.wdrp_price == Decimal("86.00")  # 106 − WDRP_DELTA(20)
+        assert response.estimated_payout_wdrp == Decimal("27.98")
+        # margin_pct = 6.84 / 106 × 100 ≈ 6.45 → LOW_MARGIN fires.
         codes = {a.code for a in response.alerts}
-        assert "THIN_PROFIT" in codes
-        assert "LOW_MARGIN" not in codes  # profit_pct=30 ≥ 10
-        assert "HIGH_MRP_MULTIPLIER" not in codes  # mrp/input ≈ 1.58 ≤ 3
+        assert "LOW_MARGIN" in codes
+        assert "SHIPPING_DOMINATES" in codes  # shipping 30 of ~59.16 > 40%
+        assert "NEGATIVE_PAYOUT" not in codes  # payout positive
 
-    async def test_alternate_commission_propagates(
+    async def test_seller_commission_input_drives_referral(
         self, db_session, use_live_valkey
     ):
-        """Second commission value (5%) — verifies the wiring is not
-        hardcoded to 15.  ``mrp`` shifts accordingly."""
+        """A higher seller-entered commission_pct raises the referral
+        deduction and lowers the payout — proving commission is a seller
+        input, not a category lookup."""
         user = await _seed_user_minimal(db_session, phone="+915550013002")
         category = await _seed_category_with_commission(
             db_session,
@@ -213,15 +200,13 @@ class TestFullCreateProductToPriceCalc:
             user_id=user.id,
             product_id=product.id,
             request=PriceCalcRequest(
+                meesho_price=Decimal("500"),
                 input_cost=Decimal("100"),
-                target_margin_pct=Decimal("30"),
+                commission_pct=Decimal("10"),  # seller input, NOT the seeded 5%
             ),
             db=db_session,
         )
 
-        assert response.commission_pct == Decimal("5.00")
-        # denom = 1 - 0.05 - 0.18 × 0.05 = 1 - 0.05 - 0.009 = 0.941
-        # mrp = 130 / 0.941 ≈ 138.15 (ROUND_HALF_EVEN)
-        assert response.mrp == Decimal("138.15"), (
-            f"5% commission case: expected mrp=138.15, got {response.mrp}"
-        )
+        assert response.commission_pct == Decimal("10.00")
+        # referral = 500 × 10% = 50.00 (echoes the seller input, not the seed)
+        assert response.referral_commission == Decimal("50.00")

@@ -1,19 +1,13 @@
-"""Pricing-module unit test #4 — Alert generation.
+"""Pricing-module unit test — Alert generation (forward estimator).
 
-Per BACKEND_ARCHITECTURE.md §12.J:
+Per BACKEND_ARCHITECTURE.md §12.M (3) AMENDMENT 2026-06-18.
 
-  Alert generation — three sub-cases:
-    * low-margin scenario → alerts includes ``LOW_MARGIN``.
-    * high-mrp-multiplier scenario → alerts includes ``HIGH_MRP_MULTIPLIER``.
-    * thin-profit scenario → alerts includes both ``THIN_PROFIT`` and
-      ``LOW_MARGIN``.
+Locked alert rules:
+    * ``NEGATIVE_PAYOUT``    — ``estimated_payout < 0``                 — warning
+    * ``LOW_MARGIN``         — ``margin_pct < 10``                     — warning
+    * ``SHIPPING_DOMINATES`` — ``shipping > 40% of total_deductions``  — info
 
-Locked alert rules per §12.F + §12-PRICING-D2:
-    * ``LOW_MARGIN``         — ``profit_pct < 10`` (strict)
-    * ``HIGH_MRP_MULTIPLIER``— ``mrp / input_cost > 3`` (strict)
-    * ``THIN_PROFIT``        — ``profit < 50`` INR (strict)
-
-All thresholds are strict inequalities — at the boundary no alert fires.
+All thresholds are strict inequalities.  Multiple alerts may fire.
 """
 
 from __future__ import annotations
@@ -22,136 +16,105 @@ from decimal import Decimal
 
 import pytest
 
-pytestmark = pytest.mark.unit
+from app.modules.pricing.service import _estimate_payout, _generate_alerts
 
-from app.modules.pricing.service import (
-    DEFAULT_GST_PCT,
-    _compute_pnl,
-    _generate_alerts,
-)
+pytestmark = pytest.mark.unit
 
 
 def _codes(alerts) -> set[str]:
-    """Helper — extract the ``code`` set from a list of PricingAlert."""
     return {a.code for a in alerts}
 
 
 class TestAlertGeneration:
-    """Three sub-cases per §12.J test #4."""
+    """Forward-estimator alert rules per §12.M (3)."""
 
-    def test_low_margin_scenario_fires_low_margin(self):
-        """``profit_pct < 10`` → ``LOW_MARGIN`` warning.
+    def test_negative_payout_fires_warning(self):
+        """A price below the deduction floor → ``NEGATIVE_PAYOUT`` warning.
 
-        Fixture: ``input_cost=200, target_margin_pct=5, commission_pct=15``.
-        seller_price = 210, profit = 10, profit_pct = 5 → LOW_MARGIN.
-        profit = 10 < 50 → THIN_PROFIT also fires.
-        mrp/input = 210/0.823/200 ≈ 1.27 → no HIGH_MRP_MULTIPLIER.
+        ``meesho_price=20`` (very low) → payout negative.
         """
-        breakdown = _compute_pnl(
-            input_cost=Decimal("200"),
-            target_margin_pct=Decimal("5"),
-            commission_pct=Decimal("15"),
-            gst_pct=DEFAULT_GST_PCT,
+        breakdown = _estimate_payout(
+            meesho_price=Decimal("20"),
+            input_cost=Decimal("40"),
         )
-        alerts = _generate_alerts(breakdown, input_cost=Decimal("200"))
+        alerts = _generate_alerts(breakdown)
+        codes = _codes(alerts)
+        assert "NEGATIVE_PAYOUT" in codes, (
+            f"payout={breakdown.estimated_payout} should fire NEGATIVE_PAYOUT; "
+            f"got {codes}"
+        )
+        neg = next(a for a in alerts if a.code == "NEGATIVE_PAYOUT")
+        assert neg.severity == "warning"
+        assert neg.message_id == "pricing.alert.negative_payout"
 
+    def test_low_margin_fires_warning(self):
+        """``margin_pct < 10`` → ``LOW_MARGIN`` warning.
+
+        ``meesho_price=106, input_cost=44`` → payout 46.84, profit 2.84,
+        margin_pct ≈ 2.68 (< 10) → LOW_MARGIN.
+        """
+        breakdown = _estimate_payout(
+            meesho_price=Decimal("106"),
+            input_cost=Decimal("44"),
+        )
+        alerts = _generate_alerts(breakdown)
         codes = _codes(alerts)
         assert "LOW_MARGIN" in codes, (
-            f"profit_pct={breakdown.profit_pct} should trigger LOW_MARGIN; "
-            f"got codes={codes}"
+            f"margin_pct={breakdown.margin_pct} should fire LOW_MARGIN; got {codes}"
         )
-        low_margin = next(a for a in alerts if a.code == "LOW_MARGIN")
-        assert low_margin.severity == "warning"
-        assert low_margin.message_id == "pricing.alert.low_margin"
+        low = next(a for a in alerts if a.code == "LOW_MARGIN")
+        assert low.severity == "warning"
+        assert low.message_id == "pricing.alert.low_margin"
 
-    def test_high_mrp_multiplier_scenario_fires_high_mrp(self):
-        """``mrp / input_cost > 3`` → ``HIGH_MRP_MULTIPLIER`` warning.
+    def test_shipping_dominates_fires_info(self):
+        """``shipping > 40% of total_deductions`` → ``SHIPPING_DOMINATES``.
 
-        Fixture: ``input_cost=10, target_margin_pct=200, commission_pct=15``.
-        seller_price = 30, mrp = 30/0.823 ≈ 36.45.
-        mrp/input = 3.645 > 3 → HIGH_MRP_MULTIPLIER fires.
-        profit = 20 → also THIN_PROFIT and LOW_MARGIN? profit_pct = 200,
-        not < 10 → no LOW_MARGIN.  profit=20 < 50 → THIN_PROFIT also fires.
+        At ₹106 with default deductions shipping=30 of total≈59.16 → ~51% > 40%.
         """
-        breakdown = _compute_pnl(
-            input_cost=Decimal("10"),
-            target_margin_pct=Decimal("200"),
-            commission_pct=Decimal("15"),
-            gst_pct=DEFAULT_GST_PCT,
+        breakdown = _estimate_payout(
+            meesho_price=Decimal("106"),
+            input_cost=Decimal("40"),
         )
-        alerts = _generate_alerts(breakdown, input_cost=Decimal("10"))
-
+        alerts = _generate_alerts(breakdown)
         codes = _codes(alerts)
-        assert "HIGH_MRP_MULTIPLIER" in codes, (
-            f"mrp/input={breakdown.mrp / Decimal('10')} should trigger "
-            f"HIGH_MRP_MULTIPLIER; got codes={codes}"
+        assert "SHIPPING_DOMINATES" in codes, (
+            f"shipping={breakdown.shipping_charge} of total="
+            f"{breakdown.total_deductions} should fire SHIPPING_DOMINATES; got {codes}"
         )
-        high = next(a for a in alerts if a.code == "HIGH_MRP_MULTIPLIER")
-        assert high.severity == "warning"
-        assert high.message_id == "pricing.alert.high_mrp_multiplier"
-        # LOW_MARGIN should NOT fire — profit_pct is 200 in this scenario.
-        assert "LOW_MARGIN" not in codes
+        ship = next(a for a in alerts if a.code == "SHIPPING_DOMINATES")
+        assert ship.severity == "info"
+        assert ship.message_id == "pricing.alert.shipping_dominates"
 
-    def test_thin_profit_scenario_fires_both_thin_and_low(self):
-        """Per §12.J test #4 sub-case 3: thin-profit scenario where
-        ``alerts`` includes BOTH ``THIN_PROFIT`` and ``LOW_MARGIN``.
+    def test_healthy_high_price_calc_fires_no_alerts(self):
+        """A healthy high-value calc fires no alerts.
 
-        Fixture: ``input_cost=100, target_margin_pct=9, commission_pct=15``.
-        seller_price = 109, profit = 9, profit_pct = 9.
-        profit < 50 → THIN_PROFIT.
-        profit_pct < 10 → LOW_MARGIN.
-        mrp/input < 3 → no HIGH_MRP_MULTIPLIER.
+        ``meesho_price=5000, input_cost=2000`` → payout well above cost,
+        margin comfortably ≥ 10, shipping (70) a small slice of total.
         """
-        breakdown = _compute_pnl(
-            input_cost=Decimal("100"),
-            target_margin_pct=Decimal("9"),
-            commission_pct=Decimal("15"),
-            gst_pct=DEFAULT_GST_PCT,
+        breakdown = _estimate_payout(
+            meesho_price=Decimal("5000"),
+            input_cost=Decimal("2000"),
         )
-        alerts = _generate_alerts(breakdown, input_cost=Decimal("100"))
+        alerts = _generate_alerts(breakdown)
+        assert alerts == [], f"healthy calc should fire no alerts; got {_codes(alerts)}"
 
-        codes = _codes(alerts)
-        assert {"THIN_PROFIT", "LOW_MARGIN"}.issubset(codes), (
-            f"Expected both THIN_PROFIT and LOW_MARGIN; got codes={codes}"
+    def test_negative_payout_implies_low_margin_too(self):
+        """When payout is negative, margin_pct is also negative (< 10), so
+        BOTH ``NEGATIVE_PAYOUT`` and ``LOW_MARGIN`` fire."""
+        breakdown = _estimate_payout(
+            meesho_price=Decimal("20"),
+            input_cost=Decimal("40"),
         )
-        thin = next(a for a in alerts if a.code == "THIN_PROFIT")
-        assert thin.severity == "info"
-        assert thin.message_id == "pricing.alert.thin_profit"
+        codes = _codes(_generate_alerts(breakdown))
+        assert {"NEGATIVE_PAYOUT", "LOW_MARGIN"}.issubset(codes)
 
-    def test_healthy_calc_fires_no_alerts(self):
-        """A genuinely healthy calc fires no alerts.
-
-        Fixture: ``input_cost=1000, target_margin_pct=50, commission_pct=15``.
-        seller_price = 1500, profit = 500, profit_pct = 50.
-        mrp = 1500/0.823 ≈ 1822.60. mrp/input = 1.82 < 3.
-        profit_pct 50 ≥ 10; profit 500 ≥ 50 → no alerts.
-        """
-        breakdown = _compute_pnl(
-            input_cost=Decimal("1000"),
-            target_margin_pct=Decimal("50"),
-            commission_pct=Decimal("15"),
-            gst_pct=DEFAULT_GST_PCT,
+    def test_retired_alert_codes_never_appear(self):
+        """The retired ``HIGH_MRP_MULTIPLIER`` / ``THIN_PROFIT`` codes are
+        never emitted (§12.M (3))."""
+        breakdown = _estimate_payout(
+            meesho_price=Decimal("106"),
+            input_cost=Decimal("44"),
         )
-        alerts = _generate_alerts(breakdown, input_cost=Decimal("1000"))
-        assert alerts == [], (
-            f"Healthy calc should fire no alerts; got {_codes(alerts)}"
-        )
-
-    def test_boundary_at_low_margin_threshold_does_not_fire(self):
-        """Threshold is STRICT (<10).  At profit_pct == 10 → no LOW_MARGIN.
-
-        Fixture: ``input_cost=100, target_margin_pct=10, commission_pct=15``.
-        seller_price = 110, profit = 10, profit_pct = 10.
-        profit_pct = 10 → NOT < 10 → no LOW_MARGIN.
-        profit = 10 < 50 → THIN_PROFIT still fires.
-        """
-        breakdown = _compute_pnl(
-            input_cost=Decimal("100"),
-            target_margin_pct=Decimal("10"),
-            commission_pct=Decimal("15"),
-            gst_pct=DEFAULT_GST_PCT,
-        )
-        alerts = _generate_alerts(breakdown, input_cost=Decimal("100"))
-        codes = _codes(alerts)
-        assert "LOW_MARGIN" not in codes
-        assert "THIN_PROFIT" in codes
+        codes = _codes(_generate_alerts(breakdown))
+        assert "HIGH_MRP_MULTIPLIER" not in codes
+        assert "THIN_PROFIT" not in codes

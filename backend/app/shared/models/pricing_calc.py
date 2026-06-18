@@ -56,19 +56,68 @@ class PricingCalc(Base):
     )
     commission_pct: Mapped[Decimal | None] = mapped_column(
         Numeric(5, 2),
-        comment="Meesho commission rate for the product's category",
+        comment="Seller-entered referral commission % snapshot (§12.M)",
     )
     gst_pct: Mapped[Decimal | None] = mapped_column(
         Numeric(5, 2),
-        comment="GST rate applicable to the product",
+        comment="GST rate applied to the fees",
     )
     margin: Mapped[Decimal | None] = mapped_column(
         Numeric(10, 2),
-        comment="Absolute margin (seller_price - cost of goods) in INR",
+        comment="Absolute profit (estimated_payout - cost of goods) in INR",
     )
     margin_pct: Mapped[Decimal | None] = mapped_column(
         Numeric(5, 2),
-        comment="Margin as percentage of seller_price",
+        comment="Margin as percentage of meesho_price",
+    )
+    # ── §12.M (5) additive nullable forward-estimator breakdown columns ──
+    estimated_payout: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 2),
+        comment="Net payout estimate = meesho_price - total_deductions",
+    )
+    referral_commission: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 2),
+        comment="meesho_price x commission_pct / 100",
+    )
+    shipping_charge: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 2),
+        comment="Bracketed flat shipping charge (INR)",
+    )
+    logistics_fee: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 2),
+        comment="Logistics fee (INR)",
+    )
+    fixed_fee: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 2),
+        comment="Fixed/closing fee (INR)",
+    )
+    gst_on_fees: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 2),
+        comment="GST on the fee base (not on MRP)",
+    )
+    tcs: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 2),
+        comment="Tax collected at source on meesho_price",
+    )
+    tds: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 2),
+        comment="Tax deducted at source on meesho_price",
+    )
+    rto_expected_loss: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 2),
+        comment="return_rate_pct x (shipping + logistics)",
+    )
+    return_rate_pct: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 2),
+        comment="Seller-entered expected return rate %",
+    )
+    markup_pct: Mapped[Decimal | None] = mapped_column(
+        Numeric(5, 2),
+        comment="Markup as percentage of input_cost (profit / input_cost)",
+    )
+    wdrp_price: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 2),
+        comment="Wrong/Defective Return Price = meesho_price - WDRP_DELTA",
     )
     created_at: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True),
