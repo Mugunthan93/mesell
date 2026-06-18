@@ -72,7 +72,12 @@ def _install_autofill_stubs(
     async def _find_by_id(db, user_id, product_id):  # noqa: ANN001
         return _FakeProductRow(category_id=uuid4(), fields_jsonb={})
 
-    async def _fetch_schema(category_id, db):  # noqa: ANN001
+    async def _fetch_schema_dto(category_id, db):  # noqa: ANN001
+        # ``autofill_product`` calls ``fetch_schema_dto`` (the FLAT §5A.C WIRE
+        # DTO), not the rich ``fetch_schema`` — stubbing it here keeps the flow
+        # in-memory and prevents the real ``fetch_schema_dto`` from reaching
+        # ``get_super_id`` → ``db.execute`` on the sentinel DB.  Mirrors the
+        # convention in ``tests/test_catalog_dependency_rules.py``.
         return {"fields": []}
 
     async def _resolve_enums(schema, category_id, db):  # noqa: ANN001
@@ -92,7 +97,9 @@ def _install_autofill_stubs(
     monkeypatch.setattr(catalog_service, "assert_product_ownership", _assert_owned)
     monkeypatch.setattr(catalog_service, "enforce_plan_limit", _enforce)
     monkeypatch.setattr(catalog_service.catalog_repo, "find_by_id", _find_by_id)
-    monkeypatch.setattr(catalog_service.category_service, "fetch_schema", _fetch_schema)
+    monkeypatch.setattr(
+        catalog_service.category_service, "fetch_schema_dto", _fetch_schema_dto
+    )
     monkeypatch.setattr(catalog_service, "_resolve_allowed_enums", _resolve_enums)
     monkeypatch.setattr(catalog_service.ai_client, "call_gemini", _call_gemini)
     monkeypatch.setattr(

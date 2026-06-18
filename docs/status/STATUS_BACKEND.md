@@ -6982,3 +6982,39 @@ Hand-offs:
   - backend-coordinator: gate — confirm zero Meesho calls in app/, additive migration reversible,
     §12.M + §2.D amendments match the founder ruling.
 =========
+
+=== UPDATE: 2026-06-18 — repair red CI Gate 1 unit tests (export validation aggregation drift) ===
+Phase: V1 Feature 8 (Export) — CI Gate 1 (`pytest -m "unit"`) repair
+Done: Fixed 5 RED export unit tests (develop RED 5+ merges). Root cause = TEST DRIFT, not code
+  regression. The export-validation-aggregation commit 464d914 reworked router-surface
+  `export.service.initiate_export` from fail-fast to collect-all: it now raises ONE aggregated
+  `ExportValidationFailedError` (422, validation_message_id=`export.validation.failed`, additive
+  `failed_checks[]`) instead of the per-check standalones `ProductNotReadyForExportError`
+  (`export.product.not_ready`) / `FrontImageMissingError` (`export.front_image.missing`). That commit
+  shipped a NEW 228-line suite (test_export_validation_aggregation.py, 5 green) + errors.py envelope
+  wiring + i18n keys, but did NOT update the 3 pre-existing per-check test files → they kept asserting
+  the OLD contract. (The per-check exceptions are NOT dead — `_run_export_pipeline` (worker path,
+  service.py:402-403) still raises them standalone; only the router surface aggregates.)
+  Updated 3 test files to the locked aggregated contract:
+    - tests/modules/export/test_front_image_check.py (3 tests → assert failed_checks ==
+      [{check_id:front_image_missing, message_key:export.check.front_image_missing}])
+    - tests/modules/export/test_product_status_check.py (draft test → assert failed_checks ==
+      [{check_id:quality_status, message_key:export.check.quality_status}]; now supplies a ready
+      front image so quality_status is the sole aggregate entry)
+    - tests/integration/test_export_blocked_by_failed_precheck.py (→ ExportValidationFailedError +
+      quality_status; ALSO now stubs image_service.list_images — the old fail-fast path never reached
+      the front-image check, so the test never mocked it; collect-all exposed a `'coroutine' has no
+      attribute 'all'` on the AsyncMock db hitting the real image repo).
+Tests: full `pytest -m "unit"` → 830 passed (was 825 passed / 5 export failed). The 5 export
+  failures are RESOLVED. NO production code changed — test-only diff (3 files).
+In progress: none.
+Blockers: none.
+Next: PR fix/export-unit-tests → develop. Do NOT merge (coordinator gate).
+Note (pre-existing, OUT of scope, NOT my regression — diff is export-only): 6 other unit tests fail on
+  my local toolchain run (catalog autofill `_Sentinel` db lacks .execute after fetch_schema_dto change;
+  dashboard/catalog flag-guard 500-vs-404; event-loop-closed). They are environment-specific to the
+  local master-venv toolchain run and untouched by this PR. Flagged for the catalog/flag owners.
+Hand-offs:
+  - backend-coordinator: merge-gate review of fix/export-unit-tests. Confirm test-only diff + the
+    aggregated contract is the intended one (464d914 + test_export_validation_aggregation.py).
+=========

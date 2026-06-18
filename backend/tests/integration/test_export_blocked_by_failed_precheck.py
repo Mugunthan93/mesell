@@ -2,7 +2,13 @@
 
 When the image precheck status is ``failed_precheck`` the product's
 status cascades to non-``ready`` per §10 catalog rules.  The export
-POST then returns 422 ``export.product.not_ready``.
+POST then returns 422 — the ``quality_status`` check fails.
+
+Router-surface ``initiate_export`` was reworked from fail-fast to
+collect-all (per export-validation-aggregation, 2026-06-18): the
+non-``ready`` status now contributes a ``quality_status`` entry to the
+aggregated :class:`ExportValidationFailedError` rather than raising the
+standalone :class:`ProductNotReadyForExportError`.
 
 We drive this through the service-layer ``initiate_export`` (the
 catalog snapshot's validation_summary.status reflects the cascade).
@@ -19,14 +25,15 @@ import pytest
 pytestmark = pytest.mark.unit
 
 from app.modules.export import service as export_service
-from app.modules.export.exceptions import ProductNotReadyForExportError
+from app.modules.export.exceptions import ExportValidationFailedError
 from app.modules.export.schemas import ExportRequest
 
 
 @pytest.mark.asyncio
 async def test_failed_precheck_blocks_export(monkeypatch):
     """Product status cascaded to 'draft' (from a failed image precheck)
-    → 422 :class:`ProductNotReadyForExportError`.
+    → 422 :class:`ExportValidationFailedError` carrying the
+    ``quality_status`` check.
     """
     from app.modules.export import service as svc
 
@@ -60,11 +67,19 @@ async def test_failed_precheck_blocks_export(monkeypatch):
     async def fake_get_product_for_export(pid, uid, db=None):
         return cascaded_snapshot
 
+    # A ready front image is present, so the front-image check passes and
+    # ``quality_status`` is the SOLE entry in the aggregate.  Stubbing
+    # list_images also keeps the collect-all path off the real image
+    # repository (the db here is an AsyncMock).
+    async def fake_list_images(user_id, product_id, db):
+        return SimpleNamespace(images=[SimpleNamespace(idx=1, status="ready")])
+
     monkeypatch.setattr(svc.catalog_service, "assert_product_ownership", fake_assert_ownership)
     monkeypatch.setattr(svc.catalog_service, "get_product_for_export", fake_get_product_for_export)
+    monkeypatch.setattr(svc.image_service, "list_images", fake_list_images)
 
     db_mock = AsyncMock()
-    with pytest.raises(ProductNotReadyForExportError) as exc_info:
+    with pytest.raises(ExportValidationFailedError) as exc_info:
         await export_service.initiate_export(
             user_id=user_id,
             product_id=product_id,
@@ -72,4 +87,7 @@ async def test_failed_precheck_blocks_export(monkeypatch):
             db=db_mock,
         )
     assert exc_info.value.status_code == 422
-    assert exc_info.value.validation_message_id == "export.product.not_ready"
+    assert exc_info.value.validation_message_id == "export.validation.failed"
+    assert exc_info.value.failed_checks == [
+        {"check_id": "quality_status", "message_key": "export.check.quality_status"}
+    ]

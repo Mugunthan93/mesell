@@ -1,8 +1,12 @@
 """§14.K unit test 2 — product status check.
 
-Product with ``status='draft'`` must raise
-:class:`ProductNotReadyForExportError` (422 +
-``export.product.not_ready``).
+Router-surface ``initiate_export`` was reworked from fail-fast to
+collect-all (per export-validation-aggregation, 2026-06-18): a product
+with ``status='draft'`` now contributes a ``quality_status`` entry to the
+aggregated :class:`ExportValidationFailedError` (422 +
+``export.validation.failed``) rather than raising the standalone
+:class:`ProductNotReadyForExportError` (which the worker pipeline
+``_run_export_pipeline`` still raises).
 """
 
 from __future__ import annotations
@@ -15,7 +19,7 @@ import pytest
 pytestmark = pytest.mark.unit
 
 from app.modules.export import service as export_service
-from app.modules.export.exceptions import ProductNotReadyForExportError
+from app.modules.export.exceptions import ExportValidationFailedError
 from app.modules.export.schemas import ExportRequest
 
 
@@ -28,7 +32,12 @@ async def test_product_status_draft_raises_not_ready(
     stub_valkey_hint,
     stub_celery,
 ):
-    """``snapshot.validation_summary.status == 'draft'`` → 422."""
+    """``snapshot.validation_summary.status == 'draft'`` → 422 aggregated
+    with a ``quality_status`` failed check.
+
+    A ready front image is supplied so the front-image check passes and
+    ``quality_status`` is the sole failure in the aggregate.
+    """
     draft_snapshot = SimpleNamespace(
         product_id=product_id,
         category_id=category_id,
@@ -45,10 +54,13 @@ async def test_product_status_draft_raises_not_ready(
             status="draft",
         ),
     )
-    stub_cross_module(snapshot=draft_snapshot)
+    stub_cross_module(
+        snapshot=draft_snapshot,
+        images=[SimpleNamespace(idx=1, status="ready")],
+    )
 
     db_mock = AsyncMock()
-    with pytest.raises(ProductNotReadyForExportError) as exc_info:
+    with pytest.raises(ExportValidationFailedError) as exc_info:
         await export_service.initiate_export(
             user_id=user_id,
             product_id=product_id,
@@ -58,7 +70,10 @@ async def test_product_status_draft_raises_not_ready(
 
     # Verify exception envelope conforms to §14.H locks.
     assert exc_info.value.status_code == 422
-    assert exc_info.value.validation_message_id == "export.product.not_ready"
+    assert exc_info.value.validation_message_id == "export.validation.failed"
+    assert exc_info.value.failed_checks == [
+        {"check_id": "quality_status", "message_key": "export.check.quality_status"}
+    ]
 
 
 @pytest.mark.asyncio
