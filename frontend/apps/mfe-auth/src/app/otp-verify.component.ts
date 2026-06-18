@@ -8,19 +8,30 @@ import {
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Router } from '@angular/router';
-import { AuthLayoutComponent } from '@mesell/composites';
-import { AuthService } from '@mesell/core';
+import { AuthLayoutComponent, MeeAlertBannerComponent } from '@mesell/composites';
+import { AuthApiService, AuthService } from '@mesell/core';
 import { MeeOtpInputComponent, MeeButtonComponent } from '@mesell/ui-kit';
+import { mapVerifyOtpError } from './auth-error-map';
 
 @Component({
   selector: 'mee-otp-verify',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [AuthLayoutComponent, RouterLink, MeeOtpInputComponent, MeeButtonComponent],
+  imports: [
+    AuthLayoutComponent,
+    RouterLink,
+    MeeOtpInputComponent,
+    MeeButtonComponent,
+    MeeAlertBannerComponent,
+  ],
   template: `
     <mee-auth-layout>
       <h1>Verify your number</h1>
       <p class="subtitle">We sent a 6-digit code to your mobile</p>
+
+      @if (errorMessage()) {
+        <mee-alert-banner variant="error" [message]="errorMessage()!" />
+      }
 
       <div class="otp-section" aria-label="One-time password entry">
         <!-- Not a <label> — OTP cells each get their own aria-label from PrimeNG.
@@ -133,16 +144,31 @@ import { MeeOtpInputComponent, MeeButtonComponent } from '@mesell/ui-kit';
   `],
 })
 export class OtpVerifyComponent implements OnInit, OnDestroy {
-  private readonly router = inject(Router);
-  private readonly auth   = inject(AuthService);
+  private readonly router  = inject(Router);
+  private readonly auth    = inject(AuthService);
+  private readonly authApi = inject(AuthApiService);
 
-  readonly loading   = signal(false);
-  readonly countdown = signal(30);
-  readonly otpValue  = signal<string>('');
+  readonly loading      = signal(false);
+  readonly countdown    = signal(30);
+  readonly otpValue     = signal<string>('');
+  readonly errorMessage = signal<string | null>(null);
+
+  /** Phone handed over from the login/signup page via Router navigation state. */
+  private phone = '';
 
   private intervalId?: ReturnType<typeof setInterval>;
 
   ngOnInit(): void {
+    const state = this.router.getCurrentNavigation()?.extras?.state as
+      | { phone?: string }
+      | undefined;
+    if (state?.phone) {
+      this.phone = state.phone;
+    } else {
+      // No phone in nav state — the user deep-linked here directly. Send them back.
+      void this.router.navigate(['/login']);
+      return;
+    }
     this.startCountdown();
   }
 
@@ -160,18 +186,33 @@ export class OtpVerifyComponent implements OnInit, OnDestroy {
     this.startCountdown();
   }
 
+  /**
+   * Verify the OTP, then run the SHARED post-credential success tail
+   * (AuthService.completeLogin) — IDENTICAL to the Google sign-in path.
+   * On /me failure the minimal session keeps the known phone.
+   */
   onSubmit(): void {
     if (this.otpValue().length < 6) return;
+    this.errorMessage.set(null);
     this.loading.set(true);
-    setTimeout(() => {
-      this.loading.set(false);
-      this.auth.setSession('mock-token', {
-        id: 1,
-        name: 'Seller',
-        phone: '+91XXXXXXXXXX',
-      });
-      this.router.navigate(['/dashboard']);
-    }, 1500);
+    this.authApi.verifyOtp(this.phone, this.otpValue()).subscribe({
+      next: (resp) => {
+        this.auth.completeLogin(resp, { phone: this.phone }).subscribe({
+          next: ({ route }) => {
+            this.loading.set(false);
+            void this.router.navigate(route);
+          },
+          error: () => {
+            this.loading.set(false);
+            void this.router.navigate(['/dashboard']);
+          },
+        });
+      },
+      error: (err: unknown) => {
+        this.loading.set(false);
+        this.errorMessage.set(mapVerifyOtpError(err));
+      },
+    });
   }
 
   private startCountdown(): void {
