@@ -14,4 +14,12 @@ export interface Environment {
    * Set to 'https://api.example.com' for cross-origin only (requires backend CORS changes).
    */
   readonly apiBase: string;
+  /**
+   * Google Identity Services OAuth 2.0 Web client id.
+   * PUBLIC by design (embedded in the page) — NOT a secret, safe as a compile-time
+   * constant. The backend pins the SAME client id for ID-token `aud` verification,
+   * so FE/BE must stay in lockstep. Authorized JavaScript origins are configured on
+   * the GCP OAuth client against the SHELL origin (not the mfe-auth remote origin).
+   */
+  readonly googleOauthClientId: string;
 }

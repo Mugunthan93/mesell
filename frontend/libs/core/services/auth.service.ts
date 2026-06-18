@@ -2,6 +2,7 @@ import { Injectable, signal, computed, inject, OnDestroy } from '@angular/core';
 import { Router } from '@angular/router';
 import {
   Observable,
+  of,
   switchMap,
   map,
   catchError,
@@ -10,7 +11,7 @@ import {
   finalize,
 } from 'rxjs';
 import { AuthApiService } from './auth-api.service';
-import type { MeResponse, RefreshResponse } from './auth-api.service';
+import type { MeResponse, RefreshResponse, VerifyOtpResponse } from './auth-api.service';
 
 /**
  * AuthUser — DECISION-3 additive-optional reconciliation.
@@ -29,8 +30,9 @@ export interface AuthUser {
   // Legacy mock fields — kept OPTIONAL (DECISION-3: additive, no breaking change)
   id?: number;
   name?: string;
-  // Required in both legacy and real
-  phone: string;
+  // Present in both legacy and real, but NULLABLE for dual-identity:
+  // a Google-only user has no phone (mirrors MeResponse.phone: string | null).
+  phone: string | null;
   // Additive from MeResponse (DECISION-3)
   user_id?: string;       // MeResponse.user_id (UUID)
   plan?: 'free';          // MeResponse.plan (V1 always free)
@@ -116,6 +118,51 @@ export class AuthService implements OnDestroy {
     if (expiresIn !== undefined) {
       this.scheduleRefresh(expiresIn);
     }
+  }
+
+  /**
+   * completeLogin — shared post-credential success tail (Google + OTP).
+   *
+   * Given an access token + expiry from ANY verify endpoint
+   * (otp/verify or google/verify — both return VerifyOtpResponse):
+   *   set token → fetch /me → setSession(token, user, expires_in) (which
+   *   auto-schedules the silent refresh) → resolve with the routing target.
+   *
+   * Onboarding gate (Path B): when `me.onboarding_complete === false` the user
+   * is routed to /onboarding; otherwise to /dashboard. This is the single place
+   * the gate decision lives, shared by every success site.
+   *
+   * On /me FAILURE: still set a MINIMAL session and schedule the refresh, then
+   * resolve with a SAFE DEFAULT route (/dashboard). NEVER errors on /me failure —
+   * mirrors the bootstrap()/_doSilentRefresh() graceful-degrade behaviour so a
+   * transient /me hiccup never blocks login.
+   *
+   * `fallbackUser` lets the caller seed the minimal session on /me failure:
+   *   - OTP path passes `{ phone }` (known at verify time) so the phone survives.
+   *   - Google path passes nothing → `{ phone: null }` (Google-only user, no phone).
+   */
+  completeLogin(
+    resp: VerifyOtpResponse,
+    fallbackUser?: AuthUser,
+  ): Observable<{ route: string[] }> {
+    const token = resp.access_token;
+    // Set the token first so the jwtInterceptor can authorize the /me call.
+    this._token.set(token);
+    return this.authApi.me().pipe(
+      map((me) => {
+        this.setSession(token, meToUser(me), resp.expires_in);
+        const route = me.onboarding_complete === false
+          ? ['/onboarding']
+          : ['/dashboard'];
+        return { route };
+      }),
+      catchError(() => {
+        // /me failed — keep the user logged in with a minimal session and a
+        // scheduled refresh, route to a safe default. Do NOT propagate the error.
+        this.setSession(token, fallbackUser ?? { phone: null }, resp.expires_in);
+        return of({ route: ['/dashboard'] });
+      }),
+    );
   }
 
   /**
