@@ -1,7 +1,15 @@
 """§14.K unit test 3 — front image check.
 
-``xlsx_with_images`` format on a product with no ``idx=1, status='ready'``
-image → 422 :class:`FrontImageMissingError`.
+Router-surface ``initiate_export`` was reworked from fail-fast to
+collect-all (per export-validation-aggregation, 2026-06-18): a
+``xlsx_with_images`` export on a product with no ``idx=1, status='ready'``
+image now contributes a ``front_image_missing`` entry to the aggregated
+:class:`ExportValidationFailedError` (422 + ``export.validation.failed``)
+rather than raising the standalone :class:`FrontImageMissingError` (which
+the worker pipeline ``_run_export_pipeline`` still raises).
+
+The snapshot here is ``status='ready'`` so ``front_image_missing`` is the
+SOLE failure in each aggregate below.
 """
 
 from __future__ import annotations
@@ -14,8 +22,13 @@ import pytest
 pytestmark = pytest.mark.unit
 
 from app.modules.export import service as export_service
-from app.modules.export.exceptions import FrontImageMissingError
+from app.modules.export.exceptions import ExportValidationFailedError
 from app.modules.export.schemas import ExportRequest
+
+_FRONT_IMAGE_CHECK = {
+    "check_id": "front_image_missing",
+    "message_key": "export.check.front_image_missing",
+}
 
 
 @pytest.mark.asyncio
@@ -27,11 +40,11 @@ async def test_no_front_image_raises_missing(
     stub_valkey_hint,
     stub_celery,
 ):
-    """Empty image list → :class:`FrontImageMissingError`."""
+    """Empty image list → aggregated ``front_image_missing`` check."""
     stub_cross_module(snapshot=export_snapshot, images=[])
 
     db_mock = AsyncMock()
-    with pytest.raises(FrontImageMissingError) as exc_info:
+    with pytest.raises(ExportValidationFailedError) as exc_info:
         await export_service.initiate_export(
             user_id=user_id,
             product_id=product_id,
@@ -39,7 +52,8 @@ async def test_no_front_image_raises_missing(
             db=db_mock,
         )
     assert exc_info.value.status_code == 422
-    assert exc_info.value.validation_message_id == "export.front_image.missing"
+    assert exc_info.value.validation_message_id == "export.validation.failed"
+    assert exc_info.value.failed_checks == [_FRONT_IMAGE_CHECK]
 
 
 @pytest.mark.asyncio
@@ -51,18 +65,20 @@ async def test_only_slot_2_image_raises_missing(
     stub_valkey_hint,
     stub_celery,
 ):
-    """A product with an image at idx=2 but NONE at idx=1 → 422."""
+    """A product with an image at idx=2 but NONE at idx=1 → aggregated
+    ``front_image_missing`` check."""
     images = [SimpleNamespace(idx=2, status="ready")]
     stub_cross_module(snapshot=export_snapshot, images=images)
 
     db_mock = AsyncMock()
-    with pytest.raises(FrontImageMissingError):
+    with pytest.raises(ExportValidationFailedError) as exc_info:
         await export_service.initiate_export(
             user_id=user_id,
             product_id=product_id,
             request=ExportRequest(format="xlsx_with_images"),
             db=db_mock,
         )
+    assert exc_info.value.failed_checks == [_FRONT_IMAGE_CHECK]
 
 
 @pytest.mark.asyncio
@@ -74,19 +90,20 @@ async def test_slot_1_pending_image_raises_missing(
     stub_valkey_hint,
     stub_celery,
 ):
-    """A front image at idx=1 but ``status='pending'`` → 422 (precheck
-    must have completed)."""
+    """A front image at idx=1 but ``status='pending'`` → aggregated
+    ``front_image_missing`` check (precheck must have completed)."""
     images = [SimpleNamespace(idx=1, status="pending")]
     stub_cross_module(snapshot=export_snapshot, images=images)
 
     db_mock = AsyncMock()
-    with pytest.raises(FrontImageMissingError):
+    with pytest.raises(ExportValidationFailedError) as exc_info:
         await export_service.initiate_export(
             user_id=user_id,
             product_id=product_id,
             request=ExportRequest(format="xlsx_with_images"),
             db=db_mock,
         )
+    assert exc_info.value.failed_checks == [_FRONT_IMAGE_CHECK]
 
 
 @pytest.mark.asyncio
