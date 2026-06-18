@@ -1,5 +1,35 @@
 # STATUS — FRONTEND
 
+=== UPDATE: 2026-06-19 01:00 ===
+Phase: libs/ui-kit — new mee-multiselect primitive
+Done:
+  - Created libs/ui-kit/multiselect/multiselect.component.ts (MeeMultiselectComponent)
+    - Selector: mee-multiselect
+    - PrimeNG base: MultiSelect from primeng/multiselect
+    - Standalone, OnPush, CVA via self-injected NgControl (no NG_VALUE_ACCESSOR circular dep)
+    - Inputs: options (required), placeholder, label, error, hint, disabled, required, showClear,
+      maxSelectedLabels, filter, display ('comma'|'chip'), showErrorOn ('touched'|'dirty'|'always')
+    - Internal signal: innerValue (unknown[]), _controlStatus (reactive bridge for computedError)
+    - computedError computed: explicit [error] input wins; falls back to form control validators
+    - resolveErrorMessage(): maps required/minlength/maxlength/min/max validators to readable strings
+    - onPanelHide fires onTouched() — correct "touched" trigger for multiselect UX
+    - 44px min-height on .p-multiselect (::ng-deep) — mobile-first touch target
+    - Chip display: MeeSell design tokens (--mee-color-primary-light/primary, --mee-radius-full)
+    - MeeShowErrorOn type exported
+  - Added exports to libs/ui-kit/index.ts:
+    - export { MeeMultiselectComponent } from './multiselect/multiselect.component'
+    - export type { MeeShowErrorOn } from './multiselect/multiselect.component'
+Tests: no .spec.ts added this task (pure primitive, no TestBed pattern change)
+Build: tsc --noEmit: ZERO errors
+In progress: none
+Blockers: none
+Next: next assigned ui-kit task
+Hand-offs:
+  - "MeeMultiselectComponent added to libs/ui-kit. Selector: mee-multiselect. Import from @mesell/ui-kit.
+     Uses NgControl self-injection (no NG_VALUE_ACCESSOR circular dep). showErrorOn input controls
+     when validation errors surface from the bound FormControl."
+=========
+
 === UPDATE: 2026-06-19 00:30 ===
 Phase: mfe-export — Tailwind-to-CSS-token migration + mobile responsive layout
 Done:

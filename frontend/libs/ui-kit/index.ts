@@ -22,6 +22,8 @@ export { MeePasswordInputComponent }   from './password-input/password-input.com
 export { MeeTextareaComponent }        from './textarea/textarea.component';
 export { MeeDrawerComponent }          from './drawer/drawer.component';
 export { MeeMenuComponent }            from './menu/menu.component';
+export { MeeMultiselectComponent }     from './multiselect/multiselect.component';
+export type { MeeShowErrorOn }         from './multiselect/multiselect.component';
 
 // Root bootstrap (PrimeNG providers + theme — sealed behind @mee/ui)
 export { provideMeeUi }                from './providers';
