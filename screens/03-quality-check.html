@@ -1,0 +1,166 @@
+<!-- @dsCard group="App Screens" name="Quality Check" subtitle="Score · Issues · Fix suggestions" -->
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Plus Jakarta Sans',system-ui,sans-serif;background:#f0f5f9;height:100vh;display:flex}
+.sidebar{width:260px;background:#111c2d;display:flex;flex-direction:column;padding:0;flex-shrink:0;height:100vh}
+.sidebar-logo{padding:24px 20px 20px;border-bottom:1px solid rgba(255,255,255,.06)}
+.logo-mark{display:flex;align-items:center;gap:10px}
+.logo-icon{width:32px;height:32px;background:#F26B23;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff}
+.logo-text{font-size:18px;font-weight:700;color:#fff}
+.sidebar-nav{flex:1;padding:16px 12px}
+.nav-group{margin-bottom:24px}
+.nav-group-label{font-size:10px;font-weight:600;color:#5a6a85;letter-spacing:.1em;text-transform:uppercase;padding:0 8px;margin-bottom:8px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;color:#9fafca;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px}
+.nav-item.active{background:rgba(242,107,35,.15);color:#F26B23}
+.nav-icon{width:18px;height:18px;flex-shrink:0}
+.sidebar-footer{padding:16px 12px;border-top:1px solid rgba(255,255,255,.06)}
+.avatar{width:32px;height:32px;background:#F26B23;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff}
+.user-row{display:flex;align-items:center;gap:10px}
+.user-info .name{font-size:13px;font-weight:600;color:#fff}
+.user-info .plan{font-size:11px;color:#5a6a85}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:#fff;border-bottom:1px solid #e5eaef;padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.breadcrumb{display:flex;align-items:center;gap:6px;font-size:13px;color:#5a6a85}
+.breadcrumb-sep{color:#e5eaef}
+.breadcrumb-current{color:#2a3547;font-weight:600}
+.topbar-actions{display:flex;align-items:center;gap:10px}
+.btn-primary{background:#F26B23;color:#fff;border:none;padding:8px 18px;border-radius:999px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn-ghost{background:transparent;border:1px solid #e5eaef;color:#5a6a85;padding:8px 14px;border-radius:999px;font-size:13px;font-weight:500;cursor:pointer;font-family:inherit}
+.content{flex:1;overflow-y:auto;padding:28px 32px}
+
+/* Score hero */
+.score-hero{background:#fff;border-radius:16px;padding:28px 32px;box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:24px;display:flex;align-items:center;gap:40px}
+.score-circle-wrap{position:relative;width:120px;height:120px;flex-shrink:0}
+.score-circle{width:120px;height:120px;border-radius:50%;background:conic-gradient(#16A34A 0% 87%,#e5eaef 87% 100%);display:flex;align-items:center;justify-content:center;position:relative}
+.score-inner{width:92px;height:92px;background:#fff;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.score-num{font-size:28px;font-weight:800;color:#16A34A;line-height:1}
+.score-denom{font-size:11px;color:#5a6a85;font-weight:500}
+.score-info{flex:1}
+.score-info h2{font-size:18px;font-weight:700;color:#2a3547;margin-bottom:6px}
+.score-info p{font-size:14px;color:#5a6a85;line-height:1.6;margin-bottom:16px}
+.score-pills{display:flex;gap:8px;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:999px;font-size:12px;font-weight:600}
+.pill-green{background:rgba(22,163,74,.1);color:#16A34A}
+.pill-amber{background:rgba(217,119,6,.1);color:#D97706}
+.pill-red{background:rgba(220,38,38,.1);color:#DC2626}
+.score-actions{display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+
+/* Issues */
+.issues-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.issue-card{background:#fff;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.08);overflow:hidden}
+.issue-header{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid #f0f5f9}
+.issue-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.issue-title{font-size:14px;font-weight:700;color:#2a3547}
+.issue-score{font-size:12px;font-weight:600;margin-top:2px}
+.issue-body{padding:16px 20px}
+.check-row{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid #f8fafc;font-size:13px;color:#2a3547}
+.check-row:last-child{border-bottom:none}
+.check-icon{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;margin-top:1px}
+.check-pass{background:rgba(22,163,74,.1);color:#16A34A}
+.check-fail{background:rgba(220,38,38,.1);color:#DC2626}
+.check-warn{background:rgba(217,119,6,.1);color:#D97706}
+.check-text{flex:1;line-height:1.4}
+.fix-chip{display:inline-block;margin-top:4px;font-size:11px;color:#F26B23;background:rgba(242,107,35,.1);padding:2px 8px;border-radius:999px;font-weight:500}
+</style></head><body>
+
+<nav class="sidebar">
+  <div class="sidebar-logo"><div class="logo-mark"><div class="logo-icon">M</div><span class="logo-text">mesell</span></div></div>
+  <div class="sidebar-nav">
+    <div class="nav-group"><div class="nav-group-label">Main</div>
+      <div class="nav-item"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard</div>
+    </div>
+    <div class="nav-group"><div class="nav-group-label">Catalogs</div>
+      <div class="nav-item active"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>My Catalogs</div>
+      <div class="nav-item"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>New Catalog</div>
+    </div>
+  </div>
+  <div class="sidebar-footer"><div class="user-row"><div class="avatar">M</div><div class="user-info"><div class="name">Mugunthan S.</div><div class="plan">Pro Plan</div></div></div></div>
+</nav>
+
+<div class="main">
+  <div class="topbar">
+    <div class="breadcrumb">
+      <span>My Catalogs</span><span class="breadcrumb-sep">›</span>
+      <span>Summer Kurti Collection</span><span class="breadcrumb-sep">›</span>
+      <span class="breadcrumb-current">Quality Check</span>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn-ghost">← Back to Catalog</button>
+      <button class="btn-primary">⬇ Export CSV</button>
+    </div>
+  </div>
+  <div class="content">
+    <div class="score-hero">
+      <div class="score-circle-wrap">
+        <div class="score-circle"><div class="score-inner"><div class="score-num">87</div><div class="score-denom">/ 100</div></div></div>
+      </div>
+      <div class="score-info">
+        <h2>Good — Ready to Upload</h2>
+        <p>This catalog meets Meesho's listing requirements. Fix the 2 warnings below to push the score above 90 and reduce rejection risk.</p>
+        <div class="score-pills">
+          <span class="pill pill-green">✓ 14 checks passed</span>
+          <span class="pill pill-amber">⚠ 2 warnings</span>
+          <span class="pill pill-red">✗ 1 error</span>
+        </div>
+      </div>
+      <div class="score-actions">
+        <button class="btn-primary" style="white-space:nowrap">⚡ Auto-fix Issues</button>
+        <button class="btn-ghost" style="white-space:nowrap">Recheck</button>
+      </div>
+    </div>
+
+    <div class="issues-grid">
+      <div class="issue-card">
+        <div class="issue-header">
+          <div class="issue-icon" style="background:rgba(22,163,74,.1)">📝</div>
+          <div><div class="issue-title">Title &amp; Description</div><div class="issue-score" style="color:#16A34A">96 / 100 — Excellent</div></div>
+        </div>
+        <div class="issue-body">
+          <div class="check-row"><div class="check-icon check-pass">✓</div><div class="check-text">Title is 60–80 characters — optimal length</div></div>
+          <div class="check-row"><div class="check-icon check-pass">✓</div><div class="check-text">No banned words detected</div></div>
+          <div class="check-row"><div class="check-icon check-pass">✓</div><div class="check-text">Description is 150–500 characters</div></div>
+          <div class="check-row"><div class="check-icon check-pass">✓</div><div class="check-text">Key features mentioned (fabric, size, color)</div></div>
+        </div>
+      </div>
+      <div class="issue-card">
+        <div class="issue-header">
+          <div class="issue-icon" style="background:rgba(217,119,6,.1)">🖼</div>
+          <div><div class="issue-title">Images</div><div class="issue-score" style="color:#D97706">72 / 100 — Needs work</div></div>
+        </div>
+        <div class="issue-body">
+          <div class="check-row"><div class="check-icon check-pass">✓</div><div class="check-text">Primary image has white background</div></div>
+          <div class="check-row"><div class="check-icon check-fail">✗</div><div class="check-text">Image resolution below 1000×1000px for SKU 3 of 24<span class="fix-chip">Upload higher-res image</span></div></div>
+          <div class="check-row"><div class="check-icon check-warn">⚠</div><div class="check-text">Watermark detected on 2 images<span class="fix-chip">AI can remove — 1 click</span></div></div>
+          <div class="check-row"><div class="check-icon check-pass">✓</div><div class="check-text">Minimum 3 images per SKU — satisfied</div></div>
+        </div>
+      </div>
+      <div class="issue-card">
+        <div class="issue-header">
+          <div class="issue-icon" style="background:rgba(37,99,235,.1)">🏷</div>
+          <div><div class="issue-title">Category Fields</div><div class="issue-score" style="color:#2563EB">88 / 100 — Good</div></div>
+        </div>
+        <div class="issue-body">
+          <div class="check-row"><div class="check-icon check-pass">✓</div><div class="check-text">All required fields filled (Fabric, Size, Color)</div></div>
+          <div class="check-row"><div class="check-icon check-pass">✓</div><div class="check-text">Size values match Meesho allowed enums</div></div>
+          <div class="check-row"><div class="check-icon check-warn">⚠</div><div class="check-text">Style field is blank — recommended but optional<span class="fix-chip">AI can suggest values</span></div></div>
+          <div class="check-row"><div class="check-icon check-pass">✓</div><div class="check-text">Country of origin set to India</div></div>
+        </div>
+      </div>
+      <div class="issue-card">
+        <div class="issue-header">
+          <div class="issue-icon" style="background:rgba(242,107,35,.1)">💰</div>
+          <div><div class="issue-title">Pricing</div><div class="issue-score" style="color:#16A34A">100 / 100 — Perfect</div></div>
+        </div>
+        <div class="issue-body">
+          <div class="check-row"><div class="check-icon check-pass">✓</div><div class="check-text">MRP set for all 24 SKUs</div></div>
+          <div class="check-row"><div class="check-icon check-pass">✓</div><div class="check-text">Selling price ≤ MRP on all SKUs</div></div>
+          <div class="check-row"><div class="check-icon check-pass">✓</div><div class="check-text">Net margin positive after Meesho commission</div></div>
+          <div class="check-row"><div class="check-icon check-pass">✓</div><div class="check-text">GST rate set correctly (5% — apparel)</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body></html>

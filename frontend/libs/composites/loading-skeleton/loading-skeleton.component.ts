@@ -11,6 +11,22 @@ import type { MeeSkeletonVariant } from '@mesell/ui-kit';
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MeeSkeletonComponent],
+  styles: [`
+    :host { display: block; }
+    .ls-table-rows {
+      display: flex;
+      flex-direction: column;
+      gap: var(--mee-space-2);
+    }
+    .ls-stat-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: var(--mee-space-3);
+    }
+    @media (min-width: 640px) {
+      .ls-stat-grid { grid-template-columns: repeat(4, 1fr); }
+    }
+  `],
   template: `
     @switch (variant()) {
       @case ('text') {
@@ -20,7 +36,7 @@ import type { MeeSkeletonVariant } from '@mesell/ui-kit';
         <mee-skeleton variant="card" [lines]="lines()" />
       }
       @case ('table-row') {
-        <div class="flex flex-col gap-2">
+        <div class="ls-table-rows">
           <mee-skeleton variant="table-row" [lines]="lines()" />
           <mee-skeleton variant="table-row" [lines]="lines()" />
           <mee-skeleton variant="table-row" [lines]="lines()" />
@@ -28,7 +44,7 @@ import type { MeeSkeletonVariant } from '@mesell/ui-kit';
         </div>
       }
       @case ('stat-card') {
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div class="ls-stat-grid">
           <mee-skeleton variant="stat-card" [lines]="lines()" />
           <mee-skeleton variant="stat-card" [lines]="lines()" />
           <mee-skeleton variant="stat-card" [lines]="lines()" />

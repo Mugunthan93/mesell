@@ -237,18 +237,14 @@ export class AuthService implements OnDestroy {
       this.refreshShared()
         .pipe(
           switchMap((refreshResp) => {
-            // Got a new access token. Set it in _token BEFORE calling /me so that
-            // jwtInterceptor can attach Bearer on the /me request (which is Bearer-protected).
             const newToken = refreshResp.access_token;
             this._token.set(newToken);
             return this.authApi.me().pipe(
               catchError(() => {
-                // /me failed but we have a token — schedule refresh and stay partially hydrated
                 this.scheduleRefresh(refreshResp.expires_in);
                 return EMPTY;
               }),
               switchMap((me) => {
-                // Full hydration: overwrite with real user from /me
                 this.setSession(newToken, meToUser(me));
                 this.scheduleRefresh(refreshResp.expires_in);
                 return EMPTY;
@@ -256,7 +252,6 @@ export class AuthService implements OnDestroy {
             );
           }),
           catchError(() => {
-            // refresh 401 — no valid cookie; stay logged-out
             return EMPTY;
           }),
         )
@@ -266,13 +261,7 @@ export class AuthService implements OnDestroy {
 
   /**
    * Re-hydrate the shared user from GET /auth/me WITHOUT touching the token or
-   * the refresh timer. Use after a backend mutation that changes user-scoped
-   * state already reflected by /me (e.g. onboarding submit flips
-   * `onboarding_complete`) so the shell's `currentUser()` updates immediately.
-   *
-   * Bearer-auth via the existing in-memory token (jwtInterceptor attaches it).
-   * On any failure (401/5xx/offline) the existing user signal is left untouched
-   * and the observable completes — callers MUST NOT depend on it for navigation.
+   * the refresh timer.
    */
   refreshUser(): Observable<void> {
     return this.authApi.me().pipe(
@@ -292,23 +281,13 @@ export class AuthService implements OnDestroy {
     }
   }
 
-  /**
-   * Proactive silent refresh triggered by the scheduled timer.
-   * Routes through refreshShared() — shares the in-flight Observable with
-   * any concurrent interceptor-triggered refresh (stampede fix).
-   *
-   * On 401 → forceLogout() (not silent EMPTY — D-C fix).
-   * On non-401 errors → swallowed (network/5xx transient, let interceptor handle).
-   */
   private _doSilentRefresh(): void {
     this.refreshShared()
       .pipe(
         switchMap((resp) => {
-          // Early-set: update _token immediately so jwtInterceptor attaches new Bearer on /me.
           this._token.set(resp.access_token);
           return this.authApi.me().pipe(
             catchError(() => {
-              // /me failed — token is already updated; just reschedule
               this.scheduleRefresh(resp.expires_in);
               return EMPTY;
             }),
@@ -320,8 +299,6 @@ export class AuthService implements OnDestroy {
           );
         }),
         catchError((err: unknown) => {
-          // On refresh-401: the refresh cookie is revoked — log out once (D-C fix).
-          // Non-401 (network/5xx): swallow, let 401-interceptor handle next real request.
           const status = (err as { status?: number })?.status;
           if (status === 401) {
             this.forceLogout();

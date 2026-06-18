@@ -42,18 +42,13 @@ import type { CategorySuggestion } from './smart-picker.model';
   template: `
     <mee-card>
       <div
-        class="flex flex-col gap-3 p-1"
+        class="mee-category-card"
         role="listitem"
         [attr.aria-label]="cardAriaLabel()"
       >
 
         <!-- Breadcrumb path -->
-        <p
-          class="text-sm font-semibold leading-snug"
-          style="color: var(--mee-color-on-surface);"
-        >
-          {{ suggestion().path }}
-        </p>
+        <p class="mee-category-path">{{ suggestion().path }}</p>
 
         <!-- Confidence bar (confidence is 0-1 float; scale * 100 for display) -->
         <mee-progress-bar
@@ -64,19 +59,15 @@ import type { CategorySuggestion } from './smart-picker.model';
 
         <!-- Reasons list (max 3) -->
         @if (suggestion().reasons.length > 0) {
-          <ul
-            class="list-disc list-inside text-xs space-y-1"
-            style="color: var(--mee-color-on-surface-muted);"
-            aria-label="Reasons for this suggestion"
-          >
+          <ul class="mee-category-reasons" aria-label="Reasons for this suggestion">
             @for (reason of suggestion().reasons.slice(0, 3); track reason) {
               <li>{{ reason }}</li>
             }
           </ul>
         }
 
-        <!-- CTA — 44px touch target enforced via min-h-[44px] on the button element -->
-        <div class="flex justify-end mt-1">
+        <!-- CTA — 44px touch target enforced via min-height on the button element -->
+        <div class="mee-category-cta">
           <mee-button
             label="Use this category"
             variant="secondary"
@@ -92,6 +83,40 @@ import type { CategorySuggestion } from './smart-picker.model';
   styles: [`
     :host {
       display: block;
+      border-radius: var(--mee-radius-md);
+      transition: transform var(--mee-transition-fast),
+                  box-shadow var(--mee-transition-fast);
+    }
+    :host:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--mee-shadow-md);
+    }
+    .mee-category-card {
+      display: flex;
+      flex-direction: column;
+      gap: var(--mee-space-3);
+      padding: var(--mee-space-1);
+    }
+    .mee-category-path {
+      font-size: 0.875rem;
+      font-weight: 600;
+      line-height: 1.4;
+      color: var(--mee-color-on-surface);
+    }
+    .mee-category-reasons {
+      list-style: disc;
+      list-style-position: inside;
+      font-size: 0.75rem;
+      line-height: 1.5;
+      color: var(--mee-color-on-surface-muted);
+      display: flex;
+      flex-direction: column;
+      gap: var(--mee-space-1);
+    }
+    .mee-category-cta {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: var(--mee-space-1);
     }
     mee-button {
       min-height: 44px;

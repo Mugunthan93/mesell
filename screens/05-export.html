@@ -1,0 +1,140 @@
+<!-- @dsCard group="App Screens" name="Export" subtitle="CSV download · ZIP with images · Status" -->
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Plus Jakarta Sans',system-ui,sans-serif;background:#f0f5f9;height:100vh;display:flex}
+.sidebar{width:260px;background:#111c2d;display:flex;flex-direction:column;padding:0;flex-shrink:0;height:100vh}
+.sidebar-logo{padding:24px 20px 20px;border-bottom:1px solid rgba(255,255,255,.06)}
+.logo-mark{display:flex;align-items:center;gap:10px}
+.logo-icon{width:32px;height:32px;background:#F26B23;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;color:#fff}
+.logo-text{font-size:18px;font-weight:700;color:#fff}
+.sidebar-nav{flex:1;padding:16px 12px}
+.nav-group{margin-bottom:24px}
+.nav-group-label{font-size:10px;font-weight:600;color:#5a6a85;letter-spacing:.1em;text-transform:uppercase;padding:0 8px;margin-bottom:8px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;color:#9fafca;font-size:13px;font-weight:500;cursor:pointer;margin-bottom:2px}
+.nav-item.active{background:rgba(242,107,35,.15);color:#F26B23}
+.nav-icon{width:18px;height:18px;flex-shrink:0}
+.sidebar-footer{padding:16px 12px;border-top:1px solid rgba(255,255,255,.06)}
+.user-row{display:flex;align-items:center;gap:10px}
+.avatar{width:32px;height:32px;background:#F26B23;border-radius:999px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff}
+.user-info .name{font-size:13px;font-weight:600;color:#fff}
+.user-info .plan{font-size:11px;color:#5a6a85}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{background:#fff;border-bottom:1px solid #e5eaef;padding:0 32px;height:60px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.breadcrumb{display:flex;align-items:center;gap:6px;font-size:13px;color:#5a6a85}
+.breadcrumb-sep{color:#e5eaef}
+.breadcrumb-current{color:#2a3547;font-weight:600}
+.content{flex:1;overflow-y:auto;padding:28px 32px;max-width:760px}
+.card{background:#fff;border-radius:16px;padding:24px;box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:20px}
+.card-title{font-size:14px;font-weight:700;color:#2a3547;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #f0f5f9}
+
+/* Summary */
+.summary-row{display:flex;gap:32px;flex-wrap:wrap}
+.summary-item{display:flex;flex-direction:column;gap:3px}
+.summary-label{font-size:11px;font-weight:600;color:#5a6a85;text-transform:uppercase;letter-spacing:.06em}
+.summary-value{font-size:16px;font-weight:700;color:#2a3547}
+.quality-badge{display:inline-flex;align-items:center;gap:5px;background:rgba(22,163,74,.1);color:#16A34A;padding:3px 10px;border-radius:999px;font-size:13px;font-weight:700}
+
+/* Export options */
+.export-options{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:4px}
+.export-option{border:2px solid #e5eaef;border-radius:12px;padding:20px;cursor:pointer;transition:all .15s;position:relative}
+.export-option.selected{border-color:#F26B23;background:rgba(242,107,35,.04)}
+.export-option-icon{font-size:28px;margin-bottom:10px}
+.export-option-name{font-size:14px;font-weight:700;color:#2a3547;margin-bottom:4px}
+.export-option-desc{font-size:12px;color:#5a6a85;line-height:1.5}
+.export-option-size{font-size:11px;color:#9fafca;margin-top:8px}
+.selected-tick{position:absolute;top:12px;right:12px;width:20px;height:20px;background:#F26B23;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff}
+
+/* Progress */
+.progress-section{margin-top:4px}
+.progress-label-row{display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px}
+.progress-label{font-weight:600;color:#2a3547}
+.progress-pct{font-weight:700;color:#F26B23}
+.progress-track{height:8px;background:#f0f5f9;border-radius:999px;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,#F26B23,#ff9b60);border-radius:999px;width:72%;transition:width .5s}
+.progress-status{font-size:12px;color:#5a6a85;margin-top:8px}
+
+/* CTA */
+.export-cta{margin-top:8px}
+.btn-download{width:100%;background:#F26B23;color:#fff;border:none;padding:14px;border-radius:999px;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn-secondary{width:100%;background:transparent;color:#5a6a85;border:1.5px solid #e5eaef;padding:11px;border-radius:999px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-top:10px}
+
+/* History */
+.history-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid #f0f5f9;font-size:13px}
+.history-row:last-child{border-bottom:none}
+.history-name{font-weight:500;color:#2a3547}
+.history-date{color:#9fafca;font-size:12px}
+.download-link{color:#F26B23;font-size:12px;font-weight:600;cursor:pointer}
+</style></head><body>
+
+<nav class="sidebar">
+  <div class="sidebar-logo"><div class="logo-mark"><div class="logo-icon">M</div><span class="logo-text">mesell</span></div></div>
+  <div class="sidebar-nav">
+    <div class="nav-group"><div class="nav-group-label">Main</div>
+      <div class="nav-item"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard</div>
+    </div>
+    <div class="nav-group"><div class="nav-group-label">Catalogs</div>
+      <div class="nav-item active"><svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>My Catalogs</div>
+    </div>
+  </div>
+  <div class="sidebar-footer"><div class="user-row"><div class="avatar">M</div><div class="user-info"><div class="name">Mugunthan S.</div><div class="plan">Pro Plan</div></div></div></div>
+</nav>
+
+<div class="main">
+  <div class="topbar">
+    <div class="breadcrumb">
+      <span>My Catalogs</span><span class="breadcrumb-sep">›</span>
+      <span>Summer Kurti Collection</span><span class="breadcrumb-sep">›</span>
+      <span class="breadcrumb-current">Export</span>
+    </div>
+  </div>
+  <div class="content">
+    <div class="card">
+      <div class="card-title">Catalog Summary</div>
+      <div class="summary-row">
+        <div class="summary-item"><div class="summary-label">Catalog</div><div class="summary-value">Summer Kurti Collection</div></div>
+        <div class="summary-item"><div class="summary-label">SKUs</div><div class="summary-value">24</div></div>
+        <div class="summary-item"><div class="summary-label">Category</div><div class="summary-value">Women's Ethnic Wear</div></div>
+        <div class="summary-item"><div class="summary-label">Quality Score</div><div class="summary-value"><span class="quality-badge">⭐ 87/100</span></div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Choose Export Format</div>
+      <div class="export-options">
+        <div class="export-option selected">
+          <div class="selected-tick">✓</div>
+          <div class="export-option-icon">📊</div>
+          <div class="export-option-name">Meesho CSV</div>
+          <div class="export-option-desc">Ready-to-upload CSV in Meesho's exact column format. Upload directly to your Meesho seller panel.</div>
+          <div class="export-option-size">~18 KB · Instant</div>
+        </div>
+        <div class="export-option">
+          <div class="export-option-icon">📦</div>
+          <div class="export-option-name">ZIP with Images</div>
+          <div class="export-option-desc">CSV + all product images in a ZIP file. Upload CSV first, then add images via Meesho image uploader.</div>
+          <div class="export-option-size">~142 MB · ~2 min</div>
+        </div>
+      </div>
+      <div class="progress-section">
+        <div class="progress-label-row"><span class="progress-label">Generating CSV…</span><span class="progress-pct">72%</span></div>
+        <div class="progress-track"><div class="progress-fill"></div></div>
+        <div class="progress-status">Processing 17 of 24 SKUs · Validating field values against Meesho schema…</div>
+      </div>
+    </div>
+
+    <div class="card export-cta">
+      <button class="btn-download">⬇ Download Meesho CSV</button>
+      <button class="btn-secondary">Download ZIP with Images</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Export History</div>
+      <div class="history-row"><div><div class="history-name">Summer Kurti Collection · CSV</div><div class="history-date">Today, 4:12 PM</div></div><span class="download-link">↓ Re-download</span></div>
+      <div class="history-row"><div><div class="history-name">Men's Cotton T-Shirts · CSV</div><div class="history-date">Yesterday, 11:30 AM</div></div><span class="download-link">↓ Re-download</span></div>
+      <div class="history-row"><div><div class="history-name">Palazzo Set · ZIP with images</div><div class="history-date">3 days ago</div></div><span class="download-link">↓ Re-download</span></div>
+    </div>
+  </div>
+</div>
+</body></html>

@@ -1,0 +1,174 @@
+<!-- @dsCard group="App Screens" name="Catalog Form (Wizard)" subtitle="Mobile-first · 5 steps · AI autofill" -->
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Plus Jakarta Sans',system-ui,sans-serif;background:#f0f5f9;min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:32px;gap:40px}
+
+/* Phone frame */
+.phone{width:390px;min-height:780px;background:#fff;border-radius:40px;box-shadow:0 8px 48px rgba(0,0,0,.16);overflow:hidden;display:flex;flex-direction:column;flex-shrink:0}
+.phone-status{height:44px;background:#fff;display:flex;align-items:center;justify-content:space-between;padding:12px 24px 0;font-size:12px;font-weight:600;color:#2a3547;flex-shrink:0}
+.phone-body{flex:1;background:#f0f5f9;overflow-y:auto;display:flex;flex-direction:column}
+
+/* App header */
+.app-header{background:#fff;padding:16px 20px 14px;border-bottom:1px solid #f0f5f9;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.app-header-left{display:flex;align-items:center;gap:10px}
+.back-btn{width:32px;height:32px;border-radius:999px;border:1.5px solid #e5eaef;display:flex;align-items:center;justify-content:center;font-size:14px;cursor:pointer;color:#5a6a85}
+.header-title{font-size:15px;font-weight:700;color:#2a3547}
+.header-step{font-size:12px;color:#5a6a85;margin-top:1px}
+.save-btn{font-size:13px;font-weight:600;color:#F26B23;cursor:pointer}
+
+/* Steps */
+.steps-bar{background:#fff;padding:12px 20px 16px;border-bottom:1px solid #f0f5f9;flex-shrink:0}
+.steps-track{display:flex;align-items:center;gap:0}
+.step-node{display:flex;flex-direction:column;align-items:center;flex:1;position:relative}
+.step-circle{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;z-index:1;position:relative}
+.step-circle.done{background:#F26B23;color:#fff}
+.step-circle.active{background:#F26B23;color:#fff;box-shadow:0 0 0 4px rgba(242,107,35,.2)}
+.step-circle.todo{background:#f0f5f9;color:#9fafca;border:1.5px solid #e5eaef}
+.step-label{font-size:9px;font-weight:600;color:#9fafca;margin-top:4px;text-align:center;white-space:nowrap}
+.step-label.active{color:#F26B23}
+.step-label.done{color:#5a6a85}
+.step-connector{flex:1;height:2px;background:#e5eaef;margin-top:-14px}
+.step-connector.done{background:#F26B23}
+
+/* Content */
+.form-content{flex:1;padding:20px}
+.section-label{font-size:11px;font-weight:700;color:#5a6a85;letter-spacing:.08em;text-transform:uppercase;margin-bottom:12px;margin-top:4px}
+.field-group{margin-bottom:14px}
+.field-label{font-size:12px;font-weight:600;color:#2a3547;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center}
+.field-required{color:#DC2626;font-size:11px}
+.field-optional{color:#9fafca;font-size:11px;font-weight:400}
+.field-input{width:100%;border:1.5px solid #e5eaef;border-radius:7px;padding:10px 12px;font-size:14px;color:#2a3547;font-family:inherit;outline:none;background:#fff}
+.field-input:focus{border-color:#F26B23}
+.field-input.filled{border-color:#e5eaef;background:#fff}
+.field-select{width:100%;border:1.5px solid #e5eaef;border-radius:7px;padding:10px 12px;font-size:14px;color:#2a3547;font-family:inherit;outline:none;background:#fff;appearance:none;background-image:url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239fafca' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:calc(100% - 12px) center}
+.char-count{font-size:11px;color:#9fafca;text-align:right;margin-top:4px}
+.ai-btn{display:flex;align-items:center;gap:6px;background:linear-gradient(135deg,rgba(242,107,35,.1),rgba(242,107,35,.05));border:1.5px solid rgba(242,107,35,.3);color:#F26B23;padding:8px 14px;border-radius:999px;font-size:12px;font-weight:700;cursor:pointer;width:100%;justify-content:center;margin-bottom:16px;font-family:inherit}
+.ai-badge{background:#F26B23;color:#fff;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:700}
+.cat-chip{display:inline-flex;align-items:center;gap:6px;background:#f0f5f9;border:1px solid #e5eaef;padding:6px 12px;border-radius:999px;font-size:12px;font-weight:500;color:#2a3547;margin-bottom:8px}
+.cat-x{color:#9fafca;cursor:pointer;font-size:14px;line-height:1}
+
+/* Bottom bar */
+.bottom-bar{background:#fff;padding:16px 20px;border-top:1px solid #f0f5f9;display:flex;gap:10px;flex-shrink:0}
+.btn-back{flex:1;background:transparent;border:1.5px solid #e5eaef;color:#5a6a85;padding:12px;border-radius:999px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn-next{flex:2;background:#F26B23;color:#fff;border:none;padding:12px;border-radius:999px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit}
+
+/* Annotation panel */
+.annotations{width:280px;flex-shrink:0}
+.ann-title{font-size:13px;font-weight:700;color:#2a3547;margin-bottom:16px}
+.ann-card{background:#fff;border-radius:12px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:12px;border-left:3px solid transparent}
+.ann-card.orange{border-left-color:#F26B23}
+.ann-card.green{border-left-color:#16A34A}
+.ann-card.blue{border-left-color:#2563EB}
+.ann-label{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px}
+.ann-label.orange{color:#F26B23}
+.ann-label.green{color:#16A34A}
+.ann-label.blue{color:#2563EB}
+.ann-text{font-size:12px;color:#5a6a85;line-height:1.5}
+</style></head><body>
+
+<div class="phone">
+  <div class="phone-status">
+    <span>9:41</span>
+    <span>●●●</span>
+  </div>
+  <div class="app-header">
+    <div class="app-header-left">
+      <div class="back-btn">←</div>
+      <div>
+        <div class="header-title">New Catalog</div>
+        <div class="header-step">Step 2 of 5 — Product Details</div>
+      </div>
+    </div>
+    <div class="save-btn">Save draft</div>
+  </div>
+
+  <div class="steps-bar">
+    <div class="steps-track">
+      <div class="step-node">
+        <div class="step-circle done">✓</div>
+        <div class="step-label done">Category</div>
+      </div>
+      <div class="step-connector done"></div>
+      <div class="step-node">
+        <div class="step-circle active">2</div>
+        <div class="step-label active">Details</div>
+      </div>
+      <div class="step-connector"></div>
+      <div class="step-node">
+        <div class="step-circle todo">3</div>
+        <div class="step-label">Images</div>
+      </div>
+      <div class="step-connector"></div>
+      <div class="step-node">
+        <div class="step-circle todo">4</div>
+        <div class="step-label">Pricing</div>
+      </div>
+      <div class="step-connector"></div>
+      <div class="step-node">
+        <div class="step-circle todo">5</div>
+        <div class="step-label">Review</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="phone-body">
+    <div class="form-content">
+      <div class="cat-chip">👗 Women's Kurti <span class="cat-x">×</span></div>
+
+      <button class="ai-btn">✨ AI Autofill <span class="ai-badge">AI</span> — Fill all fields from description</button>
+
+      <div class="section-label">Product Info</div>
+
+      <div class="field-group">
+        <div class="field-label">Product Name <span class="field-required">*</span></div>
+        <input class="field-input filled" value="Cotton Straight Kurti for Women" type="text">
+        <div class="char-count">30 / 80 characters</div>
+      </div>
+
+      <div class="field-group">
+        <div class="field-label">Description <span class="field-required">*</span></div>
+        <textarea class="field-input" rows="4" style="resize:none">Comfortable cotton straight kurti in vibrant colors. Machine washable. Available in sizes XS to 3XL.</textarea>
+        <div class="char-count">97 / 500 characters</div>
+      </div>
+
+      <div class="field-group">
+        <div class="field-label">Fabric <span class="field-required">*</span></div>
+        <select class="field-select"><option selected>Cotton</option><option>Rayon</option><option>Silk</option></select>
+      </div>
+
+      <div class="field-group">
+        <div class="field-label">Style <span class="field-optional">optional</span></div>
+        <select class="field-select"><option selected>Straight</option><option>A-Line</option><option>Anarkali</option></select>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom-bar">
+    <button class="btn-back">← Back</button>
+    <button class="btn-next">Next: Images →</button>
+  </div>
+</div>
+
+<div class="annotations">
+  <div class="ann-title">Design Notes</div>
+  <div class="ann-card orange">
+    <div class="ann-label orange">AI Autofill</div>
+    <div class="ann-text">Prominent orange CTA — taps into Gemini 2.5 Flash to fill all fields from a plain-language product description. Primary value prop of Mesell.</div>
+  </div>
+  <div class="ann-card green">
+    <div class="ann-label green">Mobile-First</div>
+    <div class="ann-text">390px frame — Tirupur sellers use phones. Thumb-friendly 44px+ touch targets. Single column layout. Sticky bottom nav bar.</div>
+  </div>
+  <div class="ann-card blue">
+    <div class="ann-label blue">5-Step Wizard</div>
+    <div class="ann-text">Category → Details → Images → Pricing → Review. Step 1 (Category) done. Step 2 active. Progress preserved on "Save draft".</div>
+  </div>
+  <div class="ann-card orange">
+    <div class="ann-label orange">Field Contract</div>
+    <div class="ann-text">Fields use display_label (not Meesho column header). Dropdowns show friendly labels; canonical codes sent to backend. M6 round-trip sacred.</div>
+  </div>
+</div>
+
+</body></html>
