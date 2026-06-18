@@ -21,7 +21,6 @@ import {
   type ValidationChecks,
   type ValidationCheckItem,
   SIMULATED_PASSING_CHECKS,
-  MOCK_DOWNLOAD_URL,
   buildCheckItems,
   allChecksPassed,
   canGenerate,
@@ -504,8 +503,11 @@ export class ExportComponent implements OnInit, OnDestroy {
       if (this.progress() >= 100) {
         this.clearPollInterval();
         this.exportStatus.set('ready');
-        this.downloadUrl.set(MOCK_DOWNLOAD_URL);
-        this.exportId.set('mock-export-' + Date.now());
+        // V1 simulation: real implementation reads the fresh 1 h GCS signed URL
+        // from ExportResponseDTO.xlsx_signed_url (GET /api/v1/exports/{export_id}).
+        const mockExportId = 'mock-export-' + Date.now();
+        this.downloadUrl.set(`https://storage.googleapis.com/mesell-exports/${mockExportId}.xlsx`);
+        this.exportId.set(mockExportId);
       }
     }, TICK_INTERVAL_MS);
   }

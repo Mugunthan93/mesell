@@ -32,7 +32,7 @@ import {
   StatusBadgeComponent,
 } from '@mesell/composites';
 
-import type { FieldGroup, FieldSchema } from '../models/field-schema.model';
+import type { AutofillResponse, FieldGroup, FieldSchema } from '../models/field-schema.model';
 import { CatalogFormApiService } from '../services/catalog-form-api.service';
 
 @Component({
@@ -233,7 +233,7 @@ import { CatalogFormApiService } from '../services/catalog-form-api.service';
         <mee-button
           label="AI fill"
           variant="secondary"
-          icon="auto_awesome"
+          icon="sparkles"
           [loading]="autofilling()"
           [disabled]="loading()"
           (clicked)="onAutofill()"
@@ -458,7 +458,7 @@ import { CatalogFormApiService } from '../services/catalog-form-api.service';
           />
           <mee-button
             label="Images"
-            icon="arrow_forward"
+            icon="forward"
             (clicked)="onNext()"
             aria-label="Continue to images"
           />
@@ -570,10 +570,18 @@ export class CatalogFormComponent implements OnInit {
 
   onAutofill(): void {
     this.autofilling.set(true);
-    this.apiSvc.autofill(this.productId()).subscribe({
-      next: (suggestions) => {
-        this.aiSuggestions.set(suggestions);
-        this.fieldValues.update(cur => ({ ...cur, ...suggestions }));
+    // Backend autofill requires a non-empty description (1..2000 chars). Seed it
+    // from the current product name in V1 simulation.
+    const description = this.productName();
+    this.apiSvc.autofill(this.productId(), description).subscribe({
+      next: (resp: AutofillResponse) => {
+        // resp.suggestions is Record<string, AutofillSuggestion>; flatten to the
+        // raw values map for the field-values signal + suggestion overlay.
+        const values: Record<string, unknown> = Object.fromEntries(
+          Object.entries(resp.suggestions).map(([k, s]) => [k, s.value]),
+        );
+        this.aiSuggestions.set(values);
+        this.fieldValues.update(cur => ({ ...cur, ...values }));
         this.autofilling.set(false);
       },
       error: () => {
