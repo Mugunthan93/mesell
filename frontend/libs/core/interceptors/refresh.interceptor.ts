@@ -6,19 +6,13 @@ import {
   HttpHandlerFn,
 } from '@angular/common/http';
 import { inject } from '@angular/core';
-import { Router } from '@angular/router';
 import {
-  BehaviorSubject,
   Observable,
   throwError,
-  filter,
-  take,
   switchMap,
   catchError,
-  tap,
 } from 'rxjs';
 import { AuthService } from '../services/auth.service';
-import { AuthApiService } from '../services/auth-api.service';
 
 /**
  * refreshInterceptor — single-flight 401→refresh→retry.
@@ -26,75 +20,56 @@ import { AuthApiService } from '../services/auth-api.service';
  * Chain position: SECOND (jwt → refresh → error).
  *
  * Behaviour on 401 from a NON-/auth/* request:
- *   1. If a refresh is NOT already in-flight: call POST /auth/refresh (withCredentials).
- *      On success → setSession(newToken, currentUser) + retry original with new Bearer.
- *      On refresh-401 → logout() + navigate('/login') + rethrow.
- *   2. If a refresh IS already in-flight: queue this request; when refresh resolves,
- *      retry with the resulting token (single-flight gate — R-W6-4).
+ *   1. Delegates to AuthService.refreshShared() — the single-flight gate now lives
+ *      in AuthService so ALL THREE callers (interceptor, _doSilentRefresh, bootstrap)
+ *      share the same in-flight Observable. Eliminates the token-rotation stampede:
+ *      regardless of how many concurrent 401s arrive, at most ONE POST /auth/refresh
+ *      is in-flight at any time.
+ *   2. On refresh-200 → retry original request with the new Bearer token.
+ *   3. On refresh-401 → auth.forceLogout() (logout-once guard: navigate to /login
+ *      exactly once regardless of how many 401s are cascading) + rethrow error.
+ *
+ * REMOVED (state hoisted to AuthService — D-A/D-B fixed by construction):
+ *   - module-level `_isRefreshing` flag (was never reset after success — D-A)
+ *   - module-level `_refreshToken$` BehaviorSubject (was never reset on logout — D-B)
+ *
+ * Previously those were acceptable only because the interceptor was the sole caller
+ * of refresh(). Now that bootstrap() and _doSilentRefresh() are also callers, the
+ * gate must live in the shared singleton (AuthService) to be effective across all paths.
  *
  * Loop prevention (R-W6-11(e)):
- *   - /auth/* URLs are skipped (the jwtInterceptor also skips them; belt+suspenders here).
- *   - The `_isRefreshing` flag ensures a 401 on /auth/refresh itself does NOT re-enter.
+ *   SKIP_REFRESH_PATHS are not retried on 401 — these are cookie-auth or public
+ *   endpoints where a 401 means a genuinely invalid credential, not a stale token.
+ *   jwtInterceptor also skips these paths (belt+suspenders).
  *
- * Module-level state is safe here because Angular's functional interceptors are called
- * within the same injector tree; the state is reset on logout().
+ * NO change to:
+ *   - auth-api.service.ts (no HTTP calls added/removed)
+ *   - jwt.interceptor.ts (skip-path lists + bearer logic unchanged)
+ *   - SKIP_BEARER_PATHS / SKIP_REFRESH_PATHS lists
  */
-
-/**
- * In-flight refresh state (module-level singletons — one per app instance).
- * _isRefreshing: true while a /auth/refresh call is in flight.
- * _refreshToken$: BehaviorSubject whose null = "refresh pending"; non-null = new token.
- *   Queued requests filter(t => t !== null).take(1) to get the resolved token.
- */
-let _isRefreshing = false;
-const _refreshToken$ = new BehaviorSubject<string | null>(null);
 
 function addBearer(req: HttpRequest<unknown>, token: string): HttpRequest<unknown> {
   return req.clone({ setHeaders: { Authorization: `Bearer ${token}` } });
 }
 
+/**
+ * handle401 — thin: delegates to AuthService.refreshShared() (the single-flight gate).
+ * Late concurrent 401s join the in-flight shareReplay Observable and all retry once
+ * the one refresh completes. No module-level state lives here.
+ */
 function handle401(
   req: HttpRequest<unknown>,
   next: HttpHandlerFn,
   auth: AuthService,
-  authApi: AuthApiService,
-  router: Router,
 ): Observable<HttpEvent<unknown>> {
-  if (_isRefreshing) {
-    // Another refresh is in-flight — queue this request
-    return _refreshToken$.pipe(
-      filter((token): token is string => token !== null),
-      take(1),
-      switchMap((token) => next(addBearer(req, token))),
-    );
-  }
-
-  _isRefreshing = true;
-  _refreshToken$.next(null);
-
-  return authApi.refresh().pipe(
-    tap((resp) => {
-      _isRefreshing = false;
-      const newToken = resp.access_token;
-      // Preserve existing user for the setSession call
-      const currentUser = auth.currentUser();
-      if (currentUser) {
-        auth.setSession(newToken, currentUser);
-      } else {
-        // Edge case: no user in memory (can happen if /me failed at bootstrap)
-        // Set the token directly via setSession with a minimal user stub
-        auth.setSession(newToken, { phone: '' });
-      }
-      auth.scheduleRefresh(resp.expires_in);
-      _refreshToken$.next(newToken);
-    }),
+  return auth.refreshShared().pipe(
     switchMap((resp) => next(addBearer(req, resp.access_token))),
-    catchError((refreshErr: unknown) => {
-      _isRefreshing = false;
-      _refreshToken$.next(null);
-      auth.logout();
-      void router.navigate(['/login']);
-      return throwError(() => refreshErr);
+    catchError((err: unknown) => {
+      // Refresh itself failed (401 from /auth/refresh — rotated/revoked cookie).
+      // forceLogout() is a logout-once guard: navigate to /login exactly once,
+      // no matter how many concurrent 401s call this path.
+      auth.forceLogout();
+      return throwError(() => err);
     }),
   );
 }
@@ -123,14 +98,12 @@ export const refreshInterceptor: HttpInterceptorFn = (req, next) => {
     return next(req);
   }
 
-  const auth    = inject(AuthService);
-  const authApi = inject(AuthApiService);
-  const router  = inject(Router);
+  const auth = inject(AuthService);
 
   return next(req).pipe(
     catchError((err: unknown) => {
       if (err instanceof HttpErrorResponse && err.status === 401) {
-        return handle401(req, next, auth, authApi, router);
+        return handle401(req, next, auth);
       }
       return throwError(() => err);
     }),
