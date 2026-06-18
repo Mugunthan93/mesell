@@ -43,6 +43,8 @@ from app.core.auth import CurrentUser, get_current_user
 from app.core.middleware.rate_limit_mw import rate_limit
 from app import service as iam_service
 from app.schemas import (
+    GoogleVerifyRequest,
+    GoogleVerifyResponse,
     MeResponse,
     RefreshResponse,
     SendOtpRequest,
@@ -268,4 +270,41 @@ async def razorpay_webhook(request: Request) -> WebhookCaptureResponse:
     return WebhookCaptureResponse(captured=True)
 
 
-__all__ = ["router"]
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. POST /auth/google/verify  — google-auth feature (design §C)
+# ─────────────────────────────────────────────────────────────────────────────
+# Mounted on a SEPARATE router so main.py can gate its inclusion on
+# FEATURE_GOOGLE_AUTH_ENABLED — when the flag is off the route is NOT mounted
+# (404), keeping the OpenAPI surface + §17 count at 28 until enabled per env.
+google_router = APIRouter(prefix="/api/v1", tags=["iam"])
+
+
+@google_router.post(
+    "/auth/google/verify",
+    response_model=GoogleVerifyResponse,
+    summary="Verify a Google ID-token, mint access JWT, set refresh cookie",
+)
+@rate_limit(scope="google_verify", limit=20, window=3600)
+async def google_verify(
+    payload: GoogleVerifyRequest,
+    request: Request,
+    response: Response,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    valkey: Annotated[Redis, Depends(get_valkey_otp)],
+) -> GoogleVerifyResponse:
+    """google-auth §C contract — verify a Google ID-token, issue our own
+    access JWT (body) + refresh cookie (Set-Cookie), byte-identical to the
+    OTP-verify path.  Per-IP rate limit 20/h (no SMS cost; abuse floor only).
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    result = await iam_service.verify_google_and_issue_tokens(
+        payload.credential, client_ip, db, valkey
+    )
+    _set_refresh_cookie(response, result.refresh_token, result.refresh_expires_in)
+    return GoogleVerifyResponse(
+        access_token=result.access_token,
+        expires_in=result.access_expires_in,
+    )
+
+
+__all__ = ["router", "google_router"]

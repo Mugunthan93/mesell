@@ -71,6 +71,31 @@ class RefreshResponse(BaseModel):
     token_type: Literal["bearer"] = "bearer"
 
 
+class GoogleVerifyRequest(BaseModel):
+    """``POST /api/v1/auth/google/verify`` body (google-auth feature).
+
+    The frontend sends ONLY the Google Identity Services ID-token.  The token
+    is verified server-side and never stored.  ``max_length`` bounds the body
+    against oversized-body abuse (Google ID-tokens are ~1KB; 4KB is headroom).
+    """
+
+    credential: str = Field(
+        min_length=1,
+        max_length=4096,
+        description="Google Identity Services ID-token (JWT). Verified server-side; never stored.",
+    )
+
+
+class GoogleVerifyResponse(VerifyOtpResponse):
+    """``POST /api/v1/auth/google/verify`` 200 body (google-auth feature).
+
+    Identical SHAPE to :class:`VerifyOtpResponse` (access JWT in body; refresh
+    token ships in the ``Set-Cookie`` header) — declared as a distinct subclass
+    so the OpenAPI surface differentiates the Google path (mirrors how
+    :class:`RefreshResponse` is distinct-but-identical, per §7.E note).
+    """
+
+
 class MeResponse(BaseModel):
     """``GET /api/v1/auth/me`` 200 body."""
 
@@ -95,6 +120,8 @@ __all__ = [
     "VerifyOtpRequest",
     "VerifyOtpResponse",
     "RefreshResponse",
+    "GoogleVerifyRequest",
+    "GoogleVerifyResponse",
     "MeResponse",
     "WebhookCaptureResponse",
 ]

@@ -42,7 +42,7 @@ from app.modules.category import category_router
 from app.modules.customer import customer_router
 from app.modules.dashboard import dashboard_router
 from app.modules.export import export_router
-from app.modules.iam import iam_router
+from app.modules.iam import iam_google_router, iam_router
 from app.modules.image import image_router
 from app.modules.pricing import pricing_router
 from app.shared.config import settings
@@ -125,6 +125,13 @@ register_error_handlers(app)
 # §7 iam — owns /api/v1/auth/* (otp/send, otp/verify, refresh, logout, me)
 # + /api/v1/webhooks/razorpay per BACKEND_ARCHITECTURE.md §7.B (LOCKED 2026-06-05).
 app.include_router(iam_router)
+
+# §7 iam — google-auth (POST /api/v1/auth/google/verify).  Feature-flag gated
+# (CLAUDE.md Decision #5 amendment 2026-06-18 / §7.3 §17 bump 28→29): when
+# FEATURE_GOOGLE_AUTH_ENABLED is False the router is NOT mounted, so the path
+# falls through to FastAPI's default 404 and the §17 count stays at 28.
+if settings.FEATURE_GOOGLE_AUTH_ENABLED:
+    app.include_router(iam_google_router)
 
 # §8 customer — owns /api/v1/seller-profile/* (5 endpoints per §8.B LOCKED 2026-06-05).
 app.include_router(customer_router)
