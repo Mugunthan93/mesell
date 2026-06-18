@@ -41,6 +41,7 @@ export type { MeeFileUploadEvent }                                       from '.
 export type { MeeTreeNode }                                              from './tree-select/tree-select.component';
 export type { MeeConfirmConfig }                                         from './confirm-dialog/confirm-dialog.component';
 export type { MeeIconName }                                              from './icon/icon.registry';
+export { meeIconClass }                                                  from './icon/icon.registry';
 
 // Aggregators (for component imports — NOT providers)
 // Use MEE_FORM / MEE_OVERLAY / etc. in a standalone component's imports:[].

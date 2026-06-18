@@ -10,6 +10,7 @@ import { Router } from '@angular/router';
 import {
   MeeButtonComponent,
   MeeCardComponent,
+  MeeIconComponent,
   MeeSkeletonComponent,
 } from '@mesell/ui-kit';
 import {
@@ -67,6 +68,7 @@ const SIMULATED_CATALOGS: CatalogRow[] = [
   imports: [
     MeeButtonComponent,
     MeeCardComponent,
+    MeeIconComponent,
     MeeSkeletonComponent,
     PageHeaderComponent,
     StatusBadgeComponent,
@@ -271,7 +273,7 @@ const SIMULATED_CATALOGS: CatalogRow[] = [
         title="My Catalogs"
         subtitle="Manage your product catalogs and track listing quality."
         cta_label="New Catalog"
-        cta_icon="pi pi-plus"
+        cta_icon="add"
         (cta_click)="onNewCatalog()"
       />
 
@@ -325,7 +327,7 @@ const SIMULATED_CATALOGS: CatalogRow[] = [
 
                 <!-- Thumbnail placeholder -->
                 <div class="mee-card-thumb" aria-hidden="true">
-                  <i class="pi pi-image"></i>
+                  <mee-icon name="image" />
                 </div>
 
                 <!-- Card info -->
@@ -378,7 +380,7 @@ const SIMULATED_CATALOGS: CatalogRow[] = [
       aria-label="Create new catalog"
       (click)="onNewCatalog()"
     >
-      <i class="pi pi-plus" aria-hidden="true"></i>
+      <mee-icon name="add" />
     </button>
   `,
 })

@@ -35,6 +35,21 @@ export const MEE_ICONS = {
 
   // Deep-link navigation
   'external-link': 'pi pi-external-link',  // My Live Listings sidebar nav (live Meesho links)
+
+  // Shell / sidebar / topbar chrome (FE-2 migration — bottom-nav + grouped sidebar)
+  home:        'pi pi-home',             // shell bottom-nav "Home" + sidebar "Home"
+  list:        'pi pi-list',             // shell/sidebar "Catalogs" / "My Catalogs"
+  tag:         'pi pi-tag',              // sidebar "Categories"
+  calculator:  'pi pi-calculator',       // sidebar "Pricing"
+  download:    'pi pi-download',         // sidebar "Export" + export-page generate/download
+
+  // Feature-page decorative icons (FE-2 migration — catalog-list + export states)
+  image:        'pi pi-image',           // catalog-list card thumbnail placeholder
+  spinner:      'pi pi-spin pi-spinner', // export "Generating…" spinner (two-class animation)
+  'check-circle': 'pi pi-check-circle',  // export "ready" banner success mark
+  'file-excel':  'pi pi-file-excel',     // export "ready" XLSX file row
+  'times-circle': 'pi pi-times-circle',  // export "failed" banner error mark
+  'file-export': 'pi pi-file-export',    // export "idle" empty-state icon
 } as const;
 
 export type MeeIconName = keyof typeof MEE_ICONS;
@@ -44,5 +59,16 @@ export type MeeIconName = keyof typeof MEE_ICONS;
  * Used by mee-icon, mee-button, mee-menu, and confirm-dialog.
  */
 export function resolveIcon(name: MeeIconName): string {
+  return MEE_ICONS[name];
+}
+
+/**
+ * meeIconClass — resolve a MeeIconName to its raw PrimeIcons CSS class string,
+ * for the rare app-side `[class]`-binding case where a `<mee-icon>` element
+ * cannot be used (e.g. an icon stored on a typed nav-item model and rendered
+ * via `<i [class]="...">`). This is the FE-2-compliant escape hatch: the raw
+ * `pi pi-*` literals never leave this registry file. Alias of {@link resolveIcon}.
+ */
+export function meeIconClass(name: MeeIconName): string {
   return MEE_ICONS[name];
 }

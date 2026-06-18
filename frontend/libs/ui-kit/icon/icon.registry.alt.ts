@@ -46,4 +46,19 @@ export const MEE_ICONS_ALT = {
 
   // Deep-link navigation
   'external-link': 'material-icons mi-open_in_new',  // My Live Listings sidebar nav
+
+  // Shell / sidebar / topbar chrome (FE-2 migration — bottom-nav + grouped sidebar)
+  home:        'material-icons mi-home',             // bottom-nav + sidebar "Home"
+  list:        'material-icons mi-list',             // "Catalogs" / "My Catalogs"
+  tag:         'material-icons mi-label',            // "Categories"
+  calculator:  'material-icons mi-calculate',        // "Pricing"
+  download:    'material-icons mi-download',         // "Export" + export-page download
+
+  // Feature-page decorative icons (FE-2 migration — catalog-list + export states)
+  image:        'material-icons mi-image',           // catalog-list card thumbnail
+  spinner:      'material-icons mi-autorenew',        // export "Generating…" spinner
+  'check-circle': 'material-icons mi-check_circle',  // export "ready" success mark
+  'file-excel':  'material-icons mi-description',     // export "ready" XLSX file row
+  'times-circle': 'material-icons mi-cancel',        // export "failed" error mark
+  'file-export': 'material-icons mi-file_download',   // export "idle" empty-state icon
 } satisfies Record<MeeIconName, string>;
