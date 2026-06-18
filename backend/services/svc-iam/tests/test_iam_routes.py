@@ -44,12 +44,23 @@ def svc_iam_app():
 
 
 def test_six_business_routes_mounted(svc_iam_app):
-    """Exactly 6 APIRoute objects excluding /health."""
+    """Exactly 6 APIRoute objects excluding /health (google-auth route is
+    flag-gated OFF by default → not mounted, so the count stays at 6)."""
     api_routes = [r for r in svc_iam_app.routes if isinstance(r, APIRoute)]
     business = [r for r in api_routes if r.path != "/health"]
     assert len(business) == 6, (
         f"Expected 6 business APIRoute objects, got {len(business)}: "
         f"{[(r.methods, r.path) for r in business]}"
+    )
+
+
+def test_google_verify_route_not_mounted_when_flag_off(svc_iam_app):
+    """google-auth: with FEATURE_GOOGLE_AUTH_ENABLED False (default), the
+    POST /api/v1/auth/google/verify route must NOT be mounted (§17 count
+    stays at 28)."""
+    paths = {r.path for r in svc_iam_app.routes if isinstance(r, APIRoute)}
+    assert "/api/v1/auth/google/verify" not in paths, (
+        "google/verify must not mount when the flag is off"
     )
 
 
@@ -116,7 +127,7 @@ def test_no_internal_routes_mounted(svc_iam_app):
 
 
 def test_seven_schemas_in_all():
-    """schemas.py exports exactly the 7 business Pydantic models."""
+    """schemas.py exports the business Pydantic models (7 original + 2 google-auth)."""
     from app import schemas
 
     expected = {
@@ -127,6 +138,9 @@ def test_seven_schemas_in_all():
         "RefreshResponse",
         "MeResponse",
         "WebhookCaptureResponse",
+        # google-auth (2026-06-18)
+        "GoogleVerifyRequest",
+        "GoogleVerifyResponse",
     }
     actual = set(schemas.__all__)
     assert actual == expected, f"Schema __all__ mismatch. Got {actual}, expected {expected}"
