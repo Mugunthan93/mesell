@@ -819,3 +819,149 @@ describe('AuthService — bootstrap racing _doSilentRefresh', () => {
     vi.useRealTimers();
   });
 });
+
+// ── Wave 3 billing: entitlement() computed + AuthUser widening ───────────────
+//
+// Tests the new entitlement() computed signal added in Wave 3.
+// Source: WAVE5_FRONTEND_TASKSPEC.md §3.2 + handoff_contract_razorpay.md §1.3.
+
+describe('AuthService — entitlement() computed (Wave 3 billing widening)', () => {
+
+  it('returns "free" when not authenticated (no user)', () => {
+    const { service } = setup();
+    expect(service.entitlement()).toBe('free');
+  });
+
+  it('returns "free" when user is logged in but entitlement is undefined (pre-Wave-3 token)', () => {
+    const { service } = setup();
+    // Simulates a pre-Wave-3 cached /me response where entitlement field is absent
+    const legacyUser: AuthUser = { phone: '+919876543210', plan: 'free' };
+    service.setSession('tok', legacyUser);
+    expect(service.entitlement()).toBe('free');
+  });
+
+  it('returns "free" when user.entitlement is explicitly "free"', () => {
+    const { service } = setup();
+    service.setSession('tok', { phone: '+91x', entitlement: 'free' });
+    expect(service.entitlement()).toBe('free');
+  });
+
+  it('returns "starter" when user.entitlement is "starter"', () => {
+    const { service } = setup();
+    service.setSession('tok', { phone: '+91x', entitlement: 'starter' });
+    expect(service.entitlement()).toBe('starter');
+  });
+
+  it('returns "pro" when user.entitlement is "pro" (plain pro plan)', () => {
+    const { service } = setup();
+    service.setSession('tok', { phone: '+91x', plan: 'pro', entitlement: 'pro' });
+    expect(service.entitlement()).toBe('pro');
+  });
+
+  it('returns "pro" when entitlement is "pro" (pro_annual — annual collapses to base)', () => {
+    const { service } = setup();
+    // Server resolves pro_annual → pro entitlement; FE just reads the server value
+    service.setSession('tok', { phone: '+91x', plan: 'pro_annual', entitlement: 'pro' });
+    expect(service.entitlement()).toBe('pro');
+  });
+
+  it('returns "pro" when entitlement is "pro" (ltd — LTD is Pro-for-life)', () => {
+    const { service } = setup();
+    service.setSession('tok', { phone: '+91x', plan: 'ltd', entitlement: 'pro' });
+    expect(service.entitlement()).toBe('pro');
+  });
+
+  it('returns "pro" when entitlement is "pro" (free user with live trial)', () => {
+    const { service } = setup();
+    // trial still live: plan='free' but server grants 'pro' entitlement
+    service.setSession('tok', {
+      phone: '+91x',
+      plan: 'free',
+      trial_ends_at: '2026-07-03T09:15:00Z',
+      entitlement: 'pro',
+    });
+    expect(service.entitlement()).toBe('pro');
+  });
+
+  it('returns "business" when user.entitlement is "business"', () => {
+    const { service } = setup();
+    service.setSession('tok', { phone: '+91x', plan: 'business', entitlement: 'business' });
+    expect(service.entitlement()).toBe('business');
+  });
+
+  it('returns "business" when entitlement is "business" (business_annual → business collapse)', () => {
+    const { service } = setup();
+    service.setSession('tok', { phone: '+91x', plan: 'business_annual', entitlement: 'business' });
+    expect(service.entitlement()).toBe('business');
+  });
+
+  it('resets to "free" on logout', () => {
+    const { service } = setup();
+    service.setSession('tok', { phone: '+91x', entitlement: 'pro' });
+    expect(service.entitlement()).toBe('pro');
+    service.logout();
+    expect(service.entitlement()).toBe('free');
+  });
+
+  it('updates reactively when refreshUser() re-hydrates /me with new entitlement', async () => {
+    const { service, controller } = setup();
+    service.setSession('tok', { phone: '+91x', plan: 'free', entitlement: 'free' });
+    expect(service.entitlement()).toBe('free');
+
+    // Trigger refreshUser()
+    let refreshDone = false;
+    service.refreshUser().subscribe({ complete: () => (refreshDone = true) });
+
+    const req = controller.expectOne('/api/v1/auth/me');
+    req.flush({
+      user_id: 'uuid-123',
+      phone: '+91x',
+      plan: 'pro',
+      created_at: '2026-01-01T00:00:00Z',
+      last_login_at: null,
+      onboarding_complete: true,
+      trial_ends_at: null,
+      entitlement: 'pro',
+    });
+
+    await new Promise<void>((r) => setTimeout(r, 0));
+
+    expect(service.entitlement()).toBe('pro');
+  });
+});
+
+// ── AuthUser Wave 3 widening — plain field tests ──────────────────────────────
+
+describe('AuthUser — Wave 3 billing fields (plan literal + trial_ends_at + entitlement)', () => {
+  it('accepts all 7 plan literal values without TS error at runtime', () => {
+    const { service } = setup();
+    const plans = ['free', 'starter', 'pro', 'pro_annual', 'business', 'business_annual', 'ltd'] as const;
+    for (const plan of plans) {
+      service.setSession('tok', { phone: '+91x', plan });
+      expect(service.currentUser()?.plan).toBe(plan);
+    }
+  });
+
+  it('carries trial_ends_at from MeResponse via meToUser', async () => {
+    const { service, controller } = setup();
+    service.setSession('tok', { phone: '+91x' }); // prime the token for the /me call
+
+    service.refreshUser().subscribe();
+    const req = controller.expectOne('/api/v1/auth/me');
+    req.flush({
+      user_id: 'uuid-trial',
+      phone: '+91x',
+      plan: 'free',
+      created_at: '2026-01-01T00:00:00Z',
+      last_login_at: null,
+      onboarding_complete: false,
+      trial_ends_at: '2026-07-03T09:15:00Z',
+      entitlement: 'pro',
+    });
+
+    await new Promise<void>((r) => setTimeout(r, 0));
+
+    expect(service.currentUser()?.trial_ends_at).toBe('2026-07-03T09:15:00Z');
+    expect(service.currentUser()?.entitlement).toBe('pro');
+  });
+});

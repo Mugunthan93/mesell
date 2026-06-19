@@ -25,6 +25,10 @@ import type { MeResponse, RefreshResponse, VerifyOtpResponse } from './auth-api.
  *
  * The real-login path (§4.3) populates user_id/plan/created_at from /me.
  * The legacy id/name fields fade out as otp-verify migrates to the real flow.
+ *
+ * Wave 3 billing widening: plan literal expanded from 'free' to the full 7-value
+ * PRICING_LOCKED v2 vocabulary. trial_ends_at and entitlement added (additive,
+ * DECISION-3). Source: handoff_contract_razorpay.md §1.
  */
 export interface AuthUser {
   // Legacy mock fields — kept OPTIONAL (DECISION-3: additive, no breaking change)
@@ -35,12 +39,32 @@ export interface AuthUser {
   phone: string | null;
   // Additive from MeResponse (DECISION-3)
   user_id?: string;       // MeResponse.user_id (UUID)
-  plan?: 'free';          // MeResponse.plan (V1 always free)
+  /**
+   * Raw billing plan — same as MeResponse.plan (the 7-value vocabulary).
+   * Gate feature UI on `entitlement` (resolved, 4-value), NOT this field.
+   * Use `plan` only for the billing-management screen (show the exact cadence).
+   */
+  plan?: 'free' | 'starter' | 'pro' | 'pro_annual' | 'business' | 'business_annual' | 'ltd';
   created_at?: string;    // MeResponse.created_at (ISO-8601 TZ)
   last_login_at?: string | null;
   // Onboarding gate (Stage-1 wire, Path B) — additive-optional. Drives the shell
   // Onboarding nav-item visibility (hidden when true). Absent on legacy mock users.
   onboarding_complete?: boolean;
+  /**
+   * ISO-8601 UTC expiry of the 14-day Pro trial. null = no trial started.
+   * Non-null + in the future → user is in a live Pro trial.
+   * After expiry the field may remain set (past timestamp) — use `entitlement` to
+   * determine the current effective access level.
+   */
+  trial_ends_at?: string | null;
+  /**
+   * RESOLVED effective entitlement — the single field to gate feature visibility on.
+   * Collapse: free(no trial)→free | free+trial→pro | starter→starter |
+   *   pro/pro_annual/ltd→pro | business/business_annual→business.
+   * Absent on pre-Wave-3 cached users — treat undefined as 'free'.
+   * Backend (plan_guard.resolve_entitlement) is authoritative.
+   */
+  entitlement?: 'free' | 'starter' | 'pro' | 'business';
 }
 
 /** Minimal AuthUser shape derived from MeResponse. */
@@ -52,6 +76,9 @@ function meToUser(me: MeResponse): AuthUser {
     created_at: me.created_at,
     last_login_at: me.last_login_at,
     onboarding_complete: me.onboarding_complete,
+    // Wave 3 billing additions (additive-optional — undefined is safe for older tokens)
+    trial_ends_at: me.trial_ends_at,
+    entitlement: me.entitlement,
   };
 }
 
@@ -69,6 +96,24 @@ export class AuthService implements OnDestroy {
 
   readonly isAuthenticated = computed(() => this._token() !== null);
   readonly currentUser     = computed(() => this._user());
+
+  /**
+   * Effective entitlement signal — the billing gating primitive.
+   *
+   * Sourced from currentUser().entitlement (resolved server-side by plan_guard).
+   * Defaults to 'free' when the user is unauthenticated or on a pre-Wave-3
+   * cached /me response that lacks the field.
+   *
+   * Gate billing CTAs, feature visibility, and SKU-cap banners on THIS signal —
+   * never directly on plan (which encodes cadence like 'pro_annual', not access level).
+   *
+   * Components inject AuthService and read:  auth.entitlement()
+   * Template: @if (auth.entitlement() === 'free') { ... }
+   */
+  readonly entitlement = computed(
+    (): 'free' | 'starter' | 'pro' | 'business' =>
+      this._user()?.entitlement ?? 'free',
+  );
 
   /** Timer handle for proactive silent refresh (scheduleRefresh). */
   private _refreshTimer: ReturnType<typeof setTimeout> | null = null;
