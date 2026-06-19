@@ -15,17 +15,8 @@ import { meeIconClass } from '@mesell/ui-kit';
 import type { MeeIconName } from '@mesell/ui-kit';
 
 import { LayoutService } from '../layout.service';
-
-interface NavItem {
-  label: string;
-  icon: MeeIconName;
-  route: string;
-}
-
-interface NavGroup {
-  label: string;
-  items: NavItem[];
-}
+import { SIDEBAR_NAV_GROUPS } from './sidebar.nav-groups';
+import type { NavGroup } from './sidebar.nav-groups';
 
 @Component({
   selector: 'mee-sidebar',
@@ -167,34 +158,10 @@ export class SidebarComponent implements OnInit, OnDestroy {
 
   private navSub?: Subscription;
 
-  protected readonly navGroups: NavGroup[] = [
-    {
-      label: 'Main',
-      items: [{ label: 'Home', icon: 'home', route: '/dashboard' }],
-    },
-    {
-      label: 'Catalogs',
-      items: [
-        { label: 'My Catalogs', icon: 'list', route: '/catalogs' },
-        { label: 'New Product', icon: 'add', route: '/catalog/new' },
-        { label: 'Categories', icon: 'tag', route: '/categories' },
-      ],
-    },
-    {
-      label: 'Tools',
-      items: [
-        { label: 'Pricing', icon: 'calculator', route: '/pricing' },
-        { label: 'Export', icon: 'download', route: '/export' },
-      ],
-    },
-    {
-      label: 'Account',
-      items: [{ label: 'Profile', icon: 'user', route: '/profile' }],
-    },
-  ];
+  protected readonly navGroups: NavGroup[] = SIDEBAR_NAV_GROUPS;
 
   /** Resolve a nav item's semantic icon name to its PrimeIcons class (FE-2: raw `pi pi-*` stays in the registry). */
-  protected readonly iconClass = (name: MeeIconName): string => meeIconClass(name);
+  protected readonly iconClass = (name: string): string => meeIconClass(name as MeeIconName);
 
   ngOnInit(): void {
     this.navSub = this.router.events
