@@ -46,7 +46,8 @@ describe('MeeTreeSelectComponent', () => {
   it('should emit value_change on node select', () => {
     const emitted: MeeTreeNode[] = [];
     comp.value_change.subscribe((n: MeeTreeNode) => { emitted.push(n); });
-    comp.onNodeSelect({ node: { label: 'Phones', data: 'phones' } });
+    // Cast to satisfy TreeNodeSelectEvent — originalEvent not needed for unit logic.
+    comp.onNodeSelect({ node: { label: 'Phones', data: 'phones' } } as never);
     expect(emitted.length).toBe(1);
     expect(emitted[0].label).toBe('Phones');
     expect(emitted[0].value).toBe('phones');
