@@ -1,6 +1,34 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-19 (meesell-database-builder) — Price Calculator W1 data layer ===
+Phase: price-calculator-rework / W1 data layer (section-7)
+Done:
+  - backend/scripts/build_pricing_lookup.py: idempotent transform from census → lookup JSON
+    (hard-fails on error_rows!=0 / count!=3772 / any non-zero commission / any formula_ok!=True)
+  - backend/app/data/meesho_pricing_lookup.json: generated + committed; 3772 entries;
+    keyed by string meesho_leaf_id; schema {_meta, lookup}; anchor 10949→82 confirmed
+  - backend/app/modules/pricing/pricing_lookup.py: loader module with get_shipping(),
+    get_commission_default(), lookup_size(), UnknownCategoryError; @lru_cache(maxsize=1)
+  - backend/app/data/meesho_shipping_slabs.json: TOMBSTONED (_CLOSED note)
+  - backend/app/data/category_commissions.json: TOMBSTONED (_CLOSED note)
+  - backend/app/data/__init__.py: load_shipping_slabs() REMOVED; zero app/ callers confirmed
+  - backend/tests/modules/pricing/test_pricing_lookup.py: 12/12 tests pass; ruff clean
+  - No Alembic migration — W1 is pure data file + loader (no DB schema change)
+In progress: none (waiting for meesell-data-engineer merge-gate review — HYBRID step 3)
+Blockers: none
+Next: meesell-data-engineer merge-gate review (data-file spot-check + loader code review)
+Hand-offs:
+  - meesell-data-engineer (merge-gate, step-3): PR on feature/price-calc-rework/w1-data → develop.
+    Verify: 3 census entries match verbatim, _meta.total==3772, tombstones in place,
+    zero app/ refs to retired stubs (grep), gate-1 green (12/12).
+  - meesell-services-builder (W2): pricing_lookup.py loader ready at
+    app.modules.pricing.pricing_lookup. Call get_shipping(meesho_leaf_id) and
+    get_commission_default(meesho_leaf_id) from the W2 settlement formula.
+    Handle UnknownCategoryError → 422 in the router.
+=========
+
+```
 === UPDATE: 2026-06-18 (meesell-services-builder) — export validation aggregation ===
 Phase: V1 Feature 9 Export — collect-all pre-enqueue validation
 Session: export-validation-aggregation, branch feat/export-validation-aggregation,
