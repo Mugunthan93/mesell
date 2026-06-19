@@ -14,12 +14,26 @@ These tests use the billing-layer service helpers directly and mock the Razorpay
 adapter (``app.adapters.razorpay``) — no real Razorpay call is made in ANY test.
 The route tests use the in-process FastAPI app via ``ASGITransport + AsyncClient``.
 All DB-touching tests target the ``meesell_rzpw2_test`` disposable test database
-(via ``TEST_DATABASE_URL``) OR the ephemeral NullPool engine used by the fixture.
+(port 5432 locally, port 5433 via GCP tunnel in CI).
 
 DB-WIPE GUARD: conftest.py will refuse any ``DATABASE_URL`` that does not end in
 ``_test``.  The fixtures here use a NullPool-bound ephemeral engine that receives
 the ``TEST_DATABASE_URL`` env var.  ``current_database()`` must NEVER equal
 ``meesell``.
+
+FK isolation
+------------
+The ``billing_client`` fixture seeds the stub user row (_STUB_USER_ID) into
+``users`` before every test that can reach the real ``subscribe`` service path
+(which writes a ``subscriptions`` row → FK on users.id). The row is deleted in
+teardown by ``_cleanup_stub_user``, so the test DB stays clean between runs.
+
+Rate-limit isolation (D2 fix)
+------------------------------
+The ``billing_start_trial`` sliding window (5/h per user) accumulates in Valkey
+across tests in the same pytest run.  The ``billing_client`` fixture flushes the
+per-route key pattern ``meesell:rl:route:billing_*`` for the stub user before and
+after every test to guarantee order-independent execution.
 
 Valkey
 ------
@@ -52,15 +66,16 @@ from sqlalchemy.pool import NullPool
 pytestmark = pytest.mark.integration
 
 # ── Test DB URL (meesell_rzpw2_test disposable DB, or any *_test DB) ─────────
+# Local: port 5432.  CI / GCP tunnel: override via TEST_DATABASE_URL (port 5433).
 _TEST_DB_URL = (
     os.environ.get("TEST_DATABASE_URL")
-    or "postgresql+asyncpg://meesell:j3w%2F6o%2F7k%2FJwjPu1J4OqDpFStho7IsK%2F0lRYnwmbN6Q%3D@localhost:5433/meesell_rzpw2_test"
+    or "postgresql+asyncpg://meesell:j3w%2F6o%2F7k%2FJwjPu1J4OqDpFStho7IsK%2F0lRYnwmbN6Q%3D@localhost:5432/meesell_rzpw2_test"
 )
 
 # ── Minimal env so the app config passes REQUIRED_FIELDS check ───────────────
 _SENTINEL_ENV: dict[str, str] = {
     "APP_ENV": "development",
-    "DATABASE_URL": _TEST_DB_URL,
+    "DATABASE_URL": _TEST_DB_URL,  # always meesell_rzpw2_test (never meesell)
     "VALKEY_URL": "redis://localhost:6379/15",
     "JWT_SECRET": "test-jwt-secret-wave3",
     "GCS_BUCKET": "test-bucket",
@@ -105,7 +120,6 @@ from app.modules.iam.exceptions import (  # noqa: E402
     TrialAlreadyUsedError,
 )
 from app.shared.database import get_db  # noqa: E402
-from app.shared.models.base import Base  # noqa: E402
 
 # ── Stub user ─────────────────────────────────────────────────────────────────
 _STUB_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
@@ -154,6 +168,85 @@ def _valkey_base() -> str:
     return url
 
 
+async def _seed_stub_user(engine) -> None:
+    """D1 fix: INSERT the stub user row so subscriptions FK resolves.
+
+    Uses raw asyncpg-style text SQL via SQLAlchemy text() so we avoid any ORM
+    relationship resolution. ``ON CONFLICT DO NOTHING`` makes it idempotent.
+    Users table columns with NOT NULL / server-defaults:
+      - id: UUID (explicit)
+      - phone: nullable (google-auth widening)
+      - plan: server_default='free' — use explicit for clarity
+      - auth_provider: server_default='phone' — use explicit
+      - ck_users_at_least_one_identity: phone IS NOT NULL OR google_sub IS NOT NULL
+        → satisfy with phone='+91555000001'
+    """
+    from sqlalchemy import text
+
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                """
+                INSERT INTO users (id, phone, plan, auth_provider)
+                VALUES (:uid, :phone, 'free', 'phone')
+                ON CONFLICT (id) DO NOTHING
+                """
+            ),
+            {"uid": str(_STUB_USER_ID), "phone": "+91555000001"},
+        )
+
+
+async def _cleanup_stub_user(engine) -> None:
+    """Remove test artefacts written by the stub user (subscriptions + user row)."""
+    from sqlalchemy import text
+
+    async with engine.begin() as conn:
+        # Delete child rows first (FK RESTRICT prevents deleting user first)
+        await conn.execute(
+            text("DELETE FROM subscriptions WHERE user_id = :uid"),
+            {"uid": str(_STUB_USER_ID)},
+        )
+        await conn.execute(
+            text("DELETE FROM audit_events WHERE user_id = :uid"),
+            {"uid": str(_STUB_USER_ID)},
+        )
+        await conn.execute(
+            text("DELETE FROM users WHERE id = :uid"),
+            {"uid": str(_STUB_USER_ID)},
+        )
+
+
+async def _flush_billing_rate_limit_keys(valkey_url: str) -> None:
+    """D2 fix: flush all per-route rate-limit keys for billing scopes + stub user.
+
+    The sliding-window key pattern for authenticated requests is:
+      meesell:rl:route:{scope}:user:{user_id}:{window}
+    For billing_start_trial (5/3600) this is a window=3600 key that survives
+    across tests in the same pytest session.  Flush it pre AND post test to
+    guarantee order-independence.
+
+    Also flushes per-IP keys for testserver (127.0.0.1 / testclient) to prevent
+    per-IP DDoS limit bleed.
+    """
+    import redis.asyncio as _redis_lib
+
+    client = _redis_lib.from_url(valkey_url, decode_responses=True)
+    try:
+        # Billing per-route keys (all windows, all scopes)
+        patterns = [
+            f"meesell:rl:route:billing_*:user:{_STUB_USER_ID}:*",
+            "meesell:rl:route:billing_*:ip:*",
+            "meesell:rl:ip:testclient:1m",
+            "meesell:rl:ip:127.0.0.1:1m",
+        ]
+        for pattern in patterns:
+            keys = await client.keys(pattern)
+            if keys:
+                await client.delete(*keys)
+    finally:
+        await client.aclose()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Fixtures
 # ─────────────────────────────────────────────────────────────────────────────
@@ -164,10 +257,17 @@ async def billing_client(monkeypatch: Any):
 
     Patches:
     - ``get_current_user`` → stub (authenticated as _STUB_USER)
-    - ``get_db`` → NullPool ephemeral engine
+    - ``get_db`` → NullPool ephemeral engine bound to meesell_rzpw2_test
     - ``audit_mw.AsyncSessionLocal`` → same session
     - ``shared.valkey._cache_client`` + ``shared.valkey._otp_client`` → in-memory
     - ``app.modules.iam.service.razorpay_adapter`` → MagicMock (no real HTTP)
+
+    D1 fix: seeds the stub user row into ``users`` before every test and deletes
+    it (plus any child ``subscriptions`` / ``audit_events``) in teardown, so the
+    subscribe paths can write ``subscriptions.user_id`` without FK violation.
+
+    D2 fix: flushes per-route Valkey keys for all billing scopes before and after
+    every test to prevent rate-limit window bleed across tests.
 
     The adapter mock is reset per-fixture (not monkeypatched at the class level)
     so individual tests can configure different return values.
@@ -179,14 +279,16 @@ async def billing_client(monkeypatch: Any):
     from app.main import app
 
     valkey_base = _valkey_base()
+    valkey_db0_url = f"{valkey_base}/0"
 
-    # 1. NullPool engine
+    # D2: flush billing rate-limit keys BEFORE the test (pre-isolation)
+    await _flush_billing_rate_limit_keys(valkey_db0_url)
+
+    # 1. NullPool engine (no pool Future binding; pre-provisioned schema)
     engine = create_async_engine(_TEST_DB_URL, poolclass=NullPool, echo=False)
-    try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-    except Exception:
-        pass  # pre-provisioned DB
+
+    # D1: seed the stub user so subscriptions FK resolves
+    await _seed_stub_user(engine)
 
     TestSession = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
@@ -205,7 +307,7 @@ async def billing_client(monkeypatch: Any):
     _original_cache = _valkey_module._cache_client
     _original_otp = _valkey_module._otp_client
     _fake_cache = _redis_lib.from_url(f"{valkey_base}/3", decode_responses=True)
-    _fake_otp = _redis_lib.from_url(f"{valkey_base}/0", decode_responses=True)
+    _fake_otp = _redis_lib.from_url(valkey_db0_url, decode_responses=True)
     _valkey_module._cache_client = _fake_cache
     _valkey_module._otp_client = _fake_otp
 
@@ -227,7 +329,7 @@ async def billing_client(monkeypatch: Any):
             except Exception:
                 pass
 
-    # Teardown
+    # Teardown: restore singletons + DI overrides
     app.dependency_overrides.pop(get_current_user, None)
     app.dependency_overrides.pop(get_db, None)
     _audit_mw.AsyncSessionLocal = _original_local
@@ -238,7 +340,13 @@ async def billing_client(monkeypatch: Any):
         await _fake_otp.aclose()
     except Exception:
         pass
+
+    # D1: clean up stub user + child rows so DB is pristine for next test
+    await _cleanup_stub_user(engine)
     await engine.dispose()
+
+    # D2: flush billing rate-limit keys AFTER the test (post-isolation)
+    await _flush_billing_rate_limit_keys(valkey_db0_url)
 
 
 @pytest_asyncio.fixture(loop_scope="function")
