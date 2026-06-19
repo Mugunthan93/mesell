@@ -58,4 +58,10 @@
   --mee-transition-fast:  150ms ease;
   --mee-transition-base:  250ms ease;
   --mee-transition-slow:  400ms ease;
+
+  /* Focus ring (a11y — brand-orange at 50% opacity, WCAG 1.4.11 non-text contrast) */
+  --mee-focus-ring-width:  2px;
+  --mee-focus-ring-style:  solid;
+  --mee-focus-ring-color:  rgba(242, 107, 35, 0.5);  /* primary #F26B23 at 50% */
+  --mee-focus-ring-offset: 2px;
 }

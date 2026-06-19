@@ -2,7 +2,7 @@
  * Aggregator membership assertions — Phase 2 (UI Design-System Decoupling)
  *
  * These are static-value assertions: no TestBed, no Angular Zone, no DOM.
- * They verify the exact composition of the seven aggregator arrays so that a
+ * They verify the exact composition of the eight aggregator arrays so that a
  * future barrel edit cannot silently break the membership or count invariants.
  */
 import { describe, it, expect } from 'vitest';
@@ -14,6 +14,7 @@ import {
   MEE_DATA,
   MEE_COMMON,
   MEE_FILE,
+  MEE_SURFACE,
   MEE_UI_ALL,
 } from './aggregators';
 
@@ -24,11 +25,27 @@ import { MeeToastService }   from './toast/toast.service';
 import { MeeConfirmService } from './confirm-dialog/confirm-dialog.component';
 
 // Import specific components to assert explicit membership.
-import { MeeIconComponent }  from './icon/icon.component';
+import { MeeIconComponent }       from './icon/icon.component';
+import { MeeCheckboxComponent }   from './checkbox/checkbox.component';
+import { MeeRadioComponent }      from './radio/radio.component';
+import { MeeBreadcrumbComponent } from './breadcrumb/breadcrumb.component';
+import { MeeTabsComponent }       from './tabs/tabs.component';
+import { MeeMessageComponent }    from './message/message.component';
+import { MeePanelComponent }      from './panel/panel.component';
+import { MeeDividerComponent }    from './divider/divider.component';
+import { MeeScrollPanelComponent } from './scroll-panel/scroll-panel.component';
 
 describe('MEE_FORM', () => {
-  it('has exactly 6 members', () => {
-    expect(MEE_FORM.length).toBe(6);
+  it('has exactly 8 members (6 original + checkbox + radio)', () => {
+    expect(MEE_FORM.length).toBe(8);
+  });
+
+  it('includes MeeCheckboxComponent', () => {
+    expect(MEE_FORM).toContain(MeeCheckboxComponent);
+  });
+
+  it('includes MeeRadioComponent', () => {
+    expect(MEE_FORM).toContain(MeeRadioComponent);
   });
 });
 
@@ -39,25 +56,36 @@ describe('MEE_OVERLAY', () => {
 });
 
 describe('MEE_FEEDBACK', () => {
-  it('has exactly 5 members', () => {
-    expect(MEE_FEEDBACK.length).toBe(5);
+  it('has exactly 6 members (5 original + message)', () => {
+    expect(MEE_FEEDBACK.length).toBe(6);
+  });
+
+  it('includes MeeMessageComponent', () => {
+    expect(MEE_FEEDBACK).toContain(MeeMessageComponent);
   });
 });
 
 describe('MEE_DATA', () => {
-  it('has exactly 2 members', () => {
-    expect(MEE_DATA.length).toBe(2);
+  it('has exactly 3 members (2 original + tabs)', () => {
+    expect(MEE_DATA.length).toBe(3);
+  });
+
+  it('includes MeeTabsComponent', () => {
+    expect(MEE_DATA).toContain(MeeTabsComponent);
   });
 });
 
 describe('MEE_COMMON', () => {
-  it('has exactly 4 members', () => {
-    expect(MEE_COMMON.length).toBe(4);
+  it('has exactly 5 members (4 original + breadcrumb)', () => {
+    expect(MEE_COMMON.length).toBe(5);
   });
 
   it('includes MeeIconComponent (Phase 1 addition — explicit guard)', () => {
-    // Prevent a future barrel/aggregator edit from silently dropping mee-icon.
     expect(MEE_COMMON).toContain(MeeIconComponent);
+  });
+
+  it('includes MeeBreadcrumbComponent', () => {
+    expect(MEE_COMMON).toContain(MeeBreadcrumbComponent);
   });
 });
 
@@ -67,13 +95,31 @@ describe('MEE_FILE', () => {
   });
 });
 
-describe('MEE_UI_ALL', () => {
-  it('has exactly 21 members (6+3+5+2+4+1)', () => {
-    expect(MEE_UI_ALL.length).toBe(21);
+describe('MEE_SURFACE', () => {
+  it('has exactly 3 members (panel + divider + scroll-panel)', () => {
+    expect(MEE_SURFACE.length).toBe(3);
   });
 
-  it('has no duplicate entries (set size === 21)', () => {
-    expect(new Set(MEE_UI_ALL).size).toBe(21);
+  it('includes MeePanelComponent', () => {
+    expect(MEE_SURFACE).toContain(MeePanelComponent);
+  });
+
+  it('includes MeeDividerComponent', () => {
+    expect(MEE_SURFACE).toContain(MeeDividerComponent);
+  });
+
+  it('includes MeeScrollPanelComponent', () => {
+    expect(MEE_SURFACE).toContain(MeeScrollPanelComponent);
+  });
+});
+
+describe('MEE_UI_ALL', () => {
+  it('has exactly 29 members (8+3+6+3+5+1+3)', () => {
+    expect(MEE_UI_ALL.length).toBe(29);
+  });
+
+  it('has no duplicate entries (set size === 29)', () => {
+    expect(new Set(MEE_UI_ALL).size).toBe(29);
   });
 
   it('does NOT include MeeToastService (provider — must stay out of imports[])', () => {
