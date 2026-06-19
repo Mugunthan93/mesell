@@ -24,7 +24,7 @@ import { MeeButtonComponent }        from '@mesell/ui-kit';
 import { MeeCardComponent }          from '@mesell/ui-kit';
 import { MeeInputComponent }         from '@mesell/ui-kit';
 
-import { formatRupee, parseDecimal } from './pricing.utils';
+import { formatRupee, formatPct, parseDecimal } from './pricing.utils';
 import { PricingApiService }         from './pricing.service';
 import type { PriceCalcResponse, PriceCalcErrorShape, PriceCalcServerError } from './pricing.model';
 import { ALERT_MESSAGES } from './pricing.model';
@@ -309,7 +309,7 @@ export type PricingErrorState =
             >
               <h2 class="mee-pricing__section-title">Enter pricing details</h2>
 
-              <!-- W3 INPUT: selling_price (listed Meesho price) — component-builder rebuilds in step-2 -->
+              <!-- selling_price: primary input (listed Meesho price, gt 0) -->
               <mee-input
                 label="Selling price (listed on Meesho)"
                 type="number"
@@ -319,7 +319,7 @@ export type PricingErrorState =
                 [error]="sellingPriceError()"
               />
 
-              <!-- W3 INPUT: commission_pct (optional override, default 0) -->
+              <!-- commission_pct: optional override (default 0%, omit key when blank) -->
               <mee-input
                 label="Commission % (optional)"
                 type="number"
@@ -366,10 +366,12 @@ export type PricingErrorState =
 
               <!-- 422 pricing.category.no_pricing_data — category leaf absent from pricing lookup -->
               @if (errorState() === 'no_pricing_data') {
-                <mee-alert-banner
-                  variant="warning"
-                  [message]="noPricingDataDetail()"
-                />
+                <div class="mee-pricing__no-data-error" role="alert">
+                  <mee-alert-banner
+                    variant="warning"
+                    message="Pricing isn't available for this category yet."
+                  />
+                </div>
               }
 
               <!-- 400 — Pydantic constraint violation (form validators prevent most) -->
@@ -426,8 +428,8 @@ export type PricingErrorState =
                 @if (breakdown()) {
                   <!--
                     W3 SETTLEMENT BREAKDOWN — 5 rows (W3 §2.2 Meesho-mirror layout).
-                    component-builder (step-2) rebuilds the full card; this stub keeps
-                    the service-builder slice TS-compilable.
+                    Rows: Selling price / Commission fee / GST / TDS / Estimated Bank Settlement.
+                    tcs (always "0.00") is NOT rendered. shipping/total_price are optional context lines (omitted V1).
                   -->
 
                   <!-- NEGATIVE_SETTLEMENT alert — renders above the table when present -->
@@ -465,7 +467,7 @@ export type PricingErrorState =
                       </tr>
                       <tr class="mee-pricing__row">
                         <td class="mee-pricing__table-label" scope="row">
-                          Commission fee ({{ breakdown()!.commission_pct }}%)
+                          Commission fee ({{ formatPctLabel(breakdown()!.commission_pct) }})
                         </td>
                         <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.commission_fees) }}</td>
                       </tr>
@@ -518,7 +520,7 @@ export type PricingErrorState =
                     <div class="mee-pricing__empty-icon" aria-hidden="true">&#8377;</div>
                     <p class="mee-pricing__empty-title">Ready to calculate</p>
                     <p class="mee-pricing__empty-hint">
-                      Enter your input cost and target margin, then tap "Calculate".
+                      Enter a selling price to estimate your settlement.
                     </p>
                   </div>
 
@@ -557,15 +559,14 @@ export class PricingComponent implements OnInit, AfterViewChecked {
   private _focusPending = false;
 
   readonly formatRupeeLabel    = formatRupee;
+  readonly formatPctLabel      = formatPct;
   readonly resolveAlertMessage = (messageId: string): string =>
     ALERT_MESSAGES[messageId] ?? messageId;
 
   // W3 FORM: selling_price (required, >0) + commission_pct (optional override).
-  // OLD form (input_cost + target_margin_pct) is DEAD — component-builder rebuilds the full
-  // form in W3 step-2. These stubs keep TS compilable for the service-builder slice.
-  // TODO(component-builder W3 step-2): replace with:
-  //   selling_price: ['', [Validators.required, Validators.min(0.01)]]
-  //   commission_pct: ['', [Validators.min(0), Validators.max(100)]]
+  // selling_price: Decimal string from input; must be > 0 (Validators.min(0.01)).
+  // commission_pct: Optional override; omit key entirely when blank (NOT sent as "").
+  //   Backend defaults to 0 — census confirms 0% for all 3,772 categories.
   readonly form = this.fb.group({
     selling_price:  ['', [Validators.required, Validators.min(0.01)]],
     commission_pct: ['', [Validators.min(0), Validators.max(100)]],
@@ -639,9 +640,9 @@ export class PricingComponent implements OnInit, AfterViewChecked {
     this.breakdown.set(null);
 
     const raw  = this.form.getRawValue();
-    // W3: new body shape — only selling_price (required) + optional commission_pct.
-    // backend extra="forbid" rejects any extra field.
-    // TODO(component-builder W3 step-2): wire real form controls + omit commission_pct when blank.
+    // W3 body: selling_price (required) + optional commission_pct.
+    // backend extra="forbid" rejects any extra field — do NOT add category or overrides.
+    // commission_pct key is OMITTED entirely when blank (not sent as "" or null).
     const commissionPct = raw.commission_pct?.trim();
     const body = {
       selling_price: String(raw.selling_price ?? ''),
