@@ -4,6 +4,11 @@
 Angular 18 component specialist for MeeSell. Owns 10 page components + shared UI components. Standalone, OnPush, Reactive Forms, Tailwind + Material. Decentralized memory ecosystem.
 
 ## MEMORY.md Index
+- [Session 2026-06-19 — feat/ui-kit-sakai-gaps Section A — 8 PrimeNG wrapper components](#sakai-gaps-section-a)
+- [Session 2026-06-18 — feat/catalog-conditional-field-ux — dependency_rules[] conditional field UX](#catalog-conditional-field-ux)
+- [Session 2026-06-18 — PR #289 data-table spec — replace require() with ESM imports](#dt-require-fix)
+- [Session 2026-06-18 — PR #284 pricing rebase split-brain fix](#pr284-pricing-fix)
+- [Session 2026-06-18 — Rebase worktree-design-figma-ui-screens onto origin/develop](#rebase-2026-06-18)
 - [Session 2026-06-15 — Section-3 Wave 2A.1 — mfe-catalog provideMeeUi bootstrap (GAP-3)](#s3-w2a1-providemeeui)
 - [Session 2026-06-10 — Wave 5 F12 Export + F11 pricing route EXECUTED](#wave5-f12-export)
 - [Session 2026-06-10 — Wave 5 F11 Pricing EXECUTED](#wave5-f11-pricing)
@@ -18,6 +23,321 @@ Angular 18 component specialist for MeeSell. Owns 10 page components + shared UI
 - [Session 2026-06-06 — Smart Picker Dispatch 1](#smart-picker-dispatch-1)
 - [Session 2026-06-06 — Auth Dispatch 1 — LandingComponent](#landing-dispatch-1)
 - [Session 2026-06-06 — Catalog Wave 2a — catalog-form service layer](#catalog-wave-2a)
+
+---
+
+## Session 2026-06-19 — feat/ui-kit-sakai-gaps Section A — 8 PrimeNG wrapper components {#sakai-gaps-section-a}
+
+### Task
+HYBRID step 2 (builder): Implement 8 ui-kit primitive wrappers for the Sakai-gap spec Section A.
+Branch/worktree: `worktree-design-figma-ui-screens`
+
+### Files Created (18 new files)
+- `checkbox/checkbox.component.ts` + `.spec.ts`
+- `radio/radio.component.ts` + `.spec.ts`
+- `breadcrumb/breadcrumb.component.ts` + `.spec.ts`
+- `tabs/tabs.types.ts` + `tabs/tabs.component.ts` + `.spec.ts`
+- `message/message.types.ts` + `message/message.component.ts` + `.spec.ts`
+- `panel/panel.component.ts` + `.spec.ts`
+- `divider/divider.component.ts` + `.spec.ts`
+- `scroll-panel/scroll-panel.component.ts` + `.spec.ts`
+
+### Files Modified
+- `aggregators.ts` — MEE_FORM 6→8, MEE_FEEDBACK 5→6, MEE_DATA 2→3, MEE_COMMON 4→5, NEW MEE_SURFACE[3], MEE_UI_ALL 21→29
+- `aggregators.spec.ts` — count assertions updated, MEE_SURFACE test block added
+- `index.ts` — 8 new component exports, MeeTab + MeeMessageSeverity type exports, MEE_SURFACE in aggregator re-export line
+
+### PrimeNG v21 API Findings (CRITICAL — save for future builders)
+
+**RadioButtonGroup does NOT exist in primeng/radiobutton v21:**
+- Only `RadioButton` and `RadioControlRegistry` are exported
+- Fallback taken: shared `[ngModel]`+`[name]`+`[value]` on individual `p-radiobutton` elements
+- The group CVA seam is on the wrapper component (`mee-radio`); all radios share the same `[name]` and `[ngModel]`
+
+**Tabs API in PrimeNG v21 (p-tabview is GONE):**
+- Import: `{ Tabs, TabList, Tab, TabPanels, TabPanel }` from `primeng/tabs`
+- `p-tabs` = host; `p-tablist` = header bar; `p-tab [value]` = individual tab header
+- `p-tabpanels` = panel container; `p-tabpanel [value]` = content area matched by value
+- `Tabs.value` is a SIGNAL input (not classic @Input) → emit via `valueChange` output
+- Two-way binding in template: use `[value]="value()" (valueChange)="onTabChange($event)"`
+- `TabPanel` in the wrapper's imports[] triggers NG8113 warning (not used in wrapper template but used by consumers via projection) — remove from imports[], document that consumers import it from primeng/tabs directly
+
+**Panel.collapsedChange emits `boolean | undefined` (not just `boolean`):**
+- Handler must accept `boolean | undefined` and normalise: `const next = value ?? false`
+
+**ScrollPanel has NO `[style]` input in v21:**
+- Apply max-height via a host wrapper `<div [style]="hostStyle()">` around `<p-scrollpanel>`
+- `p-scrollpanel` only accepts `styleClass`; sizing must be done externally
+
+**Panel ng-template naming trap:**
+- `<ng-template #header>` inside a panel template conflicts with a component `header = input<...>()` because the template variable `header` shadows the signal in Angular's template scope
+- Fix: rename the signal input with an alias: `readonly panelHeader = input<...>(undefined, { alias: 'header' })` so the template uses `panelHeader()` (no clash) and the ng-template uses `#header` (what PrimeNG's `predicate: ["header"]` query needs)
+
+**Checkbox CVA pattern — ALWAYS use Pattern A (not Pattern B) for checkbox/radio:**
+- Pattern A = `NG_VALUE_ACCESSOR + forwardRef(() => Cmp)` provider + `innerValue` signal
+- No NgControl self-inject needed (these components don't need auto-error-message machinery)
+- `[binary]="true"` default → CVA emits `boolean`; `[binary]="false"` → emits in-group value
+
+### CVA Pattern A vs existing p-checkbox API
+- `p-checkbox` emits `onChange: { checked: boolean, originalEvent: Event }` (EventEmitter)
+- Better: use `[ngModel]="innerValue()" (ngModelChange)="onModelChange($event)"` — cleaner CVA seam
+- `(onBlur)="onTouched()"` fires the CVA `registerOnTouched` callback
+
+### mee-breadcrumb design
+- Reuses `MeeMenuItem` from `menu/menu.types.ts` (no new type needed)
+- `pgItems` computed maps `MeeMenuItem[]` → PrimeNG `MenuItem[]` with `MEE_ICONS[item.icon]` resolution
+- `RouterModule` import needed because `p-breadcrumb` uses `routerLink` internally
+
+### Aggregator MEE_SURFACE naming decision
+- `MEE_LAYOUT` is reserved for `@mesell/layout` library (page-level primitives)
+- New ui-kit surface group named `MEE_SURFACE` (panel, divider, scroll-panel) — different level of abstraction
+- Added `MEE_SURFACE` to `MEE_UI_ALL` spread; total = 29
+
+### Build result
+- `tsc --noEmit -p tsconfig.json`: 0 errors from new files
+- `tsc --noEmit -p tsconfig.spec.json`: 0 errors from new files
+- Pre-existing errors in `mfe-auth` (errorMessage) and `mfe-catalog` (ApiClient) block `ng test` run — NOT introduced by this PR
+- 24 new test cases across 8 spec files; aggregators.spec.ts: 15 assertions updated
+
+---
+
+## Session 2026-06-18 — feat/catalog-conditional-field-ux — dependency_rules[] conditional field UX {#catalog-conditional-field-ux}
+
+### Task
+HYBRID step 2 (builder): Wire `dependency_rules[]` from backend PR #290 into CatalogFormComponent
+as conditional field show/require/soft-banner UX.
+Branch: `feat/catalog-conditional-field-ux` (worktree: `/tmp/mesell-wt/catalog-conditional-field-ux`)
+
+### Files Changed
+- `catalog-form.rules.ts` (NEW) — pure evaluator, no Angular imports
+- `catalog-form.rules.spec.ts` (NEW) — 41 Vitest tests, 0 TestBed
+- `catalog-form.model.ts` (MODIFIED) — re-exports DependencyRule, FieldOverride
+- `models/field-schema.model.ts` (MODIFIED) — SchemaRuleDTO, DependencyRuleDTO, adaptDependencyRules()
+- `services/catalog-form-api.service.ts` (MODIFIED) — getSchemaWithRules()
+- `catalog-form/catalog-form.component.ts` (MODIFIED) — schemaRules signal, fieldOverrides/activeSoftRules computed, show/require template wiring, soft banners
+
+### Patterns Established
+
+**Pure-function rule evaluator in a separate .rules.ts file:**
+- Co-located with component but no Angular decorator
+- Vitest-runnable (no TestBed, no zone.js)
+- Input: `rules: DependencyRule[], values: Record<string, unknown>` → Output: `Record<string, FieldOverride>`
+- Use this pattern for any form-level logic that can be extracted as a pure function
+
+**DependencyRule vs DependencyRuleDTO type split:**
+- `DependencyRule` (catalog-form.rules.ts): `message_id?: string` — optional for test fixtures
+- `DependencyRuleDTO` (field-schema.model.ts): `message_id: string` — required on wire
+- Component signals use `DependencyRule[]` (broader type); HTTP service returns `DependencyRuleDTO[]`; cast as `DependencyRule[]` on assignment (safe — DTO is a strict subtype)
+
+**Schema fetch with rules:**
+- `getSchemaWithRules()` added to CatalogFormApiService (same `/schema` endpoint, maps to `SchemaWithRules`)
+- Component calls `getSchemaWithRules()` in ngOnInit, sets both `schema` and `schemaRules` signals
+
+**Conditional visibility in accordion form (not wizard):**
+- The actual catalog-form in the worktree uses accordion sections (compulsoryFields / recommendedFields / optionalFields), NOT wizard steps
+- Template: `@if (isFieldVisible(field.canonical_name))` wraps each field row in all 3 sections
+- Fields without any 'show' rule default to `visible: true` (non-intrusive)
+
+**Soft-rule advisory banners:**
+- `activeSoftRules` computed returns firing soft rules
+- Template: `@if (getActiveSoftRule(field.canonical_name); as softRule)` renders `<div class="mee-soft-rule-banner" role="note">` after the field
+- CSS uses design tokens only (no hex), yellow/amber palette
+
+### Deviations from spec
+1. `action: 'require'` → actual backend wire value is `"required"`. Both spellings accepted in type.
+2. `error_message_key` → actual backend key is `message_id`. Both kept as aliases.
+3. Task spec referenced wizard component `activeStepRequiredFields()` — actual file uses accordion `compulsoryFields()`.
+4. `DependencyRuleDTO[]` signal → changed to `DependencyRule[]` to resolve TS2322 type error.
+
+### Type Error Solved
+TS2322 root: `DependencyRuleDTO.message_id: string` (required) vs `DependencyRule.message_id?: string` (optional).
+Fix: Change signal/computed types to `DependencyRule[]`; cast DTO array as `DependencyRule[]` on assignment.
+Pattern: When HTTP DTO is a strict subtype of the component's view-model type, use the view-model type for signals and cast at the boundary.
+
+### Build
+- Pre-existing `xlsx` TS2307/TS2347 errors in `live-listings.component.ts` on `origin/develop` — not introduced by this PR
+- PR code: GREEN (no new errors)
+
+### Tests
+- 41 Vitest pure-function tests: all pass
+- Angular TestBed spec: not written for this PR (pure-function coverage sufficient for the rule evaluator)
+
+### Status
+Commit: f1d423d. Branch pushed. PR must be opened manually (gh CLI not authenticated).
+URL: https://github.com/Mugunthan93/mesell/compare/develop...feat/catalog-conditional-field-ux
+
+---
+
+## Session 2026-06-18 — PR #289 data-table spec — replace require() with ESM imports {#dt-require-fix}
+
+### Task
+Merge-gate blocker fix: `data-table.component.spec.ts` had 6 inline CommonJS `require()` calls
+in the scenario-3 describe block. The Angular CI gate (`ng test`, @angular/build:unit-test,
+strict ESM) fails compile with TS2591 "Cannot find name 'require'" × 6, preventing all 28 tests
+from running.
+
+### Fix
+Added two ESM imports at the top of the spec file (after the existing `vitest` + `@angular/core` imports):
+```typescript
+import { Subject } from 'rxjs';
+import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
+```
+Then deleted the three pairs of inline `const { ... } = require(...)` lines (one pair per test in
+scenario 3). The test logic itself is unchanged — only the import mechanism changed.
+
+### Pattern: inline require() in Vitest specs under @angular/build:unit-test → TS2591 ALWAYS FAILS
+- `@angular/build:unit-test` (esbuild + strict ESM) does not define `require` as a global.
+- `require(...)` inside a spec body compiles fine in older CommonJS setups but fails with
+  TS2591 in this project's CI gate.
+- FIX RULE: any `require(...)` in a spec file MUST be hoisted to a top-level ESM `import`.
+- Applies to dynamic `require()` calls too — convert to `import(...)` (async) if truly dynamic.
+- The symptom is "28/28 pass" in local dev (Node.js provides `require` as a runtime global)
+  but "0/28 run + TS2591 × N" in CI. This gap is invisible unless you run `ng test` explicitly.
+
+### Pattern: worktree with detached HEAD — checkout tracking branch before push
+- `git worktree add /path origin/feat/branch` → detached HEAD at the remote tip.
+- Must `git checkout -b local-branch --track origin/feat/branch` before committing.
+- Push: `git push origin local-branch:feat/branch` maps local to remote PR branch.
+- This is required because the feature branch is already checked out in a different worktree
+  or the master tree cannot switch branches (guard-master-tree-git hook).
+
+### Result
+- `grep -n "require(" spec.ts` → 0 matches
+- `tsc -p apps/shell/tsconfig.app.json --noEmit 2>&1 | grep data-table` → 0 errors
+- Commit: 7fe0644 pushed to origin/feat/mee-data-table (PR #289)
+
+---
+
+## Session 2026-06-18 — PR #284 pricing rebase split-brain fix {#pr284-pricing-fix}
+
+### Task
+Fix `pricing.component.ts` rebase split-brain on branch `fix/ci-core-exports-and-icons`.
+The old develop version of the component imported `computePnlBreakdown` and `PnlBreakdown`
+(both DEAD per DECISION-1, MASTER_PLAN §7), while the branch's `pricing.utils.ts` and
+`pricing.model.ts` had already removed those symbols. CI was failing to compile.
+
+### Route touched
+`/catalogs/:id/pricing` — mfe-pricing app.
+
+### Services consumed
+`PricingApiService` from `./pricing.service` (component-scoped, listed in providers[]).
+
+### Root cause analysis
+The branch `fix/ci-core-exports-and-icons` was rebased, and the rebase conflict resolution
+took `pricing.component.ts` from the old develop version (pre-server-calc). The service
+(`pricing.service.ts`) and model (`pricing.model.ts`) were kept from the newer branch version
+that had already implemented DECISION-1. Result: component tried to import symbols that
+no longer existed → TypeScript error.
+
+### Fix applied
+Replaced `pricing.component.ts` with the full correct implementation:
+- Removed: `computePnlBreakdown`, `PnlBreakdown` imports, `sliderMrp`/`onSliderInput`/`onMrpInput`
+  (slider retired per DECISION-1), `MeeProgressBarComponent`
+- Added: `PricingApiService` (injected + providers[]), `MeeAlertBannerComponent`,
+  `MeeOfflineBannerComponent`, `PriceCalcResponse`, `PriceCalcErrorShape`, `ALERT_MESSAGES`
+- Form: `mrp`→`input_cost` (min 0.01), `target_margin`→`target_margin_pct` (min 0, max 500)
+- `onCalculate()`: calls `service.calc(productId, {input_cost, target_margin_pct})`
+  with subscribe(next/error/complete). next: checks `'kind' in result` to distinguish
+  error shapes from success. complete: handles EMPTY (401 path).
+- Added `_handleErrorShape()` private method with switch on `shape.kind`
+- `errorState = signal<PricingErrorState>(null)` — 5 states including null
+- `commissionMissingDetail` + `validationDetail` signals populated from server response
+- Template: 4 error banner @if blocks + spinner + result table + POSITIVE/NEGATIVE badge
+- `AfterViewChecked` + `_focusPending` flag for programmatic focus to `#resultRegion`
+
+### Pattern: tsc --noEmit via cross-tree worktree
+- The fix branch worktree (/tmp/mesell-wt/ci-core-fix) has NO node_modules (shared from
+  parent project). Running tsc with the worktree's tsconfig but main project's
+  node_modules/.bin/tsc gives accurate results.
+- Command: `cd <worktree>/frontend && /path/to/main/node_modules/.bin/tsc --noEmit ...`
+- Many "Cannot find module" errors from the worktree run are ALL environment errors
+  (no node_modules in worktree) — they appear for every file uniformly.
+- ONLY `pricing.component.ts` errors that are NOT "Cannot find module" or "tslib" are
+  genuine code errors requiring fixes.
+- Validation: run tsc from the MAIN project tree (where node_modules exist) to get the
+  true zero-error baseline.
+
+### Pattern: spec already correct — don't overwrite
+- In this case `pricing.component.spec.ts` was already the correct version on the branch.
+- The spec used pure-function Vitest tests (no TestBed) — no `computePnlBreakdown` imports.
+- Always check the spec file before deciding it needs changes — reading it first saved work.
+
+### Pattern: DECISION-1 is a PERMANENT auto-reject rule
+- Any local-math fallback in pricing MUST be rejected at merge gate.
+- Symptoms: `computePnlBreakdown`, `PnlBreakdown`, `COMMISSION_PCT`, `GST_PCT` in
+  pricing.component.ts imports.
+- The correct service is `PricingApiService.calc()` — server-calc only.
+
+### Worktree management
+- Created `/tmp/mesell-wt/ci-core-fix` via `git worktree add /tmp/mesell-wt/ci-core-fix origin/fix/ci-core-exports-and-icons`
+  → detached HEAD.
+- Needed tracking branch to push: `git checkout -b fix-pricing-server-calc --track origin/fix/ci-core-exports-and-icons`
+- Push: `git push origin fix-pricing-server-calc:fix/ci-core-exports-and-icons`
+
+### Build/test results
+- tsc --noEmit (main tree): 0 errors for pricing.component.ts
+- Contract scanner (--strict): FE-1/FE-2/FE-3/FE-4/FE-5 all CLEAN
+- Commit: 4d65398 on branch fix/ci-core-exports-and-icons
+
+---
+
+## Session 2026-06-18 — Rebase worktree-design-figma-ui-screens onto origin/develop {#rebase-2026-06-18}
+
+### Task
+Rebased `worktree-design-figma-ui-screens` (6 commits) onto `origin/develop` which was 241 commits ahead. Resolved all conflicts according to a defined resolution strategy, then force-pushed.
+
+### Rebase summary
+- Branch had 6 real commits (after stripping the old merge-commit ancestors)
+- Rebase stopped at 3 commit boundaries with 2+2+2 conflicting files respectively
+- All 6 commits applied cleanly; rebase completed successfully
+
+### Conflict resolution pattern (for future branches from this worktree)
+
+**Rule 1 — OURS** (our branch wins):
+- `frontend/libs/ui-kit/input/input.component.ts` — NgControl CVA upgrade; develop has old NG_VALUE_ACCESSOR pattern
+- `frontend/libs/ui-kit/textarea/textarea.component.ts` — same upgrade; always keep OURS on these two files
+
+**Rule 2 — THEIRS** (develop wins):
+- All MFE app components (mfe-auth, mfe-catalog, mfe-dashboard, mfe-export, mfe-onboarding, mfe-pricing)
+- All `federation.config.js` files, `federation.manifest.json`
+- Shell components (shell.component.ts/html/css, app.config.ts)
+- `frontend/libs/composites/auth-layout/auth-layout.component.ts`
+- `frontend/libs/core/services/auth.service.ts`, `auth-api.service.ts`, `index.ts`
+- All agent memory files (`.claude/agent-memory/**`)
+- `docs/status/STATUS_FRONTEND.md`
+
+**Rule 3 — git rm** (accept deletion):
+- `frontend/apps/mfe-catalog/src/app/preview/preview/preview.component.ts` — deleted on develop
+
+### Pattern: stash before rebase, pop after
+- If worktree has uncommitted changes (M  files in `git status --short`), stash first
+- `git stash` → `git rebase origin/develop` → resolve → `git rebase --continue` → `git stash pop`
+- stash pop auto-merges STATUS_FRONTEND.md cleanly if rebase kept THEIRS for that file
+
+### Pattern: GIT_EDITOR=true for headless rebase continue
+- `GIT_EDITOR=true git rebase --continue` accepts the default commit message without opening an editor
+- Required in non-interactive agent sessions
+
+### Pattern: git checkout --ours / --theirs with absolute paths
+- Must use absolute paths when the cwd might not be the repo root
+- `git checkout --ours /absolute/path/to/file` works correctly from any directory
+
+### Pattern: DU (delete/unmerged) in git status
+- `DU frontend/apps/mfe-catalog/src/app/preview/preview/preview.component.ts` = "deleted in HEAD, modified in our branch"
+- Resolution: `git rm <file>` — accept the deletion; never `git checkout --theirs` on a DU file
+
+### Pattern: add/add conflict
+- `CONFLICT (add/add): Merge conflict in frontend/libs/core/services/auth-api.service.ts`
+- Both branches added this file with different content
+- `git checkout --theirs` picks develop's version (correct per Rule 2)
+- `git add` to stage, then continue
+
+### tsc result
+- ZERO errors after rebase (verified with `pnpm exec tsc --noEmit` from `frontend/`)
+
+### PR status
+- PR #283: `"mergeable":"MERGEABLE"` — no conflicts
+- `"mergeStateStatus":"BLOCKED"` = branch protection (required reviews) — not a conflict issue
 
 ---
 
