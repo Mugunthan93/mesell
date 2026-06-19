@@ -48,20 +48,24 @@ from app.core.metrics import AUTH_TOKEN_REFRESH_FAILED
 from app.modules.iam import repository as iam_repo
 from app.modules.iam.domain import (
     BillingStatus,
+    CancelSubscriptionResult,
     OtpRecord,
     RefreshAllowlistEntry,
     RevokeResult,
     RotateRefreshResult,
     SendOtpResult,
     StartTrialResult,
+    SubscribeResult,
     UserProfile,
     VerifyOtpResult,
     WebhookCaptureResult,
 )
 from app.modules.iam.exceptions import (
+    AlreadySubscribedError,
     GoogleIdentityConflictError,
     MalformedWebhookPayloadError,
     Msg91UnavailableError,
+    NoActiveSubscriptionError,
     OtpAttemptsExceededError,
     OtpInvalidError,
     RefreshInvalidError,
@@ -878,6 +882,218 @@ async def start_trial(user_id: UUID, db: AsyncSession) -> StartTrialResult:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Razorpay Wave 3 — subscribe + cancel service helpers (routes-builder, step 2b).
+#
+# ``subscribe`` — initiates a Razorpay Subscription (recurring) or Order (LTD).
+# ``cancel``    — schedules a cancel-at-cycle-end via the adapter.
+#
+# Both are route-shaped helpers: they call the Wave-2 adapter and write the
+# appropriate ``subscriptions`` row.  The plan grant itself is webhook-driven
+# (D-D, §3.4 handler) — these helpers do NOT touch ``users.plan``.
+#
+# Tier → RAZORPAY_PLAN_ID mapping (D-B from spec §2/§5):
+# The adapter is plan-agnostic; the map lives here so PRICING_LOCKED v2 §5
+# is the single source of truth and config carries only opaque Razorpay IDs.
+# ─────────────────────────────────────────────────────────────────────────────
+
+#: Tier → ``settings.RAZORPAY_PLAN_ID_*`` attribute name.
+#: Resolved lazily at call time from ``settings`` so a restart picks up
+#: new env vars without needing a code change.
+_TIER_TO_PLAN_ID_ATTR: dict[str, str] = {
+    "starter": "RAZORPAY_PLAN_ID_STARTER_MONTHLY",
+    "pro": "RAZORPAY_PLAN_ID_PRO_MONTHLY",
+    "pro_annual": "RAZORPAY_PLAN_ID_PRO_ANNUAL",
+    "business": "RAZORPAY_PLAN_ID_BUSINESS_MONTHLY",
+    "business_annual": "RAZORPAY_PLAN_ID_BUSINESS_ANNUAL",
+}
+#: Recurring tiers that use the Subscriptions API.
+_RECURRING_TIERS = frozenset(_TIER_TO_PLAN_ID_ATTR)
+#: Tiers where an active sub blocks a new subscribe (all non-ltd active-ish statuses).
+_BLOCKING_SUB_STATUSES = frozenset({"created", "authenticated", "active", "past_due"})
+
+
+def _get_plan_id_for_tier(tier: str) -> str:
+    """Resolve the Razorpay plan_id for a recurring tier from ``settings``.
+
+    Returns the configured plan_id string (may be empty in dev — an empty plan_id
+    causes the Razorpay SDK to reject the call with a ``BadRequestError`` which
+    surfaces as a clean 502 ``RazorpayAdapterError``; this is the intended behaviour
+    for a feature-flagged route not yet wired to real Razorpay plans).
+    """
+    attr = _TIER_TO_PLAN_ID_ATTR[tier]
+    return str(getattr(settings, attr, ""))
+
+
+async def subscribe(
+    user_id: UUID,
+    tier: str,
+    db: AsyncSession,
+) -> SubscribeResult:
+    """Initiate a Razorpay Subscription (recurring) or Order (LTD one-time purchase).
+
+    Pipeline (§3.4):
+    1. Guard: if the user already holds an active/authenticated/created/past_due
+       subscription row → raise :class:`AlreadySubscribedError` (409).
+    2. For LTD (``tier == 'ltd'``):
+       a. Call ``adapter.create_order(amount=settings.RAZORPAY_LTD_PRICE_PAISE,
+          receipt=..., notes={user_id, tier})``.
+       b. Write a ``subscriptions`` row ``{tier:'ltd', status:'created',
+          razorpay_order_id:..., current_period_end:NULL}``.
+       c. Return :class:`SubscribeResult` with ``razorpay_order_id`` + ``amount_paise``.
+    3. For recurring tiers:
+       a. Resolve ``plan_id = _get_plan_id_for_tier(tier)`` (from settings).
+       b. Call ``adapter.create_subscription(plan_id=..., notes={user_id, tier})``.
+       c. Write a ``subscriptions`` row ``{tier, status:'created',
+          razorpay_subscription_id:...}``.
+       d. Return :class:`SubscribeResult` with ``razorpay_subscription_id`` + ``short_url``.
+
+    The plan grant (``users.plan`` change) is NOT applied here — it happens on
+    the ``subscription.activated`` / ``payment.captured`` webhook (D-D, Wave 2).
+
+    Raises:
+        AlreadySubscribedError: When the user already holds an active subscription.
+        RazorpayAdapterError: When the Razorpay API call fails (502 to the FE).
+    """
+    # ── Step 1: guard ─────────────────────────────────────────────────────────
+    existing_stmt = (
+        select(Subscription)
+        .where(
+            Subscription.user_id == user_id,
+            Subscription.status.in_(_BLOCKING_SUB_STATUSES),
+        )
+        .limit(1)
+    )
+    existing = (await db.execute(existing_stmt)).scalar_one_or_none()
+    if existing is not None:
+        logger.info(
+            "subscribe: rejected (existing sub status=%s) user=%s",
+            existing.status,
+            user_id,
+        )
+        raise AlreadySubscribedError()
+
+    if tier == "ltd":
+        # ── Step 2: LTD Orders path ───────────────────────────────────────────
+        receipt = f"ltd-{user_id!s}"
+        order = await razorpay_adapter.create_order(
+            amount=settings.RAZORPAY_LTD_PRICE_PAISE,
+            receipt=receipt,
+            notes={"user_id": str(user_id), "tier": "ltd"},
+        )
+        sub = Subscription(
+            user_id=user_id,
+            tier="ltd",
+            status="created",
+            razorpay_order_id=order.id,
+            current_period_end=None,  # perpetual sentinel
+        )
+        db.add(sub)
+        await db.flush()
+        logger.info(
+            "subscribe: LTD order created user=%s order=%s sub=%s",
+            user_id,
+            order.id,
+            sub.id,
+        )
+        return SubscribeResult(
+            tier="ltd",
+            razorpay_order_id=order.id,
+            amount_paise=order.amount,
+        )
+
+    # ── Step 3: recurring Subscriptions path ──────────────────────────────────
+    plan_id = _get_plan_id_for_tier(tier)
+    rzp_sub = await razorpay_adapter.create_subscription(
+        plan_id=plan_id,
+        notes={"user_id": str(user_id), "tier": tier},
+    )
+    sub = Subscription(
+        user_id=user_id,
+        tier=tier,
+        status="created",
+        razorpay_subscription_id=rzp_sub.id,
+    )
+    db.add(sub)
+    await db.flush()
+    logger.info(
+        "subscribe: recurring sub created user=%s rzp_sub=%s tier=%s sub=%s",
+        user_id,
+        rzp_sub.id,
+        tier,
+        sub.id,
+    )
+    return SubscribeResult(
+        tier=tier,
+        razorpay_subscription_id=rzp_sub.id,
+        short_url=rzp_sub.short_url,
+    )
+
+
+async def cancel(user_id: UUID, db: AsyncSession) -> CancelSubscriptionResult:
+    """Schedule a cancel-at-cycle-end for the user's active subscription (§3.3.3).
+
+    Pipeline:
+    1. Find the user's latest subscription row in a cancellable state
+       (``active`` / ``authenticated`` / ``created`` / ``past_due``).
+       If none → raise :class:`NoActiveSubscriptionError` (404).
+    2. Call ``adapter.cancel_subscription(sub_id, cancel_at_cycle_end=True)``.
+    3. Set ``subscriptions.cancel_scheduled_at = now()`` on the local row.
+    4. Return :class:`CancelSubscriptionResult` with ``entitled_until =
+       current_period_end``.
+
+    The ``status → 'cancelled'`` transition on ``subscriptions`` + any plan
+    downgrade are driven by the ``subscription.cancelled`` webhook (Wave 2).
+    The plan remains active until ``current_period_end``.
+
+    Raises:
+        NoActiveSubscriptionError: When no cancellable subscription is found.
+        RazorpayAdapterError: When the Razorpay cancel API call fails (502).
+    """
+    # ── Step 1: look up a cancellable sub ─────────────────────────────────────
+    cancellable_stmt = (
+        select(Subscription)
+        .where(
+            Subscription.user_id == user_id,
+            Subscription.status.in_({"active", "authenticated", "created", "past_due"}),
+        )
+        .order_by(Subscription.created_at.desc())
+        .limit(1)
+    )
+    sub = (await db.execute(cancellable_stmt)).scalar_one_or_none()
+    if sub is None:
+        logger.info("cancel: no cancellable sub user=%s", user_id)
+        raise NoActiveSubscriptionError()
+
+    # LTD subscriptions are perpetual — cancellation is not meaningful (no cycle
+    # end to cancel at).  Block cleanly rather than forwarding to Razorpay (which
+    # would reject it anyway since LTD is an Order, not a Subscription).
+    if sub.tier == "ltd":
+        logger.info("cancel: LTD is perpetual — cancellation rejected user=%s", user_id)
+        raise NoActiveSubscriptionError(
+            detail="Lifetime (LTD) purchases cannot be cancelled this way. "
+            "Please contact support."
+        )
+
+    # ── Step 2: call the adapter ──────────────────────────────────────────────
+    if sub.razorpay_subscription_id:
+        await razorpay_adapter.cancel_subscription(
+            sub.razorpay_subscription_id, cancel_at_cycle_end=True
+        )
+
+    # ── Step 3: record cancel_scheduled_at ───────────────────────────────────
+    sub.cancel_scheduled_at = datetime.now(timezone.utc)
+    await db.flush()
+
+    logger.info(
+        "cancel: scheduled cancel user=%s sub=%s entitled_until=%s",
+        user_id,
+        sub.id,
+        sub.current_period_end,
+    )
+    return CancelSubscriptionResult(entitled_until=sub.current_period_end)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Razorpay webhook event router (V1.5 — RAZORPAY_INTEGRATION_SPEC §4).
 #
 # Evolved from the V1 log-only capture into a signature-verified, idempotent,
@@ -1496,4 +1712,10 @@ __all__ = [
     "revoke_refresh_token",
     "get_profile",
     "capture_razorpay_webhook",
+    # Wave 3 billing (auth-builder step 2a):
+    "get_billing_status",
+    "start_trial",
+    # Wave 3 billing (api-routes-builder step 2b):
+    "subscribe",
+    "cancel",
 ]

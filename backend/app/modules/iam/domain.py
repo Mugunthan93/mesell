@@ -183,6 +183,45 @@ class StartTrialResult:
 
 
 @dataclass(frozen=True)
+class SubscribeResult:
+    """Returned by ``iam.service.subscribe`` (Razorpay Wave 3, §3.4).
+
+    Carries the Razorpay Checkout handle the FE widget needs to open payment.
+    The actual entitlement grant is webhook-driven (D-D); this result is
+    ADVISORY — it confirms the checkout session was created.
+
+    Attributes:
+        razorpay_subscription_id: Set for recurring tiers (``sub_...``).
+        razorpay_order_id: Set for the LTD one-time purchase (``order_...``).
+        short_url: Razorpay-hosted checkout fallback; ``None`` for LTD orders.
+        amount_paise: LTD order amount in paise; ``None`` for recurring.
+        tier: The tier being subscribed to (echoes the request).
+    """
+
+    tier: str
+    razorpay_subscription_id: str | None = None
+    razorpay_order_id: str | None = None
+    short_url: str | None = None
+    amount_paise: int | None = None
+
+
+@dataclass(frozen=True)
+class CancelSubscriptionResult:
+    """Returned by ``iam.service.cancel`` (Razorpay Wave 3, §3.3.3).
+
+    The subscription is scheduled to cancel at cycle end (cancel_at_cycle_end=True).
+    The actual status transition (``subscriptions.status → 'cancelled'``) is
+    webhook-driven via ``subscription.cancelled`` (Wave 2).
+
+    Attributes:
+        entitled_until: ``subscriptions.current_period_end`` — the seller
+            retains access until this date.  ``None`` in edge states.
+    """
+
+    entitled_until: datetime | None
+
+
+@dataclass(frozen=True)
 class WebhookCaptureResult:
     """Returned by ``iam.service.capture_razorpay_webhook``.
 
@@ -245,4 +284,7 @@ __all__ = [
     "UserProfile",
     "WebhookCaptureResult",
     "GoogleUpsertOutcome",
+    # Wave 3 billing:
+    "SubscribeResult",
+    "CancelSubscriptionResult",
 ]

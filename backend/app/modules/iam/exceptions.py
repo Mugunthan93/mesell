@@ -263,8 +263,8 @@ class GoogleIdentityConflictError(IamError):
 #
 # This dispatch (auth-builder, step 2a) needs ONLY ``TrialAlreadyUsedError``
 # (the ``start_trial`` idempotency 409).  ``AlreadySubscribedError`` (subscribe
-# 409) and ``NoActiveSubscriptionError`` (cancel 404/409) are owned by the
-# api-routes-builder (step 2b) and are NOT added here.
+# 409) and ``NoActiveSubscriptionError`` (cancel 404/409) are added by the
+# api-routes-builder (step 2b) — see below after TrialAlreadyUsedError.
 # ─────────────────────────────────────────────────────────────────────────────
 class TrialAlreadyUsedError(IamError):
     """PROPOSED (Wave 3 §7.G founder-gate).  Raised by ``start_trial`` when the
@@ -286,6 +286,52 @@ class TrialAlreadyUsedError(IamError):
         super().__init__(detail=detail)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Razorpay Wave 3 — api-routes-builder (step 2b) billing exceptions.
+#
+# ⚠ PROPOSED (§7.G FOUNDER-GATE ITEM) — same gate as TrialAlreadyUsedError.
+# Registered here so the build + tests are runnable; the lead carries them
+# to the founder gate at the merge-gate review.
+# ─────────────────────────────────────────────────────────────────────────────
+class AlreadySubscribedError(IamError):
+    """PROPOSED (Wave 3 §7.G founder-gate).  Raised by ``subscribe`` when the
+    user already holds an ``active``/``authenticated``/``created`` subscription
+    row — a second concurrent subscribe would create a duplicate.
+
+    Maps to 409 / ``billing.already_subscribed`` (3-segment per §5A.H).
+    The FE should surface a "You already have a subscription" message and
+    redirect to the subscription-management page.
+    """
+
+    code = "iam.already_subscribed"
+    status_code = 409
+    validation_message_id = "billing.already_subscribed"
+
+    def __init__(
+        self, detail: str = "You already have an active subscription"
+    ) -> None:
+        super().__init__(detail=detail)
+
+
+class NoActiveSubscriptionError(IamError):
+    """PROPOSED (Wave 3 §7.G founder-gate).  Raised by ``cancel`` when the
+    user has no ``active``/``authenticated``/``created`` subscription to cancel.
+
+    Maps to 404 / ``billing.no_active_subscription`` (3-segment per §5A.H).
+    A cancelled subscription or a free/trial user who never subscribed both
+    raise this; the FE can treat it as "nothing to cancel".
+    """
+
+    code = "iam.no_active_subscription"
+    status_code = 404
+    validation_message_id = "billing.no_active_subscription"
+
+    def __init__(
+        self, detail: str = "No active subscription found to cancel"
+    ) -> None:
+        super().__init__(detail=detail)
+
+
 __all__ = [
     "IamError",
     "InvalidPhoneFormatError",
@@ -300,6 +346,9 @@ __all__ = [
     "GoogleEmailUnverifiedError",
     "GoogleUnavailableError",
     "GoogleIdentityConflictError",
-    # Wave 3 PROPOSED (founder-gate):
+    # Wave 3 PROPOSED (founder-gate) — auth-builder (step 2a):
     "TrialAlreadyUsedError",
+    # Wave 3 PROPOSED (founder-gate) — api-routes-builder (step 2b):
+    "AlreadySubscribedError",
+    "NoActiveSubscriptionError",
 ]
