@@ -247,4 +247,115 @@ describe('OtpVerifyComponent', () => {
 
     vi.useRealTimers();
   });
+
+  // ── history.state fallback (federated-remote regression) ──────────────────
+  // /otp-verify is a Native Federation lazy remote. By the time it instantiates,
+  // getCurrentNavigation() is null (navigation already settled). history.state
+  // still carries { phone } — this test covers the real-world loading path.
+
+  it('history.state fallback: getCurrentNavigation null + history.state.phone set → no redirect, onSubmit uses history phone', async () => {
+    // Arrange: fresh module with getCurrentNavigation returning null
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [OtpVerifyComponent, NoopAnimationsModule],
+      providers: [
+        provideRouter([
+          { path: 'login', children: [] },
+          { path: 'dashboard', children: [] },
+        ]),
+        provideHttpClient(withFetch()),
+        provideHttpClientTesting(),
+      ],
+    }).compileComponents();
+
+    const r   = TestBed.inject(Router);
+    const hm  = TestBed.inject(HttpTestingController);
+    const spy = vi.spyOn(r, 'navigate');
+
+    // Simulate federated reality: navigation has settled → getCurrentNavigation() is null
+    vi.spyOn(r, 'getCurrentNavigation').mockReturnValue(null);
+
+    // history.state carries the phone (set by the Angular router before the remote chunk loads)
+    const originalState = window.history.state;
+    Object.defineProperty(window.history, 'state', {
+      value: { phone: '+919876543210' },
+      configurable: true,
+      writable: true,
+    });
+
+    const histFixture = TestBed.createComponent(OtpVerifyComponent);
+    const histComp    = histFixture.componentInstance;
+    histFixture.detectChanges();
+
+    // Assert: no redirect to /login
+    expect(spy).not.toHaveBeenCalledWith(['/login']);
+
+    // Assert: onSubmit sends OTP with the history.state phone
+    histComp.onOtpCompleted('654321');
+    histComp.onSubmit();
+
+    const verifyReq = hm.expectOne('/api/v1/auth/otp/verify');
+    expect(verifyReq.request.body).toEqual({ phone: '+919876543210', otp: '654321' });
+    verifyReq.flush(FAKE_VERIFY_RESP);
+
+    const meReq = hm.expectOne('/api/v1/auth/me');
+    meReq.flush(FAKE_ME_RESP);
+
+    // Cleanup
+    histFixture.destroy();
+    hm.verify();
+    Object.defineProperty(window.history, 'state', {
+      value: originalState,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  it('deep-link guard: both getCurrentNavigation null AND history.state has no phone → redirects to /login', async () => {
+    // Arrange: fresh module — both phone sources absent
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [OtpVerifyComponent, NoopAnimationsModule],
+      providers: [
+        provideRouter([
+          { path: 'login', children: [] },
+          { path: 'dashboard', children: [] },
+        ]),
+        provideHttpClient(withFetch()),
+        provideHttpClientTesting(),
+      ],
+    }).compileComponents();
+
+    const r   = TestBed.inject(Router);
+    const hm  = TestBed.inject(HttpTestingController);
+    const spy = vi.spyOn(r, 'navigate');
+
+    vi.spyOn(r, 'getCurrentNavigation').mockReturnValue(null);
+
+    const originalState = window.history.state;
+    Object.defineProperty(window.history, 'state', {
+      value: {},   // no phone key
+      configurable: true,
+      writable: true,
+    });
+
+    const dlFixture = TestBed.createComponent(OtpVerifyComponent);
+    dlFixture.componentInstance;
+    dlFixture.detectChanges();
+
+    // Assert: redirected to /login
+    expect(spy).toHaveBeenCalledWith(['/login']);
+
+    // Assert: no OTP API call made
+    hm.expectNone('/api/v1/auth/otp/verify');
+
+    // Cleanup
+    dlFixture.destroy();
+    hm.verify();
+    Object.defineProperty(window.history, 'state', {
+      value: originalState,
+      configurable: true,
+      writable: true,
+    });
+  });
 });

@@ -159,13 +159,20 @@ export class OtpVerifyComponent implements OnInit, OnDestroy {
   private intervalId?: ReturnType<typeof setInterval>;
 
   ngOnInit(): void {
-    const state = this.router.getCurrentNavigation()?.extras?.state as
+    // /otp-verify is a Native Federation lazy remote: by the time this remote chunk
+    // loads and the component instantiates, the navigation has COMPLETED, so
+    // router.getCurrentNavigation() is null. history.state survives the settled
+    // navigation and still carries the { phone } passed by login/signup.
+    const navState = this.router.getCurrentNavigation()?.extras?.state as
       | { phone?: string }
       | undefined;
-    if (state?.phone) {
-      this.phone = state.phone;
+    const histState = history.state as { phone?: string } | undefined;
+    const phone = navState?.phone ?? histState?.phone;
+
+    if (phone) {
+      this.phone = phone;
     } else {
-      // No phone in nav state — the user deep-linked here directly. Send them back.
+      // No phone from either source — the user deep-linked here directly.
       void this.router.navigate(['/login']);
       return;
     }
