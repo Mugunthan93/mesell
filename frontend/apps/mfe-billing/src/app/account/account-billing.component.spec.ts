@@ -10,31 +10,41 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import type { Mock } from 'vitest';
 import { of, throwError } from 'rxjs';
+import { Directive } from '@angular/core';
 
 import { BILLING_STRINGS } from '../billing.constants';
 import type { BillingSubscriptionResponse, BillingErrorShape } from '../billing.model';
 
 // ─── Mock factories ────────────────────────────────────────────────────────────
 
+// Use Mock<Procedure> (= Mock<(...args: any[]) => any>) rather than
+// ReturnType<typeof vi.fn> which resolves to Mock<Procedure | Constructable>
+// (the constraint, not the default). The union is NOT callable under Angular's
+// strict compiler → TS2348. Mock<Procedure> IS callable and still exposes all
+// vi.fn mock methods (.mockReturnValue, .mock.calls, etc.).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type MockFn = Mock<(...args: any[]) => any>;
+
 type BillingApiMock = {
-  getSubscription: ReturnType<typeof vi.fn>;
-  cancel: ReturnType<typeof vi.fn>;
+  getSubscription: MockFn;
+  cancel: MockFn;
 };
 
 type AuthMock = {
-  refreshUser: ReturnType<typeof vi.fn>;
+  refreshUser: MockFn;
 };
 
 type ConfirmMock = {
-  confirm: ReturnType<typeof vi.fn>;
+  confirm: MockFn;
 };
 
 type ToastMock = {
-  success: ReturnType<typeof vi.fn>;
-  warn: ReturnType<typeof vi.fn>;
-  info: ReturnType<typeof vi.fn>;
-  error: ReturnType<typeof vi.fn>;
+  success: MockFn;
+  warn: MockFn;
+  info: MockFn;
+  error: MockFn;
 };
 
 function makeBillingMock(): BillingApiMock {
@@ -75,20 +85,32 @@ function makeActiveSub(overrides: Partial<BillingSubscriptionResponse> = {}): Bi
 }
 
 // ─── Component proxy class ─────────────────────────────────────────────────────
+//
+// @Directive(standalone:true) suppresses NG2007 ("class is using Angular features but is
+// not decorated") which the Angular compiler fires for any class with lifecycle hooks
+// (ngOnInit, ngOnDestroy) in an Angular-compiled file. The empty selector ensures nothing
+// is matched in any template — this decorator only appeases the compiler in tests.
 
+@Directive({ standalone: true })
 class AccountBillingProxy {
+  billing!: BillingApiMock;
+  auth!: AuthMock;
+  confirm!: ConfirmMock;
+  toast!: ToastMock;
+
   loading = true;
   subscription: BillingSubscriptionResponse | null = null;
   billingUnavailable = false;
   errorMessage = '';
   cancelPending = false;
 
-  constructor(
-    private billing: BillingApiMock,
-    private auth: AuthMock,
-    private confirm: ConfirmMock,
-    private toast: ToastMock,
-  ) {}
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  constructor(...args: any[]) {
+    this.billing = args[0];
+    this.auth    = args[1];
+    this.confirm = args[2];
+    this.toast   = args[3];
+  }
 
   ngOnInit(): void {
     this._loadSubscription();

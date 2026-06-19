@@ -14,8 +14,9 @@
  */
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import type { Mock } from 'vitest';
 import { Subject, of, throwError } from 'rxjs';
-import { EventEmitter } from '@angular/core';
+import { Directive, EventEmitter } from '@angular/core';
 
 import { BILLING_STRINGS, TIER_DISPLAY } from '../billing.constants';
 import type { CheckoutState, EntitlementLiteral, SubscribableTier } from '../billing.model';
@@ -35,28 +36,36 @@ const VALID_STATES: CheckoutState[] = [
 
 // ─── Mock factories ────────────────────────────────────────────────────────────
 
+// Use Mock<Procedure> (= Mock<(...args: any[]) => any>) rather than
+// ReturnType<typeof vi.fn> which resolves to Mock<Procedure | Constructable>
+// (the constraint, not the default). The union is NOT callable under Angular's
+// strict compiler → TS2348. Mock<Procedure> IS callable and still exposes all
+// vi.fn mock methods (.mockReturnValue, .mock.calls, etc.).
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type MockFn = Mock<(...args: any[]) => any>;
+
 type BillingApiMock = {
-  subscribe: ReturnType<typeof vi.fn>;
-  startTrial: ReturnType<typeof vi.fn>;
-  getSubscription: ReturnType<typeof vi.fn>;
-  cancel: ReturnType<typeof vi.fn>;
+  subscribe: MockFn;
+  startTrial: MockFn;
+  getSubscription: MockFn;
+  cancel: MockFn;
 };
 
 type AuthServiceMock = {
-  entitlement: ReturnType<typeof vi.fn>;
-  currentUser: ReturnType<typeof vi.fn>;
-  refreshUser: ReturnType<typeof vi.fn>;
+  entitlement: MockFn;
+  currentUser: MockFn;
+  refreshUser: MockFn;
 };
 
 type RazorpayCheckoutMock = {
-  openWidget: ReturnType<typeof vi.fn>;
+  openWidget: MockFn;
 };
 
 type ToastMock = {
-  success: ReturnType<typeof vi.fn>;
-  warn: ReturnType<typeof vi.fn>;
-  info: ReturnType<typeof vi.fn>;
-  error: ReturnType<typeof vi.fn>;
+  success: MockFn;
+  warn: MockFn;
+  info: MockFn;
+  error: MockFn;
 };
 
 function makeAuthMock(entitlement: EntitlementLiteral = 'free'): AuthServiceMock {
@@ -94,27 +103,39 @@ function makeToastMock(): ToastMock {
 // ─── Component proxy class ─────────────────────────────────────────────────────
 // Since PlansComponent uses inject(), we test its logic indirectly through a proxy.
 // We replicate the state machine logic in a testable plain-class form.
+//
+// @Directive(standalone:true) suppresses NG2007 ("class is using Angular features but is
+// not decorated") which the Angular compiler fires for any class with lifecycle hooks
+// (ngOnDestroy) in an Angular-compiled file. The empty selector ensures nothing is
+// matched in any template — this decorator only appeases the compiler in tests.
 
+@Directive({ standalone: true })
 class PlansStateProxy {
+  billing!: BillingApiMock;
+  auth!: AuthServiceMock;
+  rzp!: RazorpayCheckoutMock;
+  toast!: ToastMock;
+
   checkoutState: CheckoutState = 'idle';
   errorMessage = '';
   activeTier: SubscribableTier | null = null;
   billingUnavailable = false;
   trialUnavailable = false;
   trialInProgress = false;
-  private _priorEntitlement: EntitlementLiteral = 'free';
-  private _pollSub: { unsubscribe: () => void } | null = null;
-  private _activated = false;
+  _priorEntitlement: EntitlementLiteral = 'free';
+  _pollSub: { unsubscribe: () => void } | null = null;
+  _activated = false;
 
   readonly tiers = TIER_DISPLAY;
   readonly STRINGS = BILLING_STRINGS;
 
-  constructor(
-    public billing: BillingApiMock,
-    public auth: AuthServiceMock,
-    public rzp: RazorpayCheckoutMock,
-    public toast: ToastMock,
-  ) {}
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  constructor(...args: any[]) {
+    this.billing = args[0];
+    this.auth    = args[1];
+    this.rzp     = args[2];
+    this.toast   = args[3];
+  }
 
   subscribe(tier: SubscribableTier): void {
     const state = this.checkoutState;
