@@ -687,6 +687,104 @@ describe('AuthService._doSilentRefresh() — refresh-401 → forceLogout (D-C fi
   });
 });
 
+// ── refreshShared() — cross-context debounce backstop (B03) ──────────────────
+
+describe('refreshShared() — cross-context debounce backstop (B03)', () => {
+  it('a second refresh trigger within REFRESH_DEBOUNCE_MS of a completed refresh does NOT fire a second authApi.refresh()', () => {
+    vi.useFakeTimers();
+
+    TestBed.configureTestingModule({
+      providers: [
+        AuthService,
+        AuthApiService,
+        provideHttpClient(withFetch()),
+        provideHttpClientTesting(),
+        provideRouter([{ path: 'login', children: [] }]),
+      ],
+    });
+
+    const service    = TestBed.inject(AuthService);
+    const controller = TestBed.inject(HttpTestingController);
+
+    // Establish a live session (token must be non-null for debounce to trigger)
+    service.setSession('live-token', { phone: '+919876543210' });
+
+    // First call to refreshShared() — no debounce window yet (_lastRefreshAt=0)
+    const tokens1: string[] = [];
+    service.refreshShared().subscribe((r) => tokens1.push(r.access_token));
+
+    // Exactly ONE /auth/refresh HTTP call
+    const firstRefreshReqs = controller.match('/api/v1/auth/refresh');
+    expect(firstRefreshReqs.length).toBe(1);
+    firstRefreshReqs[0].flush({ access_token: 'fresh-token', expires_in: 900, token_type: 'bearer' });
+
+    // First subscriber received the minted token
+    expect(tokens1).toEqual(['fresh-token']);
+
+    // Advance time by LESS than REFRESH_DEBOUNCE_MS (2 000 ms) — still within the window
+    vi.advanceTimersByTime(1_500);
+
+    // Second call to refreshShared() — within debounce window, current in-memory token exists
+    // ('live-token' set by setSession above — debounce reads _token() NOT the just-minted token)
+    const tokens2: string[] = [];
+    service.refreshShared().subscribe((r) => tokens2.push(r.access_token));
+
+    // CRITICAL: NO second HTTP call must have been made
+    const secondRefreshReqs = controller.match('/api/v1/auth/refresh');
+    expect(secondRefreshReqs.length).toBe(0);
+
+    // Second subscriber gets the current in-memory token (not undefined / empty)
+    expect(tokens2.length).toBe(1);
+    // The debounce short-circuit returns the current _token() value ('live-token')
+    expect(tokens2[0]).toBe('live-token');
+
+    controller.verify();
+    vi.useRealTimers();
+  });
+
+  it('a refresh trigger AFTER REFRESH_DEBOUNCE_MS elapses fires a new authApi.refresh()', () => {
+    vi.useFakeTimers();
+
+    TestBed.configureTestingModule({
+      providers: [
+        AuthService,
+        AuthApiService,
+        provideHttpClient(withFetch()),
+        provideHttpClientTesting(),
+        provideRouter([{ path: 'login', children: [] }]),
+      ],
+    });
+
+    const service    = TestBed.inject(AuthService);
+    const controller = TestBed.inject(HttpTestingController);
+
+    // Establish a live session
+    service.setSession('live-token', { phone: '+919876543210' });
+
+    // First refresh
+    service.refreshShared().subscribe();
+    const firstReqs = controller.match('/api/v1/auth/refresh');
+    expect(firstReqs.length).toBe(1);
+    firstReqs[0].flush({ access_token: 'first-fresh', expires_in: 900, token_type: 'bearer' });
+
+    // Advance PAST the debounce window (>2 000 ms)
+    vi.advanceTimersByTime(2_500);
+
+    // Second refresh — debounce window has expired → must fire a new HTTP call
+    const tokens2: string[] = [];
+    service.refreshShared().subscribe((r) => tokens2.push(r.access_token));
+
+    const secondReqs = controller.match('/api/v1/auth/refresh');
+    expect(secondReqs.length).toBe(1);
+    secondReqs[0].flush({ access_token: 'second-fresh', expires_in: 900, token_type: 'bearer' });
+
+    expect(tokens2).toEqual(['second-fresh']);
+
+    controller.verify();
+    vi.useRealTimers();
+  });
+});
+
 // ── bootstrap racing _doSilentRefresh → ONE authApi.refresh ───────────────────
 
 describe('AuthService — bootstrap racing _doSilentRefresh', () => {

@@ -2,12 +2,14 @@ import { Injectable, signal, computed, inject, OnDestroy } from '@angular/core';
 import { Router } from '@angular/router';
 import {
   Observable,
+  of,
   switchMap,
   map,
   catchError,
   EMPTY,
   shareReplay,
   finalize,
+  tap,
 } from 'rxjs';
 import { AuthApiService } from './auth-api.service';
 import type { MeResponse, RefreshResponse } from './auth-api.service';
@@ -59,6 +61,15 @@ function meToUser(me: MeResponse): AuthUser {
  */
 const MIN_REFRESH_DELAY_MS = 5_000;
 
+/**
+ * Cross-context refresh debounce (ms). A refreshShared() call arriving within this window
+ * AFTER a successful refresh returns the just-minted token WITHOUT a network call.
+ * Collapses a burst from multiple AuthService instances (broken federation singleton dedup)
+ * into ONE POST /auth/refresh per rotation window. Distinct from MIN_REFRESH_DELAY_MS.
+ * FE-D5 compliant: no localStorage/sessionStorage — purely in-memory.
+ */
+const REFRESH_DEBOUNCE_MS = 2_000;
+
 @Injectable({ providedIn: 'root' })
 export class AuthService implements OnDestroy {
   // FE-D5: in-memory token only — never persisted to localStorage/sessionStorage
@@ -86,6 +97,13 @@ export class AuthService implements OnDestroy {
    * Reset to false by setSession() so a fresh login window is valid.
    */
   private _loggedOut = false;
+
+  /**
+   * Timestamp (Date.now()) of the last successful refresh completion.
+   * Used by the cross-context debounce backstop (B03) in refreshShared().
+   * Initial value 0 means "no refresh has ever completed" → debounce inactive on first call.
+   */
+  private _lastRefreshAt = 0;
 
   /** AuthApiService injected via DI (avoids NG0203 outside injection context). */
   private readonly authApi = inject(AuthApiService);
@@ -182,11 +200,29 @@ export class AuthService implements OnDestroy {
    * Emits RefreshResponse so callers can read access_token/expires_in.
    */
   refreshShared(): Observable<RefreshResponse> {
+    // ── Cross-context debounce backstop (B03) ────────────────────────────────
+    // If a refresh completed within REFRESH_DEBOUNCE_MS ago AND we have a live
+    // token, short-circuit without a network call. Collapses a burst from
+    // multiple AuthService instances (broken @mesell/core federation singleton)
+    // into one POST /auth/refresh per rotation window.
+    const currentToken = this._token();
+    if (currentToken && Date.now() - this._lastRefreshAt < REFRESH_DEBOUNCE_MS) {
+      return of({
+        access_token: currentToken,
+        expires_in: 0,
+        token_type: 'bearer' as const,
+      });
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     if (this._refreshInFlight) {
       return this._refreshInFlight;
     }
 
     this._refreshInFlight = this.authApi.refresh().pipe(
+      tap(() => {
+        this._lastRefreshAt = Date.now(); // arm debounce window (B03)
+      }),
       shareReplay({ bufferSize: 1, refCount: false }),
       finalize(() => {
         // Reset in-flight on complete OR error — the NEXT refresh starts fresh.
