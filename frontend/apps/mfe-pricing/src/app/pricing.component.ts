@@ -60,19 +60,14 @@ export type PricingErrorState =
   ],
 
   // ─── Component-scoped CSS ─────────────────────────────────────────────────
-  // All values use var(--mee-*) tokens. Zero hardcoded hex (lane guard).
-  // Undefined tokens defined locally in :host per wave6b dashboard-styler lesson.
-  // libs/design-tokens/_tokens.css is FROZEN — not touched here.
+  // All values use var(--mee-*) tokens only. Zero hardcoded hex (lane guard).
+  // --mee-color-surface-variant is defined in Layer-1 _tokens.css — NO :host override.
+  // No !important — specificity achieved via compound selectors.
   styles: [`
-    :host {
-      /* --mee-color-surface-variant missing from Layer 1 — local scope only.
-         Escalation: lead queues a frozen-surface Wave-A amendment. */
-      --mee-color-surface-variant: #f2f6fa;
-    }
 
     /* ── Spinner ────────────────────────────────────────────────────────── */
-    /* MeeSpinnerComponent is a queued ui-kit amendment (NOT yet available).
-       Local spinner bridge used until the ui-kit component lands. */
+    /* MeeSpinnerComponent is queued as a ui-kit amendment (NOT yet available).
+       Local spinner bridge remains until the ui-kit component lands. */
     .mee-pricing__spinner {
       display: inline-block;
       width: 32px;
@@ -100,19 +95,25 @@ export type PricingErrorState =
       50%       { opacity: 0.35; }
     }
 
-    /* ── P&L table ──────────────────────────────────────────────────────── */
+    /* ── Settlement breakdown table ─────────────────────────────────────── */
     .mee-pricing__table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.875rem; /* 14px */
+      font-size: 0.875rem; /* 14px — readable at 360px */
     }
 
-    .mee-pricing__table td {
+    .mee-pricing__table td,
+    .mee-pricing__table th {
       padding: var(--mee-space-2) 0;
       vertical-align: middle;
     }
 
-    /* Label column: left-align, muted colour */
+    /* th[scope=row] resets browser default bold */
+    .mee-pricing__table th.mee-pricing__table-label {
+      font-weight: 400;
+    }
+
+    /* Label column: left-align, muted colour — deduction rows are subordinate */
     .mee-pricing__table .mee-pricing__table-label {
       color: var(--mee-color-on-surface-muted);
       text-align: left;
@@ -127,73 +128,99 @@ export type PricingErrorState =
       white-space: nowrap;
     }
 
-    /* Body rows (non-profit) */
+    /* Deduction rows (Commission / GST / TDS) — subtle bottom border */
     .mee-pricing__row {
       border-bottom: 1px solid var(--mee-color-outline);
     }
 
-    /* Profit summary row — thicker border above, semibold text */
+    /* ── Estimated Bank Settlement headline row ──────────────────────────
+       This is the answer the seller came for — visually dominant.
+       Thick top separator, larger label text, primary brand colour on value.  */
     .mee-pricing__row--profit {
-      border-bottom: 2px solid var(--mee-color-outline);
+      border-top: 2px solid var(--mee-color-outline);
+      border-bottom: none;
     }
 
     .mee-pricing__row--profit .mee-pricing__table-label {
       color: var(--mee-color-on-surface);
-      font-weight: 600;
+      font-weight: 700;
+      font-size: 1rem; /* 16px — larger than deduction rows */
+      padding-top: var(--mee-space-3);
     }
 
     .mee-pricing__row--profit .mee-pricing__table-value {
-      font-weight: 600;
+      font-weight: 700;
+      font-size: 1.25rem; /* 20px — headline number */
+      color: var(--mee-color-primary);
+      padding-top: var(--mee-space-3);
     }
 
-    /* Profit % row — last row, no bottom border */
-    .mee-pricing__row--profit-pct {
-      border-bottom: none;
+    /* Settlement positive — compound selector, no !important */
+    .mee-pricing__row--profit .mee-pricing__table-value.mee-pricing__value--positive {
+      color: var(--mee-color-success);
     }
 
-    /* Semantic colour classes (token-only, no hardcoded hex) */
-    .mee-pricing__value--positive {
-      color: var(--mee-color-success) !important;
+    /* Settlement negative — warning red; compound selector, no !important */
+    .mee-pricing__row--profit .mee-pricing__table-value.mee-pricing__value--negative {
+      color: var(--mee-color-error);
     }
 
-    .mee-pricing__value--negative {
-      color: var(--mee-color-error) !important;
-    }
-
-    /* 360px: ensure table label doesn't truncate — allow wrap */
+    /* 360px: label text wraps instead of truncating; slightly smaller deduction font */
     @media (max-width: 400px) {
       .mee-pricing__table-label {
-        max-width: 140px;
+        max-width: 160px;
         word-break: break-word;
       }
 
       .mee-pricing__table {
-        font-size: 0.8125rem; /* 13px at 360px */
+        font-size: 0.8125rem; /* 13px for deduction rows at 360px */
+      }
+
+      /* Headline row keeps a readable minimum even at 360px */
+      .mee-pricing__row--profit .mee-pricing__table-label {
+        font-size: 0.9375rem; /* 15px */
+      }
+
+      .mee-pricing__row--profit .mee-pricing__table-value {
+        font-size: 1.125rem; /* 18px — still clearly larger than deduction rows */
       }
     }
 
-    /* ── Alert chips ────────────────────────────────────────────────────── */
+    /* ── Alert chip — NEGATIVE_SETTLEMENT warning ───────────────────────── */
     .mee-pricing__alert-chip {
       display: flex;
       align-items: flex-start;
       gap: var(--mee-space-2);
-      padding: var(--mee-space-2) var(--mee-space-3);
+      padding: var(--mee-space-3) var(--mee-space-3);
       border-radius: var(--mee-radius-sm);
       font-size: 0.8125rem; /* 13px */
-      line-height: 1.4;
+      line-height: 1.5;
       min-height: 44px; /* WCAG 2.5.8 touch target */
     }
 
+    /* Warning chip — amber background, left accent border */
     .mee-pricing__alert-chip--warning {
       background: var(--mee-color-warning-light);
       color: var(--mee-color-warning);
       border-left: 3px solid var(--mee-color-warning);
     }
 
+    /* Info chip — kept for future use, zero hardcoded hex */
     .mee-pricing__alert-chip--info {
       background: var(--mee-color-info-light);
       color: var(--mee-color-info);
       border-left: 3px solid var(--mee-color-info);
+    }
+
+    /* ── Disclaimer — muted fine-print below settlement headline ────────── */
+    /* Renders server-sent verbatim Meesho disclaimer. NOT a CTA — never primary. */
+    .mee-pricing__disclaimer {
+      font-size: 0.75rem; /* 12px */
+      line-height: 1.6;
+      color: var(--mee-color-on-surface-muted);
+      margin-top: var(--mee-space-3);
+      padding-top: var(--mee-space-2);
+      border-top: 1px solid var(--mee-color-outline);
     }
 
     /* ── Empty / first-visit state ──────────────────────────────────────── */
@@ -230,7 +257,7 @@ export type PricingErrorState =
       color: var(--mee-color-on-surface-muted);
     }
 
-    /* ── Form layout at 360px ───────────────────────────────────────────── */
+    /* ── Form layout — mobile-first single column ───────────────────────── */
     .mee-pricing__form {
       display: flex;
       flex-direction: column;
@@ -238,17 +265,17 @@ export type PricingErrorState =
       padding: var(--mee-space-3);
     }
 
-    /* ── Result region wrapper — used for focus target ──────────────────── */
+    /* ── Result region — programmatic focus target (no visible ring) ─────── */
     .mee-pricing__result-region {
-      outline: none; /* focus ring suppressed for programmatic focus only */
+      outline: none;
     }
 
-    /* ── 44px minimum touch targets on interactive buttons ─────────────── */
+    /* ── Calculate button wrapper — enforces 44px touch target ─────────── */
     .mee-pricing__calculate-area {
       min-height: 44px;
     }
 
-    /* ── Calculating state wrapper ─────────────────────────────────────── */
+    /* ── Calculating state ──────────────────────────────────────────────── */
     .mee-pricing__calculating {
       display: flex;
       align-items: center;
@@ -262,13 +289,6 @@ export type PricingErrorState =
       color: var(--mee-color-on-surface-muted);
     }
 
-    /* ── Disclaimer ─────────────────────────────────────────────────────── */
-    .mee-pricing__disclaimer {
-      font-size: 0.75rem;
-      color: var(--mee-color-on-surface-muted);
-      margin-top: var(--mee-space-2);
-    }
-
     /* ── Section headings ───────────────────────────────────────────────── */
     .mee-pricing__section-title {
       font-size: 0.9375rem;
@@ -277,7 +297,7 @@ export type PricingErrorState =
       margin-bottom: var(--mee-space-1);
     }
 
-    /* ── Results region top: badge + alerts row ─────────────────────────── */
+    /* ── Results footer: badge row below table ──────────────────────────── */
     .mee-pricing__results-footer {
       padding-top: var(--mee-space-3);
       display: flex;
