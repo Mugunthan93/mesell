@@ -1,6 +1,48 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-19 (meesell-services-builder) — W2b settlement engine (census-confirmed) ===
+Phase: V1 Feature 7 — Price Calculator rework, WAVE 2 step-2 (service/engine slice)
+Branch: feature/price-calc-rework/w2-backend (off step-1 77479b1)
+Done:
+- domain.py REWRITTEN: NEW SettlementBreakdown (9 Decimal fields); PricingCalc remapped to
+  confirmed column set (selling_price/shipping/total_price/commission_pct/commission_fees/
+  gst_on_shipping/tds/tcs/estimated_bank_settlement/meesho_leaf_id); PricingAlert.code Literal
+  narrowed to ["NEGATIVE_SETTLEMENT"] only. DELETED PnLBreakdown.
+- service.py REWRITTEN: NEW pure _compute_settlement(*, selling_price, shipping, commission_pct);
+  NEW calculate() orchestration (ownership → get_product_meesho_leaf_id → get_shipping →
+  commission default/override → _compute_settlement → single-alert → insert_calc → response);
+  _generate_alerts down to one rule; _q now ROUND_HALF_UP. DELETED all wrong-model code:
+  WDRP_DELTA, SHIPPING_BRACKET/FLAT/HIGH, DEFAULT_GST/TCS/TDS/LOGISTICS/FIXED, _bracketed_shipping,
+  _estimate_payout, the 106→47 calibration docstring/constants. DEFAULT_COMMISSION_PCT now 0.
+- catalog/service.py ADDITIVE: get_product_meesho_leaf_id(product_id, user_id, *, db) -> str
+  (product → category_id → meesho_leaf_id, user-scoped, ProductNotFoundError on miss/cross-tenant).
+- category/service.py ADDITIVE: get_meesho_leaf_id(category_id, db) -> str | None (mirrors get_super_id).
+- category/repository.py ADDITIVE: get_meesho_leaf_id_uncached (mirrors get_super_id_uncached).
+- tests: NEW test_settlement_formula.py (9 tests incl. ₹61.78 real-order + 85.06 census + N=80
+  census-wide + single-alert). DELETED obsolete test_pnl_formula.py / test_alerts.py /
+  test_estimator_calibration.py (wrong-model pure-function tests).
+Tests: 9 passed / 0 failed (toolchain master .venv 3.11, no DB needed — pure arithmetic). ruff clean.
+       Dead-token grep over domain.py + service.py = ZERO.
+Migration: step-1 d4e5f6a7b8c9 (additive nullable columns) not applied locally — engine tests are
+           DB-free; alembic upgrade deferred to api-routes-builder / integration env.
+In progress: none
+Blockers: none
+Next: W2 step-3 (api-routes-builder) — schemas.py (PriceCalcRequest.selling_price + new
+      PriceCalcResponse incl. disclaimer), repository.insert_calc new signature, router 422 mapping
+      for UnknownCategoryError, exceptions.CategoryPricingUnavailableError, router-level tests.
+Hand-offs:
+- api-routes-builder: my calculate() calls pricing_repo.insert_calc(db, product_id, selling_price,
+  shipping, total_price, commission_pct, commission_fees, gst_on_shipping, tds, tcs,
+  estimated_bank_settlement, meesho_leaf_id) and constructs PriceCalcResponse(selling_price, shipping,
+  total_price, commission_pct, commission_fees, gst_on_shipping, tds, tcs, estimated_bank_settlement,
+  disclaimer, alerts, calculated_at) + PriceCalcAlert(code="NEGATIVE_SETTLEMENT", message_id=
+  "pricing.alert.negative_settlement", severity="warning"). schemas.py + repository.py must match
+  these exactly or service.py won't link.
+- i18n owner (non-blocking): add pricing.alert.negative_settlement key; pricing.alert.negative_payout
+  is retired.
+=========
+
 === UPDATE: 2026-06-19 (meesell-database-builder) — W2a pricing_calc confirmed-model columns ===
 Phase: price-calc-rework / W2 database slice (section-7)
 Done:

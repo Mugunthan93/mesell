@@ -1151,6 +1151,40 @@ async def assert_product_ownership(
         raise ProductNotFoundError()
 
 
+async def get_product_meesho_leaf_id(
+    product_id: UUID,
+    user_id: UUID,
+    *,
+    db: AsyncSession,
+) -> str:
+    """Resolve a product to its category's Meesho leaf id (``sscat_id``).
+
+    Cross-module call from ``pricing.service.calculate`` (W2 — price
+    calculator).  Resolves product → ``category_id`` →
+    ``categories.meesho_leaf_id``, scoped to ``user_id``.  This is the
+    single-source-of-truth path that keys the per-category shipping /
+    commission lookup; the price-calc API does NOT accept a category from
+    the client.
+
+    Tenancy: enforced via ``find_by_id`` (user-scoped + soft-delete filter);
+    a missing / cross-tenant / soft-deleted product collapses to
+    :class:`ProductNotFoundError` (404 / ``catalog.product.not_found``) per
+    the §10 leak-protection rule.
+
+    Raises:
+        ProductNotFoundError: product missing, cross-tenant, soft-deleted,
+            OR the category row carries no ``meesho_leaf_id`` (data-integrity
+            miss — a seeded leaf category always has one).
+    """
+    row = await catalog_repo.find_by_id(db, user_id, product_id)
+    if row is None:
+        raise ProductNotFoundError()
+    leaf_id = await category_service.get_meesho_leaf_id(row.category_id, db=db)
+    if leaf_id is None:
+        raise ProductNotFoundError()
+    return leaf_id
+
+
 async def get_product_for_export(
     product_id: UUID,
     user_id: UUID,
