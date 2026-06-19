@@ -35,3 +35,15 @@ html, body {
   color: var(--mee-color-on-surface);
   font-family: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
 }
+
+/* A11y: consistent focus ring for non-PrimeNG focusable elements.
+   PrimeNG components inherit the ring via MeeSellPreset semantic.focusRing
+   (which maps to --p-focus-ring-* at runtime).
+   This rule covers raw <a>, <button>, <input type="submit">, skip-links,
+   and custom tabindex elements that do NOT go through PrimeNG.
+   :focus-visible only (not :focus) — suppresses the ring on mouse click,
+   preserves it for keyboard and assistive-technology navigation. */
+:focus-visible {
+  outline: var(--mee-focus-ring-width) var(--mee-focus-ring-style) var(--mee-focus-ring-color);
+  outline-offset: var(--mee-focus-ring-offset);
+}

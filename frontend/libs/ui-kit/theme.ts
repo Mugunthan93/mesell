@@ -20,6 +20,13 @@ export const MeeSellPreset = definePreset(Aura, {
       900: '#6e2e07',
       950: '#4a1d03',
     },
+    focusRing: {
+      width:  'var(--mee-focus-ring-width)',
+      style:  'var(--mee-focus-ring-style)',
+      color:  'var(--mee-focus-ring-color)',
+      offset: 'var(--mee-focus-ring-offset)',
+      shadow: 'none',
+    },
     colorScheme: {
       light: {
         surface: {
