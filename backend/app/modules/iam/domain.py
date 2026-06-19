@@ -137,6 +137,52 @@ class UserProfile:
 
 
 @dataclass(frozen=True)
+class BillingStatus:
+    """Returned by ``iam.service.get_billing_status`` — backs ``/auth/me`` and
+    ``GET /billing/subscription`` (Razorpay Wave 3).
+
+    Carries the DB-fresh plan facts plus the RESOLVED effective entitlement so
+    the two read surfaces agree (F7 — entitlement read DB-fresh, not the JWT).
+
+    Attributes:
+        plan: ``users.plan`` (DB-fresh — the full Pricing v2 vocabulary).
+        entitlement: The resolved effective tier from
+            ``core.plan_guard.resolve_entitlement`` (``free``/``starter``/
+            ``pro``/``business``; annual→base, ltd/trial→pro).
+        status: The latest ``subscriptions.status``, or ``None`` for a
+            free/trial user with no sub row.
+        current_period_end: End of the current paid period; ``None`` =
+            perpetual (LTD) or no sub.
+        cancel_scheduled: True when the latest sub has ``cancel_scheduled_at``
+            set (a cancel-at-cycle-end is pending).
+        tier_label: Human label for the FE (e.g. ``"Pro"``, ``"Pro (Annual)"``,
+            ``"Lifetime"``, ``"Free"``).
+        trial_ends_at: The §3.7 14-day trial expiry; ``None`` if no trial.
+    """
+
+    plan: str
+    entitlement: str
+    status: str | None
+    current_period_end: datetime | None
+    cancel_scheduled: bool
+    tier_label: str
+    trial_ends_at: datetime | None
+
+
+@dataclass(frozen=True)
+class StartTrialResult:
+    """Returned by ``iam.service.start_trial`` (Razorpay Wave 3, §3.7).
+
+    Attributes:
+        trial_ends_at: The freshly set ``users.trial_ends_at`` (now + 14 days).
+        entitlement: Always ``"pro"`` — the trial grants Pro-level entitlement.
+    """
+
+    trial_ends_at: datetime
+    entitlement: str
+
+
+@dataclass(frozen=True)
 class WebhookCaptureResult:
     """Returned by ``iam.service.capture_razorpay_webhook``.
 

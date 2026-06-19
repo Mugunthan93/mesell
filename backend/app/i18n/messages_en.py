@@ -87,6 +87,13 @@ VALIDATION_MESSAGES: dict[str, str] = {
     "auth.google.identity_conflict": (
         "This email is already linked to a different Google account. Please contact support."
     ),
+    # ── Razorpay Wave 3 billing (PROPOSED — §7.G founder-gate item) ──────
+    # Registered here so the resolver finds a human message; the exception
+    # class itself (iam.exceptions.TrialAlreadyUsedError) is a founder-gate
+    # add the lead carries at the merge gate.
+    "billing.trial.already_used": (
+        "You've already used your free Pro trial on this account."
+    ),
     # ── §8 customer (6 module-specific IDs) ──────────────────────────────
     "validation.pincode.invalid_format": (
         "Please enter a valid 6-digit pincode."

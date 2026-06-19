@@ -25,7 +25,7 @@ import json
 import logging
 import secrets
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from redis.asyncio import Redis
@@ -47,11 +47,13 @@ from app.core.auth import (
 from app.core.metrics import AUTH_TOKEN_REFRESH_FAILED
 from app.modules.iam import repository as iam_repo
 from app.modules.iam.domain import (
+    BillingStatus,
     OtpRecord,
     RefreshAllowlistEntry,
     RevokeResult,
     RotateRefreshResult,
     SendOtpResult,
+    StartTrialResult,
     UserProfile,
     VerifyOtpResult,
     WebhookCaptureResult,
@@ -63,6 +65,7 @@ from app.modules.iam.exceptions import (
     OtpAttemptsExceededError,
     OtpInvalidError,
     RefreshInvalidError,
+    TrialAlreadyUsedError,
     WebhookSignatureInvalidError,
 )
 from app.shared.config import settings
@@ -723,6 +726,155 @@ async def get_profile(user_id: UUID, db: AsyncSession) -> UserProfile:
         created_at=user.created_at,
         last_login_at=user.last_login_at,
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Razorpay Wave 3 — billing-status read + app-side trial (entitlement-shaped).
+#
+# Authored by the auth-builder (step 2a).  ``get_billing_status`` is the single
+# DB-fresh read both ``/auth/me`` and ``GET /billing/subscription`` consume so
+# the resolved entitlement is computed in ONE place (F7).  ``start_trial`` is
+# the §3.7 app-side trial grant — NO Razorpay call, idempotent one-per-phone.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_TRIAL_DAYS = 14
+"""14-day Pro trial window per Pricing v2 §5 / Razorpay spec §3.7."""
+
+#: ``users.plan`` → human label for the FE (Pricing v2 §5).
+_PLAN_LABELS: dict[str, str] = {
+    "free": "Free",
+    "starter": "Starter",
+    "pro": "Pro",
+    "pro_annual": "Pro (Annual)",
+    "business": "Business",
+    "business_annual": "Business (Annual)",
+    "ltd": "Lifetime",
+}
+
+
+async def get_billing_status(user_id: UUID, db: AsyncSession) -> BillingStatus:
+    """DB-FRESH billing/entitlement read backing ``/auth/me`` + ``GET
+    /billing/subscription`` (Razorpay Wave 3, F7).
+
+    Reads ``users.plan`` + ``users.trial_ends_at`` + the user's latest
+    ``subscriptions`` row, computes the resolved effective entitlement via
+    :func:`app.core.plan_guard.resolve_entitlement`, and returns a
+    :class:`BillingStatus`.  Read-only; emits no audit event.
+
+    A trialist (``plan='free'`` + a live ``trial_ends_at``) returns
+    ``plan='free'`` but ``entitlement='pro'`` — the F7 DB-fresh proof.
+    """
+    # Local import — keeps the plan_guard dependency off the module-load path
+    # and mirrors the core/auth lazy-import pattern already used in get_profile.
+    from app.core.plan_guard import resolve_entitlement
+
+    user = await iam_repo.get_user_by_id(db, user_id)
+    if user is None:
+        from app.core.auth import UserNotFoundError
+
+        raise UserNotFoundError()
+
+    entitlement = await resolve_entitlement(user_id=user_id, db=db)
+
+    # Latest subscription row (most-recent by created_at) for status surfacing.
+    stmt = (
+        select(Subscription)
+        .where(Subscription.user_id == user_id)
+        .order_by(Subscription.created_at.desc())
+        .limit(1)
+    )
+    sub = (await db.execute(stmt)).scalar_one_or_none()
+
+    sub_status = sub.status if sub is not None else None
+    current_period_end = sub.current_period_end if sub is not None else None
+    cancel_scheduled = bool(sub is not None and sub.cancel_scheduled_at is not None)
+
+    return BillingStatus(
+        plan=user.plan,
+        entitlement=entitlement,
+        status=sub_status,
+        current_period_end=current_period_end,
+        cancel_scheduled=cancel_scheduled,
+        tier_label=_PLAN_LABELS.get(user.plan, user.plan),
+        trial_ends_at=user.trial_ends_at,
+    )
+
+
+async def start_trial(user_id: UUID, db: AsyncSession) -> StartTrialResult:
+    """Grant the 14-day app-side Pro trial (Razorpay spec §3.7, Pricing v2 §5).
+
+    App-side ONLY — NO Razorpay call, NO ``subscriptions``/``payments``/
+    ``webhook_events`` row.  Sets ``users.trial_ends_at = now() + 14 days`` and
+    writes a business ``audit_events`` row (``billing.trial.started``).
+
+    Idempotent one-per-phone (Q3 ruling): rejects with
+    :class:`TrialAlreadyUsedError` (409) if the user has ALREADY consumed a
+    trial (``trial_ends_at`` already set — past OR future) OR already holds a
+    non-free plan OR any subscription row (a trial would be redundant).  The
+    one-per-PHONE bound is enforced transitively: the user_id IS the verified
+    phone identity (a phone maps to exactly one users row via the OTP gate), so
+    "one trial per user row" == "one trial per phone".
+
+    Raises:
+        TrialAlreadyUsedError: when a trial was already used / is redundant.
+        UserNotFoundError: when the principal row is gone (very rare).
+    """
+    user = await iam_repo.get_user_by_id(db, user_id)
+    if user is None:
+        from app.core.auth import UserNotFoundError
+
+        raise UserNotFoundError()
+
+    # Idempotency / redundancy guard.
+    if user.trial_ends_at is not None:
+        logger.info("start_trial: rejected (trial already used) user=%s", user_id)
+        raise TrialAlreadyUsedError()
+    if user.plan != "free":
+        logger.info(
+            "start_trial: rejected (non-free plan=%s — trial redundant) user=%s",
+            user.plan,
+            user_id,
+        )
+        raise TrialAlreadyUsedError(
+            detail="You already have a paid plan; no trial needed."
+        )
+
+    # Defensive: a free user with an existing sub row (created-but-unpaid) — a
+    # trial would muddy the entitlement; reject as redundant.
+    existing_sub = (
+        await db.execute(
+            select(func.count(Subscription.id)).where(
+                Subscription.user_id == user_id
+            )
+        )
+    ).scalar_one()
+    if int(existing_sub or 0) > 0:
+        logger.info(
+            "start_trial: rejected (existing subscription row) user=%s", user_id
+        )
+        raise TrialAlreadyUsedError(
+            detail="A subscription already exists on this account."
+        )
+
+    trial_ends_at = datetime.now(timezone.utc) + timedelta(days=_TRIAL_DAYS)
+    user.trial_ends_at = trial_ends_at
+    await db.flush()
+
+    # Business audit row — SAVEPOINT path (drop-on-failure; never poisons the
+    # trial grant).  user_id FK is visible (the user row pre-exists).
+    await _write_audit_direct(
+        user_id=user_id,
+        event_type="billing.trial.started",
+        db=db,
+        metadata={"trial_days": _TRIAL_DAYS},
+    )
+
+    logger.info(
+        "start_trial: granted 14-day Pro trial user=%s ends_at=%s",
+        user_id,
+        trial_ends_at.isoformat(),
+    )
+    return StartTrialResult(trial_ends_at=trial_ends_at, entitlement="pro")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

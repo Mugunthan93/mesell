@@ -97,19 +97,40 @@ class GoogleVerifyResponse(VerifyOtpResponse):
 
 
 class MeResponse(BaseModel):
-    """``GET /api/v1/auth/me`` 200 body."""
+    """``GET /api/v1/auth/me`` 200 body.
+
+    Razorpay Wave 3 widened ``plan`` from ``Literal["free"]`` to the full
+    Pricing v2 vocabulary and added ``trial_ends_at`` + ``entitlement`` so the
+    FE (Wave 5) can render plan state from ``/auth/me``.  ``plan`` is sourced
+    DB-FRESH from ``users.plan`` (founder ruling F7 — NOT the JWT claim);
+    ``entitlement`` is the RESOLVED effective tier from
+    ``core.plan_guard.resolve_entitlement`` (annual→base, ltd/trial→pro).
+
+    This is an ADDITIVE contract change — existing fields are unchanged; the
+    widened ``plan`` Literal and the two new optional fields are the only diff.
+    FE-coordination memo owed (``handoff_contract_razorpay.md``).
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
     user_id: UUID
     phone: str
-    plan: Literal["free"]
+    # Widened to the full Pricing v2 plan set (sourced DB-fresh per F7).
+    plan: Literal[
+        "free", "starter", "pro", "pro_annual", "business", "business_annual", "ltd"
+    ]
     created_at: datetime
     last_login_at: datetime | None = None
     # Cross-module fact sourced from the customer module's
     # ``get_onboarding_completeness`` surface (see router).  Resolves to
     # ``False`` for a brand-new seller with no profile row yet — never raises.
     onboarding_complete: bool = False
+    # ── Razorpay Wave 3 additions ──────────────────────────────────────────
+    # The 14-day Pro-trial expiry (Pricing v2 §5.1); ``None`` if no trial.
+    trial_ends_at: datetime | None = None
+    # The RESOLVED effective entitlement (the field the FE should gate UI on):
+    # annual cadences collapse to their base tier; ltd + a live trial → "pro".
+    entitlement: Literal["free", "starter", "pro", "business"] = "free"
 
 
 class WebhookCaptureResponse(BaseModel):

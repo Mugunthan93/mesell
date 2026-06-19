@@ -252,6 +252,40 @@ class GoogleIdentityConflictError(IamError):
         super().__init__(detail=detail)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Razorpay Wave 3 — PROPOSED billing exceptions (§7.G FOUNDER-GATE ITEM).
+#
+# ⚠ These ADD to the §7.G-LOCKED iam inventory and are therefore a founder-gate
+# item per repo-management master plan §7.3.  They are added here (NOT silently
+# — flagged in the Wave-3 PR + the auth-builder MEMORY) so the build + tests are
+# runnable; the LEAD carries them to the founder gate at the merge-gate review.
+# If the founder rejects a class, it is removed and the call site reworked.
+#
+# This dispatch (auth-builder, step 2a) needs ONLY ``TrialAlreadyUsedError``
+# (the ``start_trial`` idempotency 409).  ``AlreadySubscribedError`` (subscribe
+# 409) and ``NoActiveSubscriptionError`` (cancel 404/409) are owned by the
+# api-routes-builder (step 2b) and are NOT added here.
+# ─────────────────────────────────────────────────────────────────────────────
+class TrialAlreadyUsedError(IamError):
+    """PROPOSED (Wave 3 §7.G founder-gate).  Raised by ``start_trial`` when the
+    user has already consumed their one-per-phone 14-day Pro trial OR already
+    holds a non-free plan / live subscription (a trial would be redundant).
+
+    Maps to 409 / ``billing.trial.already_used`` (3-segment per §5A.H).
+    Idempotency guard for §3.7 (one trial per verified phone, Pricing v2 §4.3
+    / Q3 ruling).
+    """
+
+    code = "iam.trial_already_used"
+    status_code = 409
+    validation_message_id = "billing.trial.already_used"
+
+    def __init__(
+        self, detail: str = "A Pro trial has already been used on this account"
+    ) -> None:
+        super().__init__(detail=detail)
+
+
 __all__ = [
     "IamError",
     "InvalidPhoneFormatError",
@@ -266,4 +300,6 @@ __all__ = [
     "GoogleEmailUnverifiedError",
     "GoogleUnavailableError",
     "GoogleIdentityConflictError",
+    # Wave 3 PROPOSED (founder-gate):
+    "TrialAlreadyUsedError",
 ]

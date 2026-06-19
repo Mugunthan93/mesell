@@ -147,6 +147,28 @@ class Settings(BaseSettings):
     RAZORPAY_KEY_SECRET: str = ""
     RAZORPAY_WEBHOOK_SECRET: str = ""  # NEW — populated during iam dispatch
 
+    # ── Razorpay billing — Wave 3 (PROPOSED; lead confirms root-wiring) ─────
+    # Opaque Razorpay Plan-object IDs, one per recurring tier.  The
+    # tier → plan-id MAP lives in the iam SERVICE layer (Pricing v2 §5 is the
+    # single source of truth for tiers); config carries only the opaque IDs
+    # (D-B).  Default "" — NOT in REQUIRED_FIELDS (billing is flag-gated; an
+    # empty plan-id fails loudly only when a real subscribe is attempted with
+    # the flag on, which is acceptable for dev).  Populated from Secret Manager
+    # at Wave 0 (Razorpay dashboard Plan objects + KYC).
+    RAZORPAY_PLAN_ID_STARTER_MONTHLY: str = ""
+    RAZORPAY_PLAN_ID_PRO_MONTHLY: str = ""
+    RAZORPAY_PLAN_ID_PRO_ANNUAL: str = ""
+    RAZORPAY_PLAN_ID_BUSINESS_MONTHLY: str = ""
+    RAZORPAY_PLAN_ID_BUSINESS_ANNUAL: str = ""
+    # LTD is an Orders-API one-time charge (no Razorpay Plan object) — the price
+    # is config-pinned in paise (₹4,999 = 499900 paise; Pricing v2 §5 / §4.6).
+    RAZORPAY_LTD_PRICE_PAISE: int = 499900
+    # FEATURE_BILLING_ENABLED: dev default TRUE; staging/prod gated by infra.
+    # Gates the billing-router mount in main.py (step-2b, google-auth pattern):
+    # when False the four /billing/* routes are NOT mounted (404), keeping
+    # billing dark until Wave 0 (plan-ids + KYC) clears.
+    FEATURE_BILLING_ENABLED: bool = True
+
     # ── Gemini (§5.D table 6) ──────────────────────────────────────────────
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.5-flash"

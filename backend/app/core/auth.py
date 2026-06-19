@@ -121,6 +121,18 @@ class CurrentUser:
     type widens to ``Literal["free", "pro"]`` in V1.5.  Routes that need the
     string value treat it as opaque — plan-gating logic lives in
     ``core/plan_guard.py``, not in route handlers.
+
+    Razorpay Wave 3 disposition (founder ruling F7) — DECIDED, LEFT VESTIGIAL
+    --------------------------------------------------------------------------
+    F7 rules that the gating plan/entitlement is read **DB-FRESH** at the point
+    of use (``plan_guard.resolve_entitlement``), NOT from the JWT claim.  So
+    ``CurrentUser.plan`` is deliberately **NOT** widened to carry the real tier
+    and is **NOT** a gating source of truth — it stays the vestigial advisory
+    ``"free"`` for every authenticated principal.  Widening it (or the JWT
+    ``plan`` claim) would re-introduce the JWT-as-truth pattern F7 rejects and
+    would require founder approval (a LOCKED §4.B surface change).  Gating reads
+    are DB-fresh; this field is left as-is intentionally.  See the Wave-3 PR /
+    auth-builder MEMORY for the full rationale.
     """
 
     user_id: UUID
