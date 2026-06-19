@@ -1,5 +1,75 @@
 # STATUS — FRONTEND
 
+=== UPDATE: 2026-06-19 19:30 ===
+Phase: B04 — mfe-catalog BrowseComponent expose missing (HYBRID Step 2 — BUILD)
+Agent: meesell-angular-component-builder
+Branch: fix/b04-browse-component-expose
+Base: develop @ 8a1b9d3
+
+Done:
+  MODIFIED: frontend/apps/mfe-catalog/federation.config.js
+    Added './BrowseComponent' expose entry pointing to
+    ./apps/mfe-catalog/src/app/categories/browse/browse.component.ts
+    BrowseComponent already existed (230 lines, standalone, OnPush) — no component creation needed.
+    Root cause: shell app.routes.ts:89 calls loadRemoteWithFallback('mfe-catalog','./BrowseComponent')
+    but the remote had never declared that expose → "Unknown exposed module" at runtime.
+
+Tests: n/a — no spec file for BrowseComponent (queued as separate follow-up ticket)
+Build:
+  ng build mfe-catalog: EXIT 0
+  dist/mfe-catalog/browser/BrowseComponent-Y3ZGE4BT.js: present
+  remoteEntry.json BrowseComponent entry: CONFIRMED (grep proof in PR)
+  Pre-existing errors (TS2820 catalog-list.component.ts, TS2322 image-uploader.component.ts,
+    TS1360 icon.registry.alt.ts) — identical to clean develop HEAD, NOT caused by this change.
+
+In progress: none
+Blockers: none
+Next: Open PR to develop; confirm BrowseComponent expose entry in PR description
+Hand-offs:
+  federation.config.js exposes both CatalogRoutes and BrowseComponent.
+  After merge: rebuild mfe-catalog + hard-refresh :4200 confirms /categories/browse renders.
+  No BrowseComponent spec exists — queued as separate follow-up ticket.
+=========
+
+=== UPDATE: 2026-06-19 18:45 ===
+Phase: B03 — Auth refresh cross-context debounce backstop (HYBRID Step 2 — BUILD)
+Agent: meesell-angular-service-builder
+Branch: fix/b03-auth-refresh-cross-context-debounce (worktree /tmp/mesell-wt/b03-debounce)
+Base: develop @ bbdd2c2
+PR: #315 (https://github.com/Mugunthan93/mesell/pull/315)
+
+Done:
+  MODIFIED: frontend/libs/core/services/auth.service.ts
+    - Added `of` and `tap` to rxjs imports
+    - Added REFRESH_DEBOUNCE_MS = 2_000 constant (FE-D5 compliant, purely in-memory)
+    - Added _lastRefreshAt = 0 private field
+    - Added cross-context debounce check at TOP of refreshShared() before existing single-flight gate
+    - Armed _lastRefreshAt = Date.now() via tap() in refreshShared() pipe after successful refresh
+
+  MODIFIED: frontend/libs/core/services/auth.service.spec.ts
+    - Added describe('refreshShared() — cross-context debounce backstop (B03)') with 2 tests:
+      (1) second call within debounce window → 0 HTTP calls, returns current in-memory token
+      (2) call after window expires → new HTTP call fires
+
+Tests:
+  tsc --noEmit on auth.service.ts + auth.service.spec.ts: 0 errors
+  tsc spec error delta vs develop: 0 new errors (20 pre-existing on both branches)
+  ng test: blocked by pre-existing suite-wide TS errors (shell.component.spec.ts TS7053,
+    tree-select.component.spec.ts TreeNodeSelectEvent, mfe-onboarding profile/onboarding specs)
+    — identical blocker documented in prior sessions, separate cleanup ticket required
+
+Build:
+  tsc --noEmit (tsconfig.json): 0 errors in auth service files
+  ng build: not run (blocked by pre-existing infra, not related to this change)
+
+Blockers: none for this PR
+Next: meesell-frontend-coordinator merge-gate review (HYBRID Step 3)
+Hand-offs:
+  AuthService.refreshShared() cross-context debounce backstop (B03) READY
+  PR #315 awaits coordinator merge-gate review
+  Downstream: federation singleton dedup root-cause fix is a separate infra/federation ticket
+=========
+
 === UPDATE: 2026-06-19 11:07 ===
 Phase: mfe-pricing — W3b calculator component (feature/price-calc-rework/w3-frontend)
 Agent: meesell-angular-component-builder
