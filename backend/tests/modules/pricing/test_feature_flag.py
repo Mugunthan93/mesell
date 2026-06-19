@@ -1,48 +1,40 @@
-"""Unit tests — FEATURE_PRICE_CALCULATOR_ENABLED flag guard.
+"""Unit tests — FEATURE_PRICE_CALCULATOR_ENABLED flag guard + router-level
+contracts (unknown-category 422, negative-settlement 200 alert).
 
-Session: mesell-flag-parity-sweep-session-1
+Session: mesell-flag-parity-sweep-session-1 + W2c api-routes-builder
 Per FEATURE_PLAN.md §1.B D2 + Master Plan §3.2 backend feature-flag protocol.
+Per W2_BACKEND_SPEC.md §2.3 router error mapping.
 
-Two test paths covered
-----------------------
-1. **404-when-disabled** (``FEATURE_PRICE_CALCULATOR_ENABLED=False``):
-   POST /api/v1/products/{id}/price-calc returns
-   ``{"detail": "Price Calculator is disabled in this environment"}`` with
-   HTTP 404 regardless of request content.
-   This path is fully self-contained — no DB or Valkey required.
-
-2. **Route-reachable when enabled** (``FEATURE_PRICE_CALCULATOR_ENABLED=True``,
-   the default):
-   POST /api/v1/products/{id}/price-calc is reachable (does NOT return the
-   flag-guard 404) when the flag is on.  Full end-to-end response is
-   infra-gated (dev-tunnel DB + categories seed required).  When infra is
-   unavailable the test confirms a non-flag-guard response (anything except
-   the 404 the flag guard emits) so the gate is meaningful in CI without
-   a live DB.
+Test inventory
+--------------
+1. ``test_price_calc_returns_404_when_flag_disabled`` — POST returns 404 when
+   FEATURE_PRICE_CALCULATOR_ENABLED=False.
+2. ``test_price_calc_flag_off_404_body_is_json`` — body is valid JSON.
+3. ``test_price_calc_route_reachable_when_flag_enabled`` — does NOT return the
+   flag-guard 404 when flag is True (default).
+4. ``test_unknown_category_is_422_not_500`` — router maps UnknownCategoryError
+   to 422 ``pricing.category.no_pricing_data`` (W2 addition).
+5. ``test_negative_settlement_returns_200_with_alert`` — selling_price tiny vs
+   shipping → HTTP 200 + NEGATIVE_SETTLEMENT alert (service mocked).
 
 Fixture strategy
 ----------------
-- ``stub_pricing_client`` creates an in-process ASGI client with a single
-  dependency override:
-    * ``get_current_user`` → a stub that returns a synthetic ``CurrentUser``
-      so no valid JWT or DB user record is required.
-- For the 404 path, ``get_db`` override is irrelevant — the flag guard fires
-  before the service call, so the DB is never touched.
-- ``settings.FEATURE_PRICE_CALCULATOR_ENABLED`` is patched at the router
-  import surface via ``unittest.mock.patch`` — specifically
-  ``app.modules.pricing.router.settings`` (the module-level name in the
-  router, NOT ``app.shared.config.settings``) per the smart-picker +
-  export precedent. This makes the patch active only within the
-  ``with patch(...)`` block and is automatically restored on exit.
+- ``stub_pricing_client`` creates an in-process ASGI client with stub
+  ``get_current_user`` override (no real JWT/DB user record needed).
+- Tests 4 & 5 also stub the service to control the failure mode / return value,
+  removing DB dependency from router-level unit tests.
 
-Markers: ``unit`` (no I/O — flag guard fires before any DB or service call).
+Markers: ``unit`` (no real I/O).
 """
 
 from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from unittest.mock import patch
+from datetime import datetime, timezone
+from decimal import Decimal
+from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -50,19 +42,20 @@ from httpx import ASGITransport, AsyncClient
 
 from app.core.auth import CurrentUser, get_current_user
 from app.main import app
+from app.modules.pricing.pricing_lookup import UnknownCategoryError
+from app.modules.pricing.schemas import PriceCalcAlert, PriceCalcResponse
 
-# ── Stub user ─────────────────────────────────────────────────────────────────
+# ── Stub identifiers ──────────────────────────────────────────────────────────
 
 _STUB_USER_ID = uuid.UUID("00000000-0000-0000-0000-0000000000cc")
 _STUB_PLAN: str = "free"
-
-# A random product UUID used as the path param in all price-calc POST requests.
 _STUB_PRODUCT_ID = uuid.UUID("00000000-0000-0000-0000-000000000033")
+
+# Minimal valid W2 request body.
+_VALID_REQUEST_BODY: dict[str, Any] = {"selling_price": "500.00"}
 
 
 def _make_stub_user() -> CurrentUser:
-    """Synthetic CurrentUser — satisfies the Depends(get_current_user) type."""
-
     @dataclass(frozen=True)
     class _StubCurrentUser:
         user_id: uuid.UUID = _STUB_USER_ID
@@ -75,32 +68,22 @@ async def _stub_get_current_user() -> CurrentUser:
     return _make_stub_user()  # type: ignore[return-value]
 
 
-# ── Fixture — lightweight ASGI client with stub auth ─────────────────────────
+# ── Fixture ───────────────────────────────────────────────────────────────────
 
 
 @pytest_asyncio.fixture(loop_scope="function")
 async def stub_pricing_client(use_live_valkey):
     """ASGI client with stub auth override.
 
-    Only ``get_current_user`` is overridden — the DB override is left out
-    intentionally.  The flag-guard tests fire BEFORE any DB call, so DB
-    access is irrelevant for the flag-disabled assertions.
+    Only ``get_current_user`` is overridden.  The flag-guard + router-level
+    tests fire BEFORE (or instead of) any DB call, so DB override is not
+    required for these assertions.
 
-    Depends on ``use_live_valkey`` so the module-level Valkey singletons are
-    reset + re-pointed at the live test Valkey per function — the
-    ``@rate_limit`` / ``@audit_event`` decorators on the route touch Valkey
-    even on the 404 short-circuit path, and a singleton bound to a PRIOR
-    test's (now-closed) event loop would otherwise raise "Event loop is
-    closed" → 500 on the second patch-based test (an ordering-dependent
-    shared-singleton artifact, independent of the §12.M rework).
+    Depends on ``use_live_valkey`` to reset Valkey singletons per function —
+    the ``@rate_limit`` / ``@audit_event`` decorators touch Valkey even on the
+    404 short-circuit path; a singleton bound to a prior loop raises
+    "Event loop is closed" on the second test.
     """
-    # NOTE: we intentionally do NOT enter ``app.router.lifespan_context`` here.
-    # The flag-disabled tests fire the guard BEFORE any DB/Valkey call, so they
-    # need no startup.  Entering+exiting the lifespan on the shared module-level
-    # ``app`` once per test disposed the shared DB engine on the FIRST test's
-    # shutdown, making every SUBSEQUENT patch-based flag test 500 on a disposed
-    # engine (an ordering-dependent shared-app bug, independent of the §12.M
-    # rework).  Dropping the lifespan keeps each flag test self-contained.
     app.dependency_overrides[get_current_user] = _stub_get_current_user
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
@@ -114,23 +97,18 @@ async def stub_pricing_client(use_live_valkey):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_price_calc_returns_404_when_flag_disabled(stub_pricing_client):
-    """FEATURE_PRICE_CALCULATOR_ENABLED=False → POST returns 404 with locked detail.
+    """FEATURE_PRICE_CALCULATOR_ENABLED=False → POST returns 404 with the
+    locked detail string.
 
-    Patches ``app.modules.pricing.router.settings`` at the module level so
-    the guard expression ``if not settings.FEATURE_PRICE_CALCULATOR_ENABLED``
-    evaluates True.  Auth is stubbed so the dependency chain resolves without
-    a real JWT.
-
-    Acceptance criteria (FEATURE_PLAN.md §1.B D2 + Master Plan §3.2):
-    - HTTP 404
-    - body["detail"] == "Price Calculator is disabled in this environment"
+    Request body uses the W2 field name ``selling_price`` (NOT the retired
+    #285 ``meesho_price``).
     """
     with patch("app.modules.pricing.router.settings") as mock_settings:
         mock_settings.FEATURE_PRICE_CALCULATOR_ENABLED = False
 
         response = await stub_pricing_client.post(
             f"/api/v1/products/{_STUB_PRODUCT_ID}/price-calc",
-            json={"meesho_price": "500.00", "input_cost": "100.00"},
+            json=_VALID_REQUEST_BODY,
         )
 
     assert response.status_code == 404, (
@@ -145,17 +123,13 @@ async def test_price_calc_returns_404_when_flag_disabled(stub_pricing_client):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_price_calc_flag_off_404_body_is_json(stub_pricing_client):
-    """Flag-disabled 404 response carries a valid JSON body.
-
-    Ensures the error handler produces the standard FastAPI HTTPException
-    envelope (not a plain string or HTML error page).
-    """
+    """Flag-disabled 404 response carries a valid JSON body."""
     with patch("app.modules.pricing.router.settings") as mock_settings:
         mock_settings.FEATURE_PRICE_CALCULATOR_ENABLED = False
 
         response = await stub_pricing_client.post(
             f"/api/v1/products/{_STUB_PRODUCT_ID}/price-calc",
-            json={"meesho_price": "750.00", "input_cost": "250.00"},
+            json=_VALID_REQUEST_BODY,
         )
 
     assert response.status_code == 404
@@ -170,55 +144,160 @@ async def test_price_calc_flag_off_404_body_is_json(stub_pricing_client):
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_price_calc_route_reachable_when_flag_enabled(stub_pricing_client):
-    """FEATURE_PRICE_CALCULATOR_ENABLED=True → POST does NOT return the flag-guard 404.
+    """FEATURE_PRICE_CALCULATOR_ENABLED=True (default) → POST does NOT return
+    the flag-guard 404.
 
-    The default value of ``settings.FEATURE_PRICE_CALCULATOR_ENABLED`` is True
-    (per config.py); no patching needed for the flag.
-
-    The response may be:
-    - 200 if DB is seeded + product + category exist (full happy path)
-    - 404 from the ownership service (product not found — NOT from the flag guard)
-    - 422 if Pydantic rejects the request body
-    - 500 if DB connection is down (infra-gated — we accept this)
-
-    ANY response other than the flag-guard 404 confirms the guard did NOT fire.
-    This assertion is meaningful in CI without a live DB: the flag-guard 404
-    is the ONLY path that sets detail == "Price Calculator is disabled in this
-    environment" for a syntactically valid POST.
-
-    If the service layer raises an exception due to missing DB infra, the test
-    skips gracefully.
+    The response may be any status except the guard-specific 404 detail.
+    Infra-down 500 is accepted (skip).
     """
     response = await stub_pricing_client.post(
         f"/api/v1/products/{_STUB_PRODUCT_ID}/price-calc",
-        json={"meesho_price": "500.00", "input_cost": "100.00"},
+        json=_VALID_REQUEST_BODY,
     )
 
-    # The flag-guard 404 must NOT appear when the flag is enabled.
     if response.status_code == 404:
         body = response.json()
         assert (
             body.get("detail") != "Price Calculator is disabled in this environment"
         ), (
-            "Flag guard fired even though FEATURE_PRICE_CALCULATOR_ENABLED=True (default). "
+            "Flag guard fired even though FEATURE_PRICE_CALCULATOR_ENABLED=True. "
             f"Full response: {body}"
         )
-        # A real 404 from the service (product not found) is acceptable.
-        return
+        return  # real 404 from service (product not found) is acceptable
 
-    # If the service blows up due to missing DB infra, skip rather than fail.
     if response.status_code == 500:
         body_text = response.text
         if any(
-            keyword in body_text
-            for keyword in ("Connection refused", "could not connect", "asyncpg")
+            kw in body_text
+            for kw in ("Connection refused", "could not connect", "asyncpg")
         ):
-            pytest.skip(
-                "DB infra not available — flag-enabled path is infra-gated; "
-                "flag-guard 404 path (test 1) is the authoritative smoke test"
-            )
+            pytest.skip("DB infra not available — flag-guard path (test 1) is authoritative")
 
-    # Successful reach: 200, 400, 404, 422, 500 are acceptable (not the flag-guard 404).
     assert response.status_code in {200, 400, 404, 422, 500}, (
         f"Unexpected status {response.status_code}: {response.text}"
+    )
+
+
+# ── Test 3: UnknownCategoryError → 422 not 500 ───────────────────────────────
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_unknown_category_is_422_not_500(stub_pricing_client):
+    """Router maps UnknownCategoryError → 422 pricing.category.no_pricing_data.
+
+    Stubs ``pricing.service.calculate`` to raise ``UnknownCategoryError``
+    (as it would when the product's meesho_leaf_id is absent from the lookup),
+    then asserts the router translates it to a clean 422 with the correct
+    error code — NOT a 500.
+
+    This is the critical W2 addition: the service lets UnknownCategoryError
+    bubble; the router catches it and re-raises CategoryPricingUnavailableError
+    which goes through _meesell_error_handler → 422 + locked envelope.
+    """
+    with patch(
+        "app.modules.pricing.service.calculate",
+        new_callable=AsyncMock,
+        side_effect=UnknownCategoryError(
+            "meesho_leaf_id '99999' not found in pricing lookup"
+        ),
+    ):
+        response = await stub_pricing_client.post(
+            f"/api/v1/products/{_STUB_PRODUCT_ID}/price-calc",
+            json=_VALID_REQUEST_BODY,
+        )
+
+    assert response.status_code == 422, (
+        f"Expected 422 for unknown category, got {response.status_code}: {response.text}"
+    )
+    body = response.json()
+    assert body.get("code") == "pricing.category.no_pricing_data", (
+        f"Expected code='pricing.category.no_pricing_data', got {body.get('code')!r}"
+    )
+
+
+# ── Test 4: negative settlement → 200 + NEGATIVE_SETTLEMENT alert ─────────────
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_negative_settlement_returns_200_with_alert(stub_pricing_client):
+    """A negative estimated_bank_settlement returns HTTP 200 + one alert.
+
+    Stubs ``pricing.service.calculate`` to return a pre-built response with
+    a negative ``estimated_bank_settlement`` and one NEGATIVE_SETTLEMENT alert.
+    Asserts that the router does NOT reject/remap this to 400 or 422 — it
+    must pass through as 200 per the locked spec.
+    """
+    stub_response = PriceCalcResponse(
+        selling_price=Decimal("1.00"),
+        shipping=Decimal("8435.00"),
+        total_price=Decimal("8436.00"),
+        commission_pct=Decimal("0.00"),
+        commission_fees=Decimal("0.00"),
+        gst_on_shipping=Decimal("1518.30"),
+        tds=Decimal("8.44"),
+        tcs=Decimal("0.00"),
+        estimated_bank_settlement=Decimal("-1525.74"),
+        alerts=[
+            PriceCalcAlert(
+                code="NEGATIVE_SETTLEMENT",
+                message_id="pricing.alert.negative_settlement",
+                severity="warning",
+            )
+        ],
+        calculated_at=datetime.now(timezone.utc),
+    )
+
+    with patch(
+        "app.modules.pricing.service.calculate",
+        new_callable=AsyncMock,
+        return_value=stub_response,
+    ):
+        response = await stub_pricing_client.post(
+            f"/api/v1/products/{_STUB_PRODUCT_ID}/price-calc",
+            json=_VALID_REQUEST_BODY,
+        )
+
+    assert response.status_code == 200, (
+        f"Negative settlement must be 200 (not a 400/422), "
+        f"got {response.status_code}: {response.text}"
+    )
+    body = response.json()
+    # The headline output is negative.
+    settlement = Decimal(body["estimated_bank_settlement"])
+    assert settlement < Decimal("0"), (
+        f"Expected negative settlement in response, got {settlement}"
+    )
+    # Exactly one alert with code NEGATIVE_SETTLEMENT.
+    alerts = body.get("alerts", [])
+    assert len(alerts) == 1, f"Expected 1 alert, got {len(alerts)}: {alerts}"
+    assert alerts[0]["code"] == "NEGATIVE_SETTLEMENT"
+    assert alerts[0]["severity"] == "warning"
+
+
+# ── Test 5: old field names rejected (extra=forbid) ───────────────────────────
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_old_285_request_fields_rejected_with_422(stub_pricing_client):
+    """Sending the retired #285 field ``meesho_price`` (or ``input_cost``)
+    must return 422 because ``PriceCalcRequest`` has ``extra="forbid"``.
+
+    This is the W3 coordination gate: the FE must ship the new body
+    (``selling_price``) in lockstep with W2 merging to develop.  A stale FE
+    sending the old fields gets a predictable 422, not a silent wrong answer.
+    """
+    with patch("app.modules.pricing.router.settings") as mock_settings:
+        mock_settings.FEATURE_PRICE_CALCULATOR_ENABLED = True
+
+        response = await stub_pricing_client.post(
+            f"/api/v1/products/{_STUB_PRODUCT_ID}/price-calc",
+            json={"meesho_price": "500.00", "input_cost": "100.00"},
+        )
+
+    assert response.status_code == 422, (
+        f"Extra fields (meesho_price, input_cost) should be rejected with 422 "
+        f"(extra=forbid), got {response.status_code}: {response.text}"
     )
