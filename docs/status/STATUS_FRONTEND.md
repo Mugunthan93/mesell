@@ -1,5 +1,53 @@
 # STATUS — FRONTEND
 
+=== UPDATE: 2026-06-19 11:07 ===
+Phase: mfe-pricing — W3b calculator component (feature/price-calc-rework/w3-frontend)
+Agent: meesell-angular-component-builder
+
+Done:
+  MODIFIED: frontend/apps/mfe-pricing/src/app/pricing.component.ts
+    - Added formatPct import from pricing.utils (W3 §2.2 commission_pct row label)
+    - Exposed formatPctLabel = formatPct on component class (template delegate)
+    - Fixed commission_pct row label: formatPctLabel(breakdown()!.commission_pct) → "0%"
+    - Fixed no_pricing_data error block: renders inline "Pricing isn't available for this category yet."
+    - Fixed empty-state hint: "Enter a selling price to estimate your settlement."
+    - Removed all stale TODO(component-builder W3 step-2) seam markers (step-2 = this task)
+    - Cleaned stale W3-INPUT template comments
+    - Zero dead-model tokens (grep gate: target_margin_pct/input_cost/mrp/meesho_price etc. = 0)
+  REPLACED: frontend/apps/mfe-pricing/src/app/pricing.component.spec.ts
+    - Total rewrite: W3 contract tests (W2 §2.2 PriceCalcResponse, NEGATIVE_SETTLEMENT alert)
+    - ₹61.78 golden fixture (founder real-order anchor): all 5 breakdown rows tested
+      selling_price(70.00) / commission_fees(0.00) / gst_on_shipping(8.10) / tds(0.12) / estimated_bank_settlement(61.78)
+    - Disclaimer text present and server-sent (not hardcoded copy)
+    - Negative-settlement: fixture (-5.00) + NEGATIVE_SETTLEMENT alert → warning banner renders
+    - 422 no_pricing_data: errorState→'no_pricing_data', breakdown stays null, NOT a crash
+    - State matrix: idle/loading/result/error all tested
+    - PriceCalcRequest body builder: commission_pct key OMITTED when blank
+    - PriceCalcNoPricingDataError replaces retired PriceCalcCommissionMissingError
+    - formatRupee 2dp + formatPct + parseDecimal helpers tested
+    - CSS token class mapping tests (no hardcoded hex)
+    - A11y attribute assertions (aria-live, role, tabindex, _focusPending)
+    - GREP GATE: 0 references to dead tokens (commission_missing, input_cost, mrp, LOW_MARGIN, etc.)
+
+Tests: 115/115 PASS (vitest run pricing.component.spec.ts)
+       16/16  PASS (vitest run pricing.utils.spec.ts — unmodified, verifying no regression)
+Build: mfe-pricing development — Application bundle generation complete (5.740s), ZERO TS errors
+       2 pre-existing WARNINGs in data-table.component.ts (NG8113/NG8102) — NOT introduced here
+TS compile: 0 errors (tsc --noEmit -p apps/mfe-pricing/tsconfig.app.json)
+In progress: none — component-builder step complete
+Blockers: none
+Next: W3 step-3 (ui-styler runs on same file: styles:[] block only)
+Hand-offs:
+  PricingComponent (W3b) ready for ui-styler. Template structure is authoritative:
+    - Breakdown table uses .mee-pricing__row / .mee-pricing__row--profit CSS classes
+    - Settlement value uses [class.mee-pricing__value--positive] / [class.mee-pricing__value--negative]
+    - Alert chips use .mee-pricing__alert-chip--warning
+    - Disclaimer uses .mee-pricing__disclaimer
+    - Spinner still uses local .mee-pricing__spinner bridge (MeeSpinner not yet in ui-kit)
+    - Surface-variant stopgap still in :host (per existing note — ui-styler may remove if Layer-1 resolved)
+    All CSS class names in styles:[] block are the ui-styler's canvas.
+=========
+
 === UPDATE: 2026-06-19 10:50 ===
 Phase: feat/ui-kit-sakai-gaps — Section A (8 PrimeNG wrapper components, P0+P1+P2)
 Agent: meesell-angular-component-builder
