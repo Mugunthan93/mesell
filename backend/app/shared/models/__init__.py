@@ -1,4 +1,4 @@
-"""ORM model registry — the 13 V1 tables.
+"""ORM model registry — 13 V1 tables + 3 Razorpay billing tables.
 
 Per BACKEND_ARCHITECTURE.md §5.E + §3.E, this package is the **single
 canonical import surface** for any ORM model class in the codebase::
@@ -7,6 +7,8 @@ canonical import surface** for any ORM model class in the codebase::
         User, SellerProfile, Template, Category, FieldEnumValue, FieldAlias,
         Catalog, Product, ProductImage, PricingCalc, Export, AuditEvent,
         ProductDraft,
+        # Razorpay Wave 1 (2026-06-19)
+        Subscription, Payment, WebhookEvent,
     )
 
 Locked rules (§5.E)
@@ -20,7 +22,7 @@ Locked rules (§5.E)
 
 Import order (locked verbatim)
 ------------------------------
-Follows the FK dependency chain per MVP_ARCHITECTURE §2.6:
+Follows the FK dependency chain per MVP_ARCHITECTURE §2.6 + billing extension:
 
   1.  users               (no FK deps)
   2.  seller_profile      (→ users)
@@ -35,6 +37,9 @@ Follows the FK dependency chain per MVP_ARCHITECTURE §2.6:
   11. exports             (→ products, users)
   12. audit_events        (→ users)
   13. product_drafts      (→ users, products)
+  14. subscriptions       (→ users)                   [Razorpay Wave 1]
+  15. payments            (→ users, subscriptions)    [Razorpay Wave 1]
+  16. webhook_events      (standalone)                [Razorpay Wave 1]
 
 All models use ``from __future__ import annotations`` + ``TYPE_CHECKING``-
 guarded forward references so that sibling imports are deferred to
@@ -93,6 +98,12 @@ from app.shared.models.audit_event import AuditEvent  # noqa: F401
 # ── 13. Product drafts (→ users, products) ──────────────────────────────────
 from app.shared.models.product_draft import ProductDraft  # noqa: F401
 
+# ── 14–16. Razorpay billing (Wave 1, 2026-06-19) ────────────────────────────
+# Subscriptions must be imported before Payments (payments FKs to subscriptions).
+from app.shared.models.subscription import Subscription  # noqa: F401
+from app.shared.models.payment import Payment  # noqa: F401
+from app.shared.models.webhook_event import WebhookEvent  # noqa: F401
+
 
 __all__ = [
     "Base",
@@ -114,4 +125,8 @@ __all__ = [
     # Audit & autosave
     "AuditEvent",
     "ProductDraft",
+    # Billing (Razorpay Wave 1)
+    "Subscription",
+    "Payment",
+    "WebhookEvent",
 ]
