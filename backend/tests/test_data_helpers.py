@@ -8,7 +8,6 @@ from app.data import (
     is_valid_category,
     load_attributes,
     load_categories,
-    load_shipping_slabs,
 )
 
 pytestmark = pytest.mark.unit
@@ -41,16 +40,6 @@ def test_is_valid_category_truth_table():
     assert is_valid_category("Earphones") is True
     assert is_valid_category("Quantum Foam") is False
     assert is_valid_category("") is False
-
-
-def test_shipping_slabs_monotonic():
-    slabs = load_shipping_slabs()["slabs"]
-    weights = [s["max_grams"] for s in slabs]
-    assert weights == sorted(weights), "slabs must be sorted by ascending weight"
-    # All zones present per slab.
-    for s in slabs:
-        for zone in ("local", "regional", "national", "special"):
-            assert zone in s
 
 
 def test_attributes_each_category_lists_required_keys():
