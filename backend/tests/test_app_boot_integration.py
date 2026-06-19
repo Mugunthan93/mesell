@@ -148,6 +148,7 @@ def test_no_stray_legacy_routes(meesell_app):
         GET    /api/v1/products/{id}/images        (also POST — shares path key)
       §12 pricing routes:
         POST   /api/v1/products/{id}/price-calc
+        POST   /api/v1/products/{id}/apply-price  (W4b)
       §14 export routes:
         POST   /api/v1/products/{product_id}/export-xlsx
         GET    /api/v1/exports/{export_id}
@@ -182,6 +183,7 @@ def test_no_stray_legacy_routes(meesell_app):
         "/api/v1/products/{id}/draft",
         "/api/v1/products/{id}/images",
         "/api/v1/products/{id}/price-calc",
+        "/api/v1/products/{id}/apply-price",
         "/api/v1/products/{product_id}/export-xlsx",
         "/api/v1/exports/{export_id}",
         "/health",
