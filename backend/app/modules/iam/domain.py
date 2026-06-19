@@ -141,15 +141,23 @@ class WebhookCaptureResult:
     """Returned by ``iam.service.capture_razorpay_webhook``.
 
     Attributes:
-        event_type: Always ``"razorpay.webhook.captured"`` in V1.
-        event_subtype: The parsed-event name from the payload (e.g.
-            ``subscription.created``, ``subscription.charged``).
-        audit_event_id: PK of the row written to ``audit_events``.
+        event_type: The Razorpay event type processed (e.g.
+            ``subscription.activated``, ``payment.captured``).  For a
+            deduplicated replay this is the event type of the duplicate;
+            for an unknown/unmodelled event it is that event's type.
+        event_subtype: Back-compat alias carrying the same Razorpay event
+            string (preserved so existing callers/tests reading
+            ``event_subtype`` keep working after the V1.5 router rework).
+        audit_event_id: PK of the business ``audit_events`` row when a
+            grant/downgrade/cancel effect was written; ``None`` for
+            transport-only events (renewal heartbeat, unknown, dedupe replay).
+            Widened from ``int`` to ``int | None`` in Wave 2 (the V1
+            sentinel ``0`` is retired in favour of ``None``).
     """
 
     event_type: str
     event_subtype: str
-    audit_event_id: int
+    audit_event_id: int | None
 
 
 @dataclass(frozen=True)
