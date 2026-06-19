@@ -1,6 +1,37 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-19 (meesell-services-builder) — Razorpay Wave 4 reconciliation + trial sweep ===
+Phase: razorpay-integration / Wave 4 (reconciliation Celery beat + trial-expiry sweep + integration tests)
+Branch: feature/razorpay-w4-reconcile (PR base feature/razorpay, tip 7e5f08b = W1+W2+W3)
+Done:
+  - NEW app/modules/iam/tasks.py (3rd module task module): billing.reconcile (every 6h) +
+    billing.trial_expiry_sweep (daily 02:00 IST) + async bodies (_reconcile_async / _trial_sweep_async,
+    optional-session for direct test invocation). Valkey DB-0 singleton lock on both (compare-and-delete release).
+  - app/workers/celery_app.py: added "app.modules.iam.tasks" to include + FIRST beat_schedule
+    (crontab 0 */6 for reconcile, 0 2 for trial sweep). New tasks NOT added to §18.F revalidation frozenset.
+  - app/modules/iam/service.py: behaviour-preserving refactor — extracted 3 shared transition helpers
+    (_apply_period_monotonic, _grant_plan_for_sub, _downgrade_user_to_free) reused by BOTH webhook handlers
+    and reconcile. Wave 2 webhook-router tests re-proven (14/14 pass).
+  - NEW backend/tests/test_razorpay_integration.py — §5.1 items 1–18 (lifecycle + trial + reconcile).
+  - BACKEND_ARCHITECTURE.md §3.I + §18.B amended (founder-ratified 2026-06-19, Razorpay Wave 4):
+    2→3 task modules + first beat_schedule; 2-task floor → 4 (2 request-driven + 2 periodic).
+  - INFRA hand-off memo: docs/plans/features/razorpay-integration/handoff_celery_beat_razorpay.md
+    (deploy a single-replica celery beat OR worker -B; Valkey lock is the double-fire guard).
+Tests: 32 passed / 0 failed (18 new integration + 14 Wave-2 webhook router) on isolated meesell_rzpw4_test;
+  24 adapter tests pass; ruff clean; import-linter 27 kept/0 broken; Contracts 8/9 PASS.
+R5 FINDING: Wave-3 start_trial once-guard is keyed PRIMARILY on `trial_ends_at IS NOT NULL` (past OR future);
+  after expiry the user is plan=free with no sub → nulling trial_ends_at WOULD re-open the trial. Therefore the
+  sweep does NOT null trial_ends_at — it uses a billing.trial.expired audit-row idempotency marker. No new column.
+Founder-gate items in PR: §3.I/§18.B amendment (self-applied per founder ruling), beat-process infra deploy.
+PRE-EXISTING (not mine): Contract 10 (i18n message_id regex) RED on base — Wave-3 key
+  `billing.no_active_subscription` (2-segment) at messages_en.py:101 violates §5A.H. Flagged to lead.
+Single alembic head unchanged: f8fa7a36383f. NO migration, NO model/schema change, NO new endpoint.
+Hand-offs:
+  - meesell-infra-builder: deploy celery beat (memo above) — 2nd razorpay infra item.
+  - backend-coordinator: HYBRID step-3 merge-gate review of feature/razorpay-w4-reconcile.
+=========
+
 === UPDATE: 2026-06-19 14:00 (meesell-database-builder) — Razorpay Wave 1 DB layer ===
 Phase: razorpay-integration / billing tables
 Done:

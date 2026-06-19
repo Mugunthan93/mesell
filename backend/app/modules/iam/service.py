@@ -1170,6 +1170,76 @@ async def _get_subscription_by_rzp_id(
     return res.scalar_one_or_none()
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Shared subscription-transition helpers (Wave 4 §0.4 / §2 "reuse, don't
+# reinvent").  Both the webhook per-event handlers AND the Wave-4 reconciliation
+# task (``app.modules.iam.tasks``) call these so a webhook and a reconcile pass
+# converge to the SAME state regardless of order.  Each helper is a small,
+# behaviour-preserving extraction of a block that previously lived inline inside
+# a webhook handler — the Wave 2 webhook-router tests
+# (``test_razorpay_webhook_router.py``) re-prove the extraction preserves
+# behaviour.
+# ─────────────────────────────────────────────────────────────────────────────
+def _apply_period_monotonic(sub: Subscription, new_end: datetime | None) -> None:
+    """GREATEST(current_period_end, new_end) — never rewind (§4.3 monotonic).
+
+    Extracted from ``_handle_subscription_charged``.  ``new_end is None`` is a
+    no-op; an EARLIER ``new_end`` is a no-op; only a strictly-later boundary
+    advances the period.  Idempotent — re-applying the same boundary is a no-op.
+    """
+    if new_end is None:
+        return
+    if sub.current_period_end is None or new_end > sub.current_period_end:
+        sub.current_period_end = new_end
+
+
+async def _grant_plan_for_sub(
+    db: AsyncSession, sub: Subscription, *, event: str
+) -> int | None:
+    """Grant ``users.plan = _TIER_TO_PLAN[sub.tier]`` + audit (idempotent).
+
+    Extracted from ``_handle_subscription_activated``.  Resolves the tier→plan
+    map (unknown tier → no grant, fails closed) and, if the user's plan differs,
+    sets it and writes a ``billing.plan.granted`` audit row.  When the user is
+    ALREADY on the target plan this is a no-op (no audit row) — this is what
+    makes a reconcile pass over an already-converged sub write nothing.
+    """
+    plan = _TIER_TO_PLAN.get(sub.tier)
+    if plan is None:
+        return None
+    user = await db.get(User, sub.user_id)
+    if user is None or user.plan == plan:
+        return None
+    user.plan = plan
+    return await _audit_business_effect(
+        db,
+        user_id=user.id,
+        event_type="billing.plan.granted",
+        metadata={"tier": sub.tier, "event": event},
+    )
+
+
+async def _downgrade_user_to_free(
+    db: AsyncSession, user_id: UUID, *, reason: str, event: str
+) -> int | None:
+    """Set ``users.plan = 'free'`` + ``billing.plan.downgraded`` audit (idempotent).
+
+    Extracted from the halted/completed handler bodies.  A user already on
+    ``free`` is a no-op (no write, no audit) — so a reconcile terminal-sweep
+    over an already-free user writes nothing.
+    """
+    user = await db.get(User, user_id)
+    if user is None or user.plan == "free":
+        return None
+    user.plan = "free"
+    return await _audit_business_effect(
+        db,
+        user_id=user.id,
+        event_type="billing.plan.downgraded",
+        metadata={"reason": reason, "event": event},
+    )
+
+
 async def _upsert_payment(
     db: AsyncSession,
     *,
@@ -1237,19 +1307,7 @@ async def _handle_subscription_activated(
     new_end = _epoch_to_utc(entity.get("current_end"))
     if new_end is not None:
         sub.current_period_end = new_end
-    plan = _TIER_TO_PLAN.get(sub.tier)
-    audit_id: int | None = None
-    if plan is not None:
-        user = await db.get(User, sub.user_id)
-        if user is not None:
-            user.plan = plan
-            audit_id = await _audit_business_effect(
-                db,
-                user_id=user.id,
-                event_type="billing.plan.granted",
-                metadata={"tier": sub.tier, "event": event_type},
-            )
-    return audit_id
+    return await _grant_plan_for_sub(db, sub, event=event_type)
 
 
 async def _handle_subscription_charged(
@@ -1263,10 +1321,7 @@ async def _handle_subscription_charged(
         return None
 
     # Monotonic period guard (§4.3): GREATEST(current_period_end, new_end).
-    new_end = _epoch_to_utc(entity.get("current_end"))
-    if new_end is not None:
-        if sub.current_period_end is None or new_end > sub.current_period_end:
-            sub.current_period_end = new_end
+    _apply_period_monotonic(sub, _epoch_to_utc(entity.get("current_end")))
 
     # Renewal heartbeat: a late charge does NOT re-activate a cancelled sub.
     if sub.status in ("active", "past_due"):
@@ -1317,17 +1372,10 @@ async def _handle_subscription_halted(
         logger.info("iam.webhook.%s illegal_transition from=%s (no-op)", event_type, sub.status)
         return None
     sub.status = "halted"
-    user = await db.get(User, sub.user_id)
-    audit_id: int | None = None
-    if user is not None:
-        user.plan = "free"  # F8 — downgrade only on halted, no fixed grace timer
-        audit_id = await _audit_business_effect(
-            db,
-            user_id=user.id,
-            event_type="billing.plan.downgraded",
-            metadata={"reason": "halted", "event": event_type},
-        )
-    return audit_id
+    # F8 — downgrade only on halted, no fixed grace timer.
+    return await _downgrade_user_to_free(
+        db, sub.user_id, reason="halted", event=event_type
+    )
 
 
 async def _handle_subscription_cancelled(
@@ -1359,17 +1407,9 @@ async def _handle_subscription_completed(
     if sub is None:
         return None
     sub.status = "completed"  # terminal; not expected for open-ended plans
-    user = await db.get(User, sub.user_id)
-    audit_id: int | None = None
-    if user is not None:
-        user.plan = "free"
-        audit_id = await _audit_business_effect(
-            db,
-            user_id=user.id,
-            event_type="billing.plan.downgraded",
-            metadata={"reason": "completed", "event": event_type},
-        )
-    return audit_id
+    return await _downgrade_user_to_free(
+        db, sub.user_id, reason="completed", event=event_type
+    )
 
 
 async def _handle_subscription_updated(
