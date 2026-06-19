@@ -317,6 +317,23 @@ async def get_super_id_uncached(
     return result.scalar_one_or_none()
 
 
+async def get_meesho_leaf_id_uncached(
+    db: AsyncSession,
+    category_id: UUID,
+) -> str | None:
+    """Return the Meesho leaf id (``sscat_id`` as string) for ``category_id``.
+
+    Used by the pricing engine (W2) to key the per-category shipping /
+    commission lookup.  ``meesho_leaf_id`` is a NOT-NULL indexed column on
+    ``categories`` (``idx_categories_meesho_leaf``); ``None`` here means the
+    ``category_id`` row does not exist (no row → ``scalar_one_or_none``).
+    Never raises — the caller maps ``None`` to a clean 4xx.
+    """
+    stmt = select(CategoryORM.meesho_leaf_id).where(CategoryORM.id == category_id)
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
 async def assert_category_exists_uncached(
     db: AsyncSession,
     category_id: UUID,

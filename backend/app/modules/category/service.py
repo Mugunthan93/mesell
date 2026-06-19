@@ -803,6 +803,20 @@ async def get_super_id(category_id: UUID, db: AsyncSession) -> str | None:
     return await category_repo.get_super_id_uncached(db, category_id)
 
 
+async def get_meesho_leaf_id(category_id: UUID, db: AsyncSession) -> str | None:
+    """Cross-module call from ``catalog.service.get_product_meesho_leaf_id`` (W2).
+
+    Returns the Meesho leaf id string (``sscat_id``) for ``category_id``,
+    used by the pricing engine to key the per-category shipping / commission
+    lookup, or ``None`` when the category row is absent.  Never raises — an
+    unknown category surfaces as ``None`` so the catalog accessor maps it to
+    a clean 4xx.  Not cached: a single indexed ``meesho_leaf_id`` SELECT is
+    cheap and the value never changes for a given seeded category (mirrors
+    :func:`get_super_id`).
+    """
+    return await category_repo.get_meesho_leaf_id_uncached(db, category_id)
+
+
 async def list_super_categories(db: AsyncSession) -> list[SuperCategoryInfo]:
     """Cross-module call from ``customer.service.set_active_categories`` (§8.C).
 

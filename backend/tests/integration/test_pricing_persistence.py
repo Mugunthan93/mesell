@@ -1,26 +1,25 @@
 """Pricing-module integration test #2 — pricing_calcs persistence +
 get_last_calc.
 
-Per BACKEND_ARCHITECTURE.md §12.J:
+Per BACKEND_ARCHITECTURE.md §12.J as superseded by the **W2 Price Calculator
+rework (census-confirmed settlement model, 2026-06-19)**.
 
-    pricing_calcs persistence + get_last_calc — verify the full
-    ``input_jsonb`` and ``output_jsonb`` snapshots are written for audit;
-    ``get_last_calc`` returns the most recent calc for a product;
-    subsequent calc inserts a new row (not an UPDATE — audit trail is
-    append-only).
-
-DECISION FLAG §12-PRICING-D4 — DDL is the law
----------------------------------------------
-The actual ``pricing_calcs`` DDL has structured monetary columns (NOT
-``input_jsonb`` / ``output_jsonb``).  This test verifies the
-**structured-column** persistence shape — adapted from the §12.J
-"input_jsonb/output_jsonb snapshots" prose per D4.  The append-only
-invariant (subsequent calc → NEW row, not UPDATE) is fully tested.
+Verifies:
+  * A single ``calculate`` call writes ONE ``pricing_calcs`` row carrying
+    ALL confirmed-model columns (selling_price, shipping, total_price,
+    commission_pct, commission_fees, gst_on_shipping, tds, tcs,
+    estimated_bank_settlement, meesho_leaf_id).
+  * The deprecated #285 columns (meesho_price, seller_price, etc.) are NULL.
+  * ``get_last_calc`` returns the most recent calc for a product.
+  * Subsequent calcs INSERT new rows (append-only, not UPDATE).
 """
 
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select
@@ -36,10 +35,21 @@ from app.shared.models.user import User
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
+_LOOKUP_FILE = (
+    Path(__file__).resolve().parents[2] / "app" / "data" / "meesho_pricing_lookup.json"
+)
+
+
+def _first_leaf_id() -> str:
+    data = json.loads(_LOOKUP_FILE.read_text(encoding="utf-8"))
+    return next(iter(data["lookup"]))
+
+
+_REAL_LEAF_ID: str = _first_leaf_id()
+
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Local fixtures — minimal seed helpers (duplicated from full_flow test to
-# keep each integration file self-contained).
+# Seed helpers
 # ─────────────────────────────────────────────────────────────────────────────
 async def _seed_user(db, phone: str) -> User:
     user = User(phone=phone, plan="free")
@@ -50,8 +60,6 @@ async def _seed_user(db, phone: str) -> User:
 
 
 async def _seed_template(db, *, schema_hash: str):
-    from datetime import datetime, timezone
-
     from app.shared.models.template import Template as TemplateORM
 
     template = TemplateORM(
@@ -75,8 +83,7 @@ async def _seed_template(db, *, schema_hash: str):
 
 
 async def _seed_category(
-    db, *, meesho_leaf_id: str, leaf_name: str, schema_hash: str,
-    commission_pct: Decimal = Decimal("15.00"),
+    db, *, meesho_leaf_id: str, leaf_name: str, schema_hash: str
 ) -> CategoryORM:
     template = await _seed_template(db, schema_hash=schema_hash)
     category = CategoryORM(
@@ -86,7 +93,7 @@ async def _seed_category(
         meesho_leaf_id=meesho_leaf_id,
         leaf_name=leaf_name,
         template_id=template.id,
-        commission_pct=commission_pct,
+        commission_pct=None,
     )
     db.add(category)
     await db.flush()
@@ -95,7 +102,9 @@ async def _seed_category(
 
 
 async def _seed_catalog(db, *, user_id) -> CatalogORM:
-    catalog = CatalogORM(user_id=user_id, name="Persistence Test Catalog", status="draft")
+    catalog = CatalogORM(
+        user_id=user_id, name="Persistence Test Catalog", status="draft"
+    )
     db.add(catalog)
     await db.flush()
     await db.refresh(catalog)
@@ -103,7 +112,12 @@ async def _seed_catalog(db, *, user_id) -> CatalogORM:
 
 
 async def _seed_product(
-    db, *, user_id, catalog_id, category_id, name: str = "Persistence Test Product"
+    db,
+    *,
+    user_id,
+    catalog_id,
+    category_id,
+    name: str = "Persistence Test Product",
 ) -> ProductORM:
     product = ProductORM(
         user_id=user_id,
@@ -122,121 +136,116 @@ async def _seed_product(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Test
+# Tests
 # ─────────────────────────────────────────────────────────────────────────────
 class TestPricingCalcsPersistence:
-    """§12.J test #2 — append-only audit trail + get_last_calc."""
+    """Append-only audit trail + confirmed-model column persistence."""
 
-    async def test_calc_writes_full_structured_snapshot(
+    async def test_calc_writes_confirmed_model_columns(
         self, db_session, use_live_valkey
     ):
-        """A single ``calculate`` call writes ONE ``pricing_calcs`` row
-        carrying ALL structured columns per the DDL (§12-PRICING-D4).
-
-        Adapts the §12.J prose "full input_jsonb and output_jsonb
-        snapshots" to the actual DDL: the structured columns ARE the
-        snapshot."""
+        """A single ``calculate`` call writes ONE ``pricing_calcs`` row with
+        all confirmed-model columns populated and all deprecated #285 columns
+        left NULL.
+        """
         user = await _seed_user(db_session, "+915550014001")
         category = await _seed_category(
-            db_session, meesho_leaf_id="99200", leaf_name="Persistence Leaf",
+            db_session,
+            meesho_leaf_id=_REAL_LEAF_ID,
+            leaf_name="Persistence Leaf",
             schema_hash="integ-pricing-persist-0001",
         )
         catalog = await _seed_catalog(db_session, user_id=user.id)
         product = await _seed_product(
-            db_session, user_id=user.id, catalog_id=catalog.id,
+            db_session,
+            user_id=user.id,
+            catalog_id=catalog.id,
             category_id=category.id,
         )
 
         response = await pricing_service.calculate(
             user_id=user.id,
             product_id=product.id,
-            request=PriceCalcRequest(
-                meesho_price=Decimal("106"),
-                input_cost=Decimal("40"),
-            ),
+            request=PriceCalcRequest(selling_price=Decimal("100")),
             db=db_session,
         )
 
-        # Find the row.
+        # ── Find the row ─────────────────────────────────────────────────
         result = await db_session.execute(
-            select(PricingCalcORM).where(
-                PricingCalcORM.product_id == product.id
-            )
+            select(PricingCalcORM).where(PricingCalcORM.product_id == product.id)
         )
         rows = result.scalars().all()
         assert len(rows) == 1, (
-            f"Expected exactly 1 pricing_calcs row after a single calc; "
-            f"got {len(rows)}"
+            f"Expected 1 pricing_calcs row after a single calc; got {len(rows)}"
         )
         row = rows[0]
 
-        # Every structured column reflects the forward-estimator response.
-        assert row.meesho_price == response.meesho_price
-        assert row.estimated_payout == response.estimated_payout
-        # Legacy seller_price column re-used as the estimated-payout snapshot.
-        assert row.seller_price == response.estimated_payout
-        assert row.commission_pct == response.commission_pct  # seller input
-        assert row.gst_pct == response.gst_pct
-        assert row.margin == response.profit
-        assert row.margin_pct == response.margin_pct
-        assert row.markup_pct == response.markup_pct
-        # Additive §12.M breakdown columns persisted.
-        assert row.referral_commission == response.referral_commission
-        assert row.shipping_charge == response.shipping_charge
-        assert row.logistics_fee == response.logistics_fee
-        assert row.fixed_fee == response.fixed_fee
-        assert row.gst_on_fees == response.gst_on_fees
-        assert row.tcs == response.tcs
+        # ── Confirmed-model columns match the response ────────────────────
+        assert row.selling_price == response.selling_price
+        assert row.shipping == response.shipping
+        assert row.total_price == response.total_price
+        assert row.commission_pct == response.commission_pct
+        assert row.commission_fees == response.commission_fees
+        assert row.gst_on_shipping == response.gst_on_shipping
         assert row.tds == response.tds
-        assert row.rto_expected_loss == response.rto_expected_loss
-        assert row.return_rate_pct == response.return_rate_pct
-        assert row.wdrp_price == response.wdrp_price
-        # created_at is server-set.
+        assert row.tcs == response.tcs
+        assert row.estimated_bank_settlement == response.estimated_bank_settlement
+        assert row.meesho_leaf_id == _REAL_LEAF_ID
+
+        # ── Deprecated #285 columns must be NULL (never written by W2+) ──
+        assert row.meesho_price is None, (
+            f"Deprecated meesho_price should be NULL, got {row.meesho_price}"
+        )
+        assert row.seller_price is None, (
+            f"Deprecated seller_price should be NULL, got {row.seller_price}"
+        )
+        assert row.estimated_payout is None, (
+            f"Deprecated estimated_payout should be NULL, got {row.estimated_payout}"
+        )
+        assert row.logistics_fee is None
+        assert row.fixed_fee is None
+        assert row.gst_on_fees is None
+        assert row.rto_expected_loss is None
+        assert row.wdrp_price is None
+
         assert row.created_at is not None
 
-    async def test_get_last_calc_returns_most_recent(
+    async def test_append_only_three_rows_for_three_calcs(
         self, db_session, use_live_valkey
     ):
-        """``get_last_calc`` returns the most recent calc and three
-        sequential calcs leave THREE rows (not one UPDATEd row).
+        """Three sequential calcs INSERT THREE rows (not one UPDATEd row).
 
-        Each calc is committed in its own transaction so PostgreSQL's
-        ``NOW()`` (which is transaction-bound) yields distinct
-        ``created_at`` values — mirroring the production reality where
-        each HTTP request is its own transaction.
+        The append-only invariant (§12.B.1 step 8 / §12-PRICING-D4) is
+        verified by counting rows after three distinct commits.
         """
         import asyncio
 
         user = await _seed_user(db_session, "+915550014002")
         category = await _seed_category(
-            db_session, meesho_leaf_id="99201", leaf_name="Sequential Leaf",
+            db_session,
+            meesho_leaf_id=_REAL_LEAF_ID,
+            leaf_name="Sequential Leaf",
             schema_hash="integ-pricing-persist-0002",
         )
         catalog = await _seed_catalog(db_session, user_id=user.id)
         product = await _seed_product(
-            db_session, user_id=user.id, catalog_id=catalog.id,
+            db_session,
+            user_id=user.id,
+            catalog_id=catalog.id,
             category_id=category.id,
         )
-        await db_session.commit()  # finalise seed in its own tx
+        await db_session.commit()
 
-        # Three sequential calcs in DISTINCT transactions — last one
-        # wins in get_last_calc but ALL persist as separate rows.
-        for price in (Decimal("200"), Decimal("300"), Decimal("500")):
+        for price in (Decimal("100"), Decimal("200"), Decimal("300")):
             await pricing_service.calculate(
                 user_id=user.id,
                 product_id=product.id,
-                request=PriceCalcRequest(
-                    meesho_price=price,
-                    input_cost=Decimal("100"),
-                ),
+                request=PriceCalcRequest(selling_price=price),
                 db=db_session,
             )
             await db_session.commit()
-            # Tiny gap ensures Postgres NOW() ticks past the previous
-            # transaction even on millisecond-resolution clocks.
             await asyncio.sleep(0.01)
 
-        # Append-only: three rows must exist (NOT one UPDATEd row).
         result = await db_session.execute(
             select(PricingCalcORM)
             .where(PricingCalcORM.product_id == product.id)
@@ -244,62 +253,89 @@ class TestPricingCalcsPersistence:
         )
         rows = result.scalars().all()
         assert len(rows) == 3, (
-            f"Append-only audit trail violated: expected 3 rows after 3 "
-            f"calcs, got {len(rows)}.  Service must INSERT each calc, "
-            f"never UPDATE."
+            f"Append-only invariant violated: expected 3 rows, got {len(rows)}"
         )
-        # Each row's seller_price (= estimated_payout snapshot) reflects its
-        # input price — proves they are distinct calcs, not duplicate writes.
-        seller_prices = sorted(r.seller_price for r in rows)
-        assert seller_prices == [
-            Decimal("135.46"),  # payout(meesho_price=200)
-            Decimal("229.74"),  # payout(meesho_price=300)
-            Decimal("418.30"),  # payout(meesho_price=500)
+        # Each row's selling_price reflects its distinct input.
+        selling_prices = sorted(r.selling_price for r in rows)
+        assert selling_prices == [
+            Decimal("100.00"),
+            Decimal("200.00"),
+            Decimal("300.00"),
         ]
 
-        # Savepoint isolation (per-test SAVEPOINT inside ONE outer transaction)
-        # shares the outer txn's NOW() across all 3 commits, so created_at is
-        # identical → ORDER BY created_at DESC is nondeterministic. Force
-        # distinct, monotonically-increasing created_at values keyed by
-        # seller_price so the "most-recent-wins" intent (50% calc = newest) is
-        # deterministic under the harness (BE-PRICING-LASTCALC-TX-1).
-        from datetime import datetime, timedelta, timezone
+    async def test_get_last_calc_returns_most_recent(
+        self, db_session, use_live_valkey
+    ):
+        """``get_last_calc`` returns the most recently committed row."""
+        import asyncio
+        from datetime import timedelta
 
+        user = await _seed_user(db_session, "+915550014003")
+        category = await _seed_category(
+            db_session,
+            meesho_leaf_id=_REAL_LEAF_ID,
+            leaf_name="LastCalc Leaf",
+            schema_hash="integ-pricing-persist-0003",
+        )
+        catalog = await _seed_catalog(db_session, user_id=user.id)
+        product = await _seed_product(
+            db_session,
+            user_id=user.id,
+            catalog_id=catalog.id,
+            category_id=category.id,
+        )
+        await db_session.commit()
+
+        for price in (Decimal("100"), Decimal("200"), Decimal("500")):
+            await pricing_service.calculate(
+                user_id=user.id,
+                product_id=product.id,
+                request=PriceCalcRequest(selling_price=price),
+                db=db_session,
+            )
+            await db_session.commit()
+            await asyncio.sleep(0.01)
+
+        # Monotonically stamp created_at so ORDER BY is deterministic under
+        # the test harness (same txn NOW() artifact).
+        result = await db_session.execute(
+            select(PricingCalcORM)
+            .where(PricingCalcORM.product_id == product.id)
+            .order_by(PricingCalcORM.selling_price.asc())
+        )
+        rows = result.scalars().all()
         base = datetime(2026, 1, 1, tzinfo=timezone.utc)
-        ts_by_price = {
-            Decimal("135.46"): base,                          # oldest (price 200)
-            Decimal("229.74"): base + timedelta(seconds=1),   # price 300
-            Decimal("418.30"): base + timedelta(seconds=2),   # newest (price 500)
-        }
-        for r in rows:
-            r.created_at = ts_by_price[r.seller_price]
+        for i, row in enumerate(rows):
+            row.created_at = base + timedelta(seconds=i)
         await db_session.flush()
 
-        # get_last_calc returns the most recent.
         latest = await pricing_service.get_last_calc(
             user_id=user.id,
             product_id=product.id,
             db=db_session,
         )
         assert latest is not None
-        assert latest.seller_price == Decimal("418.30"), (
-            f"get_last_calc should return the most recent (meesho_price=500, "
-            f"payout=418.30); got seller_price={latest.seller_price}"
+        assert latest.selling_price == Decimal("500.00"), (
+            f"get_last_calc should return the most recent (selling_price=500); "
+            f"got selling_price={latest.selling_price}"
         )
 
     async def test_get_last_calc_returns_none_for_no_history(
         self, db_session, use_live_valkey
     ):
-        """A product with no calc history → ``get_last_calc`` returns
-        ``None`` (per §12.C surface contract)."""
-        user = await _seed_user(db_session, "+915550014003")
+        """A product with no calc history → ``get_last_calc`` returns None."""
+        user = await _seed_user(db_session, "+915550014004")
         category = await _seed_category(
-            db_session, meesho_leaf_id="99202", leaf_name="No-History Leaf",
-            schema_hash="integ-pricing-persist-0003",
+            db_session,
+            meesho_leaf_id=_REAL_LEAF_ID,
+            leaf_name="No-History Leaf",
+            schema_hash="integ-pricing-persist-0004",
         )
         catalog = await _seed_catalog(db_session, user_id=user.id)
         product = await _seed_product(
-            db_session, user_id=user.id, catalog_id=catalog.id,
+            db_session,
+            user_id=user.id,
+            catalog_id=catalog.id,
             category_id=category.id,
         )
 

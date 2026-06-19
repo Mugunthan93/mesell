@@ -1,20 +1,25 @@
 """Pricing-module pytest fixtures.
 
-Per BACKEND_ARCHITECTURE.md §12.J:
+Per BACKEND_ARCHITECTURE.md §12.J as superseded by the **W2 Price Calculator
+rework (census-confirmed settlement model, 2026-06-19)**.
 
+Fixtures
+--------
 * ``user`` — a logged-in seller.
-* ``other_user`` — a second seller (for the cross-tenant ownership-gate test).
-* ``priced_category`` — a category seeded with ``commission_pct=15`` so the
-  full ``pricing.service.calculate`` path completes without raising
-  :class:`CommissionMissingError`.
-* ``uncommissioned_category`` — a category with ``commission_pct=NULL``.
-  Per §9.C, :func:`category.service.get_commission` returns
-  ``Decimal("0.00")`` for this row — the §12-PRICING-D1 missing-signal.
+* ``other_user`` — a second seller (cross-tenant ownership-gate test).
+* ``priced_category`` — a category with a ``meesho_leaf_id`` that IS present
+  in the ``meesho_pricing_lookup.json`` lookup (first key in the shipped data
+  file).  This lets the full ``pricing.service.calculate`` path complete
+  without raising :class:`UnknownCategoryError`.
 * ``catalog_row`` — a catalog under ``user``.
 * ``product_row`` — a product under ``user`` in ``catalog_row`` pointing at
   ``priced_category``.
 * ``other_user_product`` — a product under ``other_user`` (cross-tenant
   fixture for the ownership-gate test).
+
+Note: ``CommissionMissingError`` and ``product_uncommissioned`` are REMOVED
+in W2 — commission is now an optional seller override (default 0), never a
+missing-field failure mode.
 
 The ``db`` fixture is the top-level conftest's ``db_session`` — fresh
 ephemeral test DB (Postgres on :5432 via ``DATABASE_URL`` env in
@@ -23,12 +28,13 @@ ephemeral test DB (Postgres on :5432 via ``DATABASE_URL`` env in
 
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 from uuid import UUID
 
 import pytest_asyncio
-
-from datetime import datetime, timezone
 
 from app.shared.models.catalog import Catalog as CatalogORM
 from app.shared.models.category import Category as CategoryORM
@@ -36,11 +42,26 @@ from app.shared.models.product import Product as ProductORM
 from app.shared.models.template import Template as TemplateORM
 from app.shared.models.user import User
 
+# Resolve a real meesho_leaf_id from the shipped lookup so integration tests
+# exercise the full service path without stubbing the lookup.
+_LOOKUP_FILE = (
+    Path(__file__).resolve().parents[3] / "app" / "data" / "meesho_pricing_lookup.json"
+)
+
+
+def _first_lookup_leaf_id() -> str:
+    """Return the first key in the shipped pricing lookup (real sscat_id)."""
+    data = json.loads(_LOOKUP_FILE.read_text(encoding="utf-8"))
+    return next(iter(data["lookup"]))
+
+
+# Resolved once at import; the fixture embeds it.
+_REAL_LEAF_ID: str = _first_lookup_leaf_id()
+
 
 @pytest_asyncio.fixture(loop_scope="function")
 async def db(db_session):
-    """Alias for the ephemeral test DB session — matches the §8 / §10
-    fixture-naming convention so the test signatures read naturally."""
+    """Alias for the ephemeral test DB session."""
     yield db_session
 
 
@@ -69,8 +90,7 @@ async def other_user(db) -> User:
 # Categories
 # ─────────────────────────────────────────────────────────────────────────────
 async def _seed_template(db, *, schema_hash: str) -> TemplateORM:
-    """Insert a minimal templates row — Categories FK to templates with
-    ``ondelete=RESTRICT``, so we need a real template_id."""
+    """Insert a minimal templates row."""
     template = TemplateORM(
         schema_hash=schema_hash,
         schema_jsonb={
@@ -96,15 +116,10 @@ async def _seed_category(
     *,
     meesho_leaf_id: str,
     leaf_name: str,
-    commission_pct: Decimal | None,
     schema_hash: str,
+    commission_pct: Decimal | None = None,
 ) -> CategoryORM:
-    """Insert a minimal category row + its backing template.
-
-    The ``categories`` DDL requires ``super_id`` / ``super_name`` / ``path``
-    / ``meesho_leaf_id`` / ``leaf_name`` / ``template_id``.  Per §9
-    ``commission_pct`` is the only column that pricing cares about.
-    """
+    """Insert a minimal category + its backing template."""
     template = await _seed_template(db, schema_hash=schema_hash)
     category = CategoryORM(
         super_id="99",
@@ -123,27 +138,17 @@ async def _seed_category(
 
 @pytest_asyncio.fixture(loop_scope="function")
 async def priced_category(db) -> CategoryORM:
-    """A category with a 15% commission — the canonical §12.J golden."""
+    """A category whose ``meesho_leaf_id`` is present in the pricing lookup.
+
+    Uses the first key from ``meesho_pricing_lookup.json`` so the full
+    service path (ownership → leaf resolution → shipping lookup → settlement)
+    completes without :class:`UnknownCategoryError`.
+    """
     return await _seed_category(
         db,
-        meesho_leaf_id="99001",
+        meesho_leaf_id=_REAL_LEAF_ID,
         leaf_name="Priced Test Leaf",
-        commission_pct=Decimal("15.00"),
         schema_hash="test-priced-cat-hash-0001",
-    )
-
-
-@pytest_asyncio.fixture(loop_scope="function")
-async def uncommissioned_category(db) -> CategoryORM:
-    """A category with ``commission_pct=NULL`` — §9 surfaces this to
-    pricing as ``Decimal('0.00')`` per the §9.C docstring; pricing
-    raises :class:`CommissionMissingError` per §12-PRICING-D1."""
-    return await _seed_category(
-        db,
-        meesho_leaf_id="99002",
-        leaf_name="Uncommissioned Test Leaf",
-        commission_pct=None,
-        schema_hash="test-uncomm-cat-hash-0002",
     )
 
 
@@ -189,8 +194,8 @@ async def catalog_row(db, user) -> CatalogORM:
 
 @pytest_asyncio.fixture(loop_scope="function")
 async def product_row(db, user, catalog_row, priced_category) -> ProductORM:
-    """Canonical happy-path product: owned by ``user``, under
-    ``catalog_row``, pointing at ``priced_category``."""
+    """Canonical happy-path product: owned by ``user``, pointing at
+    ``priced_category`` (which has a real pricing-lookup entry)."""
     return await _seed_product(
         db,
         user_id=user.id,
@@ -200,28 +205,8 @@ async def product_row(db, user, catalog_row, priced_category) -> ProductORM:
 
 
 @pytest_asyncio.fixture(loop_scope="function")
-async def product_uncommissioned(
-    db, user, catalog_row, uncommissioned_category
-) -> ProductORM:
-    """Product under ``user`` pointing at ``uncommissioned_category``.
-
-    Used by the §12.J test #2 (commission missing): calling
-    ``pricing.service.calculate`` on this product raises
-    :class:`CommissionMissingError` because the §9 cross-module surface
-    returns ``Decimal('0.00')`` for the missing commission."""
-    return await _seed_product(
-        db,
-        user_id=user.id,
-        catalog_id=catalog_row.id,
-        category_id=uncommissioned_category.id,
-        name="Uncommissioned Product",
-    )
-
-
-@pytest_asyncio.fixture(loop_scope="function")
 async def other_user_product(db, other_user, priced_category) -> ProductORM:
-    """A product owned by ``other_user`` — used by the §12.J test #1
-    cross-tenant ownership-gate assertion."""
+    """A product owned by ``other_user`` — cross-tenant ownership-gate test."""
     other_catalog = await _seed_catalog(db, other_user.id)
     return await _seed_product(
         db,
