@@ -232,6 +232,134 @@
         }
       }
     },
+    "/api/v1/billing/subscribe": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Start a Razorpay subscription or LTD purchase",
+        "description": "Initiate a Razorpay Subscription (recurring) or Order (LTD).\n\nReturns the Razorpay Checkout handle the FE widget needs.  The plan is NOT\ngranted immediately — it lands via the ``subscription.activated`` /\n``payment.captured`` webhook (D-D, Wave 2).\n\nRaises:\n    409 ``billing.already_subscribed`` — user already has an active sub.\n    502 — Razorpay API unavailable (``RazorpayAdapterError``).",
+        "operationId": "billing_subscribe_api_v1_billing_subscribe_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BillingSubscribeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingSubscribeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/billing/start-trial": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Start the 14-day app-side Pro trial (one per phone, no Razorpay call)",
+        "description": "Grant the 14-day app-side Pro trial (§3.7).\n\nApp-side only — NO Razorpay call.  Sets ``users.trial_ends_at = now() + 14\ndays`` and writes a business ``audit_events`` row.\n\nRaises:\n    409 ``billing.trial.already_used`` — trial already used / non-free plan /\n        existing subscription (all three are handled as \"redundant trial\").",
+        "operationId": "billing_start_trial_api_v1_billing_start_trial_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingStartTrialResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/billing/cancel": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Cancel the current subscription at end of billing cycle",
+        "description": "Schedule a cancel-at-cycle-end for the active subscription.\n\nThe subscription stays active until ``entitled_until`` (the current\n``subscriptions.current_period_end``).  The final ``status → 'cancelled'``\ntransition is webhook-driven via ``subscription.cancelled`` (Wave 2).\n\nRaises:\n    404 ``billing.no_active_subscription`` — no cancellable subscription found.\n    502 — Razorpay cancel API unavailable (``RazorpayAdapterError``).",
+        "operationId": "billing_cancel_api_v1_billing_cancel_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingCancelResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/billing/subscription": {
+      "get": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Get the current billing / plan / trial status (DB-fresh, F7)",
+        "description": "Return the DB-fresh billing status for the authenticated seller.\n\n``entitlement`` is the RESOLVED effective tier the FE should gate UI on —\nannual→base, ltd→pro, trial→pro while live.  Per founder ruling F7 the plan\nis read DB-fresh, not from the JWT claim.\n\nNo rate-limit decorator (read-only; per-IP DDoS floor via the middleware).",
+        "operationId": "billing_subscription_api_v1_billing_subscription_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingSubscriptionResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/seller-profile": {
       "get": {
         "tags": [
@@ -1306,7 +1434,7 @@
           "pricing"
         ],
         "summary": "Price Calculator (Feature 7) — deterministic P&L + alerts",
-        "description": "§12.B.1 — POST /products/{id}/price-calc.\n\nStatus codes:\n  * 200 — calc completed successfully.\n  * 400 — ``validation.price.invalid_input`` (Pydantic catches\n    ``input_cost <= 0`` / ``target_margin_pct < 0`` / etc.; service\n    adds the V1.5 cross-field surface).\n  * 401 — JWT missing/invalid (handled by §4.A auth middleware).\n  * 404 — ``catalog.product.not_found`` from the §10.C\n    ``assert_product_ownership`` cross-module ownership gate.\n  * 422 — ``pricing.commission.missing`` when the resolved category\n    has no usable commission rate.",
+        "description": "§12.B.1 — POST /products/{id}/price-calc (forward estimator, §12.M).\n\nStatus codes:\n  * 200 — calc completed successfully.  A negative estimated payout is\n    ALSO a 200 — it carries a ``NEGATIVE_PAYOUT`` alert (§12.M (4)),\n    NOT a 400.\n  * 400 — ``validation.price.invalid_input`` (Pydantic catches\n    ``meesho_price <= 0`` / ``input_cost <= 0`` / out-of-range\n    percentages).\n  * 401 — JWT missing/invalid (handled by §4.A auth middleware).\n  * 404 — ``catalog.product.not_found`` from the §10.C\n    ``assert_product_ownership`` cross-module ownership gate.\n\nNote (§12.M (4)): the legacy 422 ``pricing.commission.missing`` path\nis REMOVED — commission is now a seller-entered input (default 4%).",
         "operationId": "price_calc_api_v1_products__id__price_calc_post",
         "security": [
           {
@@ -1574,6 +1702,256 @@
         ],
         "title": "AutofillSuggestion",
         "description": "One field's AI suggestion per `MVP_ARCH §2.4` shape."
+      },
+      "BillingCancelResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "cancel_scheduled",
+            "title": "Status",
+            "description": "Immediate confirmation that a cancel-at-cycle-end was scheduled. The subscription stays active until entitled_until.",
+            "default": "cancel_scheduled"
+          },
+          "entitled_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entitled Until",
+            "description": "Current ``subscriptions.current_period_end`` — the seller retains access until this date.  None in edge states (e.g. LTD cancel attempt which is currently blocked)."
+          }
+        },
+        "type": "object",
+        "title": "BillingCancelResponse",
+        "description": "``POST /api/v1/billing/cancel`` 200 body.\n\nThe subscription is scheduled to cancel at the end of the current billing\ncycle (Razorpay ``cancel_at_cycle_end=True``).  The entitlement remains\nactive until ``entitled_until``; the actual ``status → 'cancelled'``\ntransition on ``subscriptions`` is driven by the\n``subscription.cancelled`` webhook (Wave 2)."
+      },
+      "BillingCheckout": {
+        "properties": {
+          "key_id": {
+            "type": "string",
+            "title": "Key Id",
+            "description": "Razorpay public key (safe to expose to FE)"
+          },
+          "razorpay_subscription_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Razorpay Subscription Id",
+            "description": "Set for recurring tiers; used by the FE Checkout widget"
+          },
+          "razorpay_order_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Razorpay Order Id",
+            "description": "Set for the LTD one-time purchase"
+          },
+          "short_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Url",
+            "description": "Razorpay-hosted checkout fallback URL"
+          },
+          "amount_paise": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Paise",
+            "description": "Amount in paise — set only for the LTD order (display only)"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency",
+            "description": "ISO-4217 currency code",
+            "default": "INR"
+          },
+          "tier": {
+            "type": "string",
+            "title": "Tier",
+            "description": "The tier being subscribed to — echoes the request"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key_id",
+          "tier"
+        ],
+        "title": "BillingCheckout",
+        "description": "Razorpay Checkout handle returned to the FE widget.\n\nThe FE mounts the Razorpay Checkout JS with either ``subscription_id`` (for\nrecurring) or ``order_id`` (for LTD).  ``key_id`` is the public Razorpay key\n(safe to expose — it is the same key used in the FE environment config).\n``short_url`` is a Razorpay-hosted checkout fallback that the FE may open\nin a WebView / external browser if the JS widget is unavailable."
+      },
+      "BillingStartTrialResponse": {
+        "properties": {
+          "trial_ends_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Trial Ends At",
+            "description": "UTC expiry of the 14-day Pro trial"
+          },
+          "entitlement": {
+            "type": "string",
+            "const": "pro",
+            "title": "Entitlement",
+            "description": "Effective entitlement granted by the trial (always 'pro')",
+            "default": "pro"
+          }
+        },
+        "type": "object",
+        "required": [
+          "trial_ends_at"
+        ],
+        "title": "BillingStartTrialResponse",
+        "description": "``POST /api/v1/billing/start-trial`` 200 body.\n\nThe trial grants Pro-level entitlement immediately (app-side — no Razorpay\ncall).  ``trial_ends_at`` is the absolute UTC expiry; the FE should display\na countdown.  ``entitlement`` is always ``\"pro\"`` for a live trial."
+      },
+      "BillingSubscribeRequest": {
+        "properties": {
+          "tier": {
+            "type": "string",
+            "enum": [
+              "starter",
+              "pro",
+              "business",
+              "pro_annual",
+              "business_annual",
+              "ltd"
+            ],
+            "title": "Tier",
+            "description": "Target billing tier.  Recurring: starter|pro|pro_annual|business|business_annual.  One-time LTD: ltd.",
+            "examples": [
+              "pro"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "tier"
+        ],
+        "title": "BillingSubscribeRequest",
+        "description": "``POST /api/v1/billing/subscribe`` request body.\n\n``tier`` drives which Razorpay surface is called:\n  - recurring tiers (starter/pro/pro_annual/business/business_annual) →\n    Razorpay Subscriptions API (``create_subscription``).\n  - ``ltd`` → Razorpay Orders API (``create_order``), one-time payment.\n``\"free\"`` is NOT a subscribable tier — it is the default and can only be\nleft by subscribing or starting a trial."
+      },
+      "BillingSubscribeResponse": {
+        "properties": {
+          "checkout": {
+            "$ref": "#/components/schemas/BillingCheckout"
+          }
+        },
+        "type": "object",
+        "required": [
+          "checkout"
+        ],
+        "title": "BillingSubscribeResponse",
+        "description": "``POST /api/v1/billing/subscribe`` 201 body.\n\nThe actual entitlement grant happens via the Razorpay webhook\n(``subscription.activated`` / ``payment.captured``) — this response is\nADVISORY: it only confirms that a checkout session was created.  The FE\nMUST wait for the webhook-driven plan update (observable via\n``GET /auth/me`` or ``GET /billing/subscription`` polling)."
+      },
+      "BillingSubscriptionResponse": {
+        "properties": {
+          "plan": {
+            "type": "string",
+            "enum": [
+              "free",
+              "starter",
+              "pro",
+              "pro_annual",
+              "business",
+              "business_annual",
+              "ltd"
+            ],
+            "title": "Plan",
+            "description": "users.plan — the raw plan (DB-fresh per F7); may differ from entitlement"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status",
+            "description": "subscriptions.status (active/cancelled/past_due/…); None if no sub row"
+          },
+          "current_period_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Period End",
+            "description": "End of the current paid period; None = perpetual (LTD) or no sub"
+          },
+          "cancel_scheduled": {
+            "type": "boolean",
+            "title": "Cancel Scheduled",
+            "description": "True when a cancel-at-cycle-end is pending on the sub row",
+            "default": false
+          },
+          "tier_label": {
+            "type": "string",
+            "title": "Tier Label",
+            "description": "Human-readable label for the plan (e.g. 'Pro', 'Pro (Annual)', 'Lifetime')"
+          },
+          "trial_ends_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trial Ends At",
+            "description": "The §3.7 14-day trial expiry; None if no trial was started"
+          },
+          "entitlement": {
+            "type": "string",
+            "enum": [
+              "free",
+              "starter",
+              "pro",
+              "business"
+            ],
+            "title": "Entitlement",
+            "description": "The RESOLVED effective entitlement (the field the FE should gate UI on). Resolves annual→base, ltd→pro, trial→pro while live."
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan",
+          "tier_label",
+          "entitlement"
+        ],
+        "title": "BillingSubscriptionResponse",
+        "description": "``GET /api/v1/billing/subscription`` 200 body.\n\nThe DB-fresh subscription/plan/trial status for the authenticated seller.\n``entitlement`` is the field the FE should gate UI features on (it is the\nRESOLVED effective tier — annual→base, ltd/trial→pro)."
       },
       "Body_upload_image_api_v1_products__id__images_post": {
         "properties": {
@@ -2201,7 +2579,15 @@
           },
           "plan": {
             "type": "string",
-            "const": "free",
+            "enum": [
+              "free",
+              "starter",
+              "pro",
+              "pro_annual",
+              "business",
+              "business_annual",
+              "ltd"
+            ],
             "title": "Plan"
           },
           "created_at": {
@@ -2225,6 +2611,29 @@
             "type": "boolean",
             "title": "Onboarding Complete",
             "default": false
+          },
+          "trial_ends_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trial Ends At"
+          },
+          "entitlement": {
+            "type": "string",
+            "enum": [
+              "free",
+              "starter",
+              "pro",
+              "business"
+            ],
+            "title": "Entitlement",
+            "default": "free"
           }
         },
         "type": "object",
@@ -2235,7 +2644,7 @@
           "created_at"
         ],
         "title": "MeResponse",
-        "description": "``GET /api/v1/auth/me`` 200 body."
+        "description": "``GET /api/v1/auth/me`` 200 body.\n\nRazorpay Wave 3 widened ``plan`` from ``Literal[\"free\"]`` to the full\nPricing v2 vocabulary and added ``trial_ends_at`` + ``entitlement`` so the\nFE (Wave 5) can render plan state from ``/auth/me``.  ``plan`` is sourced\nDB-FRESH from ``users.plan`` (founder ruling F7 — NOT the JWT claim);\n``entitlement`` is the RESOLVED effective tier from\n``core.plan_guard.resolve_entitlement`` (annual→base, ltd/trial→pro).\n\nThis is an ADDITIVE contract change — existing fields are unchanged; the\nwidened ``plan`` Literal and the two new optional fields are the only diff.\nFE-coordination memo owed (``handoff_contract_razorpay.md``)."
       },
       "PatchActiveCategoriesRequest": {
         "properties": {
@@ -2424,9 +2833,9 @@
           "code": {
             "type": "string",
             "enum": [
+              "NEGATIVE_PAYOUT",
               "LOW_MARGIN",
-              "HIGH_MRP_MULTIPLIER",
-              "THIN_PROFIT"
+              "SHIPPING_DOMINATES"
             ],
             "title": "Code"
           },
@@ -2451,10 +2860,24 @@
           "severity"
         ],
         "title": "PriceCalcAlert",
-        "description": "Wire-shape pricing alert.  See :class:`~app.modules.pricing.domain.PricingAlert`\nfor the internal dataclass that the service constructs and the router\nmaps to this Pydantic model."
+        "description": "Wire-shape pricing alert.  See\n:class:`~app.modules.pricing.domain.PricingAlert` for the internal\ndataclass that the service constructs and the router maps to this\nPydantic model."
       },
       "PriceCalcRequest": {
         "properties": {
+          "meesho_price": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$"
+              }
+            ],
+            "title": "Meesho Price",
+            "description": "Listed/selling price on Meesho, in INR — drives the payout."
+          },
           "input_cost": {
             "anyOf": [
               {
@@ -2467,13 +2890,13 @@
               }
             ],
             "title": "Input Cost",
-            "description": "Cost of goods per unit, in INR."
+            "description": "Cost of goods per unit, in INR — drives profit + markup."
           },
-          "target_margin_pct": {
+          "commission_pct": {
             "anyOf": [
               {
                 "type": "number",
-                "maximum": 500.0,
+                "maximum": 100.0,
                 "minimum": 0.0
               },
               {
@@ -2481,15 +2904,47 @@
                 "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$"
               }
             ],
-            "title": "Target Margin Pct",
-            "description": "Desired profit margin as a percentage of input_cost.",
-            "default": "30"
+            "title": "Commission Pct",
+            "description": "Meesho referral commission %, seller-entered (default 4%).",
+            "default": "4"
           },
-          "override_commission_pct": {
+          "return_rate_pct": {
             "anyOf": [
               {
                 "type": "number",
                 "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$"
+              }
+            ],
+            "title": "Return Rate Pct",
+            "description": "Expected return rate %, drives the RTO expected-loss term.",
+            "default": "0"
+          },
+          "mrp": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mrp",
+            "description": "Struck-through reference price (display-only; does NOT drive payout)."
+          },
+          "override_shipping": {
+            "anyOf": [
+              {
+                "type": "number",
                 "minimum": 0.0
               },
               {
@@ -2500,8 +2955,42 @@
                 "type": "null"
               }
             ],
-            "title": "Override Commission Pct",
-            "description": "V1.5+ Pro override; V1 ignores this field."
+            "title": "Override Shipping",
+            "description": "Override the bracketed shipping charge (INR)."
+          },
+          "override_logistics_fee": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Logistics Fee",
+            "description": "Override the logistics fee (INR)."
+          },
+          "override_fixed_fee": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Fixed Fee",
+            "description": "Override the fixed/closing fee (INR)."
           },
           "override_gst_pct": {
             "anyOf": [
@@ -2519,22 +3008,66 @@
               }
             ],
             "title": "Override Gst Pct",
-            "description": "V1.5+ Pro override; V1 ignores this field."
+            "description": "Override the GST % applied to the fees."
+          },
+          "override_tcs_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Tcs Pct",
+            "description": "Override the TCS %."
+          },
+          "override_tds_pct": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,2}0*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Tds Pct",
+            "description": "Override the TDS %."
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
+          "meesho_price",
           "input_cost"
         ],
         "title": "PriceCalcRequest",
-        "description": "Body for ``POST /api/v1/products/{id}/price-calc``.\n\nPer §12.B.1 + §12.E.  Pydantic validates the field constraints at the\nroute boundary; service-layer business-rule checks (V1.5) are\nsurfaced via :class:`~app.modules.pricing.exceptions.InvalidPriceInputError`."
+        "description": "Body for ``POST /api/v1/products/{id}/price-calc``.\n\nPer §12.M.  Pydantic validates the field constraints at the route\nboundary; service-layer business-rule checks are surfaced via\n:class:`~app.modules.pricing.exceptions.InvalidPriceInputError` (400).\nA negative estimated payout does NOT raise — it returns 200 with a\n``NEGATIVE_PAYOUT`` alert."
       },
       "PriceCalcResponse": {
         "properties": {
           "mrp": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Mrp"
           },
           "meesho_price": {
@@ -2542,40 +3075,100 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Meesho Price"
           },
-          "seller_price": {
+          "wdrp_price": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Seller Price"
+            "title": "Wdrp Price"
+          },
+          "input_cost": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Input Cost"
           },
           "commission_pct": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Commission Pct"
           },
-          "commission_amount": {
+          "referral_commission": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Commission Amount"
+            "title": "Referral Commission"
+          },
+          "shipping_charge": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Shipping Charge"
+          },
+          "logistics_fee": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Logistics Fee"
+          },
+          "fixed_fee": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Fixed Fee"
           },
           "gst_pct": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Gst Pct"
           },
-          "gst_amount": {
+          "gst_on_fees": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Gst Amount"
+            "title": "Gst On Fees"
+          },
+          "tcs": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Tcs"
+          },
+          "tds": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Tds"
+          },
+          "return_rate_pct": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Return Rate Pct"
+          },
+          "rto_expected_loss": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Rto Expected Loss"
+          },
+          "total_deductions": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Deductions"
+          },
+          "estimated_payout": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Estimated Payout"
+          },
+          "estimated_payout_wdrp": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Estimated Payout Wdrp"
           },
           "profit": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Profit"
           },
-          "profit_pct": {
+          "margin_pct": {
             "type": "string",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Profit Pct"
+            "title": "Margin Pct"
+          },
+          "markup_pct": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Markup Pct"
           },
           "alerts": {
             "items": {
@@ -2594,18 +3187,30 @@
         "required": [
           "mrp",
           "meesho_price",
-          "seller_price",
+          "wdrp_price",
+          "input_cost",
           "commission_pct",
-          "commission_amount",
+          "referral_commission",
+          "shipping_charge",
+          "logistics_fee",
+          "fixed_fee",
           "gst_pct",
-          "gst_amount",
+          "gst_on_fees",
+          "tcs",
+          "tds",
+          "return_rate_pct",
+          "rto_expected_loss",
+          "total_deductions",
+          "estimated_payout",
+          "estimated_payout_wdrp",
           "profit",
-          "profit_pct",
+          "margin_pct",
+          "markup_pct",
           "alerts",
           "calculated_at"
         ],
         "title": "PriceCalcResponse",
-        "description": "200-OK body for ``POST /api/v1/products/{id}/price-calc``.\n\nAll monetary values in INR with 2 decimal places (quantized\n``ROUND_HALF_EVEN`` per the §12.B.1 step 6 lock)."
+        "description": "200-OK body for ``POST /api/v1/products/{id}/price-calc``.\n\nAll monetary values in INR with 2 decimal places (quantized\n``ROUND_HALF_EVEN`` per the §12.M lock)."
       },
       "ProductDraftResponse": {
         "properties": {

@@ -261,13 +261,20 @@ async def me(
     completeness = await customer_service.get_onboarding_completeness(
         user.user_id, db
     )
+    # Razorpay Wave 3 (F7): source plan/trial/entitlement DB-FRESH, NOT from the
+    # JWT claim.  ``get_billing_status`` reads ``users.plan`` + ``trial_ends_at``
+    # + the sub row and computes the resolved entitlement in one place so this
+    # handler and ``GET /billing/subscription`` agree.
+    billing = await iam_service.get_billing_status(user.user_id, db)
     return MeResponse(
         user_id=profile.user_id,
         phone=profile.phone,
-        plan="free",  # V1 narrow per §4.B CurrentUser
+        plan=billing.plan,  # DB-fresh per F7 (was hard-coded "free")
         created_at=profile.created_at,
         last_login_at=profile.last_login_at,
         onboarding_complete=completeness.onboarding_complete,
+        trial_ends_at=billing.trial_ends_at,
+        entitlement=billing.entitlement,
     )
 
 
