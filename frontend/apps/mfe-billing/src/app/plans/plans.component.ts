@@ -1,19 +1,15 @@
 /**
  * PlansComponent — tier selection, Razorpay checkout, and trial CTA.
  *
- * STUB: service-builder shell for the state machine + service wiring.
- * The component-builder (Wave 5 step 2b) builds the full template, tier-card grid,
- * and entitlement-gated CTA rendering. This file establishes the:
- *   - Signal-based checkout state machine (CheckoutState)
- *   - Service injections (BillingApiService, RazorpayCheckoutService, AuthService)
- *   - subscribe() / startTrial() action methods
- *   - Polling setup and teardown (D18 — ngOnDestroy clears the poll subscription)
+ * Implements the full post-checkout polling state machine per WAVE5_FRONTEND_TASKSPEC §5.2:
+ *   idle → initiating → checkout-open → pending → activated | pending-timeout | cancelled | error
  *
- * The component-builder MUST:
- *   - Add the template (tier cards, pending panel, error banners)
- *   - Wire the state signals to the template
- *   - Add plan-card child components
- *   - Implement aria-live on the polling status region
+ * Key rules:
+ *  - NEVER optimistic: plan card does not flip until poll detects entitlement upgrade.
+ *  - pending-timeout is NOT a failure: reassuring copy + "Refresh status" button.
+ *  - Poll is torn down on ngOnDestroy (D18 discipline).
+ *  - Gating is on auth.entitlement(), never plan literal.
+ *  - withCredentials NOT set (JWT Bearer path, not cookie).
  */
 
 import {
@@ -25,14 +21,18 @@ import {
   computed,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 
 import { AuthService } from '@mesell/core';
+import { MeeToastService } from '@mesell/ui-kit';
 
 import { BillingApiService } from '../billing-api.service';
 import { RazorpayCheckoutService } from '../checkout/razorpay-checkout.service';
+import type { CheckoutResult } from '../checkout/razorpay-checkout.service';
 import { pollUntilActivated } from '../checkout/billing-poll.util';
 import { BILLING_STRINGS, TIER_DISPLAY } from '../billing.constants';
+import { PlanCardComponent } from './plan-card.component';
 
 import type {
   CheckoutState,
@@ -45,48 +45,435 @@ import type {
 @Component({
   selector: 'app-plans',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, RouterLink, PlanCardComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  // TODO(component-builder): replace with full tier-card template
+  styles: [`
+    :host { display: block; padding: var(--mee-space-4, 16px); }
+
+    .plans-header {
+      text-align: center;
+      margin-bottom: var(--mee-space-8, 32px);
+    }
+    .plans-title {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--mee-color-on-surface, #1a1a1a);
+      margin: 0 0 var(--mee-space-2, 8px);
+    }
+    .plans-subtitle {
+      font-size: 15px;
+      color: var(--mee-color-on-surface-muted, #666);
+      margin: 0;
+    }
+
+    /* Tier grid — stacks at ≤640px, 2-col at 768px+, 4-col at 1280px+ */
+    .tier-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: var(--mee-space-4, 16px);
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    @media (min-width: 640px) {
+      .tier-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (min-width: 1024px) {
+      .tier-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (min-width: 1280px) {
+      .tier-grid { grid-template-columns: repeat(4, 1fr); }
+    }
+
+    /* Pending panel */
+    .pending-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--mee-space-4, 16px);
+      max-width: 480px;
+      margin: var(--mee-space-8, 32px) auto;
+      padding: var(--mee-space-8, 32px) var(--mee-space-6, 24px);
+      background: var(--mee-color-surface-variant, #f5f5f5);
+      border-radius: var(--mee-radius-lg, 12px);
+      text-align: center;
+    }
+    .pending-panel__spinner {
+      width: 48px;
+      height: 48px;
+      border: 4px solid var(--mee-color-surface-variant, #e0e0e0);
+      border-top-color: var(--mee-color-primary, #F26B23);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .pending-panel__title {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--mee-color-on-surface, #1a1a1a);
+      margin: 0;
+    }
+    .pending-panel__body {
+      font-size: 14px;
+      color: var(--mee-color-on-surface-muted, #666);
+      margin: 0;
+      line-height: 1.5;
+    }
+
+    /* Pending-timeout panel */
+    .timeout-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--mee-space-4, 16px);
+      max-width: 480px;
+      margin: var(--mee-space-8, 32px) auto;
+      padding: var(--mee-space-6, 24px);
+      background: var(--mee-color-info-light, rgba(59,130,246,0.1));
+      border: 1px solid var(--mee-color-info, #3b82f6);
+      border-radius: var(--mee-radius-lg, 12px);
+      text-align: center;
+    }
+    .timeout-panel__icon { font-size: 36px; }
+    .timeout-panel__title {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--mee-color-on-surface, #1a1a1a);
+      margin: 0;
+    }
+    .timeout-panel__body {
+      font-size: 14px;
+      color: var(--mee-color-on-surface-muted, #666);
+      margin: 0;
+      line-height: 1.5;
+    }
+    .timeout-panel__refresh-btn {
+      min-height: 44px;
+      padding: 0 var(--mee-space-6, 24px);
+      background: var(--mee-color-primary, #F26B23);
+      color: #fff;
+      border: none;
+      border-radius: var(--mee-radius-md, 8px);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .timeout-panel__refresh-btn:hover { opacity: 0.9; }
+
+    /* Success panel */
+    .success-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--mee-space-4, 16px);
+      max-width: 480px;
+      margin: var(--mee-space-8, 32px) auto;
+      padding: var(--mee-space-8, 32px) var(--mee-space-6, 24px);
+      background: var(--mee-color-success-light, rgba(34,197,94,0.1));
+      border: 1px solid var(--mee-color-success, #22c55e);
+      border-radius: var(--mee-radius-lg, 12px);
+      text-align: center;
+    }
+    .success-panel__icon { font-size: 40px; }
+    .success-panel__title {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--mee-color-on-surface, #1a1a1a);
+      margin: 0;
+    }
+    .success-panel__body {
+      font-size: 14px;
+      color: var(--mee-color-on-surface-muted, #666);
+      margin: 0;
+    }
+    .success-panel__cta {
+      min-height: 44px;
+      padding: 0 var(--mee-space-8, 32px);
+      background: var(--mee-color-primary, #F26B23);
+      color: #fff;
+      border: none;
+      border-radius: var(--mee-radius-md, 8px);
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    /* Error banner */
+    .error-banner {
+      max-width: 640px;
+      margin: 0 auto var(--mee-space-4, 16px);
+      padding: var(--mee-space-3, 12px) var(--mee-space-4, 16px);
+      background: var(--mee-color-error-light, rgba(239,68,68,0.1));
+      border: 1px solid var(--mee-color-error, #ef4444);
+      border-radius: var(--mee-radius-md, 8px);
+      color: var(--mee-color-error, #ef4444);
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: var(--mee-space-2, 8px);
+    }
+    .error-banner__retry-btn {
+      margin-left: auto;
+      min-height: 36px;
+      padding: 0 var(--mee-space-4, 16px);
+      background: transparent;
+      border: 1px solid var(--mee-color-error, #ef4444);
+      border-radius: var(--mee-radius-sm, 6px);
+      color: var(--mee-color-error, #ef4444);
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    /* Cancelled notice */
+    .cancelled-notice {
+      max-width: 480px;
+      margin: 0 auto var(--mee-space-4, 16px);
+      padding: var(--mee-space-3, 12px) var(--mee-space-4, 16px);
+      background: var(--mee-color-surface-variant, #f5f5f5);
+      border-radius: var(--mee-radius-md, 8px);
+      font-size: 14px;
+      color: var(--mee-color-on-surface-muted, #666);
+      text-align: center;
+    }
+
+    /* Trial CTA banner */
+    .trial-banner {
+      max-width: 640px;
+      margin: 0 auto var(--mee-space-6, 24px);
+      padding: var(--mee-space-4, 16px) var(--mee-space-5, 20px);
+      background: linear-gradient(135deg, rgba(242,107,35,0.08), rgba(242,107,35,0.15));
+      border: 1px solid var(--mee-color-primary-light, rgba(242,107,35,0.3));
+      border-radius: var(--mee-radius-lg, 12px);
+      display: flex;
+      align-items: center;
+      gap: var(--mee-space-4, 16px);
+      flex-wrap: wrap;
+    }
+    .trial-banner__text {
+      flex: 1;
+      font-size: 14px;
+      color: var(--mee-color-on-surface, #1a1a1a);
+      margin: 0;
+    }
+    .trial-banner__cta {
+      min-height: 44px;
+      padding: 0 var(--mee-space-5, 20px);
+      background: var(--mee-color-primary, #F26B23);
+      color: #fff;
+      border: none;
+      border-radius: var(--mee-radius-md, 8px);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .trial-banner__cta:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    /* Billing unavailable */
+    .unavailable-notice {
+      max-width: 480px;
+      margin: var(--mee-space-8, 32px) auto;
+      padding: var(--mee-space-6, 24px);
+      text-align: center;
+      color: var(--mee-color-on-surface-muted, #666);
+      font-size: 15px;
+    }
+  `],
   template: `
-    <div class="mee-plans">
-      <p>Plans — template TODO (component-builder step 2b)</p>
-      <p>Checkout state: {{ checkoutState() }}</p>
-      <p>Current entitlement: {{ auth.entitlement() }}</p>
-    </div>
+    <!-- === BILLING UNAVAILABLE (FEATURE_BILLING_ENABLED=off) === -->
+    @if (billingUnavailable()) {
+      <div class="unavailable-notice" role="status">
+        <p>Billing is not available yet. Check back soon.</p>
+      </div>
+    } @else {
+
+      <!-- === PENDING: processing your payment === -->
+      @if (checkoutState() === 'pending') {
+        <div
+          class="pending-panel"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          aria-label="Processing your payment"
+        >
+          <div class="pending-panel__spinner" aria-hidden="true"></div>
+          <p class="pending-panel__title">{{ STRINGS['billing.processing'] }}</p>
+          <p class="pending-panel__body">
+            This usually takes just a few seconds.
+            Please don't close this tab.
+          </p>
+        </div>
+      }
+
+      <!-- === PENDING-TIMEOUT: webhook delayed, not a failure === -->
+      @if (checkoutState() === 'pending-timeout') {
+        <div
+          class="timeout-panel"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <span class="timeout-panel__icon" aria-hidden="true">&#x1F4E8;</span>
+          <p class="timeout-panel__title">Almost there!</p>
+          <p class="timeout-panel__body">
+            {{ STRINGS['billing.activation_pending'] }}
+          </p>
+          <button
+            class="timeout-panel__refresh-btn"
+            type="button"
+            (click)="refreshStatus()"
+            aria-label="Refresh subscription status"
+          >
+            Refresh status
+          </button>
+        </div>
+      }
+
+      <!-- === ACTIVATED: success === -->
+      @if (checkoutState() === 'activated') {
+        <div
+          class="success-panel"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          <span class="success-panel__icon" aria-hidden="true">&#x2705;</span>
+          <p class="success-panel__title">Plan activated!</p>
+          <p class="success-panel__body">{{ STRINGS['billing.plan_activated'] }}</p>
+          <a
+            class="success-panel__cta"
+            routerLink="/billing/account"
+            role="button"
+          >
+            Manage my plan
+          </a>
+        </div>
+      }
+
+      <!-- === ERROR banner (409 / 502 / generic) === -->
+      @if (checkoutState() === 'error' && errorMessage()) {
+        <div class="error-banner" role="alert">
+          <span>{{ errorMessage() }}</span>
+          <button
+            class="error-banner__retry-btn"
+            type="button"
+            (click)="reset()"
+            aria-label="Dismiss error and retry"
+          >
+            Try again
+          </button>
+        </div>
+      }
+
+      <!-- === CANCELLED notice === -->
+      @if (checkoutState() === 'cancelled') {
+        <div class="cancelled-notice" role="status" aria-live="polite">
+          {{ STRINGS['billing.checkout_cancelled'] }}
+        </div>
+      }
+
+      <!-- === PLANS PAGE (idle / cancelled / error / initiating / checkout-open) === -->
+      @if (!['pending', 'pending-timeout', 'activated'].includes(checkoutState())) {
+
+        <header class="plans-header">
+          <h1 class="plans-title">Choose your plan</h1>
+          <p class="plans-subtitle">
+            All plans include a 14-day free Pro trial for new sellers.
+          </p>
+        </header>
+
+        <!-- 14-day trial CTA — only for free entitlement, not yet trialed -->
+        @if (showTrialCTA()) {
+          <div class="trial-banner" aria-label="Free trial offer">
+            <p class="trial-banner__text">
+              <strong>Try Pro free for 14 days</strong> — no credit card required.
+              Unlimited listings, all AI features, full access.
+            </p>
+            <button
+              class="trial-banner__cta"
+              type="button"
+              [disabled]="trialInProgress()"
+              (click)="startTrial()"
+              aria-label="Start your free 14-day Pro trial"
+            >
+              @if (trialInProgress()) { Starting… } @else { Start free trial }
+            </button>
+          </div>
+        }
+
+        <!-- Tier card grid -->
+        <div class="tier-grid" role="list" aria-label="Subscription plans">
+          @for (tier of tiers; track tier.tier) {
+            <app-plan-card
+              [tier]="tier"
+              [currentEntitlement]="entitlement()"
+              [isInitiating]="activeTier() === tier.tier && checkoutState() === 'initiating'"
+              (subscribe)="subscribe($event)"
+              role="listitem"
+            />
+          }
+        </div>
+      }
+
+    }
   `,
 })
 export class PlansComponent implements OnDestroy {
   // ── Service injections ────────────────────────────────────────────────────
-  protected readonly auth    = inject(AuthService);
-  private readonly billing   = inject(BillingApiService);
-  private readonly rzpCheckout = inject(RazorpayCheckoutService);
+  protected readonly auth       = inject(AuthService);
+  private readonly billing      = inject(BillingApiService);
+  private readonly rzpCheckout  = inject(RazorpayCheckoutService);
+  private readonly toast        = inject(MeeToastService);
+
+  // ── Constants ─────────────────────────────────────────────────────────────
+  readonly STRINGS = BILLING_STRINGS;
+
+  /** Tier display table for the template (all tiers including free). */
+  readonly tiers = TIER_DISPLAY;
 
   // ── Checkout state machine ────────────────────────────────────────────────
 
-  /** Current state of the checkout flow (see billing.model.ts CheckoutState). */
+  /** Current state of the checkout flow. */
   readonly checkoutState = signal<CheckoutState>('idle');
 
   /** Error message to display when state === 'error'. */
   readonly errorMessage = signal<string>('');
 
-  /** Tier currently being checked out (for loading spinners per card). */
+  /** Tier currently being checked out (for per-card loading spinners). */
   readonly activeTier = signal<SubscribableTier | null>(null);
 
-  /** Entitlement value at the time checkout was initiated (for poll target). */
-  private _priorEntitlement: EntitlementLiteral = 'free';
+  /** Whether billing feature is unavailable (FEATURE_BILLING_ENABLED=off). */
+  readonly billingUnavailable = signal(false);
 
-  /** Activated subscription response (for success message). */
-  readonly activatedAt = signal<string | null>(null);
-
-  /** Whether the trial CTA has been permanently hidden (409 trial-already-used). */
+  /** Whether the trial CTA is hidden (409 trial-already-used). */
   readonly trialUnavailable = signal(false);
 
-  /** Tier display table for the template. */
-  readonly tiers = TIER_DISPLAY;
+  /** Whether startTrial() is in-flight. */
+  readonly trialInProgress = signal(false);
 
-  /** Entitlement signal re-exposed for template ergonomics. */
+  /** Effective entitlement re-exposed for template ergonomics. */
   readonly entitlement = computed(() => this.auth.entitlement());
+
+  /**
+   * Show trial CTA only when:
+   *  - User is on free entitlement
+   *  - Trial has not been used (no trial_ends_at set on the user)
+   *  - The 409 trial-already-used error has not been hit this session
+   */
+  readonly showTrialCTA = computed(() => {
+    if (this.entitlement() !== 'free') return false;
+    if (this.trialUnavailable()) return false;
+    const user = this.auth.currentUser();
+    // If the user has trial_ends_at (any value, past or future), trial was used.
+    if (user?.trial_ends_at) return false;
+    return true;
+  });
+
+  /** Entitlement at the time checkout was initiated (for poll target comparison). */
+  private _priorEntitlement: EntitlementLiteral = 'free';
 
   // ── Poll subscription (D18 — must be cleared on destroy) ─────────────────
   private _pollSub: Subscription | null = null;
@@ -95,16 +482,16 @@ export class PlansComponent implements OnDestroy {
 
   /**
    * subscribe — main checkout action.
-   * Called by the tier-card CTA button.
+   * Called by PlanCardComponent's (subscribe) output.
    *
-   * State machine:
-   *   idle → initiating → (checkout-open) → pending → activated | pending-timeout
-   *   Any 409/502 → error
-   *   Widget cancelled → cancelled → (reset to idle on next action)
+   * State machine: idle → initiating → checkout-open → pending → activated | pending-timeout
+   * Errors: 409 (already-subscribed) | 502 (provider unavailable) → error state
+   * Widget dismiss without payment → cancelled
    */
   subscribe(tier: SubscribableTier): void {
-    if (this.checkoutState() !== 'idle' && this.checkoutState() !== 'cancelled' && this.checkoutState() !== 'error') {
-      return; // debounce double-clicks during active checkout
+    const state = this.checkoutState();
+    if (state !== 'idle' && state !== 'cancelled' && state !== 'error') {
+      return; // debounce: reject while a checkout is already active
     }
 
     this._priorEntitlement = this.auth.entitlement();
@@ -115,8 +502,7 @@ export class PlansComponent implements OnDestroy {
     this.billing.subscribe(tier).subscribe({
       next: (resp: BillingSubscribeResponse) => {
         this.checkoutState.set('checkout-open');
-        // Open Razorpay widget — the promise resolves when the widget closes.
-        void this.rzpCheckout.openWidget(resp.checkout).then((result: import('./checkout/razorpay-checkout.service').CheckoutResult) => {
+        void this.rzpCheckout.openWidget(resp.checkout).then((result: CheckoutResult) => {
           if (result.status === 'cancelled') {
             this.checkoutState.set('cancelled');
             this.activeTier.set(null);
@@ -135,29 +521,59 @@ export class PlansComponent implements OnDestroy {
 
   /**
    * startTrial — begin the 14-day Pro trial.
-   * No Razorpay. Grant is immediate; single refreshUser() call is sufficient.
+   * No Razorpay, no polling. Grant is immediate; a single refreshUser() is sufficient.
    */
   startTrial(): void {
+    this.trialInProgress.set(true);
     this.billing.startTrial().subscribe({
       next: () => {
         // Re-hydrate the auth user so the shell sidebar + all remotes see new entitlement.
-        this.auth.refreshUser().subscribe();
-        this.checkoutState.set('activated');
-        this.activatedAt.set(new Date().toISOString());
-        // TODO(component-builder): show success toast (BILLING_STRINGS['billing.trial_started'])
+        this.auth.refreshUser().subscribe({
+          next: () => {
+            this.trialInProgress.set(false);
+            this.checkoutState.set('activated');
+            this.toast.success(BILLING_STRINGS['billing.trial_started'], 'Trial started!');
+          },
+          error: () => {
+            this.trialInProgress.set(false);
+            this.checkoutState.set('activated');
+          },
+        });
       },
       error: (err: BillingErrorShape) => {
+        this.trialInProgress.set(false);
         if (
           err.kind === 'billing_error' &&
           err.code === 'billing.trial.already_used'
         ) {
-          // 409 trial-already-used — hide the CTA permanently for this session
           this.trialUnavailable.set(true);
-          this.errorMessage.set(BILLING_STRINGS['billing.trial.already_used']);
+          this.toast.warn(BILLING_STRINGS['billing.trial.already_used'], 'Trial already used');
         } else {
           this.errorMessage.set(BILLING_STRINGS['billing.generic_error']);
+          this.checkoutState.set('error');
         }
-        this.checkoutState.set('error');
+      },
+    });
+  }
+
+  /**
+   * refreshStatus — manually refresh subscription after pending-timeout.
+   * Re-polls once; if still not activated, stays in pending-timeout.
+   */
+  refreshStatus(): void {
+    this.billing.getSubscription().subscribe({
+      next: (sub) => {
+        if (sub.entitlement !== this._priorEntitlement && sub.entitlement !== 'free') {
+          this.auth.refreshUser().subscribe();
+          this.checkoutState.set('activated');
+          this.toast.success(BILLING_STRINGS['billing.plan_activated'], 'Plan activated!');
+        }
+        // Otherwise stay on pending-timeout with the Refresh button available.
+      },
+      error: (err: BillingErrorShape) => {
+        if (err.kind === 'billing_error' && err.status === 404) {
+          this.billingUnavailable.set(true);
+        }
       },
     });
   }
@@ -179,10 +595,8 @@ export class PlansComponent implements OnDestroy {
   // ── Private helpers ───────────────────────────────────────────────────────
 
   private _startPolling(subscribedTier: SubscribableTier): void {
-    this._clearPoll(); // safety: clear any prior poll
+    this._clearPoll();
 
-    // Determine the target entitlement for the subscribed tier.
-    // The TIER_DISPLAY table maps tier → entitlement.
     const tierDisplay = TIER_DISPLAY.find((t) => t.tier === subscribedTier);
     const targetEntitlement: EntitlementLiteral = tierDisplay?.entitlement ?? 'pro';
 
@@ -191,25 +605,23 @@ export class PlansComponent implements OnDestroy {
       targetEntitlement,
       {
         onActivated: (resp) => {
-          // Re-hydrate AuthService so the shell sees the new entitlement immediately.
           this.auth.refreshUser().subscribe();
           this.checkoutState.set('activated');
-          this.activatedAt.set(resp.current_period_end);
           this.activeTier.set(null);
           this._clearPoll();
-          // TODO(component-builder): show success toast (BILLING_STRINGS['billing.plan_activated'])
+          this.toast.success(BILLING_STRINGS['billing.plan_activated'], 'Plan activated!');
+          void resp; // resp available for future use (e.g. period_end display)
         },
         onTimeout: () => {
-          // NOT a failure — webhook may be delayed.
+          // NOT a failure — webhook may be delayed. Show reassuring copy.
           this.checkoutState.set('pending-timeout');
           this.activeTier.set(null);
           this._clearPoll();
-          // TODO(component-builder): show reassuring copy + "Refresh status" button
         },
       },
     ).subscribe({
       error: () => {
-        // Poll network error — transition to pending-timeout (same as budget-exhausted)
+        // Poll network error — treat same as timeout (non-alarming)
         this.checkoutState.set('pending-timeout');
         this.activeTier.set(null);
         this._clearPoll();

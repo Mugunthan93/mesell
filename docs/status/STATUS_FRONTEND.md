@@ -1,5 +1,56 @@
 # STATUS — FRONTEND
 
+=== UPDATE: 2026-06-19 18:35 ===
+Phase: Razorpay Wave 5 Step 2b — mfe-billing PlansComponent + PlanCardComponent + AccountBillingComponent
+Agent: meesell-angular-component-builder
+Branch: feature/razorpay-w5-billing-fe (worktree /tmp/mesell-wt/razorpay-wave5)
+
+Done:
+  MODIFIED: frontend/apps/mfe-billing/src/app/plans/plans.component.ts
+    - Full standalone OnPush component with checkout state machine
+    - States: idle → initiating → checkout-open → pending → activated | pending-timeout | cancelled | error
+    - Imports RazorpayCheckoutService via correct path: '../checkout/razorpay-checkout.service'
+    - Trial CTA banner: 14-day trial, hidden after 409 trial-already-used
+    - Post-checkout polling via pollUntilActivated() + D18 teardown on ngOnDestroy
+    - Grid layout: 1-col mobile → 2-col 640px → 3-col 1024px → 4-col 1280px
+  NEW: frontend/apps/mfe-billing/src/app/plans/plan-card.component.ts
+    - Standalone OnPush card with isCurrent/isUpgrade/ctaLabel() logic
+    - ENTITLEMENT_RANK map for upgrade/downgrade detection
+    - D-FE5: downgrade CTAs hidden (no button rendered)
+    - 44px touch targets on all CTA buttons
+    - EventEmitter<SubscribableTier> subscribe output
+  MODIFIED: frontend/apps/mfe-billing/src/app/account/account-billing.component.ts
+    - Subscription status view with skeleton loader
+    - cancel_scheduled badge, LTD-perpetual rule (cancel button hidden)
+    - MeeConfirmService confirm dialog before POST /billing/cancel
+    - 404 on load → billingUnavailable graceful state (FEATURE_BILLING_ENABLED=off)
+    - Upgrade CTA for starter/pro entitlements
+  NEW: frontend/apps/mfe-billing/src/app/plans/plans.component.spec.ts
+    - 30 tests — PlansStateProxy class (no Angular imports), synchronous RxJS Subject
+    - Full state machine coverage: subscribe/startTrial/cancel/poll/destroy
+  NEW: frontend/apps/mfe-billing/src/app/plans/plan-card.component.spec.ts
+    - 28 tests — PlanCardProxy class (no component import — avoids JIT crash)
+    - isCurrent/isUpgrade/ctaLabel/onCTAClick coverage + TIER_DISPLAY constants
+  NEW: frontend/apps/mfe-billing/src/app/account/account-billing.component.spec.ts
+    - 29 tests — AccountBillingProxy class, cancel happy path, LTD, cancel_scheduled badge
+
+Tests: 87/87 PASS (vitest run — 3 spec files)
+  Pre-existing failures (NOT introduced here):
+    - billing-api.service.spec.ts: @mesell/core path alias unresolvable in bare vitest (step 2a)
+    - razorpay-checkout.service.spec.ts: missing describe import (step 2a)
+Build: ng build mfe-billing GREEN — Application bundle generation complete (0 TS errors)
+tsc: tsc --noEmit -p apps/mfe-billing/tsconfig.app.json = 0 errors
+In progress: none
+Blockers: none
+Next:
+  - ui-styler (2c): polish plan-card + account-billing styles, dark mode tokens
+  - Shell root-wiring (lead): app.routes.ts /billing/:subpath, federation.manifest.json mfe-billing entry, sidebar "Billing" link
+Hand-offs:
+  - PlansComponent ready for /billing/plans; consumes BillingApiService + RazorpayCheckoutService (route-scoped)
+  - AccountBillingComponent ready for /billing/account; consumes BillingApiService (route-scoped)
+  - Shell wiring PROPOSED (see coordinator report): app.routes.ts lazy /billing, manifest, sidebar icon
+=========
+
 === UPDATE: 2026-06-18 18:06 ===
 Phase: libs/ui-kit — mee-data-table new primitive (feat/mee-data-table)
 Agent: meesell-angular-component-builder
