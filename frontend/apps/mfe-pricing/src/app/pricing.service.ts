@@ -2,24 +2,28 @@
  * pricing.service.ts — PricingApiService.
  * Wires POST /api/v1/products/{id}/price-calc (endpoint #25, V1_FEATURE_SPEC §5).
  *
- * Scoping: @Injectable() with NO providedIn — route/component-scoped.
+ * W3 REWRITE (2026-06-19): binds to W2 §2.1/§2.2 contract.
+ *   NEW request body: { selling_price, commission_pct? } — backend extra="forbid".
+ *   NEW 422 path: pricing.category.no_pricing_data (replaces retired commission_missing).
+ *
+ * Scoping: @Injectable() with NO providedIn — component-scoped.
  * Listed in PricingComponent.providers[] → tree-shakes with the lazy route chunk.
- * Mirror pattern: DashboardApiService (Wave B) + ExportApiService (Wave C export-lane).
  *
  * API client: inject(ApiClient) from @mesell/core — jwtInterceptor attaches Bearer.
- * NO raw HttpClient, NO manual auth headers (interceptors own the auth layer, Wave A).
- * NO ApiClient retryOn503 (defective — retries ALL errors, not 503-only; and this is
- *   a POST — even a correct retry would risk non-idempotent behaviour, spec §3.2).
- *   V1.5 CLEANUP: ApiClient retryOn503 is now status-filtered (503/504/network only —
- *   frozen-surface amendment 2026-06-12). The "defective" half of this note is stale,
- *   but the POST-non-idempotency reason STANDS — keep retryOn503 OFF here permanently.
- * Degradation matrix (R-W6-1, DECISION-1 — NEVER a local-math fallback):
- *   401  → EMPTY                          (refreshInterceptor handles retry; logout path owns it)
+ * NO raw HttpClient. NO manual auth headers. Interceptors own the auth layer (Wave A).
+ *
+ * retryOn503: OFF permanently. Reason: POST is non-idempotent (spec §3.2). Even the
+ * amended 503/504-only filter does not make a retry safe for a pricing POST that persists
+ * a calculation row via pricing_repo.insert_calc().
+ *
+ * Degradation matrix (R-W6-1 — NEVER a local-math fallback):
+ *   401  → EMPTY                           (refreshInterceptor handles retry/logout)
  *   404  → emit PriceCalcUnavailableError  (flag off OR product not found)
- *   422  → emit PriceCalcCommissionMissingError (no commission rate for category)
- *   400  → emit PriceCalcValidationError   (Pydantic constraint violation)
- *   5xx  → emit PriceCalcServerError       (§3.1: explicit error + retry affordance)
- *   non-HTTP / network → emit PriceCalcServerError (§3.1: explicit error + retry affordance)
+ *   422  → branch on error_code:
+ *            pricing.category.no_pricing_data → PriceCalcNoPricingDataError
+ *            other (Pydantic field constraint) → PriceCalcValidationError
+ *   400  → emit PriceCalcValidationError   (defensive; W2 primarily uses 422)
+ *   5xx / non-HTTP → emit PriceCalcServerError  (§3.1: explicit error + retry affordance)
  * The breakdown stays null on any error → component renders explicit error state.
  */
 
@@ -33,12 +37,16 @@ import type {
   PriceCalcRequest,
   PriceCalcResponse,
   PriceCalcErrorShape,
+  PriceCalcNoPricingDataError,
   PriceCalcServerError,
 } from './pricing.model';
 
 /** Endpoint path constant — single source of truth (no duplication across service + spec). */
 const PRICE_CALC_PATH = (productId: string) =>
   `/api/v1/products/${productId}/price-calc`;
+
+/** error_code emitted by W2 router when the product's category leaf is absent from the lookup. */
+const NO_PRICING_DATA_CODE = 'pricing.category.no_pricing_data';
 
 @Injectable()
 export class PricingApiService {
@@ -48,11 +56,13 @@ export class PricingApiService {
    * POST /api/v1/products/{productId}/price-calc
    *
    * On 200: emits PriceCalcResponse (all monetary fields are Decimal strings, R-W6-6).
-   * On error: emits a PriceCalcErrorShape (404/422/400) or EMPTY (401/5xx).
+   * On error: emits a typed PriceCalcErrorShape or EMPTY (401).
    * NEVER computes a local fallback — server-calc only (DECISION-1 + R-W6-1).
    *
-   * @param productId UUID of the product (from route :id param)
-   * @param body      {input_cost, target_margin_pct} — Decimal strings to preserve 2dp precision
+   * @param productId  UUID of the product (from route :id param)
+   * @param body       { selling_price, commission_pct? } — only these two fields;
+   *                   backend extra="forbid" 422s on any extra key.
+   *                   Omit commission_pct key entirely when not overriding (do NOT send "").
    */
   calc(
     productId: string,
@@ -65,12 +75,14 @@ export class PricingApiService {
       );
   }
 
-  /** Maps HTTP errors to typed error shapes per the degradation matrix (spec §3.1). */
+  /**
+   * Maps HTTP errors to typed error shapes per the W3 degradation matrix.
+   * 422 is disambiguated: no_pricing_data (category lookup miss) vs validation (Pydantic).
+   */
   private _handleError(
     err: unknown,
   ): Observable<PriceCalcErrorShape> {
-    // Network drop or non-HTTP error → emit server_error so the component can render
-    // the explicit "Couldn't calculate — please try again" banner (spec §3.1).
+    // Network drop or non-HTTP error → server_error (spec §3.1 explicit retry affordance).
     if (!(err instanceof HttpErrorResponse)) {
       return of({ kind: 'server_error' } satisfies PriceCalcServerError);
     }
@@ -78,8 +90,8 @@ export class PricingApiService {
     const status = err.status;
 
     if (status === 401) {
-      // refreshInterceptor (Wave A) already handled retry + re-login.
-      // If we reach here the logout path fired — stay EMPTY (auth layer owns this).
+      // refreshInterceptor already handled retry + forced-logout path (Wave A).
+      // Stay EMPTY — auth layer owns this; no emission to the component.
       return EMPTY;
     }
 
@@ -90,24 +102,33 @@ export class PricingApiService {
     }
 
     if (status === 422) {
-      // pricing.commission.missing — category has no usable commission rate.
-      return of({
-        kind: 'commission_missing',
-        detail: err.error?.detail ?? 'Pricing is unavailable for this category.',
-        error_code: err.error?.error_code ?? 'pricing.commission.missing',
-      } as const);
-    }
-
-    if (status === 400) {
-      // validation.price.invalid_input — Pydantic constraint (should be caught by FE validators).
+      // Disambiguate between the two W2 422 paths:
+      //   (a) pricing.category.no_pricing_data → category leaf absent from lookup → PriceCalcNoPricingDataError
+      //   (b) Pydantic field constraint (e.g. selling_price<=0, extra="forbid" stale field) → PriceCalcValidationError
+      const errorCode: string | undefined = err.error?.error_code;
+      if (errorCode === NO_PRICING_DATA_CODE) {
+        return of({
+          kind: 'no_pricing_data',
+          detail: err.error?.detail ?? 'Pricing is unavailable for this category.',
+          error_code: errorCode,
+        } satisfies PriceCalcNoPricingDataError);
+      }
+      // Pydantic validation 422 (selling_price format, extra field, etc.)
       return of({
         kind: 'validation',
         detail: err.error?.detail ?? 'Invalid pricing input.',
       } as const);
     }
 
-    // 5xx and any other HTTP status → emit server_error so the component can render
-    // the explicit retry affordance banner (spec §3.1).
+    if (status === 400) {
+      // Defensive: W2 primarily uses 422, but handle 400 for belt-and-suspenders.
+      return of({
+        kind: 'validation',
+        detail: err.error?.detail ?? 'Invalid pricing input.',
+      } as const);
+    }
+
+    // 5xx and any other HTTP status → server_error (spec §3.1 retry affordance).
     return of({ kind: 'server_error' } satisfies PriceCalcServerError);
   }
 }

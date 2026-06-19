@@ -29,15 +29,16 @@ import { PricingApiService }         from './pricing.service';
 import type { PriceCalcResponse, PriceCalcErrorShape, PriceCalcServerError } from './pricing.model';
 import { ALERT_MESSAGES } from './pricing.model';
 
-// ── Error-state type (§3.1 degradation matrix) ──────────────────────────────
-// null   = initial / cleared
-// unavailable       = 404 (flag-off or product not found)
-// commission_missing = 422 (no commission rate for category)
-// validation         = 400 (Pydantic constraint violation)
-// server_error       = 5xx / EMPTY path
+// ── Error-state type (W3 §3.1 degradation matrix) ────────────────────────────
+// null          = initial / cleared
+// unavailable   = 404 (flag-off or product not found)
+// no_pricing_data = 422 pricing.category.no_pricing_data (category leaf absent from lookup)
+// validation    = 400 / 422 Pydantic constraint violation
+// server_error  = 5xx / EMPTY path
+// W3 CHANGE: 'commission_missing' → 'no_pricing_data' (W2 §2.3 error code rename)
 export type PricingErrorState =
   | 'unavailable'
-  | 'commission_missing'
+  | 'no_pricing_data'
   | 'validation'
   | 'server_error'
   | null;
@@ -308,24 +309,24 @@ export type PricingErrorState =
             >
               <h2 class="mee-pricing__section-title">Enter pricing details</h2>
 
-              <!-- COGS per unit — replaces retired MRP input (DECISION-1) -->
+              <!-- W3 INPUT: selling_price (listed Meesho price) — component-builder rebuilds in step-2 -->
               <mee-input
-                label="Input cost (COGS per unit)"
+                label="Selling price (listed on Meesho)"
                 type="number"
                 prefix="&#8377;"
-                placeholder="e.g. 300"
-                formControlName="input_cost"
-                [error]="inputCostError()"
+                placeholder="e.g. 70"
+                formControlName="selling_price"
+                [error]="sellingPriceError()"
               />
 
-              <!-- Target margin % — replaces retired target_margin (INR) -->
+              <!-- W3 INPUT: commission_pct (optional override, default 0) -->
               <mee-input
-                label="Target margin %"
+                label="Commission % (optional)"
                 type="number"
                 suffix="%"
-                placeholder="e.g. 30"
-                formControlName="target_margin_pct"
-                [error]="targetMarginError()"
+                placeholder="0"
+                formControlName="commission_pct"
+                [error]="commissionPctError()"
               />
 
               <!-- Disabled when form invalid OR calculating in-flight (§4.4 disabled-submit) -->
@@ -363,11 +364,11 @@ export type PricingErrorState =
                 />
               }
 
-              <!-- 422 — category has no usable commission rate -->
-              @if (errorState() === 'commission_missing') {
+              <!-- 422 pricing.category.no_pricing_data — category leaf absent from pricing lookup -->
+              @if (errorState() === 'no_pricing_data') {
                 <mee-alert-banner
                   variant="warning"
-                  [message]="commissionMissingDetail()"
+                  [message]="noPricingDataDetail()"
                 />
               }
 
@@ -423,9 +424,33 @@ export type PricingErrorState =
               >
 
                 @if (breakdown()) {
+                  <!--
+                    W3 SETTLEMENT BREAKDOWN — 5 rows (W3 §2.2 Meesho-mirror layout).
+                    component-builder (step-2) rebuilds the full card; this stub keeps
+                    the service-builder slice TS-compilable.
+                  -->
+
+                  <!-- NEGATIVE_SETTLEMENT alert — renders above the table when present -->
+                  @if (breakdown()!.alerts.length > 0) {
+                    <div
+                      role="list"
+                      aria-label="Pricing alerts"
+                      class="flex flex-col gap-2"
+                    >
+                      @for (alert of breakdown()!.alerts; track alert.code) {
+                        <div
+                          role="listitem"
+                          class="mee-pricing__alert-chip mee-pricing__alert-chip--warning"
+                        >
+                          {{ resolveAlertMessage(alert.message_id) }}
+                        </div>
+                      }
+                    </div>
+                  }
+
                   <table
                     class="mee-pricing__table"
-                    aria-label="P&L breakdown"
+                    aria-label="Settlement breakdown"
                   >
                     <thead class="sr-only">
                       <tr>
@@ -434,55 +459,43 @@ export type PricingErrorState =
                       </tr>
                     </thead>
                     <tbody>
-                      <!-- MRP: server-COMPUTED output. Not an input (DECISION-1). -->
                       <tr class="mee-pricing__row">
-                        <td class="mee-pricing__table-label" scope="row">MRP (server-computed)</td>
-                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.mrp) }}</td>
-                      </tr>
-                      <tr class="mee-pricing__row">
-                        <td class="mee-pricing__table-label" scope="row">Meesho Price</td>
-                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.meesho_price) }}</td>
-                      </tr>
-                      <tr class="mee-pricing__row">
-                        <td class="mee-pricing__table-label" scope="row">Seller Price</td>
-                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.seller_price) }}</td>
+                        <td class="mee-pricing__table-label" scope="row">Selling price</td>
+                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.selling_price) }}</td>
                       </tr>
                       <tr class="mee-pricing__row">
                         <td class="mee-pricing__table-label" scope="row">
-                          Commission ({{ breakdown()!.commission_pct }}%)
+                          Commission fee ({{ breakdown()!.commission_pct }}%)
                         </td>
-                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.commission_amount) }}</td>
+                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.commission_fees) }}</td>
                       </tr>
                       <tr class="mee-pricing__row">
-                        <td class="mee-pricing__table-label" scope="row">
-                          GST ({{ breakdown()!.gst_pct }}%)
-                        </td>
-                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.gst_amount) }}</td>
+                        <td class="mee-pricing__table-label" scope="row">GST</td>
+                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.gst_on_shipping) }}</td>
                       </tr>
-                      <!-- Profit row — semantic colour via CSS class (token-only, no inline hex) -->
+                      <tr class="mee-pricing__row">
+                        <td class="mee-pricing__table-label" scope="row">TDS</td>
+                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.tds) }}</td>
+                      </tr>
+                      <!-- HEADLINE row: Estimated Bank Settlement -->
                       <tr class="mee-pricing__row mee-pricing__row--profit">
-                        <td class="mee-pricing__table-label" scope="row">Profit</td>
+                        <td class="mee-pricing__table-label" scope="row">Estimated Bank Settlement</td>
                         <td
                           class="mee-pricing__table-value"
                           [class.mee-pricing__value--positive]="marginIsPositive()"
                           [class.mee-pricing__value--negative]="!marginIsPositive()"
-                          [attr.aria-label]="'Profit: ' + formatRupeeLabel(breakdown()!.profit) + (marginIsPositive() ? ', positive' : ', negative')"
+                          [attr.aria-label]="'Estimated Bank Settlement: ' + formatRupeeLabel(breakdown()!.estimated_bank_settlement)"
                         >
-                          {{ formatRupeeLabel(breakdown()!.profit) }}
-                        </td>
-                      </tr>
-                      <tr class="mee-pricing__row mee-pricing__row--profit-pct">
-                        <td class="mee-pricing__table-label" scope="row">Profit %</td>
-                        <td
-                          class="mee-pricing__table-value"
-                          [class.mee-pricing__value--positive]="marginIsPositive()"
-                          [class.mee-pricing__value--negative]="!marginIsPositive()"
-                        >
-                          {{ breakdown()!.profit_pct }}%
+                          {{ formatRupeeLabel(breakdown()!.estimated_bank_settlement) }}
                         </td>
                       </tr>
                     </tbody>
                   </table>
+
+                  <!-- Disclaimer — server-sent literal; muted fine-print below headline -->
+                  <p class="mee-pricing__disclaimer">
+                    {{ breakdown()!.disclaimer }}
+                  </p>
 
                   <!-- POSITIVE / NEGATIVE badge -->
                   <div class="mee-pricing__results-footer">
@@ -492,36 +505,6 @@ export type PricingErrorState =
                         [severity]="marginIsPositive() ? 'success' : 'danger'"
                       />
                     </div>
-
-                    <!--
-                      Server-issued alert chips: LOW_MARGIN / HIGH_MRP_MULTIPLIER / THIN_PROFIT.
-                      Styled by severity via mee-pricing__alert-chip--warning/info classes
-                      (token-only, no hardcoded hex). MeeAlertBanner uses role="alert" internally;
-                      here we use a lighter chip variant to avoid stacking full alert banners.
-                      aria-label on the wrapper provides screen reader context.
-                    -->
-                    @if (breakdown()!.alerts.length > 0) {
-                      <div
-                        role="list"
-                        aria-label="Pricing alerts"
-                        class="flex flex-col gap-2"
-                      >
-                        @for (alert of breakdown()!.alerts; track alert.code) {
-                          <div
-                            role="listitem"
-                            class="mee-pricing__alert-chip"
-                            [class.mee-pricing__alert-chip--warning]="alert.severity === 'warning'"
-                            [class.mee-pricing__alert-chip--info]="alert.severity === 'info'"
-                          >
-                            {{ resolveAlertMessage(alert.message_id) }}
-                          </div>
-                        }
-                      </div>
-                    }
-
-                    <p class="mee-pricing__disclaimer">
-                      Shipping costs are not included in V1 calculations.
-                    </p>
                   </div>
 
                 } @else if (!calculating() && !errorState()) {
@@ -577,10 +560,15 @@ export class PricingComponent implements OnInit, AfterViewChecked {
   readonly resolveAlertMessage = (messageId: string): string =>
     ALERT_MESSAGES[messageId] ?? messageId;
 
-  // Form: input_cost (COGS) + target_margin_pct (%). MRP slider + mrp input = DEAD (DECISION-1).
+  // W3 FORM: selling_price (required, >0) + commission_pct (optional override).
+  // OLD form (input_cost + target_margin_pct) is DEAD — component-builder rebuilds the full
+  // form in W3 step-2. These stubs keep TS compilable for the service-builder slice.
+  // TODO(component-builder W3 step-2): replace with:
+  //   selling_price: ['', [Validators.required, Validators.min(0.01)]]
+  //   commission_pct: ['', [Validators.min(0), Validators.max(100)]]
   readonly form = this.fb.group({
-    input_cost:        ['300',  [Validators.required, Validators.min(0.01)]],
-    target_margin_pct: ['30',   [Validators.required, Validators.min(0), Validators.max(500)]],
+    selling_price:  ['', [Validators.required, Validators.min(0.01)]],
+    commission_pct: ['', [Validators.min(0), Validators.max(100)]],
   });
 
   // P&L breakdown — null until successful server response; stays null on any error (R-W6-1).
@@ -592,35 +580,35 @@ export class PricingComponent implements OnInit, AfterViewChecked {
   // Typed error state per §3.1 degradation matrix. null = no error.
   readonly errorState = signal<PricingErrorState>(null);
 
-  // Detail copy for 422 commission_missing — set from server response.
-  readonly commissionMissingDetail = signal<string>('Pricing is not available for this category yet.');
+  // Detail copy for 422 no_pricing_data — set from server response (W3: replaces commissionMissingDetail).
+  readonly noPricingDataDetail = signal<string>('Pricing is not available for this category yet.');
 
   // Detail copy for 400 validation — set from server response.
   readonly validationDetail = signal<string>('Invalid pricing input.');
 
   private productId = '';
 
-  // True when profit > 0 — drives badge + colour. Based on server profit (not retired net_margin).
+  // True when estimated_bank_settlement > 0 — drives badge + warning colour.
+  // W3: was breakdown()?.profit (dead field); now uses the W2 headline field.
   readonly marginIsPositive = computed<boolean>(
-    () => parseDecimal(this.breakdown()?.profit ?? '0') > 0,
+    () => parseDecimal(this.breakdown()?.estimated_bank_settlement ?? '0') > 0,
   );
 
-  // Inline field error signals — only show after user has touched the field.
-  readonly inputCostError = computed<string | undefined>(() => {
-    const ctrl = this.form.controls.input_cost;
+  // Inline field error signals — W3 stubs (component-builder rebuilds full error copy in step-2).
+  readonly sellingPriceError = computed<string | undefined>(() => {
+    const ctrl = this.form.controls.selling_price;
     if (!ctrl.touched || ctrl.valid) return undefined;
-    if (ctrl.hasError('required')) return 'Input cost is required.';
-    if (ctrl.hasError('min'))      return 'Input cost must be greater than 0.';
-    return 'Invalid input cost.';
+    if (ctrl.hasError('required')) return 'Selling price is required.';
+    if (ctrl.hasError('min'))      return 'Selling price must be greater than 0.';
+    return 'Invalid selling price.';
   });
 
-  readonly targetMarginError = computed<string | undefined>(() => {
-    const ctrl = this.form.controls.target_margin_pct;
+  readonly commissionPctError = computed<string | undefined>(() => {
+    const ctrl = this.form.controls.commission_pct;
     if (!ctrl.touched || ctrl.valid) return undefined;
-    if (ctrl.hasError('required')) return 'Target margin is required.';
-    if (ctrl.hasError('min'))      return 'Target margin cannot be negative.';
-    if (ctrl.hasError('max'))      return 'Target margin cannot exceed 500%.';
-    return 'Invalid target margin.';
+    if (ctrl.hasError('min'))  return 'Commission cannot be negative.';
+    if (ctrl.hasError('max'))  return 'Commission cannot exceed 100%.';
+    return 'Invalid commission rate.';
   });
 
   ngOnInit(): void {
@@ -651,9 +639,13 @@ export class PricingComponent implements OnInit, AfterViewChecked {
     this.breakdown.set(null);
 
     const raw  = this.form.getRawValue();
+    // W3: new body shape — only selling_price (required) + optional commission_pct.
+    // backend extra="forbid" rejects any extra field.
+    // TODO(component-builder W3 step-2): wire real form controls + omit commission_pct when blank.
+    const commissionPct = raw.commission_pct?.trim();
     const body = {
-      input_cost:        String(raw.input_cost ?? ''),
-      target_margin_pct: String(raw.target_margin_pct ?? ''),
+      selling_price: String(raw.selling_price ?? ''),
+      ...(commissionPct ? { commission_pct: commissionPct } : {}),
     };
 
     this.service.calc(this.productId, body).subscribe({
@@ -689,9 +681,10 @@ export class PricingComponent implements OnInit, AfterViewChecked {
       case 'unavailable':
         this.errorState.set('unavailable');
         break;
-      case 'commission_missing':
-        this.errorState.set('commission_missing');
-        this.commissionMissingDetail.set(shape.detail);
+      case 'no_pricing_data':
+        // W3: replaces 'commission_missing' — category leaf absent from pricing lookup.
+        this.errorState.set('no_pricing_data');
+        this.noPricingDataDetail.set(shape.detail);
         break;
       case 'validation':
         this.errorState.set('validation');
