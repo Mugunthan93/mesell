@@ -238,7 +238,7 @@
           "billing"
         ],
         "summary": "Start a Razorpay subscription or LTD purchase",
-        "description": "Initiate a Razorpay Subscription (recurring) or Order (LTD).\n\nReturns the Razorpay Checkout handle the FE widget needs.  The plan is NOT\ngranted immediately — it lands via the ``subscription.activated`` /\n``payment.captured`` webhook (D-D, Wave 2).\n\nRaises:\n    409 ``billing.already_subscribed`` — user already has an active sub.\n    502 — Razorpay API unavailable (``RazorpayAdapterError``).",
+        "description": "Initiate a Razorpay Subscription (recurring) or Order (LTD).\n\nReturns the Razorpay Checkout handle the FE widget needs.  The plan is NOT\ngranted immediately — it lands via the ``subscription.activated`` /\n``payment.captured`` webhook (D-D, Wave 2).\n\nRaises:\n    409 ``billing.subscription.already_active`` — user already has an active sub.\n    502 — Razorpay API unavailable (``RazorpayAdapterError``).",
         "operationId": "billing_subscribe_api_v1_billing_subscribe_post",
         "requestBody": {
           "content": {
@@ -312,7 +312,7 @@
           "billing"
         ],
         "summary": "Cancel the current subscription at end of billing cycle",
-        "description": "Schedule a cancel-at-cycle-end for the active subscription.\n\nThe subscription stays active until ``entitled_until`` (the current\n``subscriptions.current_period_end``).  The final ``status → 'cancelled'``\ntransition is webhook-driven via ``subscription.cancelled`` (Wave 2).\n\nRaises:\n    404 ``billing.no_active_subscription`` — no cancellable subscription found.\n    502 — Razorpay cancel API unavailable (``RazorpayAdapterError``).",
+        "description": "Schedule a cancel-at-cycle-end for the active subscription.\n\nThe subscription stays active until ``entitled_until`` (the current\n``subscriptions.current_period_end``).  The final ``status → 'cancelled'``\ntransition is webhook-driven via ``subscription.cancelled`` (Wave 2).\n\nRaises:\n    404 ``billing.subscription.none_active`` — no cancellable subscription found.\n    502 — Razorpay cancel API unavailable (``RazorpayAdapterError``).",
         "operationId": "billing_cancel_api_v1_billing_cancel_post",
         "responses": {
           "200": {

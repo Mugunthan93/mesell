@@ -128,7 +128,7 @@ existing FE-D5 split-token flow). All gated behind `FEATURE_BILLING_ENABLED` (§
   grant lands later via the Razorpay webhook (`subscription.activated` / `payment.captured`,
   Wave 2). After the widget closes, the FE should **poll `GET /billing/subscription`** (§2.4) /
   re-fetch `/auth/me` to observe the grant rather than assuming success on widget-close.
-- **Errors:** `409 billing.already_subscribed` (§3); `502` if Razorpay is unavailable.
+- **Errors:** `409 billing.subscription.already_active` (§3); `502` if Razorpay is unavailable.
 
 ### 2.2 `POST /api/v1/billing/start-trial` — start the 14-day app-side Pro trial
 
@@ -161,7 +161,7 @@ existing FE-D5 split-token flow). All gated behind `FEATURE_BILLING_ENABLED` (§
   the final `status → cancelled` transition is webhook-driven (`subscription.cancelled`,
   Wave 2). **LTD cannot be cancelled** — it is a perpetual one-time purchase (founder-ratified:
   LTD-cancel = block/perpetual); attempting to cancel a non-subscription returns the 404 below.
-- **Errors:** `404 billing.no_active_subscription` (§3); `502` if Razorpay is unavailable.
+- **Errors:** `404 billing.subscription.none_active` (§3); `502` if Razorpay is unavailable.
 
 ### 2.4 `GET /api/v1/billing/subscription` — current billing/plan/trial status
 
@@ -202,8 +202,8 @@ The FE should switch on `validation_message_id` (the i18n key) for user-facing c
 | HTTP | `code`                       | `validation_message_id` (i18n)      | Raised by      | FE handling |
 |------|------------------------------|-------------------------------------|----------------|-------------|
 | 409  | `iam.trial_already_used`     | `billing.trial.already_used`        | `start-trial`  | "You've already used your Pro trial." Hide/disable the start-trial CTA; offer Subscribe instead. |
-| 409  | `iam.already_subscribed`     | `billing.already_subscribed`        | `subscribe`    | "You already have an active subscription." Redirect to the subscription-management page (§2.4). |
-| 404  | `iam.no_active_subscription` | `billing.no_active_subscription`    | `cancel`       | "Nothing to cancel." Treat as a no-op; refresh the billing screen. |
+| 409  | `iam.already_subscribed`     | `billing.subscription.already_active` | `subscribe`  | "You already have an active subscription." Redirect to the subscription-management page (§2.4). |
+| 404  | `iam.no_active_subscription` | `billing.subscription.none_active`  | `cancel`       | "Nothing to cancel." Treat as a no-op; refresh the billing screen. |
 
 Additional non-billing-specific statuses the FE should already handle generically: `401`
 (re-auth via the existing FE-D5 refresh flow), `429` (rate-limited — back off / show "try again

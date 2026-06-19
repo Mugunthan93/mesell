@@ -298,14 +298,14 @@ class AlreadySubscribedError(IamError):
     user already holds an ``active``/``authenticated``/``created`` subscription
     row — a second concurrent subscribe would create a duplicate.
 
-    Maps to 409 / ``billing.already_subscribed`` (3-segment per §5A.H).
+    Maps to 409 / ``billing.subscription.already_active`` (3-segment per §5A.H).
     The FE should surface a "You already have a subscription" message and
     redirect to the subscription-management page.
     """
 
     code = "iam.already_subscribed"
     status_code = 409
-    validation_message_id = "billing.already_subscribed"
+    validation_message_id = "billing.subscription.already_active"
 
     def __init__(
         self, detail: str = "You already have an active subscription"
@@ -317,14 +317,14 @@ class NoActiveSubscriptionError(IamError):
     """PROPOSED (Wave 3 §7.G founder-gate).  Raised by ``cancel`` when the
     user has no ``active``/``authenticated``/``created`` subscription to cancel.
 
-    Maps to 404 / ``billing.no_active_subscription`` (3-segment per §5A.H).
+    Maps to 404 / ``billing.subscription.none_active`` (3-segment per §5A.H).
     A cancelled subscription or a free/trial user who never subscribed both
     raise this; the FE can treat it as "nothing to cancel".
     """
 
     code = "iam.no_active_subscription"
     status_code = 404
-    validation_message_id = "billing.no_active_subscription"
+    validation_message_id = "billing.subscription.none_active"
 
     def __init__(
         self, detail: str = "No active subscription found to cancel"

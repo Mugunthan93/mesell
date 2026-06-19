@@ -83,7 +83,7 @@ async def billing_subscribe(
     ``payment.captured`` webhook (D-D, Wave 2).
 
     Raises:
-        409 ``billing.already_subscribed`` — user already has an active sub.
+        409 ``billing.subscription.already_active`` — user already has an active sub.
         502 — Razorpay API unavailable (``RazorpayAdapterError``).
     """
     result = await iam_service.subscribe(
@@ -151,7 +151,7 @@ async def billing_cancel(
     transition is webhook-driven via ``subscription.cancelled`` (Wave 2).
 
     Raises:
-        404 ``billing.no_active_subscription`` — no cancellable subscription found.
+        404 ``billing.subscription.none_active`` — no cancellable subscription found.
         502 — Razorpay cancel API unavailable (``RazorpayAdapterError``).
     """
     result = await iam_service.cancel(user_id=user.user_id, db=db)

@@ -94,11 +94,14 @@ VALIDATION_MESSAGES: dict[str, str] = {
     "billing.trial.already_used": (
         "You've already used your free Pro trial on this account."
     ),
-    # api-routes-builder (step 2b) additions — same founder-gate:
-    "billing.already_subscribed": (
+    # api-routes-builder (step 2b) additions — same founder-gate.
+    # Renamed to 3-segment §5A.H-compliant keys (Wave-3 follow-up 2026-06-19):
+    # billing.already_subscribed → billing.subscription.already_active,
+    # billing.no_active_subscription → billing.subscription.none_active.
+    "billing.subscription.already_active": (
         "You already have an active subscription. Manage it from your account page."
     ),
-    "billing.no_active_subscription": (
+    "billing.subscription.none_active": (
         "No active subscription found to cancel. "
         "You may already have cancelled or never subscribed."
     ),
