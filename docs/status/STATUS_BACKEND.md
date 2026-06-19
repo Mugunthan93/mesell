@@ -1,6 +1,30 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-19 (meesell-database-builder) — W2a pricing_calc confirmed-model columns ===
+Phase: price-calc-rework / W2 database slice (section-7)
+Done:
+  - backend/app/shared/models/pricing_calc.py: added 7 new confirmed-model columns
+    (selling_price, shipping, total_price, commission_fees, gst_on_shipping,
+    estimated_bank_settlement, meesho_leaf_id) all nullable NUMERIC(10,2) or VARCHAR(16).
+    tcs + tds adopted from b7c2e1a9d3f4 with corrected semantics (no DDL change needed).
+    commission_pct reused from baseline (no DDL change).
+    All #285 wrong-model columns retained nullable with DEPRECATED comments per Q3 ruling.
+  - New additive migration d4e5f6a7b8c9 (down_rev=c2d3e4f5a6b7):
+    upgrade() adds 7 columns; downgrade() drops only those 7. NO drops of #285 columns.
+    Single head confirmed: d4e5f6a7b8c9.
+  - Ruff clean on both changed files.
+In progress: none (database slice complete)
+Blockers: none
+Next: W2 step-2 services-builder (service.py, domain.py, catalog accessor)
+Hand-offs:
+  - meesell-services-builder: pricing_calc model updated. Head=d4e5f6a7b8c9.
+    New confirmed columns available: selling_price, shipping, total_price,
+    commission_fees, gst_on_shipping, tds, tcs (reused), estimated_bank_settlement,
+    meesho_leaf_id. Branch: feature/price-calc-rework/w2-backend.
+    Apply migration before running service layer tests.
+=========
+
 === UPDATE: 2026-06-19 (meesell-database-builder) — Price Calculator W1 data layer ===
 Phase: price-calculator-rework / W1 data layer (section-7)
 Done:
