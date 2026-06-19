@@ -1,6 +1,38 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-19 (meesell-services-builder) — W4a apply chosen price to product ===
+Phase: V1 Feature 7 — Price Calculator rework, WAVE 4 step-1 (service slice)
+Branch: feature/price-calc-rework/w4-export (off origin/develop 8a1b9d3)
+Done:
+- pricing/service.py ADDITIVE: apply_price_to_product(user_id, product_id, selling_price, *, db)
+  -> None. The explicit "Use this price" action (founder G-W4-APPLY Option A — NEVER auto-saved
+  on calculate). Validates selling_price > 0 (InvalidPriceInputError, defensive — router also
+  enforces), quantizes to 2dp, then writes {meesho_price: price} into products.fields_jsonb by
+  REUSING catalog.service.patch_product (is_autosave=False) — ownership (M6) + per-field schema
+  validation + atomic JSONB || merge all reused, no new write surface.
+- Canonical: writes ONLY SELLING_PRICE_CANONICAL="meesho_price". mrp (strike-through MRP) is
+  deliberately UNTOUCHED — OPEN QUESTION flagged for api-routes/FE step (calculator yields one
+  chosen number; whether "apply" should also populate mrp is a product decision).
+- §16 constraint hit + resolved: Contract 4 FORBIDS pricing importing catalog.schemas, so
+  patch_product is fed a local duck-typed _PriceFieldsPatch (frozen dataclass exposing .fields
+  + .status only — patch_product reads exactly those). Keeps the call on the ALLOWED
+  pricing → catalog §2.D edge (line 590, locked 1 ✓) — NOT a new matrix cell.
+- tests: NEW tests/test_pricing_apply_price_service.py (8 tests, DB-free, patch_product mocked):
+  writes value under meesho_price; only-meesho_price-never-mrp; 2dp quantize; rejects 0/neg
+  (3 params) before any catalog call; ownership (ProductNotFoundError) + schema-422
+  (ValidationFailedError) bubble verbatim.
+Tests: 8 passed / 0 failed (apply suite); 31 passed across -k "pricing or price". ruff clean;
+  import-linter 27 kept / 0 broken (Contract 4.pricing KEPT); pricing.service imports clean.
+Hand-offs: ready for W4 step-2 (api-routes-builder) — add POST /products/{id}/apply-price +
+  ApplyPriceRequest(selling_price: Decimal) wrapping pricing_service.apply_price_to_product;
+  count toward §17 endpoint inventory. NOTE: api-routes-builder's W2-step3 dead-token grep gate
+  includes "mrp" — my service mentions mrp ONLY in docstrings/the open-question note + the
+  _PriceFieldsPatch never writes it; allowlist the docstring hits if that gate lands on this branch.
+Blockers: none. Next: hand to api-routes-builder.
+=========
+
+```
 === UPDATE: 2026-06-19 (meesell-services-builder) — W2b settlement engine (census-confirmed) ===
 Phase: V1 Feature 7 — Price Calculator rework, WAVE 2 step-2 (service/engine slice)
 Branch: feature/price-calc-rework/w2-backend (off step-1 77479b1)
