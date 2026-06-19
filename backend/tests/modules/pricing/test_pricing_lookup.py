@@ -170,19 +170,20 @@ def test_meta_block() -> None:
 
 
 def test_no_orphan_categories() -> None:
-    """Every meesho_leaf_id in the seeded category tree must resolve in the lookup.
+    """Every leaf_id in the category tree seed fixture must resolve in the lookup.
 
-    This is an integration test requiring the seeded dev DB.  If the dev DB is
-    unavailable (no DATABASE_URL env or no tunnel), we fall back to checking the
-    lookup against the meesho_category_tree.json seed fixture — which is a superset
-    check confirming the lookup covers at least the seeded leaf ids.
+    The real category tree at meesho_category_tree.json has shape:
+        {"categories": [{"leaf_id": "<str>", ...}, ...], ...}
 
-    The test is NOT marked @pytest.mark.integration — it degrades gracefully to the
-    offline fixture check so it always runs in the unit CI lane.
+    This test reads it directly (offline, no DB, no network) and asserts the full
+    superset check: every one of the 3772 leaf_ids appears as a key in the pricing
+    lookup.  A vacuous pass (empty seed_leaf_ids) is prevented by a guard-fail
+    assertion before the superset check.
+
+    The test is NOT marked @pytest.mark.integration — it is pure-unit (offline).
     """
     _load.cache_clear()
 
-    # Attempt 1: offline check via the category tree seed fixture
     category_tree_path = (
         Path(__file__).resolve().parent.parent.parent.parent
         / "app"
@@ -190,39 +191,25 @@ def test_no_orphan_categories() -> None:
         / "meesho_category_tree.json"
     )
 
-    if category_tree_path.exists():
-        with category_tree_path.open(encoding="utf-8") as fh:
-            tree_data = json.load(fh)
+    assert category_tree_path.exists(), (
+        f"Category tree seed fixture not found: {category_tree_path}"
+    )
 
-        # Extract all leaf ids from the category tree
-        seed_leaf_ids: set[str] = set()
-        if isinstance(tree_data, list):
-            # list of leaf objects with sscat_id or meesho_leaf_id
-            for entry in tree_data:
-                leaf_id = entry.get("sscat_id") or entry.get("meesho_leaf_id")
-                if leaf_id is not None:
-                    seed_leaf_ids.add(str(leaf_id))
-        elif isinstance(tree_data, dict):
-            # dict keyed by sscat_id OR nested tree structure
-            for key in tree_data:
-                if key.isdigit():
-                    seed_leaf_ids.add(str(key))
+    with category_tree_path.open(encoding="utf-8") as fh:
+        tree = json.load(fh)
 
-        if seed_leaf_ids:
-            lookup_keys = set(_load().keys())
-            orphans = seed_leaf_ids - lookup_keys
-            assert orphans == set(), (
-                f"{len(orphans)} category tree leaf ids have no pricing row: "
-                f"{list(orphans)[:5]}"
-            )
-            return
-        # If we couldn't extract leaf ids from the tree format, fall through to the
-        # simple size assertion below.
+    # Real shape: {"categories": [{"leaf_id": "<str>", ...}, ...], ...}
+    seed_leaf_ids = [c["leaf_id"] for c in tree["categories"]]
 
-    # Attempt 2: minimum guarantee — lookup must cover all 3772 categories
-    # (same count as categories seeded from the tree, per V1 spec)
-    size = lookup_size()
-    assert size == 3772, (
-        f"Lookup has {size} entries but 3772 categories are seeded. "
-        "Some categories may have no pricing row."
+    # Guard: extraction must never be empty — catches future shape changes
+    assert len(seed_leaf_ids) == 3772, (
+        f"Expected 3772 leaf ids from tree['categories'], got {len(seed_leaf_ids)}. "
+        "The tree JSON shape may have changed — update the extractor."
+    )
+
+    lookup_keys = set(_load().keys())
+    orphans = set(seed_leaf_ids) - lookup_keys
+    assert orphans == set(), (
+        f"{len(orphans)} category tree leaf_ids have no pricing row: "
+        f"{sorted(orphans)[:5]}"
     )
