@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.meesell.devdb-backup</string>
+
+    <!-- Runs the local dev Postgres backup script. The script reads the DB password
+         from backend/.env (never echoed), dumps to ~/mesell-db-backups/ (outside the
+         repo), and rotates old dumps. Safe to run manually too. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/mugunthansrinivasan/Project/mesell/scripts/backup_dev_db.sh</string>
+    </array>
+
+    <!-- 02:00 local time, every day. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>2</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!-- Do NOT run when the agent is (re)loaded — only on the 02:00 schedule.
+         (Set to <true/> for a one-off smoke test after loading, then revert.) -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <!-- launchd provides a minimal PATH; give pg_dump/psql/date a fighting chance.
+         The script also re-exports PATH defensively for postgresql@16. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/opt/postgresql@16/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <!-- Both stdout and stderr append to the launchd run log (separate from the
+         script's own ~/mesell-db-backups/backup.log row-per-run journal). -->
+    <key>StandardOutPath</key>
+    <string>/Users/mugunthansrinivasan/mesell-db-backups/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/mugunthansrinivasan/mesell-db-backups/launchd.err.log</string>
+
+    <!-- If the laptop is asleep at 02:00, run as soon as it wakes. -->
+    <key>StartInterval</key>
+    <integer>0</integer>
+</dict>
+</plist>
