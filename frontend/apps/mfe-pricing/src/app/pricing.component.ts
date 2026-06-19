@@ -314,7 +314,7 @@ export type PricingErrorState =
 
       <mee-page-header
         title="Price Calculator"
-        subtitle="Enter your cost and target margin to calculate pricing"
+        subtitle="Enter your selling price to see your estimated bank settlement."
       />
 
       <div class="flex flex-col gap-6 lg:flex-row lg:items-start">
