@@ -26,7 +26,7 @@ import logging
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from redis.asyncio import Redis
 from sqlalchemy import func, select
@@ -37,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.adapters import google as google_adapter
 from app.adapters import msg91 as msg91_adapter
 from app.adapters import razorpay as razorpay_adapter
+from app.adapters import razorpay_mock
 from app.core.auth import (
     issue_access_token,
     issue_refresh_token,
@@ -924,6 +925,16 @@ def _get_plan_id_for_tier(tier: str) -> str:
     return str(getattr(settings, attr, ""))
 
 
+def _rzp():
+    """Return the active Razorpay adapter — real, or the dev mock when enabled.
+
+    Read at CALL TIME (not import time) so a test/founder toggling the flag
+    after import is honoured, and so the production force-disable in
+    ``settings.razorpay_mock_active`` is evaluated fresh on every call.
+    """
+    return razorpay_mock if settings.razorpay_mock_active else razorpay_adapter
+
+
 async def subscribe(
     user_id: UUID,
     tier: str,
@@ -975,7 +986,7 @@ async def subscribe(
     if tier == "ltd":
         # ── Step 2: LTD Orders path ───────────────────────────────────────────
         receipt = f"ltd-{user_id!s}"
-        order = await razorpay_adapter.create_order(
+        order = await _rzp().create_order(
             amount=settings.RAZORPAY_LTD_PRICE_PAISE,
             receipt=receipt,
             notes={"user_id": str(user_id), "tier": "ltd"},
@@ -995,6 +1006,8 @@ async def subscribe(
             order.id,
             sub.id,
         )
+        if settings.razorpay_mock_active:
+            await _mock_drive_ltd_capture(db, sub, order_id=order.id)
         return SubscribeResult(
             tier="ltd",
             razorpay_order_id=order.id,
@@ -1003,7 +1016,7 @@ async def subscribe(
 
     # ── Step 3: recurring Subscriptions path ──────────────────────────────────
     plan_id = _get_plan_id_for_tier(tier)
-    rzp_sub = await razorpay_adapter.create_subscription(
+    rzp_sub = await _rzp().create_subscription(
         plan_id=plan_id,
         notes={"user_id": str(user_id), "tier": tier},
     )
@@ -1022,6 +1035,8 @@ async def subscribe(
         tier,
         sub.id,
     )
+    if settings.razorpay_mock_active:
+        await _mock_drive_activation(db, sub, tier=tier)
     return SubscribeResult(
         tier=tier,
         razorpay_subscription_id=rzp_sub.id,
@@ -1076,13 +1091,16 @@ async def cancel(user_id: UUID, db: AsyncSession) -> CancelSubscriptionResult:
 
     # ── Step 2: call the adapter ──────────────────────────────────────────────
     if sub.razorpay_subscription_id:
-        await razorpay_adapter.cancel_subscription(
+        await _rzp().cancel_subscription(
             sub.razorpay_subscription_id, cancel_at_cycle_end=True
         )
 
     # ── Step 3: record cancel_scheduled_at ───────────────────────────────────
     sub.cancel_scheduled_at = datetime.now(timezone.utc)
     await db.flush()
+
+    if settings.razorpay_mock_active and sub.razorpay_subscription_id:
+        await _mock_drive_cancel(db, sub)
 
     logger.info(
         "cancel: scheduled cancel user=%s sub=%s entitled_until=%s",
@@ -1091,6 +1109,123 @@ async def cancel(user_id: UUID, db: AsyncSession) -> CancelSubscriptionResult:
         sub.current_period_end,
     )
     return CancelSubscriptionResult(entitled_until=sub.current_period_end)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DEV-MOCK synthetic-webhook tails (razorpay-dev-mock feature).
+#
+# These run ONLY when ``settings.razorpay_mock_active`` is True (dev/staging,
+# never production — see the property's APP_ENV guard).  Each builds a synthetic
+# Razorpay webhook payload and replays it through the REAL
+# ``_route_webhook_in_session`` (NOT ``capture_razorpay_webhook``, which forces
+# HMAC verification) — so the LOCKED transition helpers grant the plan, set the
+# period end, write the ``audit_events`` row, and write the ``webhook_events``
+# ON-CONFLICT dedupe row exactly as a real webhook would.  ``owns_transaction``
+# is False because the request-scoped session owns the commit boundary.
+# Each opens with ``assert settings.razorpay_mock_active`` — structurally
+# unreachable in production.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def _mock_drive_activation(
+    db: AsyncSession, sub: Subscription, *, tier: str
+) -> None:
+    """DEV-MOCK ONLY. Replay a synthetic ``subscription.activated`` webhook.
+
+    Routes through the REAL handler so the plan grant + period-end + audit +
+    dedupe row all land via the LOCKED transition helpers (never a parallel
+    path).
+    """
+    assert settings.razorpay_mock_active  # never reachable in prod
+    new_end = int((datetime.now(timezone.utc) + timedelta(days=30)).timestamp())
+    payload = {
+        "event": "subscription.activated",
+        "id": f"evt_mock_{uuid4().hex}",  # unique dedupe key per replay
+        "payload": {
+            "subscription": {
+                "entity": {
+                    "id": sub.razorpay_subscription_id,
+                    "status": "active",
+                    "current_end": new_end,
+                    "plan_id": "plan_mock",
+                    "notes": {"user_id": str(sub.user_id), "tier": tier},
+                }
+            }
+        },
+    }
+    await _route_webhook_in_session(
+        db,
+        payload["id"],
+        "subscription.activated",
+        payload,
+        owns_transaction=False,
+    )
+
+
+async def _mock_drive_ltd_capture(
+    db: AsyncSession, sub: Subscription, *, order_id: str
+) -> None:
+    """DEV-MOCK ONLY. Replay a synthetic ``payment.captured`` webhook (LTD)."""
+    assert settings.razorpay_mock_active
+    payload = {
+        "event": "payment.captured",
+        "id": f"evt_mock_{uuid4().hex}",
+        "payload": {
+            "payment": {
+                "entity": {
+                    "id": f"pay_mock_{uuid4().hex[:14]}",
+                    "order_id": order_id,
+                    "amount": settings.RAZORPAY_LTD_PRICE_PAISE,
+                    "currency": "INR",
+                    "notes": {"user_id": str(sub.user_id), "tier": "ltd"},
+                }
+            },
+            "order": {
+                "entity": {
+                    "id": order_id,
+                    "notes": {"user_id": str(sub.user_id), "tier": "ltd"},
+                }
+            },
+        },
+    }
+    await _route_webhook_in_session(
+        db,
+        payload["id"],
+        "payment.captured",
+        payload,
+        owns_transaction=False,
+    )
+
+
+async def _mock_drive_cancel(db: AsyncSession, sub: Subscription) -> None:
+    """DEV-MOCK ONLY. Replay a synthetic ``subscription.cancelled`` webhook.
+
+    Drives the local row to the terminal ``cancelled`` state + the
+    ``billing.subscription.cancelled`` audit row.  Per the real contract,
+    ``users.plan`` stays at tier until ``current_period_end`` (the Wave-4
+    reconcile sweep does the eventual downgrade — the mock does NOT fake that).
+    """
+    assert settings.razorpay_mock_active
+    payload = {
+        "event": "subscription.cancelled",
+        "id": f"evt_mock_{uuid4().hex}",
+        "payload": {
+            "subscription": {
+                "entity": {
+                    "id": sub.razorpay_subscription_id,
+                    "status": "cancelled",
+                    "notes": {"user_id": str(sub.user_id), "tier": sub.tier},
+                }
+            }
+        },
+    }
+    await _route_webhook_in_session(
+        db,
+        payload["id"],
+        "subscription.cancelled",
+        payload,
+        owns_transaction=False,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

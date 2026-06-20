@@ -98,6 +98,7 @@ async def billing_subscribe(
         short_url=result.short_url,
         amount_paise=result.amount_paise,
         tier=result.tier,
+        mock=settings.razorpay_mock_active,
     )
     return BillingSubscribeResponse(checkout=checkout)
 

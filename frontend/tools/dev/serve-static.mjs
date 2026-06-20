@@ -1,9 +1,9 @@
 /**
- * serve-static.mjs — Launch the 7 zero-dep static servers for the federated dist builds.
+ * serve-static.mjs — Launch the 8 zero-dep static servers for the federated dist builds.
  *
  * Memory-safe alternative to `pnpm run start:all`. Each server is the existing
  * `tools/boot-smoke/serve.js` (a zero-dep Node http server with SPA fallback + CORS,
- * ~15 MB RSS). Seven of them together hold ~129 MB steady state — versus 3–5 GB for seven
+ * ~15 MB RSS). Eight of them together hold ~147 MB steady state — versus 3–5 GB for eight
  * concurrent `ng serve` watchers, which hang an 8 GB machine. See tools/dev/STATIC_DEV.md.
  *
  * Prerequisite: the apps must already be built — run `pnpm run dev:build-static` first.
@@ -11,11 +11,11 @@
  * is missing.
  *
  * Usage (from any directory; run resolves to frontend/):
- *   node tools/dev/serve-static.mjs        # serve all 7 on 4200–4206
+ *   node tools/dev/serve-static.mjs        # serve all 8 on 4200–4207
  *   pnpm run dev:serve-static              # preferred (package.json)
  *
  * Exit behaviour:
- *   Ctrl-C (SIGINT) / SIGTERM   → SIGTERM all 7, then SIGKILL after 3s, exit 0.
+ *   Ctrl-C (SIGINT) / SIGTERM   → SIGTERM all 8, then SIGKILL after 3s, exit 0.
  *   Any child exits non-zero    → prints which one died, kills the rest, exits 1.
  *   Missing dist for any app    → prints the fix, exits 1 (nothing started).
  *
@@ -48,6 +48,7 @@ const LABEL_COLOURS = [
   '\x1b[94m',  // bright blue    — mfe-dashboard
   '\x1b[91m',  // bright red     — mfe-catalog
   '\x1b[97m',  // bright white   — mfe-auth
+  '\x1b[33m',  // yellow         — mfe-billing
 ];
 
 // ─── Server definitions — port map MUST match federation.manifest.json ────────
@@ -61,6 +62,7 @@ const SERVERS = [
   { label: 'mfe-dashboard',  app: 'mfe-dashboard',  port: 4204 },
   { label: 'mfe-catalog',    app: 'mfe-catalog',    port: 4205 },
   { label: 'mfe-auth',       app: 'mfe-auth',       port: 4206 },
+  { label: 'mfe-billing',    app: 'mfe-billing',    port: 4207 },
 ];
 
 // ─── Working directory: two levels up from this file = frontend/ ─────────────
@@ -94,7 +96,7 @@ function preflight() {
 function printBanner() {
   const line = '─'.repeat(66);
   console.log(`\n${BOLD}${CYAN}${line}${RESET}`);
-  console.log(`${BOLD}${WHITE}  MeeSell — Static Dev Serve (7 zero-dep servers, ~129 MB total)${RESET}`);
+  console.log(`${BOLD}${WHITE}  MeeSell — Static Dev Serve (8 zero-dep servers, ~147 MB total)${RESET}`);
   console.log(`${BOLD}${CYAN}${line}${RESET}`);
   console.log(`\n${BOLD}${YELLOW}  PORT MAP${RESET}`);
   for (const s of SERVERS) {
@@ -180,7 +182,7 @@ for (let i = 0; i < SERVERS.length; i++) {
   console.log(`${colour}[serve-static]${RESET} Spawned ${BOLD}[${label}]${RESET} → :${port}  ${DIM}(${distFor(app)})${RESET}`);
 }
 
-console.log(`\n${DIM}[serve-static] All 7 servers spawned. Open http://localhost:4200${RESET}\n`);
+console.log(`\n${DIM}[serve-static] All 8 servers spawned. Open http://localhost:4200${RESET}\n`);
 
 process.on('SIGINT',  () => teardown(children, 0));
 process.on('SIGTERM', () => teardown(children, 0));

@@ -279,6 +279,18 @@ class Settings(BaseSettings):
     # service.py regardless of this value. Dev sets "000000"; PROD MUST leave empty.
     DEV_OTP_BYPASS_CODE: str = ""
 
+    # ── Dev-only Razorpay mock (razorpay-dev-mock feature) ─────────────────────
+    # OFF by default (False == disabled). When True *and* APP_ENV != "production",
+    # the billing service short-circuits every Razorpay adapter call to a local
+    # fake (no network, no SDK, no account) AND immediately replays a synthetic
+    # activation/capture/cancel webhook through the REAL transition state machine
+    # so GET /billing/subscription flips to active on the first poll. The subscribe
+    # response carries `mock: true` so the FE skips checkout.js. FORCE-DISABLED in
+    # production by the APP_ENV guard at every call site (see iam/service.py), so a
+    # leaked True in a prod env never reaches Razorpay-bypass code. Dev sets True;
+    # PROD MUST leave False.
+    RAZORPAY_DEV_MOCK: bool = False
+
     # ── Google Sign-In (google-auth feature, 2026-06-18) ───────────────────
     # GOOGLE_OAUTH_CLIENT_ID is the OAuth Web client ID used as the `audience`
     # for ID-token verification.  Modelled as a list (comma-split, like
@@ -387,6 +399,17 @@ class Settings(BaseSettings):
     @property
     def is_prod(self) -> bool:
         return self.APP_ENV == "production"
+
+    @property
+    def razorpay_mock_active(self) -> bool:
+        """True only when the dev mock is enabled AND we are NOT in production.
+
+        This is the single computed gate the service layer reads. It mirrors the
+        OTP bypass's inline ``bool(DEV_OTP_BYPASS_CODE) and APP_ENV != "production"``
+        expression, centralised here so the production force-disable lives in ONE
+        place that cannot be forgotten at a call site.
+        """
+        return self.RAZORPAY_DEV_MOCK and self.APP_ENV != "production"
 
 
 def _load_settings() -> Settings:

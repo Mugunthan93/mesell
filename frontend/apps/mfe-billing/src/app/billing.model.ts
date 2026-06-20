@@ -65,6 +65,8 @@ export interface BillingCheckout {
   amount_paise?: number | null;
   currency: string;
   tier: string;
+  /** DEV-ONLY: backend already granted entitlement; skip checkout.js, poll directly. */
+  mock?: boolean;
 }
 
 /**
