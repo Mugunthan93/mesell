@@ -4919,6 +4919,44 @@ All monetary surfaces quantize to 2 dp with banker's rounding (`ROUND_HALF_EVEN`
 
 (End amendment.)
 
+### 12.M.1 AMENDMENT 2026-06-19 — Census-confirmed settlement model (founder-ratified — SUPERSEDES §12.M)
+
+**Founder ruling 2026-06-19 (founder Mugunthan, §7.3 founder-ratified amendment to the §12 LOCKED spec).** The §12.M (2026-06-18) model above is **DISPROVEN and RETIRED**. It guessed the deduction stack — full-shipping deduction, a `commission_pct` default of 4%, fabricated `logistics_fee`/`fixed_fee`/`tcs` terms, a price-bracketed `SHIPPING_FLAT`/`SHIPPING_HIGH`, and a "₹106 Meesho price → ₹47 payout" calibration — none of which survive empirical contact with Meesho. This §12.M.1 replaces §12.M (1)–(6). Where §12.M and §12.B–§12.L prose conflict with §12.M.1, **§12.M.1 governs**.
+
+**Empirical basis.** Established 2026-06-19 by a `getTransferPrice` API census of **all 3,772 categories** (`logs/scraper/transfer_price_census*.{jsonl,json}`); the last open question (weight-dependence) was closed by founder portal verification; and the model was finally proven against the founder's **first real Meesho payout**: SKU `TTC-BL-OR-HP-NG-P4`, sub-order `289264797669114560_1` — Sale ₹70, Shipping Revenue +₹45, Commission ₹0, Shipping Charge −₹53.10 (= 45 × 1.18), TDS −₹0.12, **Bank Settlement ₹61.78**. The model reproduces it to the paise. Reference memo: `.claude/agent-memory/nexus-level-0-director/project_pricing_transfer_price_model.md` + builder handoff `.claude/agent-memory/meesell-data-engineer/handoff_pricing_transfer_price.md`.
+
+**(1) Confirmed estimator formula** (`pricing/service.py`, pure `Decimal`, `ROUND_HALF_EVEN` via `_q`; verified on 3,772/3,772 census rows, 0 failures):
+
+```
+total_price       = selling_price + shipping                     # shipping = per-category constant
+commission_fees   = commission_pct × selling_price               (commission_pct default 0)
+gst_on_shipping   = 0.18 × shipping                              # API field name = gst_price
+tds               = 0.001 × total_price
+tcs               = 0
+estimated_bank_settlement
+                  = selling_price − commission_fees − gst_on_shipping − tds − tcs
+```
+
+Real-order proof: `70 − 0 − (0.18 × 45 = 8.10) − (0.001 × 115 = 0.12) − 0 = 61.78` ✓. **The seller bears ONLY the 18% GST on shipping, NOT the shipping itself** — in Meesho's gross presentation the Shipping Revenue (+base) cancels the base of the Shipping Charge (−base × 1.18), leaving only `gst_on_shipping`. The §12.M model's full-shipping deduction would have yielded ≈₹11 (catastrophically wrong).
+
+**(2) Shipping is a per-category CONSTANT keyed by `meesho_leaf_id`** (= the census `sscat_id` of the listing's leaf category). It is **price-independent** (census) AND **weight/dimension-independent** (founder portal-confirmed 2026-06-19; `getTransferPrice` accepts no weight field). Range ₹48–₹8,435, 365 distinct values. The §12.M `SHIPPING_BRACKET`/`SHIPPING_FLAT`/`SHIPPING_HIGH` price-bracketing is **DELETED** — there is no price bracket.
+
+**(3) Commission = 0 across all 3,772 categories** per the census (`commission_analysis.non_zero_count = 0`); the panel's "4% default monetization percent" is display-only and never charges. `commission_pct` is **retained as an OPTIONAL parameter, default 0** (per the Meesho disclaimer, commission policy can change at order time — so it stays a parameter rather than a hardcoded constant). The §12.M `DEFAULT_COMMISSION_PCT = 4` is RETIRED.
+
+**(4) Data source — `backend/app/data/meesho_pricing_lookup.json`** (3,772 entries: `meesho_leaf_id` → per-category shipping constant + commission), productionized from the census summary `lookup`. **Refresh cadence: fold the `getTransferPrice` census into the EXISTING monthly category scrape** — one run refreshes the category tree AND the pricing lookup together (owner = `meesell-scraper-maintainer` + `meesell-data-engineer`, scoped to W6). NO separate pricing-refresh schedule. The lookup is the ONLY pricing input besides the seller's price + category; the production calculator is **fully OFFLINE** (zero live Meesho calls — the §12.M (6) HARD RULE is retained and strengthened: not even a calibration artifact is needed under `app/`).
+
+**(5) Retired §12.M terms.** `logistics_fee`, `fixed_fee`, `gst_on_fees` (GST-on-fees), `tcs` (now 0), `rto_expected_loss`, `return_rate_pct`, `markup_pct`, `WDRP_DELTA`-derived WDRP payout, and all §12.M named constants (`SHIPPING_FLAT`, `SHIPPING_HIGH`, `SHIPPING_BRACKET`, `DEFAULT_COMMISSION_PCT`, `DEFAULT_LOGISTICS_FEE`, `DEFAULT_FIXED_FEE`, `DEFAULT_TCS_PCT`) are **removed**. GST is now charged on **shipping** (`gst_on_shipping`), never on a fee base. TDS is `0.001 × total_price` (Meesho's 0.1% on `selling_price + shipping`), not a `meesho_price × tds_pct` term.
+
+**(6) Alerts.** `NEGATIVE_PAYOUT` (settlement < 0; 200-with-alert, never a 400) and `LOW_MARGIN` are retained. `SHIPPING_DOMINATES` from §12.M is **dropped** (the seller pays only GST-on-shipping, so shipping no longer dominates the deduction stack). `commission_pct = 0` means `commission_fees = 0` by default.
+
+**(7) Output framing.** Label the result **"Estimated Bank Settlement"** (a listing-time estimate, NOT a guarantee) and surface Meesho's disclaimer near it: *"Bank settlement amount may vary slightly based on the quantity in the order, Meesho commission policy at the time of the order and the actual weight of the product as calculated by our third party delivery partner."* Estimate-vs-actual drift is expected and small (≈1.5% on the real order: estimate ₹60.88 vs actual ₹61.78 — the courier re-measured the parcel lighter than the category default).
+
+**(8) Net-profit layer DEFERRED to V1.5.** `net_profit = estimated_bank_settlement − output_GST_liability − landed_cost` (output GST as a per-product slab input) is NOT in V1. V1 outputs only the Meesho-side estimated bank settlement.
+
+**(9) Migration alignment.** The corrected estimator + additive `pricing_calcs` columns land via migration **`d4e5f6a7b8c9`** (additive, reversible `upgrade()`/`downgrade()`). The shipped §12.M engine and its migration `b7c2e1a9d3f4` implement the disproven model and are reworked to this model. The §2.6 module catalog, the §2.D cross-module matrix (`pricing → category` remains `✗` — commission is still NOT a category lookup), and the §12 LOCKED status are otherwise unchanged.
+
+(End amendment.)
+
 ---
 
 ## Section 13 — Module: `dashboard`

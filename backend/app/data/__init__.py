@@ -25,10 +25,6 @@ def load_banned_words() -> dict:
     return _load("banned_words.json")
 
 
-def load_shipping_slabs() -> dict:
-    return _load("meesho_shipping_slabs.json")
-
-
 def all_banned_words() -> list[str]:
     data = load_banned_words()
     flat: list[str] = []

@@ -19,7 +19,7 @@ import { EmptyStateComponent } from '@mesell/composites';
   imports: [EmptyStateComponent],
   template: `
     <mee-empty-state
-      icon="cloud_off"
+      icon="cloud-off"
       message="This module is temporarily unavailable. Please retry in a moment."
       cta_label="Retry"
       (cta_click)="reload()"

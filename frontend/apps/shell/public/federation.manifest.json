@@ -1,9 +1,9 @@
 {
-  "mfe-pricing": "http://localhost:4301/remoteEntry.json",
-  "mfe-export": "http://localhost:4302/remoteEntry.json",
-  "mfe-onboarding": "http://localhost:4303/remoteEntry.json",
-  "mfe-catalog": "http://localhost:4305/remoteEntry.json",
-  "mfe-dashboard": "http://localhost:4304/remoteEntry.json",
-  "mfe-auth": "http://localhost:4306/remoteEntry.json",
+  "mfe-pricing": "http://localhost:4201/remoteEntry.json",
+  "mfe-export": "http://localhost:4202/remoteEntry.json",
+  "mfe-onboarding": "http://localhost:4203/remoteEntry.json",
+  "mfe-catalog": "http://localhost:4205/remoteEntry.json",
+  "mfe-dashboard": "http://localhost:4204/remoteEntry.json",
+  "mfe-auth": "http://localhost:4206/remoteEntry.json",
   "mfe-billing": "http://localhost:4207/remoteEntry.json"
 }

@@ -106,7 +106,7 @@ import { ImageService } from './image.service';
       <!-- Feature disabled / flag-OFF state -->
       @if (featureDisabled()) {
         <mee-empty-state
-          icon="image_not_supported"
+          icon="image-off"
           message="Image upload is not available. The image pre-check feature is currently disabled. Continue to the next step."
         />
         <div class="flex justify-end pt-4" style="border-top: 1px solid var(--mee-color-outline);">

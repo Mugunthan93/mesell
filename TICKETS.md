@@ -611,3 +611,82 @@ quality benchmarking. API-discovery-first, DOM as last resort.
 | T18 | 6 | ⬜ TODO | T14, T15 |
 | T19 | 6 | ⬜ TODO | All |
 | T20 | 7 | 🟦 IN PROGRESS | T01, T13 |
+| B01 | Bug | ✅ MERGED #320 | — |
+| B02 | Bug | ✅ MERGED #317 | — |
+| B03 | Bug | ✅ MERGED #319 | — |
+| B04 | Bug | ✅ MERGED #318 | — |
+
+---
+
+## Bug Tickets
+
+> Defects logged from live sessions. B-prefix = bug. Each has an owning `meesell-*` agent.
+
+### B01: Material Symbols Icons Render as Raw Text on Dashboard
+**Priority:** P1 | **Type:** Bug | **Found:** 2026-06-19 visual comparison session | **Status:** ✅ MERGED #320
+**Owner:** `meesell-angular-ui-styler`
+
+**Symptom:** Dashboard page shows raw ligature strings (`edit_note`, `check_circle`, `inventory_2`, `cloud_off`) instead of rendered icons. Sidebar `pi-*` icons are fine.
+
+**Root Cause:** `mfe-dashboard` dist and the shell's `RemoteFailureComponent` do not load the Material Symbols font. The font is referenced in the shell but not propagated as a shared asset to each MFE build.
+
+**Fix:** Add Material Symbols font `<link>` to `mfe-dashboard/src/index.html` (and any other MFE index.html that uses Material Symbols). Alternatively, move to `primeicons`-only and replace all Material Symbols usages with `pi-*` equivalents.
+
+**Acceptance Criteria:**
+- [x] Dashboard stat-card icons render correctly (not as text)
+- [x] `RemoteFailureComponent` icon renders correctly
+- [x] No CDN font dependency added (use self-hosted or already-bundled font)
+
+---
+
+### B02: Sidebar Nav Links Have Singular/Plural Route Drift
+**Priority:** P1 | **Type:** Bug | **Found:** 2026-06-19 visual comparison session | **Status:** ✅ MERGED #317
+**Owner:** `meesell-angular-component-builder`
+
+**Symptom:** Sidebar navigation links point to wrong routes:
+- "New Product" → `/catalog/new` (should be `/catalogs/new`)
+- "Pricing" → `/pricing` (should match actual route)
+- "Export" → `/export` (should match actual route)
+- "Categories" → `/categories` (should match actual route)
+This causes `routerLinkActive` to never highlight correctly and navigation to fail.
+
+**Fix:** Audit all `routerLink` values in the shell sidebar component against `app.routes.ts` and fix mismatches.
+
+**Acceptance Criteria:**
+- [x] All sidebar links navigate to correct routes
+- [x] `routerLinkActive` highlights active link correctly
+- [x] No 404 on any sidebar nav item
+
+---
+
+### B03: Auth Refresh 401 After OTP Verify (Non-Fatal Storm)
+**Priority:** P1 | **Type:** Bug | **Found:** 2026-06-18 monitoring session, confirmed 2026-06-19 | **Status:** ✅ MERGED #319
+**Owner:** `meesell-angular-service-builder`
+
+**Symptom:** After OTP verify succeeds and JWT is issued, the frontend immediately hits `POST /auth/refresh` ~20 times in rapid succession, then receives 401, triggering a force-logout. Reproduce: complete OTP login, watch network tab.
+
+**Root Cause (hypothesis):** Multiple concurrent `scheduleRefresh()` calls racing — interceptor single-flight not enforced, or `me 200` + refresh call both trigger the refresh scheduler simultaneously.
+
+**Fix:** Ensure `AuthService.scheduleRefresh()` is idempotent — cancel any existing refresh timer before scheduling a new one. Add single-flight guard to the refresh HTTP call (if one is in-flight, queue/share the response, don't send a second request).
+
+**Acceptance Criteria:**
+- [x] OTP login → exactly 0 refresh calls immediately after (only scheduled after TTL/2)
+- [x] `GET /auth/me` + `POST /auth/refresh` each called at most once per auth lifecycle
+- [x] No force-logout in the first 60 seconds after login
+
+---
+
+### B04: mfe-catalog BrowseComponent Expose Missing From Static Build
+**Priority:** P2 | **Type:** Bug | **Found:** 2026-06-19 visual comparison session | **Status:** ✅ MERGED #318
+**Owner:** `meesell-frontend-coordinator`
+
+**Symptom:** Navigating to `/categories/browse` via the shell loads the `RemoteFailureComponent` with message "Unknown exposed module `./BrowseComponent`". The static serve.js build at `:4205` does not expose this module in `remoteEntry.json`.
+
+**Root Cause:** The static build of `mfe-catalog` is stale — the `BrowseComponent` was added after the build was cut. The `remoteEntry.json` is from an older build that doesn't include the expose.
+
+**Fix:** Rebuild `mfe-catalog` from the current `develop` HEAD and update the static serve.js build. Also verify that `mfe-catalog`'s `module-federation.config.ts` explicitly exposes `./BrowseComponent`.
+
+**Acceptance Criteria:**
+- [x] `/categories/browse` renders the browse UI (not RemoteFailureComponent)
+- [x] `mfe-catalog`'s `remoteEntry.json` includes `./BrowseComponent` expose
+- [x] Confirmed against rebuilt static serve or `ng serve`

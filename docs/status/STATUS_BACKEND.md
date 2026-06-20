@@ -61,6 +61,132 @@ Hand-offs:
     app.shared.models; ck_users_plan and trial_ends_at are live on users table.
 =========
 
+=== UPDATE: 2026-06-19 (meesell-services-builder) — W4a apply chosen price to product ===
+Phase: V1 Feature 7 — Price Calculator rework, WAVE 4 step-1 (service slice)
+Branch: feature/price-calc-rework/w4-export (off origin/develop 8a1b9d3)
+Done:
+- pricing/service.py ADDITIVE: apply_price_to_product(user_id, product_id, selling_price, *, db)
+  -> None. The explicit "Use this price" action (founder G-W4-APPLY Option A — NEVER auto-saved
+  on calculate). Validates selling_price > 0 (InvalidPriceInputError, defensive — router also
+  enforces), quantizes to 2dp, then writes {meesho_price: price} into products.fields_jsonb by
+  REUSING catalog.service.patch_product (is_autosave=False) — ownership (M6) + per-field schema
+  validation + atomic JSONB || merge all reused, no new write surface.
+- Canonical: writes ONLY SELLING_PRICE_CANONICAL="meesho_price". mrp (strike-through MRP) is
+  deliberately UNTOUCHED — OPEN QUESTION flagged for api-routes/FE step (calculator yields one
+  chosen number; whether "apply" should also populate mrp is a product decision).
+- §16 constraint hit + resolved: Contract 4 FORBIDS pricing importing catalog.schemas, so
+  patch_product is fed a local duck-typed _PriceFieldsPatch (frozen dataclass exposing .fields
+  + .status only — patch_product reads exactly those). Keeps the call on the ALLOWED
+  pricing → catalog §2.D edge (line 590, locked 1 ✓) — NOT a new matrix cell.
+- tests: NEW tests/test_pricing_apply_price_service.py (8 tests, DB-free, patch_product mocked):
+  writes value under meesho_price; only-meesho_price-never-mrp; 2dp quantize; rejects 0/neg
+  (3 params) before any catalog call; ownership (ProductNotFoundError) + schema-422
+  (ValidationFailedError) bubble verbatim.
+Tests: 8 passed / 0 failed (apply suite); 31 passed across -k "pricing or price". ruff clean;
+  import-linter 27 kept / 0 broken (Contract 4.pricing KEPT); pricing.service imports clean.
+Hand-offs: ready for W4 step-2 (api-routes-builder) — add POST /products/{id}/apply-price +
+  ApplyPriceRequest(selling_price: Decimal) wrapping pricing_service.apply_price_to_product;
+  count toward §17 endpoint inventory. NOTE: api-routes-builder's W2-step3 dead-token grep gate
+  includes "mrp" — my service mentions mrp ONLY in docstrings/the open-question note + the
+  _PriceFieldsPatch never writes it; allowlist the docstring hits if that gate lands on this branch.
+Blockers: none. Next: hand to api-routes-builder.
+=========
+
+```
+=== UPDATE: 2026-06-19 (meesell-services-builder) — W2b settlement engine (census-confirmed) ===
+Phase: V1 Feature 7 — Price Calculator rework, WAVE 2 step-2 (service/engine slice)
+Branch: feature/price-calc-rework/w2-backend (off step-1 77479b1)
+Done:
+- domain.py REWRITTEN: NEW SettlementBreakdown (9 Decimal fields); PricingCalc remapped to
+  confirmed column set (selling_price/shipping/total_price/commission_pct/commission_fees/
+  gst_on_shipping/tds/tcs/estimated_bank_settlement/meesho_leaf_id); PricingAlert.code Literal
+  narrowed to ["NEGATIVE_SETTLEMENT"] only. DELETED PnLBreakdown.
+- service.py REWRITTEN: NEW pure _compute_settlement(*, selling_price, shipping, commission_pct);
+  NEW calculate() orchestration (ownership → get_product_meesho_leaf_id → get_shipping →
+  commission default/override → _compute_settlement → single-alert → insert_calc → response);
+  _generate_alerts down to one rule; _q now ROUND_HALF_UP. DELETED all wrong-model code:
+  WDRP_DELTA, SHIPPING_BRACKET/FLAT/HIGH, DEFAULT_GST/TCS/TDS/LOGISTICS/FIXED, _bracketed_shipping,
+  _estimate_payout, the 106→47 calibration docstring/constants. DEFAULT_COMMISSION_PCT now 0.
+- catalog/service.py ADDITIVE: get_product_meesho_leaf_id(product_id, user_id, *, db) -> str
+  (product → category_id → meesho_leaf_id, user-scoped, ProductNotFoundError on miss/cross-tenant).
+- category/service.py ADDITIVE: get_meesho_leaf_id(category_id, db) -> str | None (mirrors get_super_id).
+- category/repository.py ADDITIVE: get_meesho_leaf_id_uncached (mirrors get_super_id_uncached).
+- tests: NEW test_settlement_formula.py (9 tests incl. ₹61.78 real-order + 85.06 census + N=80
+  census-wide + single-alert). DELETED obsolete test_pnl_formula.py / test_alerts.py /
+  test_estimator_calibration.py (wrong-model pure-function tests).
+Tests: 9 passed / 0 failed (toolchain master .venv 3.11, no DB needed — pure arithmetic). ruff clean.
+       Dead-token grep over domain.py + service.py = ZERO.
+Migration: step-1 d4e5f6a7b8c9 (additive nullable columns) not applied locally — engine tests are
+           DB-free; alembic upgrade deferred to api-routes-builder / integration env.
+In progress: none
+Blockers: none
+Next: W2 step-3 (api-routes-builder) — schemas.py (PriceCalcRequest.selling_price + new
+      PriceCalcResponse incl. disclaimer), repository.insert_calc new signature, router 422 mapping
+      for UnknownCategoryError, exceptions.CategoryPricingUnavailableError, router-level tests.
+Hand-offs:
+- api-routes-builder: my calculate() calls pricing_repo.insert_calc(db, product_id, selling_price,
+  shipping, total_price, commission_pct, commission_fees, gst_on_shipping, tds, tcs,
+  estimated_bank_settlement, meesho_leaf_id) and constructs PriceCalcResponse(selling_price, shipping,
+  total_price, commission_pct, commission_fees, gst_on_shipping, tds, tcs, estimated_bank_settlement,
+  disclaimer, alerts, calculated_at) + PriceCalcAlert(code="NEGATIVE_SETTLEMENT", message_id=
+  "pricing.alert.negative_settlement", severity="warning"). schemas.py + repository.py must match
+  these exactly or service.py won't link.
+- i18n owner (non-blocking): add pricing.alert.negative_settlement key; pricing.alert.negative_payout
+  is retired.
+=========
+
+=== UPDATE: 2026-06-19 (meesell-database-builder) — W2a pricing_calc confirmed-model columns ===
+Phase: price-calc-rework / W2 database slice (section-7)
+Done:
+  - backend/app/shared/models/pricing_calc.py: added 7 new confirmed-model columns
+    (selling_price, shipping, total_price, commission_fees, gst_on_shipping,
+    estimated_bank_settlement, meesho_leaf_id) all nullable NUMERIC(10,2) or VARCHAR(16).
+    tcs + tds adopted from b7c2e1a9d3f4 with corrected semantics (no DDL change needed).
+    commission_pct reused from baseline (no DDL change).
+    All #285 wrong-model columns retained nullable with DEPRECATED comments per Q3 ruling.
+  - New additive migration d4e5f6a7b8c9 (down_rev=c2d3e4f5a6b7):
+    upgrade() adds 7 columns; downgrade() drops only those 7. NO drops of #285 columns.
+    Single head confirmed: d4e5f6a7b8c9.
+  - Ruff clean on both changed files.
+In progress: none (database slice complete)
+Blockers: none
+Next: W2 step-2 services-builder (service.py, domain.py, catalog accessor)
+Hand-offs:
+  - meesell-services-builder: pricing_calc model updated. Head=d4e5f6a7b8c9.
+    New confirmed columns available: selling_price, shipping, total_price,
+    commission_fees, gst_on_shipping, tds, tcs (reused), estimated_bank_settlement,
+    meesho_leaf_id. Branch: feature/price-calc-rework/w2-backend.
+    Apply migration before running service layer tests.
+=========
+
+=== UPDATE: 2026-06-19 (meesell-database-builder) — Price Calculator W1 data layer ===
+Phase: price-calculator-rework / W1 data layer (section-7)
+Done:
+  - backend/scripts/build_pricing_lookup.py: idempotent transform from census → lookup JSON
+    (hard-fails on error_rows!=0 / count!=3772 / any non-zero commission / any formula_ok!=True)
+  - backend/app/data/meesho_pricing_lookup.json: generated + committed; 3772 entries;
+    keyed by string meesho_leaf_id; schema {_meta, lookup}; anchor 10949→82 confirmed
+  - backend/app/modules/pricing/pricing_lookup.py: loader module with get_shipping(),
+    get_commission_default(), lookup_size(), UnknownCategoryError; @lru_cache(maxsize=1)
+  - backend/app/data/meesho_shipping_slabs.json: TOMBSTONED (_CLOSED note)
+  - backend/app/data/category_commissions.json: TOMBSTONED (_CLOSED note)
+  - backend/app/data/__init__.py: load_shipping_slabs() REMOVED; zero app/ callers confirmed
+  - backend/tests/modules/pricing/test_pricing_lookup.py: 12/12 tests pass; ruff clean
+  - No Alembic migration — W1 is pure data file + loader (no DB schema change)
+In progress: none (waiting for meesell-data-engineer merge-gate review — HYBRID step 3)
+Blockers: none
+Next: meesell-data-engineer merge-gate review (data-file spot-check + loader code review)
+Hand-offs:
+  - meesell-data-engineer (merge-gate, step-3): PR on feature/price-calc-rework/w1-data → develop.
+    Verify: 3 census entries match verbatim, _meta.total==3772, tombstones in place,
+    zero app/ refs to retired stubs (grep), gate-1 green (12/12).
+  - meesell-services-builder (W2): pricing_lookup.py loader ready at
+    app.modules.pricing.pricing_lookup. Call get_shipping(meesho_leaf_id) and
+    get_commission_default(meesho_leaf_id) from the W2 settlement formula.
+    Handle UnknownCategoryError → 422 in the router.
+=========
+
+```
 === UPDATE: 2026-06-18 (meesell-services-builder) — export validation aggregation ===
 Phase: V1 Feature 9 Export — collect-all pre-enqueue validation
 Session: export-validation-aggregation, branch feat/export-validation-aggregation,

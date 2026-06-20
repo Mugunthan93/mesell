@@ -1,26 +1,33 @@
 """``pricing`` Pydantic v2 wire-shape models — request + response surfaces.
 
 Per BACKEND_ARCHITECTURE.md §12.E (LOCKED 2026-06-05) as superseded by the
-**§12.M AMENDMENT 2026-06-18 — Price Calculator forward-estimator rework
-(founder-ratified)**.
+**W2 Price Calculator rework (census-confirmed settlement model, 2026-06-19)** —
+authoritative source
+``.claude/agent-memory/nexus-level-0-director/project_pricing_transfer_price_model.md``.
 
-Forward estimator (§12.M)
--------------------------
-The calculator runs FORWARD: the seller enters a **Meesho Price** (the
-listed price) and the backend estimates the **net payout**.  Profit and
-margin are *outputs*, never inputs.  ``target_margin_pct`` is REMOVED.
+Census-confirmed settlement model (W2)
+--------------------------------------
+The calculator runs FORWARD: the seller enters a **selling price** (the listed
+Meesho price) and the backend estimates the **bank settlement** Meesho will pay
+out.  Profit / margin / input cost are DEFERRED to V1.5
+(``G-NETPROFIT`` gate) — no such fields exist anywhere in request/response/domain.
 
-* :class:`PriceCalcRequest` — ``meesho_price`` is the primary input;
-  ``commission_pct`` is a **seller input** (default 4%), NOT a category
-  lookup; the full deduction stack is computed deterministically.
-* :class:`PriceCalcResponse` — the 3-price model (MRP reference, Meesho
-  Price, WDRP) + the full deduction breakdown + ``estimated_payout`` +
-  ``estimated_payout_wdrp`` + ``profit`` + ``margin_pct`` + ``markup_pct``
-  + alerts + ``calculated_at``.
+* :class:`PriceCalcRequest` — ``selling_price`` is the primary input;
+  ``commission_pct`` is an optional seller override (default resolved server-side
+  from the lookup = 0).
+* :class:`PriceCalcAlert` — V1 ships exactly ONE code: ``NEGATIVE_SETTLEMENT``.
+* :class:`PriceCalcResponse` — the complete bank-settlement breakdown.
+
+Breaking change from #285 (W3 note)
+------------------------------------
+The request field ``meesho_price`` has been renamed to ``selling_price`` and all
+other #285 request fields (``input_cost``, ``return_rate_pct``, ``mrp``,
+``override_*``) are REMOVED.  ``extra="forbid"`` means a stale FE sending the
+old fields gets a 422.  W3 frontend ships the new body in lockstep (see W3
+hand-off memo).
 
 All monetary values are :class:`~decimal.Decimal` with 2 dp — never
-:class:`float` per CLAUDE.md "Coding Conventions" + §4.D numeric
-precision rule.
+:class:`float` per CLAUDE.md "Coding Conventions" + §4.D numeric precision rule.
 """
 
 from __future__ import annotations
@@ -33,161 +40,171 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Request (§12.M (2))
+# Request  (§12.M + W2 confirmed model)
 # ─────────────────────────────────────────────────────────────────────────────
 class PriceCalcRequest(BaseModel):
     """Body for ``POST /api/v1/products/{id}/price-calc``.
 
-    Per §12.M.  Pydantic validates the field constraints at the route
-    boundary; service-layer business-rule checks are surfaced via
-    :class:`~app.modules.pricing.exceptions.InvalidPriceInputError` (400).
-    A negative estimated payout does NOT raise — it returns 200 with a
-    ``NEGATIVE_PAYOUT`` alert.
+    Minimal contract — the API does NOT take a category identifier.  The
+    product already carries ``category_id`` and the service resolves the
+    Meesho leaf id server-side (single source of truth, avoids client/category
+    drift bug per W2_BACKEND_SPEC §2.1 decision).
+
+    A negative ``estimated_bank_settlement`` returns 200 with a
+    ``NEGATIVE_SETTLEMENT`` alert — never a 400.
+
+    ``extra="forbid"`` is intentional: a stale frontend sending the old #285
+    fields (``meesho_price``, ``input_cost``, etc.) will receive a clean 422
+    rather than silently ignoring the extra data.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    # ── Primary inputs ───────────────────────────────────────────────────
-    meesho_price: Decimal = Field(
+    selling_price: Decimal = Field(
         gt=0,
         decimal_places=2,
-        description="Listed/selling price on Meesho, in INR — drives the payout.",
+        description=(
+            "Listed / selling price on Meesho, in INR — drives the settlement "
+            "estimate.  Renamed from #285 ``meesho_price``."
+        ),
     )
-    input_cost: Decimal = Field(
-        gt=0,
-        decimal_places=2,
-        description="Cost of goods per unit, in INR — drives profit + markup.",
-    )
-
-    # ── Seller-entered estimator inputs ──────────────────────────────────
-    commission_pct: Decimal = Field(
-        default=Decimal("4"),
-        ge=0,
-        le=Decimal("100"),
-        decimal_places=2,
-        description="Meesho referral commission %, seller-entered (default 4%).",
-    )
-    return_rate_pct: Decimal = Field(
-        default=Decimal("0"),
-        ge=0,
-        le=Decimal("100"),
-        decimal_places=2,
-        description="Expected return rate %, drives the RTO expected-loss term.",
-    )
-
-    # ── Optional display reference ───────────────────────────────────────
-    mrp: Decimal | None = Field(
-        default=None,
-        gt=0,
-        decimal_places=2,
-        description="Struck-through reference price (display-only; does NOT drive payout).",
-    )
-
-    # ── Tunable per-request deduction overrides ──────────────────────────
-    override_shipping: Decimal | None = Field(
-        default=None,
-        ge=0,
-        decimal_places=2,
-        description="Override the bracketed shipping charge (INR).",
-    )
-    override_logistics_fee: Decimal | None = Field(
-        default=None,
-        ge=0,
-        decimal_places=2,
-        description="Override the logistics fee (INR).",
-    )
-    override_fixed_fee: Decimal | None = Field(
-        default=None,
-        ge=0,
-        decimal_places=2,
-        description="Override the fixed/closing fee (INR).",
-    )
-    override_gst_pct: Decimal | None = Field(
+    commission_pct: Decimal | None = Field(
         default=None,
         ge=0,
         le=Decimal("100"),
         decimal_places=2,
-        description="Override the GST % applied to the fees.",
-    )
-    override_tcs_pct: Decimal | None = Field(
-        default=None,
-        ge=0,
-        le=Decimal("100"),
-        decimal_places=2,
-        description="Override the TCS %.",
-    )
-    override_tds_pct: Decimal | None = Field(
-        default=None,
-        ge=0,
-        le=Decimal("100"),
-        decimal_places=2,
-        description="Override the TDS %.",
+        description=(
+            "Optional seller commission % override (0–100).  When omitted the "
+            "service resolves the lookup default (0 across all 3,772 categories "
+            "per census).  Kept as a parameter so a future monthly refresh or "
+            "per-seller negotiated rate is honored."
+        ),
     )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Alert (wire shape) (§12.M (3))
+# Alert  (V1 ships ONE code)
 # ─────────────────────────────────────────────────────────────────────────────
 class PriceCalcAlert(BaseModel):
-    """Wire-shape pricing alert.  See
-    :class:`~app.modules.pricing.domain.PricingAlert` for the internal
-    dataclass that the service constructs and the router maps to this
-    Pydantic model."""
+    """Wire-shape pricing alert.
 
-    code: Literal["NEGATIVE_PAYOUT", "LOW_MARGIN", "SHIPPING_DOMINATES"]
+    V1 ships exactly one alert code (``NEGATIVE_SETTLEMENT``).  The service
+    maps :class:`~app.modules.pricing.domain.PricingAlert` → this model.
+    """
+
+    code: Literal["NEGATIVE_SETTLEMENT"]
     message_id: str = Field(
-        description="validation_message_id per §5A.H — resolved client-side via i18n.",
+        description=(
+            "i18n lookup key per §5A.H — resolved client-side.  "
+            "V1 value: ``pricing.alert.negative_settlement``."
+        ),
     )
-    severity: Literal["warning", "info"]
+    severity: Literal["warning"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Response (§12.M)
+# Response  (W3/W4 bind to this contract — DO NOT change without coordinator)
 # ─────────────────────────────────────────────────────────────────────────────
+_DISCLAIMER: str = (
+    "Bank settlement amount may vary slightly based on the quantity in the "
+    "order, Meesho commission policy at the time of the order and the actual "
+    "weight of the product as calculated by our third party delivery partner."
+)
+"""Verbatim Meesho disclaimer.  Shipped as a literal for V1; an i18n key
+(``pricing.disclaimer``) may be added later — non-blocking per W2 spec."""
+
+
 class PriceCalcResponse(BaseModel):
     """200-OK body for ``POST /api/v1/products/{id}/price-calc``.
 
-    All monetary values in INR with 2 decimal places (quantized
-    ``ROUND_HALF_EVEN`` per the §12.M lock).
+    All monetary values in INR with exactly 2 decimal places (Decimal,
+    serialized as strings to preserve precision — the frontend parses via
+    ``Number()``).
+
+    Field set is the W3/W4 contract.  Do NOT add or rename fields without
+    backend-coordinator approval + W3 FE lock-step.
     """
 
-    # ── 3-price model ────────────────────────────────────────────────────
-    mrp: Decimal | None
-    """Struck-through reference price (echoed from the request; may be None)."""
-    meesho_price: Decimal
-    wdrp_price: Decimal
-    """Wrong/Defective Return Price = meesho_price − WDRP_DELTA."""
+    # ── Echo of request (for display / debugging) ─────────────────────────
+    selling_price: Decimal
+    """The listed Meesho price echoed from the request (₹, 2 dp)."""
 
-    # ── Seller cost (echo) ───────────────────────────────────────────────
-    input_cost: Decimal
+    # ── Settlement breakdown ──────────────────────────────────────────────
+    shipping: Decimal
+    """Per-category constant shipping charge from the lookup (₹, 2 dp)."""
 
-    # ── Deduction breakdown ──────────────────────────────────────────────
+    total_price: Decimal
+    """selling_price + shipping (₹, 2 dp)."""
+
     commission_pct: Decimal
-    referral_commission: Decimal
-    shipping_charge: Decimal
-    logistics_fee: Decimal
-    fixed_fee: Decimal
-    gst_pct: Decimal
-    gst_on_fees: Decimal
-    tcs: Decimal
-    tds: Decimal
-    return_rate_pct: Decimal
-    rto_expected_loss: Decimal
-    total_deductions: Decimal
+    """Commission % actually applied — the override or the lookup default (0)."""
 
-    # ── Outputs ──────────────────────────────────────────────────────────
-    estimated_payout: Decimal
-    estimated_payout_wdrp: Decimal
-    profit: Decimal
-    margin_pct: Decimal
-    markup_pct: Decimal
+    commission_fees: Decimal
+    """commission_pct × selling_price (₹, 2 dp)."""
+
+    gst_on_shipping: Decimal
+    """18% × shipping — the seller's real shipping cost (₹, 2 dp)."""
+
+    tds: Decimal
+    """0.1% × total_price — TDS deduction (₹, 2 dp)."""
+
+    tcs: Decimal
+    """Tax collected at source — always 0.00 per census (₹, 2 dp)."""
+
+    # ── Headline output ───────────────────────────────────────────────────
+    estimated_bank_settlement: Decimal
+    """selling_price − commission_fees − gst_on_shipping − tds − tcs (₹, 2 dp).
+    May be negative (→ NEGATIVE_SETTLEMENT alert).  Never a 400."""
+
+    # ── Metadata ─────────────────────────────────────────────────────────
+    disclaimer: str = Field(default=_DISCLAIMER)
+    """Verbatim Meesho disclaimer (the model memory text, 2026-06-19)."""
 
     alerts: list[PriceCalcAlert]
+    """0 or 1 alerts (V1 ships only NEGATIVE_SETTLEMENT)."""
+
     calculated_at: datetime
+    """UTC timestamp of the persisted ``pricing_calcs`` row."""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# W4b — "apply chosen price to product" (POST /products/{id}/apply-price)
+# ─────────────────────────────────────────────────────────────────────────────
+class ApplyPriceRequest(BaseModel):
+    """Body for ``POST /api/v1/products/{id}/apply-price``.
+
+    W4 explicit "Use this price" action (W4_EXPORT_SPEC §2.B; founder ruling
+    G-W4-APPLY Option A — explicit action only, never silent mutation on
+    :func:`calculate`).
+
+    The route writes ``selling_price`` into the product's
+    ``fields_jsonb["meesho_price"]`` so it flows to the Meesho XLSX export
+    under the ``meesho_column_header`` that the seed pipeline assigns to the
+    ``meesho_price`` canonical.
+
+    ``mrp`` is deliberately absent — the calculator produces a single seller-
+    chosen number (the selling price).  The strike-through MRP is a separate
+    seller input entered in the catalog/wizard form.
+
+    ``extra="forbid"`` prevents silent field forwarding from a stale frontend.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    selling_price: Decimal = Field(
+        gt=0,
+        decimal_places=2,
+        description=(
+            "The seller's chosen selling / listed price on Meesho, in INR.  "
+            "Written into ``products.fields_jsonb[meesho_price]`` and emitted "
+            "in the XLSX under the Meesho native price column header."
+        ),
+    )
 
 
 __all__ = [
     "PriceCalcRequest",
     "PriceCalcAlert",
     "PriceCalcResponse",
+    "ApplyPriceRequest",
 ]

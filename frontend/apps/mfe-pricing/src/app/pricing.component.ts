@@ -24,20 +24,21 @@ import { MeeButtonComponent }        from '@mesell/ui-kit';
 import { MeeCardComponent }          from '@mesell/ui-kit';
 import { MeeInputComponent }         from '@mesell/ui-kit';
 
-import { formatRupee, parseDecimal } from './pricing.utils';
+import { formatRupee, formatPct, parseDecimal } from './pricing.utils';
 import { PricingApiService }         from './pricing.service';
 import type { PriceCalcResponse, PriceCalcErrorShape, PriceCalcServerError } from './pricing.model';
 import { ALERT_MESSAGES } from './pricing.model';
 
-// ── Error-state type (§3.1 degradation matrix) ──────────────────────────────
-// null   = initial / cleared
-// unavailable       = 404 (flag-off or product not found)
-// commission_missing = 422 (no commission rate for category)
-// validation         = 400 (Pydantic constraint violation)
-// server_error       = 5xx / EMPTY path
+// ── Error-state type (W3 §3.1 degradation matrix) ────────────────────────────
+// null          = initial / cleared
+// unavailable   = 404 (flag-off or product not found)
+// no_pricing_data = 422 pricing.category.no_pricing_data (category leaf absent from lookup)
+// validation    = 400 / 422 Pydantic constraint violation
+// server_error  = 5xx / EMPTY path
+// W3 CHANGE: 'commission_missing' → 'no_pricing_data' (W2 §2.3 error code rename)
 export type PricingErrorState =
   | 'unavailable'
-  | 'commission_missing'
+  | 'no_pricing_data'
   | 'validation'
   | 'server_error'
   | null;
@@ -59,19 +60,14 @@ export type PricingErrorState =
   ],
 
   // ─── Component-scoped CSS ─────────────────────────────────────────────────
-  // All values use var(--mee-*) tokens. Zero hardcoded hex (lane guard).
-  // Undefined tokens defined locally in :host per wave6b dashboard-styler lesson.
-  // libs/design-tokens/_tokens.css is FROZEN — not touched here.
+  // All values use var(--mee-*) tokens only. Zero hardcoded hex (lane guard).
+  // --mee-color-surface-variant is defined in Layer-1 _tokens.css — NO :host override.
+  // No !important — specificity achieved via compound selectors.
   styles: [`
-    :host {
-      /* --mee-color-surface-variant missing from Layer 1 — local scope only.
-         Escalation: lead queues a frozen-surface Wave-A amendment. */
-      --mee-color-surface-variant: #f2f6fa;
-    }
 
     /* ── Spinner ────────────────────────────────────────────────────────── */
-    /* MeeSpinnerComponent is a queued ui-kit amendment (NOT yet available).
-       Local spinner bridge used until the ui-kit component lands. */
+    /* MeeSpinnerComponent is queued as a ui-kit amendment (NOT yet available).
+       Local spinner bridge remains until the ui-kit component lands. */
     .mee-pricing__spinner {
       display: inline-block;
       width: 32px;
@@ -99,19 +95,25 @@ export type PricingErrorState =
       50%       { opacity: 0.35; }
     }
 
-    /* ── P&L table ──────────────────────────────────────────────────────── */
+    /* ── Settlement breakdown table ─────────────────────────────────────── */
     .mee-pricing__table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 0.875rem; /* 14px */
+      font-size: 0.875rem; /* 14px — readable at 360px */
     }
 
-    .mee-pricing__table td {
+    .mee-pricing__table td,
+    .mee-pricing__table th {
       padding: var(--mee-space-2) 0;
       vertical-align: middle;
     }
 
-    /* Label column: left-align, muted colour */
+    /* th[scope=row] resets browser default bold */
+    .mee-pricing__table th.mee-pricing__table-label {
+      font-weight: 400;
+    }
+
+    /* Label column: left-align, muted colour — deduction rows are subordinate */
     .mee-pricing__table .mee-pricing__table-label {
       color: var(--mee-color-on-surface-muted);
       text-align: left;
@@ -126,73 +128,99 @@ export type PricingErrorState =
       white-space: nowrap;
     }
 
-    /* Body rows (non-profit) */
+    /* Deduction rows (Commission / GST / TDS) — subtle bottom border */
     .mee-pricing__row {
       border-bottom: 1px solid var(--mee-color-outline);
     }
 
-    /* Profit summary row — thicker border above, semibold text */
+    /* ── Estimated Bank Settlement headline row ──────────────────────────
+       This is the answer the seller came for — visually dominant.
+       Thick top separator, larger label text, primary brand colour on value.  */
     .mee-pricing__row--profit {
-      border-bottom: 2px solid var(--mee-color-outline);
+      border-top: 2px solid var(--mee-color-outline);
+      border-bottom: none;
     }
 
     .mee-pricing__row--profit .mee-pricing__table-label {
       color: var(--mee-color-on-surface);
-      font-weight: 600;
+      font-weight: 700;
+      font-size: 1rem; /* 16px — larger than deduction rows */
+      padding-top: var(--mee-space-3);
     }
 
     .mee-pricing__row--profit .mee-pricing__table-value {
-      font-weight: 600;
+      font-weight: 700;
+      font-size: 1.25rem; /* 20px — headline number */
+      color: var(--mee-color-primary);
+      padding-top: var(--mee-space-3);
     }
 
-    /* Profit % row — last row, no bottom border */
-    .mee-pricing__row--profit-pct {
-      border-bottom: none;
+    /* Settlement positive — compound selector, no !important */
+    .mee-pricing__row--profit .mee-pricing__table-value.mee-pricing__value--positive {
+      color: var(--mee-color-success);
     }
 
-    /* Semantic colour classes (token-only, no hardcoded hex) */
-    .mee-pricing__value--positive {
-      color: var(--mee-color-success) !important;
+    /* Settlement negative — warning red; compound selector, no !important */
+    .mee-pricing__row--profit .mee-pricing__table-value.mee-pricing__value--negative {
+      color: var(--mee-color-error);
     }
 
-    .mee-pricing__value--negative {
-      color: var(--mee-color-error) !important;
-    }
-
-    /* 360px: ensure table label doesn't truncate — allow wrap */
+    /* 360px: label text wraps instead of truncating; slightly smaller deduction font */
     @media (max-width: 400px) {
       .mee-pricing__table-label {
-        max-width: 140px;
+        max-width: 160px;
         word-break: break-word;
       }
 
       .mee-pricing__table {
-        font-size: 0.8125rem; /* 13px at 360px */
+        font-size: 0.8125rem; /* 13px for deduction rows at 360px */
+      }
+
+      /* Headline row keeps a readable minimum even at 360px */
+      .mee-pricing__row--profit .mee-pricing__table-label {
+        font-size: 0.9375rem; /* 15px */
+      }
+
+      .mee-pricing__row--profit .mee-pricing__table-value {
+        font-size: 1.125rem; /* 18px — still clearly larger than deduction rows */
       }
     }
 
-    /* ── Alert chips ────────────────────────────────────────────────────── */
+    /* ── Alert chip — NEGATIVE_SETTLEMENT warning ───────────────────────── */
     .mee-pricing__alert-chip {
       display: flex;
       align-items: flex-start;
       gap: var(--mee-space-2);
-      padding: var(--mee-space-2) var(--mee-space-3);
+      padding: var(--mee-space-3) var(--mee-space-3);
       border-radius: var(--mee-radius-sm);
       font-size: 0.8125rem; /* 13px */
-      line-height: 1.4;
+      line-height: 1.5;
       min-height: 44px; /* WCAG 2.5.8 touch target */
     }
 
+    /* Warning chip — amber background, left accent border */
     .mee-pricing__alert-chip--warning {
       background: var(--mee-color-warning-light);
       color: var(--mee-color-warning);
       border-left: 3px solid var(--mee-color-warning);
     }
 
+    /* Info chip — kept for future use, zero hardcoded hex */
     .mee-pricing__alert-chip--info {
       background: var(--mee-color-info-light);
       color: var(--mee-color-info);
       border-left: 3px solid var(--mee-color-info);
+    }
+
+    /* ── Disclaimer — muted fine-print below settlement headline ────────── */
+    /* Renders server-sent verbatim Meesho disclaimer. NOT a CTA — never primary. */
+    .mee-pricing__disclaimer {
+      font-size: 0.75rem; /* 12px */
+      line-height: 1.6;
+      color: var(--mee-color-on-surface-muted);
+      margin-top: var(--mee-space-3);
+      padding-top: var(--mee-space-2);
+      border-top: 1px solid var(--mee-color-outline);
     }
 
     /* ── Empty / first-visit state ──────────────────────────────────────── */
@@ -229,7 +257,7 @@ export type PricingErrorState =
       color: var(--mee-color-on-surface-muted);
     }
 
-    /* ── Form layout at 360px ───────────────────────────────────────────── */
+    /* ── Form layout — mobile-first single column ───────────────────────── */
     .mee-pricing__form {
       display: flex;
       flex-direction: column;
@@ -237,17 +265,17 @@ export type PricingErrorState =
       padding: var(--mee-space-3);
     }
 
-    /* ── Result region wrapper — used for focus target ──────────────────── */
+    /* ── Result region — programmatic focus target (no visible ring) ─────── */
     .mee-pricing__result-region {
-      outline: none; /* focus ring suppressed for programmatic focus only */
+      outline: none;
     }
 
-    /* ── 44px minimum touch targets on interactive buttons ─────────────── */
+    /* ── Calculate button wrapper — enforces 44px touch target ─────────── */
     .mee-pricing__calculate-area {
       min-height: 44px;
     }
 
-    /* ── Calculating state wrapper ─────────────────────────────────────── */
+    /* ── Calculating state ──────────────────────────────────────────────── */
     .mee-pricing__calculating {
       display: flex;
       align-items: center;
@@ -261,13 +289,6 @@ export type PricingErrorState =
       color: var(--mee-color-on-surface-muted);
     }
 
-    /* ── Disclaimer ─────────────────────────────────────────────────────── */
-    .mee-pricing__disclaimer {
-      font-size: 0.75rem;
-      color: var(--mee-color-on-surface-muted);
-      margin-top: var(--mee-space-2);
-    }
-
     /* ── Section headings ───────────────────────────────────────────────── */
     .mee-pricing__section-title {
       font-size: 0.9375rem;
@@ -276,7 +297,7 @@ export type PricingErrorState =
       margin-bottom: var(--mee-space-1);
     }
 
-    /* ── Results region top: badge + alerts row ─────────────────────────── */
+    /* ── Results footer: badge row below table ──────────────────────────── */
     .mee-pricing__results-footer {
       padding-top: var(--mee-space-3);
       display: flex;
@@ -293,7 +314,7 @@ export type PricingErrorState =
 
       <mee-page-header
         title="Price Calculator"
-        subtitle="Enter your cost and target margin to calculate pricing"
+        subtitle="Enter your selling price to see your estimated bank settlement."
       />
 
       <div class="flex flex-col gap-6 lg:flex-row lg:items-start">
@@ -308,24 +329,24 @@ export type PricingErrorState =
             >
               <h2 class="mee-pricing__section-title">Enter pricing details</h2>
 
-              <!-- COGS per unit — replaces retired MRP input (DECISION-1) -->
+              <!-- selling_price: primary input (listed Meesho price, gt 0) -->
               <mee-input
-                label="Input cost (COGS per unit)"
+                label="Selling price (listed on Meesho)"
                 type="number"
                 prefix="&#8377;"
-                placeholder="e.g. 300"
-                formControlName="input_cost"
-                [error]="inputCostError()"
+                placeholder="e.g. 70"
+                formControlName="selling_price"
+                [error]="sellingPriceError()"
               />
 
-              <!-- Target margin % — replaces retired target_margin (INR) -->
+              <!-- commission_pct: optional override (default 0%, omit key when blank) -->
               <mee-input
-                label="Target margin %"
+                label="Commission % (optional)"
                 type="number"
                 suffix="%"
-                placeholder="e.g. 30"
-                formControlName="target_margin_pct"
-                [error]="targetMarginError()"
+                placeholder="0"
+                formControlName="commission_pct"
+                [error]="commissionPctError()"
               />
 
               <!-- Disabled when form invalid OR calculating in-flight (§4.4 disabled-submit) -->
@@ -363,12 +384,14 @@ export type PricingErrorState =
                 />
               }
 
-              <!-- 422 — category has no usable commission rate -->
-              @if (errorState() === 'commission_missing') {
-                <mee-alert-banner
-                  variant="warning"
-                  [message]="commissionMissingDetail()"
-                />
+              <!-- 422 pricing.category.no_pricing_data — category leaf absent from pricing lookup -->
+              @if (errorState() === 'no_pricing_data') {
+                <div class="mee-pricing__no-data-error" role="alert">
+                  <mee-alert-banner
+                    variant="warning"
+                    message="Pricing isn't available for this category yet."
+                  />
+                </div>
               }
 
               <!-- 400 — Pydantic constraint violation (form validators prevent most) -->
@@ -423,9 +446,33 @@ export type PricingErrorState =
               >
 
                 @if (breakdown()) {
+                  <!--
+                    W3 SETTLEMENT BREAKDOWN — 5 rows (W3 §2.2 Meesho-mirror layout).
+                    Rows: Selling price / Commission fee / GST / TDS / Estimated Bank Settlement.
+                    tcs (always "0.00") is NOT rendered. shipping/total_price are optional context lines (omitted V1).
+                  -->
+
+                  <!-- NEGATIVE_SETTLEMENT alert — renders above the table when present -->
+                  @if (breakdown()!.alerts.length > 0) {
+                    <div
+                      role="list"
+                      aria-label="Pricing alerts"
+                      class="flex flex-col gap-2"
+                    >
+                      @for (alert of breakdown()!.alerts; track alert.code) {
+                        <div
+                          role="listitem"
+                          class="mee-pricing__alert-chip mee-pricing__alert-chip--warning"
+                        >
+                          {{ resolveAlertMessage(alert.message_id) }}
+                        </div>
+                      }
+                    </div>
+                  }
+
                   <table
                     class="mee-pricing__table"
-                    aria-label="P&L breakdown"
+                    aria-label="Settlement breakdown"
                   >
                     <thead class="sr-only">
                       <tr>
@@ -434,55 +481,43 @@ export type PricingErrorState =
                       </tr>
                     </thead>
                     <tbody>
-                      <!-- MRP: server-COMPUTED output. Not an input (DECISION-1). -->
                       <tr class="mee-pricing__row">
-                        <td class="mee-pricing__table-label" scope="row">MRP (server-computed)</td>
-                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.mrp) }}</td>
-                      </tr>
-                      <tr class="mee-pricing__row">
-                        <td class="mee-pricing__table-label" scope="row">Meesho Price</td>
-                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.meesho_price) }}</td>
-                      </tr>
-                      <tr class="mee-pricing__row">
-                        <td class="mee-pricing__table-label" scope="row">Seller Price</td>
-                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.seller_price) }}</td>
+                        <td class="mee-pricing__table-label" scope="row">Selling price</td>
+                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.selling_price) }}</td>
                       </tr>
                       <tr class="mee-pricing__row">
                         <td class="mee-pricing__table-label" scope="row">
-                          Commission ({{ breakdown()!.commission_pct }}%)
+                          Commission fee ({{ formatPctLabel(breakdown()!.commission_pct) }})
                         </td>
-                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.commission_amount) }}</td>
+                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.commission_fees) }}</td>
                       </tr>
                       <tr class="mee-pricing__row">
-                        <td class="mee-pricing__table-label" scope="row">
-                          GST ({{ breakdown()!.gst_pct }}%)
-                        </td>
-                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.gst_amount) }}</td>
+                        <td class="mee-pricing__table-label" scope="row">GST</td>
+                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.gst_on_shipping) }}</td>
                       </tr>
-                      <!-- Profit row — semantic colour via CSS class (token-only, no inline hex) -->
+                      <tr class="mee-pricing__row">
+                        <td class="mee-pricing__table-label" scope="row">TDS</td>
+                        <td class="mee-pricing__table-value">{{ formatRupeeLabel(breakdown()!.tds) }}</td>
+                      </tr>
+                      <!-- HEADLINE row: Estimated Bank Settlement -->
                       <tr class="mee-pricing__row mee-pricing__row--profit">
-                        <td class="mee-pricing__table-label" scope="row">Profit</td>
+                        <td class="mee-pricing__table-label" scope="row">Estimated Bank Settlement</td>
                         <td
                           class="mee-pricing__table-value"
                           [class.mee-pricing__value--positive]="marginIsPositive()"
                           [class.mee-pricing__value--negative]="!marginIsPositive()"
-                          [attr.aria-label]="'Profit: ' + formatRupeeLabel(breakdown()!.profit) + (marginIsPositive() ? ', positive' : ', negative')"
+                          [attr.aria-label]="'Estimated Bank Settlement: ' + formatRupeeLabel(breakdown()!.estimated_bank_settlement)"
                         >
-                          {{ formatRupeeLabel(breakdown()!.profit) }}
-                        </td>
-                      </tr>
-                      <tr class="mee-pricing__row mee-pricing__row--profit-pct">
-                        <td class="mee-pricing__table-label" scope="row">Profit %</td>
-                        <td
-                          class="mee-pricing__table-value"
-                          [class.mee-pricing__value--positive]="marginIsPositive()"
-                          [class.mee-pricing__value--negative]="!marginIsPositive()"
-                        >
-                          {{ breakdown()!.profit_pct }}%
+                          {{ formatRupeeLabel(breakdown()!.estimated_bank_settlement) }}
                         </td>
                       </tr>
                     </tbody>
                   </table>
+
+                  <!-- Disclaimer — server-sent literal; muted fine-print below headline -->
+                  <p class="mee-pricing__disclaimer">
+                    {{ breakdown()!.disclaimer }}
+                  </p>
 
                   <!-- POSITIVE / NEGATIVE badge -->
                   <div class="mee-pricing__results-footer">
@@ -492,36 +527,6 @@ export type PricingErrorState =
                         [severity]="marginIsPositive() ? 'success' : 'danger'"
                       />
                     </div>
-
-                    <!--
-                      Server-issued alert chips: LOW_MARGIN / HIGH_MRP_MULTIPLIER / THIN_PROFIT.
-                      Styled by severity via mee-pricing__alert-chip--warning/info classes
-                      (token-only, no hardcoded hex). MeeAlertBanner uses role="alert" internally;
-                      here we use a lighter chip variant to avoid stacking full alert banners.
-                      aria-label on the wrapper provides screen reader context.
-                    -->
-                    @if (breakdown()!.alerts.length > 0) {
-                      <div
-                        role="list"
-                        aria-label="Pricing alerts"
-                        class="flex flex-col gap-2"
-                      >
-                        @for (alert of breakdown()!.alerts; track alert.code) {
-                          <div
-                            role="listitem"
-                            class="mee-pricing__alert-chip"
-                            [class.mee-pricing__alert-chip--warning]="alert.severity === 'warning'"
-                            [class.mee-pricing__alert-chip--info]="alert.severity === 'info'"
-                          >
-                            {{ resolveAlertMessage(alert.message_id) }}
-                          </div>
-                        }
-                      </div>
-                    }
-
-                    <p class="mee-pricing__disclaimer">
-                      Shipping costs are not included in V1 calculations.
-                    </p>
                   </div>
 
                 } @else if (!calculating() && !errorState()) {
@@ -535,7 +540,7 @@ export type PricingErrorState =
                     <div class="mee-pricing__empty-icon" aria-hidden="true">&#8377;</div>
                     <p class="mee-pricing__empty-title">Ready to calculate</p>
                     <p class="mee-pricing__empty-hint">
-                      Enter your input cost and target margin, then tap "Calculate".
+                      Enter a selling price to estimate your settlement.
                     </p>
                   </div>
 
@@ -574,13 +579,17 @@ export class PricingComponent implements OnInit, AfterViewChecked {
   private _focusPending = false;
 
   readonly formatRupeeLabel    = formatRupee;
+  readonly formatPctLabel      = formatPct;
   readonly resolveAlertMessage = (messageId: string): string =>
     ALERT_MESSAGES[messageId] ?? messageId;
 
-  // Form: input_cost (COGS) + target_margin_pct (%). MRP slider + mrp input = DEAD (DECISION-1).
+  // W3 FORM: selling_price (required, >0) + commission_pct (optional override).
+  // selling_price: Decimal string from input; must be > 0 (Validators.min(0.01)).
+  // commission_pct: Optional override; omit key entirely when blank (NOT sent as "").
+  //   Backend defaults to 0 — census confirms 0% for all 3,772 categories.
   readonly form = this.fb.group({
-    input_cost:        ['300',  [Validators.required, Validators.min(0.01)]],
-    target_margin_pct: ['30',   [Validators.required, Validators.min(0), Validators.max(500)]],
+    selling_price:  ['', [Validators.required, Validators.min(0.01)]],
+    commission_pct: ['', [Validators.min(0), Validators.max(100)]],
   });
 
   // P&L breakdown — null until successful server response; stays null on any error (R-W6-1).
@@ -592,35 +601,35 @@ export class PricingComponent implements OnInit, AfterViewChecked {
   // Typed error state per §3.1 degradation matrix. null = no error.
   readonly errorState = signal<PricingErrorState>(null);
 
-  // Detail copy for 422 commission_missing — set from server response.
-  readonly commissionMissingDetail = signal<string>('Pricing is not available for this category yet.');
+  // Detail copy for 422 no_pricing_data — set from server response (W3: replaces commissionMissingDetail).
+  readonly noPricingDataDetail = signal<string>('Pricing is not available for this category yet.');
 
   // Detail copy for 400 validation — set from server response.
   readonly validationDetail = signal<string>('Invalid pricing input.');
 
   private productId = '';
 
-  // True when profit > 0 — drives badge + colour. Based on server profit (not retired net_margin).
+  // True when estimated_bank_settlement > 0 — drives badge + warning colour.
+  // W3: was breakdown()?.profit (dead field); now uses the W2 headline field.
   readonly marginIsPositive = computed<boolean>(
-    () => parseDecimal(this.breakdown()?.profit ?? '0') > 0,
+    () => parseDecimal(this.breakdown()?.estimated_bank_settlement ?? '0') > 0,
   );
 
-  // Inline field error signals — only show after user has touched the field.
-  readonly inputCostError = computed<string | undefined>(() => {
-    const ctrl = this.form.controls.input_cost;
+  // Inline field error signals — W3 stubs (component-builder rebuilds full error copy in step-2).
+  readonly sellingPriceError = computed<string | undefined>(() => {
+    const ctrl = this.form.controls.selling_price;
     if (!ctrl.touched || ctrl.valid) return undefined;
-    if (ctrl.hasError('required')) return 'Input cost is required.';
-    if (ctrl.hasError('min'))      return 'Input cost must be greater than 0.';
-    return 'Invalid input cost.';
+    if (ctrl.hasError('required')) return 'Selling price is required.';
+    if (ctrl.hasError('min'))      return 'Selling price must be greater than 0.';
+    return 'Invalid selling price.';
   });
 
-  readonly targetMarginError = computed<string | undefined>(() => {
-    const ctrl = this.form.controls.target_margin_pct;
+  readonly commissionPctError = computed<string | undefined>(() => {
+    const ctrl = this.form.controls.commission_pct;
     if (!ctrl.touched || ctrl.valid) return undefined;
-    if (ctrl.hasError('required')) return 'Target margin is required.';
-    if (ctrl.hasError('min'))      return 'Target margin cannot be negative.';
-    if (ctrl.hasError('max'))      return 'Target margin cannot exceed 500%.';
-    return 'Invalid target margin.';
+    if (ctrl.hasError('min'))  return 'Commission cannot be negative.';
+    if (ctrl.hasError('max'))  return 'Commission cannot exceed 100%.';
+    return 'Invalid commission rate.';
   });
 
   ngOnInit(): void {
@@ -651,9 +660,13 @@ export class PricingComponent implements OnInit, AfterViewChecked {
     this.breakdown.set(null);
 
     const raw  = this.form.getRawValue();
+    // W3 body: selling_price (required) + optional commission_pct.
+    // backend extra="forbid" rejects any extra field — do NOT add category or overrides.
+    // commission_pct key is OMITTED entirely when blank (not sent as "" or null).
+    const commissionPct = raw.commission_pct?.trim();
     const body = {
-      input_cost:        String(raw.input_cost ?? ''),
-      target_margin_pct: String(raw.target_margin_pct ?? ''),
+      selling_price: String(raw.selling_price ?? ''),
+      ...(commissionPct ? { commission_pct: commissionPct } : {}),
     };
 
     this.service.calc(this.productId, body).subscribe({
@@ -689,9 +702,10 @@ export class PricingComponent implements OnInit, AfterViewChecked {
       case 'unavailable':
         this.errorState.set('unavailable');
         break;
-      case 'commission_missing':
-        this.errorState.set('commission_missing');
-        this.commissionMissingDetail.set(shape.detail);
+      case 'no_pricing_data':
+        // W3: replaces 'commission_missing' — category leaf absent from pricing lookup.
+        this.errorState.set('no_pricing_data');
+        this.noPricingDataDetail.set(shape.detail);
         break;
       case 'validation':
         this.errorState.set('validation');

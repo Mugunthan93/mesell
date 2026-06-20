@@ -16,7 +16,7 @@ Reference: `docs/VALIDATED_PAIN_POINTS.md` (themes T1–T6, new pains S3.x)
 4. **AI Auto-fill** — Gemini suggests values for compulsory fields from description
 5. **Image Pre-check** — JPEG, RGB (not CMYK), watermark detection, white-BG check
 6. **Live Product Preview** — Meesho marketplace render before publish
-7. **Price Calculator** — MRP / Meesho Price / Seller Price with category commission
+7. **Price Calculator** — Estimated Bank Settlement from Meesho Price (census-confirmed model; see Feature 7 + 2026-06-19 amendment)
 8. **Tracking Dashboard** — User's products with status (draft / exported / live)
 9. **XLSX Export** — Meesho-format XLSX for supplier-panel upload
 
@@ -321,6 +321,27 @@ Reference: `docs/VALIDATED_PAIN_POINTS.md` (themes T1–T6, new pains S3.x)
 - **Full deduction stack now INCLUDED (reverses the V1.5 deferral):** shipping (₹30 for Meesho Price ≤ ₹1000, ₹70 above), logistics, fixed/closing fee, GST 18% on the fees (not on MRP), TCS 1%, TDS, and an RTO expected-loss term from a seller `return_rate_pct`. Reverses both "RTO/shipping deferred to V1.5" and "Shipping not included in V1".
 - **Deterministic + calibrated estimator:** pure arithmetic, no AI, no live Meesho calls. Calibrated against a real scraped settlement sample (₹106 Meesho price → ₹47 payout). The scraped transfer_price is calibration-only.
 - **Breakdown shows:** MRP (reference), Meesho Price, Referral Commission, Shipping, Logistics, Fixed Fee, GST-on-Fees, TCS, TDS, RTO Expected-Loss, Estimated Payout, Profit (= payout − cost), Margin % (= profit/meesho_price), Markup % (= profit/input_cost). Negative-payout → red alert in the 200 response (not a 400).
+(End amendment.)
+
+**AMENDMENT 2026-06-19 — Census-confirmed settlement model (founder-ratified — SUPERSEDES the 2026-06-18 amendment above).** The 2026-06-18 model above was built on a guessed deduction stack (full-shipping deduction, 4% commission, fabricated logistics/fixed fees, TCS, and a "₹106 → ₹47" calibration). That model is **DISPROVEN** and is replaced. The disproof and the correct model were established 2026-06-19 by an empirical `getTransferPrice` API census of **all 3,772 categories** (`logs/scraper/transfer_price_census*.{jsonl,json}`), confirmed by founder portal verification, and finally proven against the founder's **first real Meesho payout** (SKU `TTC-BL-OR-HP-NG-P4`, sub-order `289264797669114560_1`: Sale ₹70, Shipping Revenue +₹45, Commission ₹0, Shipping Charge −₹53.10, TDS −₹0.12 → **Bank Settlement ₹61.78**). The correct model reproduces that payout to the paise.
+
+- **Confirmed formula (verified on 3,772/3,772 census rows, 0 failures):**
+  ```
+  gst_on_shipping = 0.18 × shipping
+  tds             = 0.001 × (selling_price + shipping)
+  tcs             = 0
+  commission_fees = commission_pct × selling_price        (commission_pct default 0)
+  estimated_bank_settlement = selling_price − commission_fees − gst_on_shipping − tds − tcs
+  ```
+  Real-order proof: `70 − 0 − (0.18 × 45 = 8.10) − (0.001 × 115 = 0.12) − 0 = 61.78` ✓.
+- **The seller bears ONLY the 18% GST on shipping, NOT the shipping itself.** In the gross presentation Meesho pays Shipping Revenue (+base) and charges Shipping Charge (−base × 1.18); the base cancels, leaving the seller paying only the GST on shipping. This is why the prior "deduct full shipping ~₹50 from the seller" model was catastrophically wrong (it would have shown ~₹11 instead of ₹61.78).
+- **Shipping is a per-category CONSTANT** keyed by `meesho_leaf_id` (= the census `sscat_id` of the listing's leaf category). It is **price-independent** (census) AND **weight/dimension-independent** (founder-confirmed in the portal 2026-06-19; the `getTransferPrice` endpoint does not even accept a weight field). Range ₹48–₹8,435 across 365 distinct values. There is NO ₹30/₹70 price-bracket — that was a fabrication of the prior model.
+- **Commission = 0 across all 3,772 categories** per the census (`commission_analysis.non_zero_count = 0`). The "4% default monetization percent" shown in the supplier panel is display-only and never charges. `commission_pct` is **kept as an optional parameter (default 0)** so that if Meesho's commission policy changes at order time it can be applied without a schema change.
+- **Data source:** `backend/app/data/meesho_pricing_lookup.json` — 3,772 entries (`meesho_leaf_id` → per-category shipping constant + commission), productionized from the census summary. **Refreshed MONTHLY by folding the `getTransferPrice` census into the EXISTING monthly category scrape** (one run refreshes the category tree AND the pricing lookup together; owner = `meesell-scraper-maintainer` + `meesell-data-engineer`, scoped to W6). NO separate pricing-refresh schedule.
+- **Deterministic + fully OFFLINE.** Because shipping is a per-category constant with no live inputs, the production calculator computes everything from the static lookup — ZERO live Meesho/supplier calls (zero ban risk), no weight input, no edge cases. Matches Meesho to the paise.
+- **Output framing:** label the result **"Estimated Bank Settlement"** (a listing-time estimate, NOT a guarantee) and mirror Meesho's disclaimer near it: *"Bank settlement amount may vary slightly based on the quantity in the order, Meesho commission policy at the time of the order and the actual weight of the product as calculated by our third party delivery partner."* Drift is expected and small (≈1.5% on the real order: estimate ₹60.88 on base shipping ₹50 vs actual ₹61.78 on courier-measured base ₹45).
+- **Net-profit layer DEFERRED to V1.5.** The founder's true-profit view (`net_profit = estimated_bank_settlement − output_GST_liability − landed_cost`, with output GST as a per-product slab input) is NOT in V1. V1 outputs only the Meesho-side estimated bank settlement.
+- **Code/migration alignment:** the corrected estimator and the additive `pricing_calcs` columns land via migration `d4e5f6a7b8c9` (the prior shipped engine and migration `b7c2e1a9d3f4` implement the disproven 2026-06-18 model and are reworked to this model). Effort estimate above (Backend 4 h · Frontend 5 h) is unchanged.
 (End amendment.)
 
 ---

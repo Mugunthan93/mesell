@@ -25,6 +25,17 @@ export { MeeMenuComponent }            from './menu/menu.component';
 export { MeeMultiselectComponent }     from './multiselect/multiselect.component';
 export type { MeeShowErrorOn }         from './multiselect/multiselect.component';
 export { MeeDataTableComponent }       from './data-table/data-table.component';
+// P0 — Wave Sakai-Gaps
+export { MeeCheckboxComponent }        from './checkbox/checkbox.component';
+export { MeeRadioComponent }           from './radio/radio.component';
+// P1 — Wave Sakai-Gaps
+export { MeeBreadcrumbComponent }      from './breadcrumb/breadcrumb.component';
+export { MeeTabsComponent }            from './tabs/tabs.component';
+export { MeeMessageComponent }         from './message/message.component';
+// P2 — Wave Sakai-Gaps
+export { MeePanelComponent }           from './panel/panel.component';
+export { MeeDividerComponent }         from './divider/divider.component';
+export { MeeScrollPanelComponent }     from './scroll-panel/scroll-panel.component';
 
 // Root bootstrap (PrimeNG providers + theme — sealed behind @mee/ui)
 export { provideMeeUi }                from './providers';
@@ -53,11 +64,14 @@ export type { MeeTreeNode }                                              from '.
 export type { MeeConfirmConfig }                                         from './confirm-dialog/confirm-dialog.component';
 export type { MeeIconName }                                              from './icon/icon.registry';
 export { meeIconClass }                                                  from './icon/icon.registry';
+// Sakai-Gaps type exports
+export type { MeeTab }                                                   from './tabs/tabs.types';
+export type { MeeMessageSeverity }                                       from './message/message.types';
 
 // Aggregators (for component imports — NOT providers)
 // Use MEE_FORM / MEE_OVERLAY / etc. in a standalone component's imports:[].
 // MeeToastService + MeeConfirmService are providers — they live in provideMeeUi().
-export { MEE_FORM, MEE_OVERLAY, MEE_FEEDBACK, MEE_DATA, MEE_COMMON, MEE_FILE, MEE_UI_ALL } from './aggregators';
+export { MEE_FORM, MEE_OVERLAY, MEE_FEEDBACK, MEE_DATA, MEE_COMMON, MEE_FILE, MEE_SURFACE, MEE_UI_ALL } from './aggregators';
 
 // Phase 7 — swap-proof seam (alt preset + alt icon registry + selector)
 // These are additive exports — live defaults (MeeSellPreset, MEE_ICONS) remain unchanged.

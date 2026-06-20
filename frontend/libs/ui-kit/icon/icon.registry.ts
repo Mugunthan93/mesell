@@ -54,6 +54,16 @@ export const MEE_ICONS = {
 
   // data-table
   'ellipsis-v': 'pi pi-ellipsis-v',     // per-row kebab actions trigger
+
+  // Stat-card / empty-state semantic icons (B01 fix — replacing raw Material Symbols tokens)
+  'edit-note':    'pi pi-file-edit',     // stat-card "Draft" (was Material edit_note)
+  'inventory':    'pi pi-box',           // empty-state / stat-card "No catalogs" (was inventory_2)
+  'cloud-off':    'pi pi-ban',           // remote-failure empty-state (pi-cloud-off absent in primeicons)
+  'image-off':    'pi pi-image',         // image-uploader feature-disabled state (was image_not_supported)
+  'category':     'pi pi-sitemap',       // category-related empty states
+  'link':         'pi pi-link',          // link/external reference empty states
+  'trending-up':  'pi pi-arrow-up',      // stat-card positive trend (was trending_up)
+  'trending-down':'pi pi-arrow-down',    // stat-card negative trend (was trending_down)
 } as const;
 
 export type MeeIconName = keyof typeof MEE_ICONS;
