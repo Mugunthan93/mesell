@@ -30,6 +30,13 @@ httpx==0.27.0
 # founder ruling F9.  Wrapped in asyncio.to_thread by adapters/razorpay.py
 # (GCS-pattern async-over-sync).  Proposed pin — lead confirms at the merge gate.
 razorpay==1.4.2
+# setuptools — REQUIRED at import time by razorpay==1.4.2: razorpay/client.py
+# does `import pkg_resources` (ships in setuptools) but the SDK only declares
+# `requests` in its metadata.  Python 3.12 + actions/setup-python no longer
+# bundle setuptools, so without this the unit gate fails collection with
+# ModuleNotFoundError: No module named 'pkg_resources' across every test that
+# imports the app (conftest → adapters/razorpay).  Make it explicit/direct.
+setuptools>=70,<81
 pytest==8.3.0
 pytest-asyncio==0.24.0
 # Tunnel-free async Valkey/Redis fake for unit tests (dual-pepper read-path
