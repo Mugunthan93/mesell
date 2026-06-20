@@ -157,6 +157,8 @@ A group only gets a branch **if and when** that group has work to do for that fe
 
 ## 2. Merge Flow (Governance)
 
+> **Canonical day-to-day git workflow: `docs/GIT_WORKFLOW.md`.** This §2 remains the governance rationale; `docs/GIT_WORKFLOW.md` is the operator-facing summary of the same two-step model (`feature/{slug}/{group}` --squash--> `feature/{slug}/integration` --merge-commit--> `develop` → staging → main). If the two ever disagree on procedure, `docs/GIT_WORKFLOW.md` wins.
+
 ```
                    ┌─────────────────────────────────────────────────┐
                    │  feature/{name}/{group}                          │  ← specialists push
