@@ -1,0 +1,8 @@
+{
+  "name": "@mesell/core",
+  "version": "1.0.0",
+  "peerDependencies": {
+    "@angular/core": ">=18.0.0",
+    "rxjs": ">=7.0.0"
+  }
+}

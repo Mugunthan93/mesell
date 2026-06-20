@@ -1,0 +1,7 @@
+{
+  "name": "@mesell/composites",
+  "version": "1.0.0",
+  "peerDependencies": {
+    "@angular/core": ">=18.0.0"
+  }
+}

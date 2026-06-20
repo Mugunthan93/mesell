@@ -1,18 +1,20 @@
 const { withNativeFederation, shareAll } = require('@angular-architects/native-federation/config');
 
+// VERSION-PIN (fix/federation-shared-version-pin): see shell/federation.config.js for full comment.
+const MESELL_SHARED_VERSION = '1.0.0';
+
+const mesellShared = {
+  '@mesell/core':      { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
+  '@mesell/env':       { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
+  '@mesell/ui-kit':    { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
+  '@mesell/composites': { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
+};
+
 // MF Sub-Plan 04 — remote `mfe-dashboard` (F1 landing + F6 dashboard,
 // routes / [public] + /dashboard [authenticated]). The FOURTH extraction and the
 // FIRST remote to federate a PUBLIC pre-auth route. Exposes TWO components living on
 // OPPOSITE sides of the shell's authGuard (D26): LandingComponent (public) and
 // DashboardComponent (shell-guarded).
-//
-// R-SP3-1 (P0): neither page injects AuthService, so @mesell/core is not strictly
-// required by the import graph. It is kept in the shared/singleton set for contract
-// uniformity (D22 C1) via shareAll. ignoreUnusedDeps may still prune it from this
-// remote's remoteEntry shared[] (correct — same as mfe-pricing/mfe-export, which also
-// omit @mesell/core). That is NOT drift: drift only matters for a lib a remote DOES
-// consume. @mesell/ui-kit, @mesell/composites, @angular/*, rxjs resolve to the shell's
-// instances (MASTER_PLAN §6.1).
 module.exports = withNativeFederation({
   name: 'mfe-dashboard',
 
@@ -23,6 +25,7 @@ module.exports = withNativeFederation({
 
   shared: {
     ...shareAll({ singleton: true, strictVersion: false, requiredVersion: 'auto' }),
+    ...mesellShared,
   },
 
   skip: [

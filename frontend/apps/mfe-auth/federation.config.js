@@ -1,5 +1,15 @@
 const { withNativeFederation, shareAll } = require('@angular-architects/native-federation/config');
 
+// VERSION-PIN (fix/federation-shared-version-pin): see shell/federation.config.js for full comment.
+const MESELL_SHARED_VERSION = '1.0.0';
+
+const mesellShared = {
+  '@mesell/core':      { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
+  '@mesell/env':       { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
+  '@mesell/ui-kit':    { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
+  '@mesell/composites': { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
+};
+
 // MF Sub-Plan 06 — remote `mfe-auth` (F2 login + F3 signup + F4 otp-verify; routes
 // /login + /signup + /otp-verify, all PUBLIC pre-auth). The SIXTH and FINAL extraction
 // and the most shell-connected remote: otp-verify is the ONLY flow that WRITES the shell's
@@ -8,11 +18,8 @@ const { withNativeFederation, shareAll } = require('@angular-architects/native-f
 //
 // R-SP3-1 (P0): @mesell/core (AuthService) is consumed by otp-verify.component — its
 // setSession() WRITE depends on resolving the SHELL's single AuthService instance via the
-// import map. main.ts MUST route to OtpVerifyComponent (the core consumer) so the Sheriff
-// import-graph analysis (ignoreUnusedDeps) keeps @mesell/core shared+singleton and does NOT
-// inline it into the otp chunk (which would be the P0 drift, MASTER_PLAN R1). shareAll +
-// main.ts-routes-to-all-3 = uniform shared set; @mesell/ui-kit, @mesell/composites,
-// @mesell/core, @angular/*, rxjs all resolve to the shell's instances (MASTER_PLAN §6.1).
+// import map. Explicit version pin (1.0.0) + strictVersion:true guarantees NF dedup
+// by version key so otp-verify always writes to the shell's AuthService (D38 C4).
 module.exports = withNativeFederation({
   name: 'mfe-auth',
 
@@ -24,6 +31,7 @@ module.exports = withNativeFederation({
 
   shared: {
     ...shareAll({ singleton: true, strictVersion: false, requiredVersion: 'auto' }),
+    ...mesellShared,
   },
 
   skip: [
