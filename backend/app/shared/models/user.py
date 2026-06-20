@@ -115,7 +115,7 @@ class User(Base):
     )
     audit_events: Mapped[list[AuditEvent]] = relationship(
         "AuditEvent",
-        back_populates="user",
+        viewonly=True,
     )
     product_drafts: Mapped[list[ProductDraft]] = relationship(
         "ProductDraft",

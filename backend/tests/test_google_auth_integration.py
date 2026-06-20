@@ -237,25 +237,24 @@ async def test_google_first_login_then_me_then_refresh(google_client):
     assert refresh.json()["access_token"]
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Pre-existing google-auth LINK-path defect (out of scope for the "
-        "me-phone-nullable fix): on the link branch the 'auth.login.success' "
-        "audit row is written with user_id=NULL → NotNullViolationError on "
-        "audit_events.user_id when the request transaction commits. The linking "
-        "RESOLUTION itself is correct (verified below before the commit). This is "
-        "google-auth service code (upsert_user_on_google_login link branch) owned "
-        "by services-builder/ai-coordinator; flagged to the backend-coordinator. "
-        "The original test could never run at all (client.app / un-awaited "
-        "client.post on an httpx.AsyncClient), so this xfail surfaces a real, "
-        "previously-masked defect rather than hiding a regression."
-    ),
-    strict=False,
-)
 @pytest.mark.asyncio
 async def test_google_links_to_existing_phone_user_by_email(google_client):
     """Cross-provider: a phone user + a Google login on the SAME verified email
-    resolve to the SAME user_id (auto-link, design §E rule 2)."""
+    resolve to the SAME user_id (auto-link, design §E rule 2).
+
+    Also the regression guard for the audit-userid fix (2026-06-20): on the
+    LINK path the ``audit_events`` rows (``auth.login.success`` +
+    ``auth.google.linked``) must persist with a NON-NULL ``user_id`` equal to
+    the linked user.  Before the fix, the bidirectional ``back_populates``
+    relationship caused SQLAlchemy's unit-of-work to emit
+    ``UPDATE audit_events SET user_id=NULL`` at the outer commit →
+    ``NotNullViolationError``.  Making ``User.audit_events`` ``viewonly`` (and
+    dropping the ``back_populates`` on both sides) stops the UoW from nulling
+    the child FK.
+    """
+    from sqlalchemy import delete, select
+
+    from app.shared.models.audit_event import AuditEvent
     from app.shared.models.user import User
 
     client, iam_service, monkeypatch, Session = google_client
@@ -289,12 +288,35 @@ async def test_google_links_to_existing_phone_user_by_email(google_client):
         assert refreshed.google_sub == "g-sub-int-link"
         assert refreshed.phone is not None  # phone preserved
 
-    # Cleanup the auto-linked row immediately (email-based teardown also covers).
+    # CRUX: the link-path audit rows must persist with a NON-NULL user_id equal
+    # to the linked user.  This is the assertion the bug used to break — the
+    # outer-commit ``UPDATE audit_events SET user_id=NULL`` raised
+    # NotNullViolationError before the fix, so the rows never committed.
+    async with Session() as audit_session:
+        rows = (
+            (
+                await audit_session.execute(
+                    select(AuditEvent).where(AuditEvent.user_id == original_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    event_types = {r.event_type for r in rows}
+    assert "auth.login.success" in event_types, event_types
+    assert "auth.google.linked" in event_types, event_types
+    assert all(r.user_id == original_id for r in rows)  # every row non-null + linked
+
+    # Cleanup: with the fix, audit_events RESTRICT-references the user, so the
+    # child rows MUST be deleted before the user row (else FK RESTRICT blocks).
     async with Session() as cleanup_session:
+        await cleanup_session.execute(
+            delete(AuditEvent).where(AuditEvent.user_id == original_id)
+        )
         row = await cleanup_session.get(User, original_id)
         if row is not None:
             await cleanup_session.delete(row)
-            await cleanup_session.commit()
+        await cleanup_session.commit()
 
 
 @pytest.mark.asyncio
