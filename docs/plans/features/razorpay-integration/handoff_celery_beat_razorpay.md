@@ -1,3 +1,8 @@
+> **SUPERSEDED 2026-06-20 →** folded into the consolidated go-live runbook
+> [`docs/runbooks/razorpay-golive.md`](../../../runbooks/razorpay-golive.md) §1 (Celery
+> beat deploy). That runbook is the executable form (manifest `k8s/beat.yaml`, deploy +
+> validate + rollback). This memo is retained for the Wave-4 authoring history.
+
 # INFRA hand-off — deploy the Celery `beat` process (Razorpay Wave 4)
 
 **From:** `meesell-services-builder` (Razorpay Wave 4, session `mesell-razorpay-integration-backend-session-4`)

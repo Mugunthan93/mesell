@@ -9,6 +9,7 @@ nothing in a runbook is executed during a manifests/docs authoring session.
 |---|---|---|
 | [`auth-secret-rotation.md`](auth-secret-rotation.md) | auth-otp (Feature 1) | Rotation of the `refresh-token-pepper` Secret Manager secret + dual-pepper grace window + emergency refresh-session mass-revocation. |
 | [`image-pipeline-troubleshooting.md`](image-pipeline-troubleshooting.md) | image-precheck (Feature 5) | Stuck/failed pre-check Celery job introspection, re-enqueue, GCS tenant-isolation verification (D2 Gate 3), and `meesell-images` cost monitoring. |
+| [`razorpay-golive.md`](razorpay-golive.md) | razorpay-integration (PR #323) | Razorpay subscriptions go-live: Celery `beat` deploy (`k8s/beat.yaml`, first beat_schedule), the 9 `RAZORPAY_*` secrets + 5 dashboard Plan ids, webhook registration, the checkout.js CSP allowlist, and the ordered go-live + rollback checklist. |
 
 ## Conventions
 
