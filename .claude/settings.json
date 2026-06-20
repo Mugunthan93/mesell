@@ -1,4 +1,9 @@
 {
+  "statusLine": {
+    "type": "command",
+    "command": "bash /Users/mugunthansrinivasan/Project/mesell/.claude/statusline-monitor.sh",
+    "refreshInterval": 10
+  },
   "hooks": {
     "PreToolUse": [
       {
