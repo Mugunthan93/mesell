@@ -532,6 +532,7 @@ jobs:
       mfe_dashboard: ${{ steps.filter.outputs.mfe_dashboard }}
       mfe_catalog: ${{ steps.filter.outputs.mfe_catalog }}
       mfe_auth: ${{ steps.filter.outputs.mfe_auth }}
+      mfe_billing: ${{ steps.filter.outputs.mfe_billing }}
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
@@ -574,6 +575,8 @@ jobs:
               - 'frontend/apps/mfe-catalog/**'
             mfe_auth:
               - 'frontend/apps/mfe-auth/**'
+            mfe_billing:
+              - 'frontend/apps/mfe-billing/**'
 
   # =============================================================================
   # FRONTEND-BUILD — paths-filtered MATRIX over the federated workspace (C-CI-1)
@@ -627,6 +630,9 @@ jobs:
           - unit: mfe-auth
             project: mfe-auth
             run: ${{ needs.frontend-changes.outputs.mfe_auth == 'true' || needs.frontend-changes.outputs.libs == 'true' }}
+          - unit: mfe-billing
+            project: mfe-billing
+            run: ${{ needs.frontend-changes.outputs.mfe_billing == 'true' || needs.frontend-changes.outputs.libs == 'true' }}
     steps:
       - name: "Skip notice (unit not affected)"
         if: matrix.run != 'true'
