@@ -167,8 +167,44 @@ class PriceCalcResponse(BaseModel):
     """UTC timestamp of the persisted ``pricing_calcs`` row."""
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# W4b — "apply chosen price to product" (POST /products/{id}/apply-price)
+# ─────────────────────────────────────────────────────────────────────────────
+class ApplyPriceRequest(BaseModel):
+    """Body for ``POST /api/v1/products/{id}/apply-price``.
+
+    W4 explicit "Use this price" action (W4_EXPORT_SPEC §2.B; founder ruling
+    G-W4-APPLY Option A — explicit action only, never silent mutation on
+    :func:`calculate`).
+
+    The route writes ``selling_price`` into the product's
+    ``fields_jsonb["meesho_price"]`` so it flows to the Meesho XLSX export
+    under the ``meesho_column_header`` that the seed pipeline assigns to the
+    ``meesho_price`` canonical.
+
+    ``mrp`` is deliberately absent — the calculator produces a single seller-
+    chosen number (the selling price).  The strike-through MRP is a separate
+    seller input entered in the catalog/wizard form.
+
+    ``extra="forbid"`` prevents silent field forwarding from a stale frontend.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    selling_price: Decimal = Field(
+        gt=0,
+        decimal_places=2,
+        description=(
+            "The seller's chosen selling / listed price on Meesho, in INR.  "
+            "Written into ``products.fields_jsonb[meesho_price]`` and emitted "
+            "in the XLSX under the Meesho native price column header."
+        ),
+    )
+
+
 __all__ = [
     "PriceCalcRequest",
     "PriceCalcAlert",
     "PriceCalcResponse",
+    "ApplyPriceRequest",
 ]

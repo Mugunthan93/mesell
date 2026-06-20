@@ -148,6 +148,7 @@ def test_no_stray_legacy_routes(meesell_app):
         GET    /api/v1/products/{id}/images        (also POST — shares path key)
       §12 pricing routes:
         POST   /api/v1/products/{id}/price-calc
+        POST   /api/v1/products/{id}/apply-price  (W4b)
       §14 export routes:
         POST   /api/v1/products/{product_id}/export-xlsx
         GET    /api/v1/exports/{export_id}
@@ -182,6 +183,7 @@ def test_no_stray_legacy_routes(meesell_app):
         "/api/v1/products/{id}/draft",
         "/api/v1/products/{id}/images",
         "/api/v1/products/{id}/price-calc",
+        "/api/v1/products/{id}/apply-price",
         "/api/v1/products/{product_id}/export-xlsx",
         "/api/v1/exports/{export_id}",
         "/health",
@@ -194,7 +196,7 @@ def test_no_stray_legacy_routes(meesell_app):
 
 
 def test_total_route_count(meesell_app):
-    """Exact route count: 29 distinct path entries in the route_map.
+    """Exact route count: 30 distinct path entries in the route_map.
 
     Breakdown:
       FastAPI builtins: /openapi.json, /docs, /docs/oauth2-redirect, /redoc  (4)
@@ -218,23 +220,23 @@ def test_total_route_count(meesell_app):
                         /api/v1/products/{id}/draft (GET)                      (5 distinct paths)
       §11 image:        /api/v1/products/{id}/images (GET + POST → 1 path key) (1)
       §12 pricing:      /api/v1/products/{id}/price-calc (POST)                (1)
+                        /api/v1/products/{id}/apply-price (POST, W4b)          (1)
       §14 export:       /api/v1/products/{product_id}/export-xlsx (POST)       (1)
                         /api/v1/exports/{export_id} (GET)                      (1)
       Health:           /health                                                 (1)
-    Total = 29 distinct paths  (was 27 before §14 export; +2 new path keys)
+    Total = 30 distinct paths  (was 29 before W4b; +1 new path key)
 
     Note: FastAPI creates one APIRoute object per (path, method) combination, so
     /api/v1/products/{id} has 2 APIRoute objects (PATCH + DELETE) but the
     _route_map() helper deduplicates by path key → 1 entry. Same applies to
     /api/v1/products which carries POST (§10 catalog) and GET (§13 dashboard)
-    on a single path key. The 2 new §14 export paths are DISTINCT from
-    /api/v1/products/{id} (different path templates) and each contributes +1
-    to the distinct path count.
+    on a single path key. The 2 §14 export paths + W4b apply-price each
+    contribute +1 to the distinct path count (different path templates).
 
     If this fails, a route was added or removed unexpectedly.
     """
     route_map = _route_map(meesell_app)
-    expected_count = 29
+    expected_count = 30
     assert len(route_map) == expected_count, (
         f"Expected {expected_count} routes, got {len(route_map)}. "
         f"Paths: {sorted(route_map)}"

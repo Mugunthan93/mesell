@@ -34,24 +34,35 @@ only the Meesho bank-settlement estimate, not seller profitability.
 Public surface
 --------------
 * :func:`calculate` — main endpoint surface (settlement estimator).
+* :func:`apply_price_to_product` — explicit "Use this price" action (W4):
+  writes the seller's chosen selling price into the product's
+  ``fields_jsonb`` so it flows to the Meesho XLSX export.  NEVER auto-saved
+  on :func:`calculate` (founder ruling G-W4-APPLY, Option A — explicit
+  action only, never silent mutation).
 * :func:`get_last_calc` — cross-module read (dashboard OPTIONAL per §13;
   V1 dashboard does NOT call this).
 
 Cross-module imports (strict allowlist per §3.G + §16)
 ------------------------------------------------------
 This module imports ``from app.modules.catalog import service`` ONLY (the
-``assert_product_ownership`` gate + the ``get_product_meesho_leaf_id``
-leaf accessor).  The ``category`` import that #285 retired STAYS retired —
-the leaf is reached via catalog, preserving the §2.D matrix.  It NEVER
-imports any Meesho/supplier client — the production estimator is pure
+``assert_product_ownership`` gate, the ``get_product_meesho_leaf_id``
+leaf accessor, and — from W4 — the ``patch_product`` write seam used by
+:func:`apply_price_to_product` to merge the chosen price into
+``fields_jsonb``).  All three are the SAME ``pricing → catalog`` edge in
+the §2.D matrix (locked at 1 ✓, line 590) — reusing ``patch_product`` does
+NOT add a new matrix cell.  The ``category`` import that #285 retired STAYS
+retired — the leaf is reached via catalog, preserving the §2.D matrix.  It
+NEVER imports any Meesho/supplier client — the production estimator is pure
 arithmetic over a static lookup (HARD RULE).
 """
 
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -60,6 +71,7 @@ from app.modules.catalog import service as catalog_service
 from app.modules.pricing import pricing_lookup
 from app.modules.pricing import repository as pricing_repo
 from app.modules.pricing.domain import PricingAlert, PricingCalc, SettlementBreakdown
+from app.modules.pricing.exceptions import InvalidPriceInputError
 from app.modules.pricing.schemas import (
     PriceCalcAlert,
     PriceCalcRequest,
@@ -94,6 +106,23 @@ _DISCLAIMER: str = (
 """Verbatim Meesho disclaimer surfaced near the estimated-settlement output
 (model memory 2026-06-19).  Shipped as a literal for V1; an i18n key may be
 added later (non-blocking)."""
+
+# ─── W4 "apply chosen price" canonical(s) ────────────────────────────────────
+SELLING_PRICE_CANONICAL: str = "meesho_price"
+"""The Meesho template canonical that carries the LISTED / SELLING price
+(``fetchProductDetailsV3.product_size_data``; W4_EXPORT_SPEC §1.1).  The
+export already emits any canonical present in ``products.fields_jsonb`` under
+its ``meesho_column_header`` — so writing the seller's chosen selling price
+here is the single link that makes the calculator's price reach the XLSX.
+
+OPEN QUESTION (flagged to lead, W4): the schema ALSO carries ``mrp`` (the
+strike-through MRP).  The calculator produces ONE seller-chosen number (the
+selling price), so :func:`apply_price_to_product` writes ONLY
+``meesho_price``.  Whether the "apply" action should ALSO populate ``mrp``
+(e.g. default ``mrp = selling_price``, or require a separate MRP input) is a
+product decision for the api-routes-builder/FE step — NOT resolved here.  We
+do NOT touch ``mrp`` to avoid fabricating a strike-through MRP the seller did
+not choose."""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -208,6 +237,103 @@ async def calculate(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Public — W4 "apply chosen price to product"
+# ─────────────────────────────────────────────────────────────────────────────
+@dataclass(frozen=True)
+class _PriceFieldsPatch:
+    """Minimal duck-typed stand-in for ``catalog.schemas.PatchProductRequest``.
+
+    §16 Contract 4 FORBIDS ``pricing`` importing ``catalog.schemas`` (a
+    module's schemas are private wire-shapes).  ``catalog.service.patch_product``
+    only reads ``request.fields`` and ``request.status`` — so we hand it a
+    local object exposing exactly those two attributes.  This keeps the call on
+    the ALLOWED ``pricing → catalog`` service edge (§2.D, line 590) without
+    crossing the schema boundary.  ``status`` is always ``None`` — applying a
+    price never changes the draft/ready state.
+    """
+
+    fields: dict[str, Any] = field(default_factory=dict)
+    status: None = None
+
+
+async def apply_price_to_product(
+    user_id: UUID,
+    product_id: UUID,
+    selling_price: Decimal,
+    *,
+    db: AsyncSession,
+) -> None:
+    """Explicit "Use this price" action — write the seller's CHOSEN selling
+    price into the product's ``fields_jsonb`` so it flows to the Meesho XLSX
+    export (W4_EXPORT_SPEC §2.B; founder ruling G-W4-APPLY Option A).
+
+    The export already emits any canonical present in ``fields_jsonb`` under
+    its ``meesho_column_header``; the calculator previously persisted the
+    chosen price ONLY to the ``pricing_calcs`` audit table.  This method is
+    the single link that lands the price where the export reads it.
+
+    NEVER called from :func:`calculate` — the calculator is an exploration
+    tool; the product is mutated ONLY on this explicit seller action (no
+    silent auto-save, per the founder sub-ruling).
+
+    Reuse + isolation:
+      * Ownership (M6) + per-field schema validation (enum / range — e.g.
+        Meesho's ``meesho_price`` min 2 / max 10000) + the atomic JSONB
+        ``||`` merge are ALL reused via ``catalog.service.patch_product``
+        (the §10.B.2 write seam) — no new write surface, no schema bypass.
+        This is the SAME ``pricing → catalog`` §2.D edge as
+        ``assert_product_ownership`` (NOT a new matrix cell).
+      * The chosen price is written ONLY to
+        :data:`SELLING_PRICE_CANONICAL` (``meesho_price``).  ``mrp`` is
+        deliberately left untouched (see the constant's OPEN QUESTION note).
+
+    Args:
+        user_id: Authenticated principal — tenancy gate.
+        product_id: Target product (must be owned, not soft-deleted).
+        selling_price: The calculator's chosen selling price (₹, Decimal).
+
+    Raises:
+        InvalidPriceInputError: ``selling_price`` is not strictly > 0
+            (400 / ``validation.price.invalid_input``).  The route schema
+            also enforces this; the service re-checks defensively so the
+            invariant holds for any caller.
+        ProductNotFoundError: product missing / cross-tenant / soft-deleted,
+            from ``catalog.service.patch_product`` → ``assert_product_ownership``
+            (404 / ``catalog.product_not_found``).
+        ValidationFailedError: the value fails the catalog schema's
+            range/enum checks for ``meesho_price`` (422), bubbled verbatim
+            from ``patch_product``.
+
+    The commit is owned by the route's ``get_db`` dependency (the merge is
+    flushed inside ``patch_product`` but not committed here).
+    """
+    if selling_price <= 0:
+        raise InvalidPriceInputError(
+            detail="Selling price must be greater than zero."
+        )
+
+    chosen_price = _q(selling_price)
+
+    logger.info(
+        "price-apply product=%s canonical=%s value=%s",
+        product_id,
+        SELLING_PRICE_CANONICAL,
+        chosen_price,
+    )
+
+    # Single ALLOWED pricing → catalog service edge: ownership + schema
+    # validation + atomic JSONB merge, all inside patch_product (is_autosave
+    # False → this is an explicit, audited write, not a coalesced draft).
+    await catalog_service.patch_product(
+        user_id,
+        product_id,
+        _PriceFieldsPatch(fields={SELLING_PRICE_CANONICAL: chosen_price}),
+        is_autosave=False,
+        db=db,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Public — cross-module surface (§13 OPTIONAL)
 # ─────────────────────────────────────────────────────────────────────────────
 async def get_last_calc(
@@ -308,9 +434,12 @@ def _q(value: Decimal) -> Decimal:
 
 __all__ = [
     "calculate",
+    "apply_price_to_product",
     "get_last_calc",
+    "SELLING_PRICE_CANONICAL",
     # Pure-function exports for unit-tests (NOT part of the cross-module
-    # surface — §16 callers must use ``calculate`` / ``get_last_calc``).
+    # surface — §16 callers must use ``calculate`` / ``apply_price_to_product``
+    # / ``get_last_calc``).
     "_compute_settlement",
     "_generate_alerts",
     "DEFAULT_COMMISSION_PCT",
