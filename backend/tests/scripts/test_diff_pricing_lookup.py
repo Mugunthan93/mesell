@@ -5,7 +5,11 @@ Covers §6 tests:
   - test_drift_detects_shipping_change  (one row 82→90 → shipping_changed listed)
   - test_drift_detects_added_removed    (add 1, drop 1 → report lists 1 added, 1 removed)
   - test_drift_blocks_removed_seeded_leaf (removed sscat in seed set → BLOCK)
-  - test_orchestrator_stage_order        (mocked stages A→B→C; C aborts if B fails)
+
+Orchestrator stage-order tests (A→B→C, gate failure, no-live-file-overwrite) have
+been moved to test_monthly_refresh.py, which imports the real orchestrate() function
+and patches the stage callables — replacing the prior stand-in that modelled only a
+local state machine without exercising the shipped code.
 
 DB-SAFETY: NO database imports, NO live connection.  seed_leaf_ids are synthetic
 Python sets passed as arguments — NEVER the live dev DB.  This module is a
@@ -19,7 +23,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -243,100 +247,6 @@ def test_drift_blocks_nonzero_commission() -> None:
     assert summary["verdict"] == VERDICT_BLOCK
     assert "10000" in summary["commission_nonzero"]
     assert any("commission" in r for r in summary["block_reasons"])
-
-
-# ---------------------------------------------------------------------------
-# Orchestrator stage order
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-def test_orchestrator_stage_order() -> None:
-    """§6: mocked stages assert A→B→C order and that C aborts if B's summary fails the gate.
-
-    This test does NOT import meesho_monthly_refresh.py (S1, owned by scraper-maintainer).
-    Instead it models the EXPECTED CONTRACT that the orchestrator must implement:
-      - Stage A runs first.
-      - Stage B runs second, after A completes.
-      - Stage C runs ONLY when B's census summary passes the gate (error_rows==0 etc.).
-      - If B's summary fails the gate, C must be skipped (no candidate written).
-
-    The test uses MagicMock to represent the three stage callables and asserts call ordering
-    and gating logic.  This is a behavioural contract test — the actual orchestrator is
-    wired by scraper-maintainer (S1) and must honour this contract.
-    """
-    # Simulate the orchestrator contract via a minimal state machine.
-    call_order: list[str] = []
-
-    stage_a_result = {"ok": True, "storage_state": "/tmp/fake_state.json"}
-    stage_b_ok_result = {
-        "ok": True,
-        "summary": {
-            "rows_with_data": EXPECTED_COUNT,
-            "error_rows": 0,
-            "lookup": {str(10000 + i): {"shipping_charges": 50, "commission_percentage": 0.0, "formula_ok": True} for i in range(EXPECTED_COUNT)},
-            "census_price": 100,
-            "generated_at": "2026-06-01T00:00:00",
-        },
-    }
-    stage_b_fail_result = {
-        "ok": False,
-        "summary": {
-            "rows_with_data": 100,
-            "error_rows": 10,
-            "lookup": {},
-            "census_price": 100,
-            "generated_at": "2026-06-01T00:00:00",
-        },
-    }
-
-    stage_a = MagicMock(side_effect=lambda: (call_order.append("A"), stage_a_result)[1])
-    stage_b_ok = MagicMock(
-        side_effect=lambda storage_state: (call_order.append("B"), stage_b_ok_result)[1]
-    )
-    stage_b_fail = MagicMock(
-        side_effect=lambda storage_state: (call_order.append("B"), stage_b_fail_result)[1]
-    )
-    stage_c = MagicMock(
-        side_effect=lambda census_summary: (call_order.append("C"), {"ok": True})[1]
-    )
-
-    def run_orchestrator(stage_b_mock: MagicMock) -> dict[str, Any]:
-        """Minimal orchestrator: A → B → gate-check → (C or abort)."""
-        a_result = stage_a()
-        b_result = stage_b_mock(a_result.get("storage_state"))
-
-        b_summary = b_result["summary"]
-        # Gate: B's summary must pass the same hard invariants as build_pricing_lookup.py
-        gate_ok = (
-            b_result["ok"]
-            and b_summary.get("error_rows", -1) == 0
-            and len(b_summary.get("lookup", {})) == EXPECTED_COUNT
-        )
-
-        if not gate_ok:
-            # C is skipped — orchestrator returns without calling stage_c
-            return {"ok": False, "reason": "Stage B census failed the gate"}
-
-        c_result = stage_c(b_summary)
-        return {"ok": c_result["ok"]}
-
-    # --- Scenario 1: B succeeds → C is called, order is A→B→C ---
-    call_order.clear()
-    result_ok = run_orchestrator(stage_b_ok)
-    assert result_ok["ok"] is True
-    assert call_order == ["A", "B", "C"], (
-        f"Expected A→B→C when B succeeds; got {call_order}"
-    )
-
-    # --- Scenario 2: B fails → C is NOT called, order is A→B only ---
-    call_order.clear()
-    result_fail = run_orchestrator(stage_b_fail)
-    assert result_fail["ok"] is False
-    assert call_order == ["A", "B"], (
-        f"Expected A→B only when B fails; got {call_order}"
-    )
-    stage_c.assert_called_once()  # was only called once (in scenario 1)
 
 
 # ---------------------------------------------------------------------------

@@ -17,20 +17,22 @@ Sequences three stages in one operator-supervised run:
     writes to the committed file directly).
     Then calls diff_pricing_lookup.run_diff() to classify drift vs. the live file.
     Promotion policy:
-      PASS            → stage the overwrite (copy candidate over the committed file).
-      REVIEW_REQUIRED → stage the overwrite AND emit a drift report; the data PR body
-                        MUST include the drift report for Data-Lead + founder review.
+      PASS            → candidate is staged at logs/scraper/meesho_pricing_lookup.candidate.json;
+                        exit 0.  A human opens the data PR and copies the candidate over the
+                        committed file (backend/app/data/meesho_pricing_lookup.json) for
+                        Data-Lead + founder review before merging.
+      REVIEW_REQUIRED → candidate is staged AND a drift report is written to logs/; exit 0.
+                        The data PR body MUST include the drift report for review.
       BLOCK           → leave the live file untouched; write the candidate on the side
                         path; exit non-zero; write a STATUS_DATA blocker comment to
                         stderr. Founder reviews before ANY file change.
 
 Idempotency guarantee (§3):
   The committed backend/app/data/meesho_pricing_lookup.json is NEVER overwritten
-  in-place by this script.  "Stage" means: the candidate is already written to the
-  side path (logs/scraper/meesho_pricing_lookup.candidate.json, gitignored); a human
-  promotes it via the reviewed data PR.  If you re-run after a PASS or REVIEW, the
-  script detects that the candidate already matches the live file (zero drift) and
-  does not re-copy.
+  in-place by this script under any exit path.  "Staged" means: the candidate is
+  written to the gitignored side path (logs/scraper/meesho_pricing_lookup.candidate.json);
+  a human promotes it via the reviewed data PR.  The orchestrator's job ends at
+  "candidate validated + drift report written + staged for human review."
 
 Exit codes:
   0  — All three stages succeeded; drift verdict is PASS or REVIEW_REQUIRED (candidate
@@ -70,10 +72,11 @@ Operator runbook (MUST READ before first live run):
      logs/scraper/meesho_storage_state.json          — warm session cookies
 
   4. After a PASS or REVIEW_REQUIRED run
-     - The candidate is at logs/scraper/meesho_pricing_lookup.candidate.json.
-     - Open a data PR: copy the candidate to backend/app/data/meesho_pricing_lookup.json,
-       paste the drift report into the PR body (REVIEW_REQUIRED runs), and tag the
-       Data-Lead for merge-gate review.
+     - The candidate is staged at logs/scraper/meesho_pricing_lookup.candidate.json.
+     - Open a data PR: manually copy the candidate to backend/app/data/meesho_pricing_lookup.json
+       in a dedicated data PR commit, paste the drift report into the PR body
+       (REVIEW_REQUIRED runs), and tag the Data-Lead for merge-gate review.
+     - The orchestrator NEVER touches backend/app/data/meesho_pricing_lookup.json directly.
 
   5. After a BLOCK
      - The live file is untouched.
@@ -93,7 +96,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import shutil
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -359,14 +361,22 @@ def run_stage_c(census_summary: dict) -> dict:
 
     # 3b. Drift gate — compare candidate vs. live file
     if not LIVE_LOOKUP_PATH.exists():
-        # First-time run: no live file to compare against → auto-promote
-        log.info("No live lookup file at %s — first-time run, promoting candidate", LIVE_LOOKUP_PATH)
-        LIVE_LOOKUP_PATH.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(CANDIDATE_PATH, LIVE_LOOKUP_PATH)
+        # First-time run: no live file to compare against → candidate is staged only.
+        # A human copies it into backend/app/data/ via the reviewed data PR.
+        log.info(
+            "No live lookup file at %s — first-time run; candidate staged at %s. "
+            "Copy to %s via the data PR.",
+            LIVE_LOOKUP_PATH,
+            CANDIDATE_PATH,
+            LIVE_LOOKUP_PATH,
+        )
         return {
             "ok": True,
             "verdict": "PASS",
-            "reason": "First-time run (no live file); candidate promoted to live path",
+            "reason": (
+                "First-time run (no live file); candidate staged for human promotion "
+                f"via data PR at {CANDIDATE_PATH}"
+            ),
             "candidate_path": CANDIDATE_PATH,
             "drift_summary": None,
         }
@@ -395,11 +405,15 @@ def run_stage_c(census_summary: dict) -> dict:
             "drift_summary": drift_summary,
         }
 
-    # PASS or REVIEW_REQUIRED → stage the overwrite (copy candidate over live)
-    shutil.copy2(CANDIDATE_PATH, LIVE_LOOKUP_PATH)
+    # PASS or REVIEW_REQUIRED → candidate is already staged at CANDIDATE_PATH (side path).
+    # The orchestrator's job ends here.  A human promotes via the reviewed data PR:
+    #   cp logs/scraper/meesho_pricing_lookup.candidate.json \
+    #      backend/app/data/meesho_pricing_lookup.json
+    # The committed file (LIVE_LOOKUP_PATH) is NEVER written by this script.
     log.info(
-        "Staged: candidate copied to %s (verdict=%s)",
-        LIVE_LOOKUP_PATH,
+        "Candidate staged at %s (verdict=%s). "
+        "Promote via data PR — do NOT copy manually outside the review process.",
+        CANDIDATE_PATH,
         drift_verdict,
     )
 
@@ -547,8 +561,11 @@ async def orchestrate() -> int:
     print(
         f"\n=== MONTHLY REFRESH COMPLETE ===\n"
         f"Drift verdict:     {final_verdict}\n"
-        f"Candidate:         {c_result['candidate_path']}\n"
-        f"Live file updated: {LIVE_LOOKUP_PATH}\n"
+        f"Candidate staged:  {c_result['candidate_path']}\n"
+        f"Live file:         UNTOUCHED ({LIVE_LOOKUP_PATH})\n"
+        f"Next step:         open a data PR, copy the candidate into\n"
+        f"                   backend/app/data/meesho_pricing_lookup.json,\n"
+        f"                   and tag the Data-Lead for merge-gate review.\n"
         f"Added sscat_ids:   {len(drift.get('added', []))}\n"
         f"Removed sscat_ids: {len(drift.get('removed', []))}\n"
         f"Shipping changes:  {len(drift.get('shipping_changed', []))}\n"
