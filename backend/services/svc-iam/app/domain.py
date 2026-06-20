@@ -122,7 +122,8 @@ class UserProfile:
 
     Attributes:
         user_id: Primary key.
-        phone: E.164 string. Surfaced to the seller; NOT scrubbed.
+        phone: E.164 string, or ``None`` for a Google-only user (dual-identity,
+            2026-06-18). Surfaced to the seller; NOT scrubbed.
         plan: V1 always ``"free"``.
         created_at: Account creation timestamp.
         last_login_at: Last successful OTP verify timestamp; ``None`` on the
@@ -130,7 +131,7 @@ class UserProfile:
     """
 
     user_id: UUID
-    phone: str
+    phone: str | None
     plan: str
     created_at: datetime
     last_login_at: datetime | None

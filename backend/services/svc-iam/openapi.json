@@ -12,7 +12,7 @@
           "iam"
         ],
         "summary": "Send a 6-digit OTP to a phone number",
-        "description": "\u00a77.B.1 contract.  Per-IP rate limit 3/h (decorator key=\"phone\" is a \u00a7V1.5 ask).",
+        "description": "§7.B.1 contract.  Per-IP rate limit 3/h (decorator key=\"phone\" is a §V1.5 ask).",
         "operationId": "otp_send_api_v1_auth_otp_send_post",
         "requestBody": {
           "content": {
@@ -54,7 +54,7 @@
           "iam"
         ],
         "summary": "Verify OTP, mint access JWT, set refresh cookie",
-        "description": "\u00a77.B.2 contract \u2014 issues access JWT (body) + refresh cookie (Set-Cookie).",
+        "description": "§7.B.2 contract — issues access JWT (body) + refresh cookie (Set-Cookie).",
         "operationId": "otp_verify_api_v1_auth_otp_verify_post",
         "requestBody": {
           "content": {
@@ -96,7 +96,7 @@
           "iam"
         ],
         "summary": "Atomically rotate refresh cookie and issue a new access JWT",
-        "description": "\u00a77.B.3 contract.  On any 401 path the failure handler ALSO clears the cookie.\n\nThe 401-path clear-cookie behaviour is implemented via a try/except so\nthe \u00a77.B.3 \"clear cookie on 401\" requirement is honoured without relying\non the global error handler (which has no view of this route's\n``response`` instance).",
+        "description": "§7.B.3 contract.  On any 401 path the failure handler ALSO clears the cookie.\n\nThe 401-path clear-cookie behaviour is implemented via a try/except so\nthe §7.B.3 \"clear cookie on 401\" requirement is honoured without relying\non the global error handler (which has no view of this route's\n``response`` instance).",
         "operationId": "auth_refresh_api_v1_auth_refresh_post",
         "parameters": [
           {
@@ -146,7 +146,7 @@
           "iam"
         ],
         "summary": "Revoke the refresh cookie (idempotent)",
-        "description": "\u00a77.B.4 contract.  No rate limit (idempotent, no abuse vector).\n\nAlways returns 204 + clear-cookie, regardless of whether a cookie was\npresent.  The audit row is emitted by the service ONLY when a cookie\nwas actually present (so calling logout twice does not double-log).",
+        "description": "§7.B.4 contract.  No rate limit (idempotent, no abuse vector).\n\nAlways returns 204 + clear-cookie, regardless of whether a cookie was\npresent.  The audit row is emitted by the service ONLY when a cookie\nwas actually present (so calling logout twice does not double-log).",
         "operationId": "auth_logout_api_v1_auth_logout_post",
         "parameters": [
           {
@@ -189,7 +189,7 @@
           "iam"
         ],
         "summary": "Return the authenticated user's profile",
-        "description": "\u00a77.B.5 contract.  No rate limit (per-IP DDoS guard is the floor).\n\nNo audit event per documented absence \u2014 the JWT itself proves the user\nis active; logging every ``/me`` would flood the table.",
+        "description": "§7.B.5 contract.  No rate limit (per-IP DDoS guard is the floor).\n\nNo audit event per documented absence — the JWT itself proves the user\nis active; logging every ``/me`` would flood the table.",
         "operationId": "me_api_v1_auth_me_get",
         "responses": {
           "200": {
@@ -216,7 +216,7 @@
           "iam"
         ],
         "summary": "Capture a Razorpay webhook (V1: signature-verify + log)",
-        "description": "\u00a77.B.6 contract.\n\nThe body is read as RAW bytes (NOT JSON-parsed at the FastAPI dependency\nlayer) \u2014 Pydantic parsing happens only AFTER HMAC signature verification\nsucceeds, per the V1 capture-only posture.",
+        "description": "§7.B.6 contract.\n\nThe body is read as RAW bytes (NOT JSON-parsed at the FastAPI dependency\nlayer) — Pydantic parsing happens only AFTER HMAC signature verification\nsucceeds, per the V1 capture-only posture.",
         "operationId": "razorpay_webhook_api_v1_webhooks_razorpay_post",
         "responses": {
           "200": {
@@ -277,7 +277,15 @@
             "title": "User Id"
           },
           "phone": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
             "title": "Phone"
           },
           "plan": {
@@ -306,7 +314,6 @@
         "type": "object",
         "required": [
           "user_id",
-          "phone",
           "plan",
           "created_at"
         ],
@@ -336,7 +343,7 @@
           "expires_in"
         ],
         "title": "RefreshResponse",
-        "description": "``POST /api/v1/auth/refresh`` 200 body.\n\nIdentical SHAPE to :class:`VerifyOtpResponse` but locked as a distinct\nmodel so the OpenAPI surface differentiates them (per \u00a77.E note)."
+        "description": "``POST /api/v1/auth/refresh`` 200 body.\n\nIdentical SHAPE to :class:`VerifyOtpResponse` but locked as a distinct\nmodel so the OpenAPI surface differentiates them (per §7.E note)."
       },
       "SendOtpRequest": {
         "properties": {
@@ -361,7 +368,7 @@
           "request_id": {
             "type": "string",
             "title": "Request Id",
-            "description": "MSG91 correlation ID \u2014 opaque to the client"
+            "description": "MSG91 correlation ID — opaque to the client"
           }
         },
         "type": "object",
@@ -440,7 +447,7 @@
           "expires_in": {
             "type": "integer",
             "title": "Expires In",
-            "description": "Seconds \u2014 matches ACCESS_TOKEN_TTL_SECONDS"
+            "description": "Seconds — matches ACCESS_TOKEN_TTL_SECONDS"
           },
           "token_type": {
             "type": "string",
@@ -455,7 +462,7 @@
           "expires_in"
         ],
         "title": "VerifyOtpResponse",
-        "description": "``POST /api/v1/auth/otp/verify`` 200 body.\n\nThe refresh token is NOT in the body \u2014 it ships in the ``Set-Cookie``\nresponse header per \u00a74.B FE-D5 amendment."
+        "description": "``POST /api/v1/auth/otp/verify`` 200 body.\n\nThe refresh token is NOT in the body — it ships in the ``Set-Cookie``\nresponse header per §4.B FE-D5 amendment."
       },
       "WebhookCaptureResponse": {
         "properties": {

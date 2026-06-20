@@ -102,7 +102,7 @@ class MeResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     user_id: UUID
-    phone: str
+    phone: str | None = None  # google-auth: NULL for Google-only users (matches users.phone nullable)
     plan: Literal["free"]
     created_at: datetime
     last_login_at: datetime | None = None
