@@ -12,7 +12,9 @@ module.exports = withNativeFederation({
   name: 'mfe-catalog',
 
   exposes: {
-    './CatalogRoutes': './apps/mfe-catalog/src/app/catalog.routes.ts',
+    './CatalogRoutes':   './apps/mfe-catalog/src/app/catalog.routes.ts',
+    // B04 — /categories/browse browse page; mounted via loadRemoteWithFallback in shell app.routes.ts:89
+    './BrowseComponent': './apps/mfe-catalog/src/app/categories/browse/browse.component.ts',
   },
 
   shared: {
