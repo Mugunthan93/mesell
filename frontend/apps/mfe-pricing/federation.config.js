@@ -1,5 +1,15 @@
 const { withNativeFederation, shareAll } = require('@angular-architects/native-federation/config');
 
+// VERSION-PIN (fix/federation-shared-version-pin): see shell/federation.config.js for full comment.
+const MESELL_SHARED_VERSION = '1.0.0';
+
+const mesellShared = {
+  '@mesell/core':      { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
+  '@mesell/env':       { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
+  '@mesell/ui-kit':    { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
+  '@mesell/composites': { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
+};
+
 // MF Sub-Plan 01 — PILOT remote `mfe-pricing` (F11 pricing, route /catalogs/:id/pricing).
 // kind: 'remote' — produces remoteEntry.json + ESM chunks, mounted by the shell host.
 // Exposes a SINGLE component (D10) — pricing is a leaf page with no sub-routes.
@@ -15,6 +25,7 @@ module.exports = withNativeFederation({
 
   shared: {
     ...shareAll({ singleton: true, strictVersion: false, requiredVersion: 'auto' }),
+    ...mesellShared,
   },
 
   skip: [

@@ -1,16 +1,23 @@
 const { withNativeFederation, shareAll } = require('@angular-architects/native-federation/config');
 
+// VERSION-PIN (fix/federation-shared-version-pin): see shell/federation.config.js for full comment.
+const MESELL_SHARED_VERSION = '1.0.0';
+
+const mesellShared = {
+  '@mesell/core':      { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
+  '@mesell/env':       { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
+  '@mesell/ui-kit':    { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
+  '@mesell/composites': { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
+};
+
 // MF Sub-Plan 03 — remote `mfe-onboarding` (F5 onboarding + F13 profile,
 // routes /onboarding + /profile). FIRST multi-expose remote (D20): ONE remoteEntry.json
 // exposing TWO components. FIRST remote to consume AuthService across the federation
 // boundary — profile.component injects @mesell/core AuthService (currentUser/logout).
 //
-// @mesell/core (the AuthService singleton) MUST resolve to the SHELL's single instance:
-// shareAll({ singleton: true }) puts @mesell/core in the import map as ONE shared module,
-// so the remote's inject(AuthService) returns the shell's instance (D22 C1/C2 — the
-// singleton holds via import-map sharing, NOT a decorator refactor). @mesell/core is
-// NOT skipped. @mesell/ui-kit, @mesell/composites (incl. the promoted AuthLayout),
-// @angular/*, rxjs resolve to the shell's instances too (MASTER_PLAN §6.1).
+// @mesell/core (the AuthService singleton) MUST resolve to the SHELL's single instance.
+// Explicit version pin (1.0.0) + strictVersion:true ensures NF dedup by version key
+// regardless of chunk-hash divergence (fix/federation-shared-version-pin).
 module.exports = withNativeFederation({
   name: 'mfe-onboarding',
 
@@ -21,6 +28,7 @@ module.exports = withNativeFederation({
 
   shared: {
     ...shareAll({ singleton: true, strictVersion: false, requiredVersion: 'auto' }),
+    ...mesellShared,
   },
 
   skip: [
