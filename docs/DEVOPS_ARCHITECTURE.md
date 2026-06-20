@@ -613,12 +613,13 @@ Per `GATE4_CONFIRMATION.md` condition **C-CI-1**, when the multi-project Angular
 | `mfe_dashboard` | `frontend/apps/mfe-dashboard/**` | SP04 (public landing) |
 | `mfe_catalog` | `frontend/apps/mfe-catalog/**` | SP05 |
 | `mfe_auth` | `frontend/apps/mfe-auth/**` | SP06 (public auth) |
+| `mfe_billing` | `frontend/apps/mfe-billing/**` | Billing remote (PRs #323/#325; serve :4207) |
 
-**(b) `frontend-build` matrix job** — one matrix `include` entry per buildable unit. As of SP07 the matrix has 7 legs: `shell` + all 6 remotes. Each entry carries a computed `run` boolean: build this unit when **its own filter fired OR the `libs` fan-out fired**. The job steps are all gated on `if: matrix.run == 'true'`; an unaffected unit logs a skip-notice and succeeds. Per-unit steps: `pnpm install --frozen-lockfile` → `pnpm rebuild esbuild @parcel/watcher lmdb msgpackr-extract` → `ng test <project>` → `ng build <project> --configuration production`.
+**(b) `frontend-build` matrix job** — one matrix `include` entry per buildable unit. As of the mfe-billing addition the matrix has 8 legs: `shell` + all 7 remotes. Each entry carries a computed `run` boolean: build this unit when **its own filter fired OR the `libs` fan-out fired**. The job steps are all gated on `if: matrix.run == 'true'`; an unaffected unit logs a skip-notice and succeeds. Per-unit steps: `pnpm install --frozen-lockfile` → `pnpm rebuild esbuild @parcel/watcher lmdb msgpackr-extract` → `ng test <project>` → `ng build <project> --configuration production`.
 
 **Fan-out rule (why libs are not their own matrix leg):** the shared libs are consumed via `@mesell/*` tsconfig path aliases and compile **into** each consuming unit's native-federation bundle — they are not independently published artefacts. So a libs change cannot be "built alone"; it must rebuild every dependent (shell + all remotes). The `libs` filter therefore acts as a global trigger across all matrix legs.
 
-**All 6 remotes are wired as of SP07** (the cutover). Each was a one-line addition in two places: a filter block in `frontend-changes` (`mfe_<name>: ['frontend/apps/mfe-<name>/**']`) + a matrix `include` entry in `frontend-build` (keyed off `mfe_<name> || libs`). No structural rewrite. A future remote follows the same pattern.
+**All 7 remotes are wired** (the SP07 cutover's 6 + mfe-billing). Each was a one-line addition in two places: a filter block in `frontend-changes` (`mfe_<name>: ['frontend/apps/mfe-<name>/**']`) + a matrix `include` entry in `frontend-build` (keyed off `mfe_<name> || libs`). No structural rewrite. A future remote follows the same pattern.
 
 **Native-binary note (handoff from frontend-coordinator):** `pnpm` ignores native build scripts by default (`ERR_PNPM_IGNORED_BUILDS`: esbuild / @parcel/watcher / lmdb / msgpackr-extract). The `.npmrc dangerously-allow-all-builds` trick is environment-blocked; the clean alternative is an explicit `pnpm rebuild <pkgs>` before `ng build`, which the matrix runs as a dedicated step.
 
