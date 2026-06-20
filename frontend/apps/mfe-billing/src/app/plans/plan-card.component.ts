@@ -82,7 +82,7 @@ const ENTITLEMENT_RANK: Record<EntitlementLiteral, number> = {
     .plan-card__name {
       font-size: 18px;
       font-weight: 700;
-      color: var(--mee-color-on-surface, #1a1a1a);
+      color: var(--mee-color-on-surface, #2a3547);
       margin: 0 0 var(--mee-space-2, 8px);
     }
 
@@ -95,15 +95,15 @@ const ENTITLEMENT_RANK: Record<EntitlementLiteral, number> = {
     .plan-card__price {
       font-size: 32px;
       font-weight: 800;
-      color: var(--mee-color-on-surface, #1a1a1a);
+      color: var(--mee-color-on-surface, #2a3547);
     }
     .plan-card__period {
       font-size: 13px;
-      color: var(--mee-color-on-surface-muted, #666);
+      color: var(--mee-color-on-surface-muted, #5a6a85);
     }
     .plan-card__annual-note {
       font-size: 12px;
-      color: var(--mee-color-on-surface-muted, #666);
+      color: var(--mee-color-on-surface-muted, #5a6a85);
       margin: 0 0 var(--mee-space-3, 12px);
     }
 
@@ -118,13 +118,13 @@ const ENTITLEMENT_RANK: Record<EntitlementLiteral, number> = {
     }
     .plan-card__feature {
       font-size: 13px;
-      color: var(--mee-color-on-surface-muted, #555);
+      color: var(--mee-color-on-surface-muted, #5a6a85);
       display: flex;
       align-items: flex-start;
       gap: var(--mee-space-2, 8px);
     }
     .plan-card__feature-check {
-      color: var(--mee-color-success, #22c55e);
+      color: var(--mee-color-success, #16A34A);
       font-size: 14px;
       flex-shrink: 0;
       margin-top: 1px;
@@ -152,12 +152,24 @@ const ENTITLEMENT_RANK: Record<EntitlementLiteral, number> = {
     }
     .plan-card__cta--upgrade:hover { opacity: 0.9; }
     .plan-card__cta--current {
-      background: var(--mee-color-surface-variant, #f5f5f5);
+      background: var(--mee-color-surface-variant, #f2f6fa);
       color: var(--mee-color-primary, #F26B23);
       cursor: default;
-      border: 1px solid var(--mee-color-primary-light, rgba(242,107,35,0.4));
+      border: 1px solid var(--mee-color-primary-light, rgba(242,107,35,0.12));
     }
     .plan-card__cta:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    /* prefers-reduced-motion: disable card hover + CTA transitions */
+    @media (prefers-reduced-motion: reduce) {
+      .plan-card { transition: none; }
+      .plan-card__cta { transition: none; }
+    }
+
+    /* Mobile ≤479px: badge stacking safety — badge may clip above card at 360px if card
+       has no top margin. Add padding-top to give the absolutely-positioned badge room. */
+    .plan-card {
+      margin-top: 14px; /* room for the absolute-positioned badge (-12px from top) */
+    }
   `],
   template: `
     <div

@@ -52,33 +52,46 @@ import type { BillingSubscriptionResponse, BillingErrorShape } from '../billing.
     .account-billing-title {
       font-size: 24px;
       font-weight: 700;
-      color: var(--mee-color-on-surface, #1a1a1a);
+      color: var(--mee-color-on-surface, #2a3547);
       margin: 0 0 var(--mee-space-1, 4px);
     }
     .account-billing-subtitle {
       font-size: 14px;
-      color: var(--mee-color-on-surface-muted, #666);
+      color: var(--mee-color-on-surface-muted, #5a6a85);
       margin: 0;
     }
 
     /* Skeleton */
     .skeleton {
-      background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+      background: linear-gradient(90deg, var(--mee-color-surface-variant, #f2f6fa) 25%, var(--mee-color-outline, #e5eaef) 50%, var(--mee-color-surface-variant, #f2f6fa) 75%);
       background-size: 200% 100%;
       animation: shimmer 1.5s infinite;
-      border-radius: var(--mee-radius-md, 8px);
+      border-radius: var(--mee-radius-md, 16px);
     }
     @keyframes shimmer { to { background-position: -200% 0; } }
     .skeleton--line { height: 20px; margin-bottom: 12px; }
     .skeleton--wide { width: 60%; }
     .skeleton--medium { width: 40%; }
+    /* Reduced motion: replace shimmer pulse with static muted bg */
+    @media (prefers-reduced-motion: reduce) {
+      .skeleton {
+        animation: none;
+        background: var(--mee-color-surface-variant, #f2f6fa);
+      }
+    }
 
     /* Subscription card */
     .sub-card {
       max-width: 640px;
-      border: 1px solid var(--mee-color-outline-variant, #e0e0e0);
-      border-radius: var(--mee-radius-lg, 12px);
+      border: 1px solid var(--mee-color-outline-variant, #dfe5ef);
+      border-radius: var(--mee-radius-lg, 18px);
       overflow: hidden;
+    }
+    /* Mobile: card fills width, no clipping at 360px */
+    @media (max-width: 479px) {
+      .sub-card {
+        border-radius: var(--mee-radius-md, 16px);
+      }
     }
     .sub-card__header {
       display: flex;
@@ -86,15 +99,21 @@ import type { BillingSubscriptionResponse, BillingErrorShape } from '../billing.
       justify-content: space-between;
       padding: var(--mee-space-5, 20px);
       background: var(--mee-color-surface-variant, #f9f9f9);
-      border-bottom: 1px solid var(--mee-color-outline-variant, #e0e0e0);
+      border-bottom: 1px solid var(--mee-color-outline-variant, #dfe5ef);
       flex-wrap: wrap;
       gap: var(--mee-space-3, 12px);
     }
     .sub-card__plan-name {
       font-size: 20px;
       font-weight: 700;
-      color: var(--mee-color-on-surface, #1a1a1a);
+      color: var(--mee-color-on-surface, #2a3547);
       margin: 0;
+    }
+    .sub-card__badge-row {
+      display: flex;
+      gap: var(--mee-space-2, 8px);
+      flex-wrap: wrap;
+      align-items: center;
     }
     .sub-card__body {
       padding: var(--mee-space-5, 20px);
@@ -111,15 +130,15 @@ import type { BillingSubscriptionResponse, BillingErrorShape } from '../billing.
       gap: var(--mee-space-4, 16px);
       font-size: 14px;
       padding-bottom: var(--mee-space-3, 12px);
-      border-bottom: 1px solid var(--mee-color-outline-variant, #e0e0e0);
+      border-bottom: 1px solid var(--mee-color-outline-variant, #dfe5ef);
     }
     .info-row:last-child { border-bottom: none; padding-bottom: 0; }
     .info-row__label {
-      color: var(--mee-color-on-surface-muted, #666);
+      color: var(--mee-color-on-surface-muted, #5a6a85);
       font-weight: 500;
     }
     .info-row__value {
-      color: var(--mee-color-on-surface, #1a1a1a);
+      color: var(--mee-color-on-surface, #2a3547);
       font-weight: 600;
       text-align: right;
     }
@@ -133,31 +152,43 @@ import type { BillingSubscriptionResponse, BillingErrorShape } from '../billing.
       font-size: 12px;
       font-weight: 600;
     }
-    .badge--active { background: rgba(34,197,94,0.15); color: var(--mee-color-success, #22c55e); }
-    .badge--cancelled { background: rgba(239,68,68,0.1); color: var(--mee-color-error, #ef4444); }
+    .badge--active { background: var(--mee-color-success-light, rgba(22,163,74,0.10)); color: var(--mee-color-success, #16A34A); }
+    .badge--cancelled { background: var(--mee-color-error-light, rgba(220,38,38,0.10)); color: var(--mee-color-error, #DC2626); }
     .badge--pro { background: rgba(242,107,35,0.12); color: var(--mee-color-primary, #F26B23); }
-    .badge--free { background: var(--mee-color-surface-variant, #f0f0f0); color: var(--mee-color-on-surface-muted, #666); }
+    .badge--free { background: var(--mee-color-surface-variant, #f0f0f0); color: var(--mee-color-on-surface-muted, #5a6a85); }
     .badge--cancel-scheduled {
       background: rgba(234,179,8,0.15);
-      color: var(--mee-color-warning, #ca8a04);
+      color: var(--mee-color-warning, #D97706);
     }
 
     /* Actions */
     .sub-card__actions {
       padding: var(--mee-space-4, 16px) var(--mee-space-5, 20px);
-      border-top: 1px solid var(--mee-color-outline-variant, #e0e0e0);
+      border-top: 1px solid var(--mee-color-outline-variant, #dfe5ef);
       display: flex;
       gap: var(--mee-space-3, 12px);
       flex-wrap: wrap;
       align-items: center;
     }
+    /* Mobile ≤479px: action buttons full-width, stacked vertically */
+    @media (max-width: 479px) {
+      .sub-card__actions {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .btn-cancel,
+      .btn-upgrade {
+        width: 100%;
+        justify-content: center;
+      }
+    }
     .btn-cancel {
       min-height: 44px;
       padding: 0 var(--mee-space-5, 20px);
       background: transparent;
-      border: 1px solid var(--mee-color-error, #ef4444);
+      border: 1px solid var(--mee-color-error, #DC2626);
       border-radius: var(--mee-radius-md, 8px);
-      color: var(--mee-color-error, #ef4444);
+      color: var(--mee-color-error, #DC2626);
       font-size: 14px;
       font-weight: 500;
       cursor: pointer;
@@ -183,9 +214,9 @@ import type { BillingSubscriptionResponse, BillingErrorShape } from '../billing.
     .error-banner {
       padding: var(--mee-space-3, 12px) var(--mee-space-4, 16px);
       background: rgba(239,68,68,0.08);
-      border: 1px solid var(--mee-color-error, #ef4444);
+      border: 1px solid var(--mee-color-error, #DC2626);
       border-radius: var(--mee-radius-md, 8px);
-      color: var(--mee-color-error, #ef4444);
+      color: var(--mee-color-error, #DC2626);
       font-size: 14px;
       margin-bottom: var(--mee-space-4, 16px);
     }
@@ -195,25 +226,30 @@ import type { BillingSubscriptionResponse, BillingErrorShape } from '../billing.
       max-width: 480px;
       padding: var(--mee-space-8, 32px) var(--mee-space-6, 24px);
       text-align: center;
-      color: var(--mee-color-on-surface-muted, #666);
+      color: var(--mee-color-on-surface-muted, #5a6a85);
       font-size: 15px;
     }
     .free-state {
       max-width: 480px;
       padding: var(--mee-space-6, 24px);
-      border: 1px dashed var(--mee-color-outline-variant, #e0e0e0);
-      border-radius: var(--mee-radius-lg, 12px);
+      border: 1px dashed var(--mee-color-outline-variant, #dfe5ef);
+      border-radius: var(--mee-radius-lg, 18px);
       text-align: center;
+    }
+    /* Mobile ≤479px: free-state upgrade button full-width */
+    @media (max-width: 479px) {
+      .free-state { border-radius: var(--mee-radius-md, 16px); }
+      .free-state .btn-upgrade { width: 100%; justify-content: center; }
     }
     .free-state__title {
       font-size: 18px;
       font-weight: 600;
-      color: var(--mee-color-on-surface, #1a1a1a);
+      color: var(--mee-color-on-surface, #2a3547);
       margin: 0 0 var(--mee-space-3, 12px);
     }
     .free-state__body {
       font-size: 14px;
-      color: var(--mee-color-on-surface-muted, #666);
+      color: var(--mee-color-on-surface-muted, #5a6a85);
       margin: 0 0 var(--mee-space-5, 20px);
     }
 
@@ -224,7 +260,7 @@ import type { BillingSubscriptionResponse, BillingErrorShape } from '../billing.
       border: 1px solid var(--mee-color-primary-light, rgba(242,107,35,0.3));
       border-radius: var(--mee-radius-md, 8px);
       font-size: 14px;
-      color: var(--mee-color-on-surface-muted, #666);
+      color: var(--mee-color-on-surface-muted, #5a6a85);
       font-style: italic;
     }
   `],
@@ -274,7 +310,7 @@ import type { BillingSubscriptionResponse, BillingErrorShape } from '../billing.
         <!-- Card header: plan name + badges -->
         <div class="sub-card__header">
           <h2 class="sub-card__plan-name">{{ subscription()!.tier_label }}</h2>
-          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <div class="sub-card__badge-row">
             <!-- Cancel-scheduled badge -->
             @if (subscription()!.cancel_scheduled) {
               <span

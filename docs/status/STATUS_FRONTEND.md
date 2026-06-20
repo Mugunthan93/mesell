@@ -1,5 +1,58 @@
 # STATUS — FRONTEND
 
+=== UPDATE: 2026-06-20 08:00 ===
+Phase: Wave 5 — billing-fe step 2c — reduced-motion + dark-mode token fallbacks + mobile polish (meesell-angular-ui-styler)
+Branch: feature/razorpay-w5-billing-fe (worktree /tmp/mesell-wt/razorpay-wave5)
+
+Done:
+  prefers-reduced-motion:
+    - plans.component.ts: @keyframes spin disabled (border-only static indicator, opacity:0.6)
+    - plans.component.ts: trial-banner CTA, success-panel CTA, timeout refresh-btn transitions disabled
+    - plan-card.component.ts: .plan-card hover transition:none + .plan-card__cta transition:none
+    - account-billing.component.ts: shimmer @keyframes disabled → static surface-variant bg
+
+  Token fallback alignment (all fallback hex values now match _tokens.css Layer 1 values):
+    - --mee-color-on-surface fallback: #1a1a1a → #2a3547 (all 3 billing components)
+    - --mee-color-on-surface-muted fallback: #666 → #5a6a85 (all 3 billing components)
+    - --mee-color-error fallback: #ef4444 → #DC2626 (plans + account-billing)
+    - --mee-color-success fallback: #22c55e → #16A34A (plans + plan-card + account-billing badges)
+    - --mee-color-warning fallback: #ca8a04 → #D97706 (account-billing badge--cancel-scheduled)
+    - --mee-color-info-light fallback: rgba(59,130,246,0.1) → rgba(37,99,235,0.10) (timeout-panel)
+    - --mee-color-info fallback: #3b82f6 → #2563EB (timeout-panel border)
+    - --mee-color-success-light fallback: rgba(34,197,94,0.1) → rgba(22,163,74,0.10) (success-panel)
+    - --mee-color-error-light fallback: rgba(239,68,68,0.1) → rgba(220,38,38,0.10) (error-banner)
+    - --mee-color-outline-variant fallback: #e0e0e0 → #dfe5ef (account-billing)
+    - --mee-color-surface-variant fallback in skeleton: #f0f0f0/#e0e0e0 → token vars
+    - --mee-radius-lg fallback in account-billing: 12px → 18px (correct token value)
+    - badge--active/cancelled backgrounds switched from hardcoded rgba() to token vars
+
+  Mobile layout (<480px):
+    - plans.component.ts: .trial-banner stacks vertically; .trial-banner__cta width:100%
+    - plans.component.ts: .plans-title 22px mobile / 28px ≥640px (prevents overflow at 360px)
+    - plan-card.component.ts: margin-top:14px on :host to give room to absolutely-positioned badge
+    - account-billing.component.ts: .sub-card__actions stacks vertically; btns full-width at ≤479px
+    - account-billing.component.ts: .free-state .btn-upgrade full-width at ≤479px
+    - account-billing.component.ts: border-radius responsive (18px desktop / 16px mobile)
+
+  Inline style removed:
+    - account-billing: <div style="display:flex; gap:8px; flex-wrap:wrap;"> → class="sub-card__badge-row"
+      (no inline styles in template — per hard constraint)
+
+  Token gap confirmed NOT missing:
+    - --mee-color-error-light, --mee-color-success-light, --mee-color-warning-light, --mee-color-info-light
+      are ALL present in libs/design-tokens/_tokens.css. No new tokens invented.
+    - V1 is light-mode only per memory; dark-mode deferred to V1.5. No dark-mode overrides needed.
+
+Build: tsc --noEmit -p apps/mfe-billing/tsconfig.app.json → 0 errors
+       tsc --noEmit -p tsconfig.spec.json → 0 errors
+       ng build mfe-billing (NF) stalls on cold cache — pre-existing known issue (NF "Preparing shared npm packages")
+Tests: ng test mfe-billing --watch false → 51 files PASSED / 517 PASSED / 4 SKIPPED / 0 FAILED (IDENTICAL to baseline)
+A11y: All touch targets 44px confirmed (minHeight unchanged). aria-live/role/aria-label on pending panels unchanged.
+Mobile (360px): badge margin-top guards clipping; trial-banner stacks; action btns full-width.
+Blockers: none
+Hand-offs: Billing CSS polish complete. Merge-gate reviewer: see REVIEWER NOTE below.
+=========
+
 === UPDATE: 2026-06-19 18:35 ===
 Phase: Razorpay Wave 5 Step 2b — mfe-billing PlansComponent + PlanCardComponent + AccountBillingComponent
 Agent: meesell-angular-component-builder
