@@ -399,6 +399,52 @@ async def unauth_billing_client():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Hermetic Razorpay settings (CI-env-independent)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# The route returns ``settings.RAZORPAY_KEY_ID`` and the service forwards
+# ``settings.RAZORPAY_PLAN_ID_*`` to the adapter — correct production behaviour
+# (real values arrive via Secret Manager at deploy, per
+# docs/runbooks/razorpay-golive.md).  In CI the minimal env supplies neither a
+# sentinel key (it sets ``RAZORPAY_KEY_ID=ci-dummy-razorpay-key-id``) nor the
+# five plan-id vars, and because ``app.shared.config.settings`` is a singleton
+# instantiated at import time, the module-level ``os.environ.setdefault`` block
+# above lands too late to influence it.  We therefore pin the asserted-on
+# settings DIRECTLY on the singleton with the same ``monkeypatch.setattr``
+# mechanism already used for ``FEATURE_BILLING_ENABLED`` (see
+# ``test_billing_flag_off_unmounts_routes``).  This makes the assertions validate
+# the ROUTE/SERVICE plumbing — "does the route return the configured key_id? does
+# the service forward the configured plan_id?" — regardless of ambient env.
+_HERMETIC_RAZORPAY_SETTINGS: dict[str, str | int] = {
+    "RAZORPAY_KEY_ID": "rzp_test_sentinel_key",
+    "RAZORPAY_PLAN_ID_STARTER_MONTHLY": "plan_test_starter",
+    "RAZORPAY_PLAN_ID_PRO_MONTHLY": "plan_test_pro",
+    "RAZORPAY_PLAN_ID_PRO_ANNUAL": "plan_test_pro_annual",
+    "RAZORPAY_PLAN_ID_BUSINESS_MONTHLY": "plan_test_business",
+    "RAZORPAY_PLAN_ID_BUSINESS_ANNUAL": "plan_test_business_annual",
+    # LTD is config-pinned (Orders API one-time charge, no Plan object). Pin it
+    # too so test_subscribe_ltd's amount assertion is env-independent.
+    "RAZORPAY_LTD_PRICE_PAISE": 499900,
+}
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_razorpay_settings(monkeypatch: Any):
+    """Pin Razorpay key_id + plan_ids on the live settings singleton.
+
+    Autouse so EVERY billing test sees the sentinels regardless of CI env. Both
+    ``billing_router`` (``key_id``) and ``iam.service`` (``plan_id``) read the
+    same ``app.shared.config.settings`` object, so patching its attributes here
+    deterministically drives both code paths.  ``monkeypatch`` restores the
+    originals at test teardown.
+    """
+    import app.shared.config as _config_module
+
+    for _attr, _value in _HERMETIC_RAZORPAY_SETTINGS.items():
+        monkeypatch.setattr(_config_module.settings, _attr, _value)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # §8.10 — 401 on all four routes without a valid JWT
 # ─────────────────────────────────────────────────────────────────────────────
 
