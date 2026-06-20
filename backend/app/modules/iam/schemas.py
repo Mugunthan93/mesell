@@ -114,12 +114,16 @@ class MeResponse(BaseModel):
     This is an ADDITIVE contract change — existing fields are unchanged; the
     widened ``plan`` Literal and the two new optional fields are the only diff.
     FE-coordination memo owed (``handoff_contract_razorpay.md``).
+
+    ``phone`` is nullable per #322 (google-auth): Google-only users have no
+    phone (``users.phone`` is nullable), so the FE must tolerate ``null``.
     """
 
     model_config = ConfigDict(from_attributes=True)
 
     user_id: UUID
-    phone: str
+    # google-auth (#322): NULL for Google-only users (matches users.phone nullable).
+    phone: str | None = None
     # Widened to the full Pricing v2 plan set (sourced DB-fresh per F7).
     plan: Literal[
         "free", "starter", "pro", "pro_annual", "business", "business_annual", "ltd"

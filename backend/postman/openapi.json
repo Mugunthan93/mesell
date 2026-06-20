@@ -2574,7 +2574,15 @@
             "title": "User Id"
           },
           "phone": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
             "title": "Phone"
           },
           "plan": {
@@ -2639,7 +2647,6 @@
         "type": "object",
         "required": [
           "user_id",
-          "phone",
           "plan",
           "created_at"
         ],
