@@ -64,4 +64,14 @@ export const MEE_ICONS_ALT = {
 
   // data-table
   'ellipsis-v': 'material-icons mi-more_vert',       // per-row kebab actions trigger
+
+  // Stat-card / empty-state semantic icons (B01 fix — replacing raw Material Symbols tokens)
+  'edit-note':    'material-icons mi-edit_note',        // stat-card "Draft"
+  'inventory':    'material-icons mi-inventory_2',      // empty-state / stat-card "No catalogs"
+  'cloud-off':    'material-icons mi-cloud_off',        // remote-failure empty-state
+  'image-off':    'material-icons mi-image_not_supported', // image-uploader feature-disabled
+  'category':     'material-icons mi-account_tree',     // category-related empty states
+  'link':         'material-icons mi-link',             // link/external reference empty states
+  'trending-up':  'material-icons mi-trending_up',      // stat-card positive trend
+  'trending-down':'material-icons mi-trending_down',    // stat-card negative trend
 } satisfies Record<MeeIconName, string>;

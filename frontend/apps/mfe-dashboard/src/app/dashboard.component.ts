@@ -12,7 +12,7 @@ import { ReactiveFormsModule, FormControl } from '@angular/forms';
 import { Router } from '@angular/router';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 
-import { MeeConfirmService } from '@mesell/ui-kit';
+import { MeeConfirmService, MeeIconComponent } from '@mesell/ui-kit';
 import {
   StatCardComponent,
   StatusBadgeComponent,
@@ -40,6 +40,7 @@ import { formatRelativeTime } from './dashboard.model';
     PageHeaderComponent,
     EmptyStateComponent,
     LoadingSkeletonComponent,
+    MeeIconComponent,
   ],
   styles: [`
     :host {
@@ -196,7 +197,7 @@ import { formatRelativeTime } from './dashboard.model';
       background: var(--mee-color-bg);
     }
 
-    .btn-delete .material-symbols-outlined {
+    .btn-delete mee-icon i {
       font-size: 20px;
       line-height: 1;
     }
@@ -300,13 +301,13 @@ import { formatRelativeTime } from './dashboard.model';
           <mee-stat-card
             label="Draft"
             [value]="statusCounts().draft"
-            icon="edit_note"
+            icon="edit-note"
             color="blue"
           />
           <mee-stat-card
             label="Ready"
             [value]="statusCounts().ready"
-            icon="check_circle"
+            icon="check-circle"
             color="green"
           />
         </div>
@@ -334,7 +335,7 @@ import { formatRelativeTime } from './dashboard.model';
         <!-- Empty state -->
         @if (isEmpty()) {
           <mee-empty-state
-            icon="inventory_2"
+            icon="inventory"
             message="No catalogs yet. Create your first catalog to get started."
             cta_label="New Catalog"
             (cta_click)="onNewCatalog()"
@@ -377,7 +378,7 @@ import { formatRelativeTime } from './dashboard.model';
                           aria-label="Delete catalog"
                           (click)="onDeleteClick(row, $event)"
                         >
-                          <span class="material-symbols-outlined" aria-hidden="true">delete</span>
+                          <mee-icon name="delete" />
                         </button>
                       </td>
                     </tr>

@@ -310,7 +310,7 @@ const SIMULATED_CATALOGS: CatalogRow[] = [
       <!-- Empty state: no catalogs yet -->
       } @else if (filteredCatalogs().length === 0) {
         <mee-empty-state
-          icon="inventory_2"
+          icon="inventory"
           [message]="searchQuery()
             ? 'No catalogs match your search.'
             : 'No catalogs yet. Create your first catalog to get started.'"

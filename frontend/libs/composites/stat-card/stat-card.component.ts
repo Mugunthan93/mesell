@@ -4,7 +4,8 @@ import {
   computed,
   input,
 } from '@angular/core';
-import { MeeCardComponent } from '@mesell/ui-kit';
+import { MeeCardComponent, MeeIconComponent } from '@mesell/ui-kit';
+import type { MeeIconName } from '@mesell/ui-kit';
 
 export type StatCardColor = 'orange' | 'blue' | 'green' | 'purple';
 
@@ -19,7 +20,7 @@ const COLOR_VAR_MAP: Record<StatCardColor, string> = {
   selector: 'mee-stat-card',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MeeCardComponent],
+  imports: [MeeCardComponent, MeeIconComponent],
   styles: [`
     :host { display: block; }
     .sc-body {
@@ -34,9 +35,14 @@ const COLOR_VAR_MAP: Record<StatCardColor, string> = {
       justify-content: space-between;
     }
     .sc-icon {
-      font-size: 48px;
+      display: flex;
+      align-items: center;
       width: 48px;
       height: 48px;
+      line-height: 1;
+    }
+    .sc-icon mee-icon i {
+      font-size: 48px;
       line-height: 1;
     }
     .sc-trend {
@@ -57,6 +63,11 @@ const COLOR_VAR_MAP: Record<StatCardColor, string> = {
       background: rgba(220, 38, 38, 0.12);
     }
     .sc-trend-icon {
+      display: flex;
+      align-items: center;
+      line-height: 1;
+    }
+    .sc-trend-icon mee-icon i {
       font-size: 14px;
       line-height: 1;
     }
@@ -85,10 +96,11 @@ const COLOR_VAR_MAP: Record<StatCardColor, string> = {
         <!-- Icon row + optional trend -->
         <div class="sc-header">
           <span
-            class="material-symbols-outlined sc-icon"
-            aria-hidden="true"
+            class="sc-icon"
             [style.color]="accentColor()"
-          >{{ icon() }}</span>
+          >
+            <mee-icon [name]="icon()" />
+          </span>
 
           @if (trend() !== undefined && trend() !== null) {
             <span
@@ -97,8 +109,8 @@ const COLOR_VAR_MAP: Record<StatCardColor, string> = {
               [class.sc-trend--negative]="!trendPositive()"
               [attr.aria-label]="trend_label() ?? 'trend'"
             >
-              <span class="material-symbols-outlined sc-trend-icon" aria-hidden="true">
-                {{ trendPositive() ? 'trending_up' : 'trending_down' }}
+              <span class="sc-trend-icon">
+                <mee-icon [name]="trendPositive() ? 'trending-up' : 'trending-down'" />
               </span>
               {{ trend()! > 0 ? '+' : '' }}{{ trend() }}%
             </span>
@@ -121,7 +133,7 @@ const COLOR_VAR_MAP: Record<StatCardColor, string> = {
 export class StatCardComponent {
   readonly label       = input.required<string>();
   readonly value       = input.required<string | number>();
-  readonly icon        = input.required<string>();
+  readonly icon        = input.required<MeeIconName>();
   readonly trend       = input<number | undefined>(undefined);
   readonly trend_label = input<string | undefined>(undefined);
   readonly color       = input<StatCardColor>('orange');

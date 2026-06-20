@@ -1,5 +1,107 @@
 # STATUS — FRONTEND
 
+=== UPDATE: 2026-06-19 16:30 ===
+Phase: B01 — Replace raw Material Symbols tokens with MeeIconName registry (HYBRID step 2 — BUILD)
+Agent: meesell-angular-ui-styler
+Branch: fix/b01-material-symbols-to-primeicons
+
+Done:
+  icon.registry.ts: Added 8 new semantic keys (B01 fix block):
+    edit-note → pi pi-file-edit
+    inventory → pi pi-box
+    cloud-off → pi pi-ban (pi-cloud-off absent from primeicons.css — pi-ban is best semantic match)
+    image-off → pi pi-image
+    category → pi pi-sitemap
+    link → pi pi-link
+    trending-up → pi pi-arrow-up
+    trending-down → pi pi-arrow-down
+  icon.registry.alt.ts: Matching Material Icons entries added (satisfies Record<MeeIconName, string>)
+  empty-state.component.ts: icon typed MeeIconName; material-symbols-outlined span replaced with mee-icon
+  stat-card.component.ts: icon typed MeeIconName; both material-symbols spans replaced with mee-icon;
+    trend icon now uses trendPositive() ? 'trending-up' : 'trending-down' key
+  dashboard.component.ts: edit_note→edit-note, check_circle→check-circle, inventory_2→inventory;
+    raw span.material-symbols-outlined[delete] → mee-icon name="delete"; MeeIconComponent added to imports
+  remote-failure.component.ts: cloud_off → cloud-off
+  catalog-list.component.ts: inventory_2 → inventory
+  image-uploader.component.ts: image_not_supported → image-off
+
+Build: tsc --noEmit CLEAN on mfe-dashboard, mfe-catalog, shell (exit 0)
+       ng build mfe-dashboard --configuration development: dist/mfe-dashboard/browser produced at 19:28 (GREEN)
+       ng build mfe-catalog --configuration development: exit 0 (task b4xxa27h7)
+       ng build frontend (shell) --configuration development: in progress (sequential build)
+A11y: no regressions — icon swap only, same aria-hidden="true" semantics preserved
+Mobile (360px): no layout change — icon-set swap only
+Blockers: gh auth invalid (gh auth login required); HTTPS push blocked by keychain dialog
+  Commit 6d573b3 is local and ready to push; founder can: git push -u origin fix/b01-material-symbols-to-primeicons
+Next: founder push + PR to develop
+Hand-offs: MeeIconName keys edit-note / inventory / cloud-off / image-off / trending-up /
+  trending-down / category / link now in registry; component-builder consumers may reference them
+  EmptyStateComponent.icon now MeeIconName — any consumer passing raw Material Symbols string
+  will get a TypeScript error at build time (type safety enforced)
+  StatCardComponent.icon now MeeIconName — same type enforcement
+=========
+
+=== UPDATE: 2026-06-19 19:05 ===
+Phase: B03 clean branch retry — cross-context refresh debounce backstop
+Agent: meesell-angular-service-builder
+Branch: fix/b03-auth-refresh-cross-context-debounce-v2 (worktree /tmp/mesell-wt/b03-clean)
+Base: origin/develop @ 8a1b9d3
+Commit: 2f901ad (pushed)
+PR: #319 (new clean PR — supersedes contaminated #315 which is now CLOSED)
+
+Done:
+  MODIFIED: frontend/libs/core/services/auth.service.ts
+    - tap added to rxjs imports
+    - REFRESH_DEBOUNCE_MS = 2_000 constant (after MIN_REFRESH_DELAY_MS)
+    - private _lastRefreshAt = 0 field
+    - Debounce check block at top of refreshShared() (returns of({current_token}) if within window)
+    - tap(() => { this._lastRefreshAt = Date.now(); }) in pipe (before shareReplay)
+  MODIFIED: frontend/libs/core/services/auth.service.spec.ts
+    - +2 B03 describe block tests:
+      (1) within-window -> 0 extra authApi.refresh() calls, returns 'live-token'
+      (2) after-window (2500ms) -> new POST /auth/refresh fires
+
+Tests:
+  tsc -p apps/shell/tsconfig.app.json --noEmit: 0 errors
+  tsc -p tsconfig.spec.json --noEmit: 0 errors on auth.service files
+  ng test: blocked by pre-existing suite compile errors (mfe-onboarding/shell/tree-select — unchanged)
+
+Build:
+  tsc clean (shell app.json covers libs/core path)
+
+Blockers: none
+Next: meesell-frontend-coordinator merge-gate review of PR #319
+Hand-offs:
+  - refreshShared() cross-context debounce READY — coordinator can merge-gate PR #319
+  - PR #315 CLOSED with supersede comment pointing to #319
+=========
+
+=== UPDATE: 2026-06-19 18:45 ===
+Phase: B02 — Shell sidebar nav route drift fix
+Agent: meesell-angular-component-builder
+Branch: fix/sidebar-route-drift
+PR: #317 → https://github.com/Mugunthan93/mesell/pull/317
+Base: origin/develop @ 8a1b9d3
+
+Done:
+  MODIFIED: frontend/apps/shell/src/app/layouts/shell/sidebar/sidebar.component.ts
+    Fix 1: /catalog/new → /catalogs/new (New Product nav item)
+    Fix 2: /categories → /categories/browse (Categories nav item)
+    Fix 3: Removed Tools group entirely (Pricing /pricing + Export /export) — Director ruling Option A
+    Refactor: navGroups now reads from SIDEBAR_NAV_GROUPS constant in sidebar.nav-groups.ts
+    iconClass() cast string→MeeIconName to satisfy TS strict without forcing union type in data layer
+  NEW: frontend/apps/shell/src/app/layouts/shell/sidebar/sidebar.nav-groups.ts
+    Pure-data constant file (no Angular imports) — SIDEBAR_NAV_GROUPS + NavItem + NavGroup interfaces
+    Exportable for vitest without triggering JIT PlatformLocation compilation error
+  NEW: frontend/apps/shell/src/app/layouts/shell/sidebar/sidebar.component.spec.ts
+    14 pure-data vitest tests — route correctness, absence of broken routes, full regression snapshot
+
+Tests: 14/14 PASS (vitest run on sidebar.component.spec.ts)
+Build: GREEN — Application bundle generation complete, 0 TS errors (2 pre-existing WARNINGs in data-table.component.ts, unrelated)
+Blockers: none
+Hand-offs: PR #317 ready for meesell-frontend-coordinator merge-gate review
+=========
+
 === UPDATE: 2026-06-19 19:30 ===
 Phase: B04 — mfe-catalog BrowseComponent expose missing (HYBRID Step 2 — BUILD)
 Agent: meesell-angular-component-builder

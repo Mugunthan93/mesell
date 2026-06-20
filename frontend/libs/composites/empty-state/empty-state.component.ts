@@ -5,13 +5,14 @@ import {
   input,
   output,
 } from '@angular/core';
-import { MeeButtonComponent } from '@mesell/ui-kit';
+import { MeeButtonComponent, MeeIconComponent } from '@mesell/ui-kit';
+import type { MeeIconName } from '@mesell/ui-kit';
 
 @Component({
   selector: 'mee-empty-state',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [MeeButtonComponent],
+  imports: [MeeButtonComponent, MeeIconComponent],
   styles: [`
     :host { display: block; }
     .es-root {
@@ -24,6 +25,11 @@ import { MeeButtonComponent } from '@mesell/ui-kit';
       text-align: center;
     }
     .es-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .es-icon mee-icon i {
       font-size: 64px;
       color: var(--mee-color-on-surface-muted);
     }
@@ -37,10 +43,9 @@ import { MeeButtonComponent } from '@mesell/ui-kit';
   template: `
     <div class="es-root" role="status" [attr.aria-label]="message()">
       <!-- Icon -->
-      <span
-        class="material-symbols-outlined es-icon"
-        aria-hidden="true"
-      >{{ icon() }}</span>
+      <span class="es-icon">
+        <mee-icon [name]="icon()" />
+      </span>
 
       <!-- Message -->
       <p class="es-message">{{ message() }}</p>
@@ -57,7 +62,7 @@ import { MeeButtonComponent } from '@mesell/ui-kit';
   `,
 })
 export class EmptyStateComponent {
-  readonly icon      = input.required<string>();
+  readonly icon      = input.required<MeeIconName>();
   readonly message   = input.required<string>();
   readonly cta_label = input<string | undefined>(undefined);
 
