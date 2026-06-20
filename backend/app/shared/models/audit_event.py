@@ -85,10 +85,7 @@ class AuditEvent(Base):
     )
 
     # RESTRICT means audit records survive user deletion.
-    user: Mapped[User] = relationship(
-        "User",
-        back_populates="audit_events",
-    )
+    user: Mapped[User] = relationship("User")
 
     # Indexes per §11.2 — two primary query patterns
     __table_args__ = (
