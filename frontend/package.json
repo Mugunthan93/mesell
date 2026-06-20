@@ -14,6 +14,7 @@
     "start:mfe-catalog": "ng serve mfe-catalog",
     "start:mfe-dashboard": "ng serve mfe-dashboard",
     "start:mfe-auth": "ng serve mfe-auth",
+    "start:mfe-billing": "ng serve mfe-billing",
     "start:all": "node tools/dev/start-all.mjs",
     "dev:build-static": "node tools/dev/build-static.mjs",
     "dev:serve-static": "node tools/dev/serve-static.mjs",

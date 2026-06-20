@@ -1,13 +1,13 @@
 /**
- * route-check.mjs — 11-route federation render harness (shell-driven, auth-mocked).
+ * route-check.mjs — 12-route federation render harness (shell-driven, auth-mocked).
  *
  * WHAT IT PROVES:
  *   Drives every shell route via the host on :4200 (where the federation importmap lives)
  *   and asserts each route renders CLEANLY through Native Federation — no
  *   RemoteFailureComponent, no uncaught exceptions, no failed/4xx-5xx network, a non-empty
  *   outlet render, and (for protected routes) that the auth mock unlocked them instead of
- *   bouncing to /login. This is the harness that produced the verified 11/11 result against
- *   the static-served dev builds (see tools/dev/STATIC_DEV.md).
+ *   bouncing to /login. This is the harness that produced the verified all-clean result
+ *   against the static-served dev builds (see tools/dev/STATIC_DEV.md).
  *
  * AUTH MOCK:
  *   The backend is intentionally NOT required. We mock /api/v1/auth/refresh + /api/v1/auth/me
@@ -28,10 +28,10 @@
  *   node tools/dev/route-check.mjs webkit     # webkit
  *   pnpm run dev:check-routes                  # preferred (package.json)
  *
- * Prerequisite: the 7 static servers must be up (pnpm run dev:serve-static).
+ * Prerequisite: the 8 static servers must be up (pnpm run dev:serve-static).
  *
  * Exit codes:
- *   0 — all 11 routes clean
+ *   0 — all 12 routes clean
  *   1 — at least one route had an issue
  *   2 — harness crashed (e.g. playwright not installed)
  *
@@ -74,7 +74,7 @@ const __dirname = dirname(__filename);
 const FRONTEND_DIR = resolve(__dirname, '..', '..');
 const REPORT_PATH = join(FRONTEND_DIR, 'tools', 'dev', `route-check-report-${ENGINE}.json`);
 
-// ─── The 11 shell routes (matches RUNBOOK §4 + harness2 source of truth) ──────
+// ─── The 12 shell routes (matches RUNBOOK §4 + harness2 source of truth) ──────
 
 const TARGETS = [
   { label: '/ (landing <- mfe-dashboard)',         path: '/' },
@@ -88,6 +88,7 @@ const TARGETS = [
   { label: '/onboarding (<- mfe-onboarding)',      path: '/onboarding',         protected: true },
   { label: '/catalogs/1/pricing (<- mfe-pricing)', path: '/catalogs/1/pricing', protected: true },
   { label: '/catalogs/1/export (<- mfe-export)',   path: '/catalogs/1/export',  protected: true },
+  { label: '/billing/plans (<- mfe-billing)',      path: '/billing/plans',      protected: true },
 ];
 
 // ─── Console-noise filter ─────────────────────────────────────────────────────

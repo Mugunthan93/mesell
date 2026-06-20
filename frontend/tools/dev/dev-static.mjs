@@ -2,16 +2,16 @@
  * dev-static.mjs — Orchestrator for the memory-safe static dev loop (low-RAM machines).
  *
  * Wraps the three building blocks so the founder has one entry point:
- *   build-static.mjs   → build all 7 apps (watchdog, dev config, one at a time)
- *   serve-static.mjs   → serve dist/<app>/browser on 4200–4206 (7 zero-dep servers)
- *   route-check.mjs    → drive the 11 shell routes through federation, assert 11/11 clean
+ *   build-static.mjs   → build all 8 apps (watchdog, dev config, one at a time)
+ *   serve-static.mjs   → serve dist/<app>/browser on 4200–4207 (8 zero-dep servers)
+ *   route-check.mjs    → drive the 12 shell routes through federation, assert 12/12 clean
  *
- * WHY (see tools/dev/STATIC_DEV.md for the full diagnosis): running all 7 `ng serve` dev
+ * WHY (see tools/dev/STATIC_DEV.md for the full diagnosis): running all 8 `ng serve` dev
  * servers at once (start:all) needs 3–5 GB and hangs an 8 GB machine. Building once + serving
- * the static output holds ~129 MB and is the sustainable local-dev path.
+ * the static output holds ~147 MB and is the sustainable local-dev path.
  *
  * Subcommands:
- *   build [apps...]   build all 7 apps (or a named subset)            → build-static.mjs
+ *   build [apps...]   build all 8 apps (or a named subset)            → build-static.mjs
  *   serve             serve the built apps (foreground, Ctrl-C stops) → serve-static.mjs
  *   check [engine]    route-check the running shell (chromium|webkit) → route-check.mjs
  *   up                build, then serve in the foreground             (build + serve)
@@ -24,7 +24,7 @@
  *   pnpm run dev:static all          # preferred (package.json)
  *
  * Exit codes mirror the underlying step: 0 on success, non-zero on failure. `all` exits 0
- * only if the route-check reports 11/11 clean.
+ * only if the route-check reports 12/12 clean.
  *
  * Dependencies: ZERO new ones. Node built-ins + the sibling scripts (route-check uses the
  * already-present `playwright` devDependency). Do NOT add npm packages here.
@@ -82,7 +82,7 @@ function printHelp() {
   console.log(`${BOLD}${CYAN}${line}${RESET}\n`);
   console.log(`${BOLD}  Usage:${RESET} node tools/dev/dev-static.mjs <command> [args]\n`);
   console.log(`${BOLD}${YELLOW}  Commands${RESET}`);
-  console.log(`    ${GREEN}build${RESET} [apps...]   build all 7 apps (or a named subset)`);
+  console.log(`    ${GREEN}build${RESET} [apps...]   build all 8 apps (or a named subset)`);
   console.log(`    ${GREEN}serve${RESET}             serve the built apps (foreground; Ctrl-C stops)`);
   console.log(`    ${GREEN}check${RESET} [engine]    route-check the running shell (chromium|webkit)`);
   console.log(`    ${GREEN}up${RESET}                build, then serve in the foreground`);
@@ -125,7 +125,7 @@ async function runAll(passThrough) {
   // Give the 7 servers a moment to bind before the harness hits :4200.
   await sleep(2500);
   if (serveExited) {
-    console.error(`${RED}[dev-static all] serve did not stay up — check ports 4200–4206.${RESET}`);
+    console.error(`${RED}[dev-static all] serve did not stay up — check ports 4200–4207.${RESET}`);
     process.exit(1);
   }
 

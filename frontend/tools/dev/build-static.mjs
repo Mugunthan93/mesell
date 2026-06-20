@@ -1,12 +1,12 @@
 /**
- * build-static.mjs — Watchdog-build all 7 Native Federation apps (dev config), one at a time.
+ * build-static.mjs — Watchdog-build all 8 Native Federation apps (dev config), one at a time.
  *
  * WHY THIS EXISTS (low-RAM local dev):
- *   Running all 7 `ng serve` dev servers concurrently (`pnpm run start:all`) exhausts an
- *   8 GB machine — each ng serve holds a Node+esbuild watcher (~0.4–0.8 GB), so 7 of them
+ *   Running all 8 `ng serve` dev servers concurrently (`pnpm run start:all`) exhausts an
+ *   8 GB machine — each ng serve holds a Node+esbuild watcher (~0.4–0.8 GB), so 8 of them
  *   = 3–5 GB on top of VS Code + Claude, the swap fills, and the machine HANGS. The
  *   sustainable path is: build each app ONCE here, then serve the static
- *   `dist/<app>/browser` output with `tools/dev/serve-static.mjs` (7 static servers ≈ 129 MB
+ *   `dist/<app>/browser` output with `tools/dev/serve-static.mjs` (8 static servers ≈ 147 MB
  *   total). See tools/dev/STATIC_DEV.md for the full diagnosis + numbers.
  *
  * THE dev:true WATCHDOG FINDING:
@@ -18,7 +18,7 @@
  *   process tree and move on. ONE build at a time keeps it memory-safe.
  *
  * Usage (from any directory; run resolves to frontend/):
- *   node tools/dev/build-static.mjs                 # build all 7 apps
+ *   node tools/dev/build-static.mjs                 # build all 8 apps
  *   node tools/dev/build-static.mjs mfe-auth        # build a subset
  *   node tools/dev/build-static.mjs frontend mfe-pricing
  *   pnpm run dev:build-static                        # preferred (package.json)
@@ -57,6 +57,7 @@ const ALL_APPS = [
   'mfe-dashboard',
   'mfe-catalog',
   'mfe-auth',
+  'mfe-billing',
 ];
 
 // Poll up to this long for both artifacts to appear (ms).

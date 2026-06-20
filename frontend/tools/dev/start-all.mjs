@@ -1,7 +1,7 @@
 /**
- * start-all.mjs — One-command dev boot for all 7 Native Federation servers.
+ * start-all.mjs — One-command dev boot for all 8 Native Federation servers.
  *
- * Spawns the 7 pnpm scripts that are already defined in frontend/package.json.
+ * Spawns the 8 pnpm scripts that are already defined in frontend/package.json.
  * Ports are sourced from angular.json via those scripts — nothing is hardcoded here.
  *
  * Usage (from any directory):
@@ -9,7 +9,7 @@
  *   pnpm run start:all                    (preferred — defined in package.json)
  *
  * Exit behaviour:
- *   Ctrl-C (SIGINT) or SIGTERM  → kills all 7 children, then exits 0.
+ *   Ctrl-C (SIGINT) or SIGTERM  → kills all 8 children, then exits 0.
  *   Any child exits non-zero    → prints which one died, kills the rest, exits 1.
  *
  * Dependencies: ZERO. Node built-ins only (node:child_process, node:process, node:path,
@@ -32,7 +32,7 @@ const YELLOW = '\x1b[33m';
 const CYAN   = '\x1b[36m';
 const WHITE  = '\x1b[37m';
 
-// One colour per server (cycles through the 7 bright colours).
+// One colour per server (cycles through the 8 bright colours).
 const LABEL_COLOURS = [
   '\x1b[96m',  // bright cyan   — shell
   '\x1b[93m',  // bright yellow — mfe-pricing
@@ -41,6 +41,7 @@ const LABEL_COLOURS = [
   '\x1b[94m',  // bright blue    — mfe-dashboard
   '\x1b[91m',  // bright red     — mfe-catalog
   '\x1b[97m',  // bright white   — mfe-auth
+  '\x1b[33m',  // yellow         — mfe-billing
 ];
 
 // ─── Server definitions (reuse existing pnpm scripts) ────────────────────────
@@ -53,6 +54,7 @@ const SERVERS = [
   { label: 'mfe-dashboard', script: 'start:mfe-dashboard' },
   { label: 'mfe-catalog',   script: 'start:mfe-catalog'   },
   { label: 'mfe-auth',      script: 'start:mfe-auth'      },
+  { label: 'mfe-billing',   script: 'start:mfe-billing'   },
 ];
 
 // ─── Working directory: two levels up from this file = frontend/ ─────────────
@@ -77,13 +79,14 @@ function printBanner() {
   console.log(`${GREEN}    4204${RESET}  mfe-dashboard`);
   console.log(`${GREEN}    4205${RESET}  mfe-catalog`);
   console.log(`${GREEN}    4206${RESET}  mfe-auth`);
+  console.log(`${GREEN}    4207${RESET}  mfe-billing`);
 
   console.log(`\n${BOLD}${YELLOW}  PREREQUISITES — still required for a working session:${RESET}`);
   console.log(`${RED}    (a)${RESET} Backend on ${BOLD}:8000${RESET}  (docker-compose or k3s)`);
   console.log(`${RED}    (b)${RESET} Dev proxy merged: PR #212 (${BOLD}frontend/proxy.conf.json${RESET} + angular.json proxyConfig)`);
   console.log(`${RED}    (c)${RESET} Real ${BOLD}MSG91_AUTH_KEY${RESET} in ${BOLD}backend/.env${RESET} (OTP is live-SMS-only — no test mode)`);
 
-  console.log(`\n${DIM}  Ctrl-C kills all 7 servers cleanly.${RESET}`);
+  console.log(`\n${DIM}  Ctrl-C kills all 8 servers cleanly.${RESET}`);
   console.log(`${BOLD}${CYAN}${line}${RESET}\n`);
 }
 
@@ -182,7 +185,7 @@ for (let i = 0; i < SERVERS.length; i++) {
   console.log(`${colour}[start-all]${RESET} Spawned ${BOLD}[${label}]${RESET} → pnpm run ${script}`);
 }
 
-console.log(`\n${DIM}[start-all] All 7 servers spawned. Waiting for output…${RESET}\n`);
+console.log(`\n${DIM}[start-all] All 8 servers spawned. Waiting for output…${RESET}\n`);
 
 // ─── Signal forwarding ────────────────────────────────────────────────────────
 

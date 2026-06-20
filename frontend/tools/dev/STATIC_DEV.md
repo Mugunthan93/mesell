@@ -1,21 +1,21 @@
 # Static Dev — memory-safe local boot for low-RAM machines
 
-**Audience:** anyone booting the full 7-app Native Federation frontend on a machine that
-cannot afford 7 concurrent `ng serve` watchers (e.g. the founder's 8 GB dev machine).
+**Audience:** anyone booting the full 8-app Native Federation frontend on a machine that
+cannot afford 8 concurrent `ng serve` watchers (e.g. the founder's 8 GB dev machine).
 **Owner:** meesell-frontend-coordinator (Frontend Lead). **Validated:** 2026-06-14.
 
-> TL;DR — `pnpm run start:all` (7 live `ng serve` processes) hangs an 8 GB machine. Instead:
+> TL;DR — `pnpm run start:all` (8 live `ng serve` processes) hangs an 8 GB machine. Instead:
 > **build each app once**, then **serve the static `dist/<app>/browser` output** with the
-> zero-dep `serve.js`. Seven static servers hold **~129 MB** total (vs **3–5 GB** for
-> `start:all`). All 11 shell routes render clean through federation: **verified 11/11**.
+> zero-dep `serve.js`. Eight static servers hold **~147 MB** total (vs **3–5 GB** for
+> `start:all`). All shell routes render clean through federation: **verified all-clean**.
 
 ---
 
 ## 1. The problem — why `start:all` hangs an 8 GB machine
 
-`pnpm run start:all` spawns all 7 Native Federation dev servers as live `ng serve`
+`pnpm run start:all` spawns all 8 Native Federation dev servers as live `ng serve`
 processes. Each one holds a Node + esbuild incremental watcher resident in memory
-(~0.4–0.8 GB each), so **7 of them = 3–5 GB** on top of VS Code + Claude. Adding the
+(~0.4–0.8 GB each), so **8 of them = 3–5 GB** on top of VS Code + Claude. Adding the
 backend (`make dev`) makes it worse.
 
 Observed on the 8 GB machine under `start:all`:
@@ -37,10 +37,10 @@ http server with SPA fallback + CORS, ~15 MB RSS each). No esbuild watchers stay
 
 Measured steady state for the static path:
 
-| Path                         | Resident memory      | Swap        | All 7 serve HTTP 200 |
+| Path                         | Resident memory      | Swap        | All 8 serve HTTP 200 |
 |------------------------------|----------------------|-------------|----------------------|
-| `start:all` (7 × `ng serve`) | **3–5 GB**           | fills, hangs | —                    |
-| static serve (7 × `serve.js`)| **129 MB total**     | did not grow | ✅ yes               |
+| `start:all` (8 × `ng serve`) | **3–5 GB**           | fills, hangs | —                    |
+| static serve (8 × `serve.js`)| **147 MB total**     | did not grow | ✅ yes               |
 
 This is the sustainable local-dev path on low-RAM machines.
 
@@ -77,9 +77,9 @@ chatter) so it cannot mask real errors.
 
 ## 4. Verified result
 
-All **11 shell routes render clean** through federation against the static-served dev builds:
+All **12 shell routes render clean** through federation against the static-served dev builds:
 
-- **11/11**, zero console errors (after filtering the dev live-reload noise),
+- **12/12**, zero console errors (after filtering the dev live-reload noise),
 - zero uncaught exceptions, zero network failures,
 - no `RemoteFailureComponent` fallback on any route.
 
@@ -97,14 +97,14 @@ All commands run from `frontend/`. Node built-ins only — **zero new npm deps**
 ```bash
 cd /Users/mugunthansrinivasan/Project/mesell/frontend
 
-# 1. Build all 7 apps once (watchdog, one at a time — memory-safe).
+# 1. Build all 8 apps once (watchdog, one at a time — memory-safe).
 pnpm run dev:build-static
 #    or a subset:  pnpm run dev:build-static mfe-auth mfe-pricing
 
-# 2. Serve the built apps on 4200–4206 (leave this running; Ctrl-C stops all 7).
+# 2. Serve the built apps on 4200–4207 (leave this running; Ctrl-C stops all 8).
 pnpm run dev:serve-static
 
-# 3. In another terminal — assert all 11 routes render clean through federation.
+# 3. In another terminal — assert all 12 routes render clean through federation.
 pnpm run dev:check-routes
 #    webkit instead of chromium:  pnpm run dev:check-routes webkit
 ```
@@ -118,7 +118,7 @@ cd /Users/mugunthansrinivasan/Project/mesell/frontend
 pnpm run dev:static all
 ```
 
-`dev:static all` exits **0** only if the route-check reports **11/11** clean, and stops the
+`dev:static all` exits **0** only if the route-check reports **12/12** clean, and stops the
 background servers when it finishes. Other subcommands:
 
 ```bash
@@ -139,6 +139,7 @@ pnpm run dev:static up                # build, then serve in the foreground
 | 4204 | mfe-dashboard |
 | 4205 | mfe-catalog   |
 | 4206 | mfe-auth      |
+| 4207 | mfe-billing   |
 
 ---
 
@@ -148,7 +149,7 @@ pnpm run dev:static up                # build, then serve in the foreground
 |--------------------------------------------------------|------------------------------|
 | Live HMR, ample RAM (16 GB+), actively editing code    | `pnpm run start:all` (RUNBOOK) |
 | Boot the whole app on a low-RAM machine to *see* it    | `dev:build-static` + `dev:serve-static` |
-| A quick "does federation still render 11/11?" gate     | `pnpm run dev:static all`    |
+| A quick "does federation still render 12/12?" gate     | `pnpm run dev:static all`    |
 
 > Note: the static path serves a **built** snapshot — it does **not** hot-reload on source
 > edits. Re-run `dev:build-static <app>` (subset is fine) after changing an app, then refresh.
