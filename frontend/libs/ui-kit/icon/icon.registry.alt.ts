@@ -53,6 +53,7 @@ export const MEE_ICONS_ALT = {
   tag:         'material-icons mi-label',            // "Categories"
   calculator:  'material-icons mi-calculate',        // "Pricing"
   download:    'material-icons mi-download',         // "Export" + export-page download
+  wallet:      'material-icons mi-account_balance_wallet', // "Plans" (billing — Wave 5 Razorpay)
 
   // Feature-page decorative icons (FE-2 migration — catalog-list + export states)
   image:        'material-icons mi-image',           // catalog-list card thumbnail

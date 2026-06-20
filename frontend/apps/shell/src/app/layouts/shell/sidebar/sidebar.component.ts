@@ -189,7 +189,13 @@ export class SidebarComponent implements OnInit, OnDestroy {
     },
     {
       label: 'Account',
-      items: [{ label: 'Profile', icon: 'user', route: '/profile' }],
+      items: [
+        { label: 'Profile', icon: 'user', route: '/profile' },
+        // Wave 5 (Razorpay) — billing vertical. Routes to the mfe-billing remote's
+        // /billing/plans (tier selection + checkout). `wallet` is a registered
+        // MeeIconName (icon.registry.ts → pi pi-wallet) per FE-2.
+        { label: 'Plans', icon: 'wallet', route: '/billing/plans' },
+      ],
     },
   ];
 
