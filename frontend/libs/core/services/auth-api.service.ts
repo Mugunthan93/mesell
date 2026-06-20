@@ -35,14 +35,38 @@ export interface RefreshResponse {
  * DUAL-IDENTITY: a user may sign up with phone OTP OR Google. A Google-only
  * user has NO phone, so `phone` is NULLABLE. [RECONCILE-BE] backend must return
  * null (not omit / not synthesise) for Google users without a phone.
+ *
+ * Wave 3 widening (billing): `plan` Literal expanded to 7 values (PRICING_LOCKED v2 §5).
+ * `trial_ends_at` and `entitlement` added as OPTIONAL — safe superset, no existing
+ * consumer breaks (additive, DECISION-3 pattern).
+ * Source of truth: handoff_contract_razorpay.md §1 + WAVE3_ROUTES_TASKSPEC.md §1.2.
  */
 export interface MeResponse {
   user_id: string;
   phone: string | null;
-  plan: 'free';
+  /** Raw plan stored on users.plan. Gate UI on `entitlement`, NOT `plan`. */
+  plan: 'free' | 'starter' | 'pro' | 'pro_annual' | 'business' | 'business_annual' | 'ltd';
   created_at: string;
   last_login_at: string | null;
   onboarding_complete: boolean;
+  /**
+   * ISO-8601 UTC expiry of the 14-day Pro trial. Non-null only while a trial is live
+   * or has recently expired (past timestamp kept). null = no trial ever started.
+   * Gate trial UI on entitlement==='pro' AND trial_ends_at non-null AND future.
+   */
+  trial_ends_at?: string | null;
+  /**
+   * RESOLVED effective entitlement — the field to gate feature access on.
+   * Collapse rules (handoff_contract_razorpay.md §1.3):
+   *   free (no trial) → "free"
+   *   free + live trial → "pro"
+   *   starter → "starter"
+   *   pro / pro_annual / ltd → "pro"
+   *   business / business_annual → "business"
+   * Backend (plan_guard.resolve_entitlement) computes this — FE never re-derives.
+   * Absent on pre-Wave-3 cached /me responses; default to "free" if undefined.
+   */
+  entitlement?: 'free' | 'starter' | 'pro' | 'business';
 }
 
 const AUTH_OTP_SEND     = `${environment.apiBase}/api/v1/auth/otp/send`;

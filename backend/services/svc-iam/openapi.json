@@ -252,6 +252,134 @@
           }
         }
       }
+    },
+    "/api/v1/billing/subscribe": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Start a Razorpay subscription or LTD purchase",
+        "description": "Initiate a Razorpay Subscription (recurring) or Order (LTD).\n\nReturns the Razorpay Checkout handle the FE widget needs.  The plan is NOT\ngranted immediately — it lands via the ``subscription.activated`` /\n``payment.captured`` webhook (D-D, Wave 2).\n\nRaises:\n    409 ``billing.subscription.already_active`` — user already has an active sub.\n    502 — Razorpay API unavailable (``RazorpayAdapterError``).",
+        "operationId": "billing_subscribe_api_v1_billing_subscribe_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BillingSubscribeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingSubscribeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/billing/start-trial": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Start the 14-day app-side Pro trial (one per phone, no Razorpay call)",
+        "description": "Grant the 14-day app-side Pro trial (§3.7).\n\nApp-side only — NO Razorpay call.  Sets ``users.trial_ends_at = now() + 14\ndays`` and writes a business ``audit_events`` row.\n\nRaises:\n    409 ``billing.trial.already_used`` — trial already used / non-free plan /\n        existing subscription (all three are handled as \"redundant trial\").",
+        "operationId": "billing_start_trial_api_v1_billing_start_trial_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingStartTrialResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/billing/cancel": {
+      "post": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Cancel the current subscription at end of billing cycle",
+        "description": "Schedule a cancel-at-cycle-end for the active subscription.\n\nThe subscription stays active until ``entitled_until`` (the current\n``subscriptions.current_period_end``).  The final ``status → 'cancelled'``\ntransition is webhook-driven via ``subscription.cancelled`` (Wave 2).\n\nRaises:\n    404 ``billing.subscription.none_active`` — no cancellable subscription found.\n    502 — Razorpay cancel API unavailable (``RazorpayAdapterError``).",
+        "operationId": "billing_cancel_api_v1_billing_cancel_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingCancelResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/billing/subscription": {
+      "get": {
+        "tags": [
+          "billing"
+        ],
+        "summary": "Get the current billing / plan / trial status (DB-fresh, F7)",
+        "description": "Return the DB-fresh billing status for the authenticated seller.\n\n``entitlement`` is the RESOLVED effective tier the FE should gate UI on —\nannual→base, ltd→pro, trial→pro while live.  Per founder ruling F7 the plan\nis read DB-fresh, not from the JWT claim.\n\nNo rate-limit decorator (read-only; per-IP DDoS floor via the middleware).",
+        "operationId": "billing_subscription_api_v1_billing_subscription_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BillingSubscriptionResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -475,6 +603,181 @@
         "type": "object",
         "title": "WebhookCaptureResponse",
         "description": "``POST /api/v1/webhooks/razorpay`` 200 body."
+      },
+      "BillingCancelResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "cancel_scheduled",
+            "title": "Status",
+            "description": "Immediate confirmation that a cancel-at-cycle-end was scheduled. The subscription stays active until entitled_until.",
+            "default": "cancel_scheduled"
+          },
+          "entitled_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entitled Until",
+            "description": "Current ``subscriptions.current_period_end`` — the seller retains access until this date.  None in edge states (e.g. LTD cancel attempt which is currently blocked)."
+          }
+        },
+        "type": "object",
+        "title": "BillingCancelResponse",
+        "description": "``POST /api/v1/billing/cancel`` 200 body.\n\nThe subscription is scheduled to cancel at the end of the current billing\ncycle (Razorpay ``cancel_at_cycle_end=True``).  The entitlement remains\nactive until ``entitled_until``; the actual ``status → 'cancelled'``\ntransition on ``subscriptions`` is driven by the\n``subscription.cancelled`` webhook (Wave 2)."
+      },
+      "BillingStartTrialResponse": {
+        "properties": {
+          "trial_ends_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Trial Ends At",
+            "description": "UTC expiry of the 14-day Pro trial"
+          },
+          "entitlement": {
+            "type": "string",
+            "const": "pro",
+            "title": "Entitlement",
+            "description": "Effective entitlement granted by the trial (always 'pro')",
+            "default": "pro"
+          }
+        },
+        "type": "object",
+        "required": [
+          "trial_ends_at"
+        ],
+        "title": "BillingStartTrialResponse",
+        "description": "``POST /api/v1/billing/start-trial`` 200 body.\n\nThe trial grants Pro-level entitlement immediately (app-side — no Razorpay\ncall).  ``trial_ends_at`` is the absolute UTC expiry; the FE should display\na countdown.  ``entitlement`` is always ``\"pro\"`` for a live trial."
+      },
+      "BillingSubscribeRequest": {
+        "properties": {
+          "tier": {
+            "type": "string",
+            "enum": [
+              "starter",
+              "pro",
+              "business",
+              "pro_annual",
+              "business_annual",
+              "ltd"
+            ],
+            "title": "Tier",
+            "description": "Target billing tier.  Recurring: starter|pro|pro_annual|business|business_annual.  One-time LTD: ltd.",
+            "examples": [
+              "pro"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "tier"
+        ],
+        "title": "BillingSubscribeRequest",
+        "description": "``POST /api/v1/billing/subscribe`` request body.\n\n``tier`` drives which Razorpay surface is called:\n  - recurring tiers (starter/pro/pro_annual/business/business_annual) →\n    Razorpay Subscriptions API (``create_subscription``).\n  - ``ltd`` → Razorpay Orders API (``create_order``), one-time payment.\n``\"free\"`` is NOT a subscribable tier — it is the default and can only be\nleft by subscribing or starting a trial."
+      },
+      "BillingSubscribeResponse": {
+        "properties": {
+          "checkout": {
+            "$ref": "#/components/schemas/BillingCheckout"
+          }
+        },
+        "type": "object",
+        "required": [
+          "checkout"
+        ],
+        "title": "BillingSubscribeResponse",
+        "description": "``POST /api/v1/billing/subscribe`` 201 body.\n\nThe actual entitlement grant happens via the Razorpay webhook\n(``subscription.activated`` / ``payment.captured``) — this response is\nADVISORY: it only confirms that a checkout session was created.  The FE\nMUST wait for the webhook-driven plan update (observable via\n``GET /auth/me`` or ``GET /billing/subscription`` polling)."
+      },
+      "BillingSubscriptionResponse": {
+        "properties": {
+          "plan": {
+            "type": "string",
+            "enum": [
+              "free",
+              "starter",
+              "pro",
+              "pro_annual",
+              "business",
+              "business_annual",
+              "ltd"
+            ],
+            "title": "Plan",
+            "description": "users.plan — the raw plan (DB-fresh per F7); may differ from entitlement"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status",
+            "description": "subscriptions.status (active/cancelled/past_due/…); None if no sub row"
+          },
+          "current_period_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Period End",
+            "description": "End of the current paid period; None = perpetual (LTD) or no sub"
+          },
+          "cancel_scheduled": {
+            "type": "boolean",
+            "title": "Cancel Scheduled",
+            "description": "True when a cancel-at-cycle-end is pending on the sub row",
+            "default": false
+          },
+          "tier_label": {
+            "type": "string",
+            "title": "Tier Label",
+            "description": "Human-readable label for the plan (e.g. 'Pro', 'Pro (Annual)', 'Lifetime')"
+          },
+          "trial_ends_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trial Ends At",
+            "description": "The §3.7 14-day trial expiry; None if no trial was started"
+          },
+          "entitlement": {
+            "type": "string",
+            "enum": [
+              "free",
+              "starter",
+              "pro",
+              "business"
+            ],
+            "title": "Entitlement",
+            "description": "The RESOLVED effective entitlement (the field the FE should gate UI on). Resolves annual→base, ltd→pro, trial→pro while live."
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan",
+          "tier_label",
+          "entitlement"
+        ],
+        "title": "BillingSubscriptionResponse",
+        "description": "``GET /api/v1/billing/subscription`` 200 body.\n\nThe DB-fresh subscription/plan/trial status for the authenticated seller.\n``entitlement`` is the field the FE should gate UI features on (it is the\nRESOLVED effective tier — annual→base, ltd/trial→pro)."
       }
     },
     "securitySchemes": {

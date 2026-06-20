@@ -42,7 +42,7 @@ from app.modules.category import category_router
 from app.modules.customer import customer_router
 from app.modules.dashboard import dashboard_router
 from app.modules.export import export_router
-from app.modules.iam import iam_google_router, iam_router
+from app.modules.iam import iam_billing_router, iam_google_router, iam_router
 from app.modules.image import image_router
 from app.modules.pricing import pricing_router
 from app.shared.config import settings
@@ -132,6 +132,17 @@ app.include_router(iam_router)
 # falls through to FastAPI's default 404 and the §17 count stays at 28.
 if settings.FEATURE_GOOGLE_AUTH_ENABLED:
     app.include_router(iam_google_router)
+
+# §7 iam — billing (Wave 3, Razorpay spec §6 / WAVE3_ROUTES_TASKSPEC §3.1).
+# Four endpoints: POST /api/v1/billing/subscribe, POST /api/v1/billing/start-trial,
+# POST /api/v1/billing/cancel, GET /api/v1/billing/subscription.
+# Feature-flag gated on FEATURE_BILLING_ENABLED (dev=True; staging/prod gated by
+# infra until Wave 0 Razorpay plan-ids + KYC clearance).
+# §17 route count bump: 28 (google-auth off) / 29 (google-auth on) → +4 when
+# FEATURE_BILLING_ENABLED=True.
+# PROPOSED: this mount is the lead-owned root-wiring flagged in the PR.
+if settings.FEATURE_BILLING_ENABLED:
+    app.include_router(iam_billing_router)
 
 # §8 customer — owns /api/v1/seller-profile/* (5 endpoints per §8.B LOCKED 2026-06-05).
 app.include_router(customer_router)

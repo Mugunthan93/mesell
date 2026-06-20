@@ -666,6 +666,109 @@
           }
         }
       }
+    },
+    "mfe-billing": {
+      "projectType": "application",
+      "schematics": {},
+      "root": "apps/mfe-billing",
+      "sourceRoot": "apps/mfe-billing/src",
+      "prefix": "app",
+      "architect": {
+        "build": {
+          "builder": "@angular-architects/native-federation:build",
+          "options": {},
+          "configurations": {
+            "production": {
+              "target": "mfe-billing:esbuild:production"
+            },
+            "development": {
+              "target": "mfe-billing:esbuild:development",
+              "dev": true
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular-architects/native-federation:build",
+          "options": {
+            "target": "mfe-billing:serve-original:development",
+            "rebuildDelay": 500,
+            "dev": true,
+            "cacheExternalArtifacts": false,
+            "port": 4207
+          }
+        },
+        "test": {
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "tsConfig": "tsconfig.spec.json",
+            "include": [
+              "apps/mfe-billing/**/*.spec.ts",
+              "../../../libs/**/*.spec.ts",
+              "../../apps/**/*.spec.ts"
+            ]
+          }
+        },
+        "esbuild": {
+          "builder": "@angular/build:application",
+          "options": {
+            "browser": "apps/mfe-billing/src/main.ts",
+            "index": "apps/mfe-billing/src/index.html",
+            "tsConfig": "apps/mfe-billing/tsconfig.app.json",
+            "styles": [
+              "node_modules/primeicons/primeicons.css",
+              "apps/shell/src/styles.css"
+            ],
+            "polyfills": [
+              "es-module-shims"
+            ]
+          },
+          "configurations": {
+            "production": {
+              "fileReplacements": [
+                {
+                  "replace": "libs/env/environment.ts",
+                  "with": "libs/env/environment.prod.ts"
+                }
+              ],
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "500kB",
+                  "maximumError": "1MB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "4kB",
+                  "maximumError": "8kB"
+                }
+              ],
+              "outputHashing": "all"
+            },
+            "development": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve-original": {
+          "builder": "@angular/build:dev-server",
+          "configurations": {
+            "production": {
+              "buildTarget": "mfe-billing:esbuild:production"
+            },
+            "development": {
+              "buildTarget": "mfe-billing:esbuild:development"
+            }
+          },
+          "defaultConfiguration": "development",
+          "options": {
+            "port": 4207
+          }
+        }
+      }
     }
   }
 }

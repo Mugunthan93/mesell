@@ -65,6 +65,7 @@ from uuid import UUID
 
 from celery import Celery
 from celery.exceptions import Reject
+from celery.schedules import crontab
 from celery.signals import task_prerun
 
 from app.shared.config import settings
@@ -102,6 +103,10 @@ celery_app = Celery(
     include=[
         "app.modules.image.tasks",   # image.precheck (§11.E LOCKED 2026-06-07)
         "app.modules.export.tasks",  # export.xlsx   (§14.E LOCKED 2026-06-08)
+        # Razorpay Wave 4 — 3rd task module (founder-ratified §3.I/§18.B
+        # canonical-inventory bump 2026-06-19): billing.reconcile +
+        # billing.trial_expiry_sweep periodic sweeps.
+        "app.modules.iam.tasks",
     ],
 )
 
@@ -133,6 +138,31 @@ celery_app.conf.update(
     # queue preserved for export.xlsx.
     task_routes={
         "image.precheck": {"queue": "image-tasks"},
+    },
+    # ─────────────────────────────────────────────────────────────────────
+    # Razorpay Wave 4 — FIRST beat_schedule in the repo (founder-ratified
+    # §3.I/§18.B canonical-inventory amendment 2026-06-19).  Two fixed-cadence
+    # billing sweeps.  ``crontab`` cadences are interpreted in the configured
+    # ``timezone="Asia/Kolkata"`` (with ``enable_utc=True``), so ``hour=2`` is
+    # 02:00 IST.  The cadences are founder-ruled (R1/R2), NOT env-tunable for
+    # V1.5.  These tasks are NOT in ``_TASKS_REQUIRING_USER_REVALIDATION``
+    # (§18.F) — they take no per-user args (sweeps query their own work set).
+    #
+    # NOTE (INFRA hand-off): a running ``celery beat`` process is required for
+    # these to fire — the registration here is inert without it.  Infra deploys
+    # a single-replica beat (``celery -A app.workers.celery_app beat``) or a
+    # worker ``-B``.  Two beat processes double-fire; the tasks' Valkey
+    # singleton lock (``billing:reconcile:lock`` / ``billing:trial_sweep:lock``,
+    # DB 0) is the belt-and-braces guard against that.
+    beat_schedule={
+        "billing-reconcile-every-6h": {
+            "task": "billing.reconcile",
+            "schedule": crontab(minute=0, hour="*/6"),  # 00/06/12/18 IST
+        },
+        "billing-trial-expiry-sweep-daily-0200": {
+            "task": "billing.trial_expiry_sweep",
+            "schedule": crontab(minute=0, hour=2),  # 02:00 IST
+        },
     },
 )
 

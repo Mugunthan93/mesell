@@ -1,15 +1,21 @@
-"""§18.B — Celery ``include=[...]`` MUST list exactly the 2 V1 task modules.
+"""§18.B — Celery ``include=[...]`` MUST list exactly the 3 V1 task modules.
 
 Per BACKEND_ARCHITECTURE.md §3.I canonical workers/ subtree and §18.B
-V1 inventory, ``celery_app.conf.include`` is locked to exactly two
-entries:
+V1 inventory (founder-ratified §3.I/§18.B canonical-inventory amendment
+2026-06-19 for the Razorpay Wave 4 billing sweeps),
+``celery_app.conf.include`` is locked to exactly three entries:
 
 * ``app.modules.image.tasks``  — registers ``image.precheck`` (§11.E)
 * ``app.modules.export.tasks`` — registers ``export.xlsx``  (§14.E)
+* ``app.modules.iam.tasks``    — registers ``billing.reconcile`` +
+                                 ``billing.trial_expiry_sweep`` (Razorpay
+                                 Wave 4 beat tasks; FIRST beat_schedule
+                                 in the repo)
 
-The cardinality is a hard ceiling for V1 — adding a 3rd task module is
-out-of-scope until V1.5 (audit-events Celery sink per MVP_ARCH §14, or
-a quarterly category-tree refresh task).
+The cardinality is a hard ceiling — adding a 4th task module beyond these
+three is out-of-scope until a future founder-ratified inventory bump
+(e.g. audit-events Celery sink per MVP_ARCH §14, or a quarterly
+category-tree refresh task).
 
 This test is the §18.B acceptance gate.  It also guards against
 accidental V0-leftover re-additions (e.g. ``app.workers.generation_tasks``
@@ -25,15 +31,21 @@ import pytest
 pytestmark = pytest.mark.smoke
 
 
-def test_include_list_is_exactly_2_v1_modules():
-    """``celery_app.conf.include`` MUST equal the 2 V1 entries verbatim."""
+def test_include_list_is_exactly_3_v1_modules():
+    """``celery_app.conf.include`` MUST equal the 3 V1 entries verbatim.
+
+    Razorpay Wave 4 (2026-06-19) added ``app.modules.iam.tasks`` for the two
+    periodic billing sweeps (``billing.reconcile`` + ``billing.trial_expiry_sweep``)
+    per the founder-ratified §3.I/§18.B canonical-inventory amendment.
+    """
     from app.workers.celery_app import celery_app
 
     assert celery_app.conf.include == [
         "app.modules.image.tasks",
         "app.modules.export.tasks",
+        "app.modules.iam.tasks",
     ], (
-        f"Expected exactly 2 V1 task modules in include list, "
+        f"Expected exactly 3 V1 task modules in include list, "
         f"got: {celery_app.conf.include}"
     )
 
@@ -48,7 +60,11 @@ def test_include_list_does_not_carry_v0_modules():
         "app.workers.image_tasks",
         "app.workers.scrape_tasks",
         "app.modules.catalog.tasks",  # §10 has no tasks.py
-        "app.modules.iam.tasks",      # §7 has no tasks.py
+        # NOTE: app.modules.iam.tasks was previously listed here as forbidden
+        # (§7 had no tasks.py).  Razorpay Wave 4 (2026-06-19, founder-ratified
+        # §3.I/§18.B amendment) introduced iam/tasks.py with the two billing
+        # beat sweeps, so it is now a LEGITIMATE V1 module and was removed from
+        # this forbidden set.  The other entries remain genuine V0 leftovers.
     }
     overlap = v0_forbidden & set(celery_app.conf.include)
     assert overlap == set(), f"V0-forbidden modules present: {overlap}"
@@ -70,7 +86,7 @@ def test_v1_tasks_discoverable_at_boot():
     )
 
 
-def test_only_2_v1_tasks_registered_at_module_level():
+def test_only_v1_tasks_registered_at_module_level():
     """No 3rd-party V1 module sneaks a ``@celery_app.task`` registration
     via side-effect import (e.g. a re-introduced ``generation_tasks.py``
     importing ``celery_app`` and decorating with ``@celery_app.task``).
@@ -78,6 +94,12 @@ def test_only_2_v1_tasks_registered_at_module_level():
     The ``include=[...]`` list is the canonical loader; cross-checks
     that the registry size matches the inventory after default-module
     import.
+
+    Razorpay Wave 4 (2026-06-19) added ``app.modules.iam.tasks`` which
+    registers two billing beat tasks (``billing.reconcile`` +
+    ``billing.trial_expiry_sweep``), so the expected user-task set is now
+    four entries.  The set is still pinned exactly so an UNexpected task
+    module is still caught.
     """
     from app.workers.celery_app import celery_app
 
@@ -88,6 +110,11 @@ def test_only_2_v1_tasks_registered_at_module_level():
         for name in celery_app.tasks
         if not name.startswith("celery.")
     }
-    assert user_tasks == {"image.precheck", "export.xlsx"}, (
-        f"Expected exactly 2 V1 user tasks, got: {sorted(user_tasks)}"
+    assert user_tasks == {
+        "image.precheck",
+        "export.xlsx",
+        "billing.reconcile",
+        "billing.trial_expiry_sweep",
+    }, (
+        f"Expected exactly the 4 V1 user tasks, got: {sorted(user_tasks)}"
     )

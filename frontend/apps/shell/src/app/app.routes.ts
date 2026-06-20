@@ -81,6 +81,20 @@ export const routes: Routes = [
         loadComponent: loadRemoteWithFallback('mfe-onboarding', './OnboardingComponent'),
       },
       {
+        // Wave 5 (Razorpay) — mfe-billing remote (apps/mfe-billing/). The billing
+        // vertical (plans selection + checkout + start-trial at /billing/plans, current
+        // subscription + cancel at /billing/account) lives in the 7th Native-Federation
+        // remote exposing a Routes ARRAY (./BillingRoutes) — the routes-expose precedent
+        // from mfe-catalog (D31). Both child routes require auth, inherited from the shell
+        // empty-path parent's authGuard (the guard runs in the SHELL before the remote is
+        // fetched — D27). BillingApiService + RazorpayCheckoutService stay route-scoped
+        // inside the remote's billing.routes.ts (D28a/D32). The remote consumes the shared
+        // @mesell/core AuthService singleton (entitlement gating). D12 fallback degrades
+        // the whole sub-tree to RemoteFailureComponent on remote-load failure.
+        path: 'billing',
+        loadChildren: loadRemoteRoutesWithFallback('mfe-billing', './BillingRoutes'),
+      },
+      {
         // Section-2 Plan 1-B — manual category browse page. BrowseComponent lives in
         // mfe-catalog (apps/mfe-catalog/src/app/categories/browse/) and is exposed via
         // ./BrowseComponent. Mounted at shell-level so CategoryService.browseRedirect()

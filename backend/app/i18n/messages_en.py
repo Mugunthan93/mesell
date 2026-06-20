@@ -87,6 +87,24 @@ VALIDATION_MESSAGES: dict[str, str] = {
     "auth.google.identity_conflict": (
         "This email is already linked to a different Google account. Please contact support."
     ),
+    # ── Razorpay Wave 3 billing (PROPOSED — §7.G founder-gate item) ──────
+    # Registered here so the resolver finds a human message; the exception
+    # classes themselves (iam.exceptions.Billing*Error) are founder-gate adds
+    # the lead carries at the merge gate.  3-segment IDs per §5A.H.
+    "billing.trial.already_used": (
+        "You've already used your free Pro trial on this account."
+    ),
+    # api-routes-builder (step 2b) additions — same founder-gate.
+    # Renamed to 3-segment §5A.H-compliant keys (Wave-3 follow-up 2026-06-19):
+    # billing.already_subscribed → billing.subscription.already_active,
+    # billing.no_active_subscription → billing.subscription.none_active.
+    "billing.subscription.already_active": (
+        "You already have an active subscription. Manage it from your account page."
+    ),
+    "billing.subscription.none_active": (
+        "No active subscription found to cancel. "
+        "You may already have cancelled or never subscribed."
+    ),
     # ── §8 customer (6 module-specific IDs) ──────────────────────────────
     "validation.pincode.invalid_format": (
         "Please enter a valid 6-digit pincode."

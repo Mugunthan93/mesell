@@ -42,6 +42,7 @@ export const MEE_ICONS = {
   tag:         'pi pi-tag',              // sidebar "Categories"
   calculator:  'pi pi-calculator',       // sidebar "Pricing"
   download:    'pi pi-download',         // sidebar "Export" + export-page generate/download
+  wallet:      'pi pi-wallet',           // sidebar "Plans" (billing — Wave 5 Razorpay)
 
   // Feature-page decorative icons (FE-2 migration — catalog-list + export states)
   image:        'pi pi-image',           // catalog-list card thumbnail placeholder

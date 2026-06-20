@@ -45,6 +45,13 @@ export const SIDEBAR_NAV_GROUPS: NavGroup[] = [
   },
   {
     label: 'Account',
-    items: [{ label: 'Profile', icon: 'user', route: '/profile' }],
+    items: [
+      { label: 'Profile', icon: 'user', route: '/profile' },
+      // Wave 5 (Razorpay) — billing vertical. Routes to the mfe-billing remote's
+      // /billing/plans (tier selection + checkout). 'wallet' is a registered
+      // MeeIconName; the raw PrimeIcons class it maps to lives only in
+      // icon.registry.ts (per FE-2).
+      { label: 'Plans', icon: 'wallet', route: '/billing/plans' },
+    ],
   },
 ];

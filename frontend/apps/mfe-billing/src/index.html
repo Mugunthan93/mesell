@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>mfe-billing</title>
+  <base href="/">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Standalone dev-serve host only. In federation the BILLING_ROUTES are mounted
+       INTO the shell's router outlet via loadRemoteModule; this index is not used there.
+       main.ts bootstraps PlansComponent (the 'plans' route component) as the dev host.
+       NOTE: selector is 'app-plans' (default Angular selector). -->
+  <app-plans></app-plans>
+</body>
+</html>

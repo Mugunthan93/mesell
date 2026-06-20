@@ -86,10 +86,11 @@ describe('SIDEBAR_NAV_GROUPS — nav route data contract', () => {
   });
 
   describe('Account group', () => {
-    it('should have one item: Profile → /profile', () => {
+    it('should have two items: Profile → /profile and Plans → /billing/plans (Wave 5 Razorpay)', () => {
       const account = groups.find((g) => g.label === 'Account')!;
-      expect(account.items).toHaveLength(1);
+      expect(account.items).toHaveLength(2);
       expect(account.items[0]).toMatchObject({ label: 'Profile', route: '/profile' });
+      expect(account.items[1]).toMatchObject({ label: 'Plans', route: '/billing/plans' });
     });
   });
 
@@ -102,6 +103,7 @@ describe('SIDEBAR_NAV_GROUPS — nav route data contract', () => {
         '/catalogs/new',
         '/categories/browse',
         '/profile',
+        '/billing/plans',
       ]);
     });
   });

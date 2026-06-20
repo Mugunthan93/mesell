@@ -25,9 +25,12 @@ import json
 import logging
 import secrets
 import time
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from redis.asyncio import Redis
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,27 +47,38 @@ from app.core.auth import (
 from app.core.metrics import AUTH_TOKEN_REFRESH_FAILED
 from app.modules.iam import repository as iam_repo
 from app.modules.iam.domain import (
+    BillingStatus,
+    CancelSubscriptionResult,
     OtpRecord,
     RefreshAllowlistEntry,
     RevokeResult,
     RotateRefreshResult,
     SendOtpResult,
+    StartTrialResult,
+    SubscribeResult,
     UserProfile,
     VerifyOtpResult,
     WebhookCaptureResult,
 )
 from app.modules.iam.exceptions import (
+    AlreadySubscribedError,
     GoogleIdentityConflictError,
     MalformedWebhookPayloadError,
     Msg91UnavailableError,
+    NoActiveSubscriptionError,
     OtpAttemptsExceededError,
     OtpInvalidError,
     RefreshInvalidError,
+    TrialAlreadyUsedError,
     WebhookSignatureInvalidError,
 )
 from app.shared.config import settings
 from app.shared.database import AsyncSessionLocal
 from app.shared.models.audit_event import AuditEvent
+from app.shared.models.payment import Payment
+from app.shared.models.subscription import Subscription
+from app.shared.models.user import User
+from app.shared.models.webhook_event import WebhookEvent
 
 logger = logging.getLogger(__name__)
 
@@ -718,31 +732,895 @@ async def get_profile(user_id: UUID, db: AsyncSession) -> UserProfile:
     )
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Razorpay Wave 3 — billing-status read + app-side trial (entitlement-shaped).
+#
+# Authored by the auth-builder (step 2a).  ``get_billing_status`` is the single
+# DB-fresh read both ``/auth/me`` and ``GET /billing/subscription`` consume so
+# the resolved entitlement is computed in ONE place (F7).  ``start_trial`` is
+# the §3.7 app-side trial grant — NO Razorpay call, idempotent one-per-phone.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_TRIAL_DAYS = 14
+"""14-day Pro trial window per Pricing v2 §5 / Razorpay spec §3.7."""
+
+#: ``users.plan`` → human label for the FE (Pricing v2 §5).
+_PLAN_LABELS: dict[str, str] = {
+    "free": "Free",
+    "starter": "Starter",
+    "pro": "Pro",
+    "pro_annual": "Pro (Annual)",
+    "business": "Business",
+    "business_annual": "Business (Annual)",
+    "ltd": "Lifetime",
+}
+
+
+async def get_billing_status(user_id: UUID, db: AsyncSession) -> BillingStatus:
+    """DB-FRESH billing/entitlement read backing ``/auth/me`` + ``GET
+    /billing/subscription`` (Razorpay Wave 3, F7).
+
+    Reads ``users.plan`` + ``users.trial_ends_at`` + the user's latest
+    ``subscriptions`` row, computes the resolved effective entitlement via
+    :func:`app.core.plan_guard.resolve_entitlement`, and returns a
+    :class:`BillingStatus`.  Read-only; emits no audit event.
+
+    A trialist (``plan='free'`` + a live ``trial_ends_at``) returns
+    ``plan='free'`` but ``entitlement='pro'`` — the F7 DB-fresh proof.
+    """
+    # Local import — keeps the plan_guard dependency off the module-load path
+    # and mirrors the core/auth lazy-import pattern already used in get_profile.
+    from app.core.plan_guard import resolve_entitlement
+
+    user = await iam_repo.get_user_by_id(db, user_id)
+    if user is None:
+        from app.core.auth import UserNotFoundError
+
+        raise UserNotFoundError()
+
+    entitlement = await resolve_entitlement(user_id=user_id, db=db)
+
+    # Latest subscription row (most-recent by created_at) for status surfacing.
+    stmt = (
+        select(Subscription)
+        .where(Subscription.user_id == user_id)
+        .order_by(Subscription.created_at.desc())
+        .limit(1)
+    )
+    sub = (await db.execute(stmt)).scalar_one_or_none()
+
+    sub_status = sub.status if sub is not None else None
+    current_period_end = sub.current_period_end if sub is not None else None
+    cancel_scheduled = bool(sub is not None and sub.cancel_scheduled_at is not None)
+
+    return BillingStatus(
+        plan=user.plan,
+        entitlement=entitlement,
+        status=sub_status,
+        current_period_end=current_period_end,
+        cancel_scheduled=cancel_scheduled,
+        tier_label=_PLAN_LABELS.get(user.plan, user.plan),
+        trial_ends_at=user.trial_ends_at,
+    )
+
+
+async def start_trial(user_id: UUID, db: AsyncSession) -> StartTrialResult:
+    """Grant the 14-day app-side Pro trial (Razorpay spec §3.7, Pricing v2 §5).
+
+    App-side ONLY — NO Razorpay call, NO ``subscriptions``/``payments``/
+    ``webhook_events`` row.  Sets ``users.trial_ends_at = now() + 14 days`` and
+    writes a business ``audit_events`` row (``billing.trial.started``).
+
+    Idempotent one-per-phone (Q3 ruling): rejects with
+    :class:`TrialAlreadyUsedError` (409) if the user has ALREADY consumed a
+    trial (``trial_ends_at`` already set — past OR future) OR already holds a
+    non-free plan OR any subscription row (a trial would be redundant).  The
+    one-per-PHONE bound is enforced transitively: the user_id IS the verified
+    phone identity (a phone maps to exactly one users row via the OTP gate), so
+    "one trial per user row" == "one trial per phone".
+
+    Raises:
+        TrialAlreadyUsedError: when a trial was already used / is redundant.
+        UserNotFoundError: when the principal row is gone (very rare).
+    """
+    user = await iam_repo.get_user_by_id(db, user_id)
+    if user is None:
+        from app.core.auth import UserNotFoundError
+
+        raise UserNotFoundError()
+
+    # Idempotency / redundancy guard.
+    if user.trial_ends_at is not None:
+        logger.info("start_trial: rejected (trial already used) user=%s", user_id)
+        raise TrialAlreadyUsedError()
+    if user.plan != "free":
+        logger.info(
+            "start_trial: rejected (non-free plan=%s — trial redundant) user=%s",
+            user.plan,
+            user_id,
+        )
+        raise TrialAlreadyUsedError(
+            detail="You already have a paid plan; no trial needed."
+        )
+
+    # Defensive: a free user with an existing sub row (created-but-unpaid) — a
+    # trial would muddy the entitlement; reject as redundant.
+    existing_sub = (
+        await db.execute(
+            select(func.count(Subscription.id)).where(
+                Subscription.user_id == user_id
+            )
+        )
+    ).scalar_one()
+    if int(existing_sub or 0) > 0:
+        logger.info(
+            "start_trial: rejected (existing subscription row) user=%s", user_id
+        )
+        raise TrialAlreadyUsedError(
+            detail="A subscription already exists on this account."
+        )
+
+    trial_ends_at = datetime.now(timezone.utc) + timedelta(days=_TRIAL_DAYS)
+    user.trial_ends_at = trial_ends_at
+    await db.flush()
+
+    # Business audit row — SAVEPOINT path (drop-on-failure; never poisons the
+    # trial grant).  user_id FK is visible (the user row pre-exists).
+    await _write_audit_direct(
+        user_id=user_id,
+        event_type="billing.trial.started",
+        db=db,
+        metadata={"trial_days": _TRIAL_DAYS},
+    )
+
+    logger.info(
+        "start_trial: granted 14-day Pro trial user=%s ends_at=%s",
+        user_id,
+        trial_ends_at.isoformat(),
+    )
+    return StartTrialResult(trial_ends_at=trial_ends_at, entitlement="pro")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Razorpay Wave 3 — subscribe + cancel service helpers (routes-builder, step 2b).
+#
+# ``subscribe`` — initiates a Razorpay Subscription (recurring) or Order (LTD).
+# ``cancel``    — schedules a cancel-at-cycle-end via the adapter.
+#
+# Both are route-shaped helpers: they call the Wave-2 adapter and write the
+# appropriate ``subscriptions`` row.  The plan grant itself is webhook-driven
+# (D-D, §3.4 handler) — these helpers do NOT touch ``users.plan``.
+#
+# Tier → RAZORPAY_PLAN_ID mapping (D-B from spec §2/§5):
+# The adapter is plan-agnostic; the map lives here so PRICING_LOCKED v2 §5
+# is the single source of truth and config carries only opaque Razorpay IDs.
+# ─────────────────────────────────────────────────────────────────────────────
+
+#: Tier → ``settings.RAZORPAY_PLAN_ID_*`` attribute name.
+#: Resolved lazily at call time from ``settings`` so a restart picks up
+#: new env vars without needing a code change.
+_TIER_TO_PLAN_ID_ATTR: dict[str, str] = {
+    "starter": "RAZORPAY_PLAN_ID_STARTER_MONTHLY",
+    "pro": "RAZORPAY_PLAN_ID_PRO_MONTHLY",
+    "pro_annual": "RAZORPAY_PLAN_ID_PRO_ANNUAL",
+    "business": "RAZORPAY_PLAN_ID_BUSINESS_MONTHLY",
+    "business_annual": "RAZORPAY_PLAN_ID_BUSINESS_ANNUAL",
+}
+#: Recurring tiers that use the Subscriptions API.
+_RECURRING_TIERS = frozenset(_TIER_TO_PLAN_ID_ATTR)
+#: Tiers where an active sub blocks a new subscribe (all non-ltd active-ish statuses).
+_BLOCKING_SUB_STATUSES = frozenset({"created", "authenticated", "active", "past_due"})
+
+
+def _get_plan_id_for_tier(tier: str) -> str:
+    """Resolve the Razorpay plan_id for a recurring tier from ``settings``.
+
+    Returns the configured plan_id string (may be empty in dev — an empty plan_id
+    causes the Razorpay SDK to reject the call with a ``BadRequestError`` which
+    surfaces as a clean 502 ``RazorpayAdapterError``; this is the intended behaviour
+    for a feature-flagged route not yet wired to real Razorpay plans).
+    """
+    attr = _TIER_TO_PLAN_ID_ATTR[tier]
+    return str(getattr(settings, attr, ""))
+
+
+async def subscribe(
+    user_id: UUID,
+    tier: str,
+    db: AsyncSession,
+) -> SubscribeResult:
+    """Initiate a Razorpay Subscription (recurring) or Order (LTD one-time purchase).
+
+    Pipeline (§3.4):
+    1. Guard: if the user already holds an active/authenticated/created/past_due
+       subscription row → raise :class:`AlreadySubscribedError` (409).
+    2. For LTD (``tier == 'ltd'``):
+       a. Call ``adapter.create_order(amount=settings.RAZORPAY_LTD_PRICE_PAISE,
+          receipt=..., notes={user_id, tier})``.
+       b. Write a ``subscriptions`` row ``{tier:'ltd', status:'created',
+          razorpay_order_id:..., current_period_end:NULL}``.
+       c. Return :class:`SubscribeResult` with ``razorpay_order_id`` + ``amount_paise``.
+    3. For recurring tiers:
+       a. Resolve ``plan_id = _get_plan_id_for_tier(tier)`` (from settings).
+       b. Call ``adapter.create_subscription(plan_id=..., notes={user_id, tier})``.
+       c. Write a ``subscriptions`` row ``{tier, status:'created',
+          razorpay_subscription_id:...}``.
+       d. Return :class:`SubscribeResult` with ``razorpay_subscription_id`` + ``short_url``.
+
+    The plan grant (``users.plan`` change) is NOT applied here — it happens on
+    the ``subscription.activated`` / ``payment.captured`` webhook (D-D, Wave 2).
+
+    Raises:
+        AlreadySubscribedError: When the user already holds an active subscription.
+        RazorpayAdapterError: When the Razorpay API call fails (502 to the FE).
+    """
+    # ── Step 1: guard ─────────────────────────────────────────────────────────
+    existing_stmt = (
+        select(Subscription)
+        .where(
+            Subscription.user_id == user_id,
+            Subscription.status.in_(_BLOCKING_SUB_STATUSES),
+        )
+        .limit(1)
+    )
+    existing = (await db.execute(existing_stmt)).scalar_one_or_none()
+    if existing is not None:
+        logger.info(
+            "subscribe: rejected (existing sub status=%s) user=%s",
+            existing.status,
+            user_id,
+        )
+        raise AlreadySubscribedError()
+
+    if tier == "ltd":
+        # ── Step 2: LTD Orders path ───────────────────────────────────────────
+        receipt = f"ltd-{user_id!s}"
+        order = await razorpay_adapter.create_order(
+            amount=settings.RAZORPAY_LTD_PRICE_PAISE,
+            receipt=receipt,
+            notes={"user_id": str(user_id), "tier": "ltd"},
+        )
+        sub = Subscription(
+            user_id=user_id,
+            tier="ltd",
+            status="created",
+            razorpay_order_id=order.id,
+            current_period_end=None,  # perpetual sentinel
+        )
+        db.add(sub)
+        await db.flush()
+        logger.info(
+            "subscribe: LTD order created user=%s order=%s sub=%s",
+            user_id,
+            order.id,
+            sub.id,
+        )
+        return SubscribeResult(
+            tier="ltd",
+            razorpay_order_id=order.id,
+            amount_paise=order.amount,
+        )
+
+    # ── Step 3: recurring Subscriptions path ──────────────────────────────────
+    plan_id = _get_plan_id_for_tier(tier)
+    rzp_sub = await razorpay_adapter.create_subscription(
+        plan_id=plan_id,
+        notes={"user_id": str(user_id), "tier": tier},
+    )
+    sub = Subscription(
+        user_id=user_id,
+        tier=tier,
+        status="created",
+        razorpay_subscription_id=rzp_sub.id,
+    )
+    db.add(sub)
+    await db.flush()
+    logger.info(
+        "subscribe: recurring sub created user=%s rzp_sub=%s tier=%s sub=%s",
+        user_id,
+        rzp_sub.id,
+        tier,
+        sub.id,
+    )
+    return SubscribeResult(
+        tier=tier,
+        razorpay_subscription_id=rzp_sub.id,
+        short_url=rzp_sub.short_url,
+    )
+
+
+async def cancel(user_id: UUID, db: AsyncSession) -> CancelSubscriptionResult:
+    """Schedule a cancel-at-cycle-end for the user's active subscription (§3.3.3).
+
+    Pipeline:
+    1. Find the user's latest subscription row in a cancellable state
+       (``active`` / ``authenticated`` / ``created`` / ``past_due``).
+       If none → raise :class:`NoActiveSubscriptionError` (404).
+    2. Call ``adapter.cancel_subscription(sub_id, cancel_at_cycle_end=True)``.
+    3. Set ``subscriptions.cancel_scheduled_at = now()`` on the local row.
+    4. Return :class:`CancelSubscriptionResult` with ``entitled_until =
+       current_period_end``.
+
+    The ``status → 'cancelled'`` transition on ``subscriptions`` + any plan
+    downgrade are driven by the ``subscription.cancelled`` webhook (Wave 2).
+    The plan remains active until ``current_period_end``.
+
+    Raises:
+        NoActiveSubscriptionError: When no cancellable subscription is found.
+        RazorpayAdapterError: When the Razorpay cancel API call fails (502).
+    """
+    # ── Step 1: look up a cancellable sub ─────────────────────────────────────
+    cancellable_stmt = (
+        select(Subscription)
+        .where(
+            Subscription.user_id == user_id,
+            Subscription.status.in_({"active", "authenticated", "created", "past_due"}),
+        )
+        .order_by(Subscription.created_at.desc())
+        .limit(1)
+    )
+    sub = (await db.execute(cancellable_stmt)).scalar_one_or_none()
+    if sub is None:
+        logger.info("cancel: no cancellable sub user=%s", user_id)
+        raise NoActiveSubscriptionError()
+
+    # LTD subscriptions are perpetual — cancellation is not meaningful (no cycle
+    # end to cancel at).  Block cleanly rather than forwarding to Razorpay (which
+    # would reject it anyway since LTD is an Order, not a Subscription).
+    if sub.tier == "ltd":
+        logger.info("cancel: LTD is perpetual — cancellation rejected user=%s", user_id)
+        raise NoActiveSubscriptionError(
+            detail="Lifetime (LTD) purchases cannot be cancelled this way. "
+            "Please contact support."
+        )
+
+    # ── Step 2: call the adapter ──────────────────────────────────────────────
+    if sub.razorpay_subscription_id:
+        await razorpay_adapter.cancel_subscription(
+            sub.razorpay_subscription_id, cancel_at_cycle_end=True
+        )
+
+    # ── Step 3: record cancel_scheduled_at ───────────────────────────────────
+    sub.cancel_scheduled_at = datetime.now(timezone.utc)
+    await db.flush()
+
+    logger.info(
+        "cancel: scheduled cancel user=%s sub=%s entitled_until=%s",
+        user_id,
+        sub.id,
+        sub.current_period_end,
+    )
+    return CancelSubscriptionResult(entitled_until=sub.current_period_end)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Razorpay webhook event router (V1.5 — RAZORPAY_INTEGRATION_SPEC §4).
+#
+# Evolved from the V1 log-only capture into a signature-verified, idempotent,
+# out-of-order-tolerant event router.  The dedupe INSERT and the state mutation
+# commit in a SINGLE transaction (§4.2) — a handler raise rolls back BOTH so
+# Razorpay's retry reprocesses cleanly.
+# ─────────────────────────────────────────────────────────────────────────────
+
+#: Razorpay subscription ``tier`` → ``users.plan`` mapping.  The tier comes from
+#: the subscription row we created (``notes.tier`` echoed by Razorpay, or the
+#: ``subscriptions.tier`` column).  Both vocabularies overlap exactly for the
+#: paid tiers (Pricing v2), so this is an identity map — kept explicit so an
+#: unknown tier resolves to ``None`` (no grant) rather than silently leaking.
+_TIER_TO_PLAN: dict[str, str] = {
+    "starter": "starter",
+    "pro": "pro",
+    "pro_annual": "pro_annual",
+    "business": "business",
+    "business_annual": "business_annual",
+    "ltd": "ltd",
+}
+
+
+def _epoch_to_utc(value: object) -> datetime | None:
+    """Convert a Razorpay epoch-seconds field to a UTC ``datetime`` (or None)."""
+    if value is None:
+        return None
+    try:
+        return datetime.fromtimestamp(int(value), tz=timezone.utc)  # type: ignore[arg-type]
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+
+
+def _entity(payload: dict, key: str) -> dict:
+    """Extract ``payload['payload'][key]['entity']`` defensively → dict."""
+    try:
+        node = payload["payload"][key]["entity"]
+        return node if isinstance(node, dict) else {}
+    except (KeyError, TypeError):
+        return {}
+
+
+async def _audit_business_effect(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    event_type: str,
+    metadata: dict | None = None,
+) -> int | None:
+    """Write a business ``audit_events`` row inside the webhook transaction.
+
+    Uses the SAVEPOINT in-request path of :func:`_write_audit_direct` so an
+    audit failure never poisons the webhook state mutation, while the row still
+    commits atomically with it when both succeed.
+    """
+    return await _write_audit_direct(
+        user_id=user_id,
+        event_type=event_type,
+        db=db,
+        metadata=metadata,
+    )
+
+
+async def _get_subscription_by_rzp_id(
+    db: AsyncSession, rzp_sub_id: str | None
+) -> Subscription | None:
+    if not rzp_sub_id:
+        return None
+    res = await db.execute(
+        select(Subscription).where(
+            Subscription.razorpay_subscription_id == rzp_sub_id
+        )
+    )
+    return res.scalar_one_or_none()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Shared subscription-transition helpers (Wave 4 §0.4 / §2 "reuse, don't
+# reinvent").  Both the webhook per-event handlers AND the Wave-4 reconciliation
+# task (``app.modules.iam.tasks``) call these so a webhook and a reconcile pass
+# converge to the SAME state regardless of order.  Each helper is a small,
+# behaviour-preserving extraction of a block that previously lived inline inside
+# a webhook handler — the Wave 2 webhook-router tests
+# (``test_razorpay_webhook_router.py``) re-prove the extraction preserves
+# behaviour.
+# ─────────────────────────────────────────────────────────────────────────────
+def _apply_period_monotonic(sub: Subscription, new_end: datetime | None) -> None:
+    """GREATEST(current_period_end, new_end) — never rewind (§4.3 monotonic).
+
+    Extracted from ``_handle_subscription_charged``.  ``new_end is None`` is a
+    no-op; an EARLIER ``new_end`` is a no-op; only a strictly-later boundary
+    advances the period.  Idempotent — re-applying the same boundary is a no-op.
+    """
+    if new_end is None:
+        return
+    if sub.current_period_end is None or new_end > sub.current_period_end:
+        sub.current_period_end = new_end
+
+
+async def _grant_plan_for_sub(
+    db: AsyncSession, sub: Subscription, *, event: str
+) -> int | None:
+    """Grant ``users.plan = _TIER_TO_PLAN[sub.tier]`` + audit (idempotent).
+
+    Extracted from ``_handle_subscription_activated``.  Resolves the tier→plan
+    map (unknown tier → no grant, fails closed) and, if the user's plan differs,
+    sets it and writes a ``billing.plan.granted`` audit row.  When the user is
+    ALREADY on the target plan this is a no-op (no audit row) — this is what
+    makes a reconcile pass over an already-converged sub write nothing.
+    """
+    plan = _TIER_TO_PLAN.get(sub.tier)
+    if plan is None:
+        return None
+    user = await db.get(User, sub.user_id)
+    if user is None or user.plan == plan:
+        return None
+    user.plan = plan
+    return await _audit_business_effect(
+        db,
+        user_id=user.id,
+        event_type="billing.plan.granted",
+        metadata={"tier": sub.tier, "event": event},
+    )
+
+
+async def _downgrade_user_to_free(
+    db: AsyncSession, user_id: UUID, *, reason: str, event: str
+) -> int | None:
+    """Set ``users.plan = 'free'`` + ``billing.plan.downgraded`` audit (idempotent).
+
+    Extracted from the halted/completed handler bodies.  A user already on
+    ``free`` is a no-op (no write, no audit) — so a reconcile terminal-sweep
+    over an already-free user writes nothing.
+    """
+    user = await db.get(User, user_id)
+    if user is None or user.plan == "free":
+        return None
+    user.plan = "free"
+    return await _audit_business_effect(
+        db,
+        user_id=user.id,
+        event_type="billing.plan.downgraded",
+        metadata={"reason": reason, "event": event},
+    )
+
+
+async def _upsert_payment(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    subscription_id: UUID | None,
+    razorpay_payment_id: str | None,
+    amount_paise: int,
+    currency: str,
+    status: str,
+    event_type: str,
+    occurred_at: datetime | None,
+    raw: dict | None,
+) -> None:
+    """Insert a ``payments`` row, deduped on ``razorpay_payment_id`` (§4.2).
+
+    A re-delivered ``subscription.charged`` cannot create a duplicate payment
+    even if the event-id gate were bypassed — the UNIQUE ``razorpay_payment_id``
+    ON CONFLICT DO NOTHING is the second line of defence.
+    """
+    values: dict = {
+        "user_id": user_id,
+        "subscription_id": subscription_id,
+        "razorpay_payment_id": razorpay_payment_id,
+        "amount_paise": amount_paise,
+        "currency": currency or "INR",
+        "status": status,
+        "event_type": event_type[:40],
+        "occurred_at": occurred_at,
+        "raw_jsonb": raw,
+    }
+    stmt = pg_insert(Payment).values(**values)
+    if razorpay_payment_id is not None:
+        stmt = stmt.on_conflict_do_nothing(index_elements=["razorpay_payment_id"])
+    await db.execute(stmt)
+
+
+# ── Per-event handlers — each returns an audit_event_id (or None) ───────────
+async def _handle_subscription_authenticated(
+    db: AsyncSession, event_type: str, payload: dict
+) -> int | None:
+    entity = _entity(payload, "subscription")
+    sub = await _get_subscription_by_rzp_id(db, entity.get("id"))
+    if sub is None:
+        logger.info("iam.webhook.%s no_local_sub id=%s", event_type, entity.get("id"))
+        return None
+    # Guard: only from created/authenticated (§4.3 matrix).
+    if sub.status in ("created", "authenticated"):
+        sub.status = "authenticated"
+    else:
+        logger.info(
+            "iam.webhook.%s illegal_transition from=%s (no-op)", event_type, sub.status
+        )
+    return None
+
+
+async def _handle_subscription_activated(
+    db: AsyncSession, event_type: str, payload: dict
+) -> int | None:
+    entity = _entity(payload, "subscription")
+    sub = await _get_subscription_by_rzp_id(db, entity.get("id"))
+    if sub is None:
+        logger.info("iam.webhook.%s no_local_sub id=%s", event_type, entity.get("id"))
+        return None
+    sub.status = "active"
+    new_end = _epoch_to_utc(entity.get("current_end"))
+    if new_end is not None:
+        sub.current_period_end = new_end
+    return await _grant_plan_for_sub(db, sub, event=event_type)
+
+
+async def _handle_subscription_charged(
+    db: AsyncSession, event_type: str, payload: dict
+) -> int | None:
+    entity = _entity(payload, "subscription")
+    payment = _entity(payload, "payment")
+    sub = await _get_subscription_by_rzp_id(db, entity.get("id"))
+    if sub is None:
+        logger.info("iam.webhook.%s no_local_sub id=%s", event_type, entity.get("id"))
+        return None
+
+    # Monotonic period guard (§4.3): GREATEST(current_period_end, new_end).
+    _apply_period_monotonic(sub, _epoch_to_utc(entity.get("current_end")))
+
+    # Renewal heartbeat: a late charge does NOT re-activate a cancelled sub.
+    if sub.status in ("active", "past_due"):
+        sub.status = "active"
+    else:
+        logger.info(
+            "iam.webhook.%s status=%s not re-activated by charge", event_type, sub.status
+        )
+
+    await _upsert_payment(
+        db,
+        user_id=sub.user_id,
+        subscription_id=sub.id,
+        razorpay_payment_id=payment.get("id"),
+        amount_paise=int(payment.get("amount") or entity.get("plan_amount") or 0),
+        currency=str(payment.get("currency") or "INR"),
+        status="captured",
+        event_type=event_type,
+        occurred_at=_epoch_to_utc(payment.get("created_at")),
+        raw=payment or None,
+    )
+    return None
+
+
+async def _handle_subscription_pending(
+    db: AsyncSession, event_type: str, payload: dict
+) -> int | None:
+    entity = _entity(payload, "subscription")
+    sub = await _get_subscription_by_rzp_id(db, entity.get("id"))
+    if sub is None:
+        return None
+    if sub.status == "active":
+        sub.status = "past_due"  # grace = trust Razorpay retry window (F8)
+        logger.info("iam.webhook.%s sub=%s → past_due (dunning trigger)", event_type, sub.id)
+    else:
+        logger.info("iam.webhook.%s illegal_transition from=%s (no-op)", event_type, sub.status)
+    return None
+
+
+async def _handle_subscription_halted(
+    db: AsyncSession, event_type: str, payload: dict
+) -> int | None:
+    entity = _entity(payload, "subscription")
+    sub = await _get_subscription_by_rzp_id(db, entity.get("id"))
+    if sub is None:
+        return None
+    if sub.status not in ("past_due", "active"):
+        logger.info("iam.webhook.%s illegal_transition from=%s (no-op)", event_type, sub.status)
+        return None
+    sub.status = "halted"
+    # F8 — downgrade only on halted, no fixed grace timer.
+    return await _downgrade_user_to_free(
+        db, sub.user_id, reason="halted", event=event_type
+    )
+
+
+async def _handle_subscription_cancelled(
+    db: AsyncSession, event_type: str, payload: dict
+) -> int | None:
+    entity = _entity(payload, "subscription")
+    sub = await _get_subscription_by_rzp_id(db, entity.get("id"))
+    if sub is None:
+        return None
+    # A cancelled sub STAYS cancelled even if a late charged arrives.
+    sub.status = "cancelled"
+    sub.cancel_scheduled_at = sub.cancel_scheduled_at or datetime.now(tz=timezone.utc)
+    # users.plan stays at tier until current_period_end — the Wave-4
+    # reconciliation sweep does the eventual downgrade.
+    audit_id = await _audit_business_effect(
+        db,
+        user_id=sub.user_id,
+        event_type="billing.subscription.cancelled",
+        metadata={"tier": sub.tier, "event": event_type},
+    )
+    return audit_id
+
+
+async def _handle_subscription_completed(
+    db: AsyncSession, event_type: str, payload: dict
+) -> int | None:
+    entity = _entity(payload, "subscription")
+    sub = await _get_subscription_by_rzp_id(db, entity.get("id"))
+    if sub is None:
+        return None
+    sub.status = "completed"  # terminal; not expected for open-ended plans
+    return await _downgrade_user_to_free(
+        db, sub.user_id, reason="completed", event=event_type
+    )
+
+
+async def _handle_subscription_updated(
+    db: AsyncSession, event_type: str, payload: dict
+) -> int | None:
+    """Apply a landed plan change (upgrade-immediate; downgrade lands at next
+    cycle ``charged`` per F4)."""
+    entity = _entity(payload, "subscription")
+    sub = await _get_subscription_by_rzp_id(db, entity.get("id"))
+    if sub is None:
+        return None
+    # Razorpay echoes the new plan_id; the tier→plan resolution is Wave-3 config
+    # (plan_id → tier).  Here we only react if the payload carries a notes.tier
+    # the subscribe flow set — upgrade-immediate sets both sub.tier + users.plan.
+    notes = entity.get("notes") or {}
+    new_tier = notes.get("tier") if isinstance(notes, dict) else None
+    if not new_tier or new_tier not in _TIER_TO_PLAN:
+        logger.info("iam.webhook.%s no resolvable tier in notes (no-op)", event_type)
+        return None
+    sub.tier = new_tier
+    user = await db.get(User, sub.user_id)
+    audit_id: int | None = None
+    if user is not None and sub.status == "active":
+        user.plan = _TIER_TO_PLAN[new_tier]
+        audit_id = await _audit_business_effect(
+            db,
+            user_id=user.id,
+            event_type="billing.plan.updated",
+            metadata={"tier": new_tier, "event": event_type},
+        )
+    return audit_id
+
+
+async def _handle_payment_captured(
+    db: AsyncSession, event_type: str, payload: dict
+) -> int | None:
+    """LTD path: a captured Order → permanent ``users.plan='ltd'``.
+
+    Matches the LTD ``subscriptions`` row by ``razorpay_order_id`` (or the
+    order ``notes.tier == 'ltd'``).  Non-LTD ``payment.captured`` (the payment
+    leg of a subscription charge) is handled via ``subscription.charged`` — here
+    we only act when we can resolve an LTD order, else record + no-op.
+    """
+    payment = _entity(payload, "payment")
+    order = _entity(payload, "order")
+    order_id = payment.get("order_id") or order.get("id")
+    notes = (order.get("notes") or payment.get("notes") or {})
+    is_ltd_note = isinstance(notes, dict) and notes.get("tier") == "ltd"
+
+    sub: Subscription | None = None
+    if order_id:
+        res = await db.execute(
+            select(Subscription).where(Subscription.razorpay_order_id == order_id)
+        )
+        sub = res.scalar_one_or_none()
+    if sub is None and not is_ltd_note:
+        logger.info("iam.webhook.%s not an LTD order (no-op) order=%s", event_type, order_id)
+        return None
+    if sub is None:
+        logger.info("iam.webhook.%s LTD note but no local sub order=%s", event_type, order_id)
+        return None
+
+    sub.status = "active"
+    sub.current_period_end = None  # perpetual sentinel (LTD)
+    await _upsert_payment(
+        db,
+        user_id=sub.user_id,
+        subscription_id=sub.id,
+        razorpay_payment_id=payment.get("id"),
+        amount_paise=int(payment.get("amount") or 0),
+        currency=str(payment.get("currency") or "INR"),
+        status="captured",
+        event_type=event_type,
+        occurred_at=_epoch_to_utc(payment.get("created_at")),
+        raw=payment or None,
+    )
+    user = await db.get(User, sub.user_id)
+    audit_id: int | None = None
+    if user is not None:
+        user.plan = "ltd"
+        audit_id = await _audit_business_effect(
+            db,
+            user_id=user.id,
+            event_type="billing.plan.granted",
+            metadata={"tier": "ltd", "event": event_type},
+        )
+    return audit_id
+
+
+async def _handle_payment_failed(
+    db: AsyncSession, event_type: str, payload: dict
+) -> int | None:
+    """Record a failed payment (informs dunning).  NO state downgrade here —
+    downgrade is halted-driven (F8)."""
+    payment = _entity(payload, "payment")
+    # Best-effort tenant resolution: link via the order's subscription if present.
+    order_id = payment.get("order_id")
+    sub: Subscription | None = None
+    if order_id:
+        res = await db.execute(
+            select(Subscription).where(Subscription.razorpay_order_id == order_id)
+        )
+        sub = res.scalar_one_or_none()
+    if sub is None:
+        logger.info("iam.webhook.%s unlinked failed payment (logged, no row)", event_type)
+        return None
+    await _upsert_payment(
+        db,
+        user_id=sub.user_id,
+        subscription_id=sub.id,
+        razorpay_payment_id=payment.get("id"),
+        amount_paise=int(payment.get("amount") or 0),
+        currency=str(payment.get("currency") or "INR"),
+        status="failed",
+        event_type=event_type,
+        occurred_at=_epoch_to_utc(payment.get("created_at")),
+        raw=payment or None,
+    )
+    return None
+
+
+async def _handle_refund_processed(
+    db: AsyncSession, event_type: str, payload: dict
+) -> int | None:
+    """Record a refund row.  Issuing refunds is out of scope (Razorpay
+    dashboard); we react only.  Full-refund downgrade policy (F3) is applied
+    by the Wave-4 reconciliation sweep — here we record the refund."""
+    refund = _entity(payload, "refund")
+    payment = _entity(payload, "payment")
+    payment_id = refund.get("payment_id") or payment.get("id")
+    if payment_id:
+        res = await db.execute(
+            select(Payment).where(Payment.razorpay_payment_id == payment_id)
+        )
+        orig = res.scalar_one_or_none()
+        if orig is not None:
+            sub_id = orig.subscription_id
+            await _upsert_payment(
+                db,
+                user_id=orig.user_id,
+                subscription_id=sub_id,
+                razorpay_payment_id=refund.get("id"),
+                amount_paise=int(refund.get("amount") or 0),
+                currency=str(refund.get("currency") or "INR"),
+                status="refunded",
+                event_type=event_type,
+                occurred_at=_epoch_to_utc(refund.get("created_at")),
+                raw=refund or None,
+            )
+            return None
+    logger.info("iam.webhook.%s unlinked refund (logged, no row)", event_type)
+    return None
+
+
+#: Event-type → handler dispatch table (§4.3).  Unknown types are NOT in this
+#: map → recorded + 200 + no dispatch (§4.1 step 5).
+_EVENT_HANDLERS = {
+    "subscription.authenticated": _handle_subscription_authenticated,
+    "subscription.activated": _handle_subscription_activated,
+    "subscription.charged": _handle_subscription_charged,
+    "subscription.pending": _handle_subscription_pending,
+    "subscription.halted": _handle_subscription_halted,
+    "subscription.cancelled": _handle_subscription_cancelled,
+    "subscription.completed": _handle_subscription_completed,
+    "subscription.updated": _handle_subscription_updated,
+    "payment.captured": _handle_payment_captured,
+    "payment.failed": _handle_payment_failed,
+    "refund.processed": _handle_refund_processed,
+}
+
+
 async def capture_razorpay_webhook(
-    raw_payload: bytes, signature: str
+    raw_payload: bytes,
+    signature: str,
+    *,
+    event_id: str | None = None,
+    db: AsyncSession | None = None,
 ) -> WebhookCaptureResult:
-    """``POST /api/v1/webhooks/razorpay`` business path per §7.B.6.
+    """``POST /api/v1/webhooks/razorpay`` — idempotent event router (§4).
 
-    V1 = capture only.  Steps:
+    Pipeline (the exact order — §4.1, correctness-critical):
 
-    1. Verify HMAC signature via :func:`app.adapters.razorpay.verify_webhook_signature`
-       (synchronous per §6.E).  ``False`` → raise
-       :class:`WebhookSignatureInvalidError`.
-    2. JSON-parse the (already-verified) payload.  Malformed → raise
-       :class:`MalformedWebhookPayloadError`.
-    3. Write an ``audit_events`` row (``event_type =
-       "razorpay.webhook.captured"``, ``user_id = NULL``).  Per §7.B.6 the
-       full payload is stored under ``payload_jsonb`` so V1.5 reprocessing
-       can derive subscription state without re-fetching from Razorpay.
+    1. Verify HMAC signature on RAW bytes (:func:`verify_webhook_signature`,
+       sync per §6.E).  ``False`` → :class:`WebhookSignatureInvalidError` (401).
+    2. JSON-parse.  Non-dict / decode error → :class:`MalformedWebhookPayloadError`
+       (400).
+    3. Resolve ``event_id`` (from the ``x-razorpay-event-id`` header passed by
+       the route as ``event_id=...``; fallback to the body ``id``) and
+       ``event_type`` (``payload['event']``).  Absent ``event_id`` → malformed
+       (the dedupe key is mandatory).
+    4. ONE transaction: ``INSERT ... ON CONFLICT (event_id) DO NOTHING`` into
+       ``webhook_events``; if 0 rows (conflict) → already processed → commit
+       no-op + return.  Else dispatch to the per-event handler in the SAME
+       transaction, set ``processed_at = NOW()``, commit.  A handler raise rolls
+       back BOTH the dedupe row and the mutation → Razorpay retries → clean
+       reprocess.
+    5. Unknown / unmodelled event type → record the ``webhook_events`` row, do
+       NOT dispatch, return 200 (so Razorpay does not retry).
 
-    V1 does NOT update ``users.plan`` or any other state per §7.B.6 lock.
+    Args:
+        raw_payload: RAW request bytes (NOT json-parsed) — required for HMAC.
+        signature: ``X-Razorpay-Signature`` header value.
+        event_id: ``x-razorpay-event-id`` header value (route-supplied).  When
+            ``None`` the body ``id`` is used as the dedupe key.
+        db: Optional request-scoped session.  When ``None`` (the current route
+            still calls with 2 positional args), a session is acquired from
+            :data:`AsyncSessionLocal` so the route stays untouched this wave
+            (Wave 3 wires ``db=Depends(get_db)`` + the header).
 
-    Audit row caveat: ``audit_events.user_id`` is NOT NULL (per §11.2 DDL).
-    The webhook has no user_id.  We sidestep this by NOT writing a row for
-    the webhook surface — instead we log to the service logger with the
-    full payload.  This is a §7.B.6 vs. §11.2 DDL conflict that needs a
-    §V1.5 resolution (audit_events.user_id NULLability, or a separate
-    ``webhook_events`` table).  Logged + flagged for hand-off.
+    No secrets / PII are logged — only ``event_type`` + ``event_id`` + payload
+    key names (§9).
     """
     if not razorpay_adapter.verify_webhook_signature(raw_payload, signature):
         raise WebhookSignatureInvalidError()
@@ -755,23 +1633,114 @@ async def capture_razorpay_webhook(
         logger.info("iam.webhook.malformed_json: %r", exc)
         raise MalformedWebhookPayloadError() from exc
 
-    event_subtype = str(payload.get("event") or "unknown")
+    event_type = str(payload.get("event") or "unknown")
+    resolved_event_id = event_id or payload.get("id")
+    if not resolved_event_id:
+        # The dedupe key is mandatory — without it we cannot guarantee
+        # idempotency, so treat as malformed (400) rather than risk a double
+        # grant on a Razorpay retry.
+        logger.info("iam.webhook.missing_event_id event_type=%s", event_type)
+        raise MalformedWebhookPayloadError(
+            detail="Webhook payload is missing the event id (dedupe key)"
+        )
+    resolved_event_id = str(resolved_event_id)
 
-    # §7.B.6 says "Full payload stored in audit_events.payload_jsonb"; the
-    # live DDL uses `diff_jsonb` and `metadata_jsonb` (no `payload_jsonb`),
-    # AND requires NOT NULL `user_id`.  Two-fold gap.  V1 posture: LOG the
-    # capture (so it is observable end-to-end) and return success.  V1.5
-    # adds the column + table-level NULL allowance and lights this path.
-    logger.info(
-        "iam.razorpay.webhook.captured event_subtype=%s payload_keys=%s",
-        event_subtype,
-        sorted(payload.keys()),
+    if db is not None:
+        return await _route_webhook_in_session(
+            db, resolved_event_id, event_type, payload, owns_transaction=False
+        )
+    async with AsyncSessionLocal() as session:
+        return await _route_webhook_in_session(
+            session, resolved_event_id, event_type, payload, owns_transaction=True
+        )
+
+
+async def _route_webhook_in_session(
+    db: AsyncSession,
+    event_id: str,
+    event_type: str,
+    payload: dict,
+    *,
+    owns_transaction: bool,
+) -> WebhookCaptureResult:
+    """The single-transaction dedupe-INSERT + dispatch core (§4.1 step 4-6).
+
+    ``owns_transaction`` is True when this function acquired its own session
+    (route-compat path) and is responsible for the COMMIT; False when a
+    request-scoped session was passed (Wave 3 / tests) and the caller's
+    transaction boundary owns the commit.
+    """
+    is_known = event_type in _EVENT_HANDLERS
+
+    # ── Dedupe gate: INSERT ... ON CONFLICT (event_id) DO NOTHING ────────────
+    insert_stmt = (
+        pg_insert(WebhookEvent)
+        .values(
+            event_id=event_id,
+            event_type=event_type[:60],
+            payload_jsonb=payload,
+            signature_valid=True,
+        )
+        .on_conflict_do_nothing(index_elements=["event_id"])
+        .returning(WebhookEvent.event_id)
     )
+    result = await db.execute(insert_stmt)
+    inserted = result.scalar_one_or_none()
+
+    if inserted is None:
+        # Conflict → this event was already processed → no-op, return 200.
+        if owns_transaction:
+            await db.commit()
+        logger.info(
+            "iam.webhook.duplicate event_type=%s event_id=%s (no-op)",
+            event_type,
+            event_id,
+        )
+        return WebhookCaptureResult(
+            event_type=event_type,
+            event_subtype=event_type,
+            audit_event_id=None,
+        )
+
+    audit_event_id: int | None = None
+    if is_known:
+        handler = _EVENT_HANDLERS[event_type]
+        # Dispatch in the SAME transaction as the dedupe insert.  Any raise
+        # propagates → the outer transaction rolls back BOTH → Razorpay retries.
+        audit_event_id = await handler(db, event_type, payload)
+        await db.execute(
+            WebhookEvent.__table__.update()
+            .where(WebhookEvent.event_id == event_id)
+            .values(processed_at=func.now())
+        )
+        logger.info(
+            "iam.webhook.processed event_type=%s event_id=%s audit=%s",
+            event_type,
+            event_id,
+            audit_event_id,
+        )
+    else:
+        # Unknown/unmodelled — recorded (above) but NOT dispatched.  Mark
+        # processed so the unprocessed-sweep index does not flag it forever.
+        await db.execute(
+            WebhookEvent.__table__.update()
+            .where(WebhookEvent.event_id == event_id)
+            .values(processed_at=func.now())
+        )
+        logger.info(
+            "iam.webhook.unknown_event event_type=%s event_id=%s payload_keys=%s",
+            event_type,
+            event_id,
+            sorted(payload.keys()),
+        )
+
+    if owns_transaction:
+        await db.commit()
 
     return WebhookCaptureResult(
-        event_type="razorpay.webhook.captured",
-        event_subtype=event_subtype,
-        audit_event_id=0,  # placeholder — see V1.5 hand-off
+        event_type=event_type,
+        event_subtype=event_type,
+        audit_event_id=audit_event_id,
     )
 
 
@@ -783,4 +1752,10 @@ __all__ = [
     "revoke_refresh_token",
     "get_profile",
     "capture_razorpay_webhook",
+    # Wave 3 billing (auth-builder step 2a):
+    "get_billing_status",
+    "start_trial",
+    # Wave 3 billing (api-routes-builder step 2b):
+    "subscribe",
+    "cancel",
 ]

@@ -252,6 +252,86 @@ class GoogleIdentityConflictError(IamError):
         super().__init__(detail=detail)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Razorpay Wave 3 — PROPOSED billing exceptions (§7.G FOUNDER-GATE ITEM).
+#
+# ⚠ These ADD to the §7.G-LOCKED iam inventory and are therefore a founder-gate
+# item per repo-management master plan §7.3.  They are added here (NOT silently
+# — flagged in the Wave-3 PR + the auth-builder MEMORY) so the build + tests are
+# runnable; the LEAD carries them to the founder gate at the merge-gate review.
+# If the founder rejects a class, it is removed and the call site reworked.
+#
+# This dispatch (auth-builder, step 2a) needs ONLY ``TrialAlreadyUsedError``
+# (the ``start_trial`` idempotency 409).  ``AlreadySubscribedError`` (subscribe
+# 409) and ``NoActiveSubscriptionError`` (cancel 404/409) are added by the
+# api-routes-builder (step 2b) — see below after TrialAlreadyUsedError.
+# ─────────────────────────────────────────────────────────────────────────────
+class TrialAlreadyUsedError(IamError):
+    """PROPOSED (Wave 3 §7.G founder-gate).  Raised by ``start_trial`` when the
+    user has already consumed their one-per-phone 14-day Pro trial OR already
+    holds a non-free plan / live subscription (a trial would be redundant).
+
+    Maps to 409 / ``billing.trial.already_used`` (3-segment per §5A.H).
+    Idempotency guard for §3.7 (one trial per verified phone, Pricing v2 §4.3
+    / Q3 ruling).
+    """
+
+    code = "iam.trial_already_used"
+    status_code = 409
+    validation_message_id = "billing.trial.already_used"
+
+    def __init__(
+        self, detail: str = "A Pro trial has already been used on this account"
+    ) -> None:
+        super().__init__(detail=detail)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Razorpay Wave 3 — api-routes-builder (step 2b) billing exceptions.
+#
+# ⚠ PROPOSED (§7.G FOUNDER-GATE ITEM) — same gate as TrialAlreadyUsedError.
+# Registered here so the build + tests are runnable; the lead carries them
+# to the founder gate at the merge-gate review.
+# ─────────────────────────────────────────────────────────────────────────────
+class AlreadySubscribedError(IamError):
+    """PROPOSED (Wave 3 §7.G founder-gate).  Raised by ``subscribe`` when the
+    user already holds an ``active``/``authenticated``/``created`` subscription
+    row — a second concurrent subscribe would create a duplicate.
+
+    Maps to 409 / ``billing.subscription.already_active`` (3-segment per §5A.H).
+    The FE should surface a "You already have a subscription" message and
+    redirect to the subscription-management page.
+    """
+
+    code = "iam.already_subscribed"
+    status_code = 409
+    validation_message_id = "billing.subscription.already_active"
+
+    def __init__(
+        self, detail: str = "You already have an active subscription"
+    ) -> None:
+        super().__init__(detail=detail)
+
+
+class NoActiveSubscriptionError(IamError):
+    """PROPOSED (Wave 3 §7.G founder-gate).  Raised by ``cancel`` when the
+    user has no ``active``/``authenticated``/``created`` subscription to cancel.
+
+    Maps to 404 / ``billing.subscription.none_active`` (3-segment per §5A.H).
+    A cancelled subscription or a free/trial user who never subscribed both
+    raise this; the FE can treat it as "nothing to cancel".
+    """
+
+    code = "iam.no_active_subscription"
+    status_code = 404
+    validation_message_id = "billing.subscription.none_active"
+
+    def __init__(
+        self, detail: str = "No active subscription found to cancel"
+    ) -> None:
+        super().__init__(detail=detail)
+
+
 __all__ = [
     "IamError",
     "InvalidPhoneFormatError",
@@ -266,4 +346,9 @@ __all__ = [
     "GoogleEmailUnverifiedError",
     "GoogleUnavailableError",
     "GoogleIdentityConflictError",
+    # Wave 3 PROPOSED (founder-gate) — auth-builder (step 2a):
+    "TrialAlreadyUsedError",
+    # Wave 3 PROPOSED (founder-gate) — api-routes-builder (step 2b):
+    "AlreadySubscribedError",
+    "NoActiveSubscriptionError",
 ]
