@@ -25,7 +25,6 @@ import logging
 import os
 import re
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -443,7 +442,26 @@ def verify_formula(price: int, row: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Main run
 # ---------------------------------------------------------------------------
-async def run() -> None:
+async def run(storage_state_path: "Path | None" = None) -> None:
+    """Run the full getTransferPrice census for all leaf categories.
+
+    This function is the callable entry-point for both standalone use and inline
+    invocation from the monthly orchestrator (meesho_monthly_refresh.py, Stage B).
+
+    Args:
+        storage_state_path: Optional path to a Playwright storage-state JSON file
+            (warm Akamai session cookies) produced by a prior authenticated run.
+            When provided it overrides the default STORAGE_STATE_FILE so the
+            orchestrator can pass in the warm state written by Stage A.
+            When None, the function falls back to the module-level STORAGE_STATE_FILE
+            (existing behaviour — backward-compatible with standalone use).
+
+    Contract / pacing / resumability / hard-stop codes:
+        All unchanged.  This parameter only controls WHICH storage-state file is
+        consulted for the warm-session reuse attempt at the start of the run.
+        The 2.5s inter-call pace, OTP halt, 401/403/429/463 hard-stops,
+        sanity gate, and incremental JSONL resume are completely preserved.
+    """
     configure_logging()
     user, pwd = load_creds()
 
@@ -451,6 +469,21 @@ async def run() -> None:
     log.info("Account: %s*** / supplier_id=%d / identifier=%s",
              user[:4], SUPPLIER_ID, IDENTIFIER)
     log.info("Contract: price=%d (single point), pace=%.1fs per call", CENSUS_PRICE, INTER_CALL_SLEEP)
+
+    # Resolve which storage-state file to use for warm-session reuse
+    effective_storage_state_file = (
+        storage_state_path if storage_state_path is not None else STORAGE_STATE_FILE
+    )
+    if storage_state_path is not None:
+        log.info(
+            "Warm session: using caller-supplied storage_state_path=%s",
+            storage_state_path,
+        )
+    else:
+        log.info(
+            "Warm session: using default STORAGE_STATE_FILE=%s",
+            STORAGE_STATE_FILE,
+        )
 
     # Load all leaf categories
     all_leaves = load_leaf_categories()
@@ -477,13 +510,15 @@ async def run() -> None:
     hard_stop_at: str | None = None
 
     async with async_playwright() as pw:
-        # Try to reuse warm session (storage_state from prior run)
-        warm_session_used = False
+        # Try to reuse warm session (storage_state from prior run or Stage A)
         storage_state: Any = None
-        if STORAGE_STATE_FILE.exists():
+        if effective_storage_state_file.exists():
             try:
-                storage_state = json.loads(STORAGE_STATE_FILE.read_text())
-                log.info("Warm storage_state loaded from %s — will try session reuse", STORAGE_STATE_FILE)
+                storage_state = json.loads(effective_storage_state_file.read_text())
+                log.info(
+                    "Warm storage_state loaded from %s — will try session reuse",
+                    effective_storage_state_file,
+                )
             except Exception as e:
                 log.warning("Could not load storage_state: %s — will do fresh login", e)
                 storage_state = None
@@ -787,7 +822,7 @@ def _print_summary(s: dict[str, Any]) -> None:
     print("=" * 90)
     print(f"\nCoverage: {s['rows_with_data']} of {s['total_leaves']} categories "
           f"({s['error_rows']} errors/skipped)")
-    print(f"\n--- COMMISSION ANALYSIS ---")
+    print("\n--- COMMISSION ANALYSIS ---")
     ca = s["commission_analysis"]
     print(f"Non-zero commission rows: {ca['non_zero_count']}")
     print(f"Conclusion: {ca['conclusion']}")
@@ -795,25 +830,27 @@ def _print_summary(s: dict[str, Any]) -> None:
         for r in ca["non_zero_rows"]:
             print(f"  sscat={r['sscat_id']} {r.get('leaf_name')} "
                   f"commission%={r.get('commission_percentage')} fees={r.get('commission_fees')}")
-    print(f"\n--- SHIPPING DISTRIBUTION ---")
+    print("\n--- SHIPPING DISTRIBUTION ---")
     sd = s["shipping_distribution"]
     print(f"Min: {sd['min']}  Max: {sd['max']}  Unique values: {len(sd['unique_values'])}")
     print(f"Unique shipping values: {sd['unique_values']}")
-    print(f"Histogram (by ₹10 bucket):")
+    print("Histogram (by ₹10 bucket):")
     for bucket, count in sd["histogram_by_10"].items():
         bar = "#" * min(count // 10, 60)
         print(f"  ₹{bucket:<8}: {count:>5}  {bar}")
     fc = s["formula_check"]
-    print(f"\n--- FORMULA CHECK ---")
+    print("\n--- FORMULA CHECK ---")
     print(f"Passed: {fc['passed']} / {fc['total']}  |  Failed: {fc['failed']}")
     if fc["fail_rows"]:
         print("Failing rows:")
         for r in fc["fail_rows"]:
             print(f"  sscat={r['sscat_id']} {r.get('leaf_name')} check={r.get('formula_check')}")
-    print(f"\n--- LOOKUP TABLE ---")
+    print("\n--- LOOKUP TABLE ---")
     print(f"Full lookup written to: {CENSUS_SUMMARY_JSON}")
-    print(f"  Format: sscat_id -> {{leaf_name, commission_percentage, shipping_charges, "
-          f"transfer_price_at_100, formula_ok}}")
+    print(
+        "  Format: sscat_id -> {leaf_name, commission_percentage, shipping_charges, "
+        "transfer_price_at_100, formula_ok}"
+    )
     print("=" * 90 + "\n")
 
 
@@ -822,11 +859,13 @@ def print_partial_report(done: int, total: int, hard_stop_at: str | None) -> Non
     print(f"Census PARTIAL — {done} / {total} done ({done/total*100:.1f}%)")
     if hard_stop_at:
         print(f"Stopped at: {hard_stop_at}")
-    print(f"\nResume instructions:")
-    print(f"  Just re-run: /Users/mugunthansrinivasan/Project/mesell/backend/.venv/bin/python "
-          f"/Users/mugunthansrinivasan/Project/mesell/backend/scripts/meesho_transfer_price_census.py")
+    print("\nResume instructions:")
+    print(
+        "  Just re-run: /Users/mugunthansrinivasan/Project/mesell/backend/.venv/bin/python "
+        "/Users/mugunthansrinivasan/Project/mesell/backend/scripts/meesho_transfer_price_census.py"
+    )
     print(f"  Existing results: {CENSUS_JSONL}")
-    print(f"  The script will skip already-completed sscat_ids automatically.")
+    print("  The script will skip already-completed sscat_ids automatically.")
     print("=" * 90 + "\n")
 
 
