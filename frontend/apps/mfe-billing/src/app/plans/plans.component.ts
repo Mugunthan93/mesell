@@ -524,6 +524,13 @@ export class PlansComponent implements OnDestroy {
 
     this.billing.subscribe(tier).subscribe({
       next: (resp: BillingSubscribeResponse) => {
+        // DEV-MOCK: backend already granted entitlement synchronously — skip checkout.js,
+        // go straight to PENDING + poll (the first poll flips to active).
+        if (resp.checkout.mock) {
+          this.checkoutState.set('pending');
+          this._startPolling(tier);
+          return;
+        }
         this.checkoutState.set('checkout-open');
         void this.rzpCheckout.openWidget(resp.checkout).then((result: CheckoutResult) => {
           if (result.status === 'cancelled') {

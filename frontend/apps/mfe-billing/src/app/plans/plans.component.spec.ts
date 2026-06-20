@@ -147,7 +147,14 @@ class PlansStateProxy {
     this.errorMessage = '';
 
     this.billing.subscribe(tier).subscribe({
-      next: (resp: { checkout: { key_id: string; tier: string } }) => {
+      next: (resp: { checkout: { key_id: string; tier: string; mock?: boolean } }) => {
+        // DEV-MOCK: backend already granted entitlement synchronously — skip checkout.js,
+        // go straight to PENDING + poll (the first poll flips to active).
+        if (resp.checkout.mock) {
+          this.checkoutState = 'pending';
+          this._simulatePoll(tier);
+          return;
+        }
         this.checkoutState = 'checkout-open';
         void this.rzp.openWidget(resp.checkout).then((result: { status: string }) => {
           if (result.status === 'cancelled') {
@@ -602,5 +609,65 @@ describe('PlansComponent — billing unavailable (FEATURE_BILLING_ENABLED=off)',
   it('billingUnavailable starts as false', () => {
     const proxy = new PlansStateProxy(makeBillingMock(), makeAuthMock(), makeRzpMock(), makeToastMock());
     expect(proxy.billingUnavailable).toBe(false);
+  });
+});
+
+describe('PlansComponent — dev-mock branch (checkout.mock === true)', () => {
+  it('skips the Razorpay widget and goes straight to pending when mock=true', () => {
+    const billing = makeBillingMock();
+    const rzp = makeRzpMock();
+    const proxy = new PlansStateProxy(billing, makeAuthMock(), rzp, makeToastMock());
+
+    billing.subscribe.mockReturnValue(
+      of({ checkout: { key_id: 'rzp_mock_key', tier: 'pro', mock: true } }),
+    );
+    // getSubscription is not called synchronously in _simulatePoll when using a Subject
+    // — provide a never-resolving subject so we can observe the pending state
+    billing.getSubscription.mockReturnValue(new Subject());
+
+    proxy.subscribe('pro');
+
+    // Widget must NOT have been opened
+    expect(rzp.openWidget).not.toHaveBeenCalled();
+    // State must be pending (not checkout-open)
+    expect(proxy.checkoutState).toBe('pending');
+  });
+
+  it('starts polling after mock bypass (poll resolves to activated on first hit)', async () => {
+    const billing = makeBillingMock();
+    const rzp = makeRzpMock();
+    const toast = makeToastMock();
+    const proxy = new PlansStateProxy(billing, makeAuthMock(), rzp, toast);
+
+    billing.subscribe.mockReturnValue(
+      of({ checkout: { key_id: 'rzp_mock_key', tier: 'pro', mock: true } }),
+    );
+    billing.getSubscription.mockReturnValue(of({ entitlement: 'pro', plan: 'pro' }));
+
+    proxy.subscribe('pro');
+    await Promise.resolve(); // flush any microtasks
+
+    expect(rzp.openWidget).not.toHaveBeenCalled();
+    expect(proxy.checkoutState).toBe('activated');
+    expect(toast.success).toHaveBeenCalledWith(
+      BILLING_STRINGS['billing.plan_activated'],
+      'Plan activated!',
+    );
+  });
+
+  it('normal (non-mock) path still opens the widget when mock is absent', () => {
+    const billing = makeBillingMock();
+    const rzp = makeRzpMock();
+    const proxy = new PlansStateProxy(billing, makeAuthMock(), rzp, makeToastMock());
+
+    billing.subscribe.mockReturnValue(
+      of({ checkout: { key_id: 'rzp_live_key', tier: 'pro' } }),
+    );
+    rzp.openWidget.mockResolvedValue({ status: 'cancelled' });
+
+    proxy.subscribe('pro');
+
+    expect(rzp.openWidget).toHaveBeenCalledWith({ key_id: 'rzp_live_key', tier: 'pro' });
+    expect(proxy.checkoutState).toBe('checkout-open');
   });
 });
