@@ -206,6 +206,11 @@ class BillingCheckout(BaseModel):
     )
     currency: str = Field(default="INR", description="ISO-4217 currency code")
     tier: str = Field(description="The tier being subscribed to — echoes the request")
+    mock: bool = Field(
+        default=False,
+        description="DEV-ONLY. True when the dev mock granted entitlement synchronously "
+        "(no real Razorpay object). The FE skips checkout.js and polls directly.",
+    )
 
 
 class BillingSubscribeResponse(BaseModel):
