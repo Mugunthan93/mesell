@@ -17,3 +17,23 @@ the next wave's spec automatically so every wave is smarter than the last. Forma
   `@mesell/core` is not deduped) → E2E → the `logout-guard` flow is the sentinel; keep it.
 - **Assertion-free / `assert True` tests** slip in under time pressure → all lanes →
   reject at the gate; a test that asserts nothing is a defect.
+
+
+## From Wave 1 — e2e lane (PR #385, 2026-06-22)
+- **PROVISIONAL selectors written before exploration are frequently WRONG** → E2E lane →
+  the registry must be LIVE-VERIFIED before codification; ~8 of the bootstrap provisional
+  selectors were stale/renamed. The two-phase mandate (explore→codify) caught all of them.
+  Keep enforcing: a selector that is not in `selector_registry.md` as LIVE-VERIFIED is a reject.
+- **Federation singleton staleness bites the SHARED LIB, not just remotes** → E2E/frontend →
+  a stale shell-hosted `@mesell/ui-kit` singleton makes `[testId]` passthroughs silently no-op
+  even when the rebuilt remote bundle contains the string. Rebuilding remotes is NOT enough —
+  the SHELL (singleton host) must be rebuilt too. (federation_quirks.md, Wave-1.)
+- **Single-use rotating refresh token breaks shared `storageState`** → E2E auth setup →
+  the standard "auth.setup saves one storageState → all flows reuse it" pattern 401s the 2nd
+  flow. The robust pattern is a worker-scoped shared authed context (one login per worker).
+  Bake this into every future E2E wave's auth fixture; do NOT regress to plain storageState reuse.
+- **Hardcoded placeholder IDs in feature code surface only at the E2E/integration layer** →
+  E2E → mfe-export shipped `productId='current-product-id'` (a unit/component test mocking the
+  service would never catch it). The full-flow E2E export-download test is the only guard;
+  keep flows that exercise REAL created entities (createProductViaPicker → real UUID) rather
+  than stubbing the id.
