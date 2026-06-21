@@ -24,6 +24,7 @@ import type { MeeFileUploadEvent } from './file-upload.types';
       (uploadHandler)="onUploadHandler($event)"
       (onError)="onError($event)"
       [style]="{ minHeight: '44px' }"
+      [attr.data-testid]="testId()"
     />
   `,
 })
@@ -32,6 +33,7 @@ export class MeeFileUploadComponent {
   readonly max_size_mb = input<number>(5);
   readonly multiple = input<boolean>(false);
   readonly label = input<string>('Drop files here or click to upload');
+  readonly testId = input<string | undefined>(undefined);
 
   readonly files_selected = output<MeeFileUploadEvent>();
   readonly upload_error = output<string>();

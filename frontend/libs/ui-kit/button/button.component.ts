@@ -26,6 +26,7 @@ import { MEE_ICONS, MeeIconName } from '../icon/icon.registry';
       [icon]="pgIcon()"
       [style]="{ minHeight: '44px' }"
       (onClick)="clicked.emit()"
+      [attr.data-testid]="testId()"
     />
   `,
 })
@@ -37,6 +38,7 @@ export class MeeButtonComponent {
   readonly disabled = input<boolean>(false);
   readonly fullWidth = input<boolean>(false);
   readonly icon = input<MeeIconName | undefined>(undefined);
+  readonly testId = input<string | undefined>(undefined);
 
   readonly clicked = output<void>();
 

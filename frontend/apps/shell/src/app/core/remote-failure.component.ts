@@ -19,6 +19,7 @@ import { EmptyStateComponent } from '@mesell/composites';
   imports: [EmptyStateComponent],
   template: `
     <mee-empty-state
+      data-testid="remote-failure-fallback"
       icon="cloud-off"
       message="This module is temporarily unavailable. Please retry in a moment."
       cta_label="Retry"

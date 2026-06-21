@@ -272,6 +272,7 @@ const TICK_INTERVAL_MS = 2000;
             [fullWidth]="true"
             [disabled]="!canGenerateSignal()"
             [loading]="exportStatus() === 'processing'"
+            [testId]="'export-trigger'"
             (clicked)="onGenerate()"
           />
         </div>
@@ -307,6 +308,7 @@ const TICK_INTERVAL_MS = 2000;
                 <a
                   [href]="downloadUrl() ?? '#'"
                   download
+                  data-testid="export-download"
                   class="export-download-btn"
                   aria-label="Download XLSX file"
                 >

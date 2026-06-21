@@ -47,4 +47,19 @@ describe('MeeOtpInputComponent', () => {
     comp.writeValue('999999');
     expect(comp.innerValue()).toBe('999999');
   });
+
+  describe('testId passthrough', () => {
+    it('sets data-testid on the p-inputotp when testId is provided', () => {
+      fixture.componentRef.setInput('testId', 'otp-input');
+      fixture.detectChanges();
+      const el = fixture.nativeElement.querySelector('[data-testid="otp-input"]');
+      expect(el).toBeTruthy();
+    });
+
+    it('does not set data-testid when testId is not provided', () => {
+      fixture.detectChanges();
+      const el = fixture.nativeElement.querySelector('[data-testid]');
+      expect(el).toBeNull();
+    });
+  });
 });

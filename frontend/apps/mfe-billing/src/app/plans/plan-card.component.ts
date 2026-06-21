@@ -235,6 +235,7 @@ const ENTITLEMENT_RANK: Record<EntitlementLiteral, number> = {
           <button
             class="plan-card__cta plan-card__cta--upgrade"
             type="button"
+            data-testid="upgrade-prompt"
             [disabled]="isInitiating"
             (click)="onCTAClick()"
             [attr.aria-label]="ctaLabel() + ': ' + tier.name"

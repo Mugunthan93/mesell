@@ -32,12 +32,14 @@ import { InputOtp } from 'primeng/inputotp';
       [ngModel]="innerValue()"
       (ngModelChange)="onOtpChange($event)"
       [style]="{ gap: '8px', minHeight: '44px' }"
+      [attr.data-testid]="testId()"
     />
   `,
 })
 export class MeeOtpInputComponent implements ControlValueAccessor {
   readonly length = input<number>(6);
   readonly disabled = input<boolean>(false);
+  readonly testId = input<string | undefined>(undefined);
 
   readonly completed = output<string>();
 

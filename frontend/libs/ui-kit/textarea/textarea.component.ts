@@ -47,6 +47,7 @@ import { Textarea } from 'primeng/textarea';
       (blur)="onBlur()"
       class="w-full"
       style="min-height: 44px;"
+      [attr.data-testid]="testId()"
     ></textarea>
     @if (error()) {
       <small role="alert" style="color: var(--mee-color-error)" class="block mt-1 text-xs">
@@ -68,6 +69,7 @@ export class MeeTextareaComponent implements ControlValueAccessor {
   readonly disabled = input<boolean>(false);
   readonly required = input<boolean>(false);
   readonly autoResize = input<boolean>(false);
+  readonly testId = input<string | undefined>(undefined);
 
   readonly blur = output<string>();
 

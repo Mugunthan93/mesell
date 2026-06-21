@@ -40,7 +40,7 @@ import type { CategorySuggestion } from './smart-picker.model';
     MeeProgressBarComponent,
   ],
   template: `
-    <mee-card>
+    <mee-card data-testid="category-suggestion">
       <div
         class="mee-category-card"
         role="listitem"
@@ -73,6 +73,7 @@ import type { CategorySuggestion } from './smart-picker.model';
             variant="secondary"
             size="sm"
             [fullWidth]="false"
+            [testId]="'category-suggestion-select'"
             (clicked)="onUsed()"
           />
         </div>

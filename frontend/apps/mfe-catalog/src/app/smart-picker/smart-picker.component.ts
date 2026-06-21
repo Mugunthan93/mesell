@@ -140,6 +140,7 @@ import type { CategorySuggestion, SuggestResponse } from './smart-picker.model';
           [rows]="4"
           [required]="true"
           [error]="descError()"
+          [testId]="'smart-picker-description'"
         />
         <p class="mee-search-hint">Between 10 and 500 characters.</p>
       </form>

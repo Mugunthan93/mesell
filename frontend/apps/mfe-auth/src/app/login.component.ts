@@ -49,6 +49,7 @@ import { mapGoogleError, mapSendOtpError } from './auth-error-map';
           [placeholder]="'10-digit number'"
           [error]="phoneError()"
           [required]="true"
+          [testId]="'login-phone-input'"
           formControlName="phone"
         />
 
@@ -57,6 +58,7 @@ import { mapGoogleError, mapSendOtpError } from './auth-error-map';
           [loading]="loading()"
           [disabled]="form.invalid || googleLoading()"
           [fullWidth]="true"
+          [testId]="'login-request-otp'"
           (clicked)="onSubmit()"
         />
       </form>
@@ -77,6 +79,7 @@ import { mapGoogleError, mapSendOtpError } from './auth-error-map';
           #googleBtn
           class="google-btn-host"
           aria-label="Continue with Google"
+          data-testid="login-google-host"
         ></div>
         @if (googleLoading()) {
           <span class="google-busy" role="status" aria-live="polite" aria-busy="true">

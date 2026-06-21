@@ -44,4 +44,19 @@ describe('MeeFileUploadComponent', () => {
     comp.upload_error.emit('Upload failed');
     expect(emitted).toBe('Upload failed');
   });
+
+  describe('testId passthrough', () => {
+    it('sets data-testid on the p-fileupload when testId is provided', () => {
+      fixture.componentRef.setInput('testId', 'image-file-input');
+      fixture.detectChanges();
+      const el = fixture.nativeElement.querySelector('[data-testid="image-file-input"]');
+      expect(el).toBeTruthy();
+    });
+
+    it('does not set data-testid when testId is not provided', () => {
+      fixture.detectChanges();
+      const el = fixture.nativeElement.querySelector('[data-testid]');
+      expect(el).toBeNull();
+    });
+  });
 });

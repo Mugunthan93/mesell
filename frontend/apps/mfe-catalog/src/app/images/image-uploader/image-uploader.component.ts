@@ -139,6 +139,7 @@ import { ImageService } from './image.service';
           >
             @for (img of images(); track img.slot_index) {
               <mee-card
+                data-testid="precheck-card"
                 [style]="img.status === 'failed_precheck' ? 'border: 2px solid var(--mee-color-error);' : ''"
               >
                 <!-- Slot header -->
@@ -149,7 +150,7 @@ import { ImageService } from './image.service';
                   >
                     Slot {{ img.idx }}{{ img.is_front ? ' (Front)' : '' }}
                   </span>
-                  <mee-status-badge [status]="slotDisplayStatus(img)" />
+                  <mee-status-badge data-testid="precheck-status" [status]="slotDisplayStatus(img)" />
                 </div>
 
                 <!-- Thumbnail / placeholder -->
@@ -327,6 +328,7 @@ import { ImageService } from './image.service';
         <input
           #reuploadFileInput
           type="file"
+          data-testid="image-file-input"
           accept="image/jpeg,image/jpg"
           aria-hidden="true"
           style="display:none; position:absolute; width:1px; height:1px; overflow:hidden;"

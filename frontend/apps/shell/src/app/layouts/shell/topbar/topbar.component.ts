@@ -46,6 +46,7 @@ import { LayoutService } from '../layout.service';
           tabindex="0"
           aria-haspopup="true"
           aria-label="User menu"
+          data-testid="user-menu-trigger"
           (click)="toggleUserMenu($event)"
           (keydown.enter)="toggleUserMenu($event)"
           (keydown.space)="toggleUserMenu($event)"
@@ -58,6 +59,7 @@ import { LayoutService } from '../layout.service';
           type="button"
           class="mee-topbar__logout-btn"
           aria-label="Log out"
+          data-testid="nav-logout"
           (click)="logout()"
         >
           <mee-icon name="logout" />

@@ -60,4 +60,19 @@ describe('MeeInputComponent', () => {
     comp.onBlur();
     expect(touched).toBe(true);
   });
+
+  describe('testId passthrough', () => {
+    it('sets data-testid on the inner input when testId is provided', () => {
+      fixture.componentRef.setInput('testId', 'login-phone-input');
+      fixture.detectChanges();
+      const input = fixture.nativeElement.querySelector('input[data-testid="login-phone-input"]');
+      expect(input).toBeTruthy();
+    });
+
+    it('does not set data-testid when testId is not provided', () => {
+      fixture.detectChanges();
+      const input = fixture.nativeElement.querySelector('input[data-testid]');
+      expect(input).toBeNull();
+    });
+  });
 });
