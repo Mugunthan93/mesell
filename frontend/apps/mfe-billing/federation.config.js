@@ -37,5 +37,7 @@ module.exports = withNativeFederation({
 
   features: {
     ignoreUnusedDeps: true,
+    // mappingVersion: true — see shell/federation.config.js for rationale.
+    mappingVersion: true,
   },
 });
