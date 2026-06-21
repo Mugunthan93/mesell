@@ -2779,3 +2779,17 @@ Board sweep (session start + end): docs-only chore, no feature_board_infra.md Ac
 Cost: ₹0/month.
 Next action: founder reviews + merges PR #350 → develop (founder's gate). No infra follow-up.
 =========
+
+---
+
+### UPDATE — 2026-06-21 — mesell-mesell-dev-rewrite-infra-session-1
+
+**Task (adoption item `mesell-dev-rewrite`):** rewrite the stale `/mesell:dev` command (`.claude/commands/dev.md`) — it referenced the WRONG stack (Vite :5173/:5174, React, postgresql@14, OTP 1234).
+
+**Done:** rewrote to MeeSell's real stack — Angular 21 Native Federation (shell :4200 + 7 MFEs :4201-4207), FastAPI uvicorn :8000, PostgreSQL 16 (brew postgresql@16) + Valkey 8, OTP bypass `000000`, memory-safe local-dev (`tools/meesell_env.py` baseline/up preferred; `pnpm run dev:static`; NEVER `start:all`). Verified live against backend/, frontend/apps, frontend/tools/dev, Makefile, docker-compose.dev.yml, docs/LOCAL_DEV_SETUP.md.
+
+**PR:** #353 `feat/mesell-dev-rewrite/infra` → develop (1 file, +163/-66). MERGEABLE; `mergeStateStatus=BLOCKED` = normal protected-develop state. **develop is the FOUNDER's gate (D1) — I do NOT merge it.**
+
+**Cost:** ₹0/mo. Docs-only `.claude/` file; no infra/TF/K8s/secret surface → no terraform plan / kubectl dry-run applicable.
+
+**Board sweep (session-end):** Active features table healthy; no new stale-7d flags raised this session (chore PR is an adoption item, not a feature-group lane — no board row). Worktree `/tmp/mesell-wt/mesell-dev-rewrite` pruned post-PR.

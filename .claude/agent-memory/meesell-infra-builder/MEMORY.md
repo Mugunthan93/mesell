@@ -1,5 +1,8 @@
 # Memory — meesell-infra-builder
 
+> 2026-06-21: Adoption item `plan-gate` — authored `docs/dev/PLAN_GATE.md` (HYBRID step 1, read-only SPEC phase before any code/worktree). Branch `docs/plan-gate` → PR #351 (base develop, +89/-0, MERGEABLE, clean). House style matches sibling `docs/dev/{REVIEW_GATES,VERIFY_GATE,WORKTREE_ISOLATION}.md` (blockquote intro + checklist + CLAUDE_FEATURE_ADOPTION.md ref). Session `mesell-plan-gate-doc-infra-session-1`.
+> ⚠️ GOTCHA (cost me a force-push): when cutting a branch with `git checkout -b X origin/develop`, the LOCAL `origin/develop` ref can be STALE/ahead of the true remote if another local commit was layered on it earlier in the session. Symptom: `gh pr view --json files` showed a SECOND unrelated file (`MEMORY_INDEX_CONVENTION.md`, commit 02f4caa — another adoption item, not mine) in my PR diff even though my single commit only added PLAN_GATE. Fix: `git fetch origin develop` then `git rebase --onto origin/develop <unrelated-sha> <mybranch>` to drop the foreign commit, then `git push --force-with-lease`. LESSON: ALWAYS `git fetch origin develop` + verify `gh pr view --json files` after opening any PR — never trust the local `origin/develop` ref blindly, and never ship another adoption item's unmerged commit inside your PR.
+
 > 2026-06-21: Master-tree zero-loss sync to origin/develop (#335–#338) via backup branch `backup/tidyup-presync-20260621` + tar `/tmp/mesell-tidyup-20260621.tar` → `git stash push -u` → `merge --ff-only` (f319bf8) → `stash pop` (no conflicts). Pattern for FF behind: stash-incl-untracked, never `reset --hard`. Use `MESELL_ALLOW_MASTER_GIT=1` for sanctioned master-tree git.
 
 ## Agent Identity
@@ -1360,3 +1363,25 @@ Audit of the live `.claude/agent-memory/` ecosystem for adoption assessment:
 ## [2026-06-21] REVIEW_GATES.md landed — Claude feature adoption step 1 (option C)
 Authored `docs/dev/REVIEW_GATES.md` (PR #338, squash `f319bf8`; develop `8fea4c9`->`f319bf8`). MeeSell-tailored ADVISORY checklists for the BUILT-IN `/code-review` + `/security-review` skills, run by coordinators at HYBRID dispatch step 3. Chose a checklist DOC (not custom `.claude/commands/*`) because `.claude/` is write-protected for agents. Captures recurring bug classes: federation singleton-logout (`@mesell/*` libs need `singleton:true` + `MESELL_SHARED_VERSION` pin across all 8 federation configs incl mfe-billing), FE<->BE contract parity (verb/field/enum — caused suggest-405, autofill `product_name`, `size_in_ltrs` 422), auth/session, flag-gating (razorpay-live + held-google-auth), zero-spend/READ-ONLY/never-go-live constraints. `/security-review` is diff-scoped (exclude .env/*.example/secrets/.venv). Promote `/code-review` to REQUIRED develop context after ~10 clean PRs. Companion: `docs/dev/CLAUDE_FEATURE_ADOPTION.md`.
 - Process: founder-authorized self-merge via `gh pr merge <#> --squash --admin`. Worktree-off-develop discipline held (built in `/private/tmp/mesell-wt/review-gates-doc`, never gitted master tree); cleanup = `git worktree remove` + local delete needs `MESELL_ALLOW_MASTER_GIT=1` + `git push origin --delete`. Docs-only meta-process task — no INFRASTRUCTURE_PLAYBOOK section applies, so NO IN PROGRESS row on feature_board_infra (it is not a feature/{slug}/infra build).
+
+> 2026-06-21: Authored docs/dev/MEMORY_INDEX_CONVENTION.md (PR #352, branch docs/memory-index-convention, base develop, MERGEABLE, 1 file). Convention: MEMORY.md = lean newest-first one-line index linking to <topic>.md detail files (~10x start-of-task token savings); worktree-safe append rule (memory under .claude/ via Bash/heredoc, NEVER Edit tool); rule-4 ownership (no agent edits another's memory; lazy per-agent migration). GOTCHA: a parallel session shares this master tree and switched my branch out from under me (checked out my branch → moved to docs/plan-gate), resetting my local+remote branch ref to origin/develop and orphaning my commit (02f4caa). Recovered via reflog → `git reset --hard <sha>` → `push --force-with-lease`. LESSON: in a shared master tree with concurrent sessions, after commit+push always re-verify `git ls-remote origin <branch>` == my commit SHA before `gh pr create`; the push "success" message is not proof. Did NOT touch the foreign uncommitted frontend-coordinator/MEMORY.md edit — stashed it by path before branching, popped it back after (rule 4).
+
+---
+
+## /mesell:dev command rewrite (mesell-dev-rewrite) — 2026-06-21
+
+**Adoption item:** the `/mesell:dev` slash command at `.claude/commands/dev.md` was STALE — described Vite frontend (:5173/:5174), React components, `postgresql@14`, OTP code `1234`. All WRONG.
+
+**Rewrote to the verified real stack** (branch `feat/mesell-dev-rewrite/infra`, PR #353 → develop):
+- Frontend = **Angular 21** (`@angular/core ^21.2.0`) Native Federation: **shell :4200 + 7 MFEs :4201-4207** in this exact serve-static port order: mfe-pricing 4201, mfe-export 4202, mfe-onboarding 4203, mfe-dashboard 4204, mfe-catalog 4205, mfe-auth 4206, mfe-billing 4207 (from `frontend/tools/dev/serve-static.mjs` SERVERS array — authoritative, matches `federation.manifest.json`).
+- Backend = FastAPI uvicorn **:8000** (`/health`, `/docs`; `/` 404 by design). Optional Celery worker.
+- Data = **PostgreSQL 16** (`brew postgresql@16`) :5432 + Valkey 8 :6379. `postgresql://meesell:password@localhost:5432/meesell`.
+- OTP dev bypass code = **`000000`** (`DEV_OTP_BYPASS_CODE` in `backend/app/shared/config.py`; gated `bool(DEV_OTP_BYPASS_CODE) and APP_ENV != "production"`). NOT 1234.
+- Memory-safe local dev (8 GB box): prefer **`python3 tools/meesell_env.py`** (`baseline up`, `up <wt> --mfe a,b`, `status`, `down`, `gc`) — RAM-budgeted, serialized builds (ONE at a time behind a flock), reuses slot-0 baseline via runtime federation manifest. Alt path = `pnpm run dev:build-static` + `dev:serve-static` (or `dev:static all`). **NEVER `pnpm run start:all`** (8× ng serve = 3-5 GB swap-thrash, the historical hang).
+
+**Authoritative cross-refs:** `docs/LOCAL_DEV_SETUP.md` (founder-facing canonical), `frontend/tools/dev/STATIC_DEV.md`, `Makefile` (`make dev` docker / `make dev-local` native / `make seed`).
+
+**Process notes:**
+- `.claude/commands/dev.md` IS git-tracked and NOT gitignored — editable as a normal repo file via a worktree (no settings-classifier block; that block only hits `~/.claude/settings.json` / project `.claude/settings.json`). The "edit via git-plumbing" caution in the task was a non-issue here — plain Write worked.
+- Worked in worktree `/tmp/mesell-wt/mesell-dev-rewrite` off `origin/develop` (master tree was parked on `docs/plan-gate` — never git the master tree). Pruned after PR.
+- PR #353 targets **develop** = the FOUNDER's gate (D1). `mergeStateStatus=BLOCKED` is the normal protected-develop state; I do NOT merge it. MERGEABLE=true, no conflicts, 1 file +163/-66.
