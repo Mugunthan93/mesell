@@ -206,19 +206,35 @@ because it wants to purge the corrupted `node_modules` without a TTY; `CI=true`
 is pnpm's prescribed non-interactive remedy. Verified afterward:
 `node_modules/.bin/ng version` → Angular CLI 21.2.14, no error.
 
-### `baseline up` — KNOWN ISSUE (does not yet work end-to-end)
+### `baseline up` — RESOLVED (2026-06-21)
 
-As of 2026-06-21, `baseline up` builds the shell successfully (~3.2s) then
-**deadlocks before the first MFE**: an `ng build` + `esbuild --service` child
-hangs at ~0% CPU indefinitely (observed 8m19s). This is an esbuild
-service-mode hang, **not OOM** — swap stayed flat at 18.9% and ~2 GB RAM was
-free throughout, so the RAM guard was never the constraint. The
-"pkill esbuild between builds" mitigation does not effectively clear the hung
-service on this path. Only 1 of 8 apps (shell) built.
+The earlier "deadlocks before the first MFE" issue is **fixed**.
 
-Safe-abort recovery: kill the orchestrator + `ng build` + `esbuild` PIDs, then
-run `meesell_env.py gc` (note: `down` requires a worktree arg and is N/A to the
-untracked baseline run); verify 0 listeners on ports 4200–4207 / 8000.
+**Root cause (confirmed):** on this Angular (21.2.x) toolchain, `ng build`
+finishes writing the bundle (the shell finished in ~3.8 s, dist on disk) but
+**never exits** — it leaks a persistent `esbuild --service --ping` child that
+sits in `_pthread_cond_wait`, keeping the `ng` process alive. The orchestrator's
+old `subprocess.run(...).wait()` then blocked forever on the *first* build, so
+only the shell ever "built". Confirmed it is **not** a Python pipe-buffer
+deadlock and **not** OOM: a standalone `ng build mfe-export` (no orchestrator,
+no PIPE) reproduced the same hang while swap stayed flat at 18.9 % and ~2 GB RAM
+was free throughout.
 
-STATUS: fix pending — the serialized-build esbuild deadlock needs investigation
-before `baseline up` is usable.
+**Fix:** `ng_build` now (a) writes each build's stdout+stderr to a per-app log
+file `.nexus/build-<project>.log` (never an undrained PIPE), (b) runs the build
+in its own process group (`start_new_session=True`), and (c) waits by tailing
+the log for the completion marker (`Application bundle generation complete` /
+`Output location:`) plus a dist-exists check, then reaps the process group and
+sweeps any orphan `esbuild --service` (the existing `pkill esbuild` is the
+reliable safety net — killing esbuild makes the hung `ng` exit). A genuine
+failure is detected by non-zero exit with no marker, or a 600 s timeout with no
+marker. The conservative RAM guard, the global build lock, and the
+per-slot/manifest reuse logic are all unchanged.
+
+**End-to-end verification (2026-06-21):** `baseline up` built **all 8 apps**
+(shell + mfe-auth/billing/catalog/dashboard/export/onboarding/pricing),
+serialized, esbuild swept between each, no hang, no traceback. `status` showed
+backend :8000, shell :4200, and MFEs :4201–4207 all alive. `curl` returned
+**HTTP 200** for the shell (:4200), MFEs (:4203, :4207) and backend health
+(:8000); `remoteEntry.json` 200 on two MFEs. Peak swap held at 18.9 % (no OOM).
+`down mesell` + `gc` tore the stack down cleanly (0 listeners).
