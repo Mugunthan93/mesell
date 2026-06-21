@@ -13,12 +13,43 @@
 - Tear down after.
 
 ## Change-type → assertion
-| Change type | Verify |
-|---|---|
-| fe-route | shell + route renders, HTTP 200 |
-| fe-federation | remote loads, no logout on shell→remote nav |
-| api-endpoint | targeted httpx 2xx with expected shape |
-| migration | upgrade head succeeds on a disposable TEST_DATABASE_URL |
+| Change type | Verify | Tool |
+|---|---|---|
+| fe-route | shell + route renders, HTTP 200 | **agent-browser** (behavioral) |
+| fe-federation | remote loads, no logout on shell→remote nav | **agent-browser** (behavioral) |
+| api-endpoint | targeted httpx 2xx with expected shape | httpx |
+| migration | upgrade head succeeds on a disposable TEST_DATABASE_URL | alembic |
+
+## Behavioral verification with agent-browser
+
+The FE verify checks — route renders, shell→remote nav with **NO logout**, and the in-app
+form flows — are **behavioral**: they cannot be confirmed by a diff-only `/code-review`. They
+are performed by **agent-browser** driving a real headless Chrome against a live env. This is
+the real behavioral gate that replaces the previously-deferred "logout smoke (8GB)" gap —
+agent-browser does it for real, **one env at a time** (single-build mutex + RAM budget still
+apply; never stand up two verify envs concurrently).
+
+For the `fe-route` and `fe-federation` rows in the change-type table above, **agent-browser is
+the tool.**
+
+### Recipe
+
+1. **Serve** the shell + only the touched MFE on the slot ports:
+   `python3 tools/meesell_env.py up <worktree> --mfe <touched>`
+2. **Drive** with agent-browser:
+   - Navigate to the shell.
+   - Log in using the dev OTP bypass (`000000`).
+   - Navigate **shell → the touched remote**.
+   - **ASSERT no redirect to `/login`** — i.e. the Native Federation singleton holds and the
+     in-memory access token survives the nav (the #328 regression check).
+   - Capture a **screenshot** of the rendered remote as the pass artifact.
+3. **Tear down**: `python3 tools/meesell_env.py down <worktree>` + `gc` after.
+
+### Per-dev prereq (one time)
+
+```bash
+npm i -g agent-browser && agent-browser install   # + a local Chrome
+```
 
 ## Rules
 - Pilot on the two open known bugs (federation-singleton logout, `size_in_ltrs` 422) before standardizing.
