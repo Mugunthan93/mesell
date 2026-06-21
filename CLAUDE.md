@@ -2,20 +2,20 @@
 
 ## MeeSell Agent Ecosystem Rules (NON-NEGOTIABLE)
 
-MeeSell uses a **dedicated agent fleet** of 19 `meesell-*` agents. These rules govern every Claude session, sub-session, and dispatch in this project:
+MeeSell uses a **dedicated agent fleet** of 23 `meesell-*` agents. These rules govern every Claude session, sub-session, and dispatch in this project:
 
 1. **Only `meesell-*` agents handle MeeSell work.** NEVER dispatch `nexus:level-*`, `general-purpose`, `Explore`, `Plan`, or any other non-MeeSell agent for MeeSell tasks. If a task touches MeeSell, only an agent whose name starts with `meesell-` may execute it.
 2. **Decentralized memory.** Each agent has its own persistent memory at `.claude/agent-memory/meesell-<role>/MEMORY.md`. Every agent reads its own memory at the start of every task and appends learnings at the end.
 3. **Decentralized cross-agent sharing.** Agents share context by **reading each other's memory** (`.claude/agent-memory/meesell-<other-role>/MEMORY.md`), NOT via a centralized truth document. There is no single source of truth — the truth is distributed across agent memories, STATUS files, and the locked docs (`V1_FEATURE_SPEC.md`, `PRICING_LOCKED.md`, `INFRASTRUCTURE_PLAYBOOK.md`, `LEGAL_AND_COMPLIANCE_INFO.md`).
 4. **No agent writes to another agent's memory.** Memory directories are owned. If you need info that's not yet recorded in another agent's memory, escalate via the STATUS file blocker mechanism.
-5. **Coordinator → specialist hierarchy.** The 5 coordinators (`meesell-backend-coordinator`, `meesell-frontend-coordinator`, `meesell-ai-coordinator`, `meesell-legal-writer`, `meesell-data-engineer`) plus `meesell-infra-builder` dispatch the specialists. The master Claude session dispatches the coordinators.
+5. **Coordinator → specialist hierarchy.** The 6 coordinators (`meesell-backend-coordinator`, `meesell-frontend-coordinator`, `meesell-ai-coordinator`, `meesell-qa-coordinator`, `meesell-legal-writer`, `meesell-data-engineer`) plus `meesell-infra-builder` dispatch the specialists. The master Claude session dispatches the coordinators.
 6. **Out-of-scope work is refused with a redirect.** Every agent has a Scope (IN) and Scope (OUT) section. Out-of-scope asks are refused with a polite "defer to meesell-<other-role>" message.
 7. **HYBRID dispatch rule (founder-ruled 2026-06-11).** Dispatched coordinator agents have no Agent tool — they cannot reach their specialists, so the session window must run the hierarchy FOR them:
    - **Code-heavy construction** (feature code, extractions, AI pipeline code, auth/backend changes): THREE-step dispatch — (1) dispatch the coordinator to produce a task SPEC, (2) the session dispatches the named SPECIALIST agent (the sonnet builders) with that spec, (3) dispatch the coordinator again to run the MERGE-GATE REVIEW on the specialist's PR. The review is a real gate — it can reject back to the specialist.
    - **Docs, status flips, rulings landings, chores**: single-agent fast mode — the coordinator/lead executes directly. No ceremony.
    - Standalone agents (`meesell-infra-builder`, `meesell-legal-writer`) have no specialists — they always execute directly.
 
-### The 19-agent roster
+### The 23-agent roster
 
 | Coordinator / Standalone | Specialists |
 |---|---|
@@ -24,12 +24,15 @@ MeeSell uses a **dedicated agent fleet** of 19 `meesell-*` agents. These rules g
 | `meesell-backend-coordinator` (opus) | `meesell-database-builder` (sonnet), `meesell-api-routes-builder` (sonnet), `meesell-services-builder` (opus), `meesell-auth-builder` (opus) |
 | `meesell-frontend-coordinator` (opus) | `meesell-angular-component-builder` (sonnet), `meesell-angular-service-builder` (sonnet), `meesell-angular-ui-styler` (sonnet) |
 | `meesell-ai-coordinator` (opus) | `meesell-prompt-engineer` (opus), `meesell-category-picker-builder` (opus), `meesell-image-precheck-builder` (opus) |
+| `meesell-qa-coordinator` (opus) | `meesell-backend-test-writer` (sonnet), `meesell-frontend-test-writer` (sonnet), `meesell-e2e-test-writer` (opus) |
 | `meesell-legal-writer` (opus, no Bash) | — |
 | `meesell-data-engineer` (opus) | `meesell-xlsx-parser` (sonnet), `meesell-scraper-maintainer` (sonnet) |
 
 **Tier-1:** `meesell-section-coordinator` (opus) masters ONE V1 feature vertical slice — owns its wave plan + the integration→develop PR; dispatches the frontend + backend discipline coordinators beneath it. See SECTION_PARALLEL_MODEL.md / SECTION_DISPATCH_PROTOCOL.md.
 
-**Deferred to V1.5:** `meesell-brand-master-builder` (brand whitelist parsed inline by `meesell-xlsx-parser` for V1). `meesell-test-writer` and `meesell-deployer` are not created at this stage.
+**QA pillar (added 2026-06-22):** the `meesell-qa-coordinator` + 3 test specialists supersede the old single deferred `meesell-test-writer` — a full QA wave model (backend pytest + frontend Karma/Jasmine + Playwright E2E) per `docs/superpowers/specs/2026-06-22-meesell-testing-agent-design.md`. The QA wave runs as a dedicated sprint AFTER feature waves merge; it never blocks a feature PR.
+
+**Deferred to V1.5:** `meesell-brand-master-builder` (brand whitelist parsed inline by `meesell-xlsx-parser` for V1). `meesell-deployer` is not created at this stage.
 
 See `docs/MEESELL_AGENT_REGISTRY.md` for full agent specs and `.claude/agents/meesell-*.md` for the executable spec files.
 
