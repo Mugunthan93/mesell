@@ -30,6 +30,9 @@ frontend/.angular/
 archive/
 themes/sakai-ng/
 
+# local skill/plugin lockfiles
+skills-lock.json
+
 # meesell_env.py — dev-environment manager generated state (never commit)
 .nexus/env-ports.json
 .nexus/env-state.json
