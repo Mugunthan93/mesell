@@ -238,6 +238,63 @@ async def test_google_first_login_then_me_then_refresh(google_client):
 
 
 @pytest.mark.asyncio
+async def test_google_only_user_catalog_nav_stays_authenticated(google_client):
+    """Regression guard for the "Google sign-in → view catalog → logged out" bug
+    (gauth-catalog-logout, 2026-06-21).
+
+    A real Google sign-in creates a phone-NULL user (``phone=NULL``,
+    ``google_sub`` set).  The founder reported that navigating to view the
+    catalog logged the user out — the suspicion being a phone-NULL gap on the
+    catalog path mirroring the #322 ``/auth/me`` 422 (phone-NULL) defect.
+
+    The browser repro (agent-browser, the real Google-only dev user) showed the
+    user STAYS logged in: the historical logout was the federation
+    auth-singleton stale-bundle artifact fixed in #373 (FED-1), NOT a
+    phone-NULL backend/guard gap.  This test LOCKS that finding at the
+    route→dependency layer: the Google-only user's access token must
+    authenticate the EXACT request the catalog page fires — ``GET /products``,
+    whose handler depends on ``get_current_user`` — and return 200, never 401.
+
+    ``get_current_user`` decodes the JWT ``sub`` and verifies the user row
+    exists; it has NO phone dependency, so a phone-NULL user must pass.  If a
+    future change ever introduces a phone-NULL assumption on the authenticated
+    catalog path, this test fails loudly.
+    """
+    client, iam_service, monkeypatch, _Session = google_client
+    monkeypatch.setattr(
+        iam_service.google_adapter,
+        "verify_id_token",
+        AsyncMock(return_value=_claims("catalog-nav@example.com", "g-sub-catnav")),
+    )
+
+    # 1. Google sign-in → phone-NULL user + access token (the founder's flow).
+    resp = await client.post("/api/v1/auth/google/verify", json={"credential": "tok"})
+    assert resp.status_code == 200, resp.text
+    access = resp.json()["access_token"]
+
+    # 2. /me confirms this is a Google-only (phone-NULL) user.
+    me = await client.get(
+        "/api/v1/auth/me", headers={"Authorization": f"Bearer {access}"}
+    )
+    assert me.status_code == 200, me.text
+    assert me.json()["phone"] is None  # Google-only user — the bug's precondition
+
+    # 3. THE BUG PATH: navigating to view the catalog fires GET /products.  For
+    #    a phone-NULL user this must return 200 (authenticated), NOT 401 — a 401
+    #    here is exactly what would force the FE interceptor → refresh → logout
+    #    cascade the founder observed.
+    products = await client.get(
+        "/api/v1/products", headers={"Authorization": f"Bearer {access}"}
+    )
+    assert products.status_code == 200, (
+        f"Google-only (phone-NULL) user must stay authenticated on the catalog "
+        f"nav path; got {products.status_code}: {products.text}"
+    )
+    body = products.json()
+    assert "products" in body and "total" in body  # locked list-response shape
+
+
+@pytest.mark.asyncio
 async def test_google_links_to_existing_phone_user_by_email(google_client):
     """Cross-provider: a phone user + a Google login on the SAME verified email
     resolve to the SAME user_id (auto-link, design §E rule 2).
