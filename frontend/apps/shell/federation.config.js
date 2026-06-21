@@ -1,21 +1,5 @@
 const { withNativeFederation, shareAll } = require('@angular-architects/native-federation/config');
-
-// VERSION-PIN (fix/federation-shared-version-pin):
-// @mesell/* workspace libs had no package.json → version="" in every remoteEntry.json.
-// With empty version, Native Federation cannot dedup by version key → each remote loaded
-// its own @mesell/core instance (different chunk hash) → AuthService token=null → logout.
-// Fix: explicit shared overrides with version:'1.0.0' + singleton:true + strictVersion:true
-// on ALL @mesell/* libs across ALL 7 federation configs. Matching libs/*/package.json files
-// were also added (same version) so requiredVersion:'auto' resolves correctly in future builds.
-
-const MESELL_SHARED_VERSION = '1.0.0';
-
-const mesellShared = {
-  '@mesell/core':      { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
-  '@mesell/env':       { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
-  '@mesell/ui-kit':    { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
-  '@mesell/composites': { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
-};
+const { mesellShared } = require('../../libs/federation/shared.config');
 
 // Sub-Plan 0 — Workspace Foundation. HOST (dynamic-host), ZERO remotes wired (D7).
 // Remotes are loaded at runtime from public/federation.manifest.json (currently {}).

@@ -1,4 +1,5 @@
 const { withNativeFederation, shareAll } = require('@angular-architects/native-federation/config');
+const { mesellShared } = require('../../libs/federation/shared.config');
 
 // Wave 5 — new 7th remote `mfe-billing` (D-FE1 — new remote for billing vertical).
 // kind: 'remote' — produces remoteEntry.json + ESM chunks, mounted by the shell host.
@@ -18,6 +19,7 @@ module.exports = withNativeFederation({
 
   shared: {
     ...shareAll({ singleton: true, strictVersion: false, requiredVersion: 'auto' }),
+    ...mesellShared,
   },
 
   skip: [
