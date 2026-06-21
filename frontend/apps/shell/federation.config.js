@@ -60,5 +60,10 @@ module.exports = withNativeFederation({
     // issues with node libs. Comment this out to
     // get the traditional behavior:
     ignoreUnusedDeps: true,
+    // mappingVersion: true — makes NF emit the version field for tsconfig-path shared mappings
+    // (@mesell/* libs). Without this, version='' for ALL workspace libs → NF cannot dedup by
+    // version key → each remote loads its own @mesell/core → AuthService token=null → logout.
+    // Version is read from libs/*/package.json (added as part of fix/federation-shared-version-pin).
+    mappingVersion: true,
   },
 });
