@@ -221,7 +221,7 @@ Each worktree gets the same `.gitignore` (it's a tracked file on the branch). If
 
 - Single-session work in the master tree (founder running ad-hoc edits) — just edit in `/Users/mugunthansrinivasan/Project/mesell/`.
 - Cross-cutting changes spanning multiple features (a worktree is per-feature; a cross-cutting change needs `develop` directly or a dedicated short-lived branch).
-- Infra work owned by `meesell-infra-builder` — infra session works in the master tree, not in a feature worktree. (This dispatch is the meta-case: the infra builder authors the worktree TOOLING in the master tree; sub-sessions then USE that tooling in worktrees.)
+- Infra work owned by `meesell-infra-builder` — infra session works in the master tree, not in a feature worktree. (This dispatch is the meta-case: the infra builder authors the worktree TOOLING in the master tree; sub-sessions then USE that tooling in worktrees.) **[SUPERSEDED by `docs/GIT_WORKFLOW.md`: infra is now a normal feature group (`feature/{slug}/infra`) with its own branch + worktree + localhost env; never git in the master tree.]**
 
 ---
 

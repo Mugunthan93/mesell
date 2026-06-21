@@ -385,7 +385,7 @@ The same Angular codebase is wrapped with **Ionic + Capacitor** for iOS/Android 
 - **TIMESTAMPTZ** for all timestamps (timezone-aware)
 - **JSONB** for flexible structured data (ai_attributes, quality_checks)
 - **Indexes**: on all foreign keys + frequently queried columns
-- **Migrations**: Alembic, one migration per ticket, descriptive message
+- **Migrations**: Alembic, one migration per feature-group change, descriptive message
 - **No raw SQL in routes**: always go through SQLAlchemy ORM or service layer
 
 ### API Design
@@ -399,9 +399,16 @@ The same Angular codebase is wrapped with **Ionic + Capacitor** for iOS/Android 
 
 ### Git
 
-- **Branch naming**: `ticket/{ticket-number}-short-description` (e.g., `ticket/T01-project-setup`)
-- **Commit messages**: `T01: Set up FastAPI project with config and health endpoint`
-- **One ticket per PR**, squash merge to main
+> **Canonical git workflow: see `docs/GIT_WORKFLOW.md`.** That file is the single source of truth for branching, worktrees, and the merge flow. The summary below is a pointer — if anything here ever disagrees with `docs/GIT_WORKFLOW.md`, the workflow doc wins.
+
+- **Branch naming**: `feature/{slug}/{group}`, where `group ∈ {backend, frontend, ai, data, infra}`. Each group gets its own branch, its own git worktree, and its own localhost env. (The legacy `ticket/{number}-desc` naming is RETIRED.)
+- **Worktrees, not the master tree**: every group works in its own worktree. NEVER run git in the master tree (`MESELL_ALLOW_MASTER_GIT=1` override is for safe recovery only).
+- **Two-step merge flow**:
+  1. `feature/{slug}/{group}` --**squash**--> `feature/{slug}/integration` — the Director/coordinator merges this step.
+  2. `feature/{slug}/integration` --**merge-commit**--> `develop` — the **FOUNDER** merges this step.
+  3. Promotion onward: `develop` → staging → main (tagged).
+- **No auto-delete of branches** (manual prune after merge); **no age-based stale rule**. (The legacy "one ticket per PR, squash merge to main" single-step flow is RETIRED.)
+- **Commit messages**: conventional commits (`feat:`, `fix:`, `chore:`, etc.); reference the feature slug, not a ticket number.
 - **Never commit**: .env, secrets.yaml, __pycache__, node_modules, .venv
 
 ## Key Decisions (Do Not Change)
