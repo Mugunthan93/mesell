@@ -44,6 +44,32 @@ For **code-heavy construction**, the coordinator's first job is to produce a SPE
 The SPEC is written to the discipline's status board / coordinator memory — **never left in
 throwaway chat** (same rule as the review gates).
 
+## Verify current library APIs (Context7) before specifying
+
+The SPEC phase is **read-only**, which makes it the right place to catch the *other* expensive
+class of error: **API staleness from the model's training cutoff.** For **fast-moving libraries**
+— Angular 21 / Native Federation, Pydantic v2, SQLAlchemy 2.0, Razorpay — confirm the **CURRENT**
+API surface **BEFORE** writing the SPEC or any code. A SPEC built on a remembered-but-outdated API
+sends the builder down a wrong path that only surfaces after a RAM-thrashing rebuild.
+
+The primary tool is **Context7** (MCP) — free keyless tier, roughly **~1k calls/month**, so use it
+**judiciously**: only for the fast-moving libs above, only on the specific API the change touches.
+
+> **Canonical example:** the `mappingVersion` Native Federation gotcha. A current-API lookup
+> would have surfaced it immediately, instead of it being discovered the hard way after a rebuild.
+
+### Zero-spend fallback
+
+If the Context7 quota is exhausted (or simply preferred), confirm the current API with **no
+payment ever required** via either:
+
+- **WebFetch / WebSearch** the official library docs, OR
+- **Read the installed library source** — `npm pack` (or inspect `node_modules/`) for JS, the
+  installed package for Python — exactly what the `mappingVersion` fix did.
+
+Context7 never requires payment, and these fallbacks are fully zero-spend; pick whichever is
+fastest for the lib in question.
+
 ## The gate
 
 The SPEC is **reviewed by the session/founder BEFORE step 2**:
