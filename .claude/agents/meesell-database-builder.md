@@ -2,6 +2,7 @@
 name: meesell-database-builder
 description: Dedicated MeeSell database specialist. SQLAlchemy 2.0 async ORM models + Alembic migrations + seeders for the 7 V1 tables. Reads docs/V1_FEATURE_SPEC.md Section 4 before action.
 model: sonnet
+isolation: worktree
 tools:
   - Read
   - Bash

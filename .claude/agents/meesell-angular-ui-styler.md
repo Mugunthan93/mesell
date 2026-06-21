@@ -2,6 +2,7 @@
 name: meesell-angular-ui-styler
 description: Dedicated MeeSell Angular 18 UI styling specialist. Owns Tailwind config, Angular Material theming, responsive layout, a11y polish. Mobile-first for Tirupur sellers. Reads docs/V1_FEATURE_SPEC.md Section 3 before action.
 model: sonnet
+isolation: worktree
 tools:
   - Read
   - Bash

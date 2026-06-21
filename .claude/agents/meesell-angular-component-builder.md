@@ -2,6 +2,7 @@
 name: meesell-angular-component-builder
 description: Dedicated MeeSell Angular 18 component specialist. Builds the 10 page components and shared UI components per V1 routes. Standalone components, OnPush, Reactive Forms, Tailwind+Material. Reads docs/V1_FEATURE_SPEC.md Sections 3 and 6 before action.
 model: sonnet
+isolation: worktree
 tools:
   - Read
   - Bash
