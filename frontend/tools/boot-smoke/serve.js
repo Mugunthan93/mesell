@@ -113,6 +113,24 @@ const MIME = {
 
 const INDEX = path.join(ROOT, 'index.html');
 
+// Dev no-cache policy (added 2026-06-21, feature/dev-serve-nostore/infra):
+//   Native Federation imports several files dynamically at RUNTIME — notably the
+//   UNHASHED `_mesell_core.js` (the shared @mesell/core singleton that owns the
+//   in-memory auth token), `remoteEntry.json`, and `federation.manifest.json`.
+//   With the old `Cache-Control: no-cache` (which only forces revalidation, not
+//   refetch) browsers could keep serving the STALE unhashed `_mesell_core.js`
+//   from HTTP cache even on hard-reload, so a user kept loading the pre-#373
+//   broken singleton → the catalog-view logout symptom persisted after the fix
+//   had already shipped. For a DEV server, correctness beats caching, so EVERY
+//   static response is `no-store` (never written to cache; always refetched).
+//   Proxied (/api|/health|/docs|/openapi.json) responses are untouched — they
+//   pass the backend's own headers through verbatim (preserves #368 behaviour).
+const NO_STORE_HEADERS = {
+  'Cache-Control': 'no-store, no-cache, must-revalidate',
+  'Pragma':        'no-cache',
+  'Expires':       '0',
+};
+
 function serve(req, res) {
   // Reverse-proxy FIRST: any /api|/health|/docs|/openapi.json request goes to the
   // backend (method/headers/body preserved, response streamed). This is what lets
@@ -127,6 +145,7 @@ function serve(req, res) {
   // Handle CORS preflight — the federation client may send OPTIONS before GET.
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
+      ...NO_STORE_HEADERS,
       'Access-Control-Allow-Origin':  '*',
       'Access-Control-Allow-Methods': 'GET, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
@@ -171,7 +190,10 @@ function serve(req, res) {
     const data = fs.readFileSync(filePath);
     res.writeHead(200, {
       'Content-Type':             mime,
-      'Cache-Control':            'no-cache',
+      // no-store on EVERY static asset so the unhashed federation runtime files
+      // (_mesell_*.js, remoteEntry.json, federation.manifest.json) + index.html
+      // are NEVER cached in dev. See NO_STORE_HEADERS note above.
+      ...NO_STORE_HEADERS,
       // CORS required: the shell (port 4200) fetches remoteEntry.json from the remote
       // ports (4201-4206) — a cross-origin fetch. Without this header the browser
       // blocks the request with "No 'Access-Control-Allow-Origin' header" and the
