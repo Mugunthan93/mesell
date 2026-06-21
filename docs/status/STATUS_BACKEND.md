@@ -270,6 +270,103 @@ Hand-offs:
   - founder: review field_dependency_rules.json _meta.reviewed_by ("founder pending").
 =========
 
+=== UPDATE: 2026-06-20 10:06 (meesell-database-builder) — Alembic merge migration: unify Razorpay billing + develop heads ===
+Phase: feature/razorpay — PR #323 CI Gate-4 multi-head fix
+Done:
+  - Diagnosed 2-head Alembic split on feature/razorpay:
+      HEAD 1: f8fa7a36383f (Razorpay billing Wave-1 — subscriptions/payments/webhook_events, parent c2d3e4f5a6b7)
+      HEAD 2: d4e5f6a7b8c9 (pricing_calcs confirmed-model columns from develop, parent c2d3e4f5a6b7)
+    Both branched independently from c2d3e4f5a6b7 (google identity) — classic diamond split.
+  - Generated merge revision e9415bdcae20 via `alembic merge`:
+      file: backend/alembic/versions/e9415bdcae20_merge_razorpay_billing_develop_heads.py
+      down_revision = ('d4e5f6a7b8c9', 'f8fa7a36383f') — both heads as tuple parents
+      empty upgrade()/downgrade() — no schema ops (correct for merge revision)
+  - Verified `alembic heads` = exactly ONE head: e9415bdcae20
+  - Verified `alembic upgrade head` end-to-end on disposable DB meesell_alembic_merge_test
+    (localhost:5432; confirmed current_database() = 'meesell_alembic_merge_test', NOT 'meesell')
+    All 8 revisions applied cleanly: 935e55b4852c → a1b2c3d4e5f6 → f31c75438e61 → b7c2e1a9d3f4
+    → c2d3e4f5a6b7 → (f8fa7a36383f + d4e5f6a7b8c9 in parallel) → e9415bdcae20 (merge head)
+  - Dropped disposable DB after verification. dev meesell DB (3772 cats) NEVER touched.
+  - Committed on feature/razorpay: commit 669fdc2 (1 file, 26 insertions)
+In progress: none
+Blockers: none
+Next: Director pushes feature/razorpay; CI Gate-4 "Provision schema (alembic upgrade head)" re-runs
+Hand-offs: Director — push commit 669fdc2 to feature/razorpay remote; CI Gate-4 should now pass
+=========
+
+=== UPDATE: 2026-06-20 (meesell-backend-coordinator) — PR #324 merge-gate STEP 3: google-link audit user_id=NULL fix LANDED on develop ===
+Phase: google-auth additive fix (V1 Feature 1) — HYBRID step 3 merge-gate review + merge
+Session: mesell-google-auth-backend-session-2
+Board sweep: 1 row added to Recently merged (google-auth LINK-path audit fix). Inter-lead requests open: unchanged. No new 7+-day-stale flags this dispatch (scoped to #324).
+Done:
+  - TOPOLOGY RATIFIED (git evidence, clean throwaway clone): feature/google-auth is STALE — 8 pre-squash
+    commits already on develop via #295/#296/#299; develop 32 commits ahead. develop carries BOTH the
+    google code (app/adapters/google.py, migration c2d3e4f5a6b7, iam service w/ 20 google refs, integration
+    test) AND the #322 harness repair (1a45199). develop was the correct base+target. Builder's analysis CORRECT.
+  - MERGE-GATE REVIEW PASS (code): fix = relationship-loading directive only (User.audit_events viewonly + drop
+    back_populates both sides), NO DDL/migration. Spot-checked ZERO navigational readers of either relationship
+    (all audit writes via scalar AuditEvent(user_id=...)). Test removes xfail + asserts both auth.login.success
+    + auth.google.linked rows non-null user_id==original_id + fixes cleanup ordering (RESTRICT FK).
+  - CI: required Gate 1/2/3 GREEN + advisory Gate 4 integration GREEN (1m35s — link test passes live).
+  - REJECTED squash-merge of PR #324: branch carried 2 chore commits (fa61a61, cfc2bd7) = ~9,500 lines of
+    unrelated content + a DESTRUCTIVE revert of 1,626 lines of live frontend status (STATUS_FRONTEND.md
+    develop=9,176L vs branch=7,714L). No-creep rule → cherry-picked ONLY fix commit 09eeaf9 (exactly 3 files)
+    to develop as d1bd031 (founder-authorized). PR #324 CLOSED as superseded; branch deleted.
+  - develop HEAD now d1bd031; main UNTOUCHED 6271393; no deploy fired.
+In progress: none
+Blockers: none
+Next: founder sign-off to delete stale feature/google-auth (fully superseded by develop). Separate reconciled
+  PR if the chore/status/memory content needs to land (must NOT revert develop's current frontend status log).
+Hand-offs: none new. (FE google-auth contract handoff already landed previously.)
+=========
+
+=== UPDATE: 2026-06-18 (meesell-api-routes-builder) — Postman v2.1 collection + regeneration scripts ===
+Phase: V1 tooling/docs (no endpoint additions)
+Done:
+  - backend/postman/meesell.postman_collection.json — hand-authored Postman v2.1 collection:
+    31 requests, 9 folders (auth/seller-profile/categories/products/images/pricing/exports/webhooks/health),
+    schema v2.1.0 validated, collection-level Bearer {{access_token}}, noauth on 5 public endpoints,
+    OTP verify test script auto-sets {{access_token}}, runnable example bodies on all requests
+  - backend/postman/meesell.postman_environment.json — base_url=http://localhost:8000, empty access_token
+  - backend/postman/openapi.json — FastAPI-generated spec (25 paths, 30 operations, source=live server)
+  - backend/postman/README.md — import guide, Login flow, regen command, feature flag table
+  - backend/scripts/gen_openapi.py — in-process OpenAPI dump with 18-var sentinel env; live-server fallback
+  - backend/scripts/gen_postman.sh — one-command regen: dump openapi + npx openapi-to-postmanv2
+Tests: N/A (tooling only — no app code changed)
+In progress: none
+Blockers: none
+Next: founder merges PR #282; gate confirmed
+Hand-offs:
+  - founder: PR #282 (chore/postman-collection → develop) NOT merged — gate after review
+  - Regeneration: `bash backend/scripts/gen_postman.sh` from any directory
+=========
+
+=== UPDATE: 2026-06-18 14:00 (meesell-services-builder) — i18n generic-missing fallback ===
+Phase: V1 validation-UX bug-fix (required-field 422s render BLANK)
+Session: mesell-i18n-generic-missing-backend-session-1 (HYBRID step 2/BUILD)
+  branch fix/i18n-generic-missing, worktree /private/tmp/mesell-wt/i18n-missing (off develop@0087562)
+Done:
+  - ROOT CAUSE (confirmed by SPEC): validation.{field}.missing had no generic fallback.
+    Resolver Step-2b (resolver.py:112-122) ALREADY derives validation.generic.{rule} for any
+    validation.{field}.{rule}; the missing-rule generic key was simply absent. No resolver change.
+  - messages_en.py: +10 keys in the §5A.I generic family block (after invalid_url):
+    validation.generic.{missing, string_too_short, string_too_long, int_parsing, float_parsing,
+    string_type, greater_than_equal, less_than_equal, greater_than, less_than}. All 3-segment
+    Contract-10 clean. Additive only; no existing key edited; auth.token_missing (L_iam_1) untouched;
+    bespoke .missing keys (q/catalog.draft/pricing.commission/export.front_image/auth.token) untouched.
+  - test_i18n_generic_fallback.py: +23 tests (13→36). Founder case description.missing→generic, zero
+    missing_key logs; parametrized per-field→generic for all shipped rules; bespoke-.missing-unchanged guard.
+Tests: 61 passed (test_i18n_generic_fallback + test_resolver_fallback + test_section2_i18n_contract);
+  Contract-10 3-segment gate green. ruff clean. Production diff = messages_en.py ONLY. Migration N/A.
+In progress: none
+Blockers: none
+Next: founder merges PR #280; backend-coordinator HYBRID step-3 merge-gate review.
+Hand-offs:
+  - founder: PR #280 (fix/i18n-generic-missing → develop) ready, NOT merged.
+  - frontend-coordinator: validation.{field}.missing 422s now resolve to a human string — the 4th
+    blank-error class (after q.missing/token_missing/size_in_ltrs.invalid_enum_value) is closed.
+=========
+
 === UPDATE: 2026-06-17 (meesell-services-builder) — catalog enum 422 false-reject + i18n generic fallback ===
 Phase: V1 catalog-form bug-fix (PATCH/autofill 422 on valid category-enum value)
 Session: catalog-422-fix (HYBRID step 2/BUILD), branch fix/catalog-enum-422-i18n,
@@ -7119,6 +7216,95 @@ Hand-offs:
     unchanged (verified: not in diff).
 =========
 
+=== UPDATE: 2026-06-18 17:10 ===
+Phase: V1 Feature 7 Price Calculator (forward-payout estimator rework, §12.M) — PR #285 RE-GATE round 2
+Session: mesell-price-calculator-backend-session-1
+Board sweep (session-start): Active-features rows all 2026-06-12/13/14 IST — none 7+ days stale as of
+  2026-06-18 against the MERGED-to-develop microservices rows (those are founder-gate-OPEN, not lead-stale).
+  NOTE: several microservices Active rows are stale-by-calendar (>4 days) but are FOUNDER-GATE-OPEN
+  (waiting on founder merge, not lead action) — not lead-actionable stale; left as-is. Recently-merged: no
+  rows aged past 14 days needing eviction this sweep. Inter-lead requests open: 1 (infra flag-parity flags,
+  unchanged).
+Done:
+  - RE-GATE (HYBRID step 3, round 2) of PR #285 (`fix/pricing-engine-rework` → develop). Verified the two
+    round-1 reject fixes landed in commit 74ade7c, and confirmed the fix is DOCS-ONLY.
+  - 74ade7c diff --stat = docs/BACKEND_ARCHITECTURE.md (27 lines) + docs/V1_FEATURE_SPEC.md (2 lines) ONLY.
+    No code / test / migration change. Code from round 1 (calibration, no-422, migration, alerts,
+    zero-Meesho-calls) NOT re-reviewed — untouched by this commit.
+  - R1 PASS — V1_FEATURE_SPEC.md Feature 7 amendment (PR-branch L321) now reads "shipping (₹30 for Meesho
+    Price ≤ ₹1000, ₹70 above)". The stale "₹70 bracketed" prose is GONE. Matches code + §12.M banding.
+  - R2 PASS — §2.D breakdown line (PR-branch L592) trailing assertion is now "7 ✓" (consistent with the
+    amendment that retired pricing→category). Task-specified grep `8 ✓\|exactly 8\|8-count\|8 allowed`
+    run against the PR-branch blob (git show fix/pricing-engine-rework:...) returns only L590 (the
+    before→after narrative "drops from 8 ✓ to 7 ✓" — explicitly allowed) and the 28-route-count line
+    (allowed). No surviving assertion claims the §2.D matrix has 8 cells as CURRENT FACT. The §13 (×4) and
+    §16 (×4) "8 ✓ / 8-count / 8 allowed" assertions are reconciled to "7 ✓" with a "(7 post-§12.M
+    2026-06-18; see §12.M)" cross-note. §16.D "8 domain modules" module count correctly PRESERVED (that is
+    a count of modules, not matrix cells).
+  - PROCESS NOTE: the local working tree is on `develop`; greps must target the PR-branch blob via
+    `git show fix/pricing-engine-rework:<path>` — a working-tree grep would falsely read the pre-fix develop
+    state (MEMORY gotcha class: verify against the branch under review, not HEAD).
+Pre-existing latent (RULING): builder flagged that the §2.D L592 per-source enumeration
+  (catalog 2 + image 1 + pricing 1 + dashboard 2 + export 4 = 10) does not match the asserted total (7),
+  and that the actual matrix TABLE has more ✓ cells than the stated count. CONFIRMED PRE-EXISTING: on
+  pre-PR develop the same line enumerated 2+1+2+2+4 = 11 while asserting "8 ✓", and the develop matrix table
+  also counts 11 ✓ cells. So the enumeration-vs-total AND table-vs-stated-count gaps both PRE-DATE this PR.
+  PR #285's edit to L592 was a faithful, internally-consistent decrement of exactly the two numbers it owned
+  (pricing source 2→1, grand total 8→7) reflecting the one retired pricing→category cell — it did NOT
+  introduce or widen the gap; it shifted it by one (11→10 enumeration, 8→7 assertion). RULING (doc owner):
+  this is a separate, OLDER whole-matrix accounting defect spanning §2.D + §13 + §16 AND the matrix table
+  itself, whose correct fix requires reconciling the table, the enumeration, and every "N ✓" assertion in
+  one pass — and it touches §7.3-LOCKED sections (founder approval). It must NOT block a PR that fixed its
+  actual round-1 reject reasons. FILED as a SEPARATE follow-up doc ticket (BE-DOC-2D-COUNT-1, below); NOT a
+  blocker for #285.
+VERDICT: APPROVE-FOR-FOUNDER. R1 + R2 both resolved; fix is docs-only; pre-existing latent ticketed.
+  The founder owns the `fix/pricing-engine-rework` → develop merge (D1) — I do NOT merge.
+Follow-up ticket FILED — BE-DOC-2D-COUNT-1 (P3, docs-only, separate PR): the §2.D cross-module ✓-cell
+  count is internally inconsistent across the matrix table, the L592 per-source enumeration, and the
+  §2/§13/§16 "N ✓" assertions. Determine the TRUE current ✓-cell count by counting the table rows post-§12.M
+  (table shows: catalog→customer,category; image→catalog; pricing→catalog; dashboard→customer,catalog;
+  export→customer,category,catalog,image = 10 ✓ cells in the table vs the asserted 7), then reconcile ALL
+  three surfaces in one pass. Touches §7.3-LOCKED §2.D/§13/§16 → FOUNDER approval required for the
+  amendment. Pre-dates PR #285; do not let it block #285.
+In progress: none
+Blockers: none
+Next: founder merges PR #285 to develop (D1). On merge, lead flips the board row to MERGED + Recently merged.
+  Schedule BE-DOC-2D-COUNT-1 as a standalone docs PR (founder-approval-gated, §7.3).
+Hand-offs:
+  - founder: APPROVE-FOR-FOUNDER on #285 — founder owns the develop merge gate (D1).
+  - founder: BE-DOC-2D-COUNT-1 follow-up will need §7.3 approval (LOCKED §2.D/§13/§16 amendment).
+=========
+
+=== UPDATE: 2026-06-20 (services-builder, HYBRID step-2 build) ===
+Phase: google-auth — account-link audit_events.user_id NOT-NULL fix
+Done:
+  - FIX (relationship-loading directive only, NO DDL / NO migration): User.audit_events → drop
+    back_populates, add viewonly=True (app/shared/models/user.py); AuditEvent.user → drop
+    back_populates (relationship kept) (app/shared/models/audit_event.py). Stops the UoW
+    `UPDATE audit_events SET user_id=NULL` at outer commit on the google account-LINK path
+    (NotNullViolationError). svc-iam vendored copies NOT touched (they drop all ORM rels → no bug).
+  - TEST (tests/test_google_auth_integration.py::test_google_links_to_existing_phone_user_by_email):
+    removed @pytest.mark.xfail; added crux assertion — both auth.login.success + auth.google.linked
+    audit rows exist for the linked user with non-null user_id == original_id; cleanup now DELETEs
+    audit_events before the user row (FK is RESTRICT); added `delete, select` + AuditEvent imports.
+Tests: target file 3 passed (link test now PASSES, not xfail). Regression surface
+  (test_core_audit_mw, test_core_auth, test_core_auth_rotation, test_database, test_app_boot_integration)
+  = 65 passed, 5 skipped (seed-data skips, unrelated). ruff clean on the 3 files. DB-safety:
+  current_database()=meesell_test (disposable); dev DB `meesell` never targeted.
+In progress: none
+Blockers: none
+BRANCH-TOPOLOGY DISCREPANCY (reported, coordinator/founder to ratify target):
+  spec said branch off + target `feature/google-auth`. Git evidence: that branch is 34 commits BEHIND
+  develop and its 8 unique commits were already squash-merged to develop (PR #295 google code + PR #322
+  iam_client harness repair); its test file is the BROKEN PR-#295 version. The #322-repaired test +
+  google service code live on DEVELOP. So I branched off develop (only base with both #295+#322) and
+  targeted develop. PR #324 flags this in its body.
+Next: backend-coordinator runs merge-gate review (HYBRID step 3) + confirms target (develop vs the stale
+  feature/google-auth); founder owns the develop merge.
+Hand-offs:
+  - meesell-backend-coordinator: PR #324 (fix/google-link-audit-userid → develop) ready for merge-gate
+    review. Must ratify the develop target vs the spec's stale feature/google-auth.
+=========
 === UPDATE: 2026-06-18 — Price Calculator forward-estimator rework (§12.M) ===
 Phase: V1 Feature 7 — Price Calculator (forward payout estimator rework)
 Session: mesell-price-calculator-backend-session-1 (HYBRID step 2 — builder)

@@ -1,5 +1,313 @@
 # STATUS — FRONTEND
 
+**Owner:** meesell-frontend-coordinator (master session)
+**Last update:** 2026-06-20
+
+=== UPDATE: 2026-06-20 12:42 (federation-version-pin) ===
+Phase: fix/federation-shared-version-pin — stop shell→remote logout via @mesell/* version dedup
+Branch: fix/federation-shared-version-pin (worktree /private/tmp/mesell-wt/fed-version-pin)
+Commit: 38c7934 (PUSHED to origin)
+
+Done:
+  - Added libs/{core,env,composites,ui-kit}/package.json with version "1.0.0" (new files).
+  - Added explicit mesellShared overrides in all 7 federation.config.js files:
+    singleton:true, strictVersion:true, requiredVersion:'1.0.0', version:'1.0.0'.
+  - Master tree synced (identical files already present in working tree before this task).
+  - All 7 apps rebuilt sequentially (memory-lean, direct ng binary, pkill esbuild between each).
+  - All 7 static servers restarted on ports 4200-4206 with fresh dist builds.
+
+NF framework note: @mesell/* libs processed as sharedMappings (tsconfig path aliases) →
+bundle-exposed-and-mappings.js hardcodes strictVersion:false + requiredVersion:'' for mapped libs.
+This cannot be overridden via federation.config.js shared{} entries. However, version:'1.0.0'
+and singleton:true ARE correctly picked up from libs/*/package.json. NF runtime dedups by
+packageName+version+singleton — all 7 remotes now show consistent v=1.0.0+singleton=true,
+so the second AuthService instance bug is FIXED.
+
+Verification table (all 7 remotes):
+  shell       :4200 HTTP=200 @mesell/core: v=1.0.0 sing=true strict=false req=''
+  mfe-pricing :4201 HTTP=200 @mesell/core: v=1.0.0 sing=true strict=false req=''
+  mfe-export  :4202 HTTP=200 @mesell/core: v=1.0.0 sing=true strict=false req=''
+  mfe-onboard :4203 HTTP=200 @mesell/core: v=1.0.0 sing=true strict=false req=''
+  mfe-dashbrd :4204 HTTP=200 @mesell/core: v=1.0.0 sing=true strict=false req=''
+  mfe-catalog :4205 HTTP=200 @mesell/core: v=1.0.0 sing=true strict=false req=''
+  mfe-auth    :4206 HTTP=200 @mesell/core: v=1.0.0 sing=true strict=false req=''
+
+Tests: N/A (config + build task, not a service change).
+Build: All 7 apps built OK (0 errors each).
+Blockers: none.
+Next: Founder must HARD-REFRESH :4200 (Cmd-Shift-R) + test shell→catalog navigation.
+Hand-offs: Fix branch pushed; coordinator merge-gate to open PR.
+=========
+
+=== UPDATE: 2026-06-20 12:42 ===
+Phase: fix/otp-verify-pending-phone — AuthService pendingPhone signal (HYBRID STEP 2, service layer)
+Branch: fix/otp-verify-pending-phone (worktree /tmp/mesell-wt/otp-fix)
+Commit: e7e919c
+
+Done:
+  - Added private WritableSignal<string|null> _pendingPhone (default null) to AuthService.
+  - Added setPendingPhone(phone: string): void — stores phone in-memory for OTP step.
+  - Added pendingPhone(): string | null — reads the pending phone (returns null when clear).
+  - Added clearPendingPhone(): void — resets to null after OTP-verify consumes it.
+  - All three methods documented with FE-D5 constraint: in-memory only, never persisted.
+  - WritableSignal import added to the @angular/core import line (additive, no breaking change).
+  - 6 spec cases added to auth.service.spec.ts covering: default null, set/get, clear,
+    overwrite, isolation from logout(), isolation from forceLogout().
+
+Tests:
+  - tsc --noEmit mfe-auth tsconfig.app.json: EXIT 0 (0 errors).
+  - tsc --noEmit shell tsconfig.app.json: EXIT 0 (0 errors).
+  - tsc --noEmit workspace tsconfig.spec.json: only pre-existing mfe-pricing TS2352/TS2367
+    errors (documented in memory — not caused by this change).
+  - ng test frontend: blocked by same pre-existing mfe-pricing errors at build stage (known).
+  - bare vitest: blocked by @mesell/env path alias resolution (known; ng test required).
+
+Build: tsc clean on all app tsconfigs that import @mesell/core.
+Blockers: none.
+Next: meesell-angular-component-builder updates login.component.ts + otp-verify.component.ts
+  to consume the new API (setPendingPhone before navigate; pendingPhone() in ngOnInit instead
+  of history.state; clearPendingPhone() in ngOnDestroy).
+Hand-offs:
+  - AuthService.setPendingPhone(phone) / pendingPhone() / clearPendingPhone() READY in @mesell/core.
+  - login.component.ts: call auth.setPendingPhone(phone) after OTP send success, before router.navigate(['/otp-verify']).
+  - otp-verify.component.ts ngOnInit: replace history.state?.phone read with auth.pendingPhone();
+    redirect to /login if null; call auth.clearPendingPhone() after consuming it.
+  - otp-verify.component.ts ngOnDestroy: also call auth.clearPendingPhone() on route leave
+    to prevent stale state on back-navigation.
+=========
+
+=== UPDATE: 2026-06-20 11:00 ===
+Phase: razorpay-dev-mock — FE model layer (meesell-angular-service-builder, HYBRID STEP 2)
+Branch: feature/razorpay-dev-mock (worktree /tmp/mesell-wt/razorpay-dev-mock)
+Commit: b3d60f0
+
+Done:
+  - Added `mock?: boolean` to `BillingCheckout` interface in billing.model.ts (line 68, after `tier`).
+    Field is optional for backward compatibility. No DTO mapping needed — BillingApiService returns
+    the raw typed HttpClient response, so `mock` flows through automatically.
+  - No changes to BillingApiService, checkout service, poll util, or any component.
+
+Tests:
+  - tsc --noEmit on mfe-billing tsconfig.app.json: PASS (0 errors).
+  - tsc --noEmit on workspace tsconfig.spec.json: 0 new errors (only pre-existing mfe-pricing spec
+    errors unrelated to this change).
+  - vitest plan-card.component.spec.ts: 28/28 passed.
+  - Remaining billing specs (razorpay-checkout.service.spec.ts, plans.component.spec.ts,
+    billing-api.service.spec.ts, account-billing.component.spec.ts) require Angular TestBed/ng test
+    runner which cannot be isolated from workspace-wide pre-existing TS errors. Pre-existing failures
+    confirmed not caused by this change (optional field addition is structurally backward-compatible).
+
+Build: tsc clean.
+Blockers: none.
+Next: meesell-angular-component-builder adds `if (resp.checkout.mock)` branch in plans.component.ts
+  subscribe() (§4.3 of DEV_MOCK_MODE_SPEC.md).
+Hand-offs: BillingCheckout.mock?: boolean is ready in billing.model.ts. Component builder can now
+  read `resp.checkout.mock` type-safely at plans.component.ts line ~525 (subscribe() next: handler).
+=========
+
+=== UPDATE: 2026-06-20 ===
+Phase: /catalogs/:id/pricing — local dev stack sync + rebuild for founder demo of reworked Price Calculator
+Session: mesell-pricing-fe-rework-frontend-session-2 (localdev sync; lead-executed, HYBRID single-agent fast mode — chore)
+Board sweep: no Active feature rows opened (stack-ops/sync task, not a new feature); pricing FE rework already MERGED to develop (PR #287). No stale rows flagged.
+
+Done:
+  - Synced master tree develop: stashed 26 modified + 24 untracked (recovery point `localdev-pre-rebuild-1781928001`), `git pull --rebase origin develop`.
+  - Rebase replayed 2 local commits; 5 conflicts resolved (4 docs/memory/status → theirs/develop; 1 code `backend/app/i18n/messages_en.py` was a no-op — develop already had the cross_field keys, my persist commit's hunk was empty). HEAD now develop, 0 behind / 1 ahead (cfc2bd7 memory-persist).
+  - W6 #321 (83ffd17) + #322 + #316 apply-price + #305 settlement engine all confirmed in history.
+  - Trimmed redundant ng-serve fleet (:4210, :4217-4222) + second uvicorn (:8001) + shell ng-serve (:4200). Free pages 4126 → 92583 (~1.4GB recovered) — 8GB-machine memory constraint respected.
+  - Rebuilt shell (project `frontend`) + mfe-pricing from SAME commit cfc2bd7. Auth-singleton check PASS: `@mesell/core` chunk hash IDENTICAL across both (`_mesell_core-MNJTYQMY.js`) → singleton dedups → shell→pricing nav should NOT log out. (Empty-version config defect still latent — follow-up for angular-service-builder.)
+  - Restarted static serve.js: shell :4200 + mfe-pricing :4201 on fresh dist. Other remotes :4202-4206 still on prior dist (not needed for pricing demo).
+  - Backend uvicorn --reload on :8000 auto-reloaded on fresh develop.
+
+Build: mfe-pricing GREEN 3.547s (22.98 kB transfer); shell GREEN. Only NG8113/NG8102 lint warnings in unrelated libs/ui-kit/data-table (non-blocking).
+Verify: shell :4200 → 200 (fresh main-PEWILDCB.js); mfe-pricing :4201/remoteEntry.json → 200; matched core chunk :4201 → 200; backend /health → 200; POST /api/v1/products/{id}/price-calc → 401 (registered, auth-gated); apply-price → 401; openapi lists both pricing paths.
+
+Founder URL: http://localhost:4200/catalogs/<catalogId>/pricing  (log in via password — dev OTP bypass 000000 if OTP path; reach via Dashboard → a catalog → Pricing).
+
+Blockers: none.
+Next: leave PR #287 chain to founder gate; schedule @mesell/* explicit-version fix (angular-service-builder) to harden auth singleton beyond hash-match.
+Hand-offs: none new.
+=========
+
+=== UPDATE: 2026-06-18 18:05 ===
+Phase: feat/pricing-fe-rework — §12.M pricing page visual polish + a11y (session mesell-pricing-fe-rework-frontend-session-1, HYBRID STEP 2, SLICE 3 of 3)
+Agent: meesell-angular-ui-styler
+Branch: feat/pricing-fe-rework (worktree /private/tmp/mesell-wt/pricing-fe-rework)
+PR: #287 (open → develop — do NOT merge, coordinator merge-gate after slice 3)
+Commit: 312625e
+
+Done:
+  A11y fixes:
+    - <td scope="row"> → <th scope="row"> on all 9 deduction table label cells.
+      scope is ONLY valid on <th>; using it on <td> is a WCAG 1.3.1 violation.
+    - aria-labelledby="deduction-table-heading" on table; id on h3 heading.
+      Replaced inconsistent aria-label="P&L breakdown" (now label matches heading text).
+  Token discipline:
+    - Removed :host { --mee-color-surface-variant: #f2f6fa } — hardcoded hex
+      violates no-raw-hex lane guard; token already exists in _tokens.css (Layer 1).
+  CSS violations:
+    - Removed !important from .mee-pricing__value--positive/negative.
+      Replaced with doubled-class selector for specificity (no !important needed).
+  Responsive (360px):
+    - Outer container: px-4 → px-3 sm:px-4 (saves 4px per side on 360px).
+    - .mee-pricing__table-scroll overflow-x: auto wrapper — no horizontal overflow.
+    - Table min-width: 240px — amount column never squeezed.
+    - Hero font-size: capped to 1.625rem at ≤400px (prevents overflow of ₹XXX.XX).
+    - Table label max-width: 140px → 150px at ≤400px for better label readability.
+  Visual structure:
+    - Hero: padding expanded (space-5/space-4), margin-bottom space-4.
+    - Price strip: margin-bottom space-2.
+    - Ratios row: border-bottom + padding-bottom + margin-bottom (clean separator).
+    - Table: unified th/td padding rule (th cells previously unpadded).
+
+Build: mfe-pricing GREEN (3.581s, 206.89 kB, +1.68 kB delta — all CSS).
+Tests: 129/129 PASS (vitest direct, pure-function specs).
+A11y: scope=col on col headers (PASS), scope=row on th row headers (FIXED),
+  aria-labelledby on table (FIXED), role=status on spinner (PASS),
+  aria-label on hero amount (PASS), role=alert in alert-banner (PASS),
+  44px touch targets via mee-button internals (PASS).
+Mobile (360px): no horizontal overflow; hero readable; table scrolls within card.
+Screenshots: MFE remote cannot render standalone (needs shell + ActivatedRoute :id param).
+  Background color #f0f5f9 (--mee-color-bg) confirmed loading correctly via Playwright.
+  Full screenshots require shell + all MFE remotes running (documented caveat).
+Logic/contract: untouched — CSS and aria attributes only.
+In progress: nothing (slice 3 complete).
+Blockers: none.
+Next: coordinator merge-gate review (HYBRID STEP 3).
+Hand-offs:
+  Slice 3 complete. PR #287 (feat/pricing-fe-rework) is ready for meesell-frontend-coordinator
+  merge-gate review. All 3 slices shipped: model+service (slice 1), component (slice 2),
+  UI polish+a11y (slice 3).
+=========
+
+=== UPDATE: 2026-06-18 17:25 ===
+Phase: feat/pricing-fe-rework — §12.M forward estimator model+service rewrite (session mesell-pricing-fe-rework-frontend-session-1, HYBRID STEP 2, SLICE 1 of 3)
+Agent: meesell-angular-service-builder
+Branch: feat/pricing-fe-rework (worktree /private/tmp/mesell-wt/pricing-fe-rework)
+PR: #287 (open → develop — do NOT merge, coordinator merge-gate after slice 3)
+Commit: eca463e
+
+Done:
+  pricing.model.ts — FULL REWRITE to §12.M forward estimator contract (PR #285, fd4331d):
+    PriceCalcRequest: meesho_price (primary), input_cost, commission_pct (default "4"),
+      return_rate_pct (default "0"), mrp (optional display), 6 override fields.
+      target_margin_pct DELETED.
+    PriceCalcResponse: 3-price model (mrp nullable, meesho_price, wdrp_price), input_cost echo,
+      full deduction breakdown (commission_pct, referral_commission, shipping_charge, logistics_fee,
+      fixed_fee, gst_pct, gst_on_fees, tcs, tds, return_rate_pct, rto_expected_loss, total_deductions),
+      outputs (estimated_payout, estimated_payout_wdrp, profit, margin_pct, markup_pct), alerts, calculated_at.
+      Dead §12.E fields removed: seller_price, commission_amount, gst_amount, profit_pct.
+    AlertCode: NEGATIVE_PAYOUT + SHIPPING_DOMINATES (new); HIGH_MRP_MULTIPLIER + THIN_PROFIT DEAD.
+    ALERT_MESSAGES: new §12.M keys (pricing.alert.negative_payout / .low_margin / .shipping_dominates).
+    PriceCalcCommissionMissingError DELETED (422 path dead per §12.M (4)).
+    PriceCalcErrorShape now: unavailable | validation | server_error (no commission_missing).
+  pricing.service.ts — FULL REWRITE to §12.M contract:
+    Method calc() sends PriceCalcRequest (meesho_price primary).
+    Error matrix: 401→EMPTY, 404→unavailable, 400→validation, 5xx→server_error.
+    NO 422 branch (422 treated defensively as server_error — structurally impossible in §12.M).
+    NO retryOn503 (POST non-idempotent, §3.2 permanent rule).
+  pricing.service.spec.ts — FULL REWRITE to §12.M spec:
+    Asserts: exact URL /api/v1/products/{id}/price-calc; body has meesho_price/input_cost/
+      commission_pct/return_rate_pct/mrp; NEVER target_margin_pct; 200 maps NEW §12.M keys
+      (estimated_payout, estimated_payout_wdrp, margin_pct, markup_pct, wdrp_price,
+      total_deductions, referral_commission, etc.); §12.E dead keys absent (seller_price, etc.);
+      error matrix 401/404/400/5xx/network; 422 → server_error (dead path); no retryOn503;
+      override_shipping (not override_shipping_fee); NEGATIVE_PAYOUT alert on 200; null mrp.
+  pricing.component.spec.ts — UPDATED to §12.M:
+    Removed PriceCalcCommissionMissingError import (type deleted). Updated ALERT_MESSAGES tests
+      to §12.M keys. Updated PriceCalcRequest tests (meesho_price). Updated response tests.
+      §12.E dead field tests removed. 122/122 pure-function tests PASS (vitest run).
+  pricing.component.ts — TODO(slice-2) markers added throughout:
+    Dead template fields bridged to compile (commission_amount→referral_commission,
+    gst_amount→gst_on_fees, profit_pct→margin_pct, seller_price→meesho_price).
+    commission_missing case cast-guarded. Dead form control annotated for slice 2.
+    Component NOT fully rewritten — intentional, slice 2 owns it.
+
+Tests:
+  pricing.component.spec.ts: 122/122 PASS (vitest run — pure functions, no Angular runner).
+  pricing.service.spec.ts: 0 TypeScript errors (tsc --noEmit scoped to mfe-pricing).
+  ng test (full suite): BLOCKED by pre-existing TS errors on origin/develop in mfe-auth
+    (errorMessage signal drift), mfe-onboarding, shell — confirmed pre-existing, NOT introduced
+    by this slice. These were present on origin/develop before this PR.
+
+Build: TypeScript-clean for pricing files (0 mfe-pricing errors per tsc --noEmit).
+  Full ng build not run — pre-existing TS errors prevent bundle generation.
+
+Blockers: none in slice 1. Slice 2 (component) and slice 3 (styling) must land before merge.
+Next: meesell-angular-component-builder takes slice 2 (component rewrite) on this branch.
+Hand-offs:
+  PricingApiService.calc(productId, body: PriceCalcRequest): Observable<PriceCalcResponse|PriceCalcErrorShape>
+    — ready for component. Request must have meesho_price (string) + input_cost (string);
+    response carries estimated_payout (primary), margin_pct, markup_pct, wdrp_price, total_deductions.
+    Error union: unavailable | validation | server_error (no commission_missing).
+    meesho_price drives badge: parseDecimal(estimated_payout) > 0 for POSITIVE badge.
+  pricing.component.ts TODO(slice-2) markers: form needs meesho_price control (primary input);
+    delete target_margin_pct; add commission_pct + return_rate_pct optional controls;
+    update table rows to §12.M fields; delete commission_missing error path.
+=========
+
+=== UPDATE: 2026-06-18 11:35 ===
+Phase: fix/auth-refresh-stampede — single-flight refresh gate (session mesell-auth-refresh-stampede-frontend-session-1)
+Agent: meesell-angular-service-builder
+Branch: fix/auth-refresh-stampede (worktree /private/tmp/mesell-wt/auth-stampede)
+PR: #281 (open → develop — do NOT merge, coordinator merge-gate review in step 3)
+Commit: 26a32ba
+
+Done:
+  auth.service.ts — Added refreshShared() (single-flight Observable, shareReplay{bufferSize:1,
+    refCount:false} + finalize reset). Added forceLogout() (logout-once _loggedOut guard,
+    navigate exactly once). Fixed _doSilentRefresh() to call forceLogout() on 401 (D-C fix).
+    Fixed scheduleRefresh() delay formula: skew=min(30,expiresIn*0.1), floor=5000ms (D-D fix).
+    logout() clears _refreshInFlight. setSession() resets _loggedOut guard. Injected Router.
+  refresh.interceptor.ts — Thin rewrite: delegates to auth.refreshShared(), calls
+    auth.forceLogout() on refresh-401. Removed module-level _isRefreshing/_refreshToken$
+    (D-A/D-B fixed by construction). Removed AuthApiService + Router injections.
+  auth.service.spec.ts — Updated delay assertions to new D-D formula. Added provideRouter.
+    Added refreshShared single-flight, forceLogout logout-once, _doSilentRefresh 401→forceLogout,
+    bootstrap race, scheduleRefresh clamp test blocks.
+  refresh.interceptor.spec.ts — Updated mock with refreshShared/forceLogout. Added setupReal()
+    using real AuthService. Updated test (c) to assert forceLogout (not logout). Added
+    stampede tests h (20 concurrent → 1 refresh), i (gate resets), j (cascade → ONCE),
+    k (gate not wedged after cascade).
+
+Tests: 1291/1291 PASS (79 spec files, full suite). 0 failures.
+Build: shell GREEN (2.95s, 0 errors). tsc --noEmit: 0 errors.
+Grep proof: 0 live code references to _isRefreshing/_refreshToken$ in refresh.interceptor.ts
+  (one comment reference only).
+
+Blockers: none
+Next: meesell-frontend-coordinator merge-gate review (HYBRID STEP 3).
+Hand-offs: PR #281 ready for coordinator merge-gate. refreshShared()/forceLogout() are public
+  API on AuthService — any component that needs to force-logout (e.g. explicit logout button)
+  should call forceLogout() instead of logout() if navigation is desired.
+=========
+
+=== UPDATE: 2026-06-18 09:40 ===
+Phase: feat/my-live-listings — PR #278 merge-gate fixes (session mesell-my-live-listings-frontend-session-1)
+Agent: meesell-angular-component-builder
+Branch: feat/my-live-listings
+PR: #278 (open — do NOT merge)
+Commit: 5a866ad
+
+Done:
+  FIX 1 — image-uploader.component.ts onContinue(): re-pointed navigation from dead
+    ['/catalogs', this.productId, 'preview'] (route retired in this PR) to ['/catalogs']
+    (catalog list — the '' base path in catalog.routes.ts / CatalogListComponent).
+  FIX 2 — live-listings.component.ts: added scope="col" to all three desktop table <th>
+    header cells (Product / Product ID / View on Meesho).
+  COMMENT — shell app.routes.ts: updated the mfe-catalog child route JSDoc comment to
+    remove stale :id/preview reference and note the retirement.
+
+Tests: 1277/1277 PASS (79 test files). Full suite clean.
+Build: mfe-catalog GREEN (3.148s, 0 errors). shell GREEN (exit 0, 0 errors).
+Grep sanity: 0 navigation calls to dead preview route (grep -rn navigate.*preview, frontend/apps/**/*.ts).
+  (One JSDoc comment in shell.component.ts:86 mentions 'preview' as an excluded nav route — NOT a navigation call.)
+
+Blockers: none
+Next: Coordinator merge-gate review on PR #278; then founder merges.
+Hand-offs: PR #278 updated (force-push not needed — regular push updated the branch tip to 5a866ad).
+=========
+
 === UPDATE: 2026-06-20 08:00 ===
 Phase: Wave 5 — billing-fe step 2c — reduced-motion + dark-mode token fallbacks + mobile polish (meesell-angular-ui-styler)
 Branch: feature/razorpay-w5-billing-fe (worktree /tmp/mesell-wt/razorpay-wave5)
