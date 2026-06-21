@@ -173,3 +173,52 @@ Smoke-test the orchestration without spending RAM on real builds with `--stub`.
 
 All shared state lives under the **baseline (develop) tree's** `.nexus/`, so every
 worktree shares one registry and one build lock.
+
+---
+
+## Verification (2026-06-21)
+
+A live verification run of the env-manager produced the following findings.
+
+### RAM guard — verified correct, no tuning needed
+
+`ram_stats()` computes available memory as free + inactive + speculative pages
+(not pure `Pages free`). A live run printed **2009 MB available** while pure-free
+was only ~63 MB. The conservative guard (refuse if available < 1500 MB OR
+swap > 70%) PASSED correctly and took the build lock. The feared "guard uses
+pure-free and over-rejects" tuning bug does **not** exist.
+
+### Dependency-tree gotcha + fix
+
+A pruned sibling worktree (`razorpay-wave5`) left
+`frontend/node_modules/@angular/cli` as a **dangling symlink** into the deleted
+worktree's pnpm store, so `ng build` fails with `MODULE_NOT_FOUND` for every
+caller in the develop tree.
+
+Fix:
+
+```bash
+cd frontend && CI=true pnpm install
+```
+
+A bare `pnpm install` aborts with `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`
+because it wants to purge the corrupted `node_modules` without a TTY; `CI=true`
+is pnpm's prescribed non-interactive remedy. Verified afterward:
+`node_modules/.bin/ng version` → Angular CLI 21.2.14, no error.
+
+### `baseline up` — KNOWN ISSUE (does not yet work end-to-end)
+
+As of 2026-06-21, `baseline up` builds the shell successfully (~3.2s) then
+**deadlocks before the first MFE**: an `ng build` + `esbuild --service` child
+hangs at ~0% CPU indefinitely (observed 8m19s). This is an esbuild
+service-mode hang, **not OOM** — swap stayed flat at 18.9% and ~2 GB RAM was
+free throughout, so the RAM guard was never the constraint. The
+"pkill esbuild between builds" mitigation does not effectively clear the hung
+service on this path. Only 1 of 8 apps (shell) built.
+
+Safe-abort recovery: kill the orchestrator + `ng build` + `esbuild` PIDs, then
+run `meesell_env.py gc` (note: `down` requires a worktree arg and is N/A to the
+untracked baseline run); verify 0 listeners on ports 4200–4207 / 8000.
+
+STATUS: fix pending — the serialized-build esbuild deadlock needs investigation
+before `baseline up` is usable.
