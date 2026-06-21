@@ -158,3 +158,14 @@ Full §7 iam module per BACKEND_ARCHITECTURE.md §7.A–§7.L (LOCKED 2026-06-05
 - L_iam_1: `auth.token_missing` / `auth.token_expired` / `auth.user_not_found` in `core/auth.py` use 2-segment IDs; messages_en.py has 3-segment.  Resolver falls back to `exc.detail` (still human-readable) but the i18n payload is wrong.  §4 cleanup.
 - L_iam_2: 9 baseline test failures (`test_config.py` × 5, `test_worker_db_isolation.py` × 4) reference deleted legacy modules.  §5 / §G3 cleanup ownership.
 - L_iam_3: `tests/test_otp_service.py` was deleted; reaffirms `tests/test_msg91_adapter.py` as the canonical MSG91 transport test.
+
+
+---
+
+## L_iam_1 RESOLVED — core/auth 3-segment i18n alignment (2026-06-21)
+
+> Transcribed by the dispatching coordinator from the isolated auth-builder's own reported learning
+> per the `docs/dev/WORKTREE_ISOLATION.md` "Persisting an isolated builder's memory" rule (isolated
+> builders cannot write their own memory; the coordinator is a scribe, the builder's report is SSOT).
+
+2026-06-21 — L_iam_1 RESOLVED via PR #359 (squash 30ccb39). core/auth.py migrated 2-segment → 3-segment auth ids (auth.token.missing / auth.token.expired / auth.user.not_found); resolver.py 2-segment deferral allowlist removed; messages_en.py already had the 3-segment entries (LESSON: verify the LIVE catalog — SPECs can be stale). Envelope path: MeesellError → core/errors error handler → _resolve_message_id(validation_message_id, fallback=detail) → resolver.resolve → en catalog human string. Verify pattern (api-endpoint): minimal ASGI app + register_error_handlers + Depends(get_current_user) with get_db stubbed; assert 401/403 detail is the human string, not the raw id. Test-env gotchas in an isolated worktree: no local venv/.env (use shared backend/.venv + copy shared .env); `cd backend` resolves to the shared checkout not the worktree; conftest session-autouse fixture needs Postgres even for unit tests (create a disposable *_test DB as superuser; meesell user lacks createdb) — never the live dev DB. Out of scope (V1.5): the 8 per-service svc-*/app/core/auth.py copies still raise 2-segment ids (not on the V1 monolith serving path); mirror later.
