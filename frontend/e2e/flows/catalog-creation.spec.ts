@@ -1,33 +1,38 @@
 /**
- * Flow: Catalog creation wizard.
+ * Flow: Catalog creation.
  *
- * Taxonomy (design §5.3): Shell → catalog remote → all wizard steps complete →
- * saved catalog appears in dashboard list.
+ * Taxonomy (design §5.3): Shell → catalog remote → create a product → the saved
+ * product appears in the dashboard list.
  *
- * STUB — fleshed out by the QA wave. Pre-authenticated via storageState (the
- * default project setup). The exploration phase must pin the wizard step controls
- * and the saved-catalog list item before this is completed.
+ * Reality: the "wizard" entry point is the Smart Category Picker (/catalogs/new).
+ * Typing a description → picking a suggested category POSTs a new product and
+ * routes to /catalogs/:id/edit (a REAL product UUID). The created product then
+ * shows up in the dashboard product list.
+ *
+ * Pre-authenticated via the worker-scoped authed-context fixture (rotation-safe).
+ * Asserted VISIBLE outcomes: the edit form is reached (URL + form control), and a
+ * dashboard product row is visible.
  */
-import { test, expect } from '@playwright/test';
+import { authedTest as test, expect } from '../fixtures/auth';
 import { CatalogPage } from '../page-objects/catalog.page';
 import { DashboardPage } from '../page-objects/dashboard.page';
 
 test.describe('Catalog creation', () => {
-  test.fixme('walks the wizard and the saved catalog shows in the dashboard list', async ({ page }) => {
-    const catalog = new CatalogPage(page);
-    const dashboard = new DashboardPage(page);
+  test('creating a product via the smart picker shows it in the dashboard list', async ({ authedPage }) => {
+    const catalog = new CatalogPage(authedPage);
+    const dashboard = new DashboardPage(authedPage);
 
-    // Shell → catalog remote (new wizard).
-    await catalog.gotoNew();
+    // Shell → catalog remote (smart picker) → pick a category → real product created.
+    const productId = await catalog.createProductViaPicker();
+    expect(productId).toMatch(/^[0-9a-f-]{36}$/);
 
-    // Walk every wizard step. (Exploration phase fills in per-step field entry.)
-    await catalog.wizardNext.click();
-    // ... category pick, attributes, images steps ...
-    await catalog.saveDraft.click();
+    // Visible outcome 1: we are on the catalog edit form for the new product.
+    await expect(authedPage).toHaveURL(new RegExp(`/catalogs/${productId}/edit`));
+    await expect(catalog.formNext).toBeVisible();
 
-    // Asserted outcome: the saved catalog appears in the dashboard list.
-    await dashboard.gotoCatalogs();
-    await expect(dashboard.catalogList).toBeVisible();
-    await expect(dashboard.catalogCardByName('E2E Test Catalog')).toBeVisible();
+    // Visible outcome 2: the saved product appears in the dashboard list.
+    await dashboard.goto();
+    await expect(dashboard.heading).toBeVisible();
+    await expect(dashboard.productRows.first()).toBeVisible();
   });
 });

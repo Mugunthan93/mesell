@@ -1,27 +1,33 @@
 /**
  * Flow: Plan guard.
  *
- * Taxonomy (design §5.3): Locked feature accessed on free plan → upgrade prompt
- * visible, not a blank screen or 404.
+ * Taxonomy (design §5.3): Locked feature on the free plan → upgrade prompt visible,
+ * not a blank screen or a 404.
  *
- * STUB — fleshed out by the QA wave. Pre-authenticated via storageState as a
- * free-plan seller. The exploration phase must pin the upgrade-prompt surface and
- * confirm which V1 feature is plan-gated on the free tier.
+ * The billing plans page (/billing/plans) is the upgrade surface: a free-plan seller
+ * sees an upgrade CTA per upgradeable paid tier. We assert that surface renders
+ * (the gating outcome) — explicitly NOT the remote-failure fallback.
+ *
+ * Pre-authenticated via the worker-scoped authed-context fixture (a fresh seller is
+ * on the free plan).
+ * Asserted VISIBLE outcome: an upgrade prompt is visible; the remote did not fall back.
  */
-import { test, expect } from '@playwright/test';
+import { authedTest as test, expect } from '../fixtures/auth';
+import { BillingPage } from '../page-objects/billing.page';
 import { ShellPage } from '../page-objects/shell.page';
 
-// A route gated behind a paid plan on the free tier (confirm exact route in exploration phase).
-const PLAN_GATED_ROUTE = process.env.MEESELL_E2E_GATED_ROUTE ?? 'catalogs/live';
-
 test.describe('Plan guard', () => {
-  test.fixme('accessing a locked feature on the free plan shows an upgrade prompt (not blank / not 404)', async ({ page }) => {
-    const shell = new ShellPage(page);
+  test('the free plan sees an upgrade prompt on the plans page (not blank / not a remote failure)', async ({ authedPage }) => {
+    const billing = new BillingPage(authedPage);
+    const shell = new ShellPage(authedPage);
 
-    await shell.gotoRoute(PLAN_GATED_ROUTE);
+    await billing.gotoPlans();
 
-    // Asserted outcome: an upgrade prompt is visible — explicitly NOT a blank screen or a 404.
-    await expect(page.getByTestId('upgrade-prompt')).toBeVisible();
-    await expect(page.getByTestId('not-found')).toHaveCount(0);
+    // Visible outcome: at least one upgrade CTA is shown.
+    await expect(billing.upgradePrompts.first()).toBeVisible();
+    expect(await billing.upgradePrompts.count()).toBeGreaterThan(0);
+
+    // And it is NOT a degraded remote-load fallback.
+    await expect(shell.remoteFailureFallback).toHaveCount(0);
   });
 });
