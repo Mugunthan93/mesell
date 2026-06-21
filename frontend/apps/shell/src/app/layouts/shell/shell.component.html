@@ -18,6 +18,7 @@
       <a
         [routerLink]="item.route"
         routerLinkActive="mee-bottom-nav__item--active"
+        [routerLinkActiveOptions]="{ exact: true }"
         class="mee-bottom-nav__item"
         [attr.aria-label]="item.label"
       >

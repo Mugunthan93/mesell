@@ -69,9 +69,15 @@ import { mapGoogleError, mapSendOtpError } from './auth-error-map';
 
       <div
         class="google-area"
+        role="group"
+        aria-label="Sign in with Google"
         [class.google-area--busy]="loading() || googleLoading()"
       >
-        <div #googleBtn class="google-btn-host"></div>
+        <div
+          #googleBtn
+          class="google-btn-host"
+          aria-label="Continue with Google"
+        ></div>
         @if (googleLoading()) {
           <span class="google-busy" role="status" aria-live="polite" aria-busy="true">
             Signing you in…

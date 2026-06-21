@@ -50,6 +50,7 @@ import type { NavGroup } from './sidebar.nav-groups';
                 class="mee-sidebar__item"
                 [routerLink]="item.route"
                 routerLinkActive="mee-sidebar__item--active"
+                [routerLinkActiveOptions]="{ exact: item.exact ?? true }"
               >
                 <i [class]="iconClass(item.icon)" aria-hidden="true"></i>
                 <span>{{ item.label }}</span>
