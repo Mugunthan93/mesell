@@ -349,6 +349,21 @@ The brief said "ADC identity is not vaishnaviramoorthy@gmail.com" is a stop cond
 
 **Terraform ci_identity extension (GitHub WIF + meesell-github-ci SA):**
 
+## Git branch cleanup (2026-06-20)
+
+Safe branch-cleanup chore done on master tree (override `MESELL_ALLOW_MASTER_GIT=1`). Counts: local 219→32, remote 79→28. Deleted: 46 truly-merged (`git branch -d` after `--merged develop`), 109 squash-merged (matched against `gh pr list --state merged ... -q '.[].headRefName'`, force `-D` since squash leaves them "unmerged" to git), 24 `worktree-agent-*`, 8 named scratch (`pr252-merge`/`regate-rewind`/`__cf_integration`/etc), 51 remote (merged-PR head or contained in origin/develop).
+
+Gotchas:
+- `git push origin --delete <b1> <b2> ...` BATCH form is unreliable here — output looked like it echoed names but did NOT delete (remote count unchanged). Single-branch deletes in a loop work cleanly. Always re-`fetch --prune` + re-count to VERIFY remote deletes; never trust the push stdout (it gets truncated by `tail`).
+- 5 `feature/*/integration` remote branches are PROTECTED by a GitHub branch-protection rule (`GH006: Cannot delete this branch`). Can't delete via git push — needs founder to delete via GitHub UI or relax the rule. Left for founder review.
+- 19 remote + 30 local branches KEPT because unmerged + not contained in develop (section-4..9/integration, microservices-catalog/category/iam component branches, pricing-fe-rework, bootsmoke, b03-debounce, topbar-icon-drift). Conservative rule: when ahead-of-develop AND not in merged-PR list → KEEP.
+
+## main branch protection reconciled — 2026-06-21 (founder-authorized)
+To remove ONLY required status checks from a branch while keeping force-push/deletion protection, use the granular endpoint `gh api -X DELETE repos/<o>/<r>/branches/main/protection/required_status_checks` — it deletes just the required_status_checks object; allow_force_pushes/allow_deletions/enforce_admins/required_conversation_resolution all stay untouched. Verified before(13 contexts: 5 CI gates + 8 Frontend)→after(object absent, 0 contexts) with allow_force_pushes=false + allow_deletions=false intact. This matches the 2026-06-12 founder ruling that `main` carries NO required CI checks (so a future staging→main promotion PR can't deadlock on contexts that only run on develop). required_conversation_resolution left true on main (not changed this pass — separate founder decision). Doc M11 in GIT_WORKFLOW.md reconciled to match (PR #329, commit 6deaba9, NOT merged).
+- gauth-live worktree is DETACHED HEAD (d6b2824), backs no named branch — so no branch was at risk there. Held branches (`feature/google-auth`, `feat/google-auth-backend/-frontend`) never touched.
+- Snapshots saved: `/tmp/meesell-branches-{local,remote}-before-*.txt`, `/tmp/meesell-merged-pr-heads-*.txt`.
+
+## CI/CD Dev Pipeline — Phase E + F — 2026-06-10
 New resources (all in `modules/ci_identity/main.tf`, GitLab resources untouched):
 - `google_service_account.meesell_github_ci` (account_id from var, description must be ≤256 chars — keep it tight)
 - `google_iam_workload_identity_pool.github_actions` (`github-actions-pool`)
@@ -1039,3 +1054,254 @@ Founder explicitly authorized merging PR #230 (`docs/section-parallel-model` →
 - `git` is at `/usr/bin/git` (system) AND `/opt/homebrew/bin/git`. Even after `export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"`, a multiline `for ... done` loop intermittently hit `(eval):N: command not found: git` — the eval shell lost resolution mid-loop. FIX: use the ABSOLUTE binary path `/usr/bin/git` (and `/opt/homebrew/bin/gh`) for EVERY invocation. This is more reliable than relying on PATH export across the zsh-eval wrapper. Single explicit commands per line beat a bash for-loop for this.
 
 **Discipline reaffirmed:** waited for all 5 gates to settle green before `gh pr merge --admin`; BLOCKED+MERGEABLE with in-progress required checks is not a fail. FF pull --ff-only with pre-existing unstaged memory edits in working tree still succeeds cleanly (untracked/unstaged changes don't block a FF that doesn't touch those paths). Cleanup: removed temp worktree, deleted local+remote `docs/centralize-dispatch-prompts`, pruned. Never touched main/staging or any feature/section-* branch.
+
+---
+
+## Local dev-stack rebuild — preflight gates (lesson, 2026-06-18)
+
+Dispatched to rebuild static `mfe-catalog` :4205 after "PR #278 (My Live Listings) merged to develop". STOPPED at Step 1 — premise false + tree dirty. ZERO mutations.
+
+**Two preflight gates that MUST both pass before any build/serve in the master tree:**
+1. **The PR is actually ON origin/develop.** Do NOT trust the dispatch claim. Verify: `git fetch origin develop` then `git log origin/develop --oneline | grep <feature>`. PR #278 (`5a866ad`, branch `feat/my-live-listings`) was only an OPEN PR (`refs/pull/278/head` present in `git ls-remote`, but origin/develop tip = `028096d` #277). GOTCHA: `git cat-file -t 5a866ad` returns "commit" because PR refs get fetched into the local object store — that does NOT mean it's merged. Check `git log origin/develop`, never `cat-file`.
+2. **The master tree is clean enough for `--ff-only`.** This repo has `pull.rebase=true` set locally, so `git pull --ff-only` STILL errors `cannot pull with rebase: unstaged changes` (exit 128) when the tree is dirty. The master-tree safety contract permits ONLY `git pull --ff-only origin develop` (no stash/commit/reset) — so a dirty tree is an unclearable block from my side. The modifying session must clean its own tree.
+
+**What I did right:** stopped, made zero mutations, did NOT kill the existing :4205 server (pid 2529 stale build left serving), did NOT force, recorded the STOP in STATUS_INFRA.md.
+
+**Scope note:** this ops rebuild (build → serve gitignored dist/ on a local port) is the deploy-boundary serving role, distinct from the 2026-06-08 DECLINED "scaffold frontend" dev task. Building/serving a built artifact = OK as a local ops task when founder-directed; running `ng new`/installing app deps as a feature-dev step = still NOT mine.
+
+---
+
+## Localhost dev-stack rebuild — mfe-catalog :4205 for PR #278 "My Live Listings" — 2026-06-18
+
+**Task class:** localhost dev-stack ops rebuild (single-agent fast mode, dev-only, ₹0 spend). Documented workflow pattern (master memory "localhost session rebuilds mfe-catalog"): static catalog remote on :4205 must be rebuilt after catalog feature merges because the shell :4200 federates to the STATIC build and won't pick up changes on refresh.
+
+**Outcome:** mfe-catalog rebuilt from clean worktree off origin/develop (tip `0087562`, PR #278). New :4205 serving fresh dist. `/catalogs/live` resolves 200 via shell. ₹0, no cluster/secrets/terraform touched, master tree's 20+ dirty edits NEVER touched.
+
+**Exact recipe that worked (reusable for any 420x remote rebuild):**
+1. `git -C <master> fetch origin develop` → confirm tip.
+2. `git -C <master> worktree add --detach /private/tmp/mesell-wt/rebuild-4205 origin/develop` (detached = read-only build, no branch, no commits). Confirm HEAD + feature dir exists.
+3. `cd /private/tmp/mesell-wt/rebuild-4205/frontend && pnpm install --config.dangerously-allow-all-builds=true` (~6s, picks up xlsx@0.18.5).
+4. `rm -rf dist/mfe-catalog` first (a STALE dist/ gets checked out with the worktree — mtimes = checkout time, NOT a real build; remove it so "fresh build" is provable by existence/mtime), then `nohup ./node_modules/.bin/ng build mfe-catalog > <log> 2>&1 & disown`. Build to a LOG FILE, not `| tail` (tail buffers until exit → zero incremental visibility; a log file lets you watch federation progress and diagnose a hang).
+5. Kill old :4205 (`lsof -nP -iTCP:4205 -sTCP:LISTEN -t` → kill), relaunch from frontend dir: `nohup node tools/boot-smoke/serve.js dist/mfe-catalog/browser 4205 > <log> 2>&1 & disown`.
+6. Verify: `curl -s -o /dev/null -w "%{http_code}" http://localhost:4205/` =200, remoteEntry.json =200, the feature chunk =200, the xlsx chunk =200, :4200 =200, AND `http://localhost:4200/catalogs/live` =200.
+
+**Build result (GREEN):** "Application bundle generation complete [3.291s]". Chunks confirmed in `dist/mfe-catalog/browser/`: `live-listings.component-OKYKU52J.js` + `chunk-F6YNRQX7.js` (live-listings-component 12.44kB) + `xlsx.E4BdgQhUHf.js` (609KB async chunk). Only warning = catalog-form CSS 52 bytes over 4kB budget (benign, not a failure). remoteEntry name=`mfe-catalog`, exposes `['./CatalogRoutes','./BrowseComponent']` — the `/live` route lives UNDER `./CatalogRoutes` (not a separate federation expose key; don't grep remoteEntry for "live-listings", it won't be there).
+
+**Direct-URL reachability (the founder-note check):** `http://localhost:4200/catalogs/live` returns 200 + the shell SPA HTML (`<title>Frontend</title>`, `app-root`). The shell on :4200 runs ng serve from the DIRTY master tree (old code) so the "My Live Listings" SIDEBAR NAV ITEM does NOT appear — but the route is reachable by direct URL because the shell delegates `/catalogs/*` to the rebuilt remote. Confirmed the live-listings chunk contains the #278 "View on Meesho"/"Live Listing" strings.
+
+**CRITICAL GOTCHA — native-federation `ng build` HANGS after completion on this box.** TWICE the `ng build mfe-catalog` process sat at 0.0% CPU / 22MB RSS and never self-exited. First attempt I mistook the cold federation-cache warm ("Building federation artefacts / This only needs to be done once") for a real stall and killed it prematurely. Reality: the build was fine; the process just doesn't terminate after writing output. DIAGNOSIS PROTOCOL: when `ng build` appears stuck, check (a) log file tail for "Application bundle generation complete" + "Output location", (b) `find dist/.../browser -newermt "-60 seconds"` = no recent writes, (c) `ps -o %cpu` = 0.0 twice 2s apart. If all three: the build is DONE, the wrapper is just hanging → `kill <pid>` (then `pkill -9` + clean its esbuild service `pkill -f "rebuild-4205/frontend/node_modules.*esbuild"`). dist survives the kill. Do NOT wait indefinitely; do NOT re-run (wastes ~minutes of federation warm).
+
+**Contention note:** a concurrent `ng serve mfe-catalog` from another worktree (`.claude/worktrees/design-figma-ui-screens`) + a sakai-ng esbuild were running. Box had 31% mem free (not OOM). The first build's apparent stall was the federation cold-cache step, not contention — but be aware multiple ng processes share esbuild service ports/state.
+
+**Toolchain:** node v22.15.0, pnpm 11.5.2, Angular 21.2.16 / @angular/build 21.2.14, native-federation 21.2.3. `/private/tmp` (NOT `/tmp`) explicit paths (macOS symlink). Worktree files root:wheel. serve.js at `frontend/tools/boot-smoke/serve.js` (3881 bytes), prints "serve.js: <dir> → http://127.0.0.1:<port> [SPA fallback ON]".
+
+**Cleanup deferred:** worktree `/private/tmp/mesell-wt/rebuild-4205` left IN PLACE — the :4205 serve.js (pid 61644) serves out of its dist/, so removing the worktree would break the running server. This is a long-lived serving worktree until the next rebuild supersedes it. (Same pattern as other 420x serving worktrees.)
+
+---
+
+## Localhost :4200 shell swap — DIRTY master tree → CLEAN develop worktree — 2026-06-18
+
+**Task class:** localhost dev-stack ops (single-agent fast mode, dev-only, ₹0). Founder-approved. The natural follow-up to the same-day :4205 mfe-catalog rebuild (memory above): after #278 merged to develop @ `0087562`, the SHELL on :4200 was still `ng serve` from the DIRTY master tree (old code, no "My Live Listings" nav). This task swaps the :4200 process to serve from the clean worktree so the nav item shows — WITHOUT disturbing the master tree's 20+ uncommitted source edits (fully reversible: it's just a process swap).
+
+**Recipe that worked (reusable — swap which tree :4200's ng serve runs from):**
+1. Confirm clean worktree: `git -C <wt> rev-parse HEAD` == `git -C <master> rev-parse origin/develop`, and `grep -rn "<nav label>" <wt>/frontend/apps/shell/src/`.
+2. Identify old :4200 owner: `lsof -nP -iTCP:4200 -sTCP:LISTEN` → pid; confirm cwd is the MASTER tree via `lsof -p <pid> -d cwd` (look for `/Users/.../mesell/frontend`). `ps -o command -p <pid>` shows `ng serve frontend --port 4200 (frontend)`.
+3. `kill <pid>` (process-only — NEVER git/stash/commit in the master tree; the founder's source edits stay in place). Confirm `:4200 free`.
+4. From `<wt>/frontend`: `nohup ./node_modules/.bin/ng serve frontend --port 4200 > /tmp/meesell-4200-cleanserve.log 2>&1 & disown`. proxyConfig is AUTO-applied (angular.json shell serve target has `"proxyConfig": "proxy.conf.json"` → `/api`→`localhost:8000`); no `--proxy-config` flag needed.
+5. Poll log for "Watch mode enabled" / "Application bundle generation complete" (NOT a hang this time — ng SERVE stays alive in watch mode, unlike ng BUILD which hangs-after-complete per the :4205 lesson). Federation cold-cache warm ("This only needs to be done once") fired first; benign.
+
+**VERIFICATION GOTCHA — grep the right chunk, not main.js.** In this Angular 21 native-federation shell, `main.js` is a 288-byte bootstrap STUB. The nav lives in the lazy `shell-component` chunk (e.g. `chunk-T57KXLHD.js`, name `shell-component`, ~11kB — find its hashed name in the ng serve build-output table in the log). `curl :4200/main.js | grep -c "My Live Listings"` = 0 (EXPECTED, not a failure). `curl :4200/chunk-T57KXLHD.js | grep -c "My Live Listings"` = 1 (the real proof). Also `:4200/catalogs/live` = 200.
+
+**Proxy reaching backend — how to prove it (vs ng serve SPA fallback):** `curl -D - :4200/api/v1/health` headers show `server: uvicorn` + `content-type: application/json` even on a 404 — that's FastAPI's own JSON 404, proving the proxy forwards to :8000 (SPA fallback would return HTML 200). Backend real health route = `/health` (200 direct on :8000), NOT `/api/v1/health` (404). Don't use /api/v1/health as a liveness check; use /health.
+
+**Ports after swap:** :4200 NEW pid 65133 (node, IPv6 [::1]:4200, clean develop). :4205 pid 61644 (static mfe-catalog, IPv4) UNTOUCHED, 200. :8000 pid 13356/49654 (uvicorn) UNTOUCHED.
+
+**REVERT to founder's master-tree edits later:** `kill <new-4200-pid>` then `cd /Users/mugunthansrinivasan/Project/mesell/frontend && ng serve frontend --port 4200`.
+
+**Scope note:** swapping which built tree an `ng serve` runs from = deploy-boundary serving role (OK as founder-directed local ops). Distinct from `ng new`/installing app deps as feature dev (NOT mine, 2026-06-08 DECLINE). No master-tree git ops, no cluster/secrets/terraform.
+
+---
+
+## Localhost dev-stack ADVANCE — rebuild-4205 worktree 0087562(#278) → b28ef2f(#281 auth fix) — 2026-06-18
+
+**Task class:** localhost dev-stack ops (single-agent fast mode, dev-only, ₹0). Founder-directed. Advance the EXISTING long-lived serving worktree `/private/tmp/mesell-wt/rebuild-4205` (which serves BOTH :4205 static mfe-catalog AND :4200 shell ng serve) from `0087562` (#278) to develop tip `b28ef2f` (#281 auth refresh-stampede fix + #278 My Live Listings), then restart both processes from it.
+
+**Outcome (all green):** worktree HEAD now `b28ef2f`. mfe-catalog rebuilt fresh. :4200 + :4205 restarted from the advanced tree. :8000 untouched. Master tree's 20+ dirty edits NEVER touched.
+
+**Pids (old→new):** :4200 65133→**89742** (node ng serve, IPv6 [::1], cwd=worktree). :4205 61644→**89622** (node serve.js static, IPv4). :8000 13356 master UNCHANGED (uvicorn `--reload` worker recycled 49654→89775 on its OWN — NOT me; never restart :8000).
+
+**HTTP:** :4200/=200, :4205/=200, :4200/catalogs/live=200, :4205/remoteEntry.json=200, :8000/health=200, :4200/api/v1/health proxy headers `server: uvicorn`+`application/json` (proxy→:8000 live).
+
+**Recipe (reusable to ADVANCE an existing serving worktree to a new develop tip — vs the from-scratch `worktree add` recipe above):**
+1. Preflight gate 1: `git -C <master> fetch origin develop`; `git merge-base --is-ancestor <newtip> origin/develop && echo ON` (don't trust `cat-file -t`, that's true for OPEN PR refs too).
+2. Worktree was CLEAN + detached → `git -C <wt> checkout <newtip>` works directly (no branch dance). Confirm HEAD + `grep -c refreshShared libs/core/services/auth.service.ts`.
+3. `pnpm install --config.dangerously-allow-all-builds=true` → "Already up to date" (no dep delta #278→#281).
+4. `rm -rf dist/mfe-catalog` (stale dist checked out with the prior HEAD) → `nohup ng build mfe-catalog > log 2>&1 &`. GREEN at "Application bundle generation complete [3.7s]". live-listings chunk `chunk-F6YNRQX7.js` (12.44kB) present. Native-federation HANG-after-complete recurred (pid 0.0% CPU, no recent dist writes) → killed wrapper + `pkill -9 -f "rebuild-4205/frontend/node_modules.*esbuild"`; dist survives.
+5. Kill old :4205 → `nohup node tools/boot-smoke/serve.js dist/mfe-catalog/browser 4205 &`.
+6. Kill old :4200 → `nohup ./node_modules/.bin/ng serve frontend --port 4200 &` (proxyConfig auto from angular.json). "Watch mode enabled" at poll 2 (~10s). shell-component chunk `chunk-T57KXLHD.js` (11.09kB).
+
+**CRITICAL — how to PROVE the auth fix is in the SERVED :4200 bundle when :4200 is `ng serve` (Vite dev mode), NOT a static build:** you CANNOT curl a static chunk by name for the symbol — Vite serves `@mesell/core` (the shared lib holding AuthService) as on-demand transformed modules over versioned ESM URLs the BROWSER requests, and it 403/404s arbitrary curl probes (`/@fs/...`=403 fs-allow guard, `/libs/core/...`=404) BY DESIGN. main.js is a 288-byte stub; the app chunks (`chunk-T57KXLHD.js` shell-component, `chunk-IYKZVWVP.js` bootstrap) do NOT inline the lib symbols → `grep refreshShared`=0 on all of them (EXPECTED, not a failure). The authoritative served-bundle proof for a Vite ng-serve shell is the CHAIN:
+   (a) ng serve process cwd == the advanced worktree: `lsof -a -p <pid> -d cwd` → `/private/tmp/mesell-wt/rebuild-4205/frontend`;
+   (b) that worktree's `libs/core/services/auth.service.ts` has `refreshShared`×6 + `forceLogout`×7;
+   (c) the served bootstrap chunk `chunk-IYKZVWVP.js` imports `from "@mesell/core"` (authGuard, jwtInterceptor) → core IS wired into the served graph.
+This is DIFFERENT from the static :4205 case where the built chunk file IS curl-able for the symbol. Report the count as the SOURCE count (6/7) + the cwd-chain proof, and state explicitly that grep-on-served-chunk=0 is expected for Vite dev mode.
+
+**Worktree left IN PLACE** (long-lived serving worktree; :4205 pid 89622 serves out of its dist/, :4200 pid 89742 ng-serves from it). Cleanup only when a future rebuild supersedes it.
+
+---
+
+## Founder-parked master-tree UI-refactor stash — MESELL_ALLOW_MASTER_GIT override — 2026-06-18
+
+**Task class:** founder-authorized master-tree git op (single-agent fast mode, dev-only, ₹0). Founder said "stash it now, deal with later." This DELIBERATELY OVERRIDES my standing master-tree contract ("ONLY git pull --ff-only; never stash/reset/checkout") — the documented escape hatch is the env var `MESELL_ALLOW_MASTER_GIT=1` prefixed on the git command.
+
+**NEW knowledge — the master-tree guard's escape hatch:** `MESELL_ALLOW_MASTER_GIT=1` is the intended override for deliberate, founder-approved master-tree git operations. Use it ONLY when explicitly authorized in the prompt. My memory previously only ever recorded the contract's RESTRICTION (ff-only, no stash) — this is the first time the escape hatch was exercised. The guard is presumably a pre-commit/pre-tooluse hook; the env var bypasses it for the one command it prefixes.
+
+**Exact command that worked (PATHSPEC stash — only the listed paths touched):**
+```
+MESELL_ALLOW_MASTER_GIT=1 git -C /Users/.../mesell stash push -m "<msg>" -- <path1> <path2> ... <path16>
+```
+Listing each path explicitly after `--` is the safety mechanism: a pathspec stash touches ONLY those paths, leaving every other dirty/untracked file in the working tree. This is how you surgically park a SUBSET of a dirty tree.
+
+**What got parked (16 paths):** the pre-existing UI refactor — `frontend/apps/{mfe-auth,mfe-catalog,mfe-dashboard,mfe-export,mfe-onboarding,mfe-pricing,shell}/...` components + `frontend/libs/{composites/auth-layout,ui-kit/input,ui-kit/textarea}` + `shell/public/federation.manifest.json` + shell layout (ts/html/css). New stash ref: **stash@{0}** with message "master-tree UI refactor + 43xx local-dev manifest — founder-parked 2026-06-18 (recover with stash apply)".
+
+**CRITICAL EXCLUSIONS (left in working tree, NOT stashed — pathspec made this trivial):**
+- `backend/app/i18n/messages_en.py` — LIVE i18n hot-patch the running --reload backend (:8000) is serving (`validation.generic.missing` fallback for required-field 422s, the 4th missing-key fix per master memory finding-i18n-generic-missing-gap). Stashing it would REVERT tonight's fix. Confirmed survived: `grep -c validation.generic.missing` = 1 BEFORE and AFTER.
+- `docs/status/STATUS_*.md` (4) + `.claude/agent-memory/*/MEMORY.md` (6) — current-session records.
+- untracked `.claude/statusline-monitor.sh`, `frontend/.claude/` — left alone (pathspec doesn't touch untracked anyway).
+
+**RECOVERY command (give to founder / for later):**
+```
+MESELL_ALLOW_MASTER_GIT=1 git -C /Users/.../mesell stash apply stash@{0}
+```
+Use `apply` (not `pop`) to keep the stash entry until confident. NOTE: stash refs SHIFT — `stash@{0}` is only valid until another stash is pushed (then it becomes `{1}`, `{2}`...). The repo already has 12 stashes (now 13). To recover later, match by the MESSAGE not the index: `git stash list | grep "founder-parked 2026-06-18"` → use that ref.
+
+**5-point verification (all PASS):**
+1. `git stash list` → new entry is stash@{0} with exact message.
+2. `git status -s` → none of the 16 paths modified (reverted to HEAD b6bda89/#275); messages_en.py + 4 STATUS + 6 MEMORY still ` M`.
+3. `grep -c validation.generic.missing messages_en.py` = 1 (hot-patch survived).
+4. `curl :8000/health` = healthy (--reload did NOT revert i18n — the file was never touched, so no reload fired on it).
+5. `curl :4200/` = 200, `:4205/` = 200 (those serve from the long-lived rebuild-4205 worktree, NOT the master tree — wholly unaffected by a master-tree stash).
+
+**CAVEAT recorded:** if a concurrent session had any of the 16 files open mid-edit, the stash reverted them ON DISK (their unsaved buffer would clobber on next save, OR their on-disk edits are now in stash@{0}). Recoverable via stash apply. Not observed this session (the :4200/:4205 servers run from a separate worktree, not the master tree).
+
+**Why the master tree is dirty at all:** the :4200 shell + :4205 mfe-catalog now serve from the `/private/tmp/mesell-wt/rebuild-4205` worktree (per the same-day shell-swap + advance memory entries). The master tree's 20+ uncommitted source edits are the founder's parked UI-refactor WIP — now formally stashed (the 16 FE paths) while the i18n/status/memory churn stays as live records.
+
+---
+
+## Session mesell-ci-mfe-billing-infra-session-1 — 2026-06-20 — add mfe-billing remote to CI frontend matrix
+
+**Task (additive-only CI YAML):** the mfe-billing remote (merged develop PRs #323/#325) was missing from CI's frontend build/change-detection, so no `Frontend: mfe-billing` check existed. Added it mirroring siblings EXACTLY. Worktree `/tmp/mesell-wt/ci-mfe-billing`, branch `chore/ci-mfe-billing` off develop@0203f2a. Commit `344b7b3` (NOT pushed/PR'd — Director handles git).
+
+**The 3-spot recipe (ci.yml documents it itself: "Adding a remote = ONE include entry below + ONE filter block above"; +outputs key):**
+1. `frontend-changes.outputs:` block (~L532) — `mfe_billing: ${{ steps.filter.outputs.mfe_billing }}` after `mfe_auth`.
+2. `filters:` block inside the `filter` step `with.filters` YAML string (~L576) — `mfe_billing:\n  - 'frontend/apps/mfe-billing/**'` after `mfe_auth`.
+3. `frontend-build.strategy.matrix.include:` (~L630) — `- unit: mfe-billing / project: mfe-billing / run: ${{ ...outputs.mfe_billing == 'true' || ...libs == 'true' }}` after `mfe-auth`.
+
+**NAMING CONVENTION (load-bearing, easy to get wrong):** filter/output KEYS use UNDERSCORE (`mfe_billing`); matrix `unit`/`project` use HYPHEN (`mfe-billing`). The `run` expression references the underscore output. `project:` must equal the angular.json project name (verified `"mfe-billing"` at angular.json L670, serve port :4207). Check name = `Frontend: ${{ matrix.unit }}` → `Frontend: mfe-billing`.
+
+**Verify recipe (no workflow run):** `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/ci.yml'))"` for parse, THEN parse structurally — the filters live as a YAML STRING in `steps[id=filter].with.filters`, so re-`yaml.safe_load` that string to confirm the filter key. Don't trust a flat grep on `${{` (shell-escaping ate my first grep). Matrix units after this change: shell + 7 remotes (pricing/export/onboarding/dashboard/catalog/auth/billing) = 8 legs.
+
+**Doc sync (DEVOPS_ARCHITECTURE.md §9.2 sole-writer):** it ENUMERATES the matrix → must update or it rots. Changed: added `mfe_billing` filter-table row; "7 legs / all 6 remotes" → "8 legs / all 7 remotes". The §intro "10 jobs" count is UNCHANGED (a matrix leg is not a new job).
+
+**Branch-protection follow-up (Director's note, for a later session):** after this merges to develop, add `Frontend: mfe-billing` to develop's required status-check contexts. Current required frontend contexts were 7 units + detect (per 2026-06-12 branch-protection memory) — this makes it 8 units + detect. Same NEVER-add rule holds: no Build/Deploy (main-only) or Nightly (schedule-only).
+
+## 2026-06-20 — Repo/machine cleanup (8GB RAM recovery)
+- Removed 5 merged worktrees: me-phone-fix(#322), razorpay-integration(#323), razorpay-dev-mock(#325), razorpay-wave5(folded #323), .claude/worktrees/design-figma-ui-screens(#320). `worktree prune` clean.
+- Deleted 5 local branches (override required): `MESELL_ALLOW_MASTER_GIT=1` prefix needed — guard `guard-master-tree-git` blocks `branch -D` from master tree. branch -D does NOT switch checkout, so override is the documented deliberate-recovery path. Branches: fix/me-phone-nullable-google, feature/razorpay, feature/razorpay-dev-mock, feature/razorpay-w5-billing-fe, fix/b01-material-symbols-to-primeicons.
+- Deleted 7 remote branches via `gh api -X DELETE repos/Mugunthan93/mesell/git/refs/heads/<br>` (plain git push --delete fails on this machine's cred helper). All 7 succeeded, no 404s.
+- KILLS: ZERO. No orphaned ng build/esbuild/ng serve existed. Only serve.js = the 7 master servers (87577-87583); only python:8000 = uvicorn --reload (24502/62270); all other node = claude.exe + VS Code helpers. Nothing to kill. No gauth stack listening on 4210/4217-4222 at the time.
+- LESSON: founder's local stack uses static serve.js on :4200-4206 (boot-smoke/serve.js), NOT ng serve. uvicorn runs WITH --reload (matches earlier monitor finding — it was fixed). RAM barely moved (worktrees were idle dirs, not RAM) but disk freed ~1GB (17→18Gi).
+- LEFT UNTOUCHED (not in scope, reported): worktrees ci-mfe-billing[chore/ci-mfe-billing] + otp-fix[fix/otp-verify-pending-phone] — neither in remove-list nor protected-list, so left per "when unsure leave it".
+
+## Branch housekeeping deep-pass — squash-merge "looks ahead" trap (2026-06-20)
+
+Did a deep branch-deletion pass (local 32->5, remote 28->15). KEY LESSON: `git cherry develop <branch>`
+showing `+` lines does NOT mean genuine new development. Squash-merges create a develop commit with a
+DIFFERENT patch-id than the branch's individual commits, so `git cherry` reports `+` for every branch
+commit even though the CONTENT is fully in develop. Likewise `git log develop..<branch>` shows N commits.
+
+THE DECISIVE TEST (use this, not cherry/log counts):
+  files=$(git diff develop...<ref> --name-only)
+  git diff <ref> develop -- $files --name-only | grep -c .   # 0 == develop already has branch tip content exactly => DELETE
+This restricts the compare to the branch's OWN changed files and asks "does develop already match the
+branch tip for them?" Zero differing files = squash absorbed = no new dev = DELETE.
+
+Result: ALL 8 microservices-* + ALL section-*/integration + pricing/bootsmoke/smart-picker/ci-fix branches
+were squash-absorbed (0 files differ). Two branches (chore/infra-memory-puller-destroyed,
+fix/topbar-icon-drift) had 1 differing file each but it was a PURE .md status/memory append describing
+ALREADY-COMPLETED work (zero code) — also DELETE. Net: NO non-protected/non-held branch had real unmerged code.
+
+GH006 reality: `*/integration` branches have GitHub branch protection that BLOCKS `git push origin --delete`
+("protected branch hook declined"). These 11 must be deleted from the GitHub UI by the founder (or by
+relaxing protection). git push cannot remove them. origin/staging is also protected (correctly kept).
+
+HELD branches feat/google-auth-backend + feat/google-auth-frontend are LOCAL-ONLY (never pushed). Per
+founder ruling, never auto-push or delete held branches — flag the asymmetry, leave as-is.
+
+Audit file pattern: /tmp/meesell-newdev-audit-<ts>.txt with per-branch evidence (commit count / cherry +/- /
+diff stat / decisive-test result). The `for b in $MULTILINE_VAR` shell trap: a multi-line variable in a
+POSIX `for` is ONE word — use `while IFS= read -r b; do ... done < file` instead.
+
+## GIT_WORKFLOW.md authored + live protection probe (2026-06-21)
+Authored canonical `docs/GIT_WORKFLOW.md` via worktree `/private/tmp/mesell-wt/git-workflow` off origin/develop (PR #329, founder merges). LIVE GitHub probe (REST `branches/{b}/protection`): develop = 0 reviews required (no `required_pull_request_reviews` key), strict=false, enforce_admins=false, 15 required CI contexts (5 backend gates + 9 frontend + FE lint + mfe-billing). main = PROTECTED w/ 13 required contexts (NOT "no protection" as the 2026-06-12 note expected — flagged in PR), strict=false, enforce_admins=false, 0 reviews, conversation-resolution=true. Repo merge methods: squash+merge-commit+rebase ALL allowed; deleteBranchOnMerge=false.
+
+## GIT_WORKFLOW.md canonicalization — stale-doc refs (2026-06-21)
+Finalized two-step git model lives in `docs/GIT_WORKFLOW.md` (canonical). Pointed stale homes at it via worktree `docs/git-workflow-refs` off origin/develop → PR #330: CLAUDE.md `### Git` (retired `ticket/{n}` + single-step squash-to-main → `feature/{slug}/{group}` squash→integration, merge-commit→develop[founder]→staging→main), MASTER_SESSION_DISPATCH.md §5/§6 (was untracked in master tree, now brought onto develop), MASTER_PLAN.md §2 (one-line pointer; §2 already matched), and `_WORKTREE_PROTOCOL.md` §9 (annotated "infra works in master tree" as SUPERSEDED — infra is now a normal `feature/{slug}/infra` group w/ own branch+worktree). Note: `_WORKTREE_PROTOCOL.md` §9 line 224 was THE stale "infra works in master tree" rule. SUB_PLAN_0F + status-journal master-tree refs left as historical (not rules).
+
+## Master-tree presync to origin/develop — divergent-not-stale memory recovery (2026-06-21)
+Sanctioned master-tree recovery (MESELL_ALLOW_MASTER_GIT=1): backed up 2 local commits to branch `backup/master-presync-20260621` + dirty tree to `/tmp/mesell-presync-dirty-20260621.patch` + `/tmp/mesell-presync-untracked-20260621/` BEFORE `git reset --hard origin/develop` (now == 68568b7, 0/0). KEY LESSON: the dirty files were NOT all stale echoes as diagnosed — the 7 federation.config.js each carried a GENUINELY-NEW `mappingVersion: true` directive (restored additively; preserved origin's mfe-catalog F-001 skip comment via Edit not blind overwrite), and 4 agent MEMORY.md + STATUS/board files were DIVERGENT (origin had newer entries AND local had unpushed entries — neither a superset). For divergent files I kept origin canonical in the tree and preserved the full local copy as sibling `*.local-presync-20260621.md` (zero loss, reconcile in later PR) rather than risk a fragile line-merge. Pure-superset MEMORY.md (service-builder/database-builder/infra-builder/director) restored directly; libs/*/package.json discarded (identical to origin). Always grep origin for local section anchors before calling something a "stale echo" — divergence ≠ staleness.
+
+## #329 + #330 docs PRs landed on develop (2026-06-21)
+Founder-authorized squash --admin merges in strict order (#329 first — it introduces docs/GIT_WORKFLOW.md; #330 second — CLAUDE.md pointer that refs it). #329 squash `fde46c4`, #330 squash `f5e5d3a`; origin/develop HEAD now `f5e5d3a` (was 68568b7). Verified both artifacts in origin/develop tree (GIT_WORKFLOW.md present; CLAUDE.md L402 pointer). GOTCHA: right after merging #329, GitHub reported #330 mergeable=UNKNOWN — that's GitHub recomputing mergeability, NOT a conflict; poll a few sec and it flips to MERGEABLE. Also: `git ls-tree <new-sha>` fails locally until you `git fetch` the new objects (fetch updates origin/develop ref only, leaves local checkout untouched — safe, no working-tree sync). Branches NOT deleted (B7). Local develop checkout left 2 commits behind for a later sync.
+
+---
+
+## Dev Environment Manager — tools/meesell_env.py (2026-06-21, session mesell-dev-env-manager-infra-session-1)
+
+**PR #331** (`feature/dev-env-manager/infra` → develop, founder merges). Stdlib-only Python 3 CLI to run multiple worktree FE+BE side by side on the 8GB box without esbuild deadlock / swap thrash.
+
+**Load-bearing discoveries about the FE federation setup (verified, not assumed):**
+- Shell loads its federation manifest at RUNTIME: `frontend/apps/shell/src/main.ts` → `initFederation('federation.manifest.json')` (origin-relative fetch). **This means the baseline shell build is reusable — only the manifest needs swapping per-env. NO shell-rebuild-per-worktree required** unless `apps/shell` itself was touched. This is THE exploit.
+- Manifest lives in `frontend/apps/shell/public/federation.manifest.json` (+ `.prod.json`/`.staging.json`), copied to dist root on build → served at `dist/frontend/browser/federation.manifest.json`.
+- 7 MFEs now: mfe-auth, mfe-billing, mfe-catalog, mfe-dashboard, mfe-export, mfe-onboarding, mfe-pricing. Discover dynamically from `frontend/apps/mfe-*` (sorted) — do NOT hardcode.
+- Shell's Angular *project* name is `frontend` (dist=`dist/frontend/browser`); MFE project names == dir names (dist=`dist/<name>/browser`). serve.js serves `dist/<project>/browser`.
+- Reuse existing static server `frontend/tools/boot-smoke/serve.js` — `node serve.js <dist-dir> <port>`, SPA fallback + CORS `*` (federation cross-origin fetch needs it). Don't write a new one.
+- Backend run: `uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload` from `backend/` (uses `backend/.venv/bin/uvicorn` if present).
+- PRIOR OUTAGE LESSON (master memory): committing worktree-pinned ports into federation.manifest.json broke the shell. So the per-env manifest is GENERATED at runtime + gitignored, never committed.
+
+**Design decisions made:**
+- Slot port scheme stride 10: backend=8000+N*10, shell=4200+N*10, mfe[i]=4201+N*10+i. Slot 0 = baseline (the `develop` worktree). Formalizes the old ad-hoc convention (master :4200/:8000, gauth-live :4210/:8010).
+- Baseline tree discovered DYNAMICALLY = the worktree on branch `develop` (via `git worktree list --porcelain`), NOT the dir the script copy sits in. Bug caught in testing: running the tool from a worktree made it self-baseline (slot 0). Fix = `_discover_master_root()`. All shared state (.nexus/env-ports.json, env-state.json, .build.lock) lives in the baseline tree → one registry + one lock across all worktrees.
+- Per-env manifest clobber avoided: when shell NOT touched, serve a per-slot COPY of the baseline shell dist (`.nexus/shell-dist-slot-<N>/browser`, ~16MB/404 files — cheap) so concurrent envs don't fight over one manifest. `down` removes the copy.
+- Global build lock via `fcntl.flock` on `.nexus/.build.lock`; `pkill esbuild` before+after each ng build.
+- RAM guard conservative (founder-locked): refuse if free<1500MB OR swap>70%. free_mb = (free+inactive+speculative pages)*pagesize; **parse page size from vm_stat header (16384 on this Mac, NOT 4096)**; swap% from `sysctl vm.swapusage`.
+- `--stub` flag added for build-free smoke testing of orchestration/registry/budget logic (brief required validating WITHOUT a real 7-MFE build).
+
+**Gitignore added:** `.nexus/env-ports.json`, `.nexus/env-state.json`, `.nexus/.build.lock`, `.nexus/serve-*.log`, `.nexus/backend-*.log`, `.nexus/shell-dist-slot-*/`.
+
+**Scope note:** this is dev-tooling/orchestration (no GCP/K8s blast radius) — executed directly as standalone. No playbook section maps exactly; treated as operational scripting under `tools/`. PR to develop is the founder's gate (NOT mine) per D1.
+
+---
+
+## Native Federation `mappingVersion` verified REAL + presync land (2026-06-21)
+
+**Session:** `mesell-federation-mapping-version-infra-session-1`
+
+**PART A verdict — `features.mappingVersion` IS recognized in the installed stack (PR #332, landed):**
+- Installed wrapper `@angular-architects/native-federation@21.2.3` depends on core `@softarc/native-federation ~3.5.1`; resolved core = `3.5.5` (sibling `@softarc/native-federation-node@3.5.5`).
+- The live tree's `frontend/node_modules` symlinks pointed into a PRUNED worktree (`/private/tmp/mesell-wt/razorpay-wave5/.../.pnpm`) → dangling, could NOT inspect in-tree. WORKAROUND: `npm pack` the exact versions into `/tmp/nf-inspect`, untar, grep the built JS. This is the authoritative way to verify a library option when node_modules is a dangling pnpm symlink.
+- Evidence in core 3.5.5:
+  - `src/lib/config/with-native-federation.js` L19 → `mappingVersion: config.features?.mappingVersion ?? false` (default false).
+  - `src/lib/core/bundle-exposed-and-mappings.js` L66 (shared) + L115 (sharedMappings) → `version: config.features.mappingVersion ? getMappingVersion(path) : ''`.
+  - `getMappingVersion()` reads nearest `package.json` → `json.version ?? ''`.
+  - Typed in `federation-config.d.ts` (`mappingVersion?: boolean`).
+- Dependency satisfied: `frontend/libs/{core,env,ui-kit,composites}/package.json` ("1.0.0") are already on `origin/develop`, so the flag has a real version to stamp. Landed mappingVersion:true on all 7 configs (shell + 6 remotes).
+
+**LESSON — verify the option in the BUILT lib before landing a config flag.** "Looks like an NF feature" is not enough; NF silently ignores unknown `features` keys (no default merge for them). Always grep the installed package's dist JS + .d.ts. A no-op flag would have been pure noise in 7 files.
+
+**PART B+C presync chore (chore/presync-docs-memory → develop):**
+- Copied genuinely-new docs + new nexus/backend memory + 4 SUPERSET MEMORY.md (mine, db-builder, angular-service-builder, nexus director). All 4 supersets were pure-addition (removed=0 vs develop) — safe.
+- **DROPPED `docs/sessions/MASTER_SESSION_DISPATCH.md`**: the master-tree copy was STALE (older than develop). Develop's #330 added `docs/GIT_WORKFLOW.md` references; the master-tree copy REMOVES them → would regress #330. Restored to develop in the worktree.
+- LESSON: before copying a "presync" file, diff it vs origin/develop. A line-count SHRINK on a doc-only file = red flag for a regression of upstream-reconciled content. Pure-addition supersets are safe; mixed add/remove on already-landed files are NOT.
+
+**Master-tree git hygiene:** only mutation to master-tree git state was the allowed `git checkout --` file-restore of the 7 federation.config.js (after landing them via PR #332). No commits, no staging in the master tree.
