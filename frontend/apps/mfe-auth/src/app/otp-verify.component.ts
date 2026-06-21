@@ -40,6 +40,7 @@ import { mapVerifyOtpError } from './auth-error-map';
         <mee-otp-input
           [length]="6"
           [disabled]="loading()"
+          [testId]="'otp-input'"
           (completed)="onOtpCompleted($event)"
         />
         @if (otpValue().length > 0 && otpValue().length < 6) {
@@ -52,6 +53,7 @@ import { mapVerifyOtpError } from './auth-error-map';
         [loading]="loading()"
         [disabled]="otpValue().length < 6"
         [fullWidth]="true"
+        [testId]="'otp-verify-submit'"
         (clicked)="onSubmit()"
       />
 

@@ -62,4 +62,19 @@ describe('MeeTextareaComponent', () => {
     comp.onBlur();
     expect(touched).toBe(true);
   });
+
+  describe('testId passthrough', () => {
+    it('sets data-testid on the textarea when testId is provided', () => {
+      fixture.componentRef.setInput('testId', 'smart-picker-description');
+      fixture.detectChanges();
+      const el = fixture.nativeElement.querySelector('textarea[data-testid="smart-picker-description"]');
+      expect(el).toBeTruthy();
+    });
+
+    it('does not set data-testid when testId is not provided', () => {
+      fixture.detectChanges();
+      const el = fixture.nativeElement.querySelector('textarea[data-testid]');
+      expect(el).toBeNull();
+    });
+  });
 });

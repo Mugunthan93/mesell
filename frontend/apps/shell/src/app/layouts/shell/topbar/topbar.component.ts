@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, viewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { AuthService } from '@mesell/core';
@@ -46,6 +46,7 @@ import { LayoutService } from '../layout.service';
           tabindex="0"
           aria-haspopup="true"
           aria-label="User menu"
+          data-testid="user-menu-trigger"
           (click)="toggleUserMenu($event)"
           (keydown.enter)="toggleUserMenu($event)"
           (keydown.space)="toggleUserMenu($event)"
@@ -54,6 +55,15 @@ import { LayoutService } from '../layout.service';
           <span class="mee-topbar__username">{{ userName }}</span>
         </div>
         <mee-menu #userMenu [items]="userMenuItems" />
+        <button
+          type="button"
+          class="mee-topbar__logout-btn"
+          aria-label="Log out"
+          data-testid="nav-logout"
+          (click)="logout()"
+        >
+          <mee-icon name="logout" />
+        </button>
       </div>
     </header>
   `,
@@ -165,6 +175,31 @@ import { LayoutService } from '../layout.service';
         color: var(--mee-color-on-surface-muted);
       }
 
+      .mee-topbar__logout-btn {
+        background: none;
+        border: none;
+        cursor: pointer;
+        width: 40px;
+        height: 40px;
+        min-width: 44px;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--mee-radius-sm);
+        color: var(--mee-color-on-surface-muted);
+        transition: background var(--mee-transition-fast);
+        flex-shrink: 0;
+      }
+
+      .mee-topbar__logout-btn:hover,
+      .mee-topbar__logout-btn:focus-visible {
+        background: var(--mee-color-bg);
+        color: var(--mee-color-error, #d32f2f);
+        outline: 2px solid var(--mee-color-primary);
+        outline-offset: 1px;
+      }
+
       @media (max-width: 639px) {
         .mee-topbar__username {
           display: none;
@@ -185,9 +220,11 @@ export class TopbarComponent {
 
   protected readonly userMenuItems: MeeMenuItem[] = [
     { label: 'My Profile', icon: 'user', routerLink: '/profile' },
-    { separator: true },
-    { label: 'Log out', icon: 'logout', command: () => this.auth.logout() },
   ];
+
+  protected logout(): void {
+    this.auth.logout();
+  }
 
   protected toggleUserMenu(event: Event): void {
     this.userMenu().toggle(event);

@@ -105,4 +105,16 @@ describe('MeeButtonComponent', () => {
     const comp = makeComp('Test', { icon: 'user' satisfies MeeIconName });
     expect(comp.pgIcon()).toBe(MEE_ICONS['user']);
   });
+
+  describe('testId passthrough', () => {
+    it('returns the testId signal value when provided', () => {
+      const comp = makeComp('Test', { testId: 'login-request-otp' });
+      expect(comp.testId()).toBe('login-request-otp');
+    });
+
+    it('returns undefined when testId is not provided', () => {
+      const comp = makeComp('Test');
+      expect(comp.testId()).toBeUndefined();
+    });
+  });
 });

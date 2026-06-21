@@ -53,6 +53,7 @@ import type { MeeInputType } from './input.types';
         (ngModelChange)="onModelChange($event)"
         (blur)="onBlur()"
         style="min-height: 44px;"
+        [attr.data-testid]="testId()"
       />
     </div>
     @if (error()) {
@@ -75,6 +76,7 @@ export class MeeInputComponent implements ControlValueAccessor {
   readonly hint = input<string | undefined>(undefined);
   readonly disabled = input<boolean>(false);
   readonly required = input<boolean>(false);
+  readonly testId = input<string | undefined>(undefined);
 
   readonly blur = output<string>();
 

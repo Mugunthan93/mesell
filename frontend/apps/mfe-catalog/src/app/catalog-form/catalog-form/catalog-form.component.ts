@@ -269,6 +269,7 @@ import type { DependencyRule, FieldOverride } from '../catalog-form.rules';
           icon="sparkles"
           [loading]="autofilling()"
           [disabled]="loading()"
+          [testId]="'catalog-ai-fill'"
           (clicked)="onAutofill()"
           aria-label="Fill fields with AI suggestions"
         />
@@ -505,6 +506,7 @@ import type { DependencyRule, FieldOverride } from '../catalog-form.rules';
           role="status"
           aria-live="polite"
           aria-atomic="true"
+          data-testid="catalog-save-status"
           [class]="saveStatus() === 'error' ? 'mee-form-nav__status mee-form-nav__status--error' : 'mee-form-nav__status'">
           @switch (saveStatus()) {
             @case ('saving') { Saving... }
@@ -525,6 +527,7 @@ import type { DependencyRule, FieldOverride } from '../catalog-form.rules';
           <mee-button
             label="Images"
             icon="forward"
+            [testId]="'catalog-form-next'"
             (clicked)="onNext()"
             aria-label="Continue to images"
           />

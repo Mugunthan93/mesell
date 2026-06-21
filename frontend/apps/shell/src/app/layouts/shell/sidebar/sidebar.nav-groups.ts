@@ -10,6 +10,8 @@ export interface NavItem {
   /** When true (default), active state matches ONLY on an exact route match.
    *  Set false only for routes that should also highlight on child paths. */
   exact?: boolean;
+  /** data-testid for Playwright E2E targeting. Optional — absent = no attribute. */
+  testId?: string;
 }
 
 export interface NavGroup {
@@ -36,26 +38,26 @@ export interface NavGroup {
 export const SIDEBAR_NAV_GROUPS: NavGroup[] = [
   {
     label: 'Main',
-    items: [{ label: 'Home', icon: 'home', route: '/dashboard', exact: true }],
+    items: [{ label: 'Home', icon: 'home', route: '/dashboard', exact: true, testId: 'nav-home' }],
   },
   {
     label: 'Catalogs',
     items: [
       // exact:true — /catalogs must NOT stay active on /catalogs/new or /catalogs/:id/* (F-NAV-1).
-      { label: 'My Catalogs', icon: 'list', route: '/catalogs', exact: true },
-      { label: 'New Product', icon: 'add', route: '/catalogs/new', exact: true },
-      { label: 'Categories', icon: 'tag', route: '/categories/browse', exact: true },
+      { label: 'My Catalogs', icon: 'list', route: '/catalogs', exact: true, testId: 'nav-catalogs' },
+      { label: 'New Product', icon: 'add', route: '/catalogs/new', exact: true, testId: 'nav-new-product' },
+      { label: 'Categories', icon: 'tag', route: '/categories/browse', exact: true, testId: 'nav-categories' },
     ],
   },
   {
     label: 'Account',
     items: [
-      { label: 'Profile', icon: 'user', route: '/profile', exact: true },
+      { label: 'Profile', icon: 'user', route: '/profile', exact: true, testId: 'nav-profile' },
       // Wave 5 (Razorpay) — billing vertical. Routes to the mfe-billing remote's
       // /billing/plans (tier selection + checkout). 'wallet' is a registered
       // MeeIconName; the raw PrimeIcons class it maps to lives only in
       // icon.registry.ts (per FE-2).
-      { label: 'Plans', icon: 'wallet', route: '/billing/plans', exact: true },
+      { label: 'Plans', icon: 'wallet', route: '/billing/plans', exact: true, testId: 'nav-plans' },
     ],
   },
 ];

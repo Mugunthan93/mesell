@@ -229,15 +229,18 @@ export class AuthService implements OnDestroy {
 
   /**
    * Soft logout (called by the logout button / explicit user action).
-   * Clears local state without navigating — the caller handles navigation.
-   * Does NOT set _loggedOut because this is intentional, not a cascade guard.
+   * Best-effort server revoke (fire-and-forget) → clear state → navigate to /login.
+   * Does NOT set _loggedOut because this is an intentional user action, not a cascade guard.
    */
   logout(): void {
+    // Fire-and-forget cookie revoke — never blocks local logout on network failure.
+    this.authApi.logout().subscribe({ error: () => {} });
     this._cancelRefreshTimer();
     this._refreshInFlight = null;
     this._loggedOut = false;
     this._token.set(null);
     this._user.set(null);
+    void this.router.navigate(['/login']);
   }
 
   /**
@@ -259,6 +262,8 @@ export class AuthService implements OnDestroy {
       return;
     }
     this._loggedOut = true;
+    // Best-effort server revoke before clearing state (fire-and-forget; cascade may mean cookie already gone).
+    this.authApi.logout().subscribe({ error: () => {} });
     this._cancelRefreshTimer();
     this._refreshInFlight = null;
     this._token.set(null);

@@ -153,6 +153,7 @@ export function optionalGstValidator(): ValidatorFn {
           [label]="'Business / Shop Name'"
           [required]="true"
           [error]="businessNameError()"
+          [testId]="'onboarding-business-name'"
           formControlName="businessName"
         />
 
@@ -177,6 +178,7 @@ export function optionalGstValidator(): ValidatorFn {
           [disabled]="form.invalid || loading()"
           [fullWidth]="true"
           [variant]="'primary'"
+          [testId]="'onboarding-submit'"
           (clicked)="onSubmit()"
         />
 

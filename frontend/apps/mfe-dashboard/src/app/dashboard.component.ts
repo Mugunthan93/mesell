@@ -284,6 +284,7 @@ import { formatRelativeTime } from './dashboard.model';
            /catalogs are no longer both titled "My Catalogs". The /catalogs grid keeps
            its "My Catalogs" heading exclusively. -->
       <mee-page-header
+        data-testid="dashboard-heading"
         title="Home"
         cta_label="New Catalog"
         cta_icon="add"
@@ -337,6 +338,7 @@ import { formatRelativeTime } from './dashboard.model';
         <!-- Empty state -->
         @if (isEmpty()) {
           <mee-empty-state
+            data-testid="dashboard-empty-state"
             icon="inventory"
             message="No catalogs yet. Create your first catalog to get started."
             cta_label="New Catalog"
@@ -359,6 +361,7 @@ import { formatRelativeTime } from './dashboard.model';
                   @for (row of products(); track row.product_id) {
                     <tr
                       tabindex="0"
+                      data-testid="dashboard-product-row"
                       (click)="onRowClick(row)"
                       (keydown.enter)="onRowClick(row)"
                       (keydown.space)="onRowClick(row)"
