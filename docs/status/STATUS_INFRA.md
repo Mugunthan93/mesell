@@ -4,6 +4,48 @@
 **Last update:** 2026-06-21 (**Add `/api` reverse-proxy to the static `:4200` dev shell — `serve.js` + `meesell_env.py` (UI/UX audit PR #367 fix). 2 files, stdlib `http` only, zero new deps, surgical (static-SPA serving untouched, proxy OFF by default). Proxies `/api`+`/health`+`/docs`+`/openapi.json` → backend (slot 0 = `:8000`); shell-only (MFEs serve static). VERIFIED LIVE via curl (GET /api/v1/auth/me → 401 backend JSON, OTP POST → 429 backend JSON, all 7 MFE remoteEntry 200, static / → 200 html). Branch `feature/dev-proxy/infra`→develop, FOUNDER-GATED. Stack LEFT RUNNING on http://localhost:4200 for re-audit. ₹0. See UPDATE block below. PRIOR: Codify isolated-builder memory-persistence rule + land stranded auth-builder L_iam_1 learning (PR #361, squash `1951199`, develop HEAD `1951199`).** Two edits, one PR: (1) `docs/dev/WORKTREE_ISOLATION.md` new "Persisting an isolated builder's memory" section — isolated worktree builders can't write their own MEMORY.md/docs/status (boundary-blocked) so the dispatching coordinator transcribes the builder's REPORTED learning as a sanctioned NARROW scribe-exception to CLAUDE.md rule #4; (2) appended the stranded auth-builder L_iam_1 learning (core/auth 2→3-segment i18n migration, PR #359) via git-plumbing, additions-only. Master tree FF-synced + clean. Board sweep flagged several ≥7-day-untouched rows as external-gate holds (not stalls). ₹0. See UPDATE block below. PRIOR: **MS-4 Sub-Plan F — svc-category INFRA lane AUTHORED + offline-VALIDATED (₹0, dev-only).** 8 files on `feature/microservices-category/infra` (tip `e1b890a`). Recipe blend: AI-bearing (svc-image: GEMINI + LANGFUSE_SECRET) + api-only (svc-pricing/customer — NO worker). **CRITICAL grants in schema-role.sql:** `CREATE SCHEMA category` + `category_user` owns schema (for the c4f1e7a9d302 schema-move + Alembic) + the cross-schema `GRANT INSERT ON public.audit_events` (AI cost ledger F3.c). Valkey budget-keyspace carve-out HONORED (`ai:*` global/un-prefixed DB 0; category cache `category:`-prefixed DB 3). TLS `api-tls`. NO razorpay/msg91. New SM secret `dev-category-db-password` (→founder). Cluster /32-firewalled → 27 yaml assertions + SQL grant check + secret-scan PASS; server dry-run + dev smoke deferred (§15 F3). **I push + report; backend-coordinator runs the infra→integration merge gate.** See MS-4 Sub-Plan F UPDATE below.)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
 
+## UPDATE — 2026-06-21 — mesell-dev-log-monitor-spec-infra-session-1 — author DEV_LOG_MONITOR.md design spec (dev-tooling — DO NOT BUILD)
+
+=== STEP 1: author docs/specs/DEV_LOG_MONITOR.md ===
+Phase: NOT a playbook §-resource op (no VM/K3s/ns/Postgres/Valkey/ingress/secret/cost change).
+       Dev-environment tooling I own (Scope IN: scripts + the env-dashboard wired into
+       `tools/meesell_env.py` + `tools/env_dashboard/`). Standalone fast-mode (docs-only, no specialist).
+       Rule followed: Engineering Discipline #1 (Think Before Coding) — RESOLVED the founder's
+       premise "only the backend logs to a file; the serves don't" against live code: BOTH
+       `serve_static` (→ `.nexus/serve-<port>.log`) and `serve_backend` (→ `.nexus/backend-<port>.log`)
+       already redirect stdout/stderr to per-PORT files; the real gaps are (a) port-keyed not
+       service-keyed naming, (b) `/api/log` only serves BUILD logs, (c) Celery/Postgres/Valkey are
+       NOT spawned by the tool. Spec corrects the premise instead of repeating it.
+Session: mesell-dev-log-monitor-spec-infra-session-1
+Branch: feature/dev-log-monitor-spec/infra (off origin/develop @ 376451c)
+Board sweep (session start): scanned feature_board_infra.md Active features; this is a docs-only
+       dev-tooling spec (adoption/tooling item, not a feature/{name}/infra group lane) → NO Active
+       row added per the convention used for prior tooling specs (#350/#353). No stale-7d flag
+       raised that wasn't already an external-gate hold.
+Cost: ₹0/month. No infra/TF/K8s/secret surface.
+Next action: write spec → commit → push → open PR to develop (FOUNDER's gate — I do NOT merge).
+=========
+
+=== STEP 2: spec authored + PR opened (session end) ===
+Done: `docs/specs/DEV_LOG_MONITOR.md` authored (+404 lines). Commit `931fbc4`. Pushed
+      `feature/dev-log-monitor-spec/infra`. PR **#376** → develop opened.
+Validation: `gh pr view 376` → mergeable=MERGEABLE, exactly 2 files
+      (DEV_LOG_MONITOR.md + STATUS_INFRA.md — no foreign commit leaked, per the prior
+      force-push gotcha). mergeStateStatus=BLOCKED is EXPECTED (develop = FOUNDER's gate, D1).
+Founder decisions flagged in-spec: DF-0 (approve V2 `/devlog` write endpoint + flag-gated
+      FE shim — nothing in V2 built until approved) + DF-1..DF-5 (naming/transport/PG-Valkey
+      tail/redaction-policy/V2-flag-ownership).
+Cross-lead handoffs (V2 only, AFTER DF-0): frontend-coordinator (dev console/network shim)
+      + backend-coordinator (`POST /devlog` dev-only flag-gated route). NOT yet memo'd — gated
+      on founder sign-off; no Inter-lead-requests row opened this session.
+Board sweep (session end): Active features table healthy; no new stale-7d flag raised that
+      wasn't already an external-gate hold (#350/#353/#376 all sit on the founder's develop
+      gate — holds, not stalls). No Active row added (tooling spec, not a feature-group lane).
+Cost: ₹0/month.
+Next action: founder reviews + merges PR #376 → develop (founder's gate). If V1 is approved,
+      I build V1 in-scope; V2 only after DF-0.
+=========
+
 ## UPDATE — 2026-06-21 — mesell-dev-proxy-infra-session-1 — add /api reverse-proxy to the static :4200 dev shell (serve.js + meesell_env.py)
 
 === STEP 1: dev-shell reverse-proxy (UI/UX audit PR #367 fix) ===
