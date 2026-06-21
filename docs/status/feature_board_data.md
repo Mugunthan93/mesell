@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-data-engineer`
 **Domain:** data
-**Last updated:** 2026-06-16 (category-seeding Wave 0 ratified + Wave 1 local seed landed; Wave 3 verified)
+**Last updated:** 2026-06-21 (retention-monitor design spec authored; PR #370 open for founder review)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -12,6 +12,7 @@
 | Feature | Group branch | Status | Current session | Last touched | Blocking | Notes |
 |---|---|---|---|---|---|---|
 | category-seeding | feature/category-seeding | RESOLVED (local) — PR #245 open for founder merge | mesell-category-seeding-session-1 | 2026-06-16 | founder — merge PR #245 | Architecture APPROVED (rev 1.0). D1=local-only, D2=real-commission-two-phase, D3=pure-upsert. Wave 1 DONE: `make seed` wired, ran 2× idempotent (categories 3772 / aliases 67 / templates 3566 / enum 49259), seed-script stale-import defect fixed (`app.shared.*`). Wave 3 verified: catalog→wizard chain proven end-to-end on localhost (0 FK orphans, 71-field /schema, seeded enums). Visual-gate blocker RESOLVED. Durable landing on PR #245 merge. |
+| retention-monitor-spec | feature/retention-monitor-spec/data | IN REVIEW — PR #370 (design spec, → develop, founder gate) | mesell-retention-monitor-spec-data-session-1 | 2026-06-21 | founder — review/merge PR #370 | DESIGN SPEC ONLY (V1.x/post-V1, no code). `docs/specs/RETENTION_CATEGORY_MONITOR.md`. Category-keyed change monitor: scrape unit = CATEGORY not customer; TTL/dedupe gate; diff via existing `diff_pricing_lookup.py`/`meesho_monthly_refresh.py`; fan-out "your category changed" to all sellers in category. Reuses scraper-maintainer + Celery + Valkey. BACKEND handoff: `category_subscription`+`category_snapshot` tables, `scrape_category`/`fanout` tasks, `notification` model/endpoint. INFRA handoff: CronJob + GCS lifecycle + egress. NO historical snapshots exist → measurement metric+plan defined, not quantified. FLAGS PRICING_LOCKED billing cadence + scraper ToS posture for founder ratification (NOT amended). This is a `feature/{name}`→`develop` PR — founder is sole reviewer per MASTER_PLAN §2.2. |
 | category-seeding (commission backfill, Wave 1.5) | feature/category-seeding | CLOSED — won't-fix | mesell-category-seeding-session-1 | 2026-06-16 | — | D2 Phase 2 ABANDONED ON EVIDENCE. Scrape method proven (auth WebKit + Akamai bypass) but NO category rate-card exists — only account-level flat `default_monetization_percent=4.0`. Founder observed commission differs per-product/per-date at upload; internet cross-verification CONFIRMED Meesho commission is DYNAMIC (category × price-slab × time-bound promotions; no stable published rate-card). A static `commission_pct` is wrong by construction. DECISION (founder 2026-06-16): keep `commission_pct=NULL` (Wave-1 shipped state); pricing engine's NULL-tolerant 422 stands. Real commission, if needed, = per-product capture at upload time (pricing-feature item, NOT seeded reference data). Scrape scripts + `category_commissions.json` retained as record only, NOT a seed input. |
 
 ## Recently merged (last 14 days)
