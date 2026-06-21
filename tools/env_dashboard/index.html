@@ -125,6 +125,69 @@
     font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
     color: #c7d1dc; white-space: pre-wrap; word-break: break-word;
   }
+  /* ---- Dev Log Monitor (V1): timeline + radar ---- */
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .tab-btn {
+    background: var(--panel2); border: 1px solid var(--line); color: var(--txt);
+    border-radius: 8px; padding: 7px 14px; font-size: 13px; font-weight: 600;
+    cursor: pointer;
+  }
+  .tab-btn.active { border-color: var(--accent); color: var(--accent); }
+  .tab-btn:hover { border-color: var(--accent); }
+  #logs-panel { display: none; }
+  #logs-panel.open { display: block; }
+  .radar {
+    display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px;
+  }
+  .radar-counter {
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 10px;
+    padding: 8px 12px; min-width: 120px; display: flex; flex-direction: column; gap: 2px;
+  }
+  .radar-counter .rname { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+  .radar-counter .rcount { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .radar-counter .rmeta { font-size: 10px; color: var(--muted); }
+  .radar-counter.firing { border-color: var(--dead); background: var(--bad-bg); animation: pulse 1.2s infinite; }
+  .radar-counter.firing .rcount { color: var(--dead); }
+  .radar-alerts { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+  .radar-alert {
+    font-size: 12px; background: var(--bad-bg); color: var(--dead);
+    border: 1px solid var(--dead); border-radius: 7px; padding: 5px 10px;
+  }
+  .log-controls {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px;
+  }
+  .log-controls .pill-toggle {
+    background: var(--panel2); border: 1px solid var(--line); color: var(--txt);
+    border-radius: 999px; padding: 5px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .log-controls .pill-toggle.off { opacity: .4; }
+  .log-controls .pill-toggle.lvl-error.on { border-color: var(--dead); color: var(--dead); }
+  .log-controls .pill-toggle.lvl-warn.on { border-color: var(--down); color: var(--down); }
+  .log-controls .pill-toggle.lvl-info.on { border-color: var(--accent); color: var(--accent); }
+  .log-controls input[type="text"] {
+    background: var(--bg); border: 1px solid var(--line); color: var(--txt);
+    border-radius: 7px; padding: 6px 10px; font-size: 12px; min-width: 200px;
+  }
+  .svc-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .svc-chip {
+    font-size: 11px; border: 1px solid var(--line); border-radius: 999px;
+    padding: 3px 10px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .svc-chip .cdot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .svc-chip.off { opacity: .35; }
+  .log-stream {
+    background: #0a0e13; border: 1px solid var(--line); border-radius: 10px;
+    height: 52vh; overflow: auto; padding: 8px 10px;
+    font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .log-line { display: flex; gap: 8px; white-space: pre-wrap; word-break: break-word; padding: 1px 0; }
+  .log-line .lsvc { flex: none; font-weight: 700; min-width: 92px; }
+  .log-line .llvl { flex: none; min-width: 46px; font-weight: 700; }
+  .log-line[data-level="ERROR"] .llvl { color: var(--dead); }
+  .log-line[data-level="WARN"] .llvl { color: var(--down); }
+  .log-line[data-level="INFO"] .llvl { color: var(--muted); }
+  .log-line .lmsg { color: #c7d1dc; }
+  .log-status { font-size: 11px; color: var(--muted); margin-left: auto; }
 </style>
 </head>
 <body>
@@ -151,9 +214,41 @@
 </header>
 
 <main>
-  <div class="grid" id="grid" data-testid="env-grid"></div>
-  <div class="empty" id="empty" data-testid="empty-state" style="display:none">
-    No environments found.
+  <div class="tabs" data-testid="tabs">
+    <button class="tab-btn active" id="tab-envs" data-testid="envs-tab"
+            onclick="showTab('envs')">Environments</button>
+    <button class="tab-btn" id="tab-logs" data-testid="logs-tab"
+            onclick="showTab('logs')">Logs &amp; Radar</button>
+  </div>
+
+  <div id="envs-panel">
+    <div class="grid" id="grid" data-testid="env-grid"></div>
+    <div class="empty" id="empty" data-testid="empty-state" style="display:none">
+      No environments found.
+    </div>
+  </div>
+
+  <div id="logs-panel" data-testid="logs-panel">
+    <div class="radar" id="radar" data-testid="radar-panel"></div>
+    <div class="radar-alerts" id="radar-alerts" data-testid="radar-alerts"></div>
+
+    <div class="log-controls" data-testid="log-controls">
+      <span class="pill-toggle lvl-error on" id="lvl-error" data-testid="log-filter-level-error"
+            onclick="toggleLevel('ERROR')">ERROR</span>
+      <span class="pill-toggle lvl-warn on" id="lvl-warn" data-testid="log-filter-level-warn"
+            onclick="toggleLevel('WARN')">WARN</span>
+      <span class="pill-toggle lvl-info on" id="lvl-info" data-testid="log-filter-level-info"
+            onclick="toggleLevel('INFO')">INFO</span>
+      <input type="text" id="log-search" data-testid="log-search" placeholder="search…"
+             oninput="onSearch()" />
+      <span class="pill-toggle on" id="log-follow" data-testid="log-follow-toggle"
+            onclick="toggleFollow()">Follow</span>
+      <span class="log-status" id="log-stream-status" data-testid="log-stream-status">polling</span>
+    </div>
+
+    <div class="svc-chips" id="svc-chips" data-testid="svc-chips"></div>
+
+    <div class="log-stream" id="log-stream" data-testid="log-stream"></div>
   </div>
 </main>
 
@@ -372,6 +467,180 @@ async function poll() {
 }
 poll();
 setInterval(poll, POLL_MS);
+
+/* ============================================================
+   Dev Log Monitor (V1) — timeline + error radar (poll-tail).
+   Default-collapsed tab; the env-grid above is unchanged on load.
+   ============================================================ */
+const LOG_POLL_MS = 2000;
+const RING_MAX = 2000;            // client-side ring buffer cap
+const SVC_HUES = {};              // service -> stable hue
+let SVC_HUE_SEED = 0;
+const levelOn = { ERROR: true, WARN: true, INFO: true };
+const svcOff = new Set();         // services explicitly hidden
+let follow = true;
+let searchTerm = "";
+let activeTab = "envs";
+let ring = [];                    // {service, level, msg}
+let seen = new Set();             // dedupe key set (bounded)
+let logTimer = null;
+
+function svcHue(service) {
+  if (!(service in SVC_HUES)) {
+    SVC_HUES[service] = (SVC_HUE_SEED * 47 + 200) % 360;
+    SVC_HUE_SEED++;
+  }
+  return SVC_HUES[service];
+}
+
+function showTab(name) {
+  activeTab = name;
+  document.getElementById("tab-envs").classList.toggle("active", name === "envs");
+  document.getElementById("tab-logs").classList.toggle("active", name === "logs");
+  document.getElementById("envs-panel").style.display = name === "envs" ? "block" : "none";
+  document.getElementById("logs-panel").classList.toggle("open", name === "logs");
+  if (name === "logs") { pollLogs(); ensureLogTimer(); }
+}
+function ensureLogTimer() {
+  if (!logTimer) logTimer = setInterval(() => {
+    if (activeTab === "logs") { pollLogs(); pollRadar(); }
+  }, LOG_POLL_MS);
+}
+
+function toggleLevel(lvl) {
+  levelOn[lvl] = !levelOn[lvl];
+  document.getElementById("lvl-" + lvl.toLowerCase())
+    .classList.toggle("on", levelOn[lvl]);
+  document.getElementById("lvl-" + lvl.toLowerCase())
+    .classList.toggle("off", !levelOn[lvl]);
+  renderStream();
+}
+function toggleFollow() {
+  follow = !follow;
+  document.getElementById("log-follow").classList.toggle("on", follow);
+  document.getElementById("log-follow").classList.toggle("off", !follow);
+  if (follow) scrollStream();
+}
+let searchDebounce = null;
+function onSearch() {
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(() => {
+    searchTerm = document.getElementById("log-search").value.toLowerCase();
+    renderStream();
+  }, 200);
+}
+
+function renderSvcChips(services) {
+  const box = document.getElementById("svc-chips");
+  const have = new Set(Array.from(box.children).map(c => c.getAttribute("data-service")));
+  services.forEach(svc => {
+    if (have.has(svc)) return;
+    const chip = el("span", {
+      class: "svc-chip" + (svcOff.has(svc) ? " off" : ""),
+      "data-service": svc,
+      "data-testid": "log-filter-service-" + svc,
+    }, [
+      el("span", { class: "cdot" }),
+      document.createTextNode(svc),
+    ]);
+    chip.querySelector(".cdot").style.background = "hsl(" + svcHue(svc) + ",70%,55%)";
+    chip.addEventListener("click", () => {
+      if (svcOff.has(svc)) svcOff.delete(svc); else svcOff.add(svc);
+      chip.classList.toggle("off", svcOff.has(svc));
+      renderStream();
+    });
+    box.appendChild(chip);
+  });
+}
+
+function pushLine(line) {
+  const key = line.service + "|" + line.level + "|" + line.msg;
+  if (seen.has(key)) return false;
+  seen.add(key);
+  ring.push(line);
+  if (ring.length > RING_MAX) {
+    const drop = ring.splice(0, ring.length - RING_MAX);
+    drop.forEach(d => seen.delete(d.service + "|" + d.level + "|" + d.msg));
+  }
+  return true;
+}
+
+function renderStream() {
+  const stream = document.getElementById("log-stream");
+  const frag = document.createDocumentFragment();
+  for (const ln of ring) {
+    if (!levelOn[ln.level]) continue;
+    if (svcOff.has(ln.service)) continue;
+    if (searchTerm && ln.msg.toLowerCase().indexOf(searchTerm) === -1) continue;
+    const row = el("div", {
+      class: "log-line", "data-testid": "log-line",
+      "data-service": ln.service, "data-level": ln.level,
+    }, [
+      el("span", { class: "lsvc", text: ln.service }),
+      el("span", { class: "llvl", text: ln.level }),
+      el("span", { class: "lmsg", text: ln.msg }),
+    ]);
+    row.querySelector(".lsvc").style.color = "hsl(" + svcHue(ln.service) + ",70%,62%)";
+    frag.appendChild(row);
+  }
+  stream.innerHTML = "";
+  stream.appendChild(frag);
+  if (follow) scrollStream();
+}
+function scrollStream() {
+  const s = document.getElementById("log-stream");
+  s.scrollTop = s.scrollHeight;
+}
+
+async function pollLogs() {
+  const status = document.getElementById("log-stream-status");
+  try {
+    const r = await fetch("/api/logs?service=all", { cache: "no-store" });
+    const j = await r.json();
+    renderSvcChips(j.services || []);
+    let added = 0;
+    (j.lines || []).forEach(ln => { if (pushLine(ln)) added++; });
+    if (added) renderStream();
+    status.textContent = "polling — " + (j.count || 0) + " lines / " +
+      (j.services || []).length + " services";
+  } catch (e) {
+    status.textContent = "stalled: " + e;
+  }
+}
+
+function renderRadar(j) {
+  const panel = document.getElementById("radar");
+  const alerts = document.getElementById("radar-alerts");
+  panel.innerHTML = "";
+  alerts.innerHTML = "";
+  (j.counters || []).forEach(c => {
+    const counter = el("div", {
+      class: "radar-counter" + (c.firing ? " firing" : ""),
+      "data-testid": "radar-counter-" + c.name,
+    }, [
+      el("span", { class: "rname", text: c.name }),
+      el("span", { class: "rcount", "data-testid": "radar-count-" + c.name,
+                   text: String(c.count) }),
+      el("span", { class: "rmeta", text: "≥" + c.threshold + " / " + c.window_s + "s · " + c.severity }),
+    ]);
+    panel.appendChild(counter);
+    if (c.firing) {
+      const a = el("div", { class: "radar-alert", "data-testid": "radar-alert" }, [
+        document.createTextNode(
+          c.count + "× " + c.name + " in " + c.window_s + "s" +
+          (c.service ? " [" + c.service + "]" : "") +
+          (c.sample ? " — " + c.sample : "")),
+      ]);
+      alerts.appendChild(a);
+    }
+  });
+}
+async function pollRadar() {
+  try {
+    const r = await fetch("/api/radar", { cache: "no-store" });
+    renderRadar(await r.json());
+  } catch (e) { /* radar is best-effort */ }
+}
 </script>
 </body>
 </html>
