@@ -1,6 +1,34 @@
 # STATUS — BACKEND
 
 ```
+=== UPDATE: 2026-06-21 (meesell-auth-builder) — gauth-catalog-logout ROOT-CAUSE + regression guard ===
+Phase: Feature 1 (Auth) — "Google sign-in → view catalog → logged out" debug (phone-NULL/Google user)
+Branch: feature/gauth-catalog-logout/auth (base develop @ 376451c) — DO NOT MERGE
+ROOT CAUSE: NOT a backend/auth defect and NOT Google/phone-NULL-specific. Empirical browser repro
+  (agent-browser, the real Google-only dev user e8eb7e10… phone=NULL, google_sub set):
+  - GET /auth/me → 200 (phone:null, already #322-tolerant); GET /products (the request the catalog
+    page fires) → 200; POST /auth/refresh → 200. SPA-nav shell→/catalogs STAYS logged in; hard reload
+    on /catalogs re-hydrates authed. The only logout I could induce was a double-`open` artifact
+    (consumed/rotated refresh cookie), NOT the real flow.
+  - The historical logout = the federation auth-singleton stale-bundle issue ALREADY FIXED in #373
+    (FED-1): every running remoteEntry.json emits @mesell/core version="1.0.0" uniformly → ONE
+    AuthService instance → in-memory token survives shell→remote nav. The prior FE session (#373)
+    reached the identical "stale-bundle, not a live defect" verdict via the OTP path; this session
+    extended the verification to the Google-only phone-NULL user (the task's exact suspect).
+  - Code audit confirms zero phone-NULL gap on the catalog path: authGuard checks only
+    isAuthenticated() (token presence); get_current_user decodes JWT sub + verifies row exists (no
+    phone dep); ZERO `.phone` refs on catalog/customer/dashboard/pricing/image read paths; FE
+    MeResponse.phone + meToUser are `string | null` tolerant. google/verify ↔ otp/verify issue the
+    SAME token shape + SAME env-aware refresh cookie via the shared _set_refresh_cookie.
+FIX (surgical, additive — NO production code change): new regression test
+  tests/test_google_auth_integration.py::test_google_only_user_catalog_nav_stays_authenticated —
+  Google-only (phone-NULL) login → GET /products must return 200 (never 401), locking the catalog-nav
+  auth path against a future phone-NULL regression at the route→get_current_user layer.
+Tests: 4 passed / 0 failed (3 existing + 1 new) on isolated meesell_gauthnav_test.
+Blockers: none. Hand-offs: if the founder still sees the logout LIVE, it is a stale-bundle/stale-manifest
+  artifact (FE) — rebuild all remotes off develop @ ≥376451c and hard-reload :4200; not a backend fix.
+Next: Director/founder gate.
+
 === UPDATE: 2026-06-19 (meesell-services-builder) — Razorpay Wave 4 reconciliation + trial sweep ===
 Phase: razorpay-integration / Wave 4 (reconciliation Celery beat + trial-expiry sweep + integration tests)
 Branch: feature/razorpay-w4-reconcile (PR base feature/razorpay, tip 7e5f08b = W1+W2+W3)
