@@ -4,6 +4,58 @@
 **Last update:** 2026-06-21 (**Add `/api` reverse-proxy to the static `:4200` dev shell — `serve.js` + `meesell_env.py` (UI/UX audit PR #367 fix). 2 files, stdlib `http` only, zero new deps, surgical (static-SPA serving untouched, proxy OFF by default). Proxies `/api`+`/health`+`/docs`+`/openapi.json` → backend (slot 0 = `:8000`); shell-only (MFEs serve static). VERIFIED LIVE via curl (GET /api/v1/auth/me → 401 backend JSON, OTP POST → 429 backend JSON, all 7 MFE remoteEntry 200, static / → 200 html). Branch `feature/dev-proxy/infra`→develop, FOUNDER-GATED. Stack LEFT RUNNING on http://localhost:4200 for re-audit. ₹0. See UPDATE block below. PRIOR: Codify isolated-builder memory-persistence rule + land stranded auth-builder L_iam_1 learning (PR #361, squash `1951199`, develop HEAD `1951199`).** Two edits, one PR: (1) `docs/dev/WORKTREE_ISOLATION.md` new "Persisting an isolated builder's memory" section — isolated worktree builders can't write their own MEMORY.md/docs/status (boundary-blocked) so the dispatching coordinator transcribes the builder's REPORTED learning as a sanctioned NARROW scribe-exception to CLAUDE.md rule #4; (2) appended the stranded auth-builder L_iam_1 learning (core/auth 2→3-segment i18n migration, PR #359) via git-plumbing, additions-only. Master tree FF-synced + clean. Board sweep flagged several ≥7-day-untouched rows as external-gate holds (not stalls). ₹0. See UPDATE block below. PRIOR: **MS-4 Sub-Plan F — svc-category INFRA lane AUTHORED + offline-VALIDATED (₹0, dev-only).** 8 files on `feature/microservices-category/infra` (tip `e1b890a`). Recipe blend: AI-bearing (svc-image: GEMINI + LANGFUSE_SECRET) + api-only (svc-pricing/customer — NO worker). **CRITICAL grants in schema-role.sql:** `CREATE SCHEMA category` + `category_user` owns schema (for the c4f1e7a9d302 schema-move + Alembic) + the cross-schema `GRANT INSERT ON public.audit_events` (AI cost ledger F3.c). Valkey budget-keyspace carve-out HONORED (`ai:*` global/un-prefixed DB 0; category cache `category:`-prefixed DB 3). TLS `api-tls`. NO razorpay/msg91. New SM secret `dev-category-db-password` (→founder). Cluster /32-firewalled → 27 yaml assertions + SQL grant check + secret-scan PASS; server dry-run + dev smoke deferred (§15 F3). **I push + report; backend-coordinator runs the infra→integration merge gate.** See MS-4 Sub-Plan F UPDATE below.)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
 
+## UPDATE — 2026-06-22 — mesell-qa-wave-infra-infra-session-1 — build the QA pillar (4 agents + 3 skills + 4 memory dirs + Playwright E2E scaffold + registry) per the APPROVED design
+
+=== STEP 1: scope identification ===
+Phase: NOT a playbook §-resource op (no VM/K3s/ns/Postgres/Valkey/ingress/secret/cost change).
+       Fleet-bootstrap / dev-tooling I own (Scope IN: hand-off authoring + `.claude/**` agent
+       surfaces + dev tooling). Standalone fast-mode (no specialists). Governing rule: CLAUDE.md
+       Engineering Discipline #1/#2/#3 (Think Before Coding / Surgical / Simplicity First) +
+       faithfulness to the APPROVED design `docs/superpowers/specs/2026-06-22-meesell-testing-agent-design.md`.
+Branch: `feature/qa-wave-infra/infra` (built in the isolated worktree; the design doc was already
+       on the branch at `a5f6e2c`). Two-step gate: squash `infra` → `feature/qa-wave-infra/integration`
+       (I own step-1), then PR `…/integration` → develop (FOUNDER merges — D1; I do NOT merge it).
+
+=== STEP 2: build (5 phases, ~26 artifacts) ===
+Phase 1 — E2E scaffold (writable, frontend/e2e/): 12 files. playwright.config.ts (all ports from env,
+       no hardcoding; shell :4200 + remotes :4201-4207 + backend :8000), auth.setup.ts (OTP-once dev
+       bypass 000000 → storageState.json), 4 page-objects (shell/catalog/dashboard/export), 6 flow STUBS
+       (onboarding/catalog-creation/image-precheck/export/plan-guard/logout-guard, each `test.fixme`
+       with its §5.3 asserted-outcome). Port map sourced from the LIVE `frontend/apps/shell/public/
+       federation.manifest.json` (8 ports, incl. mfe-billing :4207 — the design said 4201-4206 / 6
+       remotes; live state is 7 remotes, brief said 4201-4207 → used live).
+Phase 2 — 3 skills (git-plumbing, .claude/skills/<name>/SKILL.md): meesell-backend-testing,
+       meesell-frontend-testing, meesell-e2e-testing — each with the Conventions + Taxonomy tables
+       from design §5, MeeSell SKILL.md front-matter (name + trigger description).
+Phase 3 — 4 agent specs (git-plumbing, .claude/agents/): meesell-qa-coordinator (opus, coordinator
+       format), meesell-backend-test-writer (sonnet), meesell-frontend-test-writer (sonnet),
+       meesell-e2e-test-writer (opus) — all match the existing fleet format (front-matter incl.
+       `isolation: worktree` on the 3 specialists; Scope IN/OUT; §6.2 memory cross-read; Hard
+       Constraints; Operating Procedure; Stop Conditions; Hand-off).
+Phase 4 — memory bootstrap (git-plumbing, .claude/agent-memory/): 4 dirs + 15 files (4 MEMORY.md +
+       the §6.1 sub-files), each seeded with a header + bootstrap notes.
+Phase 5 — registry (writable): docs/status/feature_board_qa.md (NEW), MEESELL_AGENT_REGISTRY.md
+       (19→23, hierarchy + §3.22-3.25 + Section-7 count), CLAUDE.md roster (19→23 + QA row + rule #5
+       count + deferred-note).
+
+=== STEP 3: .claude/** landing method ===
+Phase: `.claude/` is Edit/Write-PROTECTED → all Phase 2/3/4 files staged to /tmp then landed via the
+       git-plumbing route (`git hash-object -w` → `git update-index --add --cacheinfo 100644,<blob>,<path>`
+       → commit from index). Phases 1 + 5 (frontend/, docs/, CLAUDE.md) are normally-writable, edited
+       in-worktree.
+
+Board sweep (session start + end): scanned `feature_board_infra.md` Active features. NO NEW stale-7d
+       stalls — the long-untouched rows (microservices-* infra lanes, mfe-cutover, auth-otp,
+       image-precheck, the dev-proxy/flags PRs) all remain external-gate / founder-gate holds, not
+       stalls (consistent with prior sessions). New Active-features row opened for `qa-wave-infra`.
+       Inter-lead requests: none opened by me (the QA coordinator will open the frontend
+       `data-testid` request at its first wave dispatch — pre-noted on the new feature_board_qa.md).
+Cost: ₹0/mo (fleet-bootstrap; no GCP/TF/K8s/secret surface → no terraform plan / kubectl dry-run applicable).
+Next action: squash `infra` → `feature/qa-wave-infra/integration`; open PR `…/integration` → develop;
+       DO NOT MERGE (founder/master merges it, pre-approved). The first QA wave is a separate
+       master-session dispatch after this lands.
+=========
+
 ## UPDATE — 2026-06-21 — mesell-dev-log-monitor-spec-infra-session-1 — author DEV_LOG_MONITOR.md design spec (dev-tooling — DO NOT BUILD)
 
 === STEP 1: author docs/specs/DEV_LOG_MONITOR.md ===
