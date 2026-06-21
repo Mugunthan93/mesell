@@ -1,14 +1,5 @@
 const { withNativeFederation, shareAll } = require('@angular-architects/native-federation/config');
-
-// VERSION-PIN (fix/federation-shared-version-pin): see shell/federation.config.js for full comment.
-const MESELL_SHARED_VERSION = '1.0.0';
-
-const mesellShared = {
-  '@mesell/core':      { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
-  '@mesell/env':       { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
-  '@mesell/ui-kit':    { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
-  '@mesell/composites': { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
-};
+const { mesellShared } = require('../../libs/federation/shared.config');
 
 // MF Sub-Plan 03 — remote `mfe-onboarding` (F5 onboarding + F13 profile,
 // routes /onboarding + /profile). FIRST multi-expose remote (D20): ONE remoteEntry.json

@@ -1,14 +1,5 @@
 const { withNativeFederation, shareAll } = require('@angular-architects/native-federation/config');
-
-// VERSION-PIN (fix/federation-shared-version-pin): see shell/federation.config.js for full comment.
-const MESELL_SHARED_VERSION = '1.0.0';
-
-const mesellShared = {
-  '@mesell/core':      { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
-  '@mesell/env':       { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
-  '@mesell/ui-kit':    { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
-  '@mesell/composites': { singleton: true, strictVersion: true, requiredVersion: MESELL_SHARED_VERSION, version: MESELL_SHARED_VERSION },
-};
+const { mesellShared } = require('../../libs/federation/shared.config');
 
 // MF Sub-Plan 05 — remote `mfe-catalog` (R4): the 5-page catalog funnel
 // (F7 smart-picker, F8 catalog-form, F9 images, F10 preview, + catalogs list).
