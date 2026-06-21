@@ -238,7 +238,7 @@ describe('422 no_pricing_data — "Pricing isn\'t available for this category ye
   it('shape has kind="no_pricing_data" (not commission_missing)', () => {
     expect(NO_PRICING_DATA_SHAPE.kind).toBe('no_pricing_data');
     // ensure the retired kind is absent from the shape
-    expect((NO_PRICING_DATA_SHAPE as Record<string, unknown>)['commission_missing']).toBeUndefined();
+    expect((NO_PRICING_DATA_SHAPE as unknown as Record<string, unknown>)['commission_missing']).toBeUndefined();
   });
 
   it('error_code is "pricing.category.no_pricing_data"', () => {
@@ -263,7 +263,7 @@ describe('422 no_pricing_data — "Pricing isn\'t available for this category ye
     // Component renders the "no_pricing_data" banner, NOT the server_error banner.
     type ErrorState = 'unavailable' | 'no_pricing_data' | 'validation' | 'server_error' | null;
     const errorState: ErrorState = 'no_pricing_data';
-    expect(errorState === 'server_error').toBe(false);
+    expect((errorState as string) === 'server_error').toBe(false);
     expect(errorState === 'no_pricing_data').toBe(true);
   });
 
