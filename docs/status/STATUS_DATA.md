@@ -88,6 +88,36 @@ Coordinator-implements fallback was used for all parsing (workspace agent regist
 
 ## Updates Log
 
+=== UPDATE: 2026-06-21 ===
+Session: mesell-retention-monitor-spec-data-session-1
+Phase: design-spec authoring (FAST MODE — single agent, no code, no specialist build)
+Done:
+  - Mandatory reads: own MEMORY.md + CLAUDE.md + MASTER_PLAN §1/§2/§6/§7 + PLAYWRIGHT_MCP_REFERENCE + feature_board_data.md + STATUS_DATA.md
+  - Authored `docs/specs/RETENTION_CATEGORY_MONITOR.md` (DRAFT, V1.x/post-V1). Founder-confirmed retention strategy:
+    convert MeeSell from one-shot creation tool → continuous maintenance service via a category-keyed change monitor.
+  - KEY RULE in spec: scrape the unit of CATEGORY (not per-customer-per-catalog). Category-keyed snapshots + TTL/dedupe gate
+    → diff (reuse existing diff_pricing_lookup.py / meesho_monthly_refresh.py PASS/REVIEW_REQUIRED/BLOCK pipeline)
+    → fan-out "your category changed" notification to ALL sellers in that category + flag catalogs needs_recheck/reprice/export.
+  - 10 sections: architecture+data-flow, snapshot store+TTL/cache, enqueue triggers+dedupe-by-category, diff→fan-out,
+    infra-reuse map + BACKEND/INFRA handoff points, ToS/rate-limit safety + zero-spend scrape budget, measurement plan,
+    scope/non-goals, LOCKED-doc ratification flags, founder open questions.
+  - PR #370 opened (feature/retention-monitor-spec/data → develop). DO NOT MERGE — founder gate per MASTER_PLAN §2.2.
+Coverage: n/a (design doc; no parse/scrape performed).
+Schema version: unchanged — no JSON/DDL touched. The spec ANTICIPATES new tables (category_subscription, category_snapshot,
+  notification) but those are BACKEND-owned handoffs, not data-domain changes.
+Board sweep (start): 2 active rows (category-seeding RESOLVED-local PR#245 open for founder; Wave-1.5 CLOSED won't-fix).
+  Both dated 2026-06-16 (>5 days) but correctly parked on a founder action (merge #245) / closed — not lead-actionable. No new lead action.
+Board sweep (close): added retention-monitor-spec row IN REVIEW (PR #370, founder gate). Board reflects current state.
+Measurement finding: NO historical snapshots exist to quantify category change-frequency — meesho_category_tree.json (1 commit 687ced1)
+  and meesho_pricing_lookup.json (1 commit 6674941) each have a single generation; data/snapshots/ does not exist; only 1 transfer-price
+  census (2026-06-19) ran, no diffable pair. Spec DEFINES the metric (category_change_rate = non-PASS verdict windows / K sweeps) + collection plan.
+Blockers: none on the doc. Build blocked on founder review of PR #370 + §9 LOCKED-doc ratification (PRICING_LOCKED billing cadence; scraper ToS posture).
+Next: founder reviews PR #370. On ratify → HYBRID flow: data SPEC (category_snapshot store + single-category scrape entrypoint via scraper-maintainer)
+  → BACKEND handoff (category_subscription/category_snapshot/notification + Celery tasks) → INFRA handoff (CronJob + GCS lifecycle).
+Hand-offs: ANTICIPATED, NOT opened (no build started) — data → backend (3 tables + 2 Celery tasks + notification endpoint),
+  data → infra (quarterly CronJob + data/snapshots GCS bucket lifecycle + scraper egress quota). Inter-lead rows open only on founder GO.
+=========
+
 === UPDATE: 2026-06-16 (Wave 1.5 commission — Re-Run, post-esignature, dispatch 5 COMPLETE) ===
 Phase: commission rate-card capture — Re-Run after founder reports completing e-signature (dispatch 5)
 Agent: meesell-scraper-maintainer (sonnet)
