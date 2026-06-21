@@ -2884,3 +2884,26 @@ Next action: founder reviews + merges PR #350 → develop (founder's gate). No i
 **Cost:** ₹0/mo. Docs-only `.claude/` file; no infra/TF/K8s/secret surface → no terraform plan / kubectl dry-run applicable.
 
 **Board sweep (session-end):** Active features table healthy; no new stale-7d flags raised this session (chore PR is an adoption item, not a feature-group lane — no board row). Worktree `/tmp/mesell-wt/mesell-dev-rewrite` pruned post-PR.
+
+---
+
+### UPDATE — 2026-06-21 — mesell-dev-serve-nostore-infra-session-1 — no-store federation runtime files in boot-smoke serve.js
+
+**Phase:** dev-tooling fix (single-agent fast mode per CLAUDE.md HYBRID — standalone lead executes directly). No playbook resource section applies (local node static server, no VM/K3s/TF/secret/cluster surface; ₹0).
+
+**Problem:** `frontend/tools/boot-smoke/serve.js` served Native-Federation runtime files (unhashed `_mesell_core.js`, `remoteEntry.json`, `federation.manifest.json`, `index.html`) with `Cache-Control: no-cache` (revalidate-only). Browsers kept serving the STALE unhashed `_mesell_core.js` from HTTP cache even on hard-reload → pre-#373 broken auth singleton reloaded → catalog-view logout symptom persisted after the fix shipped.
+
+**Done:**
+  - `frontend/tools/boot-smoke/serve.js` (+23/-1, headers-only): added `NO_STORE_HEADERS` (`no-store, no-cache, must-revalidate` + `Pragma: no-cache` + `Expires: 0`), applied to the static 200 response (was `no-cache`) and the 204 OPTIONS preflight. Proxy untouched (`/api|/health|/docs|/openapi.json` pass backend headers verbatim → preserves #368). Stdlib Node, no new deps. `node --check` passes.
+  - **Made live:** killed the 8 master-tree serve.js processes (pids 94118-94125, all verified serve.js, :8000 backend pid 92281 untouched) and relaunched all 8 on the PATCHED worktree serve.js reusing the EXISTING master-tree dists (NO rebuild — RAM). Logs at `/tmp/mesell-serve-nostore/420x.log`.
+
+**Validation (live curl):** `:4200/remoteEntry.json` + `:4200/_mesell_core.js` + `:4200/` + `:4200/federation.manifest.json` all 200 with `Cache-Control: no-store, no-cache, must-revalidate`; all 7 remotes `:4201-4207/remoteEntry.json` 200 + no-store. Proxy preserved: `/health`→backend JSON (NOT no-store), `/api/v1/auth/me`→401 JSON (reached backend). App shell serves (`<app-root>`).
+
+**PR:** #375 `feature/dev-serve-nostore/infra` → develop. **DO NOT MERGE — founder's gate (D1).** TF/kubectl/secret/smoke gates N/A (dev-tooling, ₹0).
+
+**Board sweep (session start + end):** not a `feature/{name}/infra` group lane (dev-tooling chore) → no Active row added. Active features table scanned; no NEW stale-7d stalls (long-untouched rows remain external-gate holds, consistent with prior sessions). Inter-lead requests unchanged.
+
+**Cost:** ₹0/mo.
+
+**Next action:** founder reviews + merges #375 → develop. Founder re-test: one normal reload of http://localhost:4200 now suffices (incognito once on the very first load only, to flush whatever the tab cached before the restart).
+=========
