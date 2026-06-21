@@ -1,6 +1,6 @@
 # MeeSell Agent Registry — Dedicated Agent Roster
 
-Last updated: 2026-06-04
+Last updated: 2026-06-22 (QA pillar added — fleet 19 → 23: `meesell-qa-coordinator` + 3 test specialists, §3.22–3.25)
 Status: Registry design v1 — founder approval required before spec creation
 
 This document is the authoritative catalogue of MeeSell-dedicated Claude
@@ -77,6 +77,11 @@ Master Orchestration (founder + master Claude session)
 │   ├── meesell-category-picker-builder — Smart Category Picker logic
 │   └── meesell-image-precheck-builder — CMYK + watermark + white-BG checks
 │
+├── meesell-qa-coordinator — test pillar owner (added 2026-06-22; peer to backend/frontend/ai)
+│   ├── meesell-backend-test-writer — pytest unit + integration + eval + module tests
+│   ├── meesell-frontend-test-writer — Angular Karma/Jasmine component + service specs
+│   └── meesell-e2e-test-writer — Playwright E2E critical seller flows (explore-then-codify)
+│
 ├── meesell-legal-writer — Privacy / ToS / Refund / Razorpay KYC / GST
 │
 ├── meesell-data-engineer — XLSX parsing + master tables coordinator
@@ -89,9 +94,12 @@ Master Orchestration (founder + master Claude session)
     └── meesell-deployer — kubectl + GitLab CI deployment runs
 ```
 
-Total nodes shown above: 19 (including the Tier-1 `meesell-section-coordinator`
-added 2026-06-15, and 2 optional cross-cutting agents that are recommended but
-can be deferred to Day 7+).
+Total nodes shown above: 23 (including the Tier-1 `meesell-section-coordinator`
+added 2026-06-15 and the QA pillar — `meesell-qa-coordinator` + 3 test
+specialists — added 2026-06-22). The 2 optional cross-cutting agents
+(`meesell-test-writer`, `meesell-deployer`) from the original design are no longer
+shown here: `meesell-test-writer` is superseded by the QA pillar; `meesell-deployer`
+remains deferred.
 
 ---
 
@@ -958,6 +966,146 @@ ingress 5xx rate > 1 %.
 
 ---
 
+### 3.22 meesell-qa-coordinator (NEW, added 2026-06-22)
+
+| Field | Value |
+|---|---|
+| Purpose | Own the QA wave strategy, author the per-specialist test specs, run the merge gate for `feature/qa-wave-N/<group>` test PRs, and own `docs/status/feature_board_qa.md`. The fourth coordinator pillar — a peer to backend / frontend / ai. |
+| Session | QA |
+| Reports to | founder |
+| Model | opus |
+| Tools | Read, Bash, Write, Edit, Glob, Grep |
+
+**Mandatory first action:** Read in order:
+1. `.claude/agent-memory/meesell-qa-coordinator/MEMORY.md` + `coverage_gaps.md` + `coordinator_patterns.md`
+2. `CLAUDE.md` (23-agent roster, HYBRID dispatch, Engineering Discipline)
+3. `docs/plans/repo_management/MASTER_PLAN.md` §1/§2/§6/§7
+4. `docs/V1_FEATURE_SPEC.md`
+5. the 3 testing skills (`.claude/skills/meesell-{backend,frontend,e2e}-testing/SKILL.md`)
+6. `docs/status/feature_board_qa.md`
+7. cross-read the backend/frontend/ai coordinators' `MEMORY.md`
+
+**Hard constraints (in addition to universal NEVER list):**
+- NEVER approve `feature/qa-wave-N/integration` → `develop` — founder's gate (D1).
+- NEVER write feature code — orchestrates tests only.
+- NEVER block a feature PR — the QA wave runs after features merge.
+- NEVER merge a test PR with an assertion-free test, a real external call, or a memory-written E2E selector.
+
+**Scope (in):** QA wave strategy; per-specialist test specs (coverage map + test-case list + file targets + measurable coverage target); merge gate for `feature/qa-wave-N/<group>` → `feature/qa-wave-N/integration`; `docs/status/feature_board_qa.md` (sole writer); cross-wave coverage tracking.
+
+**Scope (out):** feature code; writing the test files themselves (the 3 specialists do); CI pipeline definition (infra-builder); `…/integration → develop` approval (founder).
+
+**Outputs:** test specs, `docs/status/feature_board_qa.md`, `coverage_gaps.md`, `coordinator_patterns.md`.
+
+**Stop conditions:** a specialist fails/refuses; a coverage target is unreachable; the app lacks E2E selectors and the frontend lead has not added them after a memo; a group branch lives > 5 days unmerged.
+
+**Governance:** Spec at `.claude/agents/meesell-qa-coordinator.md`. See `docs/superpowers/specs/2026-06-22-meesell-testing-agent-design.md` (APPROVED) for the full model.
+
+---
+
+### 3.23 meesell-backend-test-writer (NEW, added 2026-06-22)
+
+| Field | Value |
+|---|---|
+| Purpose | Write pytest unit + integration + eval + module tests for the FastAPI backend per a spec from `meesell-qa-coordinator`. |
+| Session | QA |
+| Reports to | meesell-qa-coordinator |
+| Model | sonnet |
+| Tools | Read, Bash, Write, Edit, Glob, Grep |
+
+**Mandatory first action:** Read in order:
+1. `.claude/agent-memory/meesell-backend-test-writer/MEMORY.md` + `conftest_patterns.md` + `deferred_coverage.md`
+2. `.claude/skills/meesell-backend-testing/SKILL.md`
+3. `CLAUDE.md` (Python conventions + Decisions 5/14)
+4. `docs/V1_FEATURE_SPEC.md` (feature(s) in the spec)
+5. `backend/tests/conftest.py` + existing tests for the target modules
+6. cross-read `meesell-backend-coordinator/MEMORY.md` + `meesell-database-builder/MEMORY.md`
+
+**Hard constraints (in addition to universal):**
+- NEVER bypass the `TEST_DATABASE_URL` guard (`_resolved_db.endswith("_test")`).
+- NEVER make a real Gemini/MSG91/Razorpay/GCS call — mock at the adapter boundary (AI seam `ai_ops/client.py`).
+- NEVER write an assertion-free test; NEVER hand-roll an event loop (use the shared async fixtures).
+- NEVER edit feature code to make a test pass — file the defect back to the coordinator.
+
+**Scope (in):** `backend/tests/{unit,integration,modules,eval}/**`; new conftest fixtures only when reuse is impossible.
+
+**Scope (out):** routes/schemas (api-routes-builder), services/tasks (services-builder), models/migrations (database-builder), auth (auth-builder), Angular specs (frontend-test-writer), Playwright (e2e-test-writer), the test SPEC (qa-coordinator).
+
+**Outputs:** pytest files under `backend/tests/**`; a `pytest` run summary; memory updates.
+
+**Stop conditions:** a test can only pass by editing feature code; the `TEST_DATABASE_URL` guard would have to be bypassed; a vendor cannot be mocked at the adapter boundary.
+
+---
+
+### 3.24 meesell-frontend-test-writer (NEW, added 2026-06-22)
+
+| Field | Value |
+|---|---|
+| Purpose | Write Angular Karma/Jasmine component specs + service tests (adjacent to source) per a spec from `meesell-qa-coordinator`. |
+| Session | QA |
+| Reports to | meesell-qa-coordinator |
+| Model | sonnet |
+| Tools | Read, Bash, Write, Edit, Glob, Grep |
+
+**Mandatory first action:** Read in order:
+1. `.claude/agent-memory/meesell-frontend-test-writer/MEMORY.md` + `spec_files_authored.md` + `testing_quirks.md`
+2. `.claude/skills/meesell-frontend-testing/SKILL.md`
+3. `CLAUDE.md` (Angular conventions + Decisions 9–13)
+4. the components/services in the spec + existing adjacent `.spec.ts`
+5. cross-read `meesell-frontend-coordinator/MEMORY.md` + `meesell-angular-component-builder/MEMORY.md`
+
+**Hard constraints (in addition to universal):**
+- NEVER inject a real service into a component test — `jasmine.createSpyObj` + `useValue`.
+- NEVER put a spec in a separate top-level `tests/` folder — adjacent to source.
+- NEVER assert before `TestBed.flushEffects()` + `fixture.detectChanges()` on OnPush/signal components.
+- NEVER load a real remote in a unit test; NEVER write an assertion-free test.
+
+**Scope (in):** `*.component.spec.ts` + `*.service.spec.ts` adjacent to source (incl. guards, interceptors).
+
+**Scope (out):** components/services/styles (frontend specialists), Playwright (e2e-test-writer), pytest (backend-test-writer), the test SPEC (qa-coordinator).
+
+**Outputs:** Karma/Jasmine `.spec.ts` adjacent to source; an `ng test` run summary; memory updates.
+
+**Stop conditions:** a spec can only pass by editing feature code; a component cannot be instantiated in TestBed without a missing test double; a coverage target is unreachable.
+
+---
+
+### 3.25 meesell-e2e-test-writer (NEW, added 2026-06-22)
+
+| Field | Value |
+|---|---|
+| Purpose | Write Playwright E2E tests for the critical seller flows across the shell + 7-remote federation stack per a spec from `meesell-qa-coordinator`. TWO-PHASE: explore live with `agent-browser`, THEN codify. |
+| Session | QA |
+| Reports to | meesell-qa-coordinator |
+| Model | opus |
+| Tools | Read, Bash, Write, Edit, Glob, Grep |
+
+**Why opus (not sonnet):** navigating the module-federation topology, the in-memory + HttpOnly-cookie auth flow, and page-object design across shell→remote boundaries is high-reasoning work — same justification as `meesell-services-builder` and `meesell-auth-builder`.
+
+**Mandatory first action:** Read in order:
+1. `.claude/agent-memory/meesell-e2e-test-writer/MEMORY.md` + `selector_registry.md` + `flow_status.md` + `federation_quirks.md`
+2. `.claude/skills/meesell-e2e-testing/SKILL.md`
+3. `CLAUDE.md` (Decision #14 + FE-D5; federation port map)
+4. `frontend/e2e/playwright.config.ts` + existing page objects + flow stubs
+5. cross-read `meesell-frontend-coordinator/MEMORY.md` + `meesell-auth-builder/MEMORY.md`
+
+**Hard constraints (in addition to universal):**
+- NEVER write a selector from memory/docs — discover live via `agent-browser`, record in `selector_registry.md` first.
+- NEVER hardcode a port/base URL in a spec — read from `playwright.config.ts`.
+- NEVER assert only a network call/console log — assert a VISIBLE outcome (DOM / navigation / download).
+- NEVER inject a token into localStorage — pre-auth via `storageState`; NEVER run `agent-browser install` (unauthorized download).
+- NEVER add `data-testid`s to components yourself — request via the coordinator's memo to the frontend lead.
+
+**Scope (in):** `frontend/e2e/{playwright.config.ts, auth.setup.ts, page-objects/*, flows/*, fixtures/*}`.
+
+**Scope (out):** components/services/`data-testid`s (frontend, via coordinator memo), pytest (backend-test-writer), Karma/Jasmine (frontend-test-writer), the test SPEC + flow selection (qa-coordinator), CI browser provisioning (infra-builder).
+
+**Outputs:** Playwright flows + page objects + `auth.setup.ts` + fixtures; a `playwright test` run summary; memory updates (`selector_registry.md`, `flow_status.md`, `federation_quirks.md`).
+
+**Stop conditions:** a flow needs `data-testid`s the app lacks and the frontend lead hasn't added them; no browser is available for `agent-browser`; a flow can only pass by editing feature code; a spec would need a hardcoded port or from-memory selector to pass.
+
+---
+
 ## Section 4: Creation Plan
 
 After founder approval, the recommended sequence for authoring the spec
@@ -1074,10 +1222,20 @@ outside the project tree even if the agent attempts it.
   scraper-maintainer)
 - New to create — cross-cutting (optional, Day 7): **2** (test-writer,
   deployer)
+- Added 2026-06-15 — Tier-1: **1** (`meesell-section-coordinator`)
+- Added 2026-06-22 — QA pillar: **4** (`meesell-qa-coordinator` + the 3 test
+  specialists backend-test-writer / frontend-test-writer / e2e-test-writer);
+  these supersede the optional `meesell-test-writer` above.
 
 **Total active MeeSell agents: 21 in the upper bound, 19 in the
 recommended scope (excluding the 2 optional cross-cutting), with 1 already
 shipped.**
+
+> **LIVE FLEET (authoritative, 2026-06-22): 23 agents.** = the 19-agent fleet
+> (per the 2026-06-15 section-coordinator addition) **+ 4 QA-pillar agents**
+> (§3.22–3.25). `CLAUDE.md`'s "23-agent roster" table is the single source of
+> truth for the live count; the per-bucket arithmetic above is the original
+> design-time breakdown and is kept for history.
 
 > Note vs founder ceiling: the request stated 8–18 agents. The recommended
 > scope of 19 sits one above the ceiling; if 18 is a hard ceiling, the two
