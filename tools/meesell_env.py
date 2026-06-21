@@ -58,6 +58,7 @@ Files (all gitignored, never committed)
 from __future__ import annotations
 
 import argparse
+import datetime
 import fcntl
 import json
 import os
@@ -66,8 +67,13 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
+import urllib.error
+import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 # ---------------------------------------------------------------------------
 # Constants / layout discovery
@@ -119,6 +125,12 @@ NEXUS_DIR = MASTER_ROOT / ".nexus"
 PORTS_REGISTRY = NEXUS_DIR / "env-ports.json"
 STATE_FILE = NEXUS_DIR / "env-state.json"
 BUILD_LOCK = NEXUS_DIR / ".build.lock"
+BUILD_HISTORY = NEXUS_DIR / "build-history.jsonl"  # append-only build log (jsonl)
+
+# Default dashboard port. 7700 sits OUTSIDE every slot range (slots 0-9 use
+# backend 8000-8090, shell 4200-4290, mfe 4201-4297) so the monitor never
+# collides with a served env.
+DASHBOARD_PORT = 7700
 
 # Conservative RAM guard (founder-locked): refuse up/build if either trips.
 MIN_FREE_MB = 1500
@@ -397,6 +409,210 @@ def pid_alive(pid: int) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Dashboard state model (read-only) — ONE code path shared by `status` and the
+# `dashboard` HTTP server. This NEVER acquires the build lock and NEVER triggers
+# a build; it only reads registries, probes liveness, and (optionally) probes
+# health over HTTP with a short, cached timeout.
+# ---------------------------------------------------------------------------
+
+# Health-probe cache: port -> (epoch_checked, "up"|"down"). Shared across the
+# dashboard's worker threads so a mid-build slot never blocks the page.
+_HEALTH_CACHE: dict[int, tuple[float, str]] = {}
+_HEALTH_CACHE_TTL = 3.0   # seconds — re-probe at most this often per port
+_HEALTH_TIMEOUT = 1.0     # seconds — per-probe urllib timeout
+_HEALTH_LOCK = threading.Lock()
+
+
+def build_lock_held() -> bool:
+    """True if a build is in progress (the global flock is held elsewhere).
+
+    Read-only probe: open the lock file and try a NON-BLOCKING exclusive flock.
+    If we get it, no build is running -> release immediately and report free.
+    If it would block, a build holds it. Opened read-only so we never need write
+    permission on the (possibly root-owned) lock file.
+    """
+    if not BUILD_LOCK.exists():
+        return False
+    try:
+        fh = open(BUILD_LOCK, "r")
+    except OSError:
+        return False
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(fh, fcntl.LOCK_UN)
+        return False
+    except OSError:
+        return True
+    finally:
+        fh.close()
+
+
+def probe_health(port: int) -> str:
+    """Return 'up' or 'down' for a TCP/HTTP service on 127.0.0.1:<port>.
+
+    Cached for _HEALTH_CACHE_TTL seconds. 'up' means the port answered an HTTP
+    request with ANY status (even 404 — a live FastAPI/serve.js answers 404 for
+    '/'). 'down' means connection refused / timeout / no listener.
+    """
+    now = time.monotonic()
+    with _HEALTH_LOCK:
+        cached = _HEALTH_CACHE.get(port)
+        if cached and (now - cached[0]) < _HEALTH_CACHE_TTL:
+            return cached[1]
+    result = "down"
+    try:
+        req = urllib.request.Request(f"http://127.0.0.1:{port}/", method="GET")
+        urllib.request.urlopen(req, timeout=_HEALTH_TIMEOUT).close()
+        result = "up"
+    except urllib.error.HTTPError:
+        result = "up"  # answered HTTP (e.g. 404) => the process is alive
+    except (urllib.error.URLError, OSError, ValueError):
+        result = "down"
+    with _HEALTH_LOCK:
+        _HEALTH_CACHE[port] = (time.monotonic(), result)
+    return result
+
+
+def _service_health(pid: int | None, alive: bool, port: int) -> str:
+    """Map (pid liveness, http reachability) to a single dot state.
+
+    up   : process alive AND the port answers HTTP.
+    dead : a pid was tracked but the process is gone (crashed/exited).
+    down : no process tracked for this role (e.g. reusing the baseline backend),
+           or the process is alive but the port is not answering yet (mid-serve).
+    """
+    if pid and not alive:
+        return "dead"
+    if pid and alive:
+        return "up" if probe_health(port) == "up" else "down"
+    return "down"
+
+
+def load_build_history(limit_per_project: int = 5) -> dict[str, list[dict]]:
+    """Read .nexus/build-history.jsonl -> {project: [most-recent-first rows]}.
+
+    Returns at most `limit_per_project` newest rows per project. Tolerant of a
+    missing file or a partially written final line.
+    """
+    if not BUILD_HISTORY.exists():
+        return {}
+    by_project: dict[str, list[dict]] = {}
+    try:
+        lines = BUILD_HISTORY.read_text(errors="replace").splitlines()
+    except OSError:
+        return {}
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue  # skip a torn/partial trailing line
+        proj = row.get("project")
+        if not proj:
+            continue
+        by_project.setdefault(proj, []).append(row)
+    # Newest first; cap per project.
+    for proj in by_project:
+        by_project[proj] = by_project[proj][::-1][:limit_per_project]
+    return by_project
+
+
+def collect_dashboard_state(*, probe: bool = True) -> dict:
+    """The single JSON model shared by CLI `status` and the dashboard `/api/state`.
+
+    Read-only. Builds the union of `git_worktrees()` and `load_ports()` so a
+    worktree that has a reserved slot but no live processes still shows up.
+
+    With probe=False, the health field is reported as 'unknown' (no HTTP probes)
+    — used by the CLI so `status` stays instant and never blocks on a port.
+    """
+    free_mb, swap_pct = ram_stats()
+    state = load_state()
+    reg = load_ports()
+    worktrees = git_worktrees()
+    history = load_build_history()
+
+    # State is keyed by worktree basename; map basename -> running env entry.
+    running_by_name = dict(state)
+
+    # Union of every worktree we know about (live or just reserved).
+    names = set(worktrees) | set(reg) | set(running_by_name)
+
+    envs = []
+    for name in sorted(names):
+        wt = worktrees.get(name)
+        path = wt["path"] if wt else (
+            running_by_name.get(name, {}).get("path", ""))
+        branch = wt["branch"] if wt else (
+            running_by_name.get(name, {}).get("branch"))
+        slot = reg.get(name, running_by_name.get(name, {}).get("slot"))
+
+        # Port block for this slot (needs the MFE list from the worktree root).
+        ports = {"backend": None, "shell": None, "mfes": {}}
+        mfes: list[str] = []
+        if slot is not None and path and Path(path).is_dir():
+            try:
+                mfes = discover_mfes(Path(path))
+                block = ports_for_slot(slot, mfes)
+                ports = {"backend": block["backend"], "shell": block["shell"],
+                         "mfes": block["mfes"]}
+            except SystemExit:
+                pass  # frontend/apps missing in this tree — leave ports empty
+
+        # Per-service status from the tracked procs.
+        procs = running_by_name.get(name, {}).get("procs", {})
+        services = []
+        for role in sorted(procs):
+            meta = procs[role]
+            pid = meta.get("pid")
+            port = meta.get("port")
+            alive = bool(pid and pid_alive(pid))
+            health = _service_health(pid, alive, port) if probe else "unknown"
+            services.append({
+                "role": role, "pid": pid, "port": port,
+                "alive": alive, "health": health,
+            })
+
+        # Build rows for this worktree's projects (shell + this slot's mfes).
+        builds = []
+        proj_names = ["frontend"] + mfes
+        for proj in proj_names:
+            for row in history.get(proj, []):
+                builds.append({
+                    "project": proj,
+                    "status": row.get("status"),
+                    "when": row.get("end_iso") or row.get("start_iso"),
+                    "duration_s": row.get("duration_s"),
+                })
+        builds.sort(key=lambda b: (b.get("when") or ""), reverse=True)
+
+        envs.append({
+            "worktree": name,
+            "slot": slot,
+            "branch": branch,
+            "path": path,
+            "exists": name in worktrees,
+            "running": name in running_by_name,
+            "ports": ports,
+            "services": services,
+            "builds": builds[:8],
+        })
+
+    return {
+        "free_mb": free_mb,
+        "min_free_mb": MIN_FREE_MB,
+        "swap_pct": round(swap_pct, 1),
+        "max_swap_pct": MAX_SWAP_PCT,
+        "build_lock_held": build_lock_held(),
+        "env_count": len(running_by_name),
+        "envs": envs,
+        "generated_iso": _now_iso(),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Build + serve primitives
 # ---------------------------------------------------------------------------
 
@@ -518,6 +734,33 @@ def _tail_log(logpath: Path, n: int = 25) -> None:
         sys.stderr.write(ln + "\n")
 
 
+def _now_iso() -> str:
+    """UTC timestamp, second-resolution, ISO-8601 with trailing Z."""
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def record_build(project: str, start_iso: str, end_iso: str,
+                 status: str, duration_s: float) -> None:
+    """Append one build outcome to .nexus/build-history.jsonl (append-only).
+
+    Best-effort: a recorder failure must never break a build. The file is a
+    JSON-Lines stream (one object per line) so it is cheap to append and tail.
+    """
+    try:
+        NEXUS_DIR.mkdir(parents=True, exist_ok=True)
+        row = {
+            "project": project,
+            "start_iso": start_iso,
+            "end_iso": end_iso,
+            "status": status,
+            "duration_s": round(duration_s, 1),
+        }
+        with open(BUILD_HISTORY, "a") as fh:
+            fh.write(json.dumps(row) + "\n")
+    except OSError as exc:
+        info(f"build-history record skipped ({project}): {exc}")
+
+
 def ng_build(root: Path, project: str, *, stub: bool) -> None:
     """Build one Angular project as a one-shot, under the global lock.
 
@@ -534,6 +777,10 @@ def ng_build(root: Path, project: str, *, stub: bool) -> None:
     logpath = NEXUS_DIR / f"build-{project}.log"
     NEXUS_DIR.mkdir(parents=True, exist_ok=True)
     info(f"ng build {project} ... (log {logpath})")
+    # Build-history bookkeeping (additive — does not change build behaviour).
+    start_iso = _now_iso()
+    start_mono = time.monotonic()
+    build_ok = False
     with open(logpath, "w") as logfh:
         proc = subprocess.Popen(
             ["npx", "ng", "build", project, "--configuration=development"],
@@ -544,9 +791,15 @@ def ng_build(root: Path, project: str, *, stub: bool) -> None:
         )
     proc._mesell_root = root  # type: ignore[attr-defined]
     try:
-        _wait_for_build(proc, logpath, project)
+        _wait_for_build(proc, logpath, project)  # die()s on failure/timeout
+        build_ok = True
     finally:
         kill_esbuild()  # belt-and-suspenders sweep after each build
+        # _wait_for_build calls die() (SystemExit) on a failed/timed-out build,
+        # so this finally records "ok" on success and "failed" on any exit.
+        record_build(project, start_iso, _now_iso(),
+                     "ok" if build_ok else "failed",
+                     time.monotonic() - start_mono)
 
 
 def served_dist_root(root: Path, project_dist_name: str) -> Path:
@@ -654,30 +907,34 @@ def cmd_ports(args) -> None:
 
 
 def cmd_status(args) -> None:
-    free_mb, swap_pct = ram_stats()
-    state = load_state()
-    reg = load_ports()
-    print(f"RAM free: {free_mb} MB    swap used: {swap_pct:.1f}%    "
+    # Shares ONE code path with the dashboard via collect_dashboard_state().
+    # probe=False keeps `status` instant (no HTTP health probes / blocking).
+    model = collect_dashboard_state(probe=False)
+    lock = "HELD (build in progress)" if model["build_lock_held"] else "free"
+    print(f"RAM free: {model['free_mb']} MB    swap used: {model['swap_pct']:.1f}%"
+          f"    build lock: {lock}    "
           f"(guard: free>={MIN_FREE_MB}MB, swap<={MAX_SWAP_PCT:.0f}%)")
     print()
-    if not state:
+    running = [e for e in model["envs"] if e["services"]]
+    if not running:
         print("No running envs tracked.")
     else:
         print(f"{'worktree':<24}{'slot':<6}{'role':<14}{'port':<8}{'pid':<8}{'alive'}")
         print("-" * 70)
-        for wt_name, env in sorted(state.items()):
+        for env in running:
             slot = env.get("slot", "?")
-            for role, meta in env.get("procs", {}).items():
-                pid = meta.get("pid")
-                port = meta.get("port", "")
-                alive = "yes" if (pid and pid_alive(pid)) else "DEAD"
-                print(f"{wt_name:<24}{str(slot):<6}{role:<14}{str(port):<8}"
-                      f"{str(pid):<8}{alive}")
+            for svc in env["services"]:
+                pid = svc.get("pid")
+                port = svc.get("port") or ""
+                alive = "yes" if svc.get("alive") else "DEAD"
+                print(f"{env['worktree']:<24}{str(slot):<6}{svc['role']:<14}"
+                      f"{str(port):<8}{str(pid):<8}{alive}")
     print()
     print("Slot reservations:")
-    for wt_name, slot in sorted(reg.items(), key=lambda kv: kv[1]):
-        exists = "exists" if wt_name in git_worktrees() else "MISSING (gc to prune)"
-        print(f"  slot {slot}: {wt_name}  [{exists}]")
+    for env in sorted((e for e in model["envs"] if e["slot"] is not None),
+                      key=lambda e: e["slot"]):
+        exists = "exists" if env["exists"] else "MISSING (gc to prune)"
+        print(f"  slot {env['slot']}: {env['worktree']}  [{exists}]")
 
 
 def cmd_up(args) -> None:
@@ -936,6 +1193,106 @@ def cmd_gc(args) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Dashboard HTTP server (read-only). Stdlib ThreadingHTTPServer; serves the
+# self-contained SPA + a JSON state API + a build-log tail. NEVER builds.
+# ---------------------------------------------------------------------------
+
+DASHBOARD_HTML = Path(__file__).resolve().parent / "env_dashboard" / "index.html"
+_LOG_TAIL_BYTES = 64 * 1024   # tail at most this many bytes of a build log
+_PROJECT_RE = re.compile(r"^[A-Za-z0-9_.-]+$")   # guard /api/log?project=
+
+
+class _DashboardHandler(BaseHTTPRequestHandler):
+    """Routes: / (SPA), /api/state (JSON), /api/log?project=<name> (log tail)."""
+
+    server_version = "meesell-env-dashboard"
+
+    def log_message(self, fmt, *args):  # noqa: N802 — quiet the default access log
+        pass
+
+    def _send(self, code: int, body: bytes, ctype: str) -> None:
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def _send_json(self, obj, code: int = 200) -> None:
+        self._send(code, json.dumps(obj).encode("utf-8"),
+                   "application/json; charset=utf-8")
+
+    def do_GET(self):  # noqa: N802
+        parsed = urlparse(self.path)
+        route = parsed.path
+        if route == "/" or route == "/index.html":
+            self._serve_index()
+        elif route == "/api/state":
+            # Read-only model with cached HTTP health probes.
+            self._send_json(collect_dashboard_state(probe=True))
+        elif route == "/api/log":
+            self._serve_log(parse_qs(parsed.query))
+        else:
+            self._send_json({"error": "not found", "path": route}, code=404)
+
+    do_HEAD = do_GET
+
+    def _serve_index(self) -> None:
+        try:
+            body = DASHBOARD_HTML.read_bytes()
+        except OSError:
+            self._send_json(
+                {"error": f"dashboard html missing at {DASHBOARD_HTML}"}, code=500)
+            return
+        self._send(200, body, "text/html; charset=utf-8")
+
+    def _serve_log(self, qs: dict) -> None:
+        proj = (qs.get("project") or [""])[0]
+        if not proj or not _PROJECT_RE.match(proj):
+            self._send_json({"error": "missing or invalid project"}, code=400)
+            return
+        logpath = NEXUS_DIR / f"build-{proj}.log"
+        if not logpath.exists():
+            self._send_json(
+                {"project": proj, "log": "", "exists": False,
+                 "note": "no build log yet (project not built in this baseline)"})
+            return
+        try:
+            with open(logpath, "rb") as fh:
+                fh.seek(0, os.SEEK_END)
+                size = fh.tell()
+                fh.seek(max(0, size - _LOG_TAIL_BYTES))
+                raw = fh.read()
+        except OSError as exc:
+            self._send_json({"project": proj, "error": str(exc)}, code=500)
+            return
+        text = raw.decode("utf-8", errors="replace")
+        # Strip ANSI colour codes so the in-browser <pre> reads cleanly.
+        text = re.sub(r"\x1b\[[0-9;]*m", "", text)
+        self._send_json({"project": proj, "exists": True,
+                         "truncated": size > _LOG_TAIL_BYTES, "log": text})
+
+
+def cmd_dashboard(args) -> None:
+    if not DASHBOARD_HTML.exists():
+        die(f"dashboard html not found at {DASHBOARD_HTML}")
+    port = args.port
+    httpd = ThreadingHTTPServer(("127.0.0.1", port), _DashboardHandler)
+    info(f"env dashboard (read-only) on http://127.0.0.1:{port}")
+    info("  GET /              the dashboard SPA")
+    info("  GET /api/state     full JSON model")
+    info("  GET /api/log?project=<name>   tail of .nexus/build-<name>.log")
+    info("Ctrl-C to stop. This server NEVER builds and NEVER holds the build lock.")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        info("dashboard stopped")
+    finally:
+        httpd.server_close()
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -982,6 +1339,14 @@ def build_parser() -> argparse.ArgumentParser:
     pr = sub.add_parser("ports", help="print a worktree's assigned port block")
     pr.add_argument("worktree")
     pr.set_defaults(func=cmd_ports)
+
+    dash = sub.add_parser(
+        "dashboard",
+        help="serve the read-only env-monitoring dashboard (never builds)")
+    dash.add_argument("--port", type=int, default=DASHBOARD_PORT,
+                      help=f"port to serve on (default {DASHBOARD_PORT}, "
+                           f"outside all slot ranges)")
+    dash.set_defaults(func=cmd_dashboard)
 
     return p
 

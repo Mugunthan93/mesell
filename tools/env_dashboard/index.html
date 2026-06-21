@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MeeSell Dev Env Dashboard</title>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #1a2230; --panel2: #232d3d; --line: #2e3a4d;
+    --txt: #e6edf3; --muted: #8b98a8; --accent: #4ea1ff;
+    --up: #2ecc71; --down: #f39c12; --dead: #e74c3c; --unknown: #5a6473;
+    --ok-bg: #16331f; --warn-bg: #3a2a12; --bad-bg: #3a1717;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--txt);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 14px 20px; background: var(--panel); border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; z-index: 5;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; letter-spacing: .3px; }
+  .topbar { display: flex; gap: 12px; flex-wrap: wrap; margin-left: auto; align-items: center; }
+  .gauge {
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 10px;
+    padding: 8px 14px; min-width: 150px;
+  }
+  .gauge .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .gauge .value { font-size: 18px; font-weight: 700; margin-top: 2px; }
+  .gauge .bar { height: 6px; border-radius: 3px; background: #0a0e13; margin-top: 6px; overflow: hidden; }
+  .gauge .bar > span { display: block; height: 100%; border-radius: 3px; transition: width .4s; }
+  .gauge.ok .bar > span { background: var(--up); }
+  .gauge.warn .bar > span { background: var(--down); }
+  .gauge.bad .bar > span { background: var(--dead); }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 999px;
+    padding: 6px 14px; font-size: 13px; font-weight: 600;
+  }
+  .pill .dot { width: 9px; height: 9px; border-radius: 50%; }
+  .pill.lock-free .dot { background: var(--up); }
+  .pill.lock-held .dot { background: var(--down); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+  main { padding: 20px; }
+  .grid {
+    display: grid; gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px; display: flex; flex-direction: column; gap: 12px;
+  }
+  .card.stale { opacity: .55; }
+  .card-head { display: flex; align-items: center; gap: 10px; }
+  .slot-badge {
+    background: var(--accent); color: #06121f; font-weight: 800; font-size: 13px;
+    border-radius: 8px; padding: 4px 10px; min-width: 34px; text-align: center;
+  }
+  .slot-badge.noslot { background: var(--unknown); color: var(--txt); }
+  .card-head .names { display: flex; flex-direction: column; min-width: 0; }
+  .card-head .wt { font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-head .br { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tag {
+    margin-left: auto; font-size: 11px; padding: 3px 9px; border-radius: 6px;
+    text-transform: uppercase; letter-spacing: .5px; font-weight: 700;
+  }
+  .tag.running { background: var(--ok-bg); color: var(--up); }
+  .tag.idle { background: var(--bad-bg); color: var(--dead); }
+  .tag.missing { background: var(--warn-bg); color: var(--down); }
+  .dots { display: flex; flex-wrap: wrap; gap: 8px; }
+  .svc {
+    display: flex; align-items: center; gap: 6px; font-size: 12px;
+    background: var(--panel2); border: 1px solid var(--line);
+    border-radius: 7px; padding: 4px 8px;
+  }
+  .svc .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .svc .dot.up { background: var(--up); }
+  .svc .dot.down { background: var(--down); }
+  .svc .dot.dead { background: var(--dead); }
+  .svc .dot.unknown { background: var(--unknown); }
+  .svc .role { color: var(--muted); }
+  .svc .port { color: var(--txt); font-variant-numeric: tabular-nums; }
+  .links { display: flex; flex-wrap: wrap; gap: 8px; }
+  .links a, .log-btn {
+    font-size: 12px; text-decoration: none; cursor: pointer;
+    background: var(--panel2); border: 1px solid var(--line); color: var(--accent);
+    border-radius: 7px; padding: 5px 10px; font-weight: 600;
+  }
+  .links a:hover, .log-btn:hover { border-color: var(--accent); }
+  .links a.disabled { color: var(--unknown); pointer-events: none; opacity: .5; }
+  .builds { font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
+  .builds .b { display: flex; gap: 8px; align-items: center; }
+  .builds .b .bdot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .builds .b.ok .bdot { background: var(--up); }
+  .builds .b.failed .bdot { background: var(--dead); }
+  .builds .b .bp { color: var(--txt); cursor: pointer; }
+  .builds .b .bp:hover { text-decoration: underline; }
+  .builds .b .bwhen { margin-left: auto; font-variant-numeric: tabular-nums; }
+  .empty { color: var(--muted); padding: 40px; text-align: center; }
+  footer { color: var(--muted); font-size: 12px; padding: 12px 20px; text-align: center; }
+  /* Log modal */
+  .modal-bg {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.6);
+    z-index: 20; align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-bg.open { display: flex; }
+  .modal {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    width: min(900px, 100%); max-height: 80vh; display: flex; flex-direction: column;
+  }
+  .modal-head {
+    display: flex; align-items: center; gap: 10px; padding: 14px 18px;
+    border-bottom: 1px solid var(--line);
+  }
+  .modal-head h2 { font-size: 15px; margin: 0; }
+  .modal-head .close {
+    margin-left: auto; cursor: pointer; background: var(--panel2);
+    border: 1px solid var(--line); color: var(--txt); border-radius: 7px;
+    padding: 5px 12px; font-weight: 700;
+  }
+  .modal pre {
+    margin: 0; padding: 16px 18px; overflow: auto; flex: 1;
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #c7d1dc; white-space: pre-wrap; word-break: break-word;
+  }
+</style>
+</head>
+<body>
+<header data-testid="topbar">
+  <h1 data-testid="title">MeeSell Dev Env Dashboard</h1>
+  <div class="topbar">
+    <div class="gauge" id="gauge-ram" data-testid="gauge-ram">
+      <div class="label">Free RAM (floor <span id="ram-floor"></span> MB)</div>
+      <div class="value" data-testid="ram-value">—</div>
+      <div class="bar"><span data-testid="ram-bar"></span></div>
+    </div>
+    <div class="gauge" id="gauge-swap" data-testid="gauge-swap">
+      <div class="label">Swap used (ceiling <span id="swap-ceil"></span>%)</div>
+      <div class="value" data-testid="swap-value">—</div>
+      <div class="bar"><span data-testid="swap-bar"></span></div>
+    </div>
+    <span class="pill" id="lock-pill" data-testid="build-lock">
+      <span class="dot"></span><span data-testid="build-lock-text">lock —</span>
+    </span>
+    <span class="pill" data-testid="env-count">
+      <span data-testid="env-count-value">0</span>&nbsp;running
+    </span>
+  </div>
+</header>
+
+<main>
+  <div class="grid" id="grid" data-testid="env-grid"></div>
+  <div class="empty" id="empty" data-testid="empty-state" style="display:none">
+    No environments found.
+  </div>
+</main>
+
+<footer data-testid="footer">
+  Read-only monitor over <code>tools/meesell_env.py</code>. Polls
+  <code>/api/state</code> every 3 s. Last update:
+  <span id="last-update" data-testid="last-update">never</span>.
+</footer>
+
+<div class="modal-bg" id="modal-bg" data-testid="log-modal">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 data-testid="log-modal-title">Build log</h2>
+      <span class="close" data-testid="log-modal-close" onclick="closeLog()">Close</span>
+    </div>
+    <pre data-testid="log-modal-body">Loading…</pre>
+  </div>
+</div>
+
+<script>
+"use strict";
+const POLL_MS = 3000;
+const DOT_ORDER = ["backend", "shell"]; // mfes appended dynamically, sorted
+
+function el(tag, attrs, children) {
+  const e = document.createElement(tag);
+  if (attrs) for (const k in attrs) {
+    if (k === "class") e.className = attrs[k];
+    else if (k === "html") e.innerHTML = attrs[k];
+    else if (k === "text") e.textContent = attrs[k];
+    else e.setAttribute(k, attrs[k]);
+  }
+  (children || []).forEach(c => e.appendChild(c));
+  return e;
+}
+
+function gaugeClass(ratio) { // ratio of "badness", 0 good .. 1 bad
+  if (ratio >= 0.9) return "bad";
+  if (ratio >= 0.6) return "warn";
+  return "ok";
+}
+
+function renderTopbar(s) {
+  document.getElementById("ram-floor").textContent = s.min_free_mb;
+  document.getElementById("swap-ceil").textContent = s.max_swap_pct;
+
+  const ramG = document.getElementById("gauge-ram");
+  document.querySelector('[data-testid="ram-value"]').textContent = s.free_mb + " MB";
+  // Fill = how much headroom above the floor (more green = more free).
+  const ramPct = Math.max(0, Math.min(100, (s.free_mb / (s.min_free_mb * 2)) * 100));
+  document.querySelector('[data-testid="ram-bar"]').style.width = ramPct + "%";
+  ramG.className = "gauge " + gaugeClass(1 - Math.min(1, s.free_mb / s.min_free_mb));
+
+  const swapG = document.getElementById("gauge-swap");
+  document.querySelector('[data-testid="swap-value"]').textContent = s.swap_pct + " %";
+  const swapPct = Math.max(0, Math.min(100, (s.swap_pct / s.max_swap_pct) * 100));
+  document.querySelector('[data-testid="swap-bar"]').style.width = swapPct + "%";
+  swapG.className = "gauge " + gaugeClass(s.swap_pct / s.max_swap_pct);
+
+  const pill = document.getElementById("lock-pill");
+  pill.className = "pill " + (s.build_lock_held ? "lock-held" : "lock-free");
+  document.querySelector('[data-testid="build-lock-text"]').textContent =
+    s.build_lock_held ? "build running" : "lock free";
+
+  document.querySelector('[data-testid="env-count-value"]').textContent = s.env_count;
+}
+
+function svcDot(role, svc, ports) {
+  // svc may be undefined (role not tracked) — render as 'down'.
+  const health = svc ? svc.health : "down";
+  let port = svc ? svc.port : null;
+  if (port == null && ports) {
+    if (role === "backend") port = ports.backend;
+    else if (role === "shell") port = ports.shell;
+    else if (ports.mfes) port = ports.mfes[role];
+  }
+  return el("span", { class: "svc", "data-testid": "svc-" + role, title: role + " — " + health }, [
+    el("span", { class: "dot " + health, "data-testid": "svc-dot-" + role }),
+    el("span", { class: "role", text: role.replace(/^mfe-/, "") }),
+    el("span", { class: "port", text: port != null ? String(port) : "—" }),
+  ]);
+}
+
+function quickLink(testid, label, href, enabled) {
+  return el("a", {
+    "data-testid": testid,
+    class: enabled ? "" : "disabled",
+    href: enabled ? href : "#",
+    target: "_blank", rel: "noopener",
+  }, [document.createTextNode(label)]);
+}
+
+function renderCard(env) {
+  const ports = env.ports || { backend: null, shell: null, mfes: {} };
+  const svcByRole = {};
+  (env.services || []).forEach(s => { svcByRole[s.role] = s; });
+
+  // Determine the service roles to show: backend, shell, then every mfe-* (sorted).
+  const mfeRoles = Object.keys(ports.mfes || {}).sort();
+  const roles = DOT_ORDER.concat(mfeRoles);
+
+  const slotTxt = (env.slot == null) ? "—" : env.slot;
+  const badge = el("span", {
+    class: "slot-badge" + (env.slot == null ? " noslot" : ""),
+    "data-testid": "slot-badge",
+  }, [document.createTextNode(slotTxt)]);
+
+  let tagClass = "idle", tagText = "idle";
+  if (env.running) { tagClass = "running"; tagText = "running"; }
+  else if (!env.exists) { tagClass = "missing"; tagText = "missing"; }
+  const tag = el("span", { class: "tag " + tagClass, "data-testid": "env-tag" },
+    [document.createTextNode(tagText)]);
+
+  const head = el("div", { class: "card-head" }, [
+    badge,
+    el("div", { class: "names" }, [
+      el("span", { class: "wt", "data-testid": "env-worktree", title: env.path || "",
+                   text: env.worktree }),
+      el("span", { class: "br", "data-testid": "env-branch",
+                   text: env.branch || "(no branch)" }),
+    ]),
+    tag,
+  ]);
+
+  const dots = el("div", { class: "dots", "data-testid": "svc-dots" },
+    roles.map(r => svcDot(r, svcByRole[r], ports)));
+
+  // Quick-launch links. Use the served ports; enabled only when the env is running.
+  const shellPort = ports.shell, apiPort = ports.backend;
+  const linkBox = el("div", { class: "links", "data-testid": "quicklinks" }, [
+    quickLink("link-shell", "Open shell",
+      `http://localhost:${shellPort}/`, env.running && shellPort != null),
+    quickLink("link-api-docs", "API /docs",
+      `http://localhost:${apiPort}/docs`, apiPort != null),
+    quickLink("link-catalogs", "/catalogs",
+      `http://localhost:${shellPort}/catalogs`, env.running && shellPort != null),
+    quickLink("link-pricing", "/pricing",
+      `http://localhost:${shellPort}/pricing`, env.running && shellPort != null),
+  ]);
+
+  // Build history (most recent first).
+  const buildRows = (env.builds || []).slice(0, 6).map(b => {
+    const cls = b.status === "ok" ? "ok" : "failed";
+    return el("div", { class: "b " + cls, "data-testid": "build-row" }, [
+      el("span", { class: "bdot" }),
+      el("span", {
+        class: "bp", "data-testid": "build-log-link",
+        title: "view log", onclick: "",
+      }, [document.createTextNode(b.project)]),
+      el("span", { text: b.duration_s != null ? b.duration_s + "s" : "" }),
+      el("span", { class: "bwhen", text: (b.when || "").replace("T", " ").replace("Z", "") }),
+    ]);
+  });
+  // wire click handlers (onclick attr can't carry closures via setAttribute reliably)
+  buildRows.forEach((row, i) => {
+    const proj = (env.builds[i] || {}).project;
+    row.querySelector('[data-testid="build-log-link"]')
+       .addEventListener("click", () => openLog(proj));
+  });
+  const builds = el("div", { class: "builds", "data-testid": "build-history" },
+    buildRows.length ? buildRows
+      : [el("div", { class: "b", text: "no build history yet" })]);
+
+  const card = el("div", {
+    class: "card" + (env.running ? "" : " stale"),
+    "data-testid": "env-card",
+    "data-worktree": env.worktree,
+    "data-slot": slotTxt,
+  }, [head, dots, linkBox, builds]);
+  return card;
+}
+
+function render(state) {
+  renderTopbar(state);
+  const grid = document.getElementById("grid");
+  const empty = document.getElementById("empty");
+  grid.innerHTML = "";
+  const envs = state.envs || [];
+  if (!envs.length) { empty.style.display = "block"; }
+  else {
+    empty.style.display = "none";
+    envs.forEach(e => grid.appendChild(renderCard(e)));
+  }
+  document.getElementById("last-update").textContent =
+    new Date().toLocaleTimeString();
+}
+
+async function openLog(project) {
+  const bg = document.getElementById("modal-bg");
+  const body = document.querySelector('[data-testid="log-modal-body"]');
+  document.querySelector('[data-testid="log-modal-title"]').textContent =
+    "Build log — " + project;
+  body.textContent = "Loading…";
+  bg.classList.add("open");
+  try {
+    const r = await fetch("/api/log?project=" + encodeURIComponent(project));
+    const j = await r.json();
+    body.textContent = j.log && j.log.length ? j.log
+      : (j.note || j.error || "(empty log)");
+  } catch (e) {
+    body.textContent = "Failed to load log: " + e;
+  }
+}
+function closeLog() { document.getElementById("modal-bg").classList.remove("open"); }
+document.getElementById("modal-bg").addEventListener("click", (e) => {
+  if (e.target.id === "modal-bg") closeLog();
+});
+
+async function poll() {
+  try {
+    const r = await fetch("/api/state", { cache: "no-store" });
+    render(await r.json());
+  } catch (e) {
+    document.getElementById("last-update").textContent = "error: " + e;
+  }
+}
+poll();
+setInterval(poll, POLL_MS);
+</script>
+</body>
+</html>
