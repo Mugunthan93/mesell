@@ -2,6 +2,7 @@
 name: meesell-services-builder
 description: Dedicated MeeSell business-logic specialist. Owns service layer + Celery workers — quality engine, pricing engine, image processor (rembg + PIL), export (openpyxl), Gemini call sites, GCS storage. Reads docs/V1_FEATURE_SPEC.md Sections 2 and 4 before action.
 model: opus
+isolation: worktree
 tools:
   - Read
   - Bash

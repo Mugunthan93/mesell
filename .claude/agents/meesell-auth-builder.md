@@ -2,6 +2,7 @@
 name: meesell-auth-builder
 description: Dedicated MeeSell authentication specialist. Owns MSG91 OTP integration, PyJWT issuance/validation, auth middleware, plan-guard middleware, rate-limit middleware, DPDP consent flow. Reads docs/V1_FEATURE_SPEC.md Feature 1 before action.
 model: opus
+isolation: worktree
 tools:
   - Read
   - Bash

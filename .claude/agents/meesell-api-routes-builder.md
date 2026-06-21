@@ -2,6 +2,7 @@
 name: meesell-api-routes-builder
 description: Dedicated MeeSell FastAPI route handler specialist. Implements the 16 V1 endpoints with Pydantic schemas, OpenAPI metadata, and route-level tests. Reads docs/V1_FEATURE_SPEC.md Section 5 before action.
 model: sonnet
+isolation: worktree
 tools:
   - Read
   - Bash

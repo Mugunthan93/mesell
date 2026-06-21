@@ -2,6 +2,7 @@
 name: meesell-angular-service-builder
 description: Dedicated MeeSell Angular 18 service specialist. Owns services + RxJS state + HttpClient + auth guards + JWT interceptor + typed API client. Reads docs/V1_FEATURE_SPEC.md Section 5 before action.
 model: sonnet
+isolation: worktree
 tools:
   - Read
   - Bash

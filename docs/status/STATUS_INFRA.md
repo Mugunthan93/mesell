@@ -4,6 +4,38 @@
 **Last update:** 2026-06-14 (**MS-4 Sub-Plan F — svc-category INFRA lane AUTHORED + offline-VALIDATED (₹0, dev-only).** 8 files on `feature/microservices-category/infra` (tip `e1b890a`). Recipe blend: AI-bearing (svc-image: GEMINI + LANGFUSE_SECRET) + api-only (svc-pricing/customer — NO worker). **CRITICAL grants in schema-role.sql:** `CREATE SCHEMA category` + `category_user` owns schema (for the c4f1e7a9d302 schema-move + Alembic) + the cross-schema `GRANT INSERT ON public.audit_events` (AI cost ledger F3.c). Valkey budget-keyspace carve-out HONORED (`ai:*` global/un-prefixed DB 0; category cache `category:`-prefixed DB 3). TLS `api-tls`. NO razorpay/msg91. New SM secret `dev-category-db-password` (→founder). Cluster /32-firewalled → 27 yaml assertions + SQL grant check + secret-scan PASS; server dry-run + dev smoke deferred (§15 F3). **I push + report; backend-coordinator runs the infra→integration merge gate.** See MS-4 Sub-Plan F UPDATE below.)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
 
+## UPDATE — 2026-06-21 — mesell-worktree-isolation-infra-session-1 — adoption Step 2A: worktree isolation for code-writing specialists
+
+=== STEP 2A: worktree isolation rule (doc + frontmatter flag) ===
+Phase: NOT a playbook §-resource op (no VM/K3s/ns/Postgres/Valkey/ingress/secret/cost change).
+       Dev-process / agent-spec governance per `docs/dev/CLAUDE_FEATURE_ADOPTION.md` §3.3
+       (adoption Step 2A). Rule followed: CLAUDE.md MeeSell ecosystem rule 6/7 + the founder-
+       authorized git-plumbing route proven in PR #341 for write-protected `.claude/` files
+       (read current → `git hash-object -w` → `git update-index --add --cacheinfo` → commit
+       from index).
+Session: mesell-worktree-isolation-infra-session-1
+Authorization: founder-authorized in-prompt (squash-merge to develop authorized). Standalone lead
+       executes directly. Built in a WORKTREE off origin/develop (8cfe905) at
+       /tmp/mesell-wt/worktree-isolation, branch feat/worktree-isolation/infra; master tree never
+       received a commit (the two earlier master-tree doc edits were reverted before the worktree
+       was created).
+Done:
+  - `docs/dev/WORKTREE_ISOLATION.md` authored (normal write under docs/). States the rule: Director
+    dispatch convention `isolation: "worktree"` is the SOURCE OF TRUTH; frontmatter is belt-and-
+    suspenders; scope = the 7 code-writing specialists (EXCLUDE 5 coordinators + 2 standalone leads);
+    8GB cap = ONE build-specialist worktree at a time; worktrees off origin/develop, branch
+    feature/{slug}/{group} so the two-step gate is unchanged; guard-master-tree-git.sh +
+    .githooks/pre-commit remain defense-in-depth; teardown `git worktree prune` at session end.
+  - `isolation: worktree` frontmatter added to ALL 7 code-writing specialist specs via git-plumbing
+    (hash-object -w + update-index --cacheinfo). **`.claude/agents/` git-plumbing staging SUCCEEDED**
+    (7 blobs, +1 line each, body byte-preserved) — so frontmatter isolation IS landable, not doc-
+    convention-only. Specs: angular-component/service/ui-styler, services/api-routes/auth/database.
+Validation: `git diff --cached` shows exactly +1 line (`isolation: worktree` after `model:`) per
+       spec, 7/7; doc renders; offline/₹0 — no live infra touched, so no playbook validation command
+       applies.
+Next: squash PR → develop (founder-authorized self-merge), verify MERGED + new develop HEAD, tear
+       down worktree + branch.
+
 ## UPDATE — 2026-06-14 — mesell-microservices-category-infra-session-1 — MS-4 Sub-Plan F svc-category INFRA lane (authored + offline-validated)
 
 === STEP F: svc-category infra surfaces (8 files) — Sub-Plan F category extraction (MS-4) ===
