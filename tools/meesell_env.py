@@ -1216,8 +1216,272 @@ _LOG_TAIL_BYTES = 64 * 1024   # tail at most this many bytes of a build log
 _PROJECT_RE = re.compile(r"^[A-Za-z0-9_.-]+$")   # guard /api/log?project=
 
 
+# ===========================================================================
+# DEV LOG MONITOR (V1) — service-keyed runtime-log stream + error radar.
+# Spec: docs/specs/DEV_LOG_MONITOR.md. Additive, read-only, stdlib-only,
+# dev-only. NEVER builds, NEVER holds the build lock. Every line passes the
+# redaction filter (§6) before it is parsed, returned, or counted.
+# ===========================================================================
+
+_SERVICE_RE = re.compile(r"^[A-Za-z0-9_.-]+$")  # guard /api/logs?service=
+_LOGS_TAIL_BYTES = 96 * 1024     # runtime-log tail window (per request)
+_LOGS_MAX_LINES = 400            # hard cap on lines returned per /api/logs call
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+# Optional extra-log config (DF-3): a dev may opt-in extra service log paths,
+# e.g. {"extra": {"postgres": "/opt/homebrew/var/log/postgresql@16.log"}}.
+# Default-empty / absent => zero behaviour change.
+LOGMONITOR_CONFIG = NEXUS_DIR / "logmonitor.json"
+
+
+# ---------------------------------------------------------------------------
+# §6 Secret redaction — ONE ordered list, applied at EVERY ingest path.
+# Each entry is (compiled_regex, replacement). Adding a pattern is one line.
+# This is a hard never-echo-creds rule; it runs BEFORE parse/display/count.
+# ---------------------------------------------------------------------------
+
+_REDACT_MASK = "***REDACTED***"
+
+# Known secret env-var names whose echoed *value* must be masked.
+_SECRET_ENV_NAMES = (
+    "JWT_SECRET", "MSG91_AUTH_KEY", "MSG91_TEMPLATE_ID", "GEMINI_API_KEY",
+    "GEMINI_API_KEY_CI", "RAZORPAY_KEY_SECRET", "RAZORPAY_KEY_ID",
+    "RAZORPAY_WEBHOOK_SECRET", "REFRESH_TOKEN_PEPPER", "AUDIT_PII_SALT",
+    "LANGFUSE_SECRET_KEY", "POSTGRES_PASSWORD", "VALKEY_PASSWORD",
+    "DATABASE_URL", "VALKEY_URL", "CELERY_BROKER_URL", "CELERY_RESULT_BACKEND",
+)
+_SECRET_ENV_ALT = "|".join(re.escape(n) for n in _SECRET_ENV_NAMES)
+
+_REDACTIONS: list[tuple[re.Pattern, str]] = [
+    # Authorization / Bearer tokens (header or inline).
+    (re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._\-+/=]+"), "Bearer " + _REDACT_MASK),
+    (re.compile(r"(?i)\bAuthorization\s*[:=]\s*\S+"), "Authorization: " + _REDACT_MASK),
+    # JWTs — the xxxxx.yyyyy.zzzzz three-segment base64url shape.
+    (re.compile(r"\beyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+"), _REDACT_MASK),
+    (re.compile(r"\b[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\b"), _REDACT_MASK),
+    # Cookie / set-cookie values.
+    (re.compile(r"(?i)\b(set-)?cookie\s*[:=]\s*\S+"), "cookie: " + _REDACT_MASK),
+    # OTP codes — explicit otp/code fields (incl dev bypass 000000).
+    (re.compile(r'(?i)\b(otp|code)\b["\']?\s*[:=]\s*["\']?(\d{4,8})'), r"\1=" + _REDACT_MASK),
+    # Standalone 4-8 digit code near an otp/verify context.
+    (re.compile(r"(?i)(otp|verify|2fa)[^\d]{0,16}\b\d{4,8}\b"), lambda m: m.group(0).replace(
+        re.search(r"\d{4,8}", m.group(0)).group(0), _REDACT_MASK)),
+    # Secret env-var name echoed with its value.
+    (re.compile(r"(?i)\b(" + _SECRET_ENV_ALT + r")\s*[:=]\s*\S+"), r"\1=" + _REDACT_MASK),
+    # Email — keep the domain, mask the local part (account-link debuggable).
+    (re.compile(r"\b([A-Za-z0-9])[A-Za-z0-9._%+\-]*(@[A-Za-z0-9.\-]+\.[A-Za-z]{2,})"),
+     r"\1***\2"),
+    # Phone — +91 + 10 digits => mask the middle.
+    (re.compile(r"(\+\d{1,3})\d{6,9}(\d{2,4})\b"), r"\1******\2"),
+]
+
+
+def redact(text: str) -> str:
+    """Apply the ordered §6 redaction list. Hard never-echo-creds boundary.
+
+    Run on every line before it is parsed, returned, displayed, or counted.
+    Best-effort: a redactor failure must never leak the raw line, so any
+    exception falls back to a fully-masked line.
+    """
+    try:
+        for pat, repl in _REDACTIONS:
+            text = pat.sub(repl, text)
+        return text
+    except Exception:  # noqa: BLE001 — fail closed: never return a raw line
+        return _REDACT_MASK
+
+
+# ---------------------------------------------------------------------------
+# §3.1 Service-keyed log registry (in-memory name->path resolver).
+# DF-1 decision: pure resolver (no symlink farm) so up/down/baseline/gc
+# lifecycle behaviour is untouched. Build logs stay separate (already exposed
+# via /api/log). Out-of-band procs (celery/postgres/valkey) are best-effort
+# via the optional logmonitor.json extra-path config (DF-3, default-empty).
+# ---------------------------------------------------------------------------
+
+def _load_logmonitor_extra() -> dict[str, str]:
+    cfg = _read_json(LOGMONITOR_CONFIG, {}) if LOGMONITOR_CONFIG.exists() else {}
+    extra = cfg.get("extra", {}) if isinstance(cfg, dict) else {}
+    return {str(k): str(v) for k, v in extra.items()} if isinstance(extra, dict) else {}
+
+
+def service_log_index(state: dict | None = None) -> dict[str, Path]:
+    """Map each live service key -> its on-disk runtime log file.
+
+    service keys: `backend`, `shell`, `mfe-<name>` (derived from each env's
+    port block) + any opt-in extra paths from logmonitor.json. Build logs are
+    intentionally excluded (they have their own /api/log endpoint).
+    """
+    if state is None:
+        state = collect_dashboard_state(probe=False)
+    index: dict[str, Path] = {}
+    for env in state.get("envs", []):
+        ports = env.get("ports") or {}
+        bport = ports.get("backend")
+        if bport:
+            index.setdefault("backend", NEXUS_DIR / f"backend-{bport}.log")
+        sport = ports.get("shell")
+        if sport:
+            index.setdefault("shell", NEXUS_DIR / f"serve-{sport}.log")
+        for mfe_name, mport in (ports.get("mfes") or {}).items():
+            if mport:
+                index.setdefault(mfe_name, NEXUS_DIR / f"serve-{mport}.log")
+    # Best-effort celery: tool doesn't spawn it, but tail it if it logs here.
+    for path in sorted(NEXUS_DIR.glob("celery-*.log")):
+        index.setdefault("celery", path)
+    # Opt-in extra paths (postgres/valkey/...): absolute or .nexus-relative.
+    for key, raw in _load_logmonitor_extra().items():
+        p = Path(raw)
+        index.setdefault(key, p if p.is_absolute() else (NEXUS_DIR / raw))
+    return index
+
+
+# ---------------------------------------------------------------------------
+# §3.2 Line parsing — normalize a raw log line into {ts, service, level, msg}.
+# Level is parsed from uvicorn / Python-logging tokens; serve.js lines default
+# INFO unless an error signature upgrades them.
+# ---------------------------------------------------------------------------
+
+_LEVEL_RE = re.compile(r"\b(CRITICAL|FATAL|ERROR|WARNING|WARN|INFO|DEBUG|TRACE)\b")
+_HTTP_5XX_RE = re.compile(r"\b5\d\d\b")
+_HTTP_4XX_RE = re.compile(r"\b4\d\d\b")
+
+
+def parse_log_line(line: str, service: str) -> dict:
+    """Redact FIRST, then classify into {service, level, msg}. ts kept implicit
+    (the raw line carries its own timestamp text; we don't re-stamp)."""
+    safe = redact(line.rstrip("\n"))
+    m = _LEVEL_RE.search(safe)
+    if m:
+        tok = m.group(1).upper()
+        level = "WARN" if tok in ("WARNING", "WARN") else (
+            "ERROR" if tok in ("ERROR", "CRITICAL", "FATAL") else "INFO")
+    else:
+        level = "INFO"
+    up = safe.lower()
+    if level == "INFO":
+        if ("traceback (most recent call last)" in up
+                or "internal server error" in up or _HTTP_5XX_RE.search(safe)):
+            level = "ERROR"
+        elif "refused to load" in up or "deprecat" in up:
+            level = "WARN"
+    return {"service": service, "level": level, "msg": safe}
+
+
+def tail_service_log(path: Path, *, max_bytes: int, max_lines: int) -> tuple[list[str], int, bool]:
+    """Return (lines, size, truncated). Read at most max_bytes from the tail."""
+    if not path.exists():
+        return [], 0, False
+    with open(path, "rb") as fh:
+        fh.seek(0, os.SEEK_END)
+        size = fh.tell()
+        fh.seek(max(0, size - max_bytes))
+        raw = fh.read()
+    text = _ANSI_RE.sub("", raw.decode("utf-8", errors="replace"))
+    lines = [ln for ln in text.split("\n") if ln.strip()]
+    truncated = size > max_bytes
+    if len(lines) > max_lines:
+        lines = lines[-max_lines:]
+        truncated = True
+    return lines, size, truncated
+
+
+# ---------------------------------------------------------------------------
+# §3.3 Error radar — data-driven detectors over a rolling window.
+# Each detector: {name, pattern, window_s, threshold, severity}. A line that
+# matches a detector bumps its rolling-window deque; a detector is "firing"
+# when the window count >= threshold. Adding a signature is a one-line edit.
+# ---------------------------------------------------------------------------
+
+_RADAR_DETECTORS = [
+    {"name": "auth-401-storm",
+     "pattern": re.compile(r"401.*\b/(api/v1/)?auth/(me|refresh)\b"),
+     "window_s": 60, "threshold": 3, "severity": "error"},
+    {"name": "python-traceback",
+     "pattern": re.compile(r"Traceback \(most recent call last\)"),
+     "window_s": 120, "threshold": 1, "severity": "error"},
+    {"name": "http-500",
+     "pattern": re.compile(r"(\b500\b.*\b(GET|POST|PUT|PATCH|DELETE)\b|Internal Server Error)"),
+     "window_s": 60, "threshold": 1, "severity": "error"},
+    {"name": "csp-violation",
+     "pattern": re.compile(r"(?i)(Content-Security-Policy|Refused to load)"),
+     "window_s": 120, "threshold": 1, "severity": "warn"},
+    {"name": "login-redirect",
+     "pattern": re.compile(r"(?i)(redirect.*/login|authGuard.*/login|->\s*/login)"),
+     "window_s": 60, "threshold": 3, "severity": "warn"},
+    {"name": "federation-singleton",
+     "pattern": re.compile(r"(?i)(Native Federation|singleton|shared).*(mismatch|version|warn)"),
+     "window_s": 300, "threshold": 1, "severity": "warn"},
+    {"name": "route-404",
+     "pattern": re.compile(r"\b404\b.*\s/api/"),
+     "window_s": 60, "threshold": 1, "severity": "warn"},
+]
+
+
+class ErrorRadar:
+    """Server-side detector bank with rolling-window counters.
+
+    Stateful + in-memory only: per-detector deques of (monotonic_ts) plus the
+    last redacted sample line + service. Bounded by window pruning, so RAM stays
+    flat. Thread-safe (the ThreadingHTTPServer may classify concurrently)."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._hits: dict[str, list[float]] = {d["name"]: [] for d in _RADAR_DETECTORS}
+        self._sample: dict[str, tuple[str, str]] = {}  # name -> (sample, service)
+
+    def classify(self, parsed: dict) -> None:
+        """Feed one ALREADY-REDACTED parsed line through every detector."""
+        msg = parsed.get("msg", "")
+        service = parsed.get("service", "?")
+        now = time.monotonic()
+        with self._lock:
+            for d in _RADAR_DETECTORS:
+                if d["pattern"].search(msg):
+                    self._hits[d["name"]].append(now)
+                    self._sample[d["name"]] = (msg[:240], service)
+
+    def snapshot(self) -> dict:
+        now = time.monotonic()
+        counters = []
+        with self._lock:
+            for d in _RADAR_DETECTORS:
+                name = d["name"]
+                win = d["window_s"]
+                hits = [t for t in self._hits[name] if now - t <= win]
+                self._hits[name] = hits  # prune in place
+                count = len(hits)
+                sample, service = self._sample.get(name, ("", ""))
+                counters.append({
+                    "name": name, "window_s": win, "count": count,
+                    "threshold": d["threshold"], "severity": d["severity"],
+                    "firing": count >= d["threshold"],
+                    "sample": sample, "service": service,
+                })
+        return {"generated_iso": _now_iso(), "counters": counters}
+
+    def ingest_recent(self, max_per_service: int = 200) -> None:
+        """Best-effort: feed the tail of every service log through the radar so
+        counters reflect what's on disk right now. Called on each /api/radar so
+        the radar needs no background thread (read-only, stdlib ethos)."""
+        try:
+            index = service_log_index()
+        except Exception:  # noqa: BLE001
+            return
+        for service, path in index.items():
+            lines, _size, _trunc = tail_service_log(
+                path, max_bytes=_LOGS_TAIL_BYTES, max_lines=max_per_service)
+            for ln in lines:
+                self.classify(parse_log_line(ln, service))
+
+
+_RADAR = ErrorRadar()
+
+
 class _DashboardHandler(BaseHTTPRequestHandler):
-    """Routes: / (SPA), /api/state (JSON), /api/log?project=<name> (log tail)."""
+    """Routes: / (SPA), /api/state (JSON), /api/log?project=<name> (build-log
+    tail), /api/logs?service=<name> (runtime-log poll-tail, redacted),
+    /api/radar (error-radar counters, redacted)."""
 
     server_version = "meesell-env-dashboard"
 
@@ -1247,6 +1511,10 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(collect_dashboard_state(probe=True))
         elif route == "/api/log":
             self._serve_log(parse_qs(parsed.query))
+        elif route == "/api/logs":
+            self._serve_logs(parse_qs(parsed.query))
+        elif route == "/api/radar":
+            self._serve_radar()
         else:
             self._send_json({"error": "not found", "path": route}, code=404)
 
@@ -1287,6 +1555,60 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         self._send_json({"project": proj, "exists": True,
                          "truncated": size > _LOG_TAIL_BYTES, "log": text})
 
+    # ----- DEV LOG MONITOR (V1) endpoints --------------------------------
+
+    def _serve_logs(self, qs: dict) -> None:
+        """Poll-tail of one or all services' RUNTIME logs (not build logs).
+
+        Mirrors the /api/log guards: service-name validation, ANSI strip,
+        byte-bounded read. Every line is redacted (§6) before it is returned.
+        `service` omitted/`all` => merged across every live service.
+        `n` => max lines (capped at _LOGS_MAX_LINES).
+        """
+        index = service_log_index()
+        req_svc = (qs.get("service") or [""])[0]
+        try:
+            n = int((qs.get("n") or [str(_LOGS_MAX_LINES)])[0])
+        except ValueError:
+            n = _LOGS_MAX_LINES
+        n = max(1, min(n, _LOGS_MAX_LINES))
+
+        if req_svc and req_svc not in ("", "all"):
+            if not _SERVICE_RE.match(req_svc):
+                self._send_json({"error": "invalid service"}, code=400)
+                return
+            if req_svc not in index:
+                self._send_json({"service": req_svc, "lines": [], "exists": False,
+                                 "services": sorted(index),
+                                 "note": "no runtime log for this service"})
+                return
+            targets = {req_svc: index[req_svc]}
+        else:
+            targets = index
+
+        out = []
+        for service in sorted(targets):
+            lines, _size, _trunc = tail_service_log(
+                targets[service], max_bytes=_LOGS_TAIL_BYTES, max_lines=n)
+            for ln in lines:
+                out.append(parse_log_line(ln, service))  # redacts inside
+        # Newest-last; for merged view cap the total to n*services already done.
+        if req_svc in ("", "all") and len(out) > _LOGS_MAX_LINES:
+            out = out[-_LOGS_MAX_LINES:]
+        self._send_json({
+            "service": req_svc or "all",
+            "services": sorted(index),
+            "count": len(out),
+            "lines": out,
+            "generated_iso": _now_iso(),
+        })
+
+    def _serve_radar(self) -> None:
+        """Current error-radar counters + firing alerts. Ingests the tail of
+        every service log on each call (no background thread; read-only)."""
+        _RADAR.ingest_recent()
+        self._send_json(_RADAR.snapshot())
+
 
 def cmd_dashboard(args) -> None:
     if not DASHBOARD_HTML.exists():
@@ -1297,6 +1619,8 @@ def cmd_dashboard(args) -> None:
     info("  GET /              the dashboard SPA")
     info("  GET /api/state     full JSON model")
     info("  GET /api/log?project=<name>   tail of .nexus/build-<name>.log")
+    info("  GET /api/logs?service=<name>  poll-tail of a service's RUNTIME log (redacted)")
+    info("  GET /api/radar                error-radar detector counters (redacted)")
     info("Ctrl-C to stop. This server NEVER builds and NEVER holds the build lock.")
     try:
         httpd.serve_forever()
