@@ -413,3 +413,61 @@ async def test_me_phone_is_string_for_otp_user(google_client):
     assert body["phone"] is not None
     assert isinstance(body["phone"], str)
     assert body["phone"].startswith("+")
+
+
+@pytest.mark.asyncio
+async def test_google_verify_409_on_google_sub_collision(google_client):
+    """Edge case 4 (design §E rule 3): email owned by different google_sub → 409.
+
+    When the incoming Google credential's verified email matches an existing
+    user whose google_sub is NON-NULL and DIFFERENT from the incoming sub,
+    the service raises GoogleIdentityConflictError (409,
+    code="iam.google_identity_conflict").  No tokens are issued.
+
+    Arrange: seed a user with google_sub="g-sub-original" on a unique email;
+             present a credential with the SAME email but sub="g-sub-attacker".
+    Act: POST /auth/google/verify.
+    Assert: 409; code="iam.google_identity_conflict";
+            validation_message_id non-empty (P0 item 14); no access_token.
+    """
+    from datetime import datetime, timezone
+
+    from app.shared.models.user import User
+
+    client, iam_service, monkeypatch, Session = google_client
+    shared_email = f"conflict-{uuid.uuid4().hex[:8]}@example.com"
+
+    async with Session() as seed_session:
+        seeded_user = User(
+            google_sub="g-sub-original",
+            email=shared_email,
+            plan="free",
+            last_login_at=datetime.now(timezone.utc),
+        )
+        seed_session.add(seeded_user)
+        await seed_session.commit()
+
+    monkeypatch.setattr(
+        iam_service.google_adapter,
+        "verify_id_token",
+        AsyncMock(return_value=_claims(shared_email, "g-sub-attacker")),
+    )
+
+    resp = await client.post("/api/v1/auth/google/verify", json={"credential": "tok"})
+
+    assert resp.status_code == 409, (
+        f"Expected 409 on google_sub collision, got {resp.status_code}: {resp.text}"
+    )
+    body = resp.json()
+    assert body.get("code") == "iam.google_identity_conflict", (
+        f"code must be 'iam.google_identity_conflict'; got {body!r}"
+    )
+    # P0 item 14: validation_message_id must be a non-empty string.
+    msg_id = body.get("validation_message_id", "")
+    assert isinstance(msg_id, str) and msg_id, (
+        f"409 must have non-empty validation_message_id; got {body!r}"
+    )
+    # No access_token is issued on a 409.
+    assert "access_token" not in body, (
+        f"409 must NOT issue an access_token; got {body!r}"
+    )

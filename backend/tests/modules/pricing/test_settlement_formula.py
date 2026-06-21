@@ -169,3 +169,35 @@ class TestAlerts:
         assert "LOW_MARGIN" not in codes
         assert "SHIPPING_DOMINATES" not in codes
         assert "NEGATIVE_PAYOUT" not in codes
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# QA Wave 1 — P0.4: unknown leaf raises UnknownCategoryError (→ 422)
+# ─────────────────────────────────────────────────────────────────────────────
+class TestUnknownLeaf:
+    """Regression guard: a leaf_id absent from the pricing lookup must NOT silently
+    fall back to a default shipping value — that produces an incorrect settlement.
+    The lookup must raise UnknownCategoryError so the router maps it to 422.
+    """
+
+    def test_pricing_unknown_leaf_raises(self):
+        """A meesho_leaf_id not in the lookup raises UnknownCategoryError.
+
+        Arrange: a leaf id guaranteed not to exist (extremely large integer).
+        Act: call get_shipping with that id.
+        Assert: UnknownCategoryError is raised (not a silent default).
+        """
+        from app.modules.pricing.pricing_lookup import UnknownCategoryError, get_shipping
+
+        with pytest.raises(UnknownCategoryError):
+            get_shipping("9999999999")  # not in any Meesho category set
+
+    def test_pricing_unknown_leaf_raises_for_commission_too(self):
+        """get_commission_default also raises UnknownCategoryError for absent ids."""
+        from app.modules.pricing.pricing_lookup import (
+            UnknownCategoryError,
+            get_commission_default,
+        )
+
+        with pytest.raises(UnknownCategoryError):
+            get_commission_default("9999999999")

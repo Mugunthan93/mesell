@@ -422,3 +422,48 @@ async def test_cancelled_sets_status_keeps_plan(db_session):
     await db_session.refresh(user)
     assert sub.status == "cancelled"
     assert user.plan == "pro"  # entitlement persists until current_period_end
+
+
+# ── QA Wave 1 — P0.5: tampered-signature i18n guard ──────────────────────────
+async def test_tampered_signature_has_non_empty_validation_message_id(db_session):
+    """Pair for test_bad_signature_raises_401_and_no_state_change.
+
+    The existing test confirms the EXCEPTION type is raised.  This test
+    asserts the route-level response for a tampered payload: the 401 response
+    envelope must carry a non-empty ``validation_message_id`` so the frontend
+    can surface a human-readable message (P0 item 14 blank-error guard).
+
+    This exercises the HTTP-level response via the FastAPI error handler,
+    not the service directly.
+    """
+    from httpx import ASGITransport, AsyncClient
+
+    from app.main import app
+
+    body = _event(
+        "subscription.activated",
+        event_id="evt_tampered_i18n",
+        subscription={"id": "sub_tampered_i18n"},
+    )
+    tampered_sig = "00" * 32  # 64 hex chars — valid length, wrong HMAC
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+        resp = await ac.post(
+            "/api/v1/webhooks/razorpay",
+            content=body,
+            headers={
+                "Content-Type": "application/json",
+                "X-Razorpay-Signature": tampered_sig,
+            },
+        )
+
+    assert resp.status_code == 401, (
+        f"Tampered sig expected 401, got {resp.status_code}: {resp.text}"
+    )
+    resp_body = resp.json()
+    # P0 item 14: validation_message_id must be a non-empty string.
+    msg_id = resp_body.get("validation_message_id", "")
+    assert isinstance(msg_id, str) and msg_id, (
+        f"401 tampered-sig must carry non-empty validation_message_id; got {resp_body!r}"
+    )

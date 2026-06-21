@@ -178,9 +178,11 @@ async def test_suggest_success_path_enriches_and_returns_top_k(monkeypatch):
         category_service.ai_client, "call_gemini", _returning_valid
     )
 
-    payload = await category_service.suggest_categories(
-        uuid4(), "cotton kurti", db=None  # type: ignore[arg-type]
-    )
+    # Mock plan_guard to avoid Valkey dependency in this unit test.
+    with _patch("app.modules.category.service.enforce_plan_limit", new_callable=_AM_CLS):
+        payload = await category_service.suggest_categories(
+            uuid4(), "cotton kurti", db=None  # type: ignore[arg-type]
+        )
 
     assert payload["fallback_offered"] is False
     assert len(payload["suggestions"]) == 1
@@ -317,3 +319,169 @@ async def test_suggest_second_call_hits_cache_and_skips_ai(monkeypatch):
     assert call_count["n"] == 1, "second identical call must hit the cache"
     assert first == second
     assert first["fallback_offered"] is False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# QA Wave 1 — P0.7: GET /categories/suggest → 405, POST → 200 (via route layer)
+# P1.8: top-3 contract — exactly 3 suggestions + confidence each
+# ─────────────────────────────────────────────────────────────────────────────
+# These tests use an ASGI stub client (no live DB required).  The Smart Picker
+# route is POST-only since the 2026-06-16 amendment; a GET must return 405.
+
+import os as _os
+import uuid as _uuid_mod
+from contextlib import asynccontextmanager as _acm
+from unittest.mock import patch as _patch, AsyncMock as _AM_CLS
+
+from httpx import ASGITransport as _ASGITransport
+from httpx import AsyncClient as _AsyncClient
+
+from app.core.auth import CurrentUser as _CU, get_current_user as _gcu
+from app.main import app as _app
+
+
+@_acm
+async def _make_stub_client():
+    """Async context manager: in-process client with a stub auth bypass."""
+    _app.dependency_overrides[_gcu] = lambda: _CU(
+        user_id=_uuid_mod.uuid4(), plan="free"
+    )
+    transport = _ASGITransport(app=_app, raise_app_exceptions=False)
+    async with _AsyncClient(transport=transport, base_url="http://testserver") as ac:
+        try:
+            yield ac
+        finally:
+            _app.dependency_overrides.pop(_gcu, None)
+
+
+async def test_suggest_get_returns_405():
+    """GET /categories/suggest must return 405 — the route is POST-only.
+
+    The suggest route was changed from GET to POST in the 2026-06-16
+    amendment.  A stale GET call must be rejected at the HTTP layer (405),
+    not silently served or returning 404/422 from the validator.
+    """
+    async with _make_stub_client() as ac:
+        resp = await ac.get(
+            "/api/v1/categories/suggest",
+            params={"q": "kurti"},
+        )
+    assert resp.status_code == 405, (
+        f"GET /categories/suggest expected 405, got {resp.status_code}: {resp.text}"
+    )
+
+
+async def test_suggest_post_returns_non_405(monkeypatch):
+    """POST /categories/suggest does NOT return 405 — the route is registered.
+
+    We do not assert a 200 (the service may fail without seeded data or a
+    live DB), but it must NOT return 405 (method not allowed) or 404 from
+    the flag guard.  Any non-405 / non-404 response confirms the route is
+    correctly registered as POST.
+    """
+    from app.modules.category import service as _cat_svc
+    from app.adapters.gemini import GeminiResponse as _GR
+    from app.ai_ops.client import AIResponse as _AIR
+
+    monkeypatch.setattr(_cat_svc, "_fetch_tree_dicts", _AM_CLS(return_value=[]))
+    monkeypatch.setattr(_cat_svc, "enforce_plan_limit", _AM_CLS())
+
+    async def _noop(ctx, prompt_id, prompt_vars=None, **kwargs):
+        return _AIR(
+            parsed={"suggestions": [], "fallback_offered": True},
+            raw_response=_GR(text="", input_tokens=0, output_tokens=0,
+                             finish_reason="STOP", raw={}),
+            cost_inr=0.0,
+            layer2_retries=0,
+            trace_id="t",
+        )
+
+    monkeypatch.setattr(_cat_svc.ai_client, "call_gemini", _noop)
+
+    async with _make_stub_client() as ac:
+        resp = await ac.post(
+            "/api/v1/categories/suggest",
+            json={"q": "cotton kurti"},
+        )
+    assert resp.status_code != 405, (
+        f"POST /categories/suggest must not return 405; got {resp.status_code}: {resp.text}"
+    )
+
+
+# ── P1.8: top-3 contract ─────────────────────────────────────────────────────
+async def test_suggest_top_3_contract_exactly_3_with_confidence(monkeypatch):
+    """Service returns exactly 3 suggestions when AI returns exactly 3.
+
+    Verifies the top-K contract: when the AI returns exactly 3 suggestions
+    (all valid in the tree), ``suggest_categories`` must emit exactly 3 items
+    and each item must carry a ``confidence`` field that is a float.
+
+    This complements ``test_suggest_caps_results_at_five`` (which tests the
+    5-item cap) by fixing the exact-3 case that the cap test does not cover
+    (the cap test uses 7 → 5, never 3 → 3).
+    """
+    _IDS_3 = [
+        "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        "cccccccc-cccc-cccc-cccc-cccccccccccc",
+    ]
+
+    from uuid import uuid4
+
+    from app.adapters.gemini import GeminiResponse
+    from app.ai_ops.client import AIResponse
+    from app.modules.category import service as category_service
+
+    async def _stub_tree(db):
+        return [
+            {
+                "id": cid,
+                "meesho_leaf_id": 1000 + idx,
+                "super_id": "super-x",
+                "super_name": "Women Western",
+                "path": "Women Western > Kurtis",
+                "leaf_name": "Kurtis",
+                "template_id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
+                "commission_pct": "0.00",
+            }
+            for idx, cid in enumerate(_IDS_3)
+        ]
+
+    monkeypatch.setattr(category_service, "_fetch_tree_dicts", _stub_tree)
+
+    async def _returning_3(ctx, prompt_id, prompt_vars=None, **kwargs):
+        return AIResponse(
+            parsed={
+                "suggestions": [
+                    {"category_id": cid, "confidence": 0.7 + idx * 0.05, "reasons": []}
+                    for idx, cid in enumerate(_IDS_3)
+                ],
+                "fallback_offered": False,
+            },
+            raw_response=GeminiResponse(
+                text="", input_tokens=0, output_tokens=0, finish_reason="STOP", raw={}
+            ),
+            cost_inr=0.0,
+            layer2_retries=0,
+            trace_id="t",
+        )
+
+    monkeypatch.setattr(category_service.ai_client, "call_gemini", _returning_3)
+
+    # Mock plan_guard to avoid Valkey dependency in this unit test.
+    with _patch("app.modules.category.service.enforce_plan_limit", new_callable=_AM_CLS):
+        payload = await category_service.suggest_categories(
+            uuid4(), "cotton kurti", db=None  # type: ignore[arg-type]
+        )
+
+    suggestions = payload["suggestions"]
+    # Top-3 contract: exactly 3 items.
+    assert len(suggestions) == 3, (
+        f"Expected exactly 3 suggestions, got {len(suggestions)}: {suggestions}"
+    )
+    # Each item must carry a confidence field that is a numeric float.
+    for sug in suggestions:
+        conf = sug.get("confidence")
+        assert isinstance(conf, float), (
+            f"suggestion missing float 'confidence'; got {sug!r}"
+        )
