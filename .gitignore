@@ -29,3 +29,14 @@ appendonlydir/
 frontend/.angular/
 archive/
 themes/sakai-ng/
+
+# meesell_env.py — dev-environment manager generated state (never commit)
+.nexus/env-ports.json
+.nexus/env-state.json
+.nexus/.build.lock
+.nexus/serve-*.log
+.nexus/backend-*.log
+.nexus/shell-dist-slot-*/
+# Per-env runtime federation manifest is GENERATED into the served dist root.
+# dist/ is already ignored above, but guard the source copy too if ever staged there:
+frontend/apps/shell/public/federation.manifest.local.json
