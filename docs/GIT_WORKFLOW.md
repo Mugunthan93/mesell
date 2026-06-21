@@ -52,7 +52,7 @@ feature/{slug}/{group}  --squash-->  feature/{slug}/integration  --merge-commit-
 - **M8** PR templates must have zero placeholders left before merge.
 - **M9** HYBRID dispatch merge-gate (coordinator SPEC -> specialist BUILD -> coordinator review).
 - **M10** (enforced) Commits/merges/rebase/etc. in the master tree are blocked.
-- **M11** (enforced) develop branch protection: 0 review(s) required, strict=false, enforce_admins=false. main: PROTECTED (13 required CI contexts, strict=false, enforce_admins=false, 0 reviews required, required_conversation_resolution=true) - NOTE: this contradicts the 2026-06-12 "no protection on main" founder note; live state is as recorded here as of the 2026-06-21 probe.
+- **M11** (enforced) develop branch protection: 0 review(s) required, strict=false, enforce_admins=false, 15 required CI contexts (see M12). main: protected against force-push + deletion, NO required CI checks (reconciled 2026-06-21 to match the 2026-06-12 founder ruling; enforce_admins=false, 0 reviews required, required_conversation_resolution=true left as-found pending separate founder decision).
 - **M12** develop required CI contexts (15): "CI Gate 1: unit", "CI Gate 2: smoke", "CI Gate 3: lint (10 contracts)", "CI Gate 4: integration", "CI Gate 5: golden_roundtrip", "Frontend: detect changed workspace units", "Frontend: shell", "Frontend: mfe-pricing", "Frontend: mfe-catalog", "Frontend: mfe-onboarding", "Frontend: mfe-dashboard", "Frontend: mfe-auth", "Frontend: mfe-export", "FE Gate: lint (5 contracts)", "Frontend: mfe-billing".
 - **M13** `--admin` is how green PRs land on a single account; --admin-over-red needs a fresh founder grant.
 - **M14** Board status flips may be a direct commit to the integration branch (no PR).
