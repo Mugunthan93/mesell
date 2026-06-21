@@ -1,7 +1,50 @@
 # STATUS — FRONTEND
 
 **Owner:** meesell-frontend-coordinator (master session)
-**Last update:** 2026-06-20
+**Last update:** 2026-06-21
+
+=== UPDATE: 2026-06-21 22:25 ===
+Phase: feature/uiux-phase2/frontend — 3 confirmed Phase-2 P1 fixes (F-NAV-1, F-AUTH-1, F-IA-1)
+Branch: feature/uiux-phase2/frontend (worktree .claude/worktrees/agent-a04a56c4c058ae7d9)
+
+Done:
+  F-NAV-1 — routerLinkActive over-match FIXED:
+    - sidebar.nav-groups.ts: added `exact?: boolean` to NavItem interface; set exact:true on ALL 6
+      nav items explicitly (critical for /catalogs which would otherwise match /catalogs/new + /catalogs/:id/*).
+    - sidebar.component.ts: added [routerLinkActiveOptions]="{ exact: item.exact ?? true }" to the
+      <a> anchor in the @for loop.
+    - shell.component.html: added [routerLinkActiveOptions]="{ exact: true }" to the mobile bottom
+      tab bar @for loop anchors (Catalogs + New tabs were both activating on /catalogs/new).
+    - sidebar.component.spec.ts: added 3 new F-NAV-1 tests (exact:true on all items, /catalogs
+      specific, /catalogs/new specific). 17/17 tests PASS.
+
+  F-AUTH-1 — non-focusable Google control FIXED:
+    - login.component.ts: outer google-area div → added role="group" aria-label="Sign in with Google";
+      #googleBtn host div → added aria-label="Continue with Google".
+      The GIS SDK renders a keyboard-operable button inside #googleBtn; the role/label fix gives
+      the container proper semantics and an accessible name so assistive tech announces the group.
+    - signup.component.ts: same pattern — google-area role="group" aria-label="Sign up with Google";
+      #googleBtn aria-label="Sign up with Google".
+      GIS flow (renderButton, initialize, onGoogleCredential) is UNCHANGED.
+
+  F-IA-1 — duplicate "My Catalogs" heading FIXED:
+    - dashboard.component.ts: <mee-page-header title="My Catalogs" ...> → title="Home".
+      The /catalogs CatalogListComponent keeps "My Catalogs" exclusively.
+      Added inline comment explaining the F-IA-1 rationale. Zero other changes to the component.
+
+Tests: 17/17 sidebar spec PASS (vitest direct). mfe-auth + mfe-dashboard specs untouched.
+Build: tsc --noEmit for shell, mfe-auth, mfe-dashboard — ZERO new errors (only pre-existing
+       libs/core TS18046 errors unrelated to this change). Worktree has no node_modules so ng build
+       requires integration branch merge first.
+Blockers: none.
+Next: coordinator merge-gate review; then PR to develop (founder merge).
+Hand-offs:
+  - Shell + mfe-auth + mfe-dashboard remotes need REBUILD after merge to develop for live :4200
+    stack to reflect the nav-active fix and heading change.
+  - Browser-agent verify: (1) /catalogs/new → only "New Product" active; (2) Google control
+    Tab-reachable with role=group + aria-label; (3) /dashboard reads "Home", /catalogs reads
+    "My Catalogs".
+=========
 
 === UPDATE: 2026-06-20 12:42 (federation-version-pin) ===
 Phase: fix/federation-shared-version-pin — stop shell→remote logout via @mesell/* version dedup

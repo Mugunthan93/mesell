@@ -280,9 +280,11 @@ import { formatRelativeTime } from './dashboard.model';
   template: `
     <div class="dash-page">
 
-      <!-- Page header -->
+      <!-- Page header — F-IA-1: renamed from "My Catalogs" to "Home" so /dashboard and
+           /catalogs are no longer both titled "My Catalogs". The /catalogs grid keeps
+           its "My Catalogs" heading exclusively. -->
       <mee-page-header
-        title="My Catalogs"
+        title="Home"
         cta_label="New Catalog"
         cta_icon="add"
         (cta_click)="onNewCatalog()"

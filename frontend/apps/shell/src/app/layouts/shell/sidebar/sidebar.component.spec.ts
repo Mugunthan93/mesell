@@ -107,4 +107,27 @@ describe('SIDEBAR_NAV_GROUPS — nav route data contract', () => {
       ]);
     });
   });
+
+  describe('F-NAV-1 — exact active-match (routerLinkActiveOptions)', () => {
+    it('every nav item declares exact:true so /catalogs does not over-match /catalogs/new or /catalogs/:id/*', () => {
+      const allItems = groups.flatMap((g) => g.items);
+      for (const item of allItems) {
+        // Default when absent is also exact:true (template uses item.exact ?? true),
+        // but all items should be explicit.
+        expect(item.exact ?? true).toBe(true);
+      }
+    });
+
+    it('/catalogs item specifically carries exact:true', () => {
+      const catalogsGroup = groups.find((g) => g.label === 'Catalogs')!;
+      const myCatalogs = catalogsGroup.items.find((i) => i.route === '/catalogs')!;
+      expect(myCatalogs.exact).toBe(true);
+    });
+
+    it('/catalogs/new item carries exact:true', () => {
+      const catalogsGroup = groups.find((g) => g.label === 'Catalogs')!;
+      const newProduct = catalogsGroup.items.find((i) => i.route === '/catalogs/new')!;
+      expect(newProduct.exact).toBe(true);
+    });
+  });
 });

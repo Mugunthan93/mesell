@@ -7,6 +7,9 @@ export interface NavItem {
   label: string;
   icon: string;
   route: string;
+  /** When true (default), active state matches ONLY on an exact route match.
+   *  Set false only for routes that should also highlight on child paths. */
+  exact?: boolean;
 }
 
 export interface NavGroup {
@@ -33,25 +36,26 @@ export interface NavGroup {
 export const SIDEBAR_NAV_GROUPS: NavGroup[] = [
   {
     label: 'Main',
-    items: [{ label: 'Home', icon: 'home', route: '/dashboard' }],
+    items: [{ label: 'Home', icon: 'home', route: '/dashboard', exact: true }],
   },
   {
     label: 'Catalogs',
     items: [
-      { label: 'My Catalogs', icon: 'list', route: '/catalogs' },
-      { label: 'New Product', icon: 'add', route: '/catalogs/new' },
-      { label: 'Categories', icon: 'tag', route: '/categories/browse' },
+      // exact:true — /catalogs must NOT stay active on /catalogs/new or /catalogs/:id/* (F-NAV-1).
+      { label: 'My Catalogs', icon: 'list', route: '/catalogs', exact: true },
+      { label: 'New Product', icon: 'add', route: '/catalogs/new', exact: true },
+      { label: 'Categories', icon: 'tag', route: '/categories/browse', exact: true },
     ],
   },
   {
     label: 'Account',
     items: [
-      { label: 'Profile', icon: 'user', route: '/profile' },
+      { label: 'Profile', icon: 'user', route: '/profile', exact: true },
       // Wave 5 (Razorpay) — billing vertical. Routes to the mfe-billing remote's
       // /billing/plans (tier selection + checkout). 'wallet' is a registered
       // MeeIconName; the raw PrimeIcons class it maps to lives only in
       // icon.registry.ts (per FE-2).
-      { label: 'Plans', icon: 'wallet', route: '/billing/plans' },
+      { label: 'Plans', icon: 'wallet', route: '/billing/plans', exact: true },
     ],
   },
 ];
