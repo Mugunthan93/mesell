@@ -1,8 +1,50 @@
 # STATUS — INFRASTRUCTURE
 
 **Owner:** `meesell-infra-builder`
-**Last update:** 2026-06-14 (**MS-4 Sub-Plan F — svc-category INFRA lane AUTHORED + offline-VALIDATED (₹0, dev-only).** 8 files on `feature/microservices-category/infra` (tip `e1b890a`). Recipe blend: AI-bearing (svc-image: GEMINI + LANGFUSE_SECRET) + api-only (svc-pricing/customer — NO worker). **CRITICAL grants in schema-role.sql:** `CREATE SCHEMA category` + `category_user` owns schema (for the c4f1e7a9d302 schema-move + Alembic) + the cross-schema `GRANT INSERT ON public.audit_events` (AI cost ledger F3.c). Valkey budget-keyspace carve-out HONORED (`ai:*` global/un-prefixed DB 0; category cache `category:`-prefixed DB 3). TLS `api-tls`. NO razorpay/msg91. New SM secret `dev-category-db-password` (→founder). Cluster /32-firewalled → 27 yaml assertions + SQL grant check + secret-scan PASS; server dry-run + dev smoke deferred (§15 F3). **I push + report; backend-coordinator runs the infra→integration merge gate.** See MS-4 Sub-Plan F UPDATE below.)
+**Last update:** 2026-06-21 (**Codify isolated-builder memory-persistence rule + land stranded auth-builder L_iam_1 learning (PR #361, squash `1951199`, develop HEAD `1951199`).** Two edits, one PR: (1) `docs/dev/WORKTREE_ISOLATION.md` new "Persisting an isolated builder's memory" section — isolated worktree builders can't write their own MEMORY.md/docs/status (boundary-blocked) so the dispatching coordinator transcribes the builder's REPORTED learning as a sanctioned NARROW scribe-exception to CLAUDE.md rule #4; (2) appended the stranded auth-builder L_iam_1 learning (core/auth 2→3-segment i18n migration, PR #359) via git-plumbing, additions-only. Master tree FF-synced + clean. Board sweep flagged several ≥7-day-untouched rows as external-gate holds (not stalls). ₹0. See UPDATE block below. PRIOR: **MS-4 Sub-Plan F — svc-category INFRA lane AUTHORED + offline-VALIDATED (₹0, dev-only).** 8 files on `feature/microservices-category/infra` (tip `e1b890a`). Recipe blend: AI-bearing (svc-image: GEMINI + LANGFUSE_SECRET) + api-only (svc-pricing/customer — NO worker). **CRITICAL grants in schema-role.sql:** `CREATE SCHEMA category` + `category_user` owns schema (for the c4f1e7a9d302 schema-move + Alembic) + the cross-schema `GRANT INSERT ON public.audit_events` (AI cost ledger F3.c). Valkey budget-keyspace carve-out HONORED (`ai:*` global/un-prefixed DB 0; category cache `category:`-prefixed DB 3). TLS `api-tls`. NO razorpay/msg91. New SM secret `dev-category-db-password` (→founder). Cluster /32-firewalled → 27 yaml assertions + SQL grant check + secret-scan PASS; server dry-run + dev smoke deferred (§15 F3). **I push + report; backend-coordinator runs the infra→integration merge gate.** See MS-4 Sub-Plan F UPDATE below.)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
+
+## UPDATE — 2026-06-21 — mesell-isolation-memory-rule-infra-session-1 — codify isolated-builder memory-persistence rule + land stranded auth-builder L_iam_1 learning
+
+=== STEP 1: two edits, one PR (#361) ===
+Phase: NOT a playbook §-resource op (no VM/K3s/ns/Postgres/Valkey/ingress/secret/cost change).
+       Dev-process / agent-memory governance. Rules followed: CLAUDE.md MeeSell ecosystem rule #4
+       (no agent writes another's memory) — this PR adds a tightly-bounded SCRIBE exception for
+       isolated builders; HYBRID dispatch rule (docs/chore = single-agent fast mode, no ceremony);
+       founder-authorized git-plumbing route for write-protected `.claude/` files (Edit tool is
+       boundary-blocked on `.claude/` → `git hash-object -w` → `git update-index --cacheinfo`).
+Session: mesell-isolation-memory-rule-infra-session-1
+Authorization: founder-authorized in-prompt (squash-merge to develop authorized). Built in a
+       WORKTREE off origin/develop (`30ccb39`) at /tmp/mesell-wt/isolation-memory-rule, branch
+       docs/isolation-memory-rule; master tree received no commit (FF-only sync after merge).
+Done:
+  - Edit 1 — `docs/dev/WORKTREE_ISOLATION.md`: new section "Persisting an isolated builder's memory".
+    Isolated (`isolation: worktree`) builders cannot write their own `.claude/agent-memory/<builder>/
+    MEMORY.md` or `docs/status/*` (those live outside the worktree → boundary-blocked), so the
+    learning would be stranded. Rule: the dispatching coordinator (non-isolated) transcribes the
+    builder's REPORTED learning into the builder's MEMORY.md — a sanctioned NARROW exception to
+    rule #4; coordinator is a scribe, builder's report is SSOT. Cross-refs MEMORY_INDEX_CONVENTION.md
+    + SESSION_ISOLATION.md. (+29 lines, normal write under docs/.)
+  - Edit 2 — `.claude/agent-memory/meesell-auth-builder/MEMORY.md`: appended the stranded auth-builder
+    L_iam_1 learning (PR #359, squash `30ccb39`) — core/auth 2-segment → 3-segment i18n id migration
+    + isolated-worktree test-env gotchas. Additions-only (+11/-0), staged via git-plumbing.
+Validation: PR #361 file list = exactly the 2 intended files, 1 commit, MERGEABLE, base develop
+       (verified `gh pr view --json files` per my own stale-origin-ref gotcha). MEMORY diff = 11
+       added / 0 deleted (additions-only confirmed). Both edits re-verified present in develop @
+       `1951199` via `git show`.
+Land: squash-merged `gh pr merge 361 --squash --admin` → squash SHA `1951199` → new develop HEAD
+       `1951199`. Branch + worktree torn down (local + remote branch deleted, `git worktree prune`).
+       Master tree FF-synced (verify-first: clean tree + ancestor check) develop `30ccb39` → `1951199`,
+       working tree clean.
+Board sweep (session start + end): Active-features rows last touched 2026-06-11/12/14 — as of today
+       (2026-06-21) the auth-otp (06-11), mfe-cutover (06-11), and several microservices-* rows (06-12,
+       06-14) are now ≥7 days untouched. FLAGGED for founder visibility: these are founder-gated /
+       deploy-gated holds (image-precheck/infra-flags/image-tasks IN REVIEW awaiting founder develop
+       merge; microservices-* deploy-gated on the D3 e2-standard-4 spend-ask), not silent stalls —
+       no infra-side action is blocked, the holds are external gates.
+Cost: ₹0 (docs + memory only, no GCP/K8s primitive touched).
+Next action: none — chore complete.
+=========
 
 ## UPDATE — 2026-06-21 — mesell-worktree-isolation-infra-session-1 — adoption Step 2A: worktree isolation for code-writing specialists
 
