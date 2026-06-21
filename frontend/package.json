@@ -21,6 +21,7 @@
     "dev:check-routes": "node tools/dev/route-check.mjs",
     "dev:static": "node tools/dev/dev-static.mjs",
     "smoke:boot": "node tools/boot-smoke/boot-smoke.js",
+    "check:fed-singleton": "node tools/contracts/federation_singleton_guard.mjs",
     "typecheck": "tsc -p tsconfig.spec.json --noEmit"
   },
   "private": true,
