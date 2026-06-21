@@ -88,6 +88,118 @@ Angular 18 service specialist for MeeSell. Owns services + RxJS state + HttpClie
 - @primeuix/themes absent from mfe-auth + mfe-onboarding + shell remoteEntry.json
 - PR #203 updated; comment added: https://github.com/Mugunthan93/mesell/pull/203#issuecomment-4697814639
 
+## Session: auth-refresh-stampede fix (2026-06-18)
+
+**Branch/commit:** fix/auth-refresh-stampede @ 26a32ba
+**PR:** #281 (→ develop, IN REVIEW — coordinator merge-gate step 3)
+**Worktree:** /private/tmp/mesell-wt/auth-stampede
+
+### Root cause (confirmed by coordinator SPEC)
+- THREE callers called authApi.refresh() independently: refreshInterceptor (gated),
+  _doSilentRefresh (ungated), bootstrap() (ungated).
+- Rotating refresh cookies → 2nd+ concurrent refresh uses a revoked cookie → 401 cascade.
+- Secondary defects: D-A (_refreshToken$ never reset after success), D-B (_isRefreshing
+  never reset on logout), D-C (_doSilentRefresh swallowed 401 as EMPTY), D-D (Math.max(…,0)
+  allowed 0ms delay → immediate refire loop on tiny TTLs).
+
+### Fix (all 4 secondaries fixed)
+- AuthService.refreshShared(): ONLY path to POST /auth/refresh. Single-flight Observable
+  stored in _refreshInFlight. shareReplay({bufferSize:1, refCount:false}) so late subscribers
+  get the cached result. finalize() clears _refreshInFlight (D-A/D-B fixed by construction).
+- AuthService.forceLogout(): logout-once guard (_loggedOut bool). navigate(['/login']) ONCE.
+  Subsequent calls no-op. setSession() resets _loggedOut for new login windows.
+- _doSilentRefresh catchError: status===401 → forceLogout(); other errors swallowed (D-C fix).
+- scheduleRefresh delay: skew=min(30,expiresIn*0.1), delayMs=max((expiresIn-skew)*1000, 5000).
+  MIN_REFRESH_DELAY_MS=5000 prevents 0ms loop (D-D fix).
+  IMPORTANT: changed behavior — expiresIn=60 now fires at 54s (was 30s). Specs updated.
+- refreshInterceptor: thin — delegates to auth.refreshShared(), calls auth.forceLogout() on
+  refresh-401. Removed module-level _isRefreshing/_refreshToken$ entirely.
+
+### Test patterns
+- Tests (a)-(g) use lightweight mock AuthService with refreshShared as vi.fn() routing
+  to HttpClient so controller.expectOne('/api/v1/auth/refresh') still works.
+- Tests (d),(h),(i),(j),(k) use setupReal() with real AuthService + real AuthApiService —
+  REQUIRED to exercise actual shareReplay single-flight behavior. Mock AuthService cannot
+  replicate shareReplay semantics (each vi.fn() call creates a new Observable).
+- afterEach: only controller.verify() — NOT vi.useRealTimers() (no fake timers in interceptor specs).
+- Auth service specs: provideRouter required now (AuthService injects Router for forceLogout).
+
+### Key learnings
+**Mock vs real for single-flight tests:** If your test asserts "N concurrent callers → 1 HTTP call",
+  you MUST use the real service. A vi.fn() mock creates a new Observable per call — no sharing.
+  Only the real refreshShared() with shareReplay provides the single-flight guarantee.
+
+**shareReplay({refCount:false}) hazard:** refCount:true would re-subscribe the source when ref
+  count drops to 0 between emission and a late subscriber — producing a second HTTP call.
+  refCount:false keeps the multicast alive until finalize() clears it. This is the correct
+  pattern for a refresh gate.
+
+**finalize() placement:** finalize() must be OUTSIDE the shareReplay (piped after). If placed
+  inside, it fires for each subscriber's teardown, not once for the multicast source.
+
+**forceLogout() vs logout():** forceLogout = "involuntary logout, navigate once"; logout = "user
+  pressed logout button, caller handles navigation". Components calling explicit logout action
+  should call logout(); auth infra cascade paths call forceLogout().
+
+**D-D delay formula change is observable in specs:** Old formula (expiresIn-30)*1000 floor 0 gave
+  30s for expiresIn=60. New formula gives 54s. All existing timer-based specs needed update.
+
+**Build note:** ng build frontend exits 0 for core lib changes. The "ERRR Could not find xlsx"
+  is a pre-existing native-federation warning (xlsx is intentionally skipped dep). Not a new error.
+
+## Session: pricing-fe-rework slice 1 (2026-06-18)
+
+**Branch/commit:** feat/pricing-fe-rework @ eca463e
+**PR:** #287 (→ develop, open — do NOT merge, slices 2+3 follow)
+**Worktree:** /private/tmp/mesell-wt/pricing-fe-rework
+
+### Contract confirmed (backend fd4331d / PR #285 §12.M)
+
+PriceCalcRequest: meesho_price (primary), input_cost, commission_pct (default "4"),
+  return_rate_pct (default "0"), mrp (optional), override_shipping, override_logistics_fee,
+  override_fixed_fee, override_gst_pct, override_tcs_pct, override_tds_pct.
+  DEAD: target_margin_pct.
+
+PriceCalcResponse: mrp (nullable), meesho_price, wdrp_price, input_cost, commission_pct,
+  referral_commission, shipping_charge, logistics_fee, fixed_fee, gst_pct, gst_on_fees,
+  tcs, tds, return_rate_pct, rto_expected_loss, total_deductions, estimated_payout,
+  estimated_payout_wdrp, profit, margin_pct, markup_pct, alerts[], calculated_at.
+  DEAD: seller_price, commission_amount, gst_amount, profit_pct.
+
+Alert codes: NEGATIVE_PAYOUT | LOW_MARGIN | SHIPPING_DOMINATES.
+  DEAD: HIGH_MRP_MULTIPLIER, THIN_PROFIT.
+ALERT_MESSAGES keys: pricing.alert.negative_payout / .low_margin / .shipping_dominates.
+422 path: DEAD (§12.M (4)). PriceCalcCommissionMissingError DELETED.
+
+### Key learnings
+
+**Forward estimator contract shift:** §12.E was backward (input_cost+target_margin → mrp output).
+  §12.M is forward (meesho_price input → estimated_payout output). Model contracts are INVERSE.
+  component forms must be rebuilt top-to-bottom for this flip.
+
+**Pre-existing TS errors block ng test on origin/develop:** The worktree off origin/develop
+  has pre-existing TS errors in mfe-auth (errorMessage signal), mfe-onboarding, shell specs.
+  These errors are from modified working-tree files (shown in git status) that haven't been
+  pushed to origin. Pure-function pricing specs still run via bare vitest run.
+  Service specs (with @mesell/core) require ng test runner for tsconfig path resolution.
+  Strategy: confirm 0 mfe-pricing errors via tsc --noEmit + run component spec via vitest.
+
+**pricing.component.spec.ts must be updated in slice 1, not slice 2:**
+  The component spec imports model types directly. Removing PriceCalcCommissionMissingError
+  from the model breaks the spec compile immediately — must fix in the same slice as the model.
+  Pattern: always update the spec that imports the model IMMEDIATELY when the model changes.
+
+**TODO(slice-2) casting pattern for dead switch cases:**
+  When a union case is removed from a type (commission_missing deleted from PriceCalcErrorShape),
+  TypeScript raises an error on any switch case that matches it. Temporary fix until slice 2:
+  cast the dead case label: `case 'commission_missing' as 'validation':`. This compiles but
+  is clearly marked for deletion. Do not leave this in for longer than one slice.
+
+**vitest vs ng test resolution:** bare `vitest run <file>` resolves relative + rxjs imports
+  but NOT tsconfig path aliases (@mesell/*). ng test resolves everything via tsconfig.
+  For specs that only import from local files + standard libs: use bare vitest.
+  For specs that import @mesell/core ApiClient: must use ng test (fails when suite-wide TS errors block build).
+
 ## Session: boot-smoke CI gate — confirmed GREEN (2026-06-14)
 
 **Branch:** ci/frontend/boot-smoke @ 88e6262
@@ -139,3 +251,168 @@ Angular 18 service specialist for MeeSell. Owns services + RxJS state + HttpClie
 
 ### Hand-off
 PR #213 is waiting for founder D1 merge. Do NOT merge without founder approval.
+
+## Session: federation-version-pin (2026-06-20)
+
+**Branch/commit:** fix/federation-shared-version-pin @ 38c7934 (PUSHED)
+**Worktree:** /private/tmp/mesell-wt/fed-version-pin
+
+### Root cause (BUG from master-session memory)
+@mesell/* libs had NO package.json → version="" in every remoteEntry.json → NF cannot dedup
+by version → each remote loaded its own @mesell/core instance → second instance has null
+in-memory token → authGuard redirects to /login on shell→remote navigation.
+
+### Fix applied
+1. Added libs/{core,env,composites,ui-kit}/package.json with version "1.0.0".
+2. Added explicit mesellShared overrides in all 7 federation.config.js:
+   singleton:true, strictVersion:true, requiredVersion:'1.0.0', version:'1.0.0'.
+
+### NF framework limitation (critical learning — P0)
+@mesell/* workspace libs are processed via sharedMappings (tsconfig path aliases), NOT via
+the `shared` npm-packages pipeline. The function bundle-exposed-and-mappings.js in
+@softarc/native-federation@3.5.5 HARDCODES:
+  requiredVersion: '',
+  singleton: true,
+  strictVersion: false,
+for ALL sharedMappings entries regardless of federation.config.js shared{} overrides.
+
+CONSEQUENCE: strictVersion and requiredVersion CANNOT be set via config for workspace libs.
+The federation.config.js mesellShared entries for strictVersion/requiredVersion are silently
+ignored — they only affect npm packages in node_modules, not workspace path-aliased libs.
+
+WHAT WORKS: version IS populated from libs/*/package.json (package-info.js reads it).
+singleton:true IS passed through from shareAll() defaults.
+
+DEDUP MECHANISM: NF runtime deduplicates by packageName + version + singleton=true.
+With ALL 7 remotes showing v=1.0.0 + singleton=true, the shell's @mesell/core instance
+wins and remotes reuse it → single AuthService instance → no logout on nav.
+
+### Verification output
+All 7 remotes: v=1.0.0 sing=True strict=False req='' (HTTP 200).
+strictVersion=false and req='' are framework-imposed, NOT a bug in this fix.
+The dedup works via version match — strict is irrelevant when versions ARE consistent.
+
+### Sequential build pattern (memory-lean, 8GB machine)
+  cd /Users/mugunthansrinivasan/Project/mesell/frontend
+  for app in frontend mfe-pricing mfe-catalog mfe-export mfe-onboarding mfe-dashboard mfe-auth; do
+    ./node_modules/.bin/ng build $app --configuration development 2>&1 | tail -5
+    pkill -9 -f "esbuild --service" 2>/dev/null
+  done
+  Kill ALL stale serve.js PIDs before restart (kill -9 all 4200-4206 PIDs).
+  Restart: node tools/boot-smoke/serve.js dist/<app>/browser <port> &
+
+### Port map (confirmed)
+shell:4200 | mfe-pricing:4201 | mfe-export:4202 | mfe-onboarding:4203
+mfe-dashboard:4204 | mfe-catalog:4205 | mfe-auth:4206
+
+### Credential fix for worktree push
+Worktrees don't inherit global gitconfig. Fix:
+  git -C <worktree> config credential.https://github.com.helper '!/opt/homebrew/bin/gh auth git-credential'
+  git -C <worktree> push origin HEAD:<branch>
+
+## Session: razorpay-dev-mock FE model (2026-06-20)
+
+**Branch/commit:** feature/razorpay-dev-mock @ b3d60f0
+**Worktree:** /tmp/mesell-wt/razorpay-dev-mock
+**Spec:** docs/plans/features/razorpay-integration/DEV_MOCK_MODE_SPEC.md §4.2
+
+### Change summary
+Added `mock?: boolean` (optional) to the `BillingCheckout` interface in
+`frontend/apps/mfe-billing/src/app/billing.model.ts` (line 68, after `tier`).
+
+### Why optional (not required)
+Backend sets `mock: bool = Field(default=False)` — it is always present on the wire but
+defaults False. TypeScript optional (`?`) makes existing test fixtures that omit the field
+still structurally valid, avoiding spec churn. A non-optional `boolean` would also work
+since the backend always includes it, but optional is more defensive for any mock stubs.
+
+### DTO mapping: none needed
+`BillingApiService.subscribe()` uses `api.post<BillingSubscribeResponse>(...)` — raw typed
+generic pass-through. No explicit DTO transform exists in the service. `mock` flows from
+JSON → typed interface automatically. RULE: when adding a field to a billing model, always
+grep the service for explicit `{ checkout: { ... } }` construction or `map()` operators
+that would drop the new field. In this case: none found.
+
+### tsc pattern for worktree (no node_modules)
+Worktrees have no node_modules. Pattern: `ln -s /main/project/frontend/node_modules worktree/frontend/node_modules`
+Then: `cd worktree/frontend && node_modules/.bin/tsc --noEmit -p apps/<mfe>/tsconfig.app.json`
+
+### ng test isolation problem on 8GB machine
+`ng test mfe-billing` builds entire workspace → hits pre-existing mfe-pricing spec TS errors
+(TS2352 / TS2367 — confirmed pre-existing from pricing-fe-rework session). Cannot be isolated.
+WORKAROUND: use `vitest run --globals <spec-file>` for specs that only use local imports.
+Specs needing TestBed (Angular DI / jsdom / `window`) or `@mesell/*` path aliases MUST use
+`ng test` and cannot be run safely bare. For model-only changes, confirm clean via:
+  1. tsc --noEmit on tsconfig.app.json (compile gate)
+  2. tsc --noEmit on tsconfig.spec.json (spec type gate, filter known pre-existing)
+  3. vitest run on any pure-function spec that imports from the changed model
+
+### Hand-off
+Component builder next: add `if (resp.checkout.mock)` branch in plans.component.ts
+`subscribe()` next: handler per DEV_MOCK_MODE_SPEC.md §4.3.
+
+## Session: otp-verify-pending-phone — AuthService pendingPhone signal (2026-06-20)
+
+**Branch/commit:** fix/otp-verify-pending-phone @ e7e919c
+**Worktree:** /tmp/mesell-wt/otp-fix
+
+### Root cause (diagnosed by coordinator SPEC)
+history.state is wiped by Native Federation's full-document reload on first remote fetch.
+otp-verify.component.ts ngOnInit (L176) hard-redirects to /login when state.phone is missing.
+Fix: carry the pending phone in an in-memory signal on AuthService (the existing root singleton)
+so it survives across the step navigation. FE-D5: never persisted.
+
+### API added to AuthService
+
+Location: `frontend/libs/core/services/auth.service.ts`
+Private field: `private readonly _pendingPhone: WritableSignal<string | null> = signal<string | null>(null);`
+
+Public methods:
+  - `setPendingPhone(phone: string): void` — call in login.component.ts after OTP send success,
+    before router.navigate(['/otp-verify'])
+  - `pendingPhone(): string | null` — call in otp-verify.component.ts ngOnInit instead of
+    history.state?.phone; returns null when no phone is waiting
+  - `clearPendingPhone(): void` — call in otp-verify.component.ts after consuming the phone
+    (success + ngOnDestroy) to prevent stale state
+
+Barrel export: no change needed — `export { AuthService }` in `frontend/libs/core/index.ts`
+already re-exports all public methods. Components import via `@mesell/core` alias as always.
+
+CRITICAL design choices:
+  - DOES NOT clear on logout() or forceLogout() — the component owns the lifecycle.
+    A forceLogout during OTP verification must not lose the phone before the component
+    can redirect cleanly. The component calls clearPendingPhone() in ngOnDestroy.
+  - WritableSignal<string|null> not BehaviorSubject — matches the existing signal style
+    on _token and _user. Consistent with Decision 10 (no NgRx; signals for component-local
+    reactive state; BehaviorSubject for shared Observable streams — phone is not a stream).
+  - This is strictly in-memory. Adding a signal field to AuthService is zero-cost and
+    cheaper than a new dedicated PendingAuthService (avoided the extra barrel export + DI token).
+
+### Spec coverage (6 new tests, auth.service.spec.ts)
+- pendingPhone() is null by default
+- setPendingPhone sets; pendingPhone() returns it
+- clearPendingPhone resets to null
+- setPendingPhone overwrites a previous value
+- pendingPhone does NOT clear on logout()
+- pendingPhone does NOT clear on forceLogout()
+
+### tsc results
+- mfe-auth tsconfig.app.json: EXIT 0
+- shell tsconfig.app.json: EXIT 0
+- workspace tsconfig.spec.json: 0 NEW errors (only pre-existing mfe-pricing TS2352/TS2367)
+- ng test: blocked by same pre-existing mfe-pricing build error (known, unrelated)
+
+### Component-builder hand-off spec (for next dispatch)
+login.component.ts:
+  1. Inject AuthService (already injected).
+  2. After OTP send API succeeds (before navigating), call: `this.auth.setPendingPhone(this.phoneForm.value.phone)`.
+  3. Then: `this.router.navigate(['/otp-verify'])`.
+
+otp-verify.component.ts:
+  1. Inject AuthService (already injected).
+  2. In ngOnInit, REPLACE: `const phone = this.route.snapshot.data?.['phone'] ?? history.state?.phone`
+     WITH: `const phone = this.auth.pendingPhone();`
+  3. If phone is null/empty → redirect to /login (existing behaviour preserved).
+  4. Else → proceed with OTP verify using the phone.
+  5. After consuming phone (on success path): call `this.auth.clearPendingPhone()`.
+  6. In ngOnDestroy (or DestroyRef): call `this.auth.clearPendingPhone()` to handle back-nav.
