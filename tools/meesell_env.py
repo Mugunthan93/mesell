@@ -474,17 +474,30 @@ def probe_health(port: int) -> str:
 
 
 def _service_health(pid: int | None, alive: bool, port: int) -> str:
-    """Map (pid liveness, http reachability) to a single dot state.
+    """Map (live port probe, pid liveness) to a single dot state.
 
-    up   : process alive AND the port answers HTTP.
-    dead : a pid was tracked but the process is gone (crashed/exited).
-    down : no process tracked for this role (e.g. reusing the baseline backend),
-           or the process is alive but the port is not answering yet (mid-serve).
+    The verdict is a LIVE HTTP PORT PROBE first — NOT pid trust. A port that
+    answers any HTTP status is `up` regardless of whether the recorded pid still
+    matches the process actually serving it. This is what keeps the dashboard
+    honest when a service is killed+relaunched OUTSIDE the tool (a common
+    workflow): the recorded pid in env-state.json goes stale, but the port is
+    still serving, so the dot must stay green. (The recorded `pid`/`alive` are
+    still surfaced in the payload for info — only the up/down verdict moved to
+    the live probe.)
+
+    up   : the port answers HTTP (any status) — live, regardless of recorded pid.
+    dead : the probe is inconclusive (port unknown) AND a pid was tracked but is
+           gone (crashed/exited).
+    down : the probe is inconclusive (port unknown) and no live pid, OR a known
+           port that is not answering (connection refused / nothing listening).
     """
+    # Primary verdict: live port probe. A serving port is `up` even if the
+    # recorded pid is stale/wrong; a known port with nothing listening is `down`.
+    if port:
+        return probe_health(port)
+    # Fallback ONLY when the probe is inconclusive (no port known for this role).
     if pid and not alive:
         return "dead"
-    if pid and alive:
-        return "up" if probe_health(port) == "up" else "down"
     return "down"
 
 
