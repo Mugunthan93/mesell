@@ -146,15 +146,15 @@ class TokenMissingError(MeesellError):
     """Raised when the ``Authorization`` header is absent OR malformed.
 
     Per §4.B: maps to HTTP 401 with ``validation_message_id =
-    "auth.token_missing"``.  The same exception covers "no header at all" and
+    "auth.token.missing"``.  The same exception covers "no header at all" and
     "header present but unparseable" — the contract treats these uniformly
     from the client's point of view (both mean "you have no valid bearer
     token; obtain one via /auth/otp/verify").
     """
 
-    code = "auth.token_missing"
+    code = "auth.token.missing"
     status_code = 401
-    validation_message_id = "auth.token_missing"
+    validation_message_id = "auth.token.missing"
 
     def __init__(self, detail: str = "Authorization token missing or malformed") -> None:
         # Use the keyword-only ``detail=`` form so the canonical §4.F
@@ -167,14 +167,14 @@ class TokenExpiredError(MeesellError):
     """Raised when JWT decode returns ``jwt.ExpiredSignatureError``.
 
     Per §4.B: maps to HTTP 401 with ``validation_message_id =
-    "auth.token_expired"``.  Distinct from :class:`TokenMissingError` because
+    "auth.token.expired"``.  Distinct from :class:`TokenMissingError` because
     the client should silent-refresh via ``/auth/refresh`` rather than
     re-prompting the seller to re-enter an OTP.
     """
 
-    code = "auth.token_expired"
+    code = "auth.token.expired"
     status_code = 401
-    validation_message_id = "auth.token_expired"
+    validation_message_id = "auth.token.expired"
 
     def __init__(self, detail: str = "Access token has expired") -> None:
         super().__init__(detail=detail)
@@ -184,15 +184,15 @@ class UserNotFoundError(MeesellError):
     """Raised when the decoded ``sub`` does NOT resolve to a ``users`` row.
 
     Per §4.B: maps to HTTP 403 with ``validation_message_id =
-    "auth.user_not_found"``.  Status 403 (not 404) because the JWT was valid —
+    "auth.user.not_found"``.  Status 403 (not 404) because the JWT was valid —
     the principal is simply gone (e.g. account deleted between issuance and
     use); a 401 would suggest "send credentials" but the credentials WERE
     sent.
     """
 
-    code = "auth.user_not_found"
+    code = "auth.user.not_found"
     status_code = 403
-    validation_message_id = "auth.user_not_found"
+    validation_message_id = "auth.user.not_found"
 
     def __init__(self, detail: str = "Authenticated user no longer exists") -> None:
         super().__init__(detail=detail)

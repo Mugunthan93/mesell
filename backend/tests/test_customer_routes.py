@@ -16,7 +16,7 @@ Coverage matrix
   customer.compliance.missing_fields; valid Grocery payload → 200.
 - GET /seller-profile/required-fields: new seller → 200, all completed=False;
   after full PATCH → blocking base fields completed=True + onboarding_complete=True.
-- Each protected endpoint without Bearer → 401 auth.token_missing.
+- Each protected endpoint without Bearer → 401 auth.token.missing.
 
 Integration strategy
 --------------------

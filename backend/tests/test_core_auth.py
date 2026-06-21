@@ -222,7 +222,7 @@ async def test_get_current_user_happy_path() -> None:
 async def test_get_current_user_missing_token() -> None:
     """``token=None`` (no Authorization header) raises ``TokenMissingError``.
 
-    Per §4.B: status 401, ``validation_message_id="auth.token_missing"``.
+    Per §4.B: status 401, ``validation_message_id="auth.token.missing"``.
     """
     db = _mock_db_returning(None)
 
@@ -231,7 +231,7 @@ async def test_get_current_user_missing_token() -> None:
 
     err = excinfo.value
     assert err.status_code == 401
-    assert err.validation_message_id == "auth.token_missing"
+    assert err.validation_message_id == "auth.token.missing"
     # DB must NOT have been hit — the early bail-out at the dep entrance.
     db.get.assert_not_called()
 
@@ -258,7 +258,7 @@ async def test_get_current_user_expired_token() -> None:
 
     err = excinfo.value
     assert err.status_code == 401
-    assert err.validation_message_id == "auth.token_expired"
+    assert err.validation_message_id == "auth.token.expired"
     db.get.assert_not_called()
 
 
@@ -271,7 +271,7 @@ async def test_get_current_user_expired_token() -> None:
 async def test_get_current_user_malformed_token() -> None:
     """Garbage string → ``TokenMissingError`` (§4.B mapping: malformed → token_missing).
 
-    The contract says missing/malformed → 401 ``auth.token_missing``.  Both
+    The contract says missing/malformed → 401 ``auth.token.missing``.  Both
     paths raise the same exception class so the client sees one consistent
     "obtain a new token via OTP-verify" signal.
     """
@@ -282,7 +282,7 @@ async def test_get_current_user_malformed_token() -> None:
 
     err = excinfo.value
     assert err.status_code == 401
-    assert err.validation_message_id == "auth.token_missing"
+    assert err.validation_message_id == "auth.token.missing"
     db.get.assert_not_called()
 
 
@@ -303,5 +303,5 @@ async def test_get_current_user_unknown_user() -> None:
 
     err = excinfo.value
     assert err.status_code == 403
-    assert err.validation_message_id == "auth.user_not_found"
+    assert err.validation_message_id == "auth.user.not_found"
     db.get.assert_awaited_once_with(User, user_id)
