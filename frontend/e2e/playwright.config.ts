@@ -69,15 +69,24 @@ export default defineConfig({
   },
 
   projects: [
-    // Setup project — runs OTP once, writes storageState.json. Every flow depends on it.
+    // Setup project — drives the real phone-OTP login ONCE and writes
+    // storageState.json (the login-proof artifact). NOTE: the authed FLOWS do NOT
+    // reuse this storageState directly, because the MeeSell refresh token is
+    // single-use with server-side rotation (Decision #14 / FE-D5): the shell's
+    // APP_INITIALIZER bootstrap() refreshes on every page load and rotates the
+    // cookie, so a shared storageState only authenticates the FIRST flow's first
+    // navigation. The authed flows instead log in once per WORKER into a shared
+    // browser context (fixtures/auth.ts — rotation-safe). See federation_quirks.md.
     {
       name: 'setup',
       testMatch: /auth\.setup\.ts/,
     },
-    // Authenticated flows — reuse the storageState produced by setup.
+    // Authenticated flows — each manages its own auth (worker-scoped authed-context
+    // fixture, or a fresh OTP login for onboarding). No project-level storageState:
+    // imposing the rotated cookie on the default page would 401 the 2nd+ flow.
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'], storageState: STORAGE_STATE },
+      use: { ...devices['Desktop Chrome'] },
       dependencies: ['setup'],
       testMatch: /flows\/.*\.spec\.ts/,
     },

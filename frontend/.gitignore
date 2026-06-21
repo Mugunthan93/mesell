@@ -42,6 +42,13 @@ testem.log
 /typings
 __screenshots__/
 
+# Playwright E2E generated artefacts (never committed)
+/e2e/storageState.json
+/test-results
+/playwright-report
+/blob-report
+/e2e/.auth
+
 # System files
 .DS_Store
 Thumbs.db

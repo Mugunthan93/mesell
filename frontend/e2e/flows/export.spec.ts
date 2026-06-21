@@ -1,33 +1,53 @@
 /**
  * Flow: Export download.
  *
- * Taxonomy (design §5.3): Export button clicked → file download event triggered →
- * downloaded file non-empty.
+ * Taxonomy (design §5.3): Export button clicked → file download event → non-empty file.
  *
- * STUB — fleshed out by the QA wave. Pre-authenticated via storageState. The
- * asserted outcome is a Playwright `download` event (a real, observable browser
- * outcome), not a network response — per the e2e convention that every test
- * asserts a visible/observable outcome.
+ * Two tests, chaining create → export to use a REAL product:
+ *   1. (GREEN) The export page renders with the Generate button for a real product —
+ *      a reachable VISIBLE outcome.
+ *   2. (FIXME) The actual download. Blocked by a PRODUCT BUG: export.component.ts
+ *      `onGenerate()` hardcodes `productId='current-product-id'` instead of reading
+ *      the route param, so clicking Generate POSTs to a non-existent product and the
+ *      backend returns 422 — the `ready` state + the `export-download` link are
+ *      UNREACHABLE through the UI regardless of the real product. Verified live. See
+ *      federation_quirks.md (filed to meesell-frontend-coordinator). Un-fixme once
+ *      the component reads ActivatedRoute.snapshot.params['id'].
+ *
+ * Pre-authenticated via the worker-scoped authed-context fixture.
  */
-import { test, expect } from '@playwright/test';
+import { authedTest as test, expect } from '../fixtures/auth';
+import { CatalogPage } from '../page-objects/catalog.page';
 import { ExportPage } from '../page-objects/export.page';
 
-const CATALOG_ID = process.env.MEESELL_E2E_CATALOG_ID ?? '00000000-0000-0000-0000-000000000000';
-
 test.describe('Export', () => {
-  test.fixme('clicking export triggers a non-empty file download', async ({ page }) => {
-    const exportPage = new ExportPage(page);
+  test('the export page renders with the Generate button for a real product', async ({ authedPage }) => {
+    const catalog = new CatalogPage(authedPage);
+    const exportPage = new ExportPage(authedPage);
 
-    await exportPage.goto(CATALOG_ID);
+    // Chain create → export so the route carries a REAL product UUID.
+    const productId = await catalog.createProductViaPicker();
+    await exportPage.goto(productId);
 
-    // Asserted outcome: a download event fires and the file is non-empty.
-    const downloadPromise = page.waitForEvent('download');
-    await exportPage.exportButton.click();
+    // Visible outcome: the export Generate trigger is shown on the export page.
+    await expect(authedPage).toHaveURL(new RegExp(`/catalogs/${productId}/export`));
+    await expect(exportPage.generateButton).toBeVisible();
+  });
+
+  test.fixme('clicking Generate triggers a non-empty file download', async ({ authedPage }) => {
+    // BLOCKED by product bug: onGenerate() ignores the route productId.
+    const catalog = new CatalogPage(authedPage);
+    const exportPage = new ExportPage(authedPage);
+
+    const productId = await catalog.createProductViaPicker();
+    await exportPage.goto(productId);
+
+    const downloadPromise = authedPage.waitForEvent('download');
+    await exportPage.generateButton.click();
+    // (Once fixed) the export reaches `ready` and the download link appears.
+    await expect(exportPage.downloadLink).toBeVisible({ timeout: 30_000 });
+    await exportPage.downloadLink.click();
     const download = await downloadPromise;
-
-    const path = await download.path();
-    expect(path).toBeTruthy();
-    // A non-empty file: suggested filename present + readable stream resolved.
     expect(download.suggestedFilename()).toMatch(/\.(xlsx|zip)$/);
   });
 });
