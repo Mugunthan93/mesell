@@ -400,20 +400,153 @@ def pid_alive(pid: int) -> bool:
 # Build + serve primitives
 # ---------------------------------------------------------------------------
 
+# Markers ng/esbuild prints when the bundle has been written successfully.
+# We treat the build as DONE on either of these even if the `ng` process never
+# exits (see _wait_for_build below for why it doesn't).
+_BUILD_DONE_MARKERS = (
+    "Application bundle generation complete",
+    "Output location:",
+)
+# Hard ceiling for a single build. A real build of one MFE on the 8 GB box is
+# well under this; if we never see a done-marker by here it's a genuine failure.
+_BUILD_TIMEOUT_S = 600
+# Once a done-marker appears, give the process this long to exit on its own
+# before we reap its process group (the esbuild --service child keeps it alive).
+_POST_DONE_GRACE_S = 5
+
+
+def _dist_for_project(root: Path, project: str) -> Path:
+    """dist/<dist-name>/browser for a project. Shell's dist name is 'frontend'."""
+    dist_name = SHELL_DIST_NAME if project == "frontend" else project
+    return served_dist_root(root, dist_name)
+
+
+def _kill_process_group(pgid: int) -> None:
+    """SIGTERM then SIGKILL the whole process group (ng + npm + esbuild service).
+
+    Best-effort: a stray descendant may be unsignalable by our uid (e.g. a
+    process owned by root). We swallow PermissionError because the global
+    pkill-esbuild sweep in ng_build's finally clause is the real safety net, and
+    by the time we call this the build's output has already been verified.
+    """
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(pgid, sig)
+        except ProcessLookupError:
+            return
+        except PermissionError:
+            info(f"killpg({pgid}) not permitted for a group member; "
+                 f"relying on esbuild sweep")
+            return
+        time.sleep(0.5)
+
+
+def _wait_for_build(proc: subprocess.Popen, logpath: Path, project: str) -> None:
+    """Wait for a one-shot `ng build` to finish.
+
+    ROOT-CAUSE NOTE (why this is not a simple .wait()):
+    Angular 21.2.x's application builder leaves a persistent `esbuild --service`
+    child running after the bundle is written, so the `ng build` process never
+    exits — `subprocess.run(...).wait()` would block forever (observed 8m+ at
+    ~0% CPU; confirmed even for a standalone `ng build`, so it is NOT a Python
+    pipe-buffer deadlock). We therefore tail the per-app log for a done-marker
+    and, once seen (and the dist output exists), reap the whole process group to
+    sweep the orphan esbuild service, then move on. A genuine build failure is
+    detected by the process exiting non-zero with no done-marker, or by the
+    timeout elapsing with no done-marker.
+    """
+    dist = _dist_for_project(proc_root(proc), project)
+    deadline = time.monotonic() + _BUILD_TIMEOUT_S
+    pgid = os.getpgid(proc.pid)
+    done = False
+    while time.monotonic() < deadline:
+        rc = proc.poll()
+        # Read the log for a completion marker.
+        try:
+            text = logpath.read_text(errors="replace")
+        except OSError:
+            text = ""
+        if any(m in text for m in _BUILD_DONE_MARKERS):
+            done = True
+            break
+        if rc is not None:
+            # Process exited before any done-marker. Could be a clean fast exit
+            # whose marker we just missed, or a real failure.
+            if any(m in text for m in _BUILD_DONE_MARKERS):
+                done = True
+            elif rc != 0 or not dist.exists():
+                _kill_process_group(pgid)
+                _tail_log(logpath)
+                die(f"ng build {project} failed (exit {rc}); see {logpath}")
+            else:
+                done = True  # exited 0 and dist exists
+            break
+        time.sleep(1.0)
+
+    if not done:
+        _kill_process_group(pgid)
+        _tail_log(logpath)
+        die(f"ng build {project} timed out after {_BUILD_TIMEOUT_S}s "
+            f"with no completion marker; see {logpath}")
+
+    # Done-marker seen. Give it a brief grace to self-exit, then reap the group.
+    grace = time.monotonic() + _POST_DONE_GRACE_S
+    while time.monotonic() < grace and proc.poll() is None:
+        time.sleep(0.3)
+    _kill_process_group(pgid)
+
+    if not dist.exists():
+        _tail_log(logpath)
+        die(f"ng build {project} reported done but dist {dist} is missing; "
+            f"see {logpath}")
+    info(f"ng build {project} OK -> {dist} (log {logpath})")
+
+
+# proc_root: stash the build root on the Popen object so _wait_for_build can find
+# the dist without re-threading it through every call.
+def proc_root(proc: subprocess.Popen) -> Path:
+    return getattr(proc, "_mesell_root")
+
+
+def _tail_log(logpath: Path, n: int = 25) -> None:
+    try:
+        lines = logpath.read_text(errors="replace").splitlines()[-n:]
+    except OSError:
+        return
+    sys.stderr.write(f"--- last {len(lines)} lines of {logpath} ---\n")
+    for ln in lines:
+        sys.stderr.write(ln + "\n")
+
+
 def ng_build(root: Path, project: str, *, stub: bool) -> None:
-    """Run `ng build <project>` under the global lock. Stub mode skips the real build."""
+    """Build one Angular project as a one-shot, under the global lock.
+
+    Each build's stdout+stderr go to a per-app log file (never an undrained
+    PIPE), the build runs in its OWN process group, and we reap that group once
+    the bundle is written — because `ng build` does not exit on its own on this
+    Angular version (it leaks a persistent esbuild --service child). See
+    _wait_for_build for the full root-cause note.
+    """
     if stub:
         info(f"[stub] would run: ng build {project}  (cwd={root}/frontend)")
         return
-    kill_esbuild()
-    info(f"ng build {project} ...")
-    proc = subprocess.run(
-        ["npx", "ng", "build", project, "--configuration=development"],
-        cwd=str(root / "frontend"),
-    )
-    kill_esbuild()
-    if proc.returncode != 0:
-        die(f"ng build {project} failed (exit {proc.returncode})")
+    kill_esbuild()  # clear any stray service from a prior build BEFORE starting
+    logpath = NEXUS_DIR / f"build-{project}.log"
+    NEXUS_DIR.mkdir(parents=True, exist_ok=True)
+    info(f"ng build {project} ... (log {logpath})")
+    with open(logpath, "w") as logfh:
+        proc = subprocess.Popen(
+            ["npx", "ng", "build", project, "--configuration=development"],
+            cwd=str(root / "frontend"),
+            stdout=logfh,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,  # own process group -> reliable group kill
+        )
+    proc._mesell_root = root  # type: ignore[attr-defined]
+    try:
+        _wait_for_build(proc, logpath, project)
+    finally:
+        kill_esbuild()  # belt-and-suspenders sweep after each build
 
 
 def served_dist_root(root: Path, project_dist_name: str) -> Path:
