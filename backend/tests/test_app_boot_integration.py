@@ -198,6 +198,14 @@ def test_no_stray_legacy_routes(meesell_app):
         "/api/v1/exports/{export_id}",
         "/health",
     }
+    # google-auth (2026-06-18 amendment): POST /api/v1/auth/google/verify is mounted
+    # ONLY when FEATURE_GOOGLE_AUTH_ENABLED is true (dev default true; staging/prod
+    # per-namespace). Make the allowed-set flag-aware so the route is not flagged as
+    # a "stray" when the dev flag is on, mirroring the FEATURE_BILLING_ENABLED pattern.
+    from app.shared.config import settings  # noqa: PLC0415
+
+    if settings.FEATURE_GOOGLE_AUTH_ENABLED:
+        allowed_paths.add("/api/v1/auth/google/verify")
     route_map = _route_map(meesell_app)
     stray = set(route_map) - allowed_paths
     assert not stray, (
@@ -257,7 +265,13 @@ def test_total_route_count(meesell_app):
     If this fails, a route was added or removed unexpectedly.
     """
     route_map = _route_map(meesell_app)
-    expected_count = 34
+    # google-auth (2026-06-18 amendment): +1 path (/api/v1/auth/google/verify) when
+    # FEATURE_GOOGLE_AUTH_ENABLED is true (dev default true → 35; flag off → 34).
+    # §17 mounted-endpoint inventory: 28→29 maps here to 34→35 (this count includes
+    # the 4 billing paths + FastAPI builtins, hence the offset from the §17 number).
+    from app.shared.config import settings  # noqa: PLC0415
+
+    expected_count = 35 if settings.FEATURE_GOOGLE_AUTH_ENABLED else 34
     assert len(route_map) == expected_count, (
         f"Expected {expected_count} routes, got {len(route_map)}. "
         f"Paths: {sorted(route_map)}"
