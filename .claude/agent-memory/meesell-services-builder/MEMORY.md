@@ -45,6 +45,120 @@ guard-master-tree-git blocks `git checkout -b` in the master tree — must `git 
 canonical memory at the shared-checkout path was un-writable; the harness routed Edit to the worktree copy of
 MEMORY.md. The two memory copies may now diverge — reconcile on next shared-checkout session.
 
+## Razorpay DEV-MOCK mode (2026-06-20, branch feature/razorpay-dev-mock, worktree /tmp/mesell-wt/razorpay-dev-mock off develop@8b5dce2 — the #323 merge that HAS create_subscription; commit 66ecf0d)
+Flag-gated dev-only Razorpay mock so the founder tests billing locally with NO account/network (mirrors DEV_OTP_BYPASS_CODE). Founder rulings applied: Q1 keep evt_mock_* webhook_events rows; Q2 fold config field into this PR (lead-owned); Q3 scope subscribe/start-trial/cancel only (no update_subscription tail); Q4 poll unchanged.
+
+### KEY DESIGN — mock drives the REAL state machine (no parallel grant path)
+The mock NEVER touches users.plan directly. `subscribe()`/`cancel()` create the local `subscriptions` row via the real body (with sub_mock_*/order_mock_* ids from the mock adapter), then a `_mock_drive_*` tail builds a SYNTHETIC webhook payload (evt_mock_<uuid>) and replays it through `_route_webhook_in_session(db, event_id, event_type, payload, owns_transaction=False)` — NOT `capture_razorpay_webhook` (that forces HMAC verify). This funnels through the LOCKED `_handle_subscription_activated`/`_handle_payment_captured`/`_handle_subscription_cancelled` → `_grant_plan_for_sub` so it grants plan + sets period_end + writes audit_events + ON-CONFLICT webhook_events dedupe row exactly like prod. `verify_webhook_signature` LEFT BYTE-UNTOUCHED (replay begins post-verify). `owns_transaction=False` because the request session owns commit.
+
+### Files (7, +688/-4)
+- `app/shared/config.py`: `RAZORPAY_DEV_MOCK: bool = False` after DEV_OTP_BYPASS_CODE + `@property razorpay_mock_active = RAZORPAY_DEV_MOCK and APP_ENV != "production"` next to is_prod. NOT in REQUIRED_FIELDS. ALL call sites read the PROPERTY never the raw flag.
+- `.env.example`: `RAZORPAY_DEV_MOCK=false` in Razorpay block.
+- `app/adapters/razorpay_mock.py` (NEW): same 6 async signatures as real adapter, returns the REAL frozen dataclasses (RazorpaySubscription/Order/Customer) with sub_mock_*/order_mock_* ids + mock.razorpay.local short_url. ZERO `import razorpay`/httpx/to_thread. Each method opens `assert settings.razorpay_mock_active`. create_subscription returns current_end=None (period end set by the synthetic webhook, matches real).
+- `app/modules/iam/service.py`: added `from app.adapters import razorpay_mock` + `uuid4` to the uuid import; `_rzp()` seam (returns mock when active, read at CALL time); swapped 3 call sites (subscribe LTD create_order, subscribe recurring create_subscription, cancel cancel_subscription) `razorpay_adapter.X` → `_rzp().X`; 3 tails `_mock_drive_activation`/`_mock_drive_ltd_capture`/`_mock_drive_cancel` (placed after cancel(), before the webhook-router section — forward-ref to `_route_webhook_in_session` is fine, resolved at call time). start_trial has NO tail (already app-side).
+- `app/modules/iam/schemas.py`: `mock: bool = Field(default=False, ...)` on BillingCheckout after `tier`.
+- `app/modules/iam/billing_router.py`: `mock=settings.razorpay_mock_active` in the BillingCheckout(...) construction.
+- `tests/test_billing_mock_mode.py` (NEW, @pytest.mark.integration): exercises the REAL subscribe/start_trial/cancel service helpers (NOT stubbed) against meesell_rzpw2_test and asserts state-machine effects. CRITICAL flag activation: settings is import-time singleton → `monkeypatch.setattr(_config_module.settings, "RAZORPAY_DEV_MOCK", True)` + APP_ENV "development" in an autouse fixture (restored at teardown — never leaks into hermetic test_billing_routes.py). 7 tests: gate-active, gate-force-disabled-in-prod, pro-grant-via-state-machine, no-real-client-built, start-trial-app-side, cancel-terminal-state (entitlement stays pro), LTD-perpetual.
+
+### Guardrails honored
+NO new route (boot guard passes; I only added a FIELD to an existing response schema). NO new Celery task (include stays the 3 V1 modules: image/export/iam.tasks — verified). Hermetic billing tests untouched (flag defaults False → _rzp() returns real adapter). Production force-disabled via the property's APP_ENV guard + per-tail asserts. ruff clean. `--collect-only -m unit` = 0 errors (900 collected).
+
+### Verify (DB-safe) — DB used = meesell_rzpw2_test (current_database() confirmed, NOT 'meesell')
+rzpw2_test password (urlencoded in URL) decodes to `j3w/6o/7k/JwjPu1J4OqDpFStho7IsK/0lRYnwmbN6Q=`. Toolchain = master 3.11 venv against worktree, PYTHONPATH=$PWD, full dummy env exports (REQUIRED_FIELDS). Setting TEST_DATABASE_URL triggers conftest's autouse `_provision_test_schema` which DROPs public schema + alembic-upgrades (safe — disposable _test DB, gated). Results: mock test 7 passed; mock+billing_routes+app_boot+celery_include = 41 passed. RECIPE for running JUST the billing layer without reprovision: set DATABASE_URL (not TEST_DATABASE_URL) so the session provisioning fixture no-ops and uses the already-migrated rzpw2_test.
+
+
+## google-auth account-link audit_events.user_id NULL fix (2026-06-20, branch fix/google-link-audit-userid, worktree /private/tmp/mesell-wt/google-link-audit-fix off develop@fa61a61, PR #324 → develop)
+
+### Bug + fix (relationship-loading directive ONLY — NO DDL, NO migration)
+google account-LINK path (existing phone user signs in with Google on matching verified email): audit rows
+(auth.login.success + auth.google.linked) INSERT with valid user_id inside the SAVEPOINT, but SQLAlchemy's
+unit-of-work then emits `UPDATE audit_events SET user_id=NULL` at the OUTER commit → NotNullViolationError.
+Trigger = the bidirectional `back_populates`: on LINK, `by_email` is a session-managed persistent User whose
+`audit_events` collection is never appended to, so the UoW nulls the child FK to reconcile the empty collection.
+The CREATE-new-user path escapes it. FIX:
+- `app/shared/models/user.py` User.audit_events: drop `back_populates="user"`, add `viewonly=True`.
+- `app/shared/models/audit_event.py` AuditEvent.user: drop `back_populates="audit_events"` (keep relationship → `relationship("User")`).
+GENERAL LESSON: a child table with NOT-NULL parent FK + bidirectional back_populates, where the parent's
+collection is loaded-but-not-appended on a mutate path → UoW will null the child FK at commit. `viewonly=True`
+on the parent side (and dropping back_populates on both) is the surgical fix. svc-iam vendored copies deliberately
+DROP all ORM relationships → never carry this class of bug; NEVER edit them for a monolith relationship fix.
+
+### Test (tests/test_google_auth_integration.py::test_google_links_to_existing_phone_user_by_email)
+Removed @pytest.mark.xfail; added crux: query `select(AuditEvent).where(user_id==original_id)`, assert
+{auth.login.success, auth.google.linked} ⊆ event_types AND all rows user_id==original_id (non-null). Cleanup:
+DELETE audit_events BEFORE the user row (FK is RESTRICT post-fix), else teardown blocks. Added `from sqlalchemy
+import delete, select` + AuditEvent import inside the test body.
+
+### Branch topology TRAP (recurring — verify before cutting)
+Spec said branch off + target `feature/google-auth`. REALITY (git): that branch was 34 commits BEHIND develop;
+its 8 unique commits were already squash-merged to develop as PR #295 (google code e083dff) + PR #322 (iam_client
+harness repair 1a45199). Its tip is NOT an ancestor of develop and its test file is the BROKEN PR-#295 version
+(`app = client.app`). The #322-repaired test + google service code live on DEVELOP. → branched off develop,
+targeted develop, flagged the discrepancy in PR #324 body + STATUS + reported to coordinator. RULE: when a spec
+names a feature branch as base/target, FIRST `git rev-list --count <branch>..develop` + check whether the branch
+tip is an ancestor of develop + grep the repaired marker (here `iam_client`) — squash-merged feature branches go
+STALE and editing them re-introduces the broken file.
+
+### Test harness recipe (reused, works)
+Worktree has no .venv. Toolchain = master venv `/Users/.../backend/.venv/bin/python3.11`. Config needs the FULL
+§5.D env registry → `set -a; . <master>/backend/.env; set +a` to load dev placeholders, THEN HARD-OVERRIDE
+`export TEST_DATABASE_URL=...meesell_test` + `export DATABASE_URL=$TEST_DATABASE_URL` (the .env's DATABASE_URL
+points at the protected dev DB `meesell` — MUST override). conftest refuses any DB not ending in `_test`.
+Disposable `meesell_test` already exists on localhost:5432 (creds meesell:password); provisioning fixture DROPs
+public schema + alembic-upgrades it, gated on TEST_DATABASE_URL. PYTHONPATH=$PWD (worktree backend). ruff at
+/opt/homebrew/bin/ruff. git push from worktree needs token URL: `git push https://x-access-token:$(gh auth token)@github.com/...`.
+
+## PR #285 gate R1/R2 doc reconciliation (2026-06-18, branch fix/pricing-engine-rework, worktree /private/tmp/mesell-wt/pricing-rework, commit 74ade7c)
+DOCS-ONLY merge-gate fix for the pricing-engine-rework PR. Two reconciliations downstream of the founder-approved §12.M Price Calculator forward-estimator rework:
+- **R1** V1_FEATURE_SPEC §Feature 7 amendment (L321): shipping prose said "₹70 bracketed by price band" → reworded to "₹30 for Meesho Price ≤ ₹1000, ₹70 above" to match implemented constants (SHIPPING_FLAT=₹30 ≤₹1000, SHIPPING_HIGH=₹70 >₹1000).
+- **R2** BACKEND_ARCHITECTURE §2.D matrix cell-count cascade (8→7 after `pricing→category` commission edge retired). Fixed: §2.D breakdown trailing "8 ✓"→"7 ✓" (L592, self-contradiction with its own "7 ✓" opener); §13 docstring/prose at L4156 (image.summary docstring), L4915, L5229, L5235, L5366; §16 at L6464 (heading), L6465, L6487, L6530, L6871. Each non-historical "8 ✓" → "7 ✓" + appended "(7 post-§12.M 2026-06-18; see §12.M)" cross-note.
+- **DELIBERATELY PRESERVED (not §2.D cell-count):** L590 amendment narrative "drops from 8 ✓ to 7 ✓" (historical before→after); L6530 "8 domain modules" (module count, not cell count); L6936 "28-count" (HTTP-route count — matches grep `8-count` loosely but unrelated).
+- §16.B.2: dropped the now-stale "6 distinct service methods" number (it was coupled to the retired get_commission method) → "distinct service methods" to avoid a fresh inconsistency without recomputing.
+- Verify grep `8 ✓\|exactly 8\|8-count\|8 allowed` → only L590 (historical) + L6936 (route count) survive — both confirmed unrelated to §2.D cell count.
+- LESSON: my Edit at L4156 added a line, shifting all later line numbers +1 — re-grep after each structural edit before relying on task-supplied line numbers. `git diff --stat` = exactly the 2 docs (15+/14-). Pushed, NOT merged.
+
+## i18n #280 LOCAL HOT-PATCH applied to master tree (2026-06-18, dev-only bridge)
+The running backend :8000 serves from the MASTER tree (uvicorn `.venv/bin/uvicorn app.main:app --port 8000 --reload`, PID 13356 at the time) which was BEHIND develop, so the merged #280 generic keys were absent → required-field 422s still rendered blank. Applied the #280 messages_en.py change DIRECTLY to the master-tree file (Edit only, NO git, NO restart) so `--reload` hot-loaded it as a temporary local bridge that reconciles cleanly when master is later pulled to develop.
+- Verified `git diff HEAD..b28ef2f -- backend/app/i18n/messages_en.py` = EXACTLY the 10-key additive generic block (missing/string_too_short/string_too_long/int_parsing/float_parsing/string_type/greater_than_equal/less_than_equal/greater_than/less_than) inserted after `validation.generic.invalid_url`. No other diff.
+- After Edit, `git show b28ef2f:.../messages_en.py | diff - <master file>` = IDENTICAL (byte-for-byte match to merged version).
+- Functional probe (master 3.11 venv as toolchain, dummy env): `resolve("validation.description.missing")` / `validation.product_name.missing` / `validation.generic.missing` all → "This field is required. Please fill it in." (Step-2b rewrite working).
+- `/health` healthy (postgres+valkey ok) before AND after; same PID alive → reload succeeded, no import error.
+- This added ONE benign file to the master-tree dirty set (mirrors merged #280). REVERT recipe if reload ever errors: restore the original (no generic-missing block after invalid_url, dict closes with `}` at the next line).
+
+## i18n generic-missing fallback (2026-06-18, branch fix/i18n-generic-missing, PR #280, worktree /private/tmp/mesell-wt/i18n-missing off develop@0087562)
+
+### Root cause + fix (NO code change — catalog keys only)
+Required-field 422s rendered BLANK. core/errors.py:179 builds the per-field id `validation.{field}.{constraint}`
+from the raw Pydantic-v2 error `type` string (missing required field → type="missing"). resolver.py Step-2b
+(L112-122) ALREADY rewrites any `validation.{field}.{rule}` → `validation.generic.{rule}` and returns it if present
+(resolved tier — no missing_key counter bump, no WARN). The generic key for the `missing` rule (and 9 Pydantic-native
+siblings) was simply ABSENT, so it fell through to verbatim-id return = blank UI. FIX = add the keys; the resolver
+needs no edit. This is the 4th key in this blank-error class (after q.missing / auth.token_missing / size_in_ltrs.invalid_enum_value).
+
+### Keys added to messages_en.py §5A.I generic block (after validation.generic.invalid_url)
+10 keys, all 3-segment `validation.generic.<rule>` (Contract-10 clean): missing, string_too_short, string_too_long,
+int_parsing, float_parsing, string_type, greater_than_equal, less_than_equal, greater_than, less_than. These are the
+raw Pydantic-v2 `type` strings (NOT the §11/§10 bespoke names like too_short). DO NOT add 2-segment keys. The bespoke
+`.missing` keys (validation.q.missing, catalog.draft.missing, pricing.commission.missing, export.front_image.missing,
+auth.token.missing) keep resolving at Step-2 unchanged — generic.missing never diverts them (Step-2 wins before Step-2b).
+auth.token_missing (2-segment, L_iam_1 deferred) untouched — Step-2b only fires for `validation.*` ids.
+
+### Pydantic-v2 type→generic mapping reference (for future blank-error triage)
+required field absent → "missing"; str len → "string_too_short"/"string_too_long"; int/float coerce →
+"int_parsing"/"float_parsing"; wrong str type → "string_type"; numeric bounds → "greater_than[_equal]"/"less_than[_equal]".
+The enum/url/too_long/invalid_type ones pre-existed. If a NEW blank-error class shows up, grep the Pydantic `type`
+string from the raised id's last segment and add `validation.generic.<that>` — never touch resolver.py.
+
+### Verify recipe (held: worktree has no .venv)
+Toolchain = master 3.11 venv `/Users/mugunthansrinivasan/Project/mesell/backend/.venv/bin/python3.11` against worktree.
+Pass dummy required env as EXPLICIT exports (one-line `env VAR=val` form choked on `GCS_CREDENTIALS_JSON={}` → use
+multi-line backslash exports). `pytest tests/test_i18n_generic_fallback.py tests/test_resolver_fallback.py
+tests/test_section2_i18n_contract.py` = 61 passed. test_section2_i18n_contract::test_all_registry_keys_are_three_segment
+IS the Contract-10 gate (runs locally, not just CI). STATUS_BACKEND.md updated in MASTER tree (NOT in the PR commit) to
+keep production diff = messages_en.py + test file only.
+
+---
+
 ## Agent Identity
 Business-logic specialist for MeeSell. Owns service layer (ai_engine call site, image_processor, quality_engine, pricing_engine, export_service, otp_service MSG91 portion, storage) + Celery workers. Decentralized memory ecosystem.
 
@@ -2202,3 +2316,77 @@ Added to messages_en.py VALIDATION_MESSAGES after the generic block. Each rule i
 
 ### Test toolchain (worktree has NO .venv — reused recipe)
 Master 3.11 venv as toolchain: /Users/mugunthansrinivasan/Project/mesell/backend/.venv/bin/python3.11. conftest setdefaults DATABASE_URL (must end in _test)/VALKEY_URL/JWT_SECRET; pass the other ~13 REQUIRED_FIELDS as dummy env exports. **DO NOT set TEST_DATABASE_URL** — that activates the session-scoped autouse _provision_test_schema fixture which connects to Postgres (errors all tests on a laptop). Without it the fixture no-ops and pure-unit/mocked tests run. ruff at /opt/homebrew/bin/ruff. 28/28 new + 190 i18n/schema regression + 58 dto-mapper all green; DB-module suites blocked on missing tunnel only.
+
+## Price Calculator forward-estimator rework §12.M (2026-06-18, branch fix/pricing-engine-rework, PR #285, worktree /private/tmp/mesell-wt/pricing-rework off origin/develop@da588f3)
+
+### Scope (founder-ratified rework + 2 locked-doc amendments + §2.D matrix edit)
+Pricing flipped from BACK-SOLVE (enter MRP + target_margin → derive MRP) to FORWARD (enter
+meesho_price → estimate net payout). Profit/margin are OUTPUTS; target_margin_pct REMOVED.
+Commission is now a SELLER INPUT (default 4%), NOT category.get_commission — so the entire
+pricing→category cross-module edge is RETIRED (§2.D 8 ✓ → 7 ✓), CommissionMissingError DELETED,
+the 422 path gone. Negative payout = 200-WITH-ALERT, never 400/422.
+
+### The estimator (service._estimate_payout, pure Decimal ROUND_HALF_EVEN via _q)
+referral=price×commission%; shipping=bracketed flat; fee_base=referral+shipping+logistics+fixed;
+gst_on_fees=fee_base×18% (GST on FEES not MRP); tcs=price×1%; tds=price×0%;
+rto_expected_loss=return_rate%×(shipping+logistics); estimated_payout=price−Σdeductions;
+profit=payout−cost; margin_pct=profit/price; markup_pct=profit/cost (both 0-guard on zero denom).
+WDRP: wdrp_price=price−WDRP_DELTA, re-run estimator on it for estimated_payout_wdrp.
+
+### CALIBRATION (the law — ₹106 → ₹47 real scraped settlement sample)
+Constants that pass TOLERANCE=3.00: SHIPPING_FLAT=30 (low band price≤1000), SHIPPING_HIGH=70
+(price>1000), SHIPPING_BRACKET=1000, DEFAULT_LOGISTICS_FEE=10, DEFAULT_FIXED_FEE=5,
+DEFAULT_COMMISSION_PCT=4, DEFAULT_GST_PCT=18, DEFAULT_TCS_PCT=1, DEFAULT_TDS_PCT=0, WDRP_DELTA=20.
+Result: estimate(106)=46.84 (residual −0.16); WDRP 86→27.98 (residual +0.98). NOTE the spec said
+"SHIPPING_FLAT=70 bracketed" but 70 on a ₹106 item crushes payout to ~17 — so I made 70 the HIGH
+band and 30 the calibration low band (documented in the constant docstrings + PR). Algebra to
+hit a target payout: deductions = 6.0632 + 1.18×(shipping+logistics+fixed) at price 106 (the
+1.18 = 1 + gst 18%; the 6.0632 = referral 4.24 + tcs 1.06 + gst-on-referral 0.7632).
+
+### HARD RULE §12.M (6) — grep-clean gate
+transfer_price / fetch-supplier-products / supplier.meesho.com MUST be ZERO under backend/app/
+and appear ONLY in tests/modules/pricing/test_estimator_calibration.py. GOTCHA: I first wrote
+those literal tokens into service.py's HARD-RULE docstring → grep-DIRTY. Reword any app/ docstring
+to NOT contain the literal tokens (say "the scraped settlement artifacts" instead). Docs/ are
+fine (gate is app/-scoped).
+
+### Additive migration b7c2e1a9d3f4 (down_rev f31c75438e61 — was the head)
+12 nullable cols: estimated_payout, referral_commission, shipping_charge, logistics_fee,
+fixed_fee, gst_on_fees, tcs, tds, rto_expected_loss, return_rate_pct, markup_pct, wdrp_price.
+Legacy seller_price column RE-USED to store estimated_payout; legacy commission_pct RE-PURPOSED
+as the seller snapshot (no DDL change to those two). upgrade+downgrade both tested.
+
+### Test-harness gotchas (worktree has NO .venv)
+- Toolchain: master tree's 3.11 venv /Users/mugunthansrinivasan/Project/mesell/backend/.venv/bin/
+  python3.11 against worktree code; ruff at /opt/homebrew/bin/ruff.
+- DB: conftest REQUIRES a *_test DB whose name ends "_test" AND the connecting user must OWN
+  schema public (the schema-reset fixture does DROP SCHEMA public CASCADE). meesell_test was
+  owned by a different role → "must be owner of schema public". FIX: as local superuser
+  (mugunthansrinivasan, peer auth on :5432) CREATE DATABASE meesell_pricerework_test OWNER meesell;
+  then `create extension pgcrypto`. Pass TEST_DATABASE_URL=...meesell_pricerework_test + the full
+  ~20 dummy env (DATABASE_URL, VALKEY/TEST_VALKEY/CORE_TEST_VALKEY → redis://localhost:6379/15,
+  JWT_SECRET, REFRESH_TOKEN_PEPPER, MSG91_*, RAZORPAY_*, GEMINI_API_KEY, GCS_* incl
+  GCS_CREDENTIALS_JSON={}, LANGFUSE_*, AUDIT_PII_SALT, CORS_ALLOWED_ORIGINS). Drop the temp DBs
+  after.
+- E402: this repo has NO ruff config (defaults). The pricing test idiom `pytestmark = pytest.mark.X`
+  BEFORE the `from app...` import trips ruff E402. Put the import FIRST, pytestmark AFTER. (The
+  original files shipped with E402 because CI evidently doesn't ruff test files — but keep mine
+  clean.)
+- FLAKY shared-app bug (pre-existing, FIXED here): test_feature_flag.py's stub_pricing_client used
+  the module-level `app` + entered app.router.lifespan_context per test. The @rate_limit/@audit_event
+  decorators on the route touch the Valkey singleton EVEN on the 404 short-circuit; a singleton bound
+  to a prior function-loop → "Event loop is closed" → 500 on the 2nd patch-based flag test. FIX:
+  make stub_pricing_client depend on the conftest `use_live_valkey` fixture (resets+re-points the
+  singletons per function). Removing lifespan_context alone did NOT fix it (the singleton, not the
+  lifespan, was the loop-bound resource).
+
+### i18n
+4 pricing keys now: validation.price.invalid_input, pricing.alert.negative_payout,
+pricing.alert.low_margin, pricing.alert.shipping_dominates. Removed: pricing.commission.missing,
+pricing.alert.high_mrp_multiplier, pricing.alert.thin_profit. test_i18n_generic_fallback.py
+parametrizes bespoke .missing keys — had to drop pricing.commission.missing from that list.
+
+### Validation run (real output)
+70 passed (tests/modules/pricing + test_pricing_full_flow + test_i18n_generic_fallback) + 3
+(persistence). ruff clean. import-linter 27 kept/0 broken (removing pricing→category import is
+always allowed). Contracts 8/9/10 PASS. import smoke app routes 36. PR #285 → develop (NOT merged).
