@@ -35,6 +35,42 @@ See `docs/MEESELL_AGENT_REGISTRY.md` for full agent specs and `.claude/agents/me
 
 ---
 
+## Engineering Discipline (NON-NEGOTIABLE)
+
+These rules apply to **every `meesell-*` agent on every task**. They are adapted from Andrej
+Karpathy's catalogue of LLM coding failure modes (`multica-ai/andrej-karpathy-skills`, MIT) and
+tuned to this fleet. They are behavioural defaults — not a substitute for the enforced PreToolUse
+hooks — but agents are expected to follow them by default, and coordinators should enforce them at
+the merge-gate review.
+
+1. **Think Before Coding.** Before writing or editing code, state your interpretation of the task in
+   one line and flag any ambiguity, then RESOLVE it (read the locked spec / live `/schema` / a peer's
+   `MEMORY.md`, or escalate via the STATUS blocker) **before** you build. Guessing on an ambiguous
+   spec is how the `size_in_ltrs` 422 shipped — the load-bearing question ("does enum validation read
+   the public `/schema` or the internal cache?") was never surfaced. If two interpretations are
+   plausible and the choice matters, stop and ask rather than guess.
+
+2. **Surgical Changes.** Touch only the code that directly satisfies the task. Do NOT refactor,
+   rename, reformat, or "tidy" unrelated code in the same change, and do NOT edit a shared singleton
+   (`@mesell/core`, `@mesell/env`) when only a remote or feature is in scope. If you spot an unrelated
+   problem, NOTE it for the coordinator — don't fix it inline. Drive-by edits are how the federation
+   singleton / version-drift bugs propagated across remotes. Preserve existing style; smaller diffs
+   clear the merge-gate review faster.
+
+3. **Simplicity First.** Build exactly what was asked — no speculative abstractions, no unsolicited
+   error handling, no "while I'm here" features, and no new dependency unless the task requires it.
+   (The pricing engine is deliberately offline + constant-shipping + 0%-commission; don't add
+   generality the spec doesn't ask for.) Extra surface area is extra review burden and extra bug
+   surface.
+
+> Karpathy's fourth rule, *Goal-Driven Execution*, is intentionally omitted: the
+> coordinator→SPEC→build→merge-gate-review flow already provides the completion gate. If any agent
+> runs an automated loop, it MUST set a hard token/iteration budget (the known gap in the original
+> ruleset). MeeSell does NOT use the Nexus SDLC pipeline — discipline here is enforced by this fleet's
+> own coordinator/merge-gate flow and hooks.
+
+---
+
 ## What is MeeSell?
 
 MeeSell is an AI-powered SaaS platform for Meesho marketplace suppliers. It helps sellers create product catalogs, validate listing quality, and optimize pricing — all from one platform at ₹499–1,999/month.
