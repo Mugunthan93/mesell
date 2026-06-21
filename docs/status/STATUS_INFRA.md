@@ -1,8 +1,57 @@
 # STATUS — INFRASTRUCTURE
 
 **Owner:** `meesell-infra-builder`
-**Last update:** 2026-06-21 (**Codify isolated-builder memory-persistence rule + land stranded auth-builder L_iam_1 learning (PR #361, squash `1951199`, develop HEAD `1951199`).** Two edits, one PR: (1) `docs/dev/WORKTREE_ISOLATION.md` new "Persisting an isolated builder's memory" section — isolated worktree builders can't write their own MEMORY.md/docs/status (boundary-blocked) so the dispatching coordinator transcribes the builder's REPORTED learning as a sanctioned NARROW scribe-exception to CLAUDE.md rule #4; (2) appended the stranded auth-builder L_iam_1 learning (core/auth 2→3-segment i18n migration, PR #359) via git-plumbing, additions-only. Master tree FF-synced + clean. Board sweep flagged several ≥7-day-untouched rows as external-gate holds (not stalls). ₹0. See UPDATE block below. PRIOR: **MS-4 Sub-Plan F — svc-category INFRA lane AUTHORED + offline-VALIDATED (₹0, dev-only).** 8 files on `feature/microservices-category/infra` (tip `e1b890a`). Recipe blend: AI-bearing (svc-image: GEMINI + LANGFUSE_SECRET) + api-only (svc-pricing/customer — NO worker). **CRITICAL grants in schema-role.sql:** `CREATE SCHEMA category` + `category_user` owns schema (for the c4f1e7a9d302 schema-move + Alembic) + the cross-schema `GRANT INSERT ON public.audit_events` (AI cost ledger F3.c). Valkey budget-keyspace carve-out HONORED (`ai:*` global/un-prefixed DB 0; category cache `category:`-prefixed DB 3). TLS `api-tls`. NO razorpay/msg91. New SM secret `dev-category-db-password` (→founder). Cluster /32-firewalled → 27 yaml assertions + SQL grant check + secret-scan PASS; server dry-run + dev smoke deferred (§15 F3). **I push + report; backend-coordinator runs the infra→integration merge gate.** See MS-4 Sub-Plan F UPDATE below.)
+**Last update:** 2026-06-21 (**Add `/api` reverse-proxy to the static `:4200` dev shell — `serve.js` + `meesell_env.py` (UI/UX audit PR #367 fix). 2 files, stdlib `http` only, zero new deps, surgical (static-SPA serving untouched, proxy OFF by default). Proxies `/api`+`/health`+`/docs`+`/openapi.json` → backend (slot 0 = `:8000`); shell-only (MFEs serve static). VERIFIED LIVE via curl (GET /api/v1/auth/me → 401 backend JSON, OTP POST → 429 backend JSON, all 7 MFE remoteEntry 200, static / → 200 html). Branch `feature/dev-proxy/infra`→develop, FOUNDER-GATED. Stack LEFT RUNNING on http://localhost:4200 for re-audit. ₹0. See UPDATE block below. PRIOR: Codify isolated-builder memory-persistence rule + land stranded auth-builder L_iam_1 learning (PR #361, squash `1951199`, develop HEAD `1951199`).** Two edits, one PR: (1) `docs/dev/WORKTREE_ISOLATION.md` new "Persisting an isolated builder's memory" section — isolated worktree builders can't write their own MEMORY.md/docs/status (boundary-blocked) so the dispatching coordinator transcribes the builder's REPORTED learning as a sanctioned NARROW scribe-exception to CLAUDE.md rule #4; (2) appended the stranded auth-builder L_iam_1 learning (core/auth 2→3-segment i18n migration, PR #359) via git-plumbing, additions-only. Master tree FF-synced + clean. Board sweep flagged several ≥7-day-untouched rows as external-gate holds (not stalls). ₹0. See UPDATE block below. PRIOR: **MS-4 Sub-Plan F — svc-category INFRA lane AUTHORED + offline-VALIDATED (₹0, dev-only).** 8 files on `feature/microservices-category/infra` (tip `e1b890a`). Recipe blend: AI-bearing (svc-image: GEMINI + LANGFUSE_SECRET) + api-only (svc-pricing/customer — NO worker). **CRITICAL grants in schema-role.sql:** `CREATE SCHEMA category` + `category_user` owns schema (for the c4f1e7a9d302 schema-move + Alembic) + the cross-schema `GRANT INSERT ON public.audit_events` (AI cost ledger F3.c). Valkey budget-keyspace carve-out HONORED (`ai:*` global/un-prefixed DB 0; category cache `category:`-prefixed DB 3). TLS `api-tls`. NO razorpay/msg91. New SM secret `dev-category-db-password` (→founder). Cluster /32-firewalled → 27 yaml assertions + SQL grant check + secret-scan PASS; server dry-run + dev smoke deferred (§15 F3). **I push + report; backend-coordinator runs the infra→integration merge gate.** See MS-4 Sub-Plan F UPDATE below.)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
+
+## UPDATE — 2026-06-21 — mesell-dev-proxy-infra-session-1 — add /api reverse-proxy to the static :4200 dev shell (serve.js + meesell_env.py)
+
+=== STEP 1: dev-shell reverse-proxy (UI/UX audit PR #367 fix) ===
+Phase: NOT a playbook §-resource op (no VM/K3s/ns/Postgres/Valkey/ingress/secret/cost change).
+       Dev-environment tooling I own (Scope IN: scripts + the dev-shell `serve.js` wired into
+       `tools/meesell_env.py`). Rules followed: Engineering Discipline #2 (Surgical Changes — proxy
+       added without altering static-SPA serving) + #3 (Simplicity First — Node stdlib `http` only,
+       zero new deps, proxy OFF by default so smoke-gate callers are unchanged).
+Session: mesell-dev-proxy-infra-session-1
+Branch: feature/dev-proxy/infra cut from origin/develop `1b71f91` (isolated worktree). → develop PR,
+       FOUNDER-GATED (do NOT merge — founder/master merges the develop PR).
+Problem: the static `:4200` shell (`frontend/tools/boot-smoke/serve.js`, used by
+       `meesell_env.py baseline`) had NO `/api` reverse-proxy. The federated app runs in the :4200
+       origin and makes RELATIVE API calls (`${apiBase=''}/api/v1/...`), which the static server
+       answered with index.html (SPA fallback) → OTP login could not complete and every authed
+       screen silently degraded.
+Investigation: every FE HTTP call is `apiBase('')+/api/v1/...` (verified — `libs/core/services/
+       auth-api.service.ts` constants + `ApiClient.withBase`; auth/OTP path = `/api/v1/auth/otp/send`).
+       grep confirmed NO root-level `/auth` `/health` `/docs` app calls. Existing `frontend/
+       proxy.conf.json` (ng-serve) proxies `/api` → `http://localhost:8000`. Backend for slot N =
+       `8000+N*10`; slot 0 = `:8000`.
+Done:
+  - `frontend/tools/boot-smoke/serve.js` — added reverse-proxy (stdlib `http.request` + `req.pipe`
+    /response pipe, method+headers+body+query preserved). Proxied prefixes: `/api`, `/health`,
+    `/docs`, `/openapi.json` (only `/api` is load-bearing; rest defensive for manual probing). The
+    proxy decision runs FIRST in `serve()`, before OPTIONS/static, and ONLY when a backend target is
+    supplied (3rd CLI arg OR `MEESELL_BACKEND` env) — proxy OFF by default → byte-identical static
+    behavior for existing callers. Non-API paths keep the exact SPA fallback. 502 JSON on upstream error.
+  - `tools/meesell_env.py` — `serve_static(... backend_port=None)`; the SHELL call sites in `cmd_up`
+    (slot's own backend if backend-touched, else baseline `:8000`) and `cmd_baseline` (`:8000`) pass
+    the port; MFE remotes pass nothing (no API calls → no proxy). Additive; no other command changed.
+Validation: `python3 -c ast.parse` (meesell_env.py OK) + `node --check serve.js` OK + `baseline up
+       --stub` shows shell `(proxy -> http://127.0.0.1:8000)` and all 7 MFEs with NO proxy note.
+Bring-up: restarted ONLY the shell on :4200 with the patched serve.js against the existing baseline
+       dist (preserving the slot-0 `federation.manifest.json` → :4201-4207); did NOT rebuild MFEs
+       (RAM tight). Startup log: `[proxy /api|/health|/docs|/openapi.json → http://127.0.0.1:8000]`.
+Verify (curl, LIVE): GET `/`+`/dashboard` → 200 text/html (static unchanged); GET :4200`/api/v1/auth/me`
+       → 401 application/json (real FastAPI body w/ request_id == direct :8000, NOT index.html); GET
+       :4200`/health` → 200 backend JSON; ONE OTP POST :4200`/api/v1/auth/otp/send` → 429
+       `rate_limit.exceeded` JSON (proves POST+body proxied to FastAPI; the 3/3600s window was already
+       consumed per the audit — single shot only, no re-probe); all 7 MFE remoteEntry.json (:4201-4207)
+       still 200. Stack LEFT RUNNING on http://localhost:4200 for the re-audit.
+Board sweep (session start + end): no NEW row crosses the 7-day-untouched line beyond those already
+       flagged 2026-06-21 (auth-otp 06-11, mfe-cutover 06-11, microservices-* 06-12/13/14) — all are
+       external-gate holds (founder cost/spend gates, cluster-firewalled deploy-time gates), not stalls.
+Cost: ₹0/mo — dev-tooling only, no cluster/cloud/secret change.
+Next: founder merges the develop PR; re-audit targets http://localhost:4200.
+=========
 
 ## UPDATE — 2026-06-21 — mesell-isolation-memory-rule-infra-session-1 — codify isolated-builder memory-persistence rule + land stranded auth-builder L_iam_1 learning
 
