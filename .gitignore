@@ -39,6 +39,8 @@ skills-lock.json
 .nexus/.build.lock
 .nexus/serve-*.log
 .nexus/backend-*.log
+.nexus/build-*.log
+.nexus/build-history.jsonl
 .nexus/shell-dist-slot-*/
 # Per-env runtime federation manifest is GENERATED into the served dist root.
 # dist/ is already ignored above, but guard the source copy too if ever staged there:
