@@ -976,6 +976,19 @@ jobs:
         # No pnpm install — scanners are dependency-free Node ESM (node:fs + node:path).
         run: node tools/contracts/run-all.mjs --strict
 
+      - name: Federation auth-singleton config guard (FED-1)
+        working-directory: frontend
+        # FED-1: asserts the @mesell/* shared-singleton config is UNIFORM across the shell
+        # and every remote — i.e. shared.config.js pins each cross-boundary lib (singleton +
+        # version), each pinned lib's package.json carries that version (mappingVersion reads
+        # it), and EVERY apps/*/federation.config.js both spreads `...mesellShared` after
+        # shareAll AND sets `features.mappingVersion: true`. Without mappingVersion the version
+        # pin is INERT → NF emits version='' for @mesell/core → a second AuthService instance in
+        # the remote → token=null → shell→remote navigation bounces the user to /login (the #328
+        # "shell→remote logout" class; recurred when mfe-billing was added without the pin).
+        # Catches that drift at config-review time, before any build. Dependency-free Node ESM.
+        run: node tools/contracts/federation_singleton_guard.mjs
+
   # =============================================================================
   # BUILD — Docker images via Cloud Build
   # FOUNDER RULING 2026-06-12: dev deploys fire from develop; main is reserved for staging/prod

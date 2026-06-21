@@ -9585,3 +9585,45 @@ Next: Coordinator merge-gate review (§6 checklist).
 Hand-offs: DashboardComponent adopts mee-page; landing.component.ts 100% unchanged.
            ui-styler owns 3-breakpoint pixel-diff (H3 flex-gap, H2 stat-grid mobile 2-up, H1 banner full-bleed).
 =========
+
+=== UPDATE: 2026-06-21 22:50 ===
+Phase: federation auth-singleton (shell→remote logout) — root-cause + regression guard
+Session: mesell-fed-auth-singleton-frontend-session-1
+Board sweep: 1 row added (fed-auth-singleton, IN PROGRESS→IN REVIEW on PR open); inter-lead requests
+  open = 8 (all pre-existing infra-side MF hosting rows, untouched). NO rows untouched-7d newly flagged
+  beyond the long-standing infra MF-hosting set already on the board (cutover-week carried).
+Done:
+ - ROOT-CAUSE (empirical, not assumed): the federation config layer is ALREADY CORRECT on develop.
+   shared.config.js pins @mesell/{core,env,ui-kit,composites} at version 1.0.0 (singleton+strictVersion);
+   every apps/*/federation.config.js spreads ...mesellShared AFTER shareAll AND sets
+   features.mappingVersion:true; every pinned lib package.json carries version:1.0.0. Fixes #328
+   (version pin) + #332 (mappingVersion) + #346 (hoist) are all on develop.
+ - BUILD PROOF: built shell + ALL 7 remotes FRESH in isolated meesell-env slot 1 (shell :4210,
+   remotes :4211-4217). Every freshly-built remoteEntry.json (shell + 7 remotes) emits
+   @mesell/core version="1.0.0" (uniform). NF 3.5.5 dedups shared deps by import-map key
+   packageName@version (verified in @softarc/native-federation-runtime getExternalKey) — uniform
+   version ⇒ ONE _mesell_core.js URL ⇒ ONE AuthService instance. requiredVersion="" / strictVersion=false
+   in the emitted output are NF-internal artifacts for tsconfig-path libs and DO NOT affect the
+   version-keyed dedup (confirmed against @angular/core which dedups fine with the same shape).
+ - BROWSER PROOF (the founder's exact repro DID NOT REPRODUCE): OTP login 000000 → navigated
+   shell→/catalogs (mfe-catalog), /catalogs/new, /billing/plans (mfe-billing), /profile
+   (mfe-onboarding) + landing/auth = 6 distinct remotes. HAR: POST /auth/otp/send 202, POST
+   /auth/otp/verify 200, GET /auth/me 200 with ZERO 401s, ZERO 3xx redirects, ZERO /auth/refresh
+   storm, ZERO bounce to /login. Even a direct hard-load of /catalogs re-hydrated and stayed authed.
+   Screenshots → /tmp/fed-auth/01..06.
+ - VERDICT: "persists on develop" = STALE BUNDLES / stale-manifest-port, NOT a live config defect.
+   The honest fix is NOT to invent a config change (Surgical/Simplicity discipline) — it is to add a
+   regression GUARD that makes the drift class detectable before it ships.
+ - FIX (surgical, additive): new frontend/tools/contracts/federation_singleton_guard.mjs (FED-1) +
+   CI step in the existing "FE Gate" job + `pnpm check:fed-singleton`. Asserts shared.config.js pin,
+   per-lib package.json version match, and that EVERY apps/*/federation.config.js spreads
+   ...mesellShared after shareAll AND sets mappingVersion:true. Negative-tested: catches mappingVersion
+   removal (even with the rationale comment present), the missing ...mesellShared spread, and lib
+   version drift. 0 violations on current develop. Zero changes to app code / federation configs /
+   AuthService.
+In progress: none.
+Blockers: none.
+Next: PR feature/fed-auth-singleton/frontend → develop (DO NOT MERGE — per dispatch); Director review.
+Hand-offs: none new. Carries the standing infra MF-hosting rows (CDN must serve identical _mesell_core.js
+   URL to shell + all remotes at cutover — the prod analogue of this static guard).
+=========
