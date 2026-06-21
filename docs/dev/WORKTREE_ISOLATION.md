@@ -94,6 +94,35 @@ cd /tmp/mesell-wt/<slug>-<group>   # all specialist work happens here
 
   Stale worktrees waste disk and add to RAM/build confusion — prune them.
 
+## Persisting an isolated builder's memory
+
+An isolated builder (`isolation: "worktree"`) runs with its working directory pinned to the
+worktree. Its own memory directory (`.claude/agent-memory/<builder>/MEMORY.md`) and the status
+surfaces (`docs/status/*`) live **OUTSIDE** that worktree, so every `Write`/`Edit` against them is
+**boundary-blocked**. Consequence: an isolated builder **cannot append its own memory** — its
+learnings would otherwise be stranded (this gap was found during the loop demo).
+
+So an isolated builder must **REPORT its learning back** instead of writing it.
+
+> **Rule:** after an isolated build, the **dispatching coordinator** (which is non-isolated)
+> persists the builder's REPORTED learning into that builder's own
+> `.claude/agent-memory/<builder>/MEMORY.md`.
+
+This is a **sanctioned NARROW exception** to CLAUDE.md MeeSell ecosystem rule #4 ("no agent writes
+to another agent's memory"). The exception is tightly bounded:
+
+- The coordinator acts as a **scribe transcribing the builder's own reported content** — it is
+  **not authoring new memory** and must not editorialize, summarize away substance, or invent
+  learnings the builder did not report.
+- **The builder's report is the source of truth.** If the report and the memory ever disagree, the
+  report wins; the coordinator's transcription is corrected to match.
+- The transcription follows the builder's existing memory format (see
+  `MEMORY_INDEX_CONVENTION.md` for the index + detail-file convention) and is additions-only —
+  the coordinator never alters the builder's prior entries.
+
+Cross-reference: `MEMORY_INDEX_CONVENTION.md` (memory index format) and `SESSION_ISOLATION.md`
+(why the worktree boundary exists in the first place).
+
 ## Relationship to the dispatch protocol
 
 This rule layers onto the HYBRID dispatch rule (CLAUDE.md MeeSell ecosystem rule 7): in
