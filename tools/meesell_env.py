@@ -819,20 +819,27 @@ def write_env_manifest(dist_root: Path, manifest: dict) -> None:
     info(f"wrote per-env manifest -> {target}")
 
 
-def serve_static(root: Path, dist_root: Path, port: int, *, stub: bool) -> int | None:
+def serve_static(root: Path, dist_root: Path, port: int, *, stub: bool,
+                 backend_port: int | None = None) -> int | None:
     serve_js = root / SERVE_JS_REL
     if not serve_js.exists():
         die(f"serve.js not found at {serve_js}")
+    # Only the SHELL passes backend_port: it hosts the federated app, which makes
+    # relative /api/v1/* calls, so serve.js reverse-proxies those to the backend.
+    # MFE remotes serve only static remoteEntry chunks (no API calls) -> no proxy.
+    backend = f"http://127.0.0.1:{backend_port}" if backend_port else None
     if stub:
-        info(f"[stub] would serve {dist_root} on :{port}")
+        proxy_note = f" (proxy -> {backend})" if backend else ""
+        info(f"[stub] would serve {dist_root} on :{port}{proxy_note}")
         return None
     log = NEXUS_DIR / f"serve-{port}.log"
     fh = open(log, "w")
-    proc = subprocess.Popen(
-        ["node", str(serve_js), str(dist_root), str(port)],
-        stdout=fh, stderr=subprocess.STDOUT,
-    )
-    info(f"serving {dist_root} on :{port} (pid {proc.pid}, log {log})")
+    cmd = ["node", str(serve_js), str(dist_root), str(port)]
+    if backend:
+        cmd.append(backend)
+    proc = subprocess.Popen(cmd, stdout=fh, stderr=subprocess.STDOUT)
+    proxy_note = f" (proxy -> {backend})" if backend else ""
+    info(f"serving {dist_root} on :{port} (pid {proc.pid}, log {log}){proxy_note}")
     return proc.pid
 
 
@@ -1017,8 +1024,14 @@ def cmd_up(args) -> None:
         for k, v in manifest.items():
             info(f"[stub]   {k} -> {v}")
 
-    # 7. Serve shell.
-    pid = serve_static(root, shell_dist, block["shell"], stub=stub)
+    # 7. Serve shell — with a backend proxy target so the federated app's relative
+    #    /api/v1/* calls reach the backend. Target = this env's backend if touched,
+    #    else the baseline backend (slot 0). Computed here so the shell can proxy.
+    backend_touched = is_backend_touched(root, branch)
+    shell_backend_port = (block["backend"] if backend_touched
+                          else baseline_block["backend"])
+    pid = serve_static(root, shell_dist, block["shell"], stub=stub,
+                       backend_port=shell_backend_port)
     if pid:
         procs["shell"] = {"pid": pid, "port": block["shell"]}
 
@@ -1030,7 +1043,6 @@ def cmd_up(args) -> None:
             procs[name] = {"pid": pid, "port": block["mfes"][name]}
 
     # 9. Backend: only if touched; else point at baseline backend.
-    backend_touched = is_backend_touched(root, branch)
     if backend_touched:
         pid = serve_backend(root, block["backend"], stub=stub)
         if pid:
@@ -1133,7 +1145,9 @@ def cmd_baseline(args) -> None:
         write_env_manifest(shell_dist, manifest)
 
     procs: dict[str, dict] = {}
-    pid = serve_static(root, shell_dist, block["shell"], stub=stub)
+    # Shell proxies the baseline app's relative /api/v1/* calls to the slot-0 backend.
+    pid = serve_static(root, shell_dist, block["shell"], stub=stub,
+                       backend_port=block["backend"])
     if pid:
         procs["shell"] = {"pid": pid, "port": block["shell"]}
     for name in all_mfes:
