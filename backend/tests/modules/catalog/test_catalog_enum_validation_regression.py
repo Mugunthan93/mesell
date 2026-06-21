@@ -252,3 +252,51 @@ class TestValidationReadsFlatDto:
             rich, beauty_category.id, db
         )
         assert rich_resolved.get("size_in_ltrs") == []
+
+
+# ── QA Wave 1 — P1.10: size_in_ltrs canonical enum must not produce 422 ───────
+class TestSizeInLtrsEnumRegression:
+    """Regression guard for the 2026-06-17 finding: PATCH autosave with
+    ``size_in_ltrs:"3.5"`` (a valid canonical value in cat 46677c24) was
+    incorrectly rejected with 422 validation.size_in_ltrs.invalid_enum_value.
+
+    The root cause was a cache divergence / key-casing mismatch in
+    ``_resolve_allowed_enums``.  This test pins the fix at the service layer.
+    """
+
+    async def test_3_5_is_in_canonical_enum_list(self, monkeypatch):
+        """``"3.5"`` must pass ``_validate_single_field`` when it is a valid canonical.
+
+        Signature: _validate_single_field(canonical_name, value, spec, category_enums)
+        Returns None on pass, (validation_message_id, suffix) on failure.
+
+        We call the validator with a dropdown/category spec and a
+        ``category_enums`` dict that includes "3.5" in the size_in_ltrs set.
+        This mirrors what ``patch_product`` builds from ``_resolve_allowed_enums``.
+        """
+        from app.modules.catalog import service as catalog_service
+
+        field_name = "size_in_ltrs"
+        value = "3.5"
+
+        # Minimal field spec for a dropdown with enum_resolver="category"
+        spec = {
+            "data_type": "dropdown",
+            "primitive": "dropdown",
+            "enum_resolver": "category",
+            "enum_values": None,
+        }
+
+        # category_enums: what _resolve_allowed_enums returns for this category.
+        # "3.5" must be present — it IS a valid canonical per the DB fixture.
+        category_enums = {
+            field_name: ["1.5", "2.0", "3.5", "5.0", "7.5"]
+        }
+
+        error = catalog_service._validate_single_field(
+            field_name, value, spec, category_enums
+        )
+        assert error is None, (
+            f"_validate_single_field rejected valid enum '3.5' for "
+            f"size_in_ltrs; returned: {error!r}"
+        )

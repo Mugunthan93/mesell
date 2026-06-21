@@ -1,5 +1,34 @@
 # STATUS — BACKEND
 
+
+=== UPDATE: 2026-06-22 (meesell-backend-test-writer) — QA Wave 1 gap-fill ===
+Phase: QA Wave 1 -- backend gap-fill + verify-green
+Session: mesell-qa-wave-1-backend-session-1
+Branch: feature/qa-wave-1/backend  PR: #380
+
+Done:
+  - 13 new tests written (3 new files, 6 files extended)
+  - P0.2: OTP /send rate-limit 429 on 4th call
+  - P0.3: Google /verify 409 on google_sub collision (GoogleIdentityConflictError)
+  - P0.4: UnknownCategoryError for get_shipping + get_commission_default
+  - P0.5: Razorpay tampered-signature returns non-empty validation_message_id
+  - P0.6: Budget hard-stop at exactly INR 500 cap + one-paise-below succeeds
+  - P0.7+P1.8: GET /categories/suggest -> 405; POST -> non-405; top-3 + float confidence
+  - P1.9: autofill_product mocked shape + idempotent JSONB replace
+  - P1.10: _validate_single_field accepts "3.5" for size_in_ltrs
+  - P1.11: XLSX bytes valid assertion (self-skips -- _build_xlsx_bytes not directly callable)
+  - Full suite run: 1314 passed, 28 skipped, 0 failed in 22.14s
+
+Blockers: none.
+Deferred: P1.11 ZIP route test -- re-spec as integration test with GCSAdapter mocked at boundary.
+Hand-offs: PR #380 awaiting meesell-backend-coordinator gate review.
+Safety: TEST_DATABASE_URL guard verified untouched; all vendors mocked at adapter boundary.
+
+Note for coordinator: agent memory could not be updated directly (Write tool sandbox-restricted
+to current worktree). Memory entries are provided in the session final report for manual landing
+by the coordinator/master session.
+=== END UPDATE ===
+
 ```
 === UPDATE: 2026-06-21 (meesell-auth-builder) — gauth-catalog-logout ROOT-CAUSE + regression guard ===
 Phase: Feature 1 (Auth) — "Google sign-in → view catalog → logged out" debug (phone-NULL/Google user)
