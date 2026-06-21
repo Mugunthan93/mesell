@@ -191,18 +191,19 @@ def test_per_field_id_with_unknown_rule_falls_through_to_verbatim(
     ]
 
 
-# ── auth.token_missing: locked L_iam_1 verbatim behaviour is UNCHANGED ───────
-def test_auth_token_missing_unchanged_verbatim_l_iam_1() -> None:
-    """``auth.token_missing`` is NOT a 3-segment key and is NOT generic-family.
+# ── L_iam_1 RESOLVED: 3-segment auth.token.missing resolves to human copy ────
+def test_auth_token_missing_resolves_human_l_iam_1_closed() -> None:
+    """``auth.token.missing`` (3-segment) resolves to the human catalog string.
 
-    Per the locked L_iam_1 deferral (see ``resolver._DEFERRED_DEBUG_MISSING_KEYS``)
-    the 2-segment auth ids remain verbatim-at-DEBUG. This fix does NOT change
-    that — adding the key to the 3-segment-locked catalog would break §5A.H
-    Contract 10. See the PR deviation note.
+    L_iam_1 is closed: ``core/auth.py`` now raises the 3-segment ids that exist
+    in ``messages_en``, so the resolver returns the human copy instead of the
+    verbatim id. The legacy 2-segment ``auth.token_missing`` is no longer raised
+    anywhere and is intentionally absent from the catalog.
     """
+    assert "auth.token.missing" in VALIDATION_MESSAGES
+    assert resolve("auth.token.missing") == VALIDATION_MESSAGES["auth.token.missing"]
+    # The legacy 2-segment form is gone from the runtime and the catalog.
     assert "auth.token_missing" not in VALIDATION_MESSAGES
-    # Step-2b only fires for ``validation.*`` ids, so auth ids are untouched.
-    assert resolve("auth.token_missing") == "auth.token_missing"
 
 
 # ── existing q.missing key is unchanged (no duplicate, still resolves) ──────

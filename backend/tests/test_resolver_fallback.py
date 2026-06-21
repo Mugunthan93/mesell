@@ -90,37 +90,36 @@ def test_unregistered_locale_falls_back_to_en() -> None:
     assert resolve(known, locale="fr") == VALIDATION_MESSAGES[known]
 
 
-# ── L_iam_1 known-deferred auth ids: DEBUG-not-WARNING noise suppression ─────
+# ── L_iam_1 RESOLVED: core/auth.py now raises 3-segment auth ids ─────────────
 @pytest.mark.parametrize(
-    "deferred_id",
-    ["auth.token_missing", "auth.token_expired", "auth.user_not_found"],
+    "auth_id",
+    ["auth.token.missing", "auth.token.expired", "auth.user.not_found"],
 )
-def test_deferred_auth_id_logs_debug_not_warning(
-    deferred_id: str,
+def test_auth_ids_resolve_to_human_strings(
+    auth_id: str,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """L_iam_1 2-segment auth ids log at DEBUG, not WARNING.
+    """The 3-segment auth ids raised by ``core/auth.py`` resolve to human copy.
 
-    Behaviour (verbatim fallback) is UNCHANGED — the id is still returned —
-    only the log level changes so the per-401 noise is silenced while
-    L_iam_1 is deferred. These ids are intentionally absent from the
-    3-segment-locked catalog.
+    Closes L_iam_1: ``core/auth.py`` migrated from 2-segment legacy ids
+    (``auth.token_missing``) to the 3-segment catalog ids
+    (``auth.token.missing``) that exist in ``messages_en``. The resolver now
+    returns the human string — NOT the verbatim id — and emits NO missing_key
+    line. The 2-segment deferral allowlist was deleted in lock-step.
     """
-    assert deferred_id not in VALIDATION_MESSAGES
+    assert auth_id in VALIDATION_MESSAGES
     with caplog.at_level(logging.DEBUG, logger="app.i18n.resolver"):
-        result = resolve(deferred_id, locale="en")
-    # Verbatim fallback unchanged.
-    assert result == deferred_id
-    # The missing_key line is present...
-    missing_records = [
+        result = resolve(auth_id, locale="en")
+    # Resolved to the human catalog string, NOT the verbatim id.
+    assert result == VALIDATION_MESSAGES[auth_id]
+    assert result != auth_id
+    # No missing_key telemetry for a registered key.
+    assert not [
         r
         for r in caplog.records
         if "i18n.resolver.missing_key" in r.getMessage()
-        and deferred_id in r.getMessage()
+        and auth_id in r.getMessage()
     ]
-    assert missing_records, "expected a missing_key log line for the deferred id"
-    # ...and every such line is at DEBUG, never WARNING.
-    assert all(r.levelno == logging.DEBUG for r in missing_records)
 
 
 def test_real_missing_key_still_warns(
