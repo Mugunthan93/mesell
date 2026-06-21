@@ -111,12 +111,73 @@ describe('AuthService — setSession / logout / getToken', () => {
   });
 
   it('logout clears token and user', () => {
-    const { service } = setup();
+    const { service, controller } = setup();
     service.setSession('tok', { phone: '+91x' });
     service.logout();
+    // Consume the fire-and-forget revoke POST so controller.verify() passes.
+    controller.match('/api/v1/auth/logout').forEach((r) =>
+      r.flush(null, { status: 200, statusText: 'OK' }),
+    );
     expect(service.getToken()).toBeNull();
     expect(service.isAuthenticated()).toBe(false);
     expect(service.currentUser()).toBeNull();
+  });
+});
+
+// ── logout() — cookie-revoke + navigation (QA-wave-1 regression) ─────────────
+//
+// Regression tests for the logout fix: logout() must call POST /auth/logout
+// (fire-and-forget cookie revoke) AND navigate to /login.
+// Previously logout() only nulled in-memory state — the HttpOnly refresh cookie
+// survived and bootstrap/refresh re-authenticated the session silently.
+
+describe('AuthService.logout() — cookie-revoke + navigate (QA-wave-1 regression)', () => {
+  it('calls POST /api/v1/auth/logout (withCredentials) as fire-and-forget', () => {
+    const { service, controller } = setup();
+    service.setSession('tok', { phone: '+91x' });
+
+    service.logout();
+
+    const logoutReqs = controller.match('/api/v1/auth/logout');
+    expect(logoutReqs.length).toBe(1);
+    expect(logoutReqs[0].request.method).toBe('POST');
+    // withCredentials=true is required so the browser sends the HttpOnly refresh cookie.
+    expect(logoutReqs[0].request.withCredentials).toBe(true);
+    logoutReqs[0].flush(null, { status: 200, statusText: 'OK' });
+  });
+
+  it('navigates to /login immediately regardless of server revoke success/failure', () => {
+    const { service, controller, router } = setup();
+    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+    service.setSession('tok', { phone: '+91x' });
+    service.logout();
+
+    // Consume the revoke POST (fire-and-forget — the test does not care about outcome).
+    controller.match('/api/v1/auth/logout').forEach((r) =>
+      r.flush(null, { status: 200, statusText: 'OK' }),
+    );
+
+    expect(navigateSpy).toHaveBeenCalledOnce();
+    expect(navigateSpy).toHaveBeenCalledWith(['/login']);
+  });
+
+  it('navigates even when the server revoke returns 401 (cookie already expired)', () => {
+    const { service, controller, router } = setup();
+    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+    service.setSession('tok', { phone: '+91x' });
+    service.logout();
+
+    // Simulate 401 from server — local logout must still complete.
+    controller.match('/api/v1/auth/logout').forEach((r) =>
+      r.flush({ detail: 'Unauthorized' }, { status: 401, statusText: 'Unauthorized' }),
+    );
+
+    expect(navigateSpy).toHaveBeenCalledOnce();
+    expect(navigateSpy).toHaveBeenCalledWith(['/login']);
+    expect(service.getToken()).toBeNull();
+    expect(service.isAuthenticated()).toBe(false);
   });
 });
 
@@ -188,6 +249,11 @@ describe('AuthService.scheduleRefresh()', () => {
 
     vi.advanceTimersByTime(60_000); // advance past the fire point
     controller.expectNone('/api/v1/auth/refresh');
+
+    // Consume the fire-and-forget revoke POST so controller.verify() passes.
+    controller.match('/api/v1/auth/logout').forEach((r) =>
+      r.flush(null, { status: 200, statusText: 'OK' }),
+    );
 
     controller.verify();
     vi.useRealTimers();
@@ -642,13 +708,17 @@ describe('AuthService.refreshShared() — single-flight gate', () => {
 
 describe('AuthService.forceLogout() — logout-once guard', () => {
   it('first call clears token + user and navigates to /login', () => {
-    const { service, router } = setup();
+    const { service, controller, router } = setup();
     const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
 
     service.setSession('tok', { phone: '+91x' });
     expect(service.isAuthenticated()).toBe(true);
 
     service.forceLogout();
+    // Consume the fire-and-forget revoke POST (forceLogout now calls authApi.logout()).
+    controller.match('/api/v1/auth/logout').forEach((r) =>
+      r.flush(null, { status: 200, statusText: 'OK' }),
+    );
 
     expect(service.getToken()).toBeNull();
     expect(service.isAuthenticated()).toBe(false);
@@ -658,19 +728,24 @@ describe('AuthService.forceLogout() — logout-once guard', () => {
   });
 
   it('subsequent calls are no-ops — navigate called ONLY ONCE no matter how many times called', () => {
-    const { service, router } = setup();
+    const { service, controller, router } = setup();
     const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
 
     service.setSession('tok', { phone: '+91x' });
-    service.forceLogout(); // first call — navigates
-    service.forceLogout(); // no-op
-    service.forceLogout(); // no-op
+    service.forceLogout(); // first call — navigates (fires revoke POST)
+    service.forceLogout(); // no-op (guard blocks)
+    service.forceLogout(); // no-op (guard blocks)
+
+    // Only one revoke POST was fired (on the first call; subsequent calls are no-ops).
+    controller.match('/api/v1/auth/logout').forEach((r) =>
+      r.flush(null, { status: 200, statusText: 'OK' }),
+    );
 
     expect(navigateSpy).toHaveBeenCalledOnce(); // NOT 3 times
   });
 
   it('setSession re-arms the guard so forceLogout works again after re-login', () => {
-    const { service, router } = setup();
+    const { service, controller, router } = setup();
     const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
 
     service.setSession('tok-1', { phone: '+91x' });
@@ -679,6 +754,11 @@ describe('AuthService.forceLogout() — logout-once guard', () => {
     // Re-login
     service.setSession('tok-2', { phone: '+91x' });
     service.forceLogout(); // second login window → logout
+
+    // Consume both revoke POSTs.
+    controller.match('/api/v1/auth/logout').forEach((r) =>
+      r.flush(null, { status: 200, statusText: 'OK' }),
+    );
 
     // Both logins produced exactly one navigate each = 2 total
     expect(navigateSpy).toHaveBeenCalledTimes(2);
@@ -724,6 +804,11 @@ describe('AuthService._doSilentRefresh() — refresh-401 → forceLogout (D-C fi
     expect(service.isAuthenticated()).toBe(false);
     expect(navigateSpy).toHaveBeenCalledOnce();
     expect(navigateSpy).toHaveBeenCalledWith(['/login']);
+
+    // forceLogout() now fires a best-effort revoke POST — consume it.
+    controller.match('/api/v1/auth/logout').forEach((r) =>
+      r.flush(null, { status: 200, statusText: 'OK' }),
+    );
 
     controller.verify();
     vi.useRealTimers();
@@ -896,10 +981,14 @@ describe('AuthService — entitlement() computed (Wave 3 billing widening)', () 
   });
 
   it('resets to "free" on logout', () => {
-    const { service } = setup();
+    const { service, controller } = setup();
     service.setSession('tok', { phone: '+91x', entitlement: 'pro' });
     expect(service.entitlement()).toBe('pro');
     service.logout();
+    // Consume the fire-and-forget revoke POST so controller.verify() passes.
+    controller.match('/api/v1/auth/logout').forEach((r) =>
+      r.flush(null, { status: 200, statusText: 'OK' }),
+    );
     expect(service.entitlement()).toBe('free');
   });
 

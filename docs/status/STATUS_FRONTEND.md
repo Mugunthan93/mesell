@@ -1,7 +1,62 @@
 # STATUS — FRONTEND
 
 **Owner:** meesell-frontend-coordinator (master session)
-**Last update:** 2026-06-21
+**Last update:** 2026-06-22
+
+=== UPDATE: 2026-06-22 02:10 (QA-wave-1 service lane COMMIT 1) ===
+Phase: feature/qa-wave-1/testids-logout/frontend — logout cookie-revoke bug fix
+Branch: feature/qa-wave-1/testids-logout/frontend (worktree .claude/worktrees/agent-a6b0cbd5e0ca009d6)
+Agent: meesell-angular-service-builder (COMMIT 1 of 2; component-builder adds commit 2)
+
+Done:
+  LOGOUT BUG FIX — auth.service.ts logout():
+    - Added `this.authApi.logout().subscribe({ error: () => {} })` fire-and-forget revoke
+      BEFORE clearing state — HttpOnly refresh cookie is now revoked server-side on user-logout.
+    - Added `void this.router.navigate(['/login'])` — was previously missing (caller no longer
+      navigates; auth service owns navigation on logout).
+    - Previously logout() only nulled in-memory state → refresh cookie survived → bootstrap
+      re-authenticated silently → user appeared not logged out.
+
+  FORCE-LOGOUT BUG FIX — auth.service.ts forceLogout():
+    - Added same `this.authApi.logout().subscribe({ error: () => {} })` revoke inside
+      the once-guard block (before state clear) so cascade logouts also revoke the cookie.
+
+  TOPBAR RESTRUCTURE — topbar.component.ts:
+    - Removed `{ separator: true }` and `{ label: 'Log out', ... }` from userMenuItems
+      (only 'My Profile' remains in popup).
+    - Added direct <button type="button" class="mee-topbar__logout-btn" aria-label="Log out"
+      (click)="logout()"> with <mee-icon name="logout" /> inside .mee-topbar__actions.
+    - Added `protected logout(): void { this.auth.logout(); }` method.
+    - Added `.mee-topbar__logout-btn` CSS block (hover/focus-visible states).
+    - NO data-testid on the new button — component-builder adds nav-logout in commit 2.
+    - Removed unused `computed` from @angular/core import.
+
+  REGRESSION TESTS — auth.service.spec.ts:
+    - New describe block: 'logout() — cookie-revoke + navigate (QA-wave-1 regression)' (3 tests):
+        (1) calls POST /api/v1/auth/logout with withCredentials=true (fire-and-forget)
+        (2) navigates to /login immediately on success
+        (3) navigates even when server revoke returns 401 (cookie already expired)
+    - Updated existing tests that call logout()/forceLogout() to consume the new
+      fire-and-forget POST to /api/v1/auth/logout (required for controller.verify() to pass):
+        - 'logout clears token and user'
+        - 'logout cancels the scheduled refresh timer'
+        - 'resets to "free" on logout' (entitlement block)
+        - All 3 forceLogout() describe-block tests
+        - '_doSilentRefresh 401 → forceLogout()' test
+
+Tests: tsc --noEmit on shell tsconfig.app.json: EXIT 0 (zero errors).
+       tsc --noEmit on tsconfig.spec.json: zero NEW errors (only pre-existing mfe-pricing
+       TS2352/TS2367 which pre-date this change — confirmed in memory as known constraint).
+       ng test frontend: blocked by pre-existing mfe-pricing build errors (known constraint,
+       documented in memory session: pricing-fe-rework slice 1). Full suite runs at gate.
+Build: tsc clean on shell app. ng build not run (worktree, gate runs it).
+Blockers: none.
+Next: component-builder adds nav-logout data-testid to the logout button (commit 2 on same branch).
+Hand-offs:
+  - AuthService.logout() now calls authApi.logout() + navigates to /login.
+    TopbarComponent's logout button is a direct <button> (not MeeMenuItem), no data-testid yet.
+    Component-builder: add data-testid="nav-logout" to the <button> in topbar.component.ts.
+=========
 
 === UPDATE: 2026-06-21 22:25 ===
 Phase: feature/uiux-phase2/frontend — 3 confirmed Phase-2 P1 fixes (F-NAV-1, F-AUTH-1, F-IA-1)
