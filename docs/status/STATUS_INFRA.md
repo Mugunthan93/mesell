@@ -2766,3 +2766,16 @@ Cost: ₹0/month (manifests + docs only; no GCP resource, no new IAM grant; the 
 Branch: feature/microservices-catalog/infra — pushed; push only, NO PR, NO merge (backend-coordinator runs the infra→integration merge gate per dispatch + HYBRID rule).
 Next action: backend-coordinator runs the merge gate against the LANDED svc-catalog backend tree (deferred-validation: re-derive COPY targets + entrypoint from the landed app/ once the svc branch pushes); founder D3 spend decision + dev-catalog-db-password before any deploy.
 =========
+
+=== UPDATE 2026-06-21 — mesell-claude-tooling-usage-doc-infra-session-1 ===
+Phase: docs adoption chore (single-agent fast mode per CLAUDE.md HYBRID rule — standalone lead executes directly; no playbook resource section applies — docs-only, ₹0).
+Task: ADOPTION ITEM claude-tooling-usage — author docs/dev/CLAUDE_TOOLING_USAGE.md adopting TaskCreate/TaskList, /loop, /deep-research + WebSearch/WebFetch. References docs/dev/CLAUDE_FEATURE_ADOPTION.md.
+Done:
+  - docs/dev/CLAUDE_TOOLING_USAGE.md (+74) — when-to-use bullets per tool + quick-ref table. /loop carries the "ONE build-gated rebuild at a time" 8GB rule; /deep-research scoped to Razorpay/GIS/Angular grounding; TaskList warned not to replace the durable board.
+  - Worktree /tmp/mesell-wt/claude-tooling on branch docs/claude-tooling-usage (off origin/develop @ 621a9da) — master tree never branch-switched (guard-master-tree-git respected).
+  - PR #350 opened base=develop.
+Validation: gh pr view 350 → mergeable=MERGEABLE, +74/-0. mergeStateStatus=BLOCKED is EXPECTED (develop is the FOUNDER's merge gate per Decision D1 — not mine to merge).
+Board sweep (session start + end): docs-only chore, no feature_board_infra.md Active row added (not a feature/{name}/infra group lane). No infra Active row touched. Inter-lead requests unchanged.
+Cost: ₹0/month.
+Next action: founder reviews + merges PR #350 → develop (founder's gate). No infra follow-up.
+=========
