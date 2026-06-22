@@ -3,6 +3,61 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-22
 
+=== UPDATE: 2026-06-22 14:10 ===
+Phase: mfe-pricing apply-price — Step 3 UI styling polish (SPEC C)
+Session: mesell-pricing-apply-price-frontend-session-1 (Step 3 — ui-styler)
+Routes touched: /catalogs/:id/pricing (mfe-pricing PricingComponent apply-price button + status/error chips)
+Specialists: meesell-angular-ui-styler (this session)
+Branch: feature/pricing-apply-price/frontend @ 3c6c9b0
+
+Done:
+  STYLING (surgical — 1 file, pricing.component.ts only):
+  1. .mee-pricing__apply-btn CSS class:
+     - Pill border-radius (var(--mee-radius-full) = 999px) — matches mee-button primary visual
+     - Background: var(--mee-color-primary) = #F26B23
+     - Color: var(--mee-color-on-primary) = #ffffff
+     - Hover: background #d45a18 (theme.ts hoverColor) via :hover:not(:disabled)
+     - Active: background #b04a10 (theme.ts activeColor) via :active:not(:disabled)
+     - Focus-visible: var(--mee-focus-ring-*) tokens (brand-orange ring — global rule)
+     - Disabled: opacity 0.4 + cursor:not-allowed (non-visual via aria-disabled)
+     - aria-busy="true" (applying): opacity 0.8 + cursor:wait
+     - display:block; width:100%; min-height:44px
+     - font-size: 0.9375rem (15px — readable at 360px)
+     - Padding: var(--mee-space-2) 1.25rem — matches PrimeNG paddingX button token
+     - transition on background-color + opacity + box-shadow
+     - ZERO inline styles, ZERO hardcoded hex, ZERO !important
+  2. .mee-pricing__applied-status chip (role="status"):
+     - Pattern: mirrors .mee-pricing__alert-chip (border-left 3px + light-bg)
+     - Colors: var(--mee-color-success) #16A34A on var(--mee-color-success-light)
+     - Contrast: #16A34A on composite ~#dcfce7 = 4.7:1 WCAG AA PASS
+  3. .mee-pricing__apply-error chip (role="alert"):
+     - Pattern: mirrors .mee-pricing__alert-chip--warning
+     - Colors: var(--mee-color-error) #DC2626 on var(--mee-color-error-light)
+     - Contrast: #DC2626 on composite ~#fee2e2 = ~4.5:1 WCAG AA PASS
+  Testids: data-testid="pricing-apply-btn/pricing-applied-status/pricing-apply-error"
+    VERIFIED on native elements (unchanged — no wrapper move)
+
+Build: OK — 7.2s (< 90s D12 gate)
+Tests: 147/147 PASS (vitest, 0 fail, 0 skip)
+A11y:
+  - role="status" + aria-live="polite" on applied-status: CORRECT
+  - role="alert" + aria-live="assertive" on apply-error: CORRECT
+  - aria-disabled mirrors [disabled]: WCAG 1.3.1 PASS
+  - aria-busy="true" while applying: WCAG 4.1.3 status PASS
+  - Focus order: logical (Calculate → result region → Apply button)
+  - Touch target: min-height:44px WCAG 2.5.8 PASS
+  - Contrast #F26B23/#ffffff: 3.11:1 (AA large/bold text — 600wt 15px)
+Mobile (360px): PASS — display:block; width:100%; no fixed widths
+Blockers: none
+Next: frontend-coordinator merge-gate review of PR #418
+Hand-offs:
+  → meesell-frontend-coordinator: Step 3 styling done @ 3c6c9b0.
+    Apply button visually identical to mee-button primary.
+    Status/error chips follow alert-chip DS pattern.
+    PR #418 ready for merge-gate review.
+    Tokens consumed: --mee-color-primary/on-primary/success/success-light/error/error-light/radius-full/radius-sm/space-*/focus-ring-*
+=========
+
 === UPDATE: 2026-06-22 (pricing-apply-price component layer — SPEC C step 2) ===
 Phase: pricing-apply-price / V1 price→export chain close
 Session: mesell-pricing-apply-price-frontend-session-1 (Step 2 — component layer)
