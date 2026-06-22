@@ -15,6 +15,24 @@ memory.
 - [coverage_gaps.md](coverage_gaps.md) — accumulated gaps across waves (survives between sessions)
 - [coordinator_patterns.md](coordinator_patterns.md) — recurring omissions in builder PRs (cross-wave learning)
 
+## PR #417 reconcile onto develop (2026-06-22)
+The Wave-C gate-scribe PR #417 went CONFLICTING after the qa-onboarding wave fully
+merged to develop (#422 `98cc02a`; develop tip `f820903`). Cause: the develop->integration
+reconcile pre-#422 cleared `.claude` journal conflicts with `git checkout --theirs`
+(dropping #417's Wave-C scribe lines from `coverage_gaps.md`/`qa_waves.md`/`coordinator_patterns.md`)
+and keep-both-merged the board. Resolution: rebased #417 onto develop in a worktree —
+`coverage_gaps.md` = keep-BOTH (Wave-A-closed + Wave-C-scribe sections both belong),
+`feature_board_qa.md` = took the richer Wave-C header + keep-BOTH table rows (Wave-A #391
+AND Wave-C #411) + a NEW lead clause marking the #422 `98cc02a` integration->develop landing
++ the profile-reshape #416 + pincode 422-not-500 #419, and collapsed the two stale Active-waves
+rows (Wave-B PENDING / Wave-C IN-REVIEW) into one "none active" note. `.claude` write-protected
+files resolved via GIT ONLY (python marker-strip at the shell, NOT the Edit tool). Verdict:
+#417 was NOT redundant — develop lacked the entire Wave-C scribe across all 3 journals; MERGED
+(squash) to develop `664eadb`, all CI green (Gate 1-4 pass, FE units pass, mergeStateStatus CLEAN).
+LESSON: when a wave's integration->develop reconcile uses `checkout --theirs` on `.claude` journals,
+the lane gate-scribe PRs cut from an older base will conflict — rebase + keep-both is the fix,
+and the scribe content survives because it was appended, not edited in place.
+
 ## Bootstrap note (2026-06-22)
 Pillar created via `feature/qa-wave-infra` (QA pillar bootstrap, fleet 19→23). No
 wave has run yet. First expected dispatch: "Run QA Wave 1 against: auth-otp,
