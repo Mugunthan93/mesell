@@ -7594,3 +7594,40 @@ Hand-offs:
     exists for manufacturer_name / manufacturer_address / packer_name / packer_address /
     country_of_origin — a SEPARATE follow-up; this PR is pincodes-only per spec scope guard.
 =========
+
+=== UPDATE: 2026-06-22 — category-monitor Wave-3 onboarding-edge bug fix (PR #472 merge-gate REJECT) ===
+Phase: category-monitor Wave 3 (onboarding-complete trigger) — production-bug fix on the REJECT.
+Bug: SQLAlchemy identity-map aliasing. All 3 onboarding sites (upsert_profile,
+  set_active_categories, set_compliance_extension) read existing=find_by_user_id() BEFORE the repo
+  write, then passed that SAME live ORM into _enqueue_monitor_on_onboarding_edge which read
+  existing.onboarding_complete AFTER the write. The repo re-queries the same PK in the same session
+  → identity map returns the SAME Python object → the write mutates existing.onboarding_complete to
+  True before the edge test reads it → crossed_edge = complete and not existing.onboarding_complete
+  was ALWAYS False on the realistic update→complete path → monitor NEVER enqueued in prod. The 8 fast
+  unit tests masked it by mocking find_by_user_id to a DIFFERENT object than the repo write returned.
+Fix (customer/service.py): helper signature changed existing: SellerProfileORM|None → prior_complete:
+  bool (L192-223); crossed_edge = onboarding_complete and not prior_complete (L222). Each call site
+  snapshots prior_complete = bool(existing.onboarding_complete) [if existing] as a plain bool BEFORE
+  the repo write: upsert_profile L471 (call L538), set_active_categories L577 (call L599),
+  set_compliance_extension L633 (call L710). Live ORM never read for the edge after the write.
+Tests: NEW tests/integration/test_customer_monitor_edge_identity.py — 4 identity-faithful REAL-session
+  tests (real async session + real customer_repo, so find_by_user_id + write share ONE identity-mapped
+  object = prod path). Only catalog_service.get_distinct_product_category_ids + Celery .delay mocked;
+  zero live Meesho/broker. PROVEN: all 4 FAIL on old live-ORM code (got 0 enqueues) + PASS on fixed
+  code (2 enqueues/leaf). The 8 fast unit tests in test_monitor_triggers.py preserved (still green).
+  Host-survival preserved (enqueue raise → host flow + completion commit survive). Full local run:
+  test_customer_monitor_edge_identity (4) + test_monitor_triggers (8) + test_monitor_gate +
+  test_customer_routes + app_boot + celery_include = all green. ruff clean. import-linter EXIT=0
+  (27 kept/0 broken). No router touched → route count unchanged.
+In progress: none.
+Blockers: none.
+Next: backend-coordinator re-gates PR #472 (branch feature/category-monitor/backend-w3-triggers). Do
+  NOT merge. §2.D founder-gate flag preserved in PR body.
+Hand-offs:
+  - backend-coordinator: re-gate PR #472. Fix diff = customer/service.py (+42/-14) + 1 new test file.
+  - PRE-EXISTING flake (NOT mine, NOT in scope): test_customer_onboarding_coverage.py::
+    test_active_categories_replace_semantics ERRORs at SETUP only when run AFTER test_customer_routes
+    in the same process (cross-fixture asyncpg loop/teardown ordering with the customer_client +
+    iam_client lifespan fixtures). Passes in isolation; reproduces WITHOUT my new file. Filed as a
+    separate harness ticket.
+=========
