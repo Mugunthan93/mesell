@@ -97,3 +97,6 @@ bisectable failure on a seeded DB — while honestly skipping (not green-washing
 on an unseeded DB — is the right shape for closing a "seed gap" finding. The skip
 predicate must key off a table NO fixture commits to (`field_enum_values`), not a
 fixture-polluted one (`categories`).
+
+## qa-auth-contract backend lane (PR #440)
+qa-auth-contract backend lane (PR #440): 6 net-new (BE-AUTH-05/08-recovery/10/12/14/15) + 3 upgrades (04/16/02-03); ran 61 passed live vs meesell_test. BE-AUTH-09/11 dropped (covered by #427 `test_refresh_401_clears_stale_cookie`).

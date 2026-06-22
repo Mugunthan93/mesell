@@ -114,3 +114,6 @@ STILL OPEN (carried, filed as inter-lead requests):
 - **Live `--workers=1` run OWED** — slot-2 torn down + 8GB swap ceiling refused a rebuild;
   the gate fell back to source ground-truth + a CLEAN `--list` re-run. Re-run when the swap
   ceiling clears.
+
+## From qa-auth-contract (#480 dev-google seam + #483 google-success)
+- E2E-AUTH-06 Google-success now GREEN (un-fixme via #480 dev-google seam + #483). NEW gap: onboarding selector map stale — multi-step compliance wizard, no `onboarding-business-name` testid → frontend re-exploration + data-testids owed.

@@ -191,3 +191,6 @@ entry here.
   edit form with NO fields. NOT a spec/product UI defect, but it BLOCKS CAT-E2E-05
   (autosave-persist) + CAT-E2E-06 (AI-fill). Filed → data-engineer + backend. Un-fixme on
   a schema-seeded env (or a known-schema'd fixture category).
+
+## Dev-google bypass seam (#480) + sorted dev-port regime (#447)
+Dev-google bypass (PR #480): backend env `APP_ENV=development` (NOT `dev` — Pydantic Literal), `FEATURE_GOOGLE_AUTH_ENABLED=true`, `DEV_GOOGLE_BYPASS_TOKEN=dev-google:{sub}:{email}`; POST that exact sentinel as `credential` → 200 synthetic dual-identity user, no real Google call. Google-only synthetic user lands on `/onboarding` (onboarding_complete=false), not `/dashboard`. Master-tree `adapters/google.py` was stale pre-#480 — run backend from a develop-tip worktree. Dev port regime is now SORTED/alphabetical (shell 4200, mfe-auth 4201…mfe-pricing 4207) after #447 — `applyManifestPortFix` is a no-op on a correct stack.

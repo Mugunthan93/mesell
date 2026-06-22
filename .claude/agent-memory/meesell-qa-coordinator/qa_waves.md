@@ -125,3 +125,6 @@ real Gemini/GCS (adapter seam); no assertion-free tests; IMG-BE-07=502; IA-RED-2
 branch NOT deleted, PR left open + verdict commented.
 
 **Owed/owned:** IA-RED-2 stub-guard retirement (memo -> ai-coordinator); fast-forward integration to develop's tip on re-do.
+
+## qa-auth-contract salvage wave — CLOSED on develop
+qa-auth-contract salvage wave CLOSED on develop (#445 `e83e6f2`); follow-ons #480 google-seam (`b10cc77`) + #483 google-success E2E (`17171d1`) landed. All gate-reviewed + independently re-run.

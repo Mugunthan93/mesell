@@ -55,3 +55,7 @@ Five further pitfalls hit while authoring the Wave-3 catalog-vertical suite (con
 17. **`_package_images_zip` has keyword-only args** — call it as `_package_images_zip(image_refs=..., user_id=..., db=...)`. A positional-style call raises `TypeError`. Check the exact signature before calling.
 
 18. **File-level `pytestmark = pytest.mark.asyncio` applied to sync unit tests** produces `PytestWarning` ("marked with asyncio but not async function"). For files that mix async fixtures + sync unit tests, prefer applying `pytest.mark.asyncio` on the async tests only (or accept the warning — it does NOT fail the test). All 36 Wave A tests pass despite the 7 warnings.
+
+19. **Asserting a route is NOT mounted (flag-OFF 404)** — never use the shared `app` singleton (route may be mounted from a prior test) — build a separate minimal `FastAPI()` with only the needed routers + `ASGITransport`.
+
+20. **plan-guard two-user fixtures** — seed free+pro users in ONE lifespan context and yield `(client, Session, free_token, pro_token)`; nested `lifespan_context` calls conflict on `app.state`.
