@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  OnInit,
   computed,
   inject,
   signal,
@@ -14,23 +15,33 @@ import {
   Validators,
 } from '@angular/forms';
 import { Router } from '@angular/router';
-import { AuthLayoutComponent } from '@mesell/composites';
+import { AuthService } from '@mesell/core';
+import {
+  AuthLayoutComponent,
+  MeeAlertBannerComponent,
+  MeeOfflineBannerComponent,
+  EmptyStateComponent,
+} from '@mesell/composites';
 import {
   MeeButtonComponent,
   MeeInputComponent,
+  MeeSkeletonComponent,
   MeeStepsComponent,
 } from '@mesell/ui-kit';
 import type { MeeStep } from '@mesell/ui-kit';
+import { SellerProfileService, ProfileValidationError, ProfileNetworkError } from './services/seller-profile.service';
+import type { PatchProfileRequest, SellerProfile } from './seller-profile.model';
+import type { ApiErrorEnvelope } from '@mesell/core';
 
-/** GST pattern: 15-char GSTIN format */
-const GST_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
-
-/** Validator that only applies GST pattern when the field has a non-empty value. */
-export function optionalGstValidator(): ValidatorFn {
+/**
+ * Optional pincode validator.
+ * Empty → valid; non-empty must match ^\d{6}$ else error key `pincodeInvalid`.
+ */
+export function pincodeValidator(): ValidatorFn {
   return (control: AbstractControl): ValidationErrors | null => {
     const value = (control.value as string | null | undefined) ?? '';
     if (!value.trim()) return null;
-    return GST_PATTERN.test(value) ? null : { gstPattern: true };
+    return /^\d{6}$/.test(value) ? null : { pincodeInvalid: true };
   };
 }
 
@@ -38,12 +49,17 @@ export function optionalGstValidator(): ValidatorFn {
   selector: 'mee-onboarding',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  providers: [SellerProfileService],
   imports: [
     ReactiveFormsModule,
     AuthLayoutComponent,
+    MeeAlertBannerComponent,
+    MeeOfflineBannerComponent,
+    EmptyStateComponent,
     MeeStepsComponent,
     MeeInputComponent,
     MeeButtonComponent,
+    MeeSkeletonComponent,
   ],
   styles: [`
     /* ── Steps wrap ─────────────────────────────────────────────────────────
@@ -147,42 +163,70 @@ export function optionalGstValidator(): ValidatorFn {
         <p class="section-subtitle">Tell us about your shop</p>
       </div>
 
-      <form [formGroup]="form" (ngSubmit)="onSubmit()" novalidate class="form-fields">
+      @if (profileLoading()) {
+        <mee-skeleton variant="text" [lines]="5" />
+      } @else {
+        @if (errorMessage()) {
+          <mee-alert-banner variant="error" [message]="errorMessage()!" />
+        }
 
-        <mee-input
-          [label]="'Business / Shop Name'"
-          [required]="true"
-          [error]="businessNameError()"
-          [testId]="'onboarding-business-name'"
-          formControlName="businessName"
-        />
+        <form [formGroup]="form" (ngSubmit)="onSubmit()" novalidate class="form-fields">
 
-        <mee-input
-          [label]="'City'"
-          [required]="true"
-          [error]="cityError()"
-          formControlName="city"
-        />
+          <mee-input
+            [label]="'Manufacturer Name'"
+            [required]="true"
+            formControlName="manufacturer_name"
+          />
 
-        <mee-input
-          [label]="'GST Number'"
-          [hint]="'You can add this later'"
-          [error]="gstError()"
-          formControlName="gstNumber"
-        />
+          <mee-input
+            [label]="'Manufacturer Address'"
+            [required]="true"
+            formControlName="manufacturer_address"
+          />
 
-        <mee-button
-          class="block"
-          [label]="'Save & Continue'"
-          [loading]="loading()"
-          [disabled]="form.invalid || loading()"
-          [fullWidth]="true"
-          [variant]="'primary'"
-          [testId]="'onboarding-submit'"
-          (clicked)="onSubmit()"
-        />
+          <mee-input
+            [label]="'Manufacturer Pincode'"
+            [hint]="'6-digit PIN code'"
+            formControlName="manufacturer_pincode"
+          />
 
-      </form>
+          <mee-input
+            [label]="'Packer Name'"
+            [required]="true"
+            formControlName="packer_name"
+          />
+
+          <mee-input
+            [label]="'Packer Address'"
+            [required]="true"
+            formControlName="packer_address"
+          />
+
+          <mee-input
+            [label]="'Packer Pincode'"
+            [hint]="'6-digit PIN code'"
+            formControlName="packer_pincode"
+          />
+
+          <mee-input
+            [label]="'Country of Origin'"
+            [required]="true"
+            formControlName="country_of_origin"
+          />
+
+          <mee-button
+            class="block"
+            [label]="'Save & Continue'"
+            [loading]="loading()"
+            [disabled]="form.invalid || loading()"
+            [fullWidth]="true"
+            [variant]="'primary'"
+            [testId]="'onboarding-submit'"
+            (clicked)="onSubmit()"
+          />
+
+        </form>
+      }
 
       <!-- Skip footer -->
       <p class="skip-text">
@@ -197,9 +241,11 @@ export function optionalGstValidator(): ValidatorFn {
     </mee-auth-layout>
   `,
 })
-export class OnboardingComponent {
+export class OnboardingComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly router = inject(Router);
+  private readonly auth = inject(AuthService);
+  private readonly sellerProfile = inject(SellerProfileService);
 
   readonly steps: MeeStep[] = [
     { label: 'Account' },
@@ -209,51 +255,111 @@ export class OnboardingComponent {
 
   readonly loading = signal<boolean>(false);
   readonly submitted = signal<boolean>(false);
+  readonly profileLoading = signal<boolean>(true);
+
+  private readonly _errorMessage = signal<string | null>(null);
+  readonly errorMessage = computed<string | null>(() => this._errorMessage());
+
+  private readonly _fieldErrors = signal<Record<string, string>>({});
 
   readonly form = this.fb.group({
-    businessName: ['', [Validators.required, Validators.minLength(2), Validators.maxLength(100)]],
-    city: ['Tirupur', [Validators.required, Validators.maxLength(60)]],
-    gstNumber: ['', [optionalGstValidator()]],
+    manufacturer_name:    ['', [Validators.required, Validators.maxLength(140)]],
+    manufacturer_address: ['', [Validators.required, Validators.maxLength(280)]],
+    manufacturer_pincode: ['', [pincodeValidator()]],
+    packer_name:          ['', [Validators.required, Validators.maxLength(140)]],
+    packer_address:       ['', [Validators.required, Validators.maxLength(280)]],
+    packer_pincode:       ['', [pincodeValidator()]],
+    country_of_origin:    ['India', [Validators.required]],
   });
 
-  readonly businessNameError = computed<string | undefined>(() => {
-    if (!this.submitted()) return undefined;
-    const ctrl = this.form.get('businessName');
-    if (!ctrl?.errors) return undefined;
-    if (ctrl.errors['required']) return 'Business name is required.';
-    if (ctrl.errors['minlength']) return 'Business name must be at least 2 characters.';
-    if (ctrl.errors['maxlength']) return 'Business name must be 100 characters or fewer.';
-    return undefined;
-  });
-
-  readonly cityError = computed<string | undefined>(() => {
-    if (!this.submitted()) return undefined;
-    const ctrl = this.form.get('city');
-    if (!ctrl?.errors) return undefined;
-    if (ctrl.errors['required']) return 'City is required.';
-    if (ctrl.errors['maxlength']) return 'City must be 60 characters or fewer.';
-    return undefined;
-  });
-
-  readonly gstError = computed<string | undefined>(() => {
-    if (!this.submitted()) return undefined;
-    const ctrl = this.form.get('gstNumber');
-    if (!ctrl?.errors) return undefined;
-    if (ctrl.errors['gstPattern']) return 'Enter a valid 15-character GSTIN (e.g. 29ABCDE1234F1Z5).';
-    return undefined;
-  });
+  ngOnInit(): void {
+    this.sellerProfile.getProfile().subscribe({
+      next: (profile: SellerProfile) => {
+        this.form.patchValue({
+          manufacturer_name:    profile.manufacturer_name    ?? '',
+          manufacturer_address: profile.manufacturer_address ?? '',
+          manufacturer_pincode: profile.manufacturer_pincode ?? '',
+          packer_name:          profile.packer_name          ?? '',
+          packer_address:       profile.packer_address       ?? '',
+          packer_pincode:       profile.packer_pincode       ?? '',
+          country_of_origin:    profile.country_of_origin    ?? 'India',
+        });
+        this.profileLoading.set(false);
+      },
+      error: () => {
+        this.profileLoading.set(false);
+      },
+    });
+  }
 
   onSubmit(): void {
     this.submitted.set(true);
     if (this.form.invalid || this.loading()) return;
+
     this.loading.set(true);
-    setTimeout(() => {
-      this.loading.set(false);
-      void this.router.navigate(['/dashboard']);
-    }, 1500);
+    this._errorMessage.set(null);
+    this._fieldErrors.set({});
+
+    const raw = this.form.value;
+    const payload: PatchProfileRequest = {
+      manufacturer_name:    raw.manufacturer_name    ?? null,
+      manufacturer_address: raw.manufacturer_address ?? null,
+      manufacturer_pincode: raw.manufacturer_pincode?.trim() || null,
+      packer_name:          raw.packer_name          ?? null,
+      packer_address:       raw.packer_address       ?? null,
+      packer_pincode:       raw.packer_pincode?.trim() || null,
+      country_of_origin:    raw.country_of_origin    ?? null,
+    };
+
+    this.sellerProfile.patchProfile(payload).subscribe({
+      next: () => {
+        this.auth.refreshUser().subscribe({
+          complete: () => {
+            this.loading.set(false);
+            void this.router.navigate(['/dashboard']);
+          },
+        });
+      },
+      error: (err: unknown) => {
+        this.loading.set(false);
+        if (err instanceof ProfileValidationError) {
+          this._mapValidationError(err.envelope);
+        } else if (err instanceof ProfileNetworkError) {
+          this._errorMessage.set(err.message);
+        } else {
+          this._errorMessage.set('A network error occurred. Please try again.');
+        }
+      },
+    });
+  }
+
+  /**
+   * Returns the per-field error message for the given control name.
+   * Gate 7 asserts: `fieldError('manufacturer_pincode') === 'Enter a valid 6-digit pincode.'`
+   */
+  fieldError(controlName: string): string | null {
+    return this._fieldErrors()[controlName] ?? null;
   }
 
   skipSetup(): void {
     void this.router.navigate(['/dashboard']);
+  }
+
+  private _mapValidationError(envelope: Partial<ApiErrorEnvelope>): void {
+    const errors = (envelope.errors ?? []) as Array<{
+      field?: string;
+      constraint?: string;
+      msg?: string;
+    }>;
+    const mapped: Record<string, string> = {};
+    for (const e of errors) {
+      if (e.field) {
+        mapped[e.field] = e.msg ?? 'Invalid value.';
+      }
+    }
+    this._fieldErrors.set(mapped);
+    this._errorMessage.set(
+      envelope.detail ?? 'Validation failed — check the highlighted fields.',
+    );
   }
 }
