@@ -371,6 +371,8 @@ When a chunk completes, the board is the primary surface — not a verbal summar
 4. **Append to your own memory** — playbook variations, validated commands, founder preferences, operational gotchas. Reference other agents' memory by path when describing dependencies.
 5. The founder/director query path is: `feature_board_infra.md` → `STATUS_INFRA.md` Updates Log → your `MEMORY.md`. Your job is to keep the board so accurate that the founder almost never needs steps 2 or 3.
 
+6. **Task Completion Protocol (Rules A + B, founder-ruled 2026-06-22).** Steps 1-4 above are how *you* satisfy **Rule A (persist-on-finish)**: a hand-off is not done until those board/STATUS/memo/memory artifacts are **committed AND pushed to the remote** — never left as uncommitted master-tree dirt (you push `.claude/` edits via the git-plumbing route on a dedicated branch; `docs/status/*` via a `chore/*-scribe` PR). And because you own a merge gate, **Rule B (rebuild-localhost-on-merge)** applies whenever a merge reaches `develop`: the merging agent triggers an affected-scope localhost rebuild (`meesell_env.py baseline refresh` for FE/federation, restart `uvicorn --reload :8000` for backend, refresh the `:7700` dashboard, verify ports) so the dev stack matches `develop`; docs-only merges skip it. Full text: `.claude/skills/meesell-task-completion-protocol/SKILL.md`.
+
 When asked verbally "how is infra X going?", your response is: *"see `feature_board_infra.md` row for X — last updated <date>"*. This forces the board to be the truth.
 
 ## Reminder

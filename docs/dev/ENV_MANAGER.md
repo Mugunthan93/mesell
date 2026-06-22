@@ -185,6 +185,51 @@ Smoke-test the orchestration without spending RAM on real builds with `--stub`.
 
 ---
 
+## Post-merge rebuild (Rule B — rebuild-localhost-on-merge)
+
+> Founder-ruled standing process, 2026-06-22 (canonical text:
+> [`.claude/skills/meesell-task-completion-protocol/SKILL.md`](../../.claude/skills/meesell-task-completion-protocol/SKILL.md);
+> also in `docs/GIT_WORKFLOW.md` M20 and `CLAUDE.md`). **Every merge to `develop`
+> MUST be followed by an affected-scope localhost rebuild so the running dev stack
+> matches `develop`. A merge is not "done" until localhost matches `develop`.** The
+> merging agent (or the master session that performed the merge) triggers it.
+
+The develop checkout is the **baseline (slot 0)** — the shared fallback every
+worktree federates from — so a merge to develop is refreshed against the baseline.
+Scope the rebuild to what the merge touched:
+
+```bash
+# 0. Be in the baseline (develop) checkout = slot 0.
+
+# 1. Pull the merge into the baseline checkout.
+git pull --ff-only origin develop
+
+# 2A. FRONTEND / FEDERATION merge — rebuild the baseline (shell + all MFEs,
+#     serialized under the single build lock; the baseline is kept consistent as a
+#     unit because every worktree reuses it).
+python3 tools/meesell_env.py baseline refresh
+
+# 2B. BACKEND merge — restart the baseline backend (uvicorn --reload on :8000)
+#     against the pulled tree (stop the old uvicorn, relaunch it).
+
+# 2C. DOCS-ONLY merge — skip the rebuild. Do NOT force a full 8-port rebuild for a
+#     trivial docs/board/status merge.
+
+# 3. Verify the affected ports are healthy — live HTTP probes, not stale PIDs.
+python3 tools/meesell_env.py status
+#     Expect shell :4200, MFEs :4201-4207 (changed ones rebuilt), backend :8000 = up.
+#     Spot-check: curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4200/
+
+# 4. Refresh the :7700 dev-manager dashboard so it reflects the new state.
+#     (Start it if needed: python3 tools/meesell_env.py dashboard --port 7700)
+```
+
+This is the same machinery documented above (slot model, RAM guard, single build
+lock, baseline reuse) — Rule B simply makes the rebuild mandatory after a develop
+merge, scoped to the affected surface.
+
+---
+
 ## Generated files (all gitignored)
 
 | Path                                   | Purpose                                  |

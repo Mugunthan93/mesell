@@ -87,6 +87,24 @@ kubectl rollout status -n "$NS" deployment/meesell-api --timeout=180s
 kubectl rollout undo -n "$NS" deployment/meesell-api
 ```
 
+## Finishing the task (Task Completion Protocol)
+
+Two NON-NEGOTIABLE fleet rules gate "done" — full text in
+`.claude/skills/meesell-task-completion-protocol/SKILL.md` (founder-ruled 2026-06-22):
+
+- **Rule A — persist-on-finish.** Your durable outputs (memory, `docs/status/STATUS_*.md`,
+  `docs/status/feature_board_*.md`, any manifest/spec you produced) must be **committed AND
+  pushed** — on the feature branch (rides the PR) or via a `chore/<slug>-scribe` PR /
+  git-plumbing for `.claude/`. Never leave them as uncommitted master-tree dirt.
+- **Rule B — rebuild-localhost-on-merge.** A deploy/merge that reaches `develop` is followed
+  by an affected-scope localhost rebuild so the dev stack matches `develop` (pull develop ->
+  `python3 tools/meesell_env.py baseline refresh` for FE/federation, or restart
+  `uvicorn --reload :8000` for backend -> verify ports via `meesell_env.py status` ->
+  refresh the `:7700` dashboard). Docs-only merges skip the rebuild. See
+  `docs/dev/ENV_MANAGER.md`. (This is localhost dev-stack hygiene; it is distinct from a
+  real K3s `dev`/`staging`/`prod` cluster deploy, which still follows the 8-point checklist
+  above.)
+
 ## Quick checklist before you finish a deploy task
 
 - [ ] Namespace named explicitly on every command, matches intent
