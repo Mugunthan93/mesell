@@ -7555,3 +7555,37 @@ Hand-offs:
     exists for manufacturer_name / manufacturer_address / packer_name / packer_address /
     country_of_origin — a SEPARATE follow-up; this PR is pincodes-only per spec scope guard.
 =========
+
+=== UPDATE: 2026-06-22 ===
+Phase: Feature 1 (Auth) / google-auth — dev/test verify bypass (PROD-HARD-DISABLED)
+Agent: meesell-auth-builder
+Done:
+  - NEW seam: dev/test Google-verify bypass mirroring the OTP DEV_OTP_BYPASS_CODE safety model.
+    Unblocks E2E-AUTH-06 Google-success (was test.fixme — fake credential → 401 against real JWKs).
+  - Config: backend/app/shared/config.py adds `DEV_GOOGLE_BYPASS_TOKEN: str = ""` (OFF by default;
+    sentinel form `dev-google:{sub}:{email}` encodes the test identity).
+  - Adapter: backend/app/adapters/google.py — `_resolve_dev_bypass_claims()` short-circuits
+    `verify_id_token()` BEFORE the real `id_token.verify_oauth2_token` call, returning synthetic
+    verified claims ONLY when ALL THREE guards hold: APP_ENV != "production" (checked FIRST),
+    DEV_GOOGLE_BYPASS_TOKEN non-empty, FEATURE_GOOGLE_AUTH_ENABLED True, AND constant-time exact
+    sentinel match. Otherwise returns None → real verify runs byte-identically to before.
+  - Downstream (upsert/auto-link, token issuance, audit, envelope) UNCHANGED — surgical.
+Tests (real DB meesell_gbypass_test + Valkey/0; real Google call mocked at adapter boundary):
+  - test_google_auth_integration.py::test_dev_google_bypass_success — 200 + tokens + synthetic
+    dual-identity user (phone NULL, google_sub=e2e-sub-001, email landed).
+  - ::test_prod_force_disable — APP_ENV=production + sentinel set → bypass inert → real verify → 401
+    iam.google_token_invalid, NO synthetic user. LOAD-BEARING security test.
+  - ::test_dev_google_bypass_regression — bypass OFF + sentinel-string → 401; bypass ON + non-sentinel
+    credential → 401. Neither fires → no synthetic user.
+  - Result: 3/3 new PASS; full file 8/8 PASS; OTP-bypass (3) + boot-smoke (8) regression 11/11 PASS.
+  - ruff clean on all 3 touched files.
+In progress: none
+Blockers: none
+Next: backend-coordinator merge-gate review of the PR (diff = config + adapter + test file).
+Hand-offs:
+  - E2E lane drives it with: FEATURE_GOOGLE_AUTH_ENABLED=True + DEV_GOOGLE_BYPASS_TOKEN=
+    "dev-google:{sub}:{email}" in the dev stack env, then POST /api/v1/auth/google/verify with
+    {"credential": "<that exact sentinel>"}. APP_ENV must be != production (dev/staging).
+  - PROD safety: leave DEV_GOOGLE_BYPASS_TOKEN empty in prod; even if leaked, the APP_ENV guard
+    force-disables it (test_prod_force_disable locks this).
+=========
