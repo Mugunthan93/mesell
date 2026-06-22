@@ -1,6 +1,37 @@
 # STATUS — BACKEND
 
 
+=== UPDATE: 2026-06-22 (meesell-api-routes-builder) — category-monitor Wave-4 Unit N: GET /api/v1/notifications router ===
+Phase: category-monitor — Wave 4 Unit N (monitor notifications read route)
+Branch: feature/category-monitor/notifications-route off integration dba57ff. PR → feature/category-monitor/integration.
+Session: mesell-category-monitor-backend-session-8
+
+Done:
+- NEW GET /api/v1/notifications — monitor's first public HTTP route; JWT-protected, `FEATURE_CATEGORY_MONITOR_ENABLED` flag-gated (default False, mirrors google-auth precedent). NOT mounted when flag is False; §17 stays 28 until founder flips flag at integration→develop merge.
+- NEW backend/app/modules/monitor/schemas.py: `NotificationItem` (id, category_id, content_hash, payload, is_read, read_at, created_at; `payload` maps from `payload_jsonb` ORM column via `validation_alias`) + `NotificationListResponse` ({data, total, page, unread_count}).
+- NEW backend/app/modules/monitor/router.py: `APIRouter(prefix="/api/v1/notifications", tags=["notifications"])`; pagination `?page=1&limit=20&unread_only=false`; order `created_at DESC`; additive `unread_count` for bell badge. Calls `monitor.service.list_notifications(user_id, page, limit, unread_only, db)`. Flag-guard inside route handler (404 when off) for belt-and-suspenders.
+- MODIFIED backend/app/modules/monitor/service.py: NEW `list_notifications(user_id, page, limit, unread_only, db)` — tenant-scoped via `scope_to_user`, count subquery for total, separate subquery for unread_count (full-table regardless of `unread_only` filter), items ordered DESC. Fixed bug: `unread_q` uses `select(Notification)` base (not `select(func.count())`) so `scope_to_user` can resolve the entity.
+- MODIFIED backend/app/modules/monitor/__init__.py: exports `notifications_router`.
+- MODIFIED backend/app/shared/config.py: `FEATURE_CATEGORY_MONITOR_ENABLED: bool = False` (not in REQUIRED_FIELDS; dev-safe default).
+- MODIFIED backend/app/main.py: `from app.modules.monitor import notifications_router`; conditional `if settings.FEATURE_CATEGORY_MONITOR_ENABLED: app.include_router(notifications_router)`.
+- MODIFIED backend/tests/test_app_boot_integration.py: `test_no_stray_legacy_routes` + `test_total_route_count` now flag-aware for FEATURE_CATEGORY_MONITOR_ENABLED.
+- MODIFIED backend/tests/lint/import_rules.toml: monitor added to Contracts 2/3/5; new sub-contracts 1.monitor/4.monitor/7.monitor; transitive `monitor.service → core.cache → category.service → category.repository` chain allowlisted (not a direct cross-module repo import — passes through core/).
+- NEW backend/tests/test_notifications_routes.py: 12 tests covering tenancy (user A vs B), 401, envelope shape, unread_only filter, pagination, unread_count semantics, flag-gate (OFF=absent/count unchanged, ON=router has GET route/adds exactly 1 path). DB integration tests (tenancy/envelope/pagination) use NullPool+savepoint+lifespan_context fixture mirroring customer_client pattern.
+
+Tests (local, non-DB subset runnable in worktree):
+- 6/6 passed locally (flag-gate × 4 + 401 × 2); DB tests structurally correct but need CI environment (Valkey on 6381 + correct event loop) — same constraint as existing customer_routes + google_auth_integration tests in this branch.
+- ruff check app/modules/monitor/ tests/test_notifications_routes.py app/main.py app/shared/config.py tests/test_app_boot_integration.py → ALL CHECKS PASSED.
+- lint-imports → 30 kept, 0 broken (added 3 new monitor sub-contracts).
+
+In progress: none.
+Blockers: none.
+Next: PR for backend-coordinator merge-gate review. Does NOT self-merge.
+Hand-offs:
+  - backend-coordinator: gate the PR. §17 28→29 LOCKED amendment flag in PR body — do NOT self-apply to BACKEND_ARCHITECTURE.md; that is the founder's gate at integration→develop merge.
+  - FRONTEND: GET /api/v1/notifications live when flag flipped; returns `NotificationListResponse {data:[NotificationItem], total, page, unread_count}` — wire bell-badge component to `unread_count`.
+=========
+
+
 === UPDATE: 2026-06-22 (meesell-services-builder) — category-monitor Wave-4 Unit F: fan-out + notify worker ===
 Phase: category-monitor — Wave 4 Unit F (fan-out worker)
 Branch: feature/category-monitor/fanout-worker off integration f363db6. PR → feature/category-monitor/integration.

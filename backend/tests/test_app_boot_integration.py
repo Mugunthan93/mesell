@@ -202,10 +202,14 @@ def test_no_stray_legacy_routes(meesell_app):
     # ONLY when FEATURE_GOOGLE_AUTH_ENABLED is true (dev default true; staging/prod
     # per-namespace). Make the allowed-set flag-aware so the route is not flagged as
     # a "stray" when the dev flag is on, mirroring the FEATURE_BILLING_ENABLED pattern.
+    # category-monitor (Wave-4 Unit N): GET /api/v1/notifications is mounted ONLY when
+    # FEATURE_CATEGORY_MONITOR_ENABLED is true (default False). §17 28→29 founder-gate.
     from app.shared.config import settings  # noqa: PLC0415
 
     if settings.FEATURE_GOOGLE_AUTH_ENABLED:
         allowed_paths.add("/api/v1/auth/google/verify")
+    if settings.FEATURE_CATEGORY_MONITOR_ENABLED:
+        allowed_paths.add("/api/v1/notifications")
     route_map = _route_map(meesell_app)
     stray = set(route_map) - allowed_paths
     assert not stray, (
@@ -269,9 +273,19 @@ def test_total_route_count(meesell_app):
     # FEATURE_GOOGLE_AUTH_ENABLED is true (dev default true → 35; flag off → 34).
     # §17 mounted-endpoint inventory: 28→29 maps here to 34→35 (this count includes
     # the 4 billing paths + FastAPI builtins, hence the offset from the §17 number).
+    # category-monitor Wave-4 Unit N (2026-06-22): +1 path (/api/v1/notifications)
+    # when FEATURE_CATEGORY_MONITOR_ENABLED is true (default False).
+    # §17 28→29 LOCKED amendment is the founder's gate — do NOT self-apply.
+    # flag-OFF (default): count = 34 (google-auth off) or 35 (google-auth on).
+    # flag-ON: count = 35 (google-auth off) or 36 (google-auth on).
     from app.shared.config import settings  # noqa: PLC0415
 
-    expected_count = 35 if settings.FEATURE_GOOGLE_AUTH_ENABLED else 34
+    base_count = 34
+    if settings.FEATURE_GOOGLE_AUTH_ENABLED:
+        base_count += 1
+    if settings.FEATURE_CATEGORY_MONITOR_ENABLED:
+        base_count += 1
+    expected_count = base_count
     assert len(route_map) == expected_count, (
         f"Expected {expected_count} routes, got {len(route_map)}. "
         f"Paths: {sorted(route_map)}"

@@ -44,6 +44,7 @@ from app.modules.dashboard import dashboard_router
 from app.modules.export import export_router
 from app.modules.iam import iam_billing_router, iam_google_router, iam_router
 from app.modules.image import image_router
+from app.modules.monitor import notifications_router
 from app.modules.pricing import pricing_router
 from app.shared.config import settings
 
@@ -143,6 +144,15 @@ if settings.FEATURE_GOOGLE_AUTH_ENABLED:
 # PROPOSED: this mount is the lead-owned root-wiring flagged in the PR.
 if settings.FEATURE_BILLING_ENABLED:
     app.include_router(iam_billing_router)
+
+# monitor — Wave-4 Unit N: GET /api/v1/notifications.
+# Feature-flag gated on FEATURE_CATEGORY_MONITOR_ENABLED (default False —
+# google-auth precedent): when False the router is NOT mounted, so the path
+# falls through to FastAPI's default 404 and the §17 count stays at 28.
+# §17 28→29 LOCKED amendment is the founder's gate at the
+# feature/category-monitor/integration → develop merge; do NOT self-apply.
+if settings.FEATURE_CATEGORY_MONITOR_ENABLED:
+    app.include_router(notifications_router)
 
 # §8 customer — owns /api/v1/seller-profile/* (5 endpoints per §8.B LOCKED 2026-06-05).
 app.include_router(customer_router)

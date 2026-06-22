@@ -34,7 +34,9 @@ On a BLOCK verdict the gate logs a WARNING and STOPS — it never fans out.
 from __future__ import annotations
 
 from app.modules.monitor.exceptions import CategoryNotFoundError
+from app.modules.monitor.router import router as notifications_router
 
 __all__ = [
     "CategoryNotFoundError",
+    "notifications_router",
 ]
