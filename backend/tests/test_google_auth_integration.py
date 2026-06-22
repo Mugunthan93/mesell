@@ -416,6 +416,88 @@ async def test_me_phone_is_string_for_otp_user(google_client):
 
 
 @pytest.mark.asyncio
+async def test_google_email_unverified_rejected(google_client):
+    """BE-AUTH-17: Google verify rejects email_verified=False → 401.
+
+    QA Wave 2 hardening: the google adapter raises GoogleEmailUnverifiedError when
+    email_verified is False (it is the adapter's responsibility to enforce this per
+    §6.G).  The route must return 401 with a non-empty validation_message_id;
+    no user is created; no cookie is set.
+
+    Arrange: mock google adapter raises GoogleEmailUnverifiedError.
+    Act: POST /auth/google/verify.
+    Assert: 401; non-empty validation_message_id; no Set-Cookie refresh_token;
+            no access_token in body.
+    """
+    from app.modules.iam.exceptions import GoogleEmailUnverifiedError  # noqa: PLC0415
+
+    client, iam_service, monkeypatch, _Session = google_client
+
+    monkeypatch.setattr(
+        iam_service.google_adapter,
+        "verify_id_token",
+        AsyncMock(side_effect=GoogleEmailUnverifiedError()),
+    )
+
+    resp = await client.post("/api/v1/auth/google/verify", json={"credential": "tok"})
+
+    assert resp.status_code == 401, (
+        f"email_verified=False must return 401, got {resp.status_code}: {resp.text}"
+    )
+    body = resp.json()
+    msg_id = body.get("validation_message_id", "")
+    assert isinstance(msg_id, str) and msg_id, (
+        f"401 must carry non-empty validation_message_id; got {body!r}"
+    )
+    # No cookie or access_token on failure.
+    assert extract_refresh_cookie(resp) is None, (
+        "email_unverified 401 must not set a refresh cookie"
+    )
+    assert "access_token" not in body, f"401 must not include access_token; got {body!r}"
+
+
+@pytest.mark.asyncio
+async def test_google_only_me_phone_null_isolated(google_client):
+    """BE-AUTH-18: Google-only user /auth/me returns phone=null in isolation.
+
+    QA Wave 2: asserts the phone=null case in a dedicated isolated test (not bundled
+    inside the navigation flow).  A Google-only user (no phone in the DB) must have
+    /auth/me return 200 with the ``phone`` key explicitly null (not missing, not "").
+
+    Arrange: fresh Google-only user via mock adapter returning a unique email/sub.
+    Act: GET /auth/me.
+    Assert: 200; ``phone`` key is present; value is null.
+    """
+    client, iam_service, monkeypatch, _Session = google_client
+
+    monkeypatch.setattr(
+        iam_service.google_adapter,
+        "verify_id_token",
+        AsyncMock(
+            return_value=_claims("isolated-null-phone@example.com", "g-sub-iso-be18")
+        ),
+    )
+
+    verify_resp = await client.post("/api/v1/auth/google/verify", json={"credential": "tok"})
+    assert verify_resp.status_code == 200, f"google verify failed: {verify_resp.text}"
+    access_token = verify_resp.json()["access_token"]
+
+    me = await client.get(
+        "/api/v1/auth/me", headers={"Authorization": f"Bearer {access_token}"}
+    )
+    assert me.status_code == 200, f"/auth/me failed: {me.text}"
+    body = me.json()
+
+    # The ``phone`` key MUST be present with value null.
+    assert "phone" in body, (
+        f"/auth/me response must include 'phone' key; keys present: {list(body)}"
+    )
+    assert body["phone"] is None, (
+        f"Google-only user /auth/me must return phone=null; got {body['phone']!r}"
+    )
+
+
+@pytest.mark.asyncio
 async def test_google_verify_409_on_google_sub_collision(google_client):
     """Edge case 4 (design §E rule 3): email owned by different google_sub → 409.
 
