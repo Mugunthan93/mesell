@@ -261,11 +261,14 @@ describe('OnboardingComponent', () => {
     expect(component.form.get('manufacturer_pincode')!.valid).toBeTruthy();
   });
 
-  it('should not flag pincodeInvalid for empty pincode (format validator is optional)', () => {
+  it('should not flag pincodeInvalid for empty pincode (required error fires; pincodeInvalid does not)', () => {
+    // pincodeValidator() returns null for empty — only Validators.required fires.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (component.form.get('manufacturer_pincode') as any)?.setValue('');
     const errs = component.form.get('manufacturer_pincode')!.errors;
     expect(errs?.['pincodeInvalid']).toBeFalsy();
+    // required error IS present (pincode is now required):
+    expect(errs?.['required']).toBeTruthy();
   });
 
   // ── Gate 5: Form validity ──────────────────────────────────────────────────
@@ -294,6 +297,68 @@ describe('OnboardingComponent', () => {
       country_of_origin: 'India',
     });
     expect(component.form.valid).toBeTruthy();
+  });
+
+  // ── Gate 5b: Required pincodes — form invalid + submit blocked ──────────────
+  // (pincode-required change: d521bde; both pincodes now carry Validators.required)
+
+  it('should be invalid when manufacturer_pincode is empty (required)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (component.form.get('manufacturer_pincode') as any)?.setValue('');
+    expect(component.form.invalid).toBeTruthy();
+  });
+
+  it('should be invalid when packer_pincode is empty (required)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (component.form.get('packer_pincode') as any)?.setValue('');
+    expect(component.form.invalid).toBeTruthy();
+  });
+
+  it('should have required error on manufacturer_pincode when empty', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (component.form.get('manufacturer_pincode') as any)?.setValue('');
+    expect(component.form.get('manufacturer_pincode')?.hasError('required')).toBeTruthy();
+  });
+
+  it('should have required error on packer_pincode when empty', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (component.form.get('packer_pincode') as any)?.setValue('');
+    expect(component.form.get('packer_pincode')?.hasError('required')).toBeTruthy();
+  });
+
+  it('should NOT call patchProfile when manufacturer_pincode is empty (submit blocked by form.invalid)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (component.form as any).setValue({
+      manufacturer_name: 'Acme',
+      manufacturer_address: '12 Industrial',
+      manufacturer_pincode: '',        // ← empty: required error
+      packer_name: 'Pack Co',
+      packer_address: '12 Industrial',
+      packer_pincode: '641604',
+      country_of_origin: 'India',
+    });
+
+    component.onSubmit();
+    // form.invalid → onSubmit returns early → no PATCH
+    httpMock.expectNone('/api/v1/seller-profile');
+    expect(component.loading()).toBeFalsy();
+  });
+
+  it('should NOT call patchProfile when packer_pincode is empty (submit blocked by form.invalid)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (component.form as any).setValue({
+      manufacturer_name: 'Acme',
+      manufacturer_address: '12 Industrial',
+      manufacturer_pincode: '641604',
+      packer_name: 'Pack Co',
+      packer_address: '12 Industrial',
+      packer_pincode: '',              // ← empty: required error
+      country_of_origin: 'India',
+    });
+
+    component.onSubmit();
+    httpMock.expectNone('/api/v1/seller-profile');
+    expect(component.loading()).toBeFalsy();
   });
 
   // ── Gate 6: onSubmit → patchProfile() → navigate /dashboard ─────────────────
