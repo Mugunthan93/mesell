@@ -7,7 +7,7 @@
   "passed": 20,
   "bad_expected": 10,
   "good_expected": 10,
-  "worst_case_pillow_seconds": 0.028,
+  "worst_case_pillow_seconds": 0.0278,
   "pillow_budget_seconds": 2.0,
   "gemini_calls": 0,
   "gemini_cost_inr": 0.0,

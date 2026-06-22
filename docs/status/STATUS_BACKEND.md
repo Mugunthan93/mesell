@@ -1,6 +1,57 @@
 # STATUS — BACKEND
 
 
+=== UPDATE: 2026-06-22 (meesell-backend-test-writer) — QA Wave 3 catalog-vertical backend lane ===
+Phase: QA Wave 3 — catalog vertical backend lane
+Session: mesell-qa-wave-3-backend-session-1
+Branch: feature/qa-wave-3/backend  PR: #396 (targeting feature/qa-wave-3/integration)
+
+Done:
+  - 59 new tests across 4 new files + 1 rewritten file; all passing.
+  NEW files authored:
+    - backend/tests/modules/catalog/test_live_preview_route.py (W3-BE-1,2,3,5 — 4 tests)
+      GET /products/{id}/preview: happy path 200+locked-shape, cross-tenant 404,
+      unauthenticated 401, preview reflects autosave.
+    - backend/tests/modules/catalog/test_catalog_delete_route.py (W3-BE-15a,15b — 2 tests)
+      DELETE /products/{id}: owner 204 + re-GET 404; cross-tenant 404 non-empty detail.
+    - backend/tests/modules/image/test_pil_check_boundaries.py (W3-BE-7,8,9 — 20 tests)
+      PIL boundary unit tests: CMYK/RGB color space, resolution ≥1500×1500 pass+fail,
+      white background threshold pass+fail, edge cases.
+    - backend/tests/eval/watermark/test_watermark_asserting.py (W3-BE-10 — 33 tests)
+      Watermark eval: parametrized per-fixture + aggregate ≥85% accuracy threshold.
+  REWRITTEN files:
+    - backend/tests/integration/test_export_zip_member_structure.py (W3-BE-6a,6b,6c — 3 tests)
+      Rewrote Wave-1 P1.11 carry-forward against correct signatures _write_xlsx(XlsxRowSpec)
+      and _package_images_zip(); GCS mocked at adapter boundary.
+  Run: 59 passed (scoped); broader suite 125 passed, 2 pre-existing infra failures (Valkey port 6381).
+
+Deferred:
+  W3-BE-11 (cost ceiling): gated on live Gemini cost data per founder ruling. Logged in deferred_coverage.md.
+
+Confirmed-only (no new tests, already covered):
+  W3-BE-12 (PATCH enum validation) — test_catalog_enum_validation_regression.py covers it.
+  W3-BE-13 (non-empty localized enum 422) — test_i18n_generic_fallback.py covers it.
+  W3-BE-14 (suggest GET→405) — existing test covers it.
+  W3-BE-16 (route-level create happy) — existing test covers it.
+  W3-BE-17 (price→export roundtrip) — existing test covers it.
+
+Key fixture design (logged in conftest_patterns.md):
+  - auth_client + catalog conftest's db fixture are incompatible (two-connection visibility:
+    db is in SAVEPOINT rollback on db_engine; client's override_get_db does not commit).
+  - Solution: local _preview_client / _delete_client fixtures modelled on iam_client:
+    * NullPool engine against DATABASE_URL (test DB); seed with REAL commit.
+    * Override get_current_user directly (returns CurrentUser, no DB lookup).
+    * Override get_db with commit-on-success semantics.
+    * Pre+post cleanup via raw SQL cascade (8 FK-dependent child tables).
+  - .env symlink needed in worktree backend dir (Pydantic Settings reads .env from cwd).
+
+Blockers: none.
+Hand-offs: PR #396 awaiting meesell-qa-coordinator / meesell-backend-coordinator gate review.
+Safety: TEST_DATABASE_URL guard verified untouched; all vendors mocked at adapter boundary.
+Note: agent memory write-protected (sandbox restriction). Memory entries provided in final report
+for coordinator landing.
+=== END UPDATE ===
+
 === UPDATE: 2026-06-22 (meesell-backend-test-writer) — QA Wave 1 gap-fill ===
 Phase: QA Wave 1 -- backend gap-fill + verify-green
 Session: mesell-qa-wave-1-backend-session-1
