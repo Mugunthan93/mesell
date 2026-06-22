@@ -4,6 +4,53 @@
 **Last update:** 2026-06-22 (**Federation port-regime reconcile — OPTION 1 (sorted-canonical), founder-chosen — PR #412 → develop, DO NOT MERGE (FE coordinator gates).** Permanently kills the TWO-PORT-REGIME bug (committed manifest [hand-pinned] vs meesell_env [sorted] disagreed → shell loaded wrong remote per port). Made the SORTED order (meesell_env slot-0 formula) the SINGLE regime everywhere. 7 files, ₹0, dev-only, surgical (port literals + ordering only — 0 .ts/component/app touched): `apps/shell/public/federation.manifest.json` sorted (strict JSON); `angular.json` serve+serve-original ports sorted; `ci.yml` boot-smoke readiness now waits ALL 7 remotes (was :4201-:4206, MISSING :4207); `tools/dev/{serve-static,start-all}.mjs` + `tools/boot-smoke/{README.md,serve.js}` sorted. `meesell_env.py` UNCHANGED (it IS the canonical ref; its override is now IDEMPOTENT == committed). 3 PROOFS green: 4-way (5-surface) static map IDENTICAL; live boot-smoke port→served-name all match + served runtime manifest == committed (idempotency); route-check.mjs federation 100% clean (0 RemoteFailure/0 specifier-miss across 12 routes — its exit-1 is a PRE-EXISTING GIS-403 on auth routes, unrelated) + contracts run-all.mjs EXIT 0. Resolves the BLOCKED stale-federation-manifest row + inter-lead row 75 (FE memo delegated the full reconcile to me). Session `mesell-federation-manifest-reconcile-infra-session-1`. See UPDATE block below. PRIOR: Add `/api` reverse-proxy to the static `:4200` dev shell — `serve.js` + `meesell_env.py` (UI/UX audit PR #367 fix). 2 files, stdlib `http` only, zero new deps, surgical (static-SPA serving untouched, proxy OFF by default). Proxies `/api`+`/health`+`/docs`+`/openapi.json` → backend (slot 0 = `:8000`); shell-only (MFEs serve static). VERIFIED LIVE via curl (GET /api/v1/auth/me → 401 backend JSON, OTP POST → 429 backend JSON, all 7 MFE remoteEntry 200, static / → 200 html). Branch `feature/dev-proxy/infra`→develop, FOUNDER-GATED. Stack LEFT RUNNING on http://localhost:4200 for re-audit. ₹0. See UPDATE block below. PRIOR: Codify isolated-builder memory-persistence rule + land stranded auth-builder L_iam_1 learning (PR #361, squash `1951199`, develop HEAD `1951199`).** Two edits, one PR: (1) `docs/dev/WORKTREE_ISOLATION.md` new "Persisting an isolated builder's memory" section — isolated worktree builders can't write their own MEMORY.md/docs/status (boundary-blocked) so the dispatching coordinator transcribes the builder's REPORTED learning as a sanctioned NARROW scribe-exception to CLAUDE.md rule #4; (2) appended the stranded auth-builder L_iam_1 learning (core/auth 2→3-segment i18n migration, PR #359) via git-plumbing, additions-only. Master tree FF-synced + clean. Board sweep flagged several ≥7-day-untouched rows as external-gate holds (not stalls). ₹0. See UPDATE block below. PRIOR: **MS-4 Sub-Plan F — svc-category INFRA lane AUTHORED + offline-VALIDATED (₹0, dev-only).** 8 files on `feature/microservices-category/infra` (tip `e1b890a`). Recipe blend: AI-bearing (svc-image: GEMINI + LANGFUSE_SECRET) + api-only (svc-pricing/customer — NO worker). **CRITICAL grants in schema-role.sql:** `CREATE SCHEMA category` + `category_user` owns schema (for the c4f1e7a9d302 schema-move + Alembic) + the cross-schema `GRANT INSERT ON public.audit_events` (AI cost ledger F3.c). Valkey budget-keyspace carve-out HONORED (`ai:*` global/un-prefixed DB 0; category cache `category:`-prefixed DB 3). TLS `api-tls`. NO razorpay/msg91. New SM secret `dev-category-db-password` (→founder). Cluster /32-firewalled → 27 yaml assertions + SQL grant check + secret-scan PASS; server dry-run + dev smoke deferred (§15 F3). **I push + report; backend-coordinator runs the infra→integration merge gate.** See MS-4 Sub-Plan F UPDATE below.)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
 
+## UPDATE — 2026-06-22 — mesell-onboarding-testing-session-1 — qa-onboarding integration→develop merge (founder-authorized) + #417 STOP + session handoff doc
+
+=== SESSION START ===
+Phase: NOT a playbook §-resource op (no VM/K3s/ns/Postgres/Valkey/ingress/secret/cost change, ₹0).
+       Pure git merge-gate orchestration on the founder's `feature/{name}/integration` → `develop`
+       gate (GIT_WORKFLOW step 2, merge-commit / `--no-ff`), founder-authorized in the brief.
+Board sweep (session start): qa-wave-infra / dev-proxy / image-precheck / federation-manifest-reconcile
+       / the 6 microservices rows = IN REVIEW under FOUNDER/FE GATE (external holds, NOT stalls).
+       No NEW row crosses the 7-day-untouched stall line that isn't an explicit external-gate hold.
+
+=== TASK 1: merge feature/qa-onboarding/integration (2147d5b) → develop ===
+Pre-flight: `git fetch --all`. origin/develop = `4f055ec` (#414/#415 fe-lockfile-sync). integration tip
+  = `2147d5b` (merge: absorb develop #406 refreshForced + reconcile auth-storm spec). `git merge-base
+  --is-ancestor origin/develop integration` = YES → develop's #406 was absorbed INTO integration first.
+  `git merge-tree origin/develop integration` = **0 conflict markers**. 9 commits ahead (the QA-wave lanes).
+Command: `gh pr create --base develop --head feature/qa-onboarding/integration` → **PR #422**.
+  Waited for all 15 required checks → ALL PASS (5 CI gates + detect + shell + 7 mfe + 2 FE-gate/boot-smoke);
+  mergeStateStatus = CLEAN. NO red check (Build/Deploy/AI-eval/Nightly = `skipping`, expected — they never
+  report on a PR). NO `--admin` needed.
+  `gh pr merge 422 --merge` → MERGED 07:17:45Z.
+Validation: NEW develop tip = **`98cc02a`** — a true merge-commit, parents = `4f055ec` (develop) +
+  `2147d5b` (integration). No fast-forward, no force-push, no branch deletes. PASS.
+
+=== TASK 2: PR #417 (QA-journal docs → develop) — STOPPED, left OPEN (per brief contingency) ===
+Pre-#422, #417 was MERGEABLE/CLEAN. POST-#422 it now **CONFLICTS** against develop `98cc02a`
+  (`gh pr view 417` → mergeable=CONFLICTING, mergeStateStatus=DIRTY; local `git merge-tree` confirms).
+  Exactly 2 conflicting files — BOTH QA-coordinator sole-writer surfaces:
+    - `docs/status/feature_board_qa.md`
+    - `.claude/agent-memory/meesell-qa-coordinator/coverage_gaps.md`
+  Cause: #422 brought the canonical QA-journal content into develop, so #417's older copies (cut from
+  `4f055ec`) now collide. **DID NOT resolve** — these are NOT infra-owned files (hard constraint: never
+  edit another lead's board or another agent's memory dir), and the brief says "if it now conflicts,
+  rebase/report." #417 (head `75b2a38`) LEFT OPEN. Owner to resolve = qa-coordinator: rebase onto
+  `98cc02a` + reconcile against the landed journal content.
+
+=== TASK 3: session handoff doc ===
+Wrote `docs/testing/ONBOARDING_TESTING_SESSION_1_HANDOFF.md` (corrected integration SHA to `2147d5b`,
+  noted develop's #406 absorbed, recorded the develop merge-commit `98cc02a` + the #417 STOP). Landed on
+  develop via this small docs PR (develop protected → direct push blocked). Built in a CLEAN worktree off
+  origin/develop `98cc02a` and staged ONLY my infra-owned paths (handoff doc + feature_board_infra.md +
+  this STATUS) — the master tree carries a live sibling frontend-coordinator + prior infra session's
+  uncommitted edits to these same status files, NEVER touched (co-tenancy rule).
+
+=== SESSION END ===
+Board sweep (session end): qa-onboarding row added → MERGED (live on develop @ `98cc02a`). No row newly
+  crossed the 7-day stall line (the IN REVIEW rows are external-gate holds). Cost ₹0/mo.
+
 ## UPDATE — 2026-06-22 — mesell-federation-manifest-reconcile-infra-session-1 — Option 1 (sorted-canonical) port-regime reconcile (founder-chosen; resumes the BLOCKED stale-federation-manifest row; FE coordinator ruled Option 1 via memo)
 
 === SESSION START ===
