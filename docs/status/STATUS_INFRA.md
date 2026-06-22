@@ -1,8 +1,153 @@
 # STATUS — INFRASTRUCTURE
 
 **Owner:** `meesell-infra-builder`
-**Last update:** 2026-06-21 (**Add `/api` reverse-proxy to the static `:4200` dev shell — `serve.js` + `meesell_env.py` (UI/UX audit PR #367 fix). 2 files, stdlib `http` only, zero new deps, surgical (static-SPA serving untouched, proxy OFF by default). Proxies `/api`+`/health`+`/docs`+`/openapi.json` → backend (slot 0 = `:8000`); shell-only (MFEs serve static). VERIFIED LIVE via curl (GET /api/v1/auth/me → 401 backend JSON, OTP POST → 429 backend JSON, all 7 MFE remoteEntry 200, static / → 200 html). Branch `feature/dev-proxy/infra`→develop, FOUNDER-GATED. Stack LEFT RUNNING on http://localhost:4200 for re-audit. ₹0. See UPDATE block below. PRIOR: Codify isolated-builder memory-persistence rule + land stranded auth-builder L_iam_1 learning (PR #361, squash `1951199`, develop HEAD `1951199`).** Two edits, one PR: (1) `docs/dev/WORKTREE_ISOLATION.md` new "Persisting an isolated builder's memory" section — isolated worktree builders can't write their own MEMORY.md/docs/status (boundary-blocked) so the dispatching coordinator transcribes the builder's REPORTED learning as a sanctioned NARROW scribe-exception to CLAUDE.md rule #4; (2) appended the stranded auth-builder L_iam_1 learning (core/auth 2→3-segment i18n migration, PR #359) via git-plumbing, additions-only. Master tree FF-synced + clean. Board sweep flagged several ≥7-day-untouched rows as external-gate holds (not stalls). ₹0. See UPDATE block below. PRIOR: **MS-4 Sub-Plan F — svc-category INFRA lane AUTHORED + offline-VALIDATED (₹0, dev-only).** 8 files on `feature/microservices-category/infra` (tip `e1b890a`). Recipe blend: AI-bearing (svc-image: GEMINI + LANGFUSE_SECRET) + api-only (svc-pricing/customer — NO worker). **CRITICAL grants in schema-role.sql:** `CREATE SCHEMA category` + `category_user` owns schema (for the c4f1e7a9d302 schema-move + Alembic) + the cross-schema `GRANT INSERT ON public.audit_events` (AI cost ledger F3.c). Valkey budget-keyspace carve-out HONORED (`ai:*` global/un-prefixed DB 0; category cache `category:`-prefixed DB 3). TLS `api-tls`. NO razorpay/msg91. New SM secret `dev-category-db-password` (→founder). Cluster /32-firewalled → 27 yaml assertions + SQL grant check + secret-scan PASS; server dry-run + dev smoke deferred (§15 F3). **I push + report; backend-coordinator runs the infra→integration merge gate.** See MS-4 Sub-Plan F UPDATE below.)
+**Last update:** 2026-06-22 (**Federation port-regime reconcile — OPTION 1 (sorted-canonical), founder-chosen — PR #412 → develop, DO NOT MERGE (FE coordinator gates).** Permanently kills the TWO-PORT-REGIME bug (committed manifest [hand-pinned] vs meesell_env [sorted] disagreed → shell loaded wrong remote per port). Made the SORTED order (meesell_env slot-0 formula) the SINGLE regime everywhere. 7 files, ₹0, dev-only, surgical (port literals + ordering only — 0 .ts/component/app touched): `apps/shell/public/federation.manifest.json` sorted (strict JSON); `angular.json` serve+serve-original ports sorted; `ci.yml` boot-smoke readiness now waits ALL 7 remotes (was :4201-:4206, MISSING :4207); `tools/dev/{serve-static,start-all}.mjs` + `tools/boot-smoke/{README.md,serve.js}` sorted. `meesell_env.py` UNCHANGED (it IS the canonical ref; its override is now IDEMPOTENT == committed). 3 PROOFS green: 4-way (5-surface) static map IDENTICAL; live boot-smoke port→served-name all match + served runtime manifest == committed (idempotency); route-check.mjs federation 100% clean (0 RemoteFailure/0 specifier-miss across 12 routes — its exit-1 is a PRE-EXISTING GIS-403 on auth routes, unrelated) + contracts run-all.mjs EXIT 0. Resolves the BLOCKED stale-federation-manifest row + inter-lead row 75 (FE memo delegated the full reconcile to me). Session `mesell-federation-manifest-reconcile-infra-session-1`. See UPDATE block below. PRIOR: Add `/api` reverse-proxy to the static `:4200` dev shell — `serve.js` + `meesell_env.py` (UI/UX audit PR #367 fix). 2 files, stdlib `http` only, zero new deps, surgical (static-SPA serving untouched, proxy OFF by default). Proxies `/api`+`/health`+`/docs`+`/openapi.json` → backend (slot 0 = `:8000`); shell-only (MFEs serve static). VERIFIED LIVE via curl (GET /api/v1/auth/me → 401 backend JSON, OTP POST → 429 backend JSON, all 7 MFE remoteEntry 200, static / → 200 html). Branch `feature/dev-proxy/infra`→develop, FOUNDER-GATED. Stack LEFT RUNNING on http://localhost:4200 for re-audit. ₹0. See UPDATE block below. PRIOR: Codify isolated-builder memory-persistence rule + land stranded auth-builder L_iam_1 learning (PR #361, squash `1951199`, develop HEAD `1951199`).** Two edits, one PR: (1) `docs/dev/WORKTREE_ISOLATION.md` new "Persisting an isolated builder's memory" section — isolated worktree builders can't write their own MEMORY.md/docs/status (boundary-blocked) so the dispatching coordinator transcribes the builder's REPORTED learning as a sanctioned NARROW scribe-exception to CLAUDE.md rule #4; (2) appended the stranded auth-builder L_iam_1 learning (core/auth 2→3-segment i18n migration, PR #359) via git-plumbing, additions-only. Master tree FF-synced + clean. Board sweep flagged several ≥7-day-untouched rows as external-gate holds (not stalls). ₹0. See UPDATE block below. PRIOR: **MS-4 Sub-Plan F — svc-category INFRA lane AUTHORED + offline-VALIDATED (₹0, dev-only).** 8 files on `feature/microservices-category/infra` (tip `e1b890a`). Recipe blend: AI-bearing (svc-image: GEMINI + LANGFUSE_SECRET) + api-only (svc-pricing/customer — NO worker). **CRITICAL grants in schema-role.sql:** `CREATE SCHEMA category` + `category_user` owns schema (for the c4f1e7a9d302 schema-move + Alembic) + the cross-schema `GRANT INSERT ON public.audit_events` (AI cost ledger F3.c). Valkey budget-keyspace carve-out HONORED (`ai:*` global/un-prefixed DB 0; category cache `category:`-prefixed DB 3). TLS `api-tls`. NO razorpay/msg91. New SM secret `dev-category-db-password` (→founder). Cluster /32-firewalled → 27 yaml assertions + SQL grant check + secret-scan PASS; server dry-run + dev smoke deferred (§15 F3). **I push + report; backend-coordinator runs the infra→integration merge gate.** See MS-4 Sub-Plan F UPDATE below.)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
+
+## UPDATE — 2026-06-22 — mesell-federation-manifest-reconcile-infra-session-1 — Option 1 (sorted-canonical) port-regime reconcile (founder-chosen; resumes the BLOCKED stale-federation-manifest row; FE coordinator ruled Option 1 via memo)
+
+=== SESSION START ===
+Phase: NOT a playbook §-resource op (no VM/K3s/ns/Postgres/Valkey/ingress/secret/cost change, ₹0).
+       Touches the CI/CD pipeline def (`.github/workflows/ci.yml` boot-smoke gate — MINE, sole writer)
+       + the port-regime dev-tooling surfaces. `frontend/{angular.json,package.json,tools/dev/*.mjs,
+       tools/boot-smoke/README.md}` are normally FE-owned, but THIS reconcile was (a) founder-scoped to
+       include them and (b) explicitly DELEGATED to me by the frontend-coordinator memo
+       (`.claude/agent-memory/meesell-frontend-coordinator/handoff_federation_manifest_port_regime_fe.md`:
+       "Land the permanent reconcile (Option 1) on your own fix/.../infra branch -> develop (your gate)").
+       So this is a sanctioned cross-surface reconcile with FE sign-off ON RECORD. Governing rule:
+       CLAUDE.md Engineering Discipline #2 (Surgical — port literals only, no app/component/.ts change).
+Decision: FOUNDER chose OPTION 1 — make the SORTED (alphabetical-by-remote-name) order the SINGLE
+       canonical regime everywhere, so committed federation.manifest.json == meesell_env slot-0 generated
+       manifest == angular.json serve ports == CI boot-smoke ports. The two regimes stop disagreeing;
+       meesell_env's runtime override becomes byte-identical (idempotent) to the committed file.
+
+CANONICAL name→port table (per meesell_env.py ports_for_slot(0, sorted(mfe-*))):
+  shell=4200 | mfe-auth=4201 mfe-billing=4202 mfe-catalog=4203 mfe-dashboard=4204
+            | mfe-export=4205 mfe-onboarding=4206 mfe-pricing=4207
+This == the live running stack (curl :420X/remoteEntry.json name, per FE memo + prior session verify).
+
+Board sweep (session start): stale-federation-manifest row = BLOCKED awaiting exactly this ruling
+       (now resolved → superseded by this feature). qa-wave-infra / dev-proxy / image-precheck / the 6
+       microservices rows = IN REVIEW under FOUNDER GATE (external holds, NOT stalls). No NEW row crosses
+       the 7-day-untouched stall line that isn't an explicit external-gate hold.
+
+=== STEP 1: define canonical order + plan surgical edits (7 surfaces; meesell_env confirm-only) ===
+Pre-flight: pass. Worktree `/private/tmp/mesell-wt/fed-manifest-reconcile` off origin/develop `2dbcfae`;
+node_modules symlinked from master for RAM-safe builds. NEVER ran git in the master tree.
+Canonical = ports_for_slot(0, sorted(mfe-*)) (CONFIRMED meesell_env.py already emits this → confirm-only).
+
+=== STEP 2: surgical edits (7 files; port literals + ordering ONLY; 0 .ts/component/app touched) ===
+Command executed: Edit ×N across the 7 surfaces (manifest, angular.json, ci.yml, serve-static.mjs,
+  start-all.mjs, boot-smoke/README.md, serve.js). `git diff --stat` = 7 files, +102/-84.
+  `meesell_env.py` UNCHANGED (confirm-only). grep confirmed NO .ts/.html/src/libs/federation.config.
+Validation: angular.json + manifest valid JSON; ci.yml valid YAML; all .mjs/.js `node --check` OK;
+  meesell_env.py `py_compile` OK. PASS.
+
+=== STEP 3: PROOF 1 — 4-way (5-surface) static consistency ===
+committed manifest == angular.json == ci.yml == meesell_env slot-0 (+ serve-static.mjs) →
+  ALL 5 SURFACES IDENTICAL name→port (auth=4201 billing=4202 catalog=4203 dashboard=4204
+  export=4205 onboarding=4206 pricing=4207). Validation: PASS.
+
+=== STEP 4: PROOF 2 — live boot-smoke (RAM-safe; sibling held the build lock so I did NOT contend) ===
+Running meesell_env.py slot-0 stack (already up; RAM free 2074MB / swap 59.9% — I did NOT spawn 7
+  concurrent ng-serves). curl each :420X/remoteEntry.json `name`:
+  :4201→mfe-auth :4202→mfe-billing :4203→mfe-catalog :4204→mfe-dashboard :4205→mfe-export
+  :4206→mfe-onboarding :4207→mfe-pricing — ALL MATCH the committed manifest. shell :4200 root → 200.
+IDEMPOTENCY (brief's key acceptance): served runtime :4200/federation.manifest.json == committed file
+  (same 7 keys, same port map, same host/path) → meesell_env override is now a no-op → ONE regime.
+  Validation: PASS.
+
+=== STEP 5: PROOF 3 — dead_route_guard.mjs (brief-specified) → EXIT 0 ===
+`node frontend/tools/contracts/dead_route_guard.mjs` (run from the reconcile worktree's frontend/) →
+  EXIT 0: "FED-2: OK — 48 static navigations, all resolve to a defined route (18 route patterns;
+  6 dynamic targets skipped)". CORRECTION to the session-start note: the guard DOES exist (FED-2,
+  PR #403 `058c743`) and IS in my reconcile base `2dbcfae` + origin/develop — I earlier checked the
+  STALE master tree at `3c63b55` (before develop advanced) and wrongly reported it absent.
+BONUS guards: tools/dev/route-check.mjs (live 12-route federation render harness) = 0
+  RemoteFailureComponent / 0 "Unable to resolve specifier" across all 12 routes (federation 100% clean);
+  its TRUE exit=1 is SOLELY 3 mfe-auth routes hitting a PRE-EXISTING GIS 403 (accounts.google.com/
+  gsi/button "origin not allowed for client ID" = gauth localhost-origin deferred go-live, UNRELATED to
+  ports). tools/contracts/run-all.mjs (fe1-fe5 + federation_singleton_guard) = EXIT 0. Validation: PASS.
+
+=== STEP 6: commit + PR (DO NOT MERGE — FE coordinator gates next) ===
+Commit `c372cee` (7 files, +102/-84, session footer). Pushed
+  `feature/federation-manifest-reconcile/infra`. PR **#412** → develop, base=develop, state=OPEN,
+  mergeable=MERGEABLE, files=EXACTLY 7 (verified `gh pr view 412 --json files`; proof report artifact
+  NOT committed). Develop advanced 2dbcfae→dff633a mid-session (only #410 QA docs — ZERO overlap with
+  my 7 files; PR diff stays clean).
+
+Board sweep (session end): federation-manifest-reconcile row = IN REVIEW (FE gate). stale-federation-
+  manifest BLOCKED row flipped to SUPERSEDED → #412. Inter-lead row 75 (→frontend-coordinator) flipped
+  OPEN → RESOLVED (FE gates #412 + marks CLOSED on its own board). No row crosses the 7-day stall line
+  that isn't an explicit external-gate hold.
+
+Cost: ₹0/mo (dev-tooling + CI def only; no cluster/cloud/secret change). Next action: WAIT for FE
+  coordinator merge-gate on PR #412. NOT my gate to merge.
+
+=========
+
+---
+
+## UPDATE — 2026-06-22 — mesell-stale-federation-manifest-infra-session-1 — correct the stale committed dev federation.manifest.json port→remote mapping (founder pre-approved cleanup)
+
+=== STEP 1: scope identification ===
+Phase: NOT a playbook §-resource op (no VM/K3s/ns/Postgres/Valkey/ingress/secret/cost change, ₹0).
+       Dev-tooling / static-dev baseline config I own (frontend/apps/shell/public/federation.manifest.json
+       is the static-dev/boot-smoke baseline; meesell_env.py OVERRIDES it at runtime per slot). Governing
+       rule: CLAUDE.md Engineering Discipline #2 (Surgical — JSON values only, no app/code touch) + my own
+       memory finding-federation-manifest-pins-worktree-ports.md (committed manifest port-pins mislead
+       debugging). Playbook §0 "live state is SSOT" applies in spirit: the RUNNING stack is the truth,
+       the committed file must match it.
+Branch: `fix/stale-federation-manifest/infra` (isolated worktree /private/tmp/mesell-wt/stale-fed-manifest,
+       cut from origin/develop @ 25a85f4). PR → develop (FOUNDER/MASTER gate, D1 — but founder PRE-APPROVED
+       this cleanup IN THE BRIEF → admin-merge sanctioned).
+
+=== STEP 2: verification (live running stack = ground truth) ===
+curl http://localhost:420X/remoteEntry.json → "name" field, all 7 ports up:
+  :4201=mfe-auth  :4202=mfe-billing  :4203=mfe-catalog  :4204=mfe-dashboard
+  :4205=mfe-export  :4206=mfe-onboarding  :4207=mfe-pricing
+This MATCHES (a) meesell_env.py mfe[i]=4201+N*10+i over sorted(mfe-* dirs) [auth,billing,catalog,
+dashboard,export,onboarding,pricing] and (b) the brief's stated target. The COMMITTED dev manifest
+was stale on 6 of 7 lines (e.g. it claimed mfe-auth→:4206, but :4206 actually serves mfe-onboarding;
+mfe-pricing→:4201, but :4201 serves mfe-auth). It predated the alphabetical-sort + the mfe-billing
+remote, and lacked mfe-billing entirely (only 7 keys but wrong ports).
+
+=== STEP 3: STOP CONDITION — the brief-literal fix would break the CI boot-smoke gate ===
+On inspection the committed manifest is NOT random cruft — it is the load-bearing artifact for a SECOND,
+internally-consistent port regime that disagrees with the running stack:
+  Regime A (ng serve / start:all / CI): ports come from frontend/angular.json serve config —
+    mfe-pricing→:4201, mfe-export→:4202, mfe-onboarding→:4203, mfe-dashboard→:4204, mfe-catalog→:4205,
+    mfe-auth→:4206, mfe-billing→:4207 (OLD order). package.json start:mfe-* = bare `ng serve <app>`
+    (no --port) → inherits angular.json. start-all.mjs + serve-static.mjs SERVERS arrays = same OLD order.
+    CI boot-smoke job runs `setsid pnpm run start:all` (ci.yml:811) → ng serve → the shell serves the
+    COMMITTED public/federation.manifest.json VERBATIM (angular.json esbuild assets glob =
+    apps/shell/public/**/*; main.ts initFederation('federation.manifest.json') origin-relative; NO
+    manifest regeneration anywhere; CI never runs meesell_env.py). The committed manifest is CORRECT for A.
+  Regime B (meesell_env.py / boot-smoke serve.js): mfe[i]=4201+N*10+i over sorted(mfe-* dirs) → SORTED
+    order (auth→:4201 ... pricing→:4207). This is the CURRENTLY-RUNNING stack (curl-verified) and what
+    the brief targets. meesell_env.py GENERATES + OVERRIDES the served manifest at runtime → the live
+    shell at :4200 already serves a SORTED manifest. So the "stale debugging" the founder hit was the
+    EXPECTED runtime override, not a broken committed file.
+CONSEQUENCE of the brief-literal change: flip ONLY the committed manifest to sorted order → in CI/ng serve
+the shell maps mfe-auth→:4201 while ng serve binds mfe-pricing→:4201 → wrong-remote / RemoteFailureComponent
+→ boot-smoke RED. The full fix (Option 1: make sorted canonical) requires editing FE-owned angular.json
+serve ports + tools/dev/{start-all,serve-static}.mjs + tools/boot-smoke/README.md (also omits mfe-billing)
++ ci.yml readiness loop (waits :4201-:4206 only — MISSING :4207, a latent gap) — ALL out of my infra lane
+(meesell-frontend-coordinator owns them). Option 2 = make old-order canonical, change meesell_env.py to read
+angular.json ports (no manifest edit). Either way needs an FE+founder ruling.
+DECISION: STOP. Did NOT ship. Worktree edits (manifest + README) reverted; branch `fix/stale-federation-
+manifest/infra` left CLEAN (no commits). NOT touched: federation.manifest.{prod,staging}.json (real
+remotes.mesell.xyz hostnames, no localhost — correct, out of scope; 6-remote shape is FE's D44 concern).
+Native-federation loadManifest = fetch().json() = strict JSON.parse → the dev manifest must stay comment-free
+(can't add a // header — would break a real browser load).
+
+=== STEP 4: escalation + board ===
+Memo `.claude/agent-memory/meesell-infra-builder/handoff_federation_manifest_port_regime.md` (full evidence +
+Option 1 vs 2 + the files FE must reconcile). Inter-lead request → frontend-coordinator OPENED on this board.
+Active-features row `stale-federation-manifest` = BLOCKED (pending FE+founder ruling). Session-end sweep:
+no NEW row untouched 7+ days beyond the known external-gate holds already flagged. ₹0/mo (zero live touch).
+Next action: WAIT for FE+founder ruling. On Option 1 ping → I ship the one-line manifest flip + a README
+override-note in `fix/stale-federation-manifest/infra` and run the merge.
 
 ## UPDATE — 2026-06-22 — mesell-qa-wave-infra-infra-session-1 — build the QA pillar (4 agents + 3 skills + 4 memory dirs + Playwright E2E scaffold + registry) per the APPROVED design
 
