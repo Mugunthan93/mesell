@@ -1,5 +1,21 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { SIDEBAR_NAV_GROUPS, NavGroup } from './sidebar.nav-groups';
+import { SIDEBAR_NAV_GROUPS, ONBOARDING_NAV_ITEM, NavGroup } from './sidebar.nav-groups';
+
+// ---------------------------------------------------------------------------
+// Helper — mirrors SidebarComponent.navGroups computed logic (OB-FE-18).
+// Kept here as a pure function so we can test all gate conditions without
+// TestBed (which triggers the Angular 21 + Vitest JIT crash on standalone
+// components that import PrimeNG modules).
+// ---------------------------------------------------------------------------
+function buildNavGroups(onboardingComplete: boolean | null | undefined): NavGroup[] {
+  if (onboardingComplete === false) {
+    return [
+      { label: 'Getting started', items: [ONBOARDING_NAV_ITEM] },
+      ...SIDEBAR_NAV_GROUPS,
+    ];
+  }
+  return SIDEBAR_NAV_GROUPS;
+}
 
 // Pure-data assertions on SIDEBAR_NAV_GROUPS.
 // The template wiring (routerLink / routerLinkActive) is verified by E2E / shell integration
@@ -128,6 +144,113 @@ describe('SIDEBAR_NAV_GROUPS — nav route data contract', () => {
       const catalogsGroup = groups.find((g) => g.label === 'Catalogs')!;
       const newProduct = catalogsGroup.items.find((i) => i.route === '/catalogs/new')!;
       expect(newProduct.exact).toBe(true);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// OB-FE-18 — onboarding nav item gate (=== false ONLY)
+// Tests the same conditional logic used by SidebarComponent.navGroups computed.
+// Uses a narrow AuthService stub exposing only `currentUser` as a writable
+// Angular signal — no TestBed needed (avoids Angular 21 + Vitest JIT crash
+// on standalone components that import PrimeNG modules).
+// ---------------------------------------------------------------------------
+
+describe('ONBOARDING_NAV_ITEM — data contract', () => {
+  it('should have route /onboarding', () => {
+    expect(ONBOARDING_NAV_ITEM.route).toBe('/onboarding');
+  });
+
+  it('should carry testId nav-onboarding for Playwright targeting', () => {
+    expect(ONBOARDING_NAV_ITEM.testId).toBe('nav-onboarding');
+  });
+
+  it('should have exact:true', () => {
+    expect(ONBOARDING_NAV_ITEM.exact).toBe(true);
+  });
+});
+
+describe('navGroups computed — OB-FE-18 gate (=== false ONLY)', () => {
+  // Stub: a minimal AuthService whose `currentUser` signal is simulated as a
+  // plain function — no @angular/core import needed in bare vitest (avoids the
+  // "Cannot find package '@angular/core'" error when node_modules is not in the
+  // worktree path).  The component uses `this.auth.currentUser()` — a zero-arg
+  // call returning AuthUser|null — so we pass the value directly.
+
+  describe('when onboarding_complete === false (onboarding incomplete)', () => {
+    it('prepends a "Getting started" group containing the onboarding nav item', () => {
+      const groups = buildNavGroups(false);
+
+      expect(groups[0].label).toBe('Getting started');
+      expect(groups[0].items).toHaveLength(1);
+      expect(groups[0].items[0].route).toBe('/onboarding');
+      expect(groups[0].items[0].testId).toBe('nav-onboarding');
+    });
+
+    it('still includes all standard SIDEBAR_NAV_GROUPS after the Getting started group', () => {
+      const groups = buildNavGroups(false);
+      const remainder = groups.slice(1);
+
+      expect(remainder).toEqual(SIDEBAR_NAV_GROUPS);
+    });
+
+    it('total group count is SIDEBAR_NAV_GROUPS.length + 1', () => {
+      const groups = buildNavGroups(false);
+      expect(groups).toHaveLength(SIDEBAR_NAV_GROUPS.length + 1);
+    });
+  });
+
+  describe('when onboarding_complete === true (profile complete)', () => {
+    it('does NOT include a "Getting started" group — item absent', () => {
+      const groups = buildNavGroups(true);
+      const gettingStarted = groups.find((g) => g.label === 'Getting started');
+
+      expect(gettingStarted).toBeUndefined();
+    });
+
+    it('returns exactly SIDEBAR_NAV_GROUPS unmodified', () => {
+      expect(buildNavGroups(true)).toEqual(SIDEBAR_NAV_GROUPS);
+    });
+
+    it('does NOT include the /onboarding route in any group', () => {
+      const allRoutes = buildNavGroups(true).flatMap((g) => g.items.map((i) => i.route));
+      expect(allRoutes).not.toContain('/onboarding');
+    });
+  });
+
+  describe('when onboarding_complete === undefined (legacy/mock users — no field set)', () => {
+    it('does NOT include a "Getting started" group — item absent', () => {
+      const groups = buildNavGroups(undefined);
+      const gettingStarted = groups.find((g) => g.label === 'Getting started');
+
+      expect(gettingStarted).toBeUndefined();
+    });
+
+    it('returns exactly SIDEBAR_NAV_GROUPS unmodified', () => {
+      expect(buildNavGroups(undefined)).toEqual(SIDEBAR_NAV_GROUPS);
+    });
+
+    it('does NOT include the /onboarding route in any group', () => {
+      const allRoutes = buildNavGroups(undefined).flatMap((g) => g.items.map((i) => i.route));
+      expect(allRoutes).not.toContain('/onboarding');
+    });
+  });
+
+  describe('OB-FE-18 strict gate — only === false triggers the item (NOT falsy)', () => {
+    it('undefined does NOT trigger — strict false check, not falsy (legacy users safe)', () => {
+      expect(buildNavGroups(undefined).find((g) => g.label === 'Getting started')).toBeUndefined();
+    });
+
+    it('null does NOT trigger — strict false check, not falsy', () => {
+      expect(buildNavGroups(null).find((g) => g.label === 'Getting started')).toBeUndefined();
+    });
+
+    it('false triggers — item present (onboarding incomplete)', () => {
+      expect(buildNavGroups(false).find((g) => g.label === 'Getting started')).toBeDefined();
+    });
+
+    it('true does NOT trigger — item absent (onboarding complete)', () => {
+      expect(buildNavGroups(true).find((g) => g.label === 'Getting started')).toBeUndefined();
     });
   });
 });

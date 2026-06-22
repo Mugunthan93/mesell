@@ -5,6 +5,7 @@ import {
   HostListener,
   OnDestroy,
   OnInit,
+  computed,
   inject,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
@@ -14,8 +15,10 @@ import { Subscription, filter } from 'rxjs';
 import { meeIconClass } from '@mesell/ui-kit';
 import type { MeeIconName } from '@mesell/ui-kit';
 
+import { AuthService } from '@mesell/core';
+
 import { LayoutService } from '../layout.service';
-import { SIDEBAR_NAV_GROUPS } from './sidebar.nav-groups';
+import { SIDEBAR_NAV_GROUPS, ONBOARDING_NAV_ITEM } from './sidebar.nav-groups';
 import type { NavGroup } from './sidebar.nav-groups';
 
 @Component({
@@ -42,7 +45,7 @@ import type { NavGroup } from './sidebar.nav-groups';
       </div>
 
       <nav class="mee-sidebar__nav" aria-label="Primary">
-        @for (group of navGroups; track group.label) {
+        @for (group of navGroups(); track group.label) {
           <div class="mee-sidebar__group">
             <span class="mee-sidebar__group-label">{{ group.label }}</span>
             @for (item of group.items; track item.route) {
@@ -140,7 +143,7 @@ import type { NavGroup } from './sidebar.nav-groups';
           transform: translateX(0) !important;
         }
       }
-      /* <992px: hidden, slides in as overlay when open */
+      /* <992px: hidden, slides in as overlay when load */
       @media (max-width: 991px) {
         .mee-sidebar {
           transform: translateX(-100%);
@@ -157,10 +160,27 @@ export class SidebarComponent implements OnInit, OnDestroy {
   protected readonly layoutService = inject(LayoutService);
   private readonly router = inject(Router);
   private readonly host = inject(ElementRef<HTMLElement>);
+  private readonly auth = inject(AuthService);
 
   private navSub?: Subscription;
 
-  protected readonly navGroups: NavGroup[] = SIDEBAR_NAV_GROUPS;
+  /**
+   * navGroups — computed signal so Angular re-evaluates reactively when
+   * currentUser() changes (e.g. after onboarding completes + refreshUser()).
+   *
+   * Gate: STRICT === false (OB-FE-18). Falsy (undefined, null, true) must NOT
+   * show the onboarding item — only an explicit boolean false triggers it.
+   */
+  protected readonly navGroups = computed<NavGroup[]>(() => {
+    const user = this.auth.currentUser();
+    if (user?.onboarding_complete === false) {
+      return [
+        { label: 'Getting started', items: [ONBOARDING_NAV_ITEM] },
+        ...SIDEBAR_NAV_GROUPS,
+      ];
+    }
+    return SIDEBAR_NAV_GROUPS;
+  });
 
   /** Resolve a nav item's semantic icon name to its PrimeIcons class (FE-2: raw `pi pi-*` stays in the registry). */
   protected readonly iconClass = (name: string): string => meeIconClass(name as MeeIconName);
