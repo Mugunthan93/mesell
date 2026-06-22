@@ -466,6 +466,50 @@ class TestPatchSellerProfile:
         )
         assert resp.status_code == 422
 
+    async def test_first_patch_missing_manufacturer_pincode_returns_422_not_500(
+        self, customer_client
+    ):
+        """First (row-creating) PATCH omitting manufacturer_pincode → 422, not 500.
+
+        Pre-flight INSERT-path guard converts the NOT-NULL violation into a clean
+        422 with a non-empty validation_message_id (resolves via the generic
+        fallback to ``validation.generic.missing``).
+        """
+        payload = {k: v for k, v in _VALID_PROFILE_PAYLOAD.items() if k != "manufacturer_pincode"}
+        resp = await customer_client.patch("/api/v1/seller-profile", json=payload)
+        assert resp.status_code == 422, (
+            f"Expected 422 (not 500) for missing manufacturer_pincode on first PATCH, "
+            f"got {resp.status_code}: {resp.text}"
+        )
+        body = resp.json()
+        assert body.get("validation_message_id") == "validation.manufacturer_pincode.missing"
+        assert body.get("detail"), "detail must be non-empty (generic.missing resolved)"
+
+    async def test_first_patch_null_packer_pincode_returns_422_not_500(
+        self, customer_client
+    ):
+        """First (row-creating) PATCH with an explicit null packer_pincode → 422, not 500."""
+        payload = {**_VALID_PROFILE_PAYLOAD, "packer_pincode": None}
+        resp = await customer_client.patch("/api/v1/seller-profile", json=payload)
+        assert resp.status_code == 422, (
+            f"Expected 422 (not 500) for null packer_pincode on first PATCH, "
+            f"got {resp.status_code}: {resp.text}"
+        )
+        body = resp.json()
+        assert body.get("validation_message_id") == "validation.packer_pincode.missing"
+        assert body.get("detail")
+
+    async def test_first_patch_complete_payload_creates_row_200(self, customer_client):
+        """Complete first PATCH (all 7 NOT-NULL fields present) → 200, row created."""
+        resp = await customer_client.patch(
+            "/api/v1/seller-profile",
+            json=_VALID_PROFILE_PAYLOAD,
+        )
+        assert resp.status_code == 200, (
+            f"Expected 200 for complete first PATCH, got {resp.status_code}: {resp.text}"
+        )
+        assert resp.json()["manufacturer_pincode"] == "641001"
+
     async def test_patch_subset_semantics_preserves_existing_fields(self, customer_client):
         """Subsequent PATCH with partial body preserves fields not in payload."""
         # First upsert.
