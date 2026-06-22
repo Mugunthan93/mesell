@@ -31,7 +31,9 @@ import {
   Validators,
 } from '@angular/forms';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { of } from 'rxjs';
 import {
+  catchError,
   debounceTime,
   distinctUntilChanged,
   filter,
@@ -247,7 +249,14 @@ export class SmartPickerComponent implements OnInit {
           this.loading.set(true);
           this.suggestions.set([]);
           this.fallbackOffered.set(false);
-          return this.categoryService.suggest(q);
+          return this.categoryService.suggest(q).pipe(
+            catchError(() =>
+              // Inner-catch keeps the OUTER valueChanges stream alive after a rethrown
+              // 400/422/429 from CategoryService.suggest (CAT-BUG-1). Maps to the contract
+              // fallback shape that drives the existing browse-CTA error UI.
+              of<SuggestResponse>({ suggestions: [], fallback_offered: true }),
+            ),
+          );
         }),
         takeUntilDestroyed(this.destroyRef),
       )
@@ -256,10 +265,6 @@ export class SmartPickerComponent implements OnInit {
           this.suggestions.set(response.suggestions);
           this.fallbackOffered.set(response.fallback_offered);
           this.loading.set(false);
-        },
-        error: () => {
-          this.loading.set(false);
-          this.fallbackOffered.set(true);
         },
       });
   }
