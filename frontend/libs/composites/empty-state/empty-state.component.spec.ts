@@ -31,7 +31,8 @@ describe('EmptyStateComponent', () => {
     fixture.componentRef.setInput('message', 'No products yet');
     fixture.detectChanges();
     const el: HTMLElement = fixture.nativeElement;
-    expect(el.textContent).toContain('inventory');
+    // icon name is wired as an input to <mee-icon> — it is never rendered as text
+    expect(fixture.nativeElement.querySelector('mee-icon')).not.toBeNull();
     expect(el.textContent).toContain('No products yet');
   });
 
