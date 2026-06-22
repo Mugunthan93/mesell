@@ -142,6 +142,58 @@ wrong and `getByTestId(x)` resolves to a non-interactable host:
 - Download link (literal `<a download href>`, ONLY rendered in the `ready` state):
   `[data-testid="export-download"]`.
 - NOTE: the provisional `export-download-button`/`export-status` testids do NOT exist.
+- RECONCILE (QA Wave C, qa-pricing 2026-06-22): the brief asked to reconcile
+  `export-download-button` vs `export-download`. CONFIRMED LIVE: the real anchor is
+  `data-testid="export-download"` (a literal `<a download href>`); `export-download-btn`
+  is only a CSS class. The ExportPage page object (`downloadLink` → `export-download`)
+  is ALREADY correct — no change needed.
+- PRODUCTID BUG FIXED (was the Wave-1 `test.fixme` reason): `export.component.ts`
+  `onGenerate()` now calls `resolveExportProductId(this.route.snapshot.paramMap)` (line
+  ~425). VERIFIED LIVE: clicking `export-trigger` on `/catalogs/{realPid}/export` POSTs
+  to `/api/v1/products/{realPid}/export-xlsx` (the REAL UUID, NOT the old
+  `current-product-id` placeholder). For a DRAFT product the backend returns 422 with a
+  real "Your product isn't ready…/A front image is required" validation message rendered
+  in the LEFT panel checklist (`<ul aria-label="Items to resolve before export">` → `<li>`
+  items; the not-ready copy ALSO surfaces via `notReadyMessage()`). NO `data-testid` on
+  these list items → assert by visible text (e.g. `getByText(/isn't ready/i)`).
+- The `ready` state + the `export-download` link remain UNREACHABLE in LOCAL dev — NOT
+  the placeholder bug anymore, but (a) no DRAFT product is `ready` (needs all fields +
+  a front image) and (b) the `ready`→signed-URL path needs GCS, which 502s in local dev
+  (no creds). So the actual file-download stays `test.fixme` with the UPDATED reason.
+
+## mfe-pricing (:4207 baseline alphabetical / :421x slot) — price-calc  [VERIFIED 2026-06-22 QA Wave C]
+> LIVE-VERIFIED against the running federated stack with the integration-tip mfe-pricing
+> build (#439 testids: 3 `[testId]` passthroughs + 4 literal `data-testid`s), shell routed
+> to `catalogs/:id/pricing`. The remote LOADS (remote-failure-fallback count 0).
+- Selling-price input (mee-input → `[testId]` passthrough lands on the inner `<input>`):
+  `[data-testid="pricing-cost-input"]` → `getByTestId('pricing-cost-input').fill(value)`
+  DIRECTLY (NO `.locator('input')`).
+- Commission % input (mee-input, optional override): `[data-testid="pricing-commission-input"]`
+  → fill directly. Omit (leave blank) for the default-0% path.
+- Calculate button (mee-button → `[testId]` on the `<p-button>` host):
+  `[data-testid="pricing-calculate-btn"]` → `.locator('button').click()`. Disabled while
+  the form is invalid (no selling price) or a calc is in-flight.
+- Result region (literal, ALWAYS present on load — it is the `#resultRegion` container):
+  `[data-testid="pricing-breakdown"]`. Populated with the 5-row settlement table AFTER a
+  successful calc.
+- Headline settlement value (literal, the "Estimated Bank Settlement" row value, rendered
+  ONLY after a successful calc): `[data-testid="pricing-settlement-value"]`. LIVE: cost
+  70 → `₹57.62`; cost 1 → `₹-11.31` (negative, server-authoritative).
+- Disclaimer (literal `<p>`, server-sent text, rendered ONLY after a successful calc):
+  `[data-testid="pricing-disclaimer"]`. LIVE text: "Bank settlement amount may vary
+  slightly based on the quantity in the order, Meesho commission policy at the time of
+  the order and the actual…".
+- NEGATIVE_SETTLEMENT alert (literal, rendered ONLY when settlement < 0):
+  `[data-testid="pricing-negative-alert"]`. LIVE: appears for cost 1 (settlement ₹-11.31),
+  text "This selling price results in a negative settlement — the fees exceed your price.".
+  For a positive calc its count is 0 (NOT rendered) — assert `count()===0` / not-visible.
+- RENDER ORDER on load: cost-input + commission-input + calculate-btn + breakdown region
+  are present immediately; settlement-value + disclaimer appear post-calc; negative-alert
+  only on a negative settlement.
+- DATA DEPENDENCY: price-calc 200 requires the product's category leaf to have a pricing
+  lookup row. A category picked via the smart-picker (a census leaf) HAS one (LIVE: a real
+  product calc'd ₹57.62). A category with no lookup row → 422 `pricing.category.no_pricing_data`
+  (no settlement renders).
 
 ## mfe-billing (:4202/:421x) — plans  [VERIFIED]
 - Upgrade CTA (literal `<button>`, on /billing/plans, one per upgradeable paid tier):
