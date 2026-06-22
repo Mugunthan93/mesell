@@ -1,6 +1,25 @@
 # STATUS — BACKEND
 
 
+=== UPDATE: 2026-06-22 (meesell-services-builder) — category-monitor Wave-3 Unit T: 3RD onboarding edge site (Director full-coverage ruling) ===
+Phase: category-monitor — Wave 3 Unit T (additive fix to OPEN PR #472)
+Branch: feature/category-monitor/backend-w3-triggers @ bb71c1c. PR #472 → feature/category-monitor/integration.
+Session: mesell-category-monitor-backend-session-5 (continuation)
+
+Done:
+- Director ruling: cover ALL THREE onboarding `onboarding_complete` recompute sites (was 2: upsert_profile + set_active_categories). Wired the existing reusable `customer/service.py::_enqueue_monitor_on_onboarding_edge(...)` into `set_compliance_extension`'s MAIN recompute branch (after `update_compliance_extension` + cache invalidate, ~L673), SAME false→true edge guard — no re-enqueue when already complete. `existing` read at ~L604 BEFORE the merge carries the prior flag. The `no_spec` early-return branch (~L629-637) passes the prior flag unchanged → cannot cross the edge → correctly left untouched.
+- Tests: +3 in `tests/test_monitor_triggers.py` (5→8) mirroring the existing onboarding-edge tests: enqueue-per-distinct-leaf on edge, no-reenqueue on repeat-when-complete, host-survives-raising-`.delay`. New `patched_compliance` fixture (all collaborators mocked; `.delay` mocked on source `monitor.tasks.scrape_category_task`; no live DB).
+- Mutation-verified BOTH gates on the new tests: dropping the try/except → raise-survival test RED; breaking the edge guard → no-reenqueue test RED.
+
+Tests: 8/8 passed under `-m unit` (master 3.11 venv toolchain, no live DB, scrape_category/.delay MOCKED). ruff clean; lint-imports 27 kept / 0 broken (no new cross-module edge — reuses the same `customer→catalog.service`/`customer→monitor.triggers` edges already flagged in §2.D); diff = exactly 2 files (customer/service.py +13, test +154); no router/main.py touched → route inventory unchanged (28); LOCKED docs + import_rules.toml byte-untouched.
+In progress: none.
+Blockers: none.
+Next: PR #472 ready for backend-coordinator re-gate. Does NOT self-merge.
+Hand-offs:
+  - backend-coordinator: re-gate PR #472 (additive 3rd-site diff = customer/service.py + test). §2.D founder-gate flag unchanged (no new edge beyond the already-flagged customer→catalog/customer→monitor).
+=========
+
+
 === UPDATE: 2026-06-22 (meesell-services-builder) — category-monitor Wave-3 Unit T TRIGGER WIRING COMPLETE ===
 Phase: category-monitor (RETENTION_CATEGORY_MONITOR) — Wave 3 Unit T (trigger wiring — the ONE unit that touches LIVE V1 paths)
 Branch: feature/category-monitor/backend-w3-triggers off integration 0d0abfb (carries W1+W2). PR → feature/category-monitor/integration.
