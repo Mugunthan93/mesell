@@ -119,3 +119,77 @@ async def test_full_silent_refresh_flow(iam_client, use_live_valkey, monkeypatch
     # New refresh cookie MUST be present and fresh (locked at §7.B.3).
     refresh_v2 = extract_refresh_cookie(r2)
     assert refresh_v2 and refresh_v2 != refresh_v1
+
+
+def _refresh_clear_cookie_header(response) -> str | None:
+    """Return the raw ``Set-Cookie`` line that CLEARS the refresh cookie.
+
+    A clear-cookie line is ``refresh_token=...; ...; Max-Age=0`` (empty value
+    + ``Max-Age=0``).  ``extract_refresh_cookie`` deliberately conflates "no
+    cookie" with "clear cookie", so for this regression we inspect the raw
+    header to prove the clear was actually emitted.
+    """
+    for header in response.headers.get_list("set-cookie"):
+        if "refresh_token=" in header and "Max-Age=0" in header:
+            return header
+    return None
+
+
+async def test_refresh_401_clears_stale_cookie(iam_client, use_live_valkey):
+    """Regression — a rejected/replayed refresh (401) MUST clear the refresh cookie.
+
+    §7.B.3 contract: on the 401 failure path the server emits
+    ``Set-Cookie: refresh_token=...; Max-Age=0`` so a stale cookie cannot
+    persist in the browser.  Guards the bug where the global error handler
+    returned a brand-new JSONResponse and discarded the clear-cookie header
+    set on the FastAPI-injected ``response``.
+
+    Two failure shapes are exercised:
+      1. An invalid/never-issued token value.
+      2. A REPLAYED token — one that was valid, rotated away on first use,
+         and presented a second time (the canonical replay-attack signal).
+    """
+    # ── Shape 1: invalid / never-issued refresh token ──────────────────────
+    r_invalid = await iam_client.post(
+        "/api/v1/auth/refresh",
+        headers={"Cookie": "refresh_token=never-issued-bogus-token"},
+    )
+    assert r_invalid.status_code == 401, r_invalid.text
+    body_invalid = r_invalid.json()
+    assert body_invalid["validation_message_id"] == "auth.refresh.invalid", body_invalid
+    assert _refresh_clear_cookie_header(r_invalid) is not None, (
+        "401 refresh (invalid token) MUST emit a Max-Age=0 clear-cookie; "
+        f"got Set-Cookie={r_invalid.headers.get_list('set-cookie')!r}"
+    )
+
+    # ── Shape 2: replayed token (valid → rotated → re-presented) ───────────
+    phone = "+915550000102"
+    otp = "424242"
+    await _seed_otp_in_valkey(phone, otp)
+
+    r_verify = await iam_client.post(
+        "/api/v1/auth/otp/verify", json={"phone": phone, "otp": otp}
+    )
+    assert r_verify.status_code == 200, r_verify.text
+    refresh_v1 = extract_refresh_cookie(r_verify)
+    assert refresh_v1, "verify must emit a refresh_token Set-Cookie"
+
+    # First refresh — succeeds and rotates the token away.
+    r_first = await iam_client.post(
+        "/api/v1/auth/refresh",
+        headers={"Cookie": f"refresh_token={refresh_v1}"},
+    )
+    assert r_first.status_code == 200, r_first.text
+
+    # Replay the now-rotated token — MUST 401 AND clear the cookie.
+    r_replay = await iam_client.post(
+        "/api/v1/auth/refresh",
+        headers={"Cookie": f"refresh_token={refresh_v1}"},
+    )
+    assert r_replay.status_code == 401, r_replay.text
+    body_replay = r_replay.json()
+    assert body_replay["validation_message_id"] == "auth.refresh.invalid", body_replay
+    assert _refresh_clear_cookie_header(r_replay) is not None, (
+        "401 refresh (replayed token) MUST emit a Max-Age=0 clear-cookie; "
+        f"got Set-Cookie={r_replay.headers.get_list('set-cookie')!r}"
+    )

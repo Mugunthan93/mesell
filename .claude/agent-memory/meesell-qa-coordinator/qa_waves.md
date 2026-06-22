@@ -84,3 +84,28 @@ Append a new section at the top after each wave.
 - 6 inter-lead requests logged (FE: catalog-list delete+testids; FE: mfe-pricing apply+testids; FE: Live Preview page
   reintroduction; infra/backend: Gemini-dev OR no-spend fixture-product seam; FE: PR #398 to develop; infra: lockfile
   @playwright/test@1.52.0).
+
+## qa-image-ai Wave A backend gate (PR #431) — 2026-06-22 — REJECTED (one file)
+
+**Session:** mesell-qa-wave-image-ai-backend-session-1 (gate). **Plan:** docs/testing/IMAGE_AI_QA_WAVE_PLAN.md.
+**Branch:** feature/qa-image-ai/backend (8ff7021) -> feature/qa-image-ai/integration (stale base 3c63b55, ancestor of develop).
+
+**Real lane delta** (`git diff origin/develop...backend`): exactly 7 Wave A test files, +1657/-32.
+(PR-vs-base showed 67 files / +5793 = already-on-develop qa-onboarding history the integration branch hadn't absorbed.)
+
+**RAN vs `meesell_test`** (full CI env replicated; PYTEST_RUN_SLOW=1; local pg :5432 meesell_test + valkey :6379):
+- 6 of 7 files TOGETHER = 38 passed / 1 skipped (skip = perf test honest `<20 events` guard).
+- `test_route_integration.py` (IMG-BE-01/07/09/11) = 2 failed / 2 passed run as a unit, 3x deterministic.
+  Each class PASSES alone. Failure = `_otp_client` closed-loop singleton -> rate_limit_mw 500, NOT a route
+  assertion. File is `@pytest.mark.integration` -> CI Gate-4 (`pytest -m integration`, one process) would red.
+
+**Content verification (all GREEN):** IA-RED-1 genuinely fixed (perf reads event_type="ai.call"/cost_inr/occurred_at +
+asserts <=Rs0.05; revert-check confirms); AI-BE-13 producer contract real (captures live cost_tracker.record); zero
+real Gemini/GCS (adapter seam); no assertion-free tests; IMG-BE-07=502; IA-RED-2 TestStubStateGuards locks stub
+(0/30) VALID NOW + TestRunnerAggregationLogic scorer-independent.
+
+**Verdict:** REJECT scoped to test_route_integration.py fixture. Re-dispatch backend writer: reuse the loop-bound
+`_otp_client` client fixture from `tests/integration/conftest.py`; rerun the file as a UNIT -> 4/4. develop UNTOUCHED,
+branch NOT deleted, PR left open + verdict commented.
+
+**Owed/owned:** IA-RED-2 stub-guard retirement (memo -> ai-coordinator); fast-forward integration to develop's tip on re-do.

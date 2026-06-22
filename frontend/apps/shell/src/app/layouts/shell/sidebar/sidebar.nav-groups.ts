@@ -20,6 +20,19 @@ export interface NavGroup {
 }
 
 /**
+ * ONBOARDING_NAV_ITEM — shown ONLY when AuthUser.onboarding_complete === false.
+ * Consumed by SidebarComponent to prepend a transient "Getting started" group.
+ * Pure data — no Angular imports (vitest-safe).
+ */
+export const ONBOARDING_NAV_ITEM: NavItem = {
+  label: 'Complete your profile',
+  icon: 'user',
+  route: '/onboarding',
+  exact: true,
+  testId: 'nav-onboarding',
+};
+
+/**
  * SIDEBAR_NAV_GROUPS — canonical top-level navigation for MeeSell shell sidebar.
  *
  * V1 routes represented here:

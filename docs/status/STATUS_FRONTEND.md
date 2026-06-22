@@ -3,6 +3,57 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-22
 
+=== UPDATE: 2026-06-22 — qa-pricing/testids — data-testids on mfe-pricing calculator flow ===
+Phase: /catalogs/:id/pricing — mfe-pricing
+Session: mesell-qa-pricing-testids-session-1 (meesell-angular-component-builder)
+Agent: meesell-angular-component-builder (sonnet)
+Branch: feature/qa-pricing/testids (off origin/develop @ 1fc73f4)
+
+Done:
+  Attribute-only additions to frontend/apps/mfe-pricing/src/app/pricing.component.ts:
+    - [testId]="'pricing-cost-input'"   on mee-input formControlName="selling_price"
+    - [testId]="'pricing-commission-input'" on mee-input formControlName="commission_pct"
+    - [testId]="'pricing-calculate-btn'" on mee-button label="Calculate"
+    - data-testid="pricing-breakdown"   on #resultRegion div (P&L container)
+    - data-testid="pricing-settlement-value" on <td> for estimated_bank_settlement
+    - data-testid="pricing-negative-alert"   on <div role="list"> alerts container
+    - data-testid="pricing-disclaimer"  on <p class="mee-pricing__disclaimer">
+  No logic, no restyle, no refactor. OnPush/standalone preserved.
+  mee-input [testId] + mee-button [testId] passthrough pre-existing on develop (PR #381).
+  Native elements received data-testid= directly.
+
+Tests: no spec change (QA lane adds E2E specs separately)
+Build: GREEN — ng build mfe-pricing: Application bundle generation complete [7.741s], zero TS errors
+       Pre-existing warnings only: NG8113 + NG8102 in data-table.component.ts (not this PR)
+In progress: none
+Blockers: none
+Next: PR to feature/qa-pricing/integration (lead merge-gate)
+Hand-offs: QA E2E lane (meesell-e2e-test-writer) — exact testid list above
+=========
+
+=== UPDATE: 2026-06-22 (TWO fix-fe-followups PRs — HYBRID step-3 LEAD MERGE-GATE: #429 + #430 both PASS → develop) ===
+Phase: fix-fe-followups — empty-state spec red (#429) + OB-FE-18 shell onboarding sidebar nav (#430)
+Session: mesell-fix-fe-followups-frontend-gate-1
+Routes touched: shell sidebar (visible on all authenticated routes — #430) ; composites/empty-state spec only (#429, test surface)
+Specialists (built; this entry = lead merge-gate only): #430 = meesell-angular-component-builder ; #429 = meesell-frontend-test-writer
+Board sweep: 2 rows closed (OB-FE-18, empty-state red) → Recently merged; no Active rows untouched 7+ days; 1 inter-lead request open (infra — federation manifest port regime, carried)
+
+Done:
+  PR #429 (empty-state spec red) — APPROVE → squash-merged to develop (`a77f868`). Diff = ONLY empty-state.component.spec.ts (3-dot vs develop confirms component untouched). The false `toContain('inventory')` removed (icon name is a `[name]` INPUT to <mee-icon>, never DOM text; source `icon = input.required<MeeIconName>()` + `<mee-icon [name]="icon()" />`), replaced with `querySelector('mee-icon').not.toBeNull()`. Lead-ran in isolation = 7/7 PASS (fixed test + other 6 intact). PR CLEAN/MERGEABLE, all CI green at gate time.
+  PR #430 (OB-FE-18 shell onboarding nav) — APPROVE → squash-merged to develop (`1fbdc64`); branch RETAINED. `sidebar.component.ts` navGroups field → `computed<NavGroup[]>` prepending `{label:'Getting started', items:[ONBOARDING_NAV_ITEM]}` ONLY when `auth.currentUser()?.onboarding_complete === false` (STRICT; undefined/null/true → unchanged). `ONBOARDING_NAV_ITEM` (label 'Complete your profile', icon 'user', route '/onboarding', exact:true, testId 'nav-onboarding') added to `sidebar.nav-groups.ts` as pure data (no Angular import). AuthService via the `@mesell/core` barrel.
+  Lead independent verification (#430): contract confirmed in @mesell/core (AuthUser.onboarding_complete?: boolean auth.service.ts:53; AuthService.currentUser computed auth.service.ts:108; barrel export index.ts:5); OnPush+standalone preserved; nav-groups pure-data (grep @angular=0); boundary grep over all 3 files = 0 primeng / 0 deep @mesell/*/src; sidebar spec in isolation = 33/33 (3 gate cases green + null + strict-gate + data-contract); `tsc --noEmit -p apps/shell/tsconfig.app.json` = EXIT 0; `ng build frontend` = 3.534s (≪90s D12), 0 errors; PR CI all green (Gate1 unit, Gate3 lint, 8 FE builds, boot smoke, FE Gate lint).
+
+Sole-writer note: PR #430 also edited THIS file (lead-sole-writer) — the ONLY develop conflict. Resolved by rebuilding the branch atop develop with ONLY the 3 sidebar files (force-pushed `6c91302`), dropping the STATUS edit; lead authors STATUS directly (this block). Same pattern applied earlier to #420/#416.
+Repo-hygiene note: the master checkout carries accumulated UNCOMMITTED board/STATUS edits from prior gate sessions (#420/#416/#404/#399/#395 rows) that were never landed on develop (master-tree git guard blocks commits there). This block + the board rows were landed via a docs worktree off clean develop HEAD; reconciling the full accumulated master-tree doc divergence onto develop is a separate founder-owned cleanup, out of scope for this two-PR gate.
+
+Discipline note (→ memory): #430 introduced one cosmetic regression — unrelated CSS comment `slides in as overlay when open` → `when load` (Karpathy rule-2 surgical-change drift). Accepted (comment-only, not load-bearing); logged.
+
+Blockers: none
+Next: founder owns develop promotion onward (develop→staging→main). OB-FE-18 carried gap closed on develop; the empty-state `1 fail` that rode along in #416/#420 runs is resolved on develop.
+Hand-offs: none new (infra federation-manifest-port-regime inter-lead request remains open, carried).
+develop tip: `1fbdc64`
+=========
+
 === UPDATE: 2026-06-22 11:55 ===
 Phase: QA Wave B — qa-onboarding frontend spec rewrite
 Branch: feature/qa-onboarding/frontend @ c529bb5 (PR #416 READY FOR REVIEW)
