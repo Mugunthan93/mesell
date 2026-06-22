@@ -17,7 +17,6 @@ import {
 import { Router } from '@angular/router';
 import { AuthService } from '@mesell/core';
 import {
-  AuthLayoutComponent,
   MeeAlertBannerComponent,
   MeeOfflineBannerComponent,
   EmptyStateComponent,
@@ -52,7 +51,6 @@ export function pincodeValidator(): ValidatorFn {
   providers: [SellerProfileService],
   imports: [
     ReactiveFormsModule,
-    AuthLayoutComponent,
     MeeAlertBannerComponent,
     MeeOfflineBannerComponent,
     EmptyStateComponent,
@@ -62,8 +60,24 @@ export function pincodeValidator(): ValidatorFn {
     MeeSkeletonComponent,
   ],
   styles: [`
+    /* ── Host centering ─────────────────────────────────────────────────────
+       Mirrors ProfileComponent host pattern: block display, shell-area padding,
+       content constrained to 560px centred column for 360/1280 viewports. */
+    :host {
+      display: block;
+      padding: var(--mee-space-4);
+      padding-bottom: calc(var(--mee-space-8) + env(safe-area-inset-bottom, 0px));
+    }
+
+    .onboarding-content {
+      max-width: 560px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+    }
+
     /* ── Steps wrap ─────────────────────────────────────────────────────────
-       Prevent PrimeNG p-steps from overflowing the auth card at 360px.
+       Prevent PrimeNG p-steps from overflowing at 360px.
        Step labels are short but PrimeNG renders a full-width flex row — clip cleanly. */
     .steps-wrap {
       overflow: hidden;
@@ -119,35 +133,9 @@ export function pincodeValidator(): ValidatorFn {
       margin-top: var(--mee-space-1);
       margin-bottom: 0;
     }
-
-    /* ── Skip footer ────────────────────────────────────────────────────────
-       "I'll set this up later" link below the submit button. */
-    .skip-text {
-      text-align: center;
-      font-size: 13px;
-      color: var(--mee-color-on-surface-muted);
-      margin-top: var(--mee-space-4);
-      margin-bottom: 0;
-    }
-
-    .skip-link {
-      color: var(--mee-color-primary);
-      font-weight: 500;
-      cursor: pointer;
-      text-decoration: none;
-      transition: color var(--mee-transition-fast);
-      /* Touch target: inline-flex with min-height ensures >= 44px tap area on mobile */
-      min-height: 44px;
-      display: inline-flex;
-      align-items: center;
-    }
-
-    .skip-link:hover {
-      text-decoration: underline;
-    }
   `],
   template: `
-    <mee-auth-layout>
+    <div class="onboarding-content">
       <!-- Progress indicator.
            Wrapped in .steps-wrap to constrain PrimeNG step label overflow at 360px. -->
       <div class="steps-wrap">
@@ -231,18 +219,7 @@ export function pincodeValidator(): ValidatorFn {
 
         </form>
       }
-
-      <!-- Skip footer -->
-      <p class="skip-text">
-        <a
-          class="skip-link"
-          (click)="skipSetup()"
-          role="button"
-          tabindex="0"
-          (keydown.enter)="skipSetup()"
-        >I'll set this up later →</a>
-      </p>
-    </mee-auth-layout>
+    </div>
   `,
 })
 export class OnboardingComponent implements OnInit {
@@ -343,10 +320,6 @@ export class OnboardingComponent implements OnInit {
    */
   fieldError(controlName: string): string | null {
     return this._fieldErrors()[controlName] ?? null;
-  }
-
-  skipSetup(): void {
-    void this.router.navigate(['/dashboard']);
   }
 
   private _mapValidationError(envelope: Partial<ApiErrorEnvelope>): void {

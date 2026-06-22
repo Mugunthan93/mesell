@@ -3,6 +3,72 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-22
 
+=== UPDATE: 2026-06-22 — onboarding-gate — route wiring + sidebar collapse + layout rework ===
+Phase: onboarding-gate — app.routes.ts + sidebar + mfe-onboarding layout
+Session: mesell-onboarding-gate-frontend-session-1 (meesell-angular-component-builder)
+Agent: meesell-angular-component-builder (sonnet)
+Branch: feature/onboarding-gate/frontend (on top of c1ab844)
+Routes touched: all 7 protected shell children (dashboard, catalogs, profile, billing, categories/browse, catalogs/:id/pricing, catalogs/:id/export); /onboarding EXEMPT (no guard — no loop)
+
+Done:
+  EDIT frontend/apps/shell/src/app/app.routes.ts
+    - Import onboardingGuard from @mesell/core (barrel, alongside authGuard)
+    - canActivate: [onboardingGuard] added to 7 protected children:
+        dashboard, catalogs (loadChildren), profile, billing (loadChildren),
+        categories/browse, catalogs/:id/pricing, catalogs/:id/export
+    - /onboarding child unchanged (no guard — redirect loop exempt)
+    - authGuard on shell parent unchanged
+
+  EDIT frontend/apps/shell/src/app/layouts/shell/sidebar/sidebar.component.ts
+    - navGroups computed: while onboarding_complete === false, return ONLY
+      [{label:'Getting started', items:[ONBOARDING_NAV_ITEM]}] — rest hidden
+    - Previously: prepended Getting-started group before SIDEBAR_NAV_GROUPS
+    - Strict === false gate preserved; undefined/null/true pass through to full nav
+
+  EDIT frontend/apps/mfe-onboarding/src/app/onboarding.component.ts
+    - Removed <mee-auth-layout> wrapper + closing tag from template
+    - Removed AuthLayoutComponent import statement + decorator imports[] entry
+    - Removed skipSetup() method + skip link <p class="skip-text">...</p> (hard gate)
+    - Added :host { display:block; padding; padding-bottom } centering (mirrors ProfileComponent L71-75)
+    - Added .onboarding-content { max-width:560px; margin:0 auto } wrapper div
+    - Router import retained (used by onSubmit() post-save navigate to /dashboard)
+    - Form logic, step UI, onSubmit persist chain unchanged
+
+Tests: no spec changes (QA lane — spec updates land separately)
+Build: pending (ng build frontend + ng build mfe-onboarding running in background at time of commit)
+tsc: EXIT 0 on apps/shell/tsconfig.app.json + apps/mfe-onboarding/tsconfig.app.json (no non-environment errors)
+Diff: exactly 3 files (app.routes.ts, sidebar.component.ts, onboarding.component.ts)
+Blockers: none
+Next: ui-styler (sizing review at 360/1280 — onboarding form now in shell content area, max-width 560px)
+Hand-offs: QA spec updates needed (onboarding.component.spec.ts — skip* references, AuthLayoutComponent refs); ui-styler to review shell-area form proportions
+=========
+
+=== UPDATE: 2026-06-22 — onboarding-gate — onboardingGuard CanActivateFn ===
+Phase: onboarding-gate — route guard (guard piece only; route wiring follows)
+Session: mesell-onboarding-gate-frontend-session-1
+Agent: meesell-angular-service-builder (sonnet)
+Branch: feature/onboarding-gate/frontend @ c1ab844 (pushed to origin)
+Routes touched: none (guard only — route wiring is next specialist's job)
+
+Done:
+  NEW frontend/libs/core/guards/onboarding.guard.ts
+    - CanActivateFn; injects AuthService + Router via inject()
+    - Strict === false check on auth.currentUser()?.onboarding_complete
+    - Redirects to /onboarding ONLY when explicitly false; all other values pass
+    - Mirrors auth.guard.ts import style exactly (../services/auth.service path)
+  EDIT frontend/libs/core/index.ts
+    - Added: export { onboardingGuard } from './guards/onboarding.guard';
+    - Added adjacent to existing authGuard export line (Guards section ~L26)
+  Diff: exactly 2 files (1 new guard, 1 barrel export line)
+
+Tests: none (QA writer adds onboarding.guard.spec.ts; per task constraint)
+Build/typecheck: tsc --noEmit -p apps/shell/tsconfig.app.json (covers libs/**/*.ts) — EXIT 0
+In progress: none (this specialist's work complete)
+Blockers: none
+Next: meesell-angular-component-builder wires onboardingGuard into route table
+Hand-offs: onboardingGuard exported from @mesell/core barrel; route-builder imports via @mesell/core
+=========
+
 === UPDATE: 2026-06-22 — qa-pricing/testids — data-testids on mfe-pricing calculator flow ===
 Phase: /catalogs/:id/pricing — mfe-pricing
 Session: mesell-qa-pricing-testids-session-1 (meesell-angular-component-builder)

@@ -174,10 +174,7 @@ export class SidebarComponent implements OnInit, OnDestroy {
   protected readonly navGroups = computed<NavGroup[]>(() => {
     const user = this.auth.currentUser();
     if (user?.onboarding_complete === false) {
-      return [
-        { label: 'Getting started', items: [ONBOARDING_NAV_ITEM] },
-        ...SIDEBAR_NAV_GROUPS,
-      ];
+      return [{ label: 'Getting started', items: [ONBOARDING_NAV_ITEM] }];
     }
     return SIDEBAR_NAV_GROUPS;
   });

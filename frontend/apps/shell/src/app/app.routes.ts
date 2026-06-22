@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { authGuard } from '@mesell/core';
+import { authGuard, onboardingGuard } from '@mesell/core';
 
 import { loadRemoteWithFallback, loadRemoteRoutesWithFallback } from './core/load-remote';
 
@@ -53,6 +53,7 @@ export const routes: Routes = [
         // NOT inject AuthService. D12 fallback on load failure.
         path: 'dashboard',
         loadComponent: loadRemoteWithFallback('mfe-dashboard', './DashboardComponent'),
+        canActivate: [onboardingGuard],
       },
       {
         // MF Sub-Plan 05 — mfe-catalog remote (apps/mfe-catalog/). The catalog pages
@@ -66,6 +67,7 @@ export const routes: Routes = [
         // NOTE: :id/preview route retired in feat/my-live-listings (PR #278).
         path: 'catalogs',
         loadChildren: loadRemoteRoutesWithFallback('mfe-catalog', './CatalogRoutes'),
+        canActivate: [onboardingGuard],
       },
       {
         // MF Sub-Plan 03 — mfe-onboarding remote (apps/mfe-onboarding/). Profile +
@@ -75,6 +77,7 @@ export const routes: Routes = [
         // AuthService singleton (@mesell/core) across the boundary — see D22 C1–C5.
         path: 'profile',
         loadComponent: loadRemoteWithFallback('mfe-onboarding', './ProfileComponent'),
+        canActivate: [onboardingGuard],
       },
       {
         path: 'onboarding',
@@ -93,6 +96,7 @@ export const routes: Routes = [
         // the whole sub-tree to RemoteFailureComponent on remote-load failure.
         path: 'billing',
         loadChildren: loadRemoteRoutesWithFallback('mfe-billing', './BillingRoutes'),
+        canActivate: [onboardingGuard],
       },
       {
         // Section-2 Plan 1-B — manual category browse page. BrowseComponent lives in
@@ -102,6 +106,7 @@ export const routes: Routes = [
         // path change to the service.
         path: 'categories/browse',
         loadComponent: loadRemoteWithFallback('mfe-catalog', './BrowseComponent'),
+        canActivate: [onboardingGuard],
       },
       {
         // MF Sub-Plan 01 — first federated remote. Pricing now lives in the
@@ -110,6 +115,7 @@ export const routes: Routes = [
         // outlet into the remote component unchanged. D12 fallback on load failure.
         path: 'catalogs/:id/pricing',
         loadComponent: loadRemoteWithFallback('mfe-pricing', './PricingComponent'),
+        canActivate: [onboardingGuard],
       },
       {
         // MF Sub-Plan 02 — second federated remote. Export now lives in the
@@ -120,6 +126,7 @@ export const routes: Routes = [
         // (D18 — boundary does not alter lifecycle). D12 fallback on load failure.
         path: 'catalogs/:id/export',
         loadComponent: loadRemoteWithFallback('mfe-export', './ExportComponent'),
+        canActivate: [onboardingGuard],
       },
     ],
   },
