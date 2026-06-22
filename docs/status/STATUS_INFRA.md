@@ -3169,3 +3169,28 @@ Next action: founder reviews + merges PR #350 → develop (founder's gate). No i
 
 **Next action:** none — both scribe PRs merged to develop. Frontend lead's in-flight working-tree edits remain its own to commit.
 =========
+
+---
+
+### UPDATE — 2026-06-22 — mesell-fe-lockfile-sync-infra-session-1 — pnpm-lock.yaml drift fix (restore frozen-lockfile CI)
+
+**Phase:** CI-health chore on `.github/workflows/ci.yml`'s dependency-install precondition (`frontend/pnpm-lock.yaml`). Single-agent fast mode per CLAUDE.md HYBRID (standalone lead executes directly). No VM/K3s/TF/secret/cluster surface; dev-only; ₹0. Founder-pre-approved, blocking. Rule followed: worked in an isolated worktree off freshly-fetched `origin/develop` (never the master tree — it had sibling-lead uncommitted edits incl. a dirty `frontend/pnpm-lock.yaml` mid-regen I did NOT inherit); touched ONLY `frontend/pnpm-lock.yaml`; used corepack-pinned pnpm so the lockfile format does not churn.
+
+**Problem:** committed `origin/develop` `frontend/pnpm-lock.yaml` was missing `@playwright/test@1.52.0` (declared in `package.json` devDependencies) → `pnpm install --frozen-lockfile` failed with `ERR_PNPM_OUTDATED_LOCKFILE`, crashing every CI job that installs from `frontend/` with a frozen lockfile.
+
+**Fix (PR #414 → develop, squash `--admin`, merge SHA `d7b423c` = new develop HEAD):**
+- pnpm version used = **11.5.2** via `corepack pnpm` — MATCHES repo pin `packageManager: pnpm@11.5.2` (no format churn; lockfileVersion stays `'9.0'`).
+- `pnpm install --lockfile-only` regenerated the lockfile. `git diff --stat` = **1 file, +12 −0** (`frontend/pnpm-lock.yaml` only; package.json UNTOUCHED). Delta is playwright-only: `importers` + `packages` (integrity + engines node>=18 + hasBin) + `snapshots` (deps: playwright 1.52.0). `playwright@1.52.0` was already present, so 0 transitive deps added. NOT a broad-staleness sweep — the "unexpected large diff" STOP did not trip.
+- Proof: `pnpm install --frozen-lockfile` (real install, corepack pnpm 11.5.2) → **EXIT 0**, success line `Done in 5s using pnpm v11.5.2`, no `ERR_PNPM_OUTDATED_LOCKFILE`.
+- Confirmed live on develop tip: `@playwright/test` now appears 3× in committed `frontend/pnpm-lock.yaml` (was 0).
+
+**CI diagnostic (the founder question — was the FED-2 guard #403 silently inert?):**
+- TWO jobs run `pnpm install --frozen-lockfile` with `working-directory: frontend` and WERE dying at install: **`frontend-build`** (ci.yml:664; in `build.needs` → blocked the dev build/deploy DAG) and **`frontend-boot-smoke`** (ci.yml:781; the browser-boot gate, died before its Playwright assertions).
+- **The FED-2 dead-route guard (#403) was NOT inert.** It lives in **`fe-lint-contracts`** ("FE Gate: lint (5 contracts)", ci.yml:996/1010, `node tools/contracts/dead_route_guard.mjs`), which deliberately runs **NO `pnpm install`** — ci.yml:980: "No pnpm install — scanners are dependency-free Node ESM ... cannot be broken by lockfile drift." So FED-2 (plus FE-5-contracts `run-all.mjs` and FED-1 singleton guard) kept executing and gating throughout the drift. Only boot-smoke + build were down. `dead_route_guard.mjs` confirmed present (29KB, real runnable step).
+
+**Board sweep (session start + end):** dev-tooling CI-health chore, not a `feature/{name}/infra` group lane → no Active row added. Active features scanned; long-untouched rows remain external-gate holds (federation-manifest-reconcile #412 FE gate; qa-wave-infra + dev-proxy founder gates; microservices lanes deploy-gated) — no NEW stale-7d stalls. Inter-lead requests unchanged.
+
+**Cost:** ₹0/mo (resolved from the existing public registry; no cluster/cloud/TF/secret change).
+
+**Next action:** none — fix merged + verified on develop. CI frozen-lockfile install restored; next frontend-touching push/PR will see `frontend-build` + `frontend-boot-smoke` pass `pnpm install` again.
+=========
