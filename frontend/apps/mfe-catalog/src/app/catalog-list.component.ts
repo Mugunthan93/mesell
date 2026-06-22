@@ -12,6 +12,7 @@ import {
   MeeCardComponent,
   MeeIconComponent,
   MeeSkeletonComponent,
+  MeeToastService,
 } from '@mesell/ui-kit';
 import {
   PageHeaderComponent,
@@ -20,9 +21,13 @@ import {
 } from '@mesell/composites';
 import type { ProductStatus } from '@mesell/composites';
 
+import { CatalogListApiService } from './catalog-list-api.service';
+import type { CatalogListItem } from './catalog-list.model';
+
 // ---------------------------------------------------------------------------
 // View model — typed shape for a catalog list row.
-// Wired to real API in Wave 6; simulated for responsive polish in Wave 5.
+// Derived from CatalogListItem returned by CatalogListApiService.listProducts().
+// Fields without a wire counterpart use safe fallback values.
 // ---------------------------------------------------------------------------
 interface CatalogRow {
   id: string;
@@ -33,33 +38,17 @@ interface CatalogRow {
   updated_at: string;
 }
 
-// Simulated catalog data — 3 entries so layout is exercised at all breakpoints.
-const SIMULATED_CATALOGS: CatalogRow[] = [
-  {
-    id:         'cat-001',
-    name:       'Blue Cotton Kurti Collection',
-    category:   'Fashion > Women > Ethnic > Kurti',
-    sku_count:  12,
-    status:     'ready',
-    updated_at: '2026-06-17',
-  },
-  {
-    id:         'cat-002',
-    name:       'Printed Silk Saree Set',
-    category:   'Fashion > Women > Ethnic > Saree',
-    sku_count:  6,
-    status:     'draft',
-    updated_at: '2026-06-16',
-  },
-  {
-    id:         'cat-003',
-    name:       'Kids Hooded Jacket',
-    category:   'Fashion > Kids > Winterwear > Jackets',
-    sku_count:  8,
-    status:     'exported',
-    updated_at: '2026-06-15',
-  },
-];
+/** Map CatalogListItem (wire view-model) → CatalogRow (component view-model). */
+function adaptToRow(item: CatalogListItem): CatalogRow {
+  return {
+    id:        item.id,
+    name:      item.name,
+    category:  '', // not on wire for V1 list endpoint; populated by catalog-form in later views
+    sku_count: 0,  // not on wire for V1 list endpoint
+    status:    item.status as ProductStatus,
+    updated_at: item.updatedAt,
+  };
+}
 
 @Component({
   selector: 'mee-catalog-list',
@@ -227,6 +216,22 @@ const SIMULATED_CATALOGS: CatalogRow[] = [
       border-top: 1px solid var(--mee-color-outline);
     }
 
+    /* ── Inline confirm affordance ──────────────────────────────────── */
+    .mee-confirm-row {
+      display: flex;
+      align-items: center;
+      gap: var(--mee-space-2);
+      padding: var(--mee-space-2) 0;
+      font-size: 0.8125rem;
+      color: var(--mee-color-on-surface-muted);
+    }
+
+    .mee-confirm-actions {
+      display: flex;
+      gap: var(--mee-space-2);
+      margin-left: auto;
+    }
+
     /* ── FAB ─────────────────────────────────────────────────────── */
     .mee-fab {
       position: fixed;
@@ -309,64 +314,110 @@ const SIMULATED_CATALOGS: CatalogRow[] = [
 
       <!-- Empty state: no catalogs yet -->
       } @else if (filteredCatalogs().length === 0) {
-        <mee-empty-state
-          icon="inventory"
-          [message]="searchQuery()
-            ? 'No catalogs match your search.'
-            : 'No catalogs yet. Create your first catalog to get started.'"
-          [cta_label]="searchQuery() ? undefined : 'New Catalog'"
-          (cta_click)="onNewCatalog()"
-        />
+        <div data-testid="catalog-empty">
+          <mee-empty-state
+            icon="inventory"
+            [message]="searchQuery()
+              ? 'No catalogs match your search.'
+              : 'No catalogs yet. Create your first catalog to get started.'"
+            [cta_label]="searchQuery() ? undefined : 'New Catalog'"
+            (cta_click)="onNewCatalog()"
+          />
+        </div>
 
       <!-- Catalog grid — 1-col on mobile, 2-col at sm, 3-col at lg -->
       } @else {
         <div class="mee-grid" aria-label="Catalog list">
           @for (cat of filteredCatalogs(); track cat.id) {
-            <mee-card>
-              <div class="mee-card-body--row">
+            <div
+              data-testid="catalog-row"
+              [attr.data-product-id]="cat.id"
+            >
+              <mee-card>
+                <div class="mee-card-body--row">
 
-                <!-- Thumbnail placeholder -->
-                <div class="mee-card-thumb" aria-hidden="true">
-                  <mee-icon name="image" />
+                  <!-- Thumbnail placeholder -->
+                  <div class="mee-card-thumb" aria-hidden="true">
+                    <mee-icon name="image" />
+                  </div>
+
+                  <!-- Card info -->
+                  <div class="mee-card-info">
+
+                    <!-- Card header: name + status badge -->
+                    <div class="mee-card-head">
+                      <h2 class="mee-card-title">{{ cat.name }}</h2>
+                      <mee-status-badge [status]="cat.status" />
+                    </div>
+
+                    @if (cat.category) {
+                      <!-- Category path — truncated to 1 line -->
+                      <p class="mee-card-category" [title]="cat.category">{{ cat.category }}</p>
+                    }
+
+                    @if (cat.sku_count > 0) {
+                      <!-- Meta row: SKU count + updated date -->
+                      <div class="mee-card-meta">
+                        <span>{{ cat.sku_count }} SKUs</span>
+                        <span>{{ cat.updated_at }}</span>
+                      </div>
+                    } @else {
+                      <div class="mee-card-meta">
+                        <span>{{ cat.updated_at }}</span>
+                      </div>
+                    }
+
+                    <!-- Action buttons (or inline confirm affordance) -->
+                    <div class="mee-card-actions">
+                      @if (confirmingDeleteId() === cat.id) {
+                        <!-- Inline confirm affordance — abstraction-wall-safe, no PrimeNG dialog -->
+                        <div class="mee-confirm-row" role="alert" aria-live="polite">
+                          <span>Delete this catalog?</span>
+                          <div class="mee-confirm-actions">
+                            <span data-testid="catalog-delete-cancel">
+                              <mee-button
+                                label="Cancel"
+                                variant="ghost"
+                                size="sm"
+                                (clicked)="onDeleteCancel()"
+                              />
+                            </span>
+                            <span data-testid="catalog-delete-confirm">
+                              <mee-button
+                                label="Confirm delete"
+                                variant="secondary"
+                                size="sm"
+                                [disabled]="deletingId() === cat.id"
+                                (clicked)="onDeleteConfirm(cat.id)"
+                              />
+                            </span>
+                          </div>
+                        </div>
+                      } @else {
+                        <!-- Normal action row -->
+                        <span data-testid="catalog-edit-btn">
+                          <mee-button
+                            label="Edit"
+                            variant="secondary"
+                            size="sm"
+                            (clicked)="onEdit(cat.id)"
+                          />
+                        </span>
+                        <span data-testid="catalog-delete-btn">
+                          <mee-button
+                            label="Delete"
+                            variant="ghost"
+                            size="sm"
+                            (clicked)="onDelete(cat.id)"
+                          />
+                        </span>
+                      }
+                    </div>
+
+                  </div>
                 </div>
-
-                <!-- Card info -->
-                <div class="mee-card-info">
-
-                  <!-- Card header: name + status badge -->
-                  <div class="mee-card-head">
-                    <h2 class="mee-card-title">{{ cat.name }}</h2>
-                    <mee-status-badge [status]="cat.status" />
-                  </div>
-
-                  <!-- Category path — truncated to 1 line -->
-                  <p class="mee-card-category" [title]="cat.category">{{ cat.category }}</p>
-
-                  <!-- Meta row: SKU count + updated date -->
-                  <div class="mee-card-meta">
-                    <span>{{ cat.sku_count }} SKUs</span>
-                    <span>{{ cat.updated_at }}</span>
-                  </div>
-
-                  <!-- Action buttons -->
-                  <div class="mee-card-actions">
-                    <mee-button
-                      label="Edit"
-                      variant="secondary"
-                      size="sm"
-                      (clicked)="onEdit(cat.id)"
-                    />
-                    <mee-button
-                      label="Preview"
-                      variant="ghost"
-                      size="sm"
-                      (clicked)="onPreview(cat.id)"
-                    />
-                  </div>
-
-                </div>
-              </div>
-            </mee-card>
+              </mee-card>
+            </div>
           }
         </div>
       }
@@ -385,12 +436,18 @@ const SIMULATED_CATALOGS: CatalogRow[] = [
   `,
 })
 export class CatalogListComponent implements OnInit {
-  private readonly router = inject(Router);
+  private readonly router     = inject(Router);
+  private readonly catalogApi = inject(CatalogListApiService);
+  private readonly toast      = inject(MeeToastService);
 
-  readonly loading      = signal<boolean>(true);
-  readonly catalogs     = signal<CatalogRow[]>([]);
-  readonly searchQuery  = signal<string>('');
-  readonly statusFilter = signal<ProductStatus | 'all'>('all');
+  readonly loading             = signal<boolean>(true);
+  readonly catalogs            = signal<CatalogRow[]>([]);
+  readonly searchQuery         = signal<string>('');
+  readonly statusFilter        = signal<ProductStatus | 'all'>('all');
+  /** Id of the row currently showing the inline confirm affordance (null = none). */
+  readonly confirmingDeleteId  = signal<string | null>(null);
+  /** Id of the row whose delete is in-flight (prevents double-submit). */
+  readonly deletingId          = signal<string | null>(null);
 
   readonly ALL_STATUSES: Array<ProductStatus | 'all'> = ['all', 'draft', 'ready', 'exported', 'live'];
 
@@ -413,11 +470,16 @@ export class CatalogListComponent implements OnInit {
   };
 
   ngOnInit(): void {
-    // Simulate 600ms load — Wave 6 replaces with real HTTP call.
-    setTimeout(() => {
-      this.catalogs.set(SIMULATED_CATALOGS);
-      this.loading.set(false);
-    }, 600);
+    this.catalogApi.listProducts({ page: 1, limit: 20 }).subscribe({
+      next: (res) => {
+        this.catalogs.set(res.items.map(adaptToRow));
+        this.loading.set(false);
+      },
+      error: () => {
+        this.loading.set(false);
+        this.toast.error('Failed to load catalogs. Please refresh.');
+      },
+    });
   }
 
   onNewCatalog(): void {
@@ -435,5 +497,40 @@ export class CatalogListComponent implements OnInit {
   onSearch(event: Event): void {
     const val = (event.target as HTMLInputElement).value;
     this.searchQuery.set(val);
+  }
+
+  /** Open the inline confirm affordance for this row. */
+  onDelete(id: string): void {
+    this.confirmingDeleteId.set(id);
+  }
+
+  /** Cancel the inline confirm — restore normal action row. */
+  onDeleteCancel(): void {
+    this.confirmingDeleteId.set(null);
+  }
+
+  /** Confirmed delete: call service, remove row on complete, show error on 5xx. */
+  onDeleteConfirm(id: string): void {
+    if (this.deletingId() === id) {
+      // guard: already in-flight for this id
+      return;
+    }
+    this.deletingId.set(id);
+
+    this.catalogApi.deleteProduct(id).subscribe({
+      complete: () => {
+        // Success (204/200) AND silent cases (401/404 → EMPTY):
+        // remove the row optimistically — the spec says complete fires on success AND 404/401.
+        this.catalogs.update(rows => rows.filter(r => r.id !== id));
+        this.confirmingDeleteId.set(null);
+        this.deletingId.set(null);
+      },
+      error: () => {
+        // 5xx or network error: surface non-blocking toast, keep the row.
+        this.toast.error('Delete failed. Please try again.');
+        this.confirmingDeleteId.set(null);
+        this.deletingId.set(null);
+      },
+    });
   }
 }
