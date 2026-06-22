@@ -3,6 +3,39 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-22
 
+=== UPDATE: 2026-06-22 (pricing-apply-price component layer — SPEC C step 2) ===
+Phase: pricing-apply-price / V1 price→export chain close
+Session: mesell-pricing-apply-price-frontend-session-1 (Step 2 — component layer)
+Agent: meesell-angular-component-builder (HYBRID step 2 of 3)
+Branch: feature/pricing-apply-price/frontend (worktree /tmp/mesell-wt/pricing-apply-price)
+
+Done:
+  PricingComponent — apps/mfe-pricing/src/app/pricing.component.ts (MODIFIED, surgical):
+    - Added `appliedStatus` signal ('idle'|'applying'|'applied'|'error')
+    - `onSaveContinue()` now calls `service.applyPrice(productId, sellingPrice)` FIRST
+    - 204 void → appliedStatus='applied' → navigate(['/catalogs', productId, 'export'])
+    - Error shapes (404/422/5xx) → appliedStatus='error' + reuses existing errorState banners
+    - 401 EMPTY → appliedStatus reset to 'idle' (refreshInterceptor owns retry)
+    - Guard: onSaveContinue() no-ops when breakdown() is null (calc not run yet)
+    - Template: replaced mee-button with native <button> data-testid="pricing-apply-btn"
+    - Native <span data-testid="pricing-applied-status"> shown when appliedStatus='applied'
+    - Native <span data-testid="pricing-apply-error"> shown when appliedStatus='error'
+    - All testids on NATIVE DOM elements (federation strips testids on mee-* wrapper inputs)
+  pricing.component.spec.ts (EXTENDED):
+    - Added 18 new tests across 4 describe blocks (SPEC C state machine + body contract + signal values + testids)
+    - 147/147 pass (was 129; 18 new), 0 fail, 0 skip
+  Build: mfe-pricing GREEN (3.218s — well under 90s D12); 0 TS errors, 2 pre-existing NG warnings (data-table, not this PR)
+
+Tests: 147/147 pass, 0 fail, 0 skip
+Build: GREEN (3.218s)
+In progress: none (component layer complete)
+Blockers: none
+Next: meesell-angular-ui-styler → apply-button + applied-status polish + a11y (HYBRID step 3)
+Hand-offs:
+  → meesell-angular-ui-styler (HYBRID step 3): apply-button style polish (native <button> w/ mee tokens), applied-status and error span styling review, a11y check (keyboard, contrast). Component + testids are ready.
+  → QA: pricing-apply-btn (native), pricing-applied-status (native), pricing-apply-error (native) are all on native DOM — E2E flow W3-E2-6 (price-calc → apply → export) is unblocked.
+=========
+
 === UPDATE: 2026-06-22 (pricing-apply-price service layer — SPEC C step 1) ===
 Phase: pricing-apply-price / V1 price→export chain close
 Session: mesell-pricing-apply-price-frontend-session-1

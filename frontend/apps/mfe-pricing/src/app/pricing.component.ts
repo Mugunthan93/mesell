@@ -553,14 +553,66 @@ export type PricingErrorState =
 
       </div>
 
-      <!-- Save & Continue: full-width, min 44px touch target via mee-button internals -->
+      <!--
+        SPEC C: Save & Continue — apply-price then navigate.
+        Enabled only when a calc breakdown exists and no apply in-flight.
+        Testids on NATIVE elements (federation strips testids on mee-* wrapper inputs):
+          data-testid="pricing-apply-btn" on the native <button>
+          data-testid="pricing-applied-status" on the native <span> reflecting applied state
+          data-testid="pricing-apply-error" on the native error indicator (reuses error banner area)
+        The mee-button wrapper does NOT receive testids — only native DOM elements do.
+      -->
       <div class="pt-2">
-        <mee-button
-          label="Save &amp; Continue"
-          variant="primary"
-          [fullWidth]="true"
-          (clicked)="onSaveContinue()"
-        />
+        <!-- Native button wrapper preserves 44px touch target and carries the testid. -->
+        <button
+          data-testid="pricing-apply-btn"
+          type="button"
+          class="w-full min-h-[44px] px-4 py-2 rounded font-semibold text-white"
+          style="background: var(--mee-color-primary); opacity: 1;"
+          [disabled]="!breakdown() || appliedStatus() === 'applying'"
+          [attr.aria-busy]="appliedStatus() === 'applying' ? 'true' : null"
+          [attr.aria-disabled]="!breakdown() || appliedStatus() === 'applying'"
+          (click)="onSaveContinue()"
+        >
+          @if (appliedStatus() === 'applying') {
+            Saving…
+          } @else {
+            Save &amp; Continue
+          }
+        </button>
+
+        <!--
+          Applied status indicator — visible only after a 204 response.
+          role="status" + aria-live="polite" ensures screen readers announce the success.
+        -->
+        @if (appliedStatus() === 'applied') {
+          <span
+            data-testid="pricing-applied-status"
+            role="status"
+            aria-live="polite"
+            class="block mt-2 text-sm font-medium text-center"
+            style="color: var(--mee-color-success);"
+          >
+            Price applied
+          </span>
+        }
+
+        <!--
+          Apply-error indicator (SPEC C §4 pricing-apply-error testid).
+          Reuses existing errorState banners above — this is only the native testid anchor.
+          Visible when appliedStatus=error; the mee-alert-banner above shows the detail.
+        -->
+        @if (appliedStatus() === 'error') {
+          <span
+            data-testid="pricing-apply-error"
+            role="alert"
+            aria-live="assertive"
+            class="block mt-2 text-sm text-center"
+            style="color: var(--mee-color-error);"
+          >
+            Could not apply price. Please try again.
+          </span>
+        }
       </div>
 
     </div>
@@ -614,6 +666,13 @@ export class PricingComponent implements OnInit, AfterViewChecked {
   readonly marginIsPositive = computed<boolean>(
     () => parseDecimal(this.breakdown()?.estimated_bank_settlement ?? '0') > 0,
   );
+
+  // SPEC C: apply-price status — driven by onSaveContinue() flow.
+  // idle     = initial / cleared / after error reset
+  // applying = apply POST in-flight
+  // applied  = 204 received; navigation to export is next
+  // error    = apply POST returned a typed error shape (reuses existing errorState banners)
+  readonly appliedStatus = signal<'idle' | 'applying' | 'applied' | 'error'>('idle');
 
   // Inline field error signals — W3 stubs (component-builder rebuilds full error copy in step-2).
   readonly sellingPriceError = computed<string | undefined>(() => {
@@ -693,8 +752,54 @@ export class PricingComponent implements OnInit, AfterViewChecked {
     });
   }
 
+  /**
+   * SPEC C — apply-price + navigate.
+   *
+   * Fires only when breakdown() is set (the seller has run calc at least once).
+   * Enabled guard: button [disabled]="!breakdown() || appliedStatus() === 'applying'".
+   *
+   * Flow:
+   *   1. Set appliedStatus → 'applying' (button disables, aria-busy="true").
+   *   2. POST /apply-price { selling_price } via PricingApiService.applyPrice().
+   *   3a. 204 (void next): appliedStatus → 'applied', then navigate to export.
+   *   3b. Error shape: appliedStatus → 'error', reuse existing errorState banners (no new UI).
+   *   3c. EMPTY (401): complete() fires; appliedStatus reset to 'idle' (refreshInterceptor owns retry).
+   *
+   * The selling_price string is taken from the form value — same value that was sent to calc().
+   * Backend extra="forbid" → ONLY selling_price key is sent.
+   */
   onSaveContinue(): void {
-    void this.router.navigate(['/catalogs', this.productId, 'export']);
+    // Guard: require a completed calc before applying.
+    if (!this.breakdown()) return;
+
+    const sellingPrice = String(this.form.getRawValue().selling_price ?? '');
+    this.appliedStatus.set('applying');
+
+    this.service.applyPrice(this.productId, sellingPrice).subscribe({
+      next: (result) => {
+        if (result !== undefined && 'kind' in (result as object)) {
+          // Typed error shape emitted by service._handleError (404/400/422/5xx paths).
+          this.appliedStatus.set('error');
+          this._handleErrorShape(result as PriceCalcErrorShape);
+        } else {
+          // 204 void → price applied; navigate to export.
+          this.appliedStatus.set('applied');
+          void this.router.navigate(['/catalogs', this.productId, 'export']);
+        }
+      },
+      error: () => {
+        // Defensive guard — service absorbs all errors via catchError.
+        this.appliedStatus.set('error');
+        this.errorState.set('server_error');
+      },
+      complete: () => {
+        // Fires on EMPTY (401). refreshInterceptor owns the retry/logout path.
+        // Reset applying state so the button is re-enabled if the user authenticates again.
+        if (this.appliedStatus() === 'applying') {
+          this.appliedStatus.set('idle');
+        }
+      },
+    });
   }
 
   private _handleErrorShape(shape: PriceCalcErrorShape): void {
