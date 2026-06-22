@@ -88,6 +88,32 @@ Coordinator-implements fallback was used for all parsing (workspace agent regist
 
 ## Updates Log
 
+=== UPDATE: 2026-06-22 ===
+Session: mesell-scraper-cadence-locked-reconcile-data-session-1
+Phase: git landing (FAST MODE — founder-directed merge) + LOCKED-doc cadence reconcile
+Done:
+  - Mandatory reads: own MEMORY.md + GIT_WORKFLOW.md + feature_board_data.md + STATUS_DATA.md.
+  - STEP 1 (founder-directed): landed `feature/scraper-cadence-reconcile/data` (3 commits 7d77adc/f518550/550d6a5,
+    docs-only) on develop. PR #444 → merge-commit `9d5f5b4` (--admin; enforce_admins=false, develop deploys but no app code).
+  - STEP 2 (founder-approved locked-change): NEW branch `feature/scraper-cadence-locked-reconcile/data` off updated develop.
+    Reconciled "quarterly" → "monthly, usage-driven" at the 29 OUR-scrape-cadence sites across 5 LOCKED/SSoT docs:
+    MVP_ARCHITECTURE.md (13), BACKEND_ARCHITECTURE.md (9), DATABASE_ARCHITECTURE.md (3), BUSINESS_STRATEGY.md (4),
+    MEESELL_AGENT_REGISTRY.md (3). Inline `#370` pointer added at 3 anchor sites. PR #448 → merge-commit `cd81ba0` (--admin).
+  - 5 "quarter" deliberately LEFT (different cadence, NOT our scrape): MVP §1376 release-smoke "per release";
+    BACKEND §6898 module-extraction roadmap "over months/quarters"; BACKEND §8189 Meesho's OWN schema-change frequency;
+    BUSINESS_STRATEGY §197 rejection-rate trend "each quarter"; BUSINESS_STRATEGY §392 doc "Next review | Quarterly".
+Coverage: n/a (docs-only; no parse/scrape/seed). Diff balanced 32/32 word swaps; no non-cadence content altered.
+Schema version: unchanged — no derived JSON, no DDL, no migration.
+Board sweep (start): 3 active rows (category-seeding RESOLVED-local PR#245 open for founder; scraper-cadence-reconcile
+  awaiting founder merge; Wave-1.5 CLOSED). All parked on founder action / closed — not lead-actionable. No stale-flag needed.
+Board sweep (close): scraper-cadence-reconcile + scraper-cadence-locked-reconcile both moved to "Recently merged"
+  (develop @ 9d5f5b4 / cd81ba0). Board reflects current state.
+Blockers: none.
+Next: carryover follow-ups (NOT done this session) — (a) scraper-maintainer self-updates its OWN MEMORY quarterly→monthly
+  line per rule #4 (no agent writes another's memory); (b) infra K3s CronJob quarterly→monthly wiring at build time.
+Hand-offs: none opened (docs-only reconcile; no schema/enum/seed touched).
+=========
+
 === UPDATE: 2026-06-21 ===
 Session: mesell-retention-monitor-spec-data-session-1
 Phase: design-spec authoring (FAST MODE — single agent, no code, no specialist build)
