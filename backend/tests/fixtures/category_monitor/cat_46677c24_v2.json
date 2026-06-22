@@ -1,0 +1,21 @@
+{
+  "_fixture_note": "Snapshot v2 for category 46677c24 (Kurtis). compliance_fields has a NEW required field 'color'; shipping_slab is unchanged; banned_words has a NEW entry 'lv'; cost_fields unchanged.",
+  "compliance_fields": {
+    "required": ["fabric", "fit", "sleeve_length", "neck_type", "length", "occasion", "color"],
+    "optional": ["pattern", "stitch_type", "wash_care", "ornamentation"],
+    "default_return_rate": 0.25
+  },
+  "shipping_slab": {
+    "shipping_charges": 55,
+    "gst_percentage": 5
+  },
+  "banned_words": {
+    "branded": ["nike", "adidas", "puma", "lv"],
+    "trademark": ["patented", "copyright"]
+  },
+  "cost_fields": {
+    "transfer_price": 68.0,
+    "platform_fee": 0,
+    "sscat_id": "46677c24"
+  }
+}

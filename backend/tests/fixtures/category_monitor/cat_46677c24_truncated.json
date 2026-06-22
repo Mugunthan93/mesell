@@ -1,0 +1,8 @@
+{
+  "_fixture_note": "Truncated/anomalous scrape for category 46677c24 — missing cost_fields and shipping_slab entirely. Simulates a partial response (e.g. 429 mid-scrape). Unit B must emit BLOCK on this input.",
+  "compliance_fields": {
+    "required": ["fabric"],
+    "optional": [],
+    "default_return_rate": 0.25
+  }
+}
