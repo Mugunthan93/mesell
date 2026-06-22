@@ -150,3 +150,19 @@ export function isTerminalStatus(status: ExportWireStatus): boolean {
 export function retryState(): { status: ExportStatus; downloadUrl: null } {
   return { status: 'idle', downloadUrl: null };
 }
+
+/**
+ * Resolves the product ID from an ActivatedRoute-style ParamMap.
+ * Returns the id string when present and non-empty; null otherwise.
+ * Pure helper — testable without TestBed or Angular DI.
+ *
+ * Usage in component:
+ *   const productId = resolveExportProductId(this.route.snapshot.paramMap);
+ *   if (!productId) { ... return; }
+ */
+export function resolveExportProductId(
+  paramMap: { get(key: string): string | null }
+): string | null {
+  const id = paramMap.get('id');
+  return id && id.length > 0 ? id : null;
+}

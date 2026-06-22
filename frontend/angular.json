@@ -143,7 +143,7 @@
             "rebuildDelay": 500,
             "dev": true,
             "cacheExternalArtifacts": false,
-            "port": 4201
+            "port": 4207
           }
         },
         "esbuild": {
@@ -202,7 +202,7 @@
           },
           "defaultConfiguration": "development",
           "options": {
-            "port": 4201
+            "port": 4207
           }
         }
       }
@@ -235,7 +235,7 @@
             "rebuildDelay": 500,
             "dev": true,
             "cacheExternalArtifacts": false,
-            "port": 4202
+            "port": 4205
           }
         },
         "esbuild": {
@@ -294,7 +294,7 @@
           },
           "defaultConfiguration": "development",
           "options": {
-            "port": 4202
+            "port": 4205
           }
         }
       }
@@ -327,7 +327,7 @@
             "rebuildDelay": 500,
             "dev": true,
             "cacheExternalArtifacts": false,
-            "port": 4203
+            "port": 4206
           }
         },
         "esbuild": {
@@ -386,7 +386,7 @@
           },
           "defaultConfiguration": "development",
           "options": {
-            "port": 4203
+            "port": 4206
           }
         }
       }
@@ -419,7 +419,7 @@
             "rebuildDelay": 500,
             "dev": true,
             "cacheExternalArtifacts": false,
-            "port": 4205
+            "port": 4203
           }
         },
         "esbuild": {
@@ -478,7 +478,7 @@
           },
           "defaultConfiguration": "development",
           "options": {
-            "port": 4205
+            "port": 4203
           }
         }
       }
@@ -603,7 +603,7 @@
             "rebuildDelay": 500,
             "dev": true,
             "cacheExternalArtifacts": false,
-            "port": 4206
+            "port": 4201
           }
         },
         "esbuild": {
@@ -662,7 +662,7 @@
           },
           "defaultConfiguration": "development",
           "options": {
-            "port": 4206
+            "port": 4201
           }
         }
       }
@@ -695,7 +695,7 @@
             "rebuildDelay": 500,
             "dev": true,
             "cacheExternalArtifacts": false,
-            "port": 4207
+            "port": 4202
           }
         },
         "test": {
@@ -765,7 +765,7 @@
           },
           "defaultConfiguration": "development",
           "options": {
-            "port": 4207
+            "port": 4202
           }
         }
       }

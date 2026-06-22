@@ -7,7 +7,7 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 
 import { MeeButtonComponent }       from '@mesell/ui-kit';
 import { MeeCardComponent }         from '@mesell/ui-kit';
@@ -21,6 +21,7 @@ import {
   type ExportResponseDTO,
   canGenerate,
   resolveCheckMessage,
+  resolveExportProductId,
 } from './export.model';
 
 import {
@@ -365,7 +366,8 @@ const TICK_INTERVAL_MS = 2000;
   `,
 })
 export class ExportComponent implements OnInit, OnDestroy {
-  private readonly router = inject(Router);
+  private readonly route    = inject(ActivatedRoute);
+  private readonly router   = inject(Router);
   private readonly exportApi = inject(ExportApiService);
 
   // ── State signals ──────────────────────────────────────────────────────────
@@ -394,8 +396,7 @@ export class ExportComponent implements OnInit, OnDestroy {
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   ngOnInit(): void {
-    // Route param reading would go here for real product ID injection.
-    // For V1: product ID read from ActivatedRoute in onGenerate().
+    // Product ID is resolved from ActivatedRoute snapshot inside onGenerate().
   }
 
   ngOnDestroy(): void {
@@ -421,14 +422,17 @@ export class ExportComponent implements OnInit, OnDestroy {
   onGenerate(): void {
     if (!this.canGenerateSignal()) return;
 
+    const productId = resolveExportProductId(this.route.snapshot.paramMap);
+    if (!productId) {
+      this.exportStatus.set('idle');
+      this.notReadyMessage.set('No product selected for export.');
+      return;
+    }
+
     // Clear any stale state from previous attempt.
     this.notReadyMessage.set(null);
     this.failedChecks.set([]);
     this.exportStatus.set('processing');
-
-    // TODO(V1): read productId from ActivatedRoute snapshot.params['id']
-    // Using a placeholder for V1; coordinator wires route params.
-    const productId = 'current-product-id';
 
     this.exportApi.initiate(productId).subscribe({
       next: (result: ExportInitiatedResponse | InitiateErrorShape) => {

@@ -69,6 +69,49 @@ Next: QA spec rewrite on this branch (QA's lane), then lead merge-gate review.
 Hand-offs: "OnboardingComponent + ProfileComponent pincode controls are now [Validators.required,
 pincodeValidator()]; form.invalid blocks submit when either pincode is empty. Draft PR #416
 extended. Lead (meesell-frontend-coordinator) gates next."
+
+=== UPDATE: 2026-06-22 09:39 (fix/export-productid — ExportComponent ActivatedRoute fix) ===
+Phase: /catalogs/:id/export — mfe-export ExportComponent productId resolution
+Branch: fix/export-productid/frontend (worktree: .claude/worktrees/agent-ac2eee68ffbc83662)
+Agent: meesell-angular-component-builder
+
+Done:
+  BUG FIX (HIGH) — export.component.ts onGenerate():
+    - Replaced hardcoded `const productId = 'current-product-id'` with
+      `resolveExportProductId(this.route.snapshot.paramMap)` call.
+    - Added `ActivatedRoute` to `@angular/router` import.
+    - Injected `ActivatedRoute` via `inject(ActivatedRoute)` as `private readonly route`.
+    - Added null-guard: if productId is null/empty → sets status idle + notReadyMessage
+      'No product selected for export.' + returns without POSTing.
+    - Removed stale TODO(V1) comments around the hardcoded block.
+    - Updated stale ngOnInit comment.
+
+  PURE HELPER — export.model.ts:
+    - Added `resolveExportProductId(paramMap): string | null` pure function.
+    - Accepts `{ get(key: string): string | null }` duck-type (ActivatedRoute-compatible).
+    - Testable without TestBed or Angular DI.
+
+  SPEC — export.component.spec.ts:
+    - Added `resolveExportProductId` import from export.model.
+    - Added new describe block 'resolveExportProductId — route param resolution' (5 tests):
+        (1) returns id when paramMap has non-empty id
+        (2) returns null when paramMap.get('id') returns null
+        (3) returns null when paramMap.get('id') returns empty string
+        (4) null result → onGenerate proxy short-circuits, no POST, sets idle + 'No product selected'
+        (5) non-null result → onGenerate proxy proceeds, POST called, status=processing
+
+Tests: 67/67 PASS (export.component.spec.ts) | 29/29 PASS (export.model.spec.ts)
+tsc: Zero errors in changed files (environment errors from worktree node_modules absence are
+     pre-existing across all files uniformly — documented pattern; same as ci-core-fix session)
+Build: Not run (tsc clean on changed files; ng build gate at PR review by coordinator)
+Blockers: none
+e2e NOTE: export.component.ts download anchor has data-testid="export-download" (L311);
+  e2e page object (frontend/e2e/page-objects/export.page.ts L18) expects data-testid=
+  "export-download-button" → selector mismatch. export.spec.ts:18 is test.fixme.
+  Un-fixme = reconcile selector + generate→poll→ready→download multi-step flow → e2e/QA lane.
+Next: PR opened → develop. Coordinator runs merge-gate review.
+Hand-offs: ExportComponent reads ActivatedRoute `:id` param at onGenerate() time.
+  Shell mounts mfe-export at `catalogs/:id/export` (app.routes.ts L121) — param flows through.
 =========
 
 === UPDATE: 2026-06-22 02:10 (QA-wave-1 service lane COMMIT 1) ===

@@ -15,23 +15,24 @@ import {
 import { AuthService } from '../services/auth.service';
 
 /**
- * refreshInterceptor — single-flight 401→refresh→retry.
+ * refreshInterceptor — single-flight 401=>refresh=>retry.
  *
- * Chain position: SECOND (jwt → refresh → error).
+ * Chain position: SECOND (jwt => refresh => error).
  *
  * Behaviour on 401 from a NON-/auth/* request:
- *   1. Delegates to AuthService.refreshShared() — the single-flight gate now lives
- *      in AuthService so ALL THREE callers (interceptor, _doSilentRefresh, bootstrap)
- *      share the same in-flight Observable. Eliminates the token-rotation stampede:
- *      regardless of how many concurrent 401s arrive, at most ONE POST /auth/refresh
- *      is in-flight at any time.
- *   2. On refresh-200 → retry original request with the new Bearer token.
- *   3. On refresh-401 → auth.forceLogout() (logout-once guard: navigate to /login
+ *   1. Delegates to AuthService.refreshForced() — bypasses the B03 cross-context
+ *      debounce so a genuine 401 ALWAYS hits the network. (refreshShared() would
+ *      return a cached token on the 2s debounce window, causing another 401.)
+ *   2. refreshForced() still shares _refreshInFlight with refreshShared() so
+ *      concurrent 401s from multiple requests produce exactly ONE POST /auth/refresh
+ *      (stampede fix intact).
+ *   3. On refresh-200 => retry original request with the new Bearer token.
+ *   4. On refresh-401 => auth.forceLogout() (logout-once guard: navigate to /login
  *      exactly once regardless of how many 401s are cascading) + rethrow error.
  *
  * REMOVED (state hoisted to AuthService — D-A/D-B fixed by construction):
- *   - module-level `_isRefreshing` flag (was never reset after success — D-A)
- *   - module-level `_refreshToken$` BehaviorSubject (was never reset on logout — D-B)
+ *   - module-level _isRefreshing flag (was never reset after success — D-A)
+ *   - module-level _refreshToken$ BehaviorSubject (was never reset on logout — D-B)
  *
  * Previously those were acceptable only because the interceptor was the sole caller
  * of refresh(). Now that bootstrap() and _doSilentRefresh() are also callers, the
@@ -53,16 +54,20 @@ function addBearer(req: HttpRequest<unknown>, token: string): HttpRequest<unknow
 }
 
 /**
- * handle401 — thin: delegates to AuthService.refreshShared() (the single-flight gate).
- * Late concurrent 401s join the in-flight shareReplay Observable and all retry once
+ * handle401 — thin: delegates to AuthService.refreshForced() (bypass-debounce gate).
+ * Late concurrent 401s join the in-flight Subject Observable and all retry once
  * the one refresh completes. No module-level state lives here.
+ *
+ * Uses refreshForced() (not refreshShared()) because a 401 proves the server
+ * has already rejected the current token — the B03 debounce must be bypassed or
+ * the retry would use the same rejected token and immediately 401 again.
  */
 function handle401(
   req: HttpRequest<unknown>,
   next: HttpHandlerFn,
   auth: AuthService,
 ): Observable<HttpEvent<unknown>> {
-  return auth.refreshShared().pipe(
+  return auth.refreshForced().pipe(
     switchMap((resp) => next(addBearer(req, resp.access_token))),
     catchError((err: unknown) => {
       // Refresh itself failed (401 from /auth/refresh — rotated/revoked cookie).

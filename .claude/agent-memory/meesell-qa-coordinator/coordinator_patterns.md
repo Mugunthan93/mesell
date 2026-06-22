@@ -38,31 +38,26 @@ the next wave's spec automatically so every wave is smarter than the last. Forma
   keep flows that exercise REAL created entities (createProductViaPicker → real UUID) rather
   than stubbing the id.
 
-## From qa-onboarding Wave A — backend gate (2026-06-22)
-- **Backend test writer's deferrals were BOTH honest this wave** (a good sign): the OB-BE-24 flag-OFF skip
-  is a genuine process-singleton limitation (a sibling test mounts the flag-gated router onto the
-  shared `app.main.app` in-process), and OB-BE-38 DPDP was a real schema gap, NOT a coverage hole.
-  Gate lesson: VERIFY the schema-gap claim yourself (`grep consent` → 0 hits) before accepting a
-  "not modelled, no test" deferral; don't let a writer hand-wave a missing assertion as a spec gap.
-- **`assert True` is NOT automatically a green-washed test.** The 2 nullable-CHECK positive cases end
-  in `assert True`, but the load-bearing assertion is the `await db_session.flush()` line ABOVE it —
-  the CHECK constraint fires on flush; reaching `assert True` IS the proof it didn't raise. Read the
-  whole test body before rejecting an `assert True` — distinguish "operation completed without raising"
-  (legitimate) from "asserts nothing meaningful" (reject).
-- **A flag-gated route mounted onto a process-wide app singleton defeats per-test flag isolation** →
-  backend lane → when a spec needs to assert BOTH flag-ON and flag-OFF behaviour for the same route,
-  require an app-FACTORY fixture (fresh ASGI app per test), not the shared `app.main.app` import.
-  Pre-empt this in the next backend spec that touches a feature-flag-gated mount.
-- **Gate env recipe for re-running integration tests locally:** the app's §5.D startup guard requires
-  ~13 env vars (REFRESH_TOKEN_PEPPER, MSG91_*, RAZORPAY_*, GCS_*, LANGFUSE_*, AUDIT_PII_SALT,
-  CORS_ALLOWED_ORIGINS). Copy them dummy from `.github/workflows/ci.yml`'s integration job. The DB must
-  be at `alembic upgrade head` (the integration conftest expects a PRE-MIGRATED `*_test` DB, it does
-  not build schema). Local PG is on 5432 (CI uses 5433). The backend `.venv` (py3.11) has the deps;
-  the base interpreter does not.
-- **A specialist may open the group PR against the WRONG base (`develop` not `…/integration`).** GitHub
-  then blocks retargeting if the squash already landed on integration ("no new commits between base and
-  head"). The QA gate is still satisfiable: post the APPROVE verdict + close the PR with the squash SHA
-  recorded. Watch for this — `develop` is the FOUNDER's gate, never the QA group-PR target.
-- **The master-tree git guard blocks branch-ref moves from `/Users/.../mesell`.** To land the board
-  gate-record on the integration branch, commit in a worktree and `git push origin HEAD:refs/heads/<branch>`.
-  Do NOT `git branch -f` from the master checkout (guard-master-tree-git blocks it).
+## From Wave 3 — catalog vertical execution (PRs #396/#394, 2026-06-22)
+
+- **"Contamination" in a lane diff is usually a STALE INTEGRATION BASE, not specialist scope creep** → all lanes / merge-gate → before rejecting a non-test file in a test-lane PR, check `diff <(git show develop:<f>) <(git show <branch>:<f>)`. If IDENTICAL to develop, it is a develop commit the branch inherited because the integration branch was cut at an older develop tip. FIX = fast-forward `integration` to current develop (verify `merge-base --is-ancestor` first) BEFORE merging; then the lane's net-new is just its own files. Do NOT reject the specialist for it.
+- **Frontend component specs use the pure-function-mirror pattern, not TestBed render** (PrimeNG 21 + Angular 21 ngModule-null TestBed crash, documented as angular-component-builder Wave-5 F8) → frontend lane → the spec re-implements the component's logic inline and asserts against the copy. This is a WEAKER guard than a render test (drift between the real component and the mirror goes undetected), but it is the accepted codebase-wide pattern. At the gate: VERIFY the mirror faithfully matches the real component logic (read both); accept it as a contract guard; flag it (not reject) so the founder knows a TestBed-render upgrade is owed once the PrimeNG/Angular issue is fixed. The SERVICE specs (HTTP boundary) DO use real TestBed + HttpTestingController — require that for any service lane.
+- **A regression guard must assert the NEGATIVE, not just the positive** → all lanes → W3-FE-5 done right: it asserts `product_name` is the seed AND that `product_title` does NOT win when `product_name` is present (the actual bug was reading `product_title`). A guard that only asserts the happy key would stay green if the bug came back. Spec the negative assertion explicitly.
+- **Narrow infra-gate skips (DB-connection-refused / openpyxl-importorskip) are acceptable; assertion-free skips are not** → backend lane → a `pytest.skip()` that only fires on a genuine `Connection refused`/missing-optional-dep and otherwise runs the full assertion is fine. The reject line is a skip that NEVER asserts (the Wave-1 P1.11 self-skip) or a `pytest.skip()` at the top of the test body unconditionally.
+- **The Valkey port default in conftest is `:6381` (CI), not `:6379` (local)** → backend lane / gate environment → any test on the rate-limit/plan-guard Valkey path 500s locally unless a Valkey runs on 6381 OR `TEST_VALKEY_URL` is overridden. Expect ~2 such pre-existing failures (`test_flag_gate.py`) in any broad local backend run; confirm they're byte-identical at base and disclose, don't treat as new.
+
+
+## Wave-3 e2e gate — recurring patterns
+- STALE-BASE / LANE-DELETION HAZARD is now confirmed RECURRING on E2E lanes (Wave-2 AND Wave-3). E2E branches get cut from
+  develop, so their merge-base with the wave integration branch pre-dates the BE/FE lane merges. ALWAYS run
+  `git diff --diff-filter=D --name-only integration..e2e` BEFORE squashing; if it shows lane-file deletions, merge
+  integration INTO the e2e branch first, then squash. Make this a standing pre-squash check for every multi-lane wave.
+- SCOPE-CREEP FALSE POSITIVE: files like `dead_route_guard.mjs` / `ci.yml` can appear in a lane PR diff purely because the
+  branch carries develop commits the integration base lacks. Before rejecting for scope creep, check `git cat-file -e
+  origin/develop:<file>` — if it's already on develop, it's a base-divergence artifact, not the specialist's edit.
+- BOARD IN-REVIEW SOFT GAP persists across ALL e2e lanes (Wave-1/2/3): the e2e specialist leaves its row PENDING on PR open
+  instead of flipping to IN REVIEW. Same omission seen on backend lanes. Low-cost product-side fix; gate keeps setting the
+  final MERGED state and logging it. Consider baking the IN-REVIEW flip into the e2e-writer dispatch spec.
+- HONEST SKIP-GATING is the correct posture for env-blocked E2E (W3-E2-1): gate on the precondition (suggestions present /
+  schema fields present) with a documented `test.skip` reason rather than letting the flow fail red on an env gap. Verify
+  the skip does NOT green-wash (it must still assert the visible outcome when the precondition IS met).

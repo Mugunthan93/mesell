@@ -843,13 +843,17 @@ jobs:
           }
           # Shell: poll root path (ng serve SPA — always 200)
           check http://localhost:4200/
-          # Remotes: poll remoteEntry.json (proves federation entry point is live)
-          check http://localhost:4201/remoteEntry.json
-          check http://localhost:4202/remoteEntry.json
-          check http://localhost:4203/remoteEntry.json
-          check http://localhost:4204/remoteEntry.json
-          check http://localhost:4205/remoteEntry.json
-          check http://localhost:4206/remoteEntry.json
+          # Remotes: poll remoteEntry.json (proves federation entry point is live).
+          # SORTED-CANONICAL port map (alphabetical by remote name) — must match
+          # angular.json serve ports + federation.manifest.json + meesell_env.py
+          # slot-0. All 7 remotes (incl. mfe-billing on :4207) are waited on.
+          check http://localhost:4201/remoteEntry.json   # mfe-auth
+          check http://localhost:4202/remoteEntry.json   # mfe-billing
+          check http://localhost:4203/remoteEntry.json   # mfe-catalog
+          check http://localhost:4204/remoteEntry.json   # mfe-dashboard
+          check http://localhost:4205/remoteEntry.json   # mfe-export
+          check http://localhost:4206/remoteEntry.json   # mfe-onboarding
+          check http://localhost:4207/remoteEntry.json   # mfe-pricing
           # SPA fallback proof: /login MUST return 200 (ng serve history fallback).
           HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4200/login)
           echo "SPA fallback check: /login → HTTP $HTTP_CODE"
@@ -988,6 +992,22 @@ jobs:
         # "shell→remote logout" class; recurred when mfe-billing was added without the pin).
         # Catches that drift at config-review time, before any build. Dependency-free Node ESM.
         run: node tools/contracts/federation_singleton_guard.mjs
+
+      - name: Dead-route navigation guard (FED-2)
+        working-directory: frontend
+        # FED-2: asserts every STATIC navigation target (router.navigate([...]),
+        # navigateByUrl(), routerLink, and nav-item route:/routerLink: config literals)
+        # resolves to a route that actually EXISTS in the mounted route table. The table is
+        # DERIVED from the route files (apps/shell/app.routes.ts + the loadChildren-expanded
+        # mfe-catalog/mfe-billing route arrays via each remote's federation.config.js exposes),
+        # so it stays correct as routes change. WHY: the shell ends in `{ path: '**',
+        # redirectTo: 'login' }`, so a navigate to an UNDEFINED route does not 404 — it silently
+        # falls through to /login, which a logged-in user reads as a sudden "logout". We hit this
+        # twice from a single typo'd navigate literal (image-uploader #278, Preview :id/preview
+        # #395). This guard makes such a navigate a build failure at lint time, before any build.
+        # Fully-dynamic targets (navigate(routeVar), [routerLink]="item.route") are printed as
+        # UNVERIFIABLE and never fail the build. Dependency-free Node ESM.
+        run: node tools/contracts/dead_route_guard.mjs
 
   # =============================================================================
   # BUILD — Docker images via Cloud Build
