@@ -34,6 +34,17 @@ test.describe('Export', () => {
     await expect(exportPage.generateButton).toBeVisible();
   });
 
+  // W3-E2-3 — un-fixme condition (re-verified QA Wave 3, develop @ a94e013):
+  // STILL BLOCKED — export.component.ts onGenerate() (line ~431) STILL hardcodes
+  // `const productId = 'current-product-id';` on develop; the route-read fix is in an
+  // in-progress worktree (feature/mfe-export-productid/frontend) but NOT merged to
+  // develop. mfe-export PR #398 is the gating change.
+  // UN-FIXME ONLY WHEN: develop's frontend/apps/mfe-export/src/app/export.component.ts
+  // reads `route.snapshot.paramMap.get('id')` (or ActivatedRoute.snapshot.params['id'])
+  // in onGenerate() instead of the hardcoded 'current-product-id'.
+  // SELECTOR NOTE (verified live): the download link testid is `export-download`
+  // (a literal <a download>, rendered ONLY in the `ready` state) — NOT
+  // `export-download-button` (which does not exist). The trigger is `export-trigger`.
   test.fixme('clicking Generate triggers a non-empty file download', async ({ authedPage }) => {
     // BLOCKED by product bug: onGenerate() ignores the route productId.
     const catalog = new CatalogPage(authedPage);

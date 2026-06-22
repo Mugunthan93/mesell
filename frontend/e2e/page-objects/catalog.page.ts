@@ -38,9 +38,31 @@ export class CatalogPage {
   get formNext(): Locator {
     return this.page.getByTestId('catalog-form-next').locator('button');
   }
-  /** Autosave status (renders during/after an autosave). */
+  /** AI-fill button (mee-button → inner <button>). */
+  get aiFill(): Locator {
+    return this.page.getByTestId('catalog-ai-fill').locator('button');
+  }
+  /**
+   * Autosave status indicator (literal data-testid). The element host is ALWAYS
+   * present on the edit form (LIVE-VERIFIED QA Wave 3, develop @ a94e013, route
+   * /catalogs/:id/edit). Its TEXT switches idle('' empty) → "Saving…" → "Saved" →
+   * error. Assert the SAVED text rather than mere visibility (the host is always
+   * visible — visibility alone is not a save proof).
+   */
   get saveStatus(): Locator {
     return this.page.getByTestId('catalog-save-status');
+  }
+
+  /**
+   * The first editable schema-driven field on the edit form, if any are rendered.
+   * The catalog form renders category-schema fields inside mee-input / mee-textarea
+   * wrappers (the testid lands on the inner <input>/<textarea>). When the category's
+   * field schema is loaded there is ≥1 such control; when the dev backend has not
+   * populated the schema the accordion shows "Compulsory (0)" and there are none.
+   * Callers MUST guard on .count() before interacting (see W3-E2-1).
+   */
+  get firstEditableField(): Locator {
+    return this.page.locator('mee-input input, mee-textarea textarea').first();
   }
 
   // ── Image upload + precheck (/catalogs/:id/images) ──
