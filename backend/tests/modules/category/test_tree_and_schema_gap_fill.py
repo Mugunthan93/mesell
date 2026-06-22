@@ -14,65 +14,38 @@ the 304 tests do a 200 first to capture the ETag, then send it back.
 from __future__ import annotations
 
 import uuid
-from contextlib import asynccontextmanager
-from dataclasses import dataclass
 
 import pytest
-from httpx import ASGITransport, AsyncClient
-
-from app.core.auth import CurrentUser, get_current_user
-from app.main import app
 
 
 pytestmark = pytest.mark.integration
-
-
-@dataclass(frozen=True)
-class _StubUser:
-    user_id: object
-    plan: str = "free"
-
-
-def _stub_user_dep():
-    return _StubUser(user_id=uuid.uuid4())
-
-
-@asynccontextmanager
-async def _make_client():
-    app.dependency_overrides[get_current_user] = _stub_user_dep
-    transport = ASGITransport(app=app, raise_app_exceptions=False)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
-        async with app.router.lifespan_context(app):
-            yield ac
-    app.dependency_overrides.pop(get_current_user, None)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CAT-BE-15  GET /categories → 304 on If-None-Match
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def test_category_tree_304_on_if_none_match(use_live_valkey):
+async def test_category_tree_304_on_if_none_match(category_route_client):
     """CAT-BE-15: second GET /categories with matching ETag → 304, no body."""
-    async with _make_client() as ac:
-        # First request — get the ETag.
-        first = await ac.get("/api/v1/categories")
-        if first.status_code not in (200, 304):
-            pytest.skip(
-                f"GET /categories returned {first.status_code} "
-                "(DB infra may be unavailable)"
-            )
-        if first.status_code == 304:
-            pytest.skip("Cache already warm with a 304 — skip test")
-
-        etag = first.headers.get("ETag") or first.headers.get("etag")
-        if not etag:
-            pytest.skip("No ETag in first GET /categories response")
-
-        # Second request — conditional GET.
-        second = await ac.get(
-            "/api/v1/categories",
-            headers={"If-None-Match": etag},
+    # First request — get the ETag.
+    first = await category_route_client.get("/api/v1/categories")
+    if first.status_code not in (200, 304):
+        pytest.skip(
+            f"GET /categories returned {first.status_code} "
+            "(DB infra may be unavailable)"
         )
+    if first.status_code == 304:
+        pytest.skip("Cache already warm with a 304 — skip test")
+
+    etag = first.headers.get("ETag") or first.headers.get("etag")
+    if not etag:
+        pytest.skip("No ETag in first GET /categories response")
+
+    # Second request — conditional GET.
+    second = await category_route_client.get(
+        "/api/v1/categories",
+        headers={"If-None-Match": etag},
+    )
 
     assert second.status_code == 304, (
         f"Expected 304 on If-None-Match, got {second.status_code}: {second.text}"
@@ -87,19 +60,17 @@ async def test_category_tree_304_on_if_none_match(use_live_valkey):
 # CAT-BE-16  GET /categories → 200, super buckets present
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def test_category_tree_200_has_super_buckets(db, use_live_valkey):
+async def test_category_tree_200_has_super_buckets(db, category_route_client):
     """CAT-BE-16: GET /categories returns 200 with at least one super-category bucket."""
     from sqlalchemy import text as _text
 
     # Skip when seed absent.
-    async with db:
-        row = await db.execute(_text("SELECT COUNT(*) FROM categories"))
-        count = row.scalar_one()
+    row = await db.execute(_text("SELECT COUNT(*) FROM categories"))
+    count = row.scalar_one()
     if count == 0:
         pytest.skip("categories not seeded — CI schema-only; skip CAT-BE-16")
 
-    async with _make_client() as ac:
-        resp = await ac.get("/api/v1/categories")
+    resp = await category_route_client.get("/api/v1/categories")
 
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
     body = resp.json()
@@ -120,12 +91,11 @@ async def test_category_tree_200_has_super_buckets(db, use_live_valkey):
 # CAT-BE-17  GET /categories/{id}/schema with unknown UUID → 404
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def test_schema_unknown_category_404(use_live_valkey):
+async def test_schema_unknown_category_404(category_route_client):
     """CAT-BE-17: schema for a random UUID → 404, category.lookup.not_found NON-EMPTY."""
     random_id = uuid.uuid4()
 
-    async with _make_client() as ac:
-        resp = await ac.get(f"/api/v1/categories/{random_id}/schema")
+    resp = await category_route_client.get(f"/api/v1/categories/{random_id}/schema")
 
     assert resp.status_code == 404, (
         f"Expected 404 for unknown category UUID, got {resp.status_code}: {resp.text}"
@@ -143,36 +113,34 @@ async def test_schema_unknown_category_404(use_live_valkey):
 # CAT-BE-18  GET /categories/{id}/schema → 304 on If-None-Match
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def test_schema_304_on_if_none_match(db, use_live_valkey):
+async def test_schema_304_on_if_none_match(db, category_route_client):
     """CAT-BE-18: second GET /categories/{id}/schema with ETag → 304, no body."""
     from sqlalchemy import text as _text
 
     # Discover a real seeded category.
-    async with db:
-        row = await db.execute(
-            _text("SELECT id FROM categories LIMIT 1")
-        )
-        result = row.fetchone()
+    row = await db.execute(
+        _text("SELECT id FROM categories LIMIT 1")
+    )
+    result = row.fetchone()
 
     if result is None:
         pytest.skip("categories not seeded — CI schema-only; skip CAT-BE-18")
 
     category_id = result[0]
 
-    async with _make_client() as ac:
-        first = await ac.get(f"/api/v1/categories/{category_id}/schema")
-        if first.status_code != 200:
-            pytest.skip(
-                f"First GET /schema returned {first.status_code}; skip 304 test"
-            )
-        etag = first.headers.get("ETag") or first.headers.get("etag")
-        if not etag:
-            pytest.skip("No ETag in first GET /schema response")
-
-        second = await ac.get(
-            f"/api/v1/categories/{category_id}/schema",
-            headers={"If-None-Match": etag},
+    first = await category_route_client.get(f"/api/v1/categories/{category_id}/schema")
+    if first.status_code != 200:
+        pytest.skip(
+            f"First GET /schema returned {first.status_code}; skip 304 test"
         )
+    etag = first.headers.get("ETag") or first.headers.get("etag")
+    if not etag:
+        pytest.skip("No ETag in first GET /schema response")
+
+    second = await category_route_client.get(
+        f"/api/v1/categories/{category_id}/schema",
+        headers={"If-None-Match": etag},
+    )
 
     assert second.status_code == 304, (
         f"Expected 304 on If-None-Match, got {second.status_code}: {second.text}"

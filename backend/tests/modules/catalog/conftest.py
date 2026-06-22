@@ -329,6 +329,132 @@ def stub_call_gemini_budget_exceeded(monkeypatch):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# catalog_route_client — D2-patched ASGI fixture (Gate-4 repair pattern)
+# ─────────────────────────────────────────────────────────────────────────────
+@pytest_asyncio.fixture(loop_scope="function")
+async def catalog_route_client():
+    """ASGI client with stub auth, function-loop NullPool DB, and D2 Valkey fix.
+
+    Mirrors ``integration/conftest.py::iam_client`` exactly:
+
+    * D1 fix: overrides ``get_db`` with a function-loop NullPool engine so
+      route handlers never touch the module-level ``AsyncSessionLocal``
+      (session-loop-bound engine) → kills "got Future attached to a different
+      loop" from the middleware/route DB access.
+    * D2 fix: swaps ``_valkey_module._otp_client`` to a fresh function-loop
+      client → kills "RuntimeError: Event loop is closed" in rate_limit_mw.
+    * audit_mw patch: ``AuditMiddleware`` uses ``AsyncSessionLocal`` directly
+      (not via DI) — patch it to the same NullPool session-maker.
+    """
+    import os as _os
+    import uuid as _uuid
+    from dataclasses import dataclass
+
+    import redis.asyncio as _redis_lib
+    from httpx import ASGITransport, AsyncClient
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.pool import NullPool
+
+    import app.core.middleware.audit_mw as _audit_mw
+    import app.shared.valkey as _valkey_module
+    from app.core.auth import get_current_user
+    from app.main import app
+    from app.shared.database import get_db
+    from tests.conftest import _DEV_DATABASE_URL, _valkey_base
+
+    @dataclass(frozen=True)
+    class _StubUser:
+        user_id: object = None
+        plan: str = "free"
+
+        def __post_init__(self):
+            if self.user_id is None:
+                object.__setattr__(self, "user_id", _uuid.uuid4())
+
+    def _stub_dep():
+        return _StubUser()
+
+    db_url = _DEV_DATABASE_URL
+    valkey_base = _valkey_base()
+
+    # D1: function-loop NullPool engine — no connection reuse across loops.
+    engine = create_async_engine(db_url, poolclass=NullPool, echo=False)
+    _provisioned = bool(_os.environ.get("TEST_DATABASE_URL"))
+    if not _provisioned:
+        from app.shared.database import Base
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
+
+    TestSession = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def _db_override():
+        session = TestSession()
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+
+    app.dependency_overrides[get_db] = _db_override
+    app.dependency_overrides[get_current_user] = _stub_dep
+
+    # audit_mw uses AsyncSessionLocal directly (not via DI).
+    _original_audit_session_local = _audit_mw.AsyncSessionLocal
+    _audit_mw.AsyncSessionLocal = TestSession  # type: ignore[attr-defined]
+
+    # D2: fresh function-loop OTP client.
+    _original_otp_client = _valkey_module._otp_client
+    _test_otp_client = _redis_lib.from_url(f"{valkey_base}/0", decode_responses=True)
+    _valkey_module._otp_client = _test_otp_client  # type: ignore[assignment]
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    lifespan_db_engine = None
+    lifespan_valkey_client = None
+
+    try:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            async with app.router.lifespan_context(app):
+                lifespan_db_engine = getattr(app.state, "db_engine", None)
+                lifespan_valkey_client = getattr(app.state, "valkey", None)
+                yield ac
+
+            if lifespan_db_engine is not None:
+                try:
+                    await lifespan_db_engine.dispose()
+                except Exception:
+                    pass
+            if lifespan_valkey_client is not None:
+                try:
+                    await lifespan_valkey_client.aclose()
+                except Exception:
+                    pass
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
+        app.dependency_overrides.pop(get_db, None)
+        _audit_mw.AsyncSessionLocal = _original_audit_session_local  # type: ignore[attr-defined]
+        _valkey_module._otp_client = _original_otp_client  # type: ignore[assignment]
+        try:
+            await _test_otp_client.aclose()
+        except Exception:
+            pass
+        if not _provisioned:
+            try:
+                from app.shared.database import Base
+                async with engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.drop_all)
+            except Exception:
+                pass
+        try:
+            await engine.dispose()
+        except Exception:
+            pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Disable category schema cache for unit tests (single-process Valkey not always live)
 # ─────────────────────────────────────────────────────────────────────────────
 @pytest.fixture(autouse=True)

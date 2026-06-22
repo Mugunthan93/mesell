@@ -15,19 +15,13 @@ No Postgres is touched; ``use_live_valkey`` provides the cache layer.
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
-from dataclasses import dataclass
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
-import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
 
 from app.adapters.gemini import GeminiResponse
 from app.ai_ops.client import AIResponse
-from app.core.auth import CurrentUser, get_current_user
-from app.main import app
 
 pytestmark = pytest.mark.integration
 
@@ -42,35 +36,13 @@ def _empty_gemini_resp() -> GeminiResponse:
     )
 
 
-@dataclass(frozen=True)
-class _StubUser:
-    user_id: object
-    plan: str = "free"
-
-
-def _stub_user_dep():
-    return _StubUser(user_id=uuid4())
-
-
-@asynccontextmanager
-async def _make_client(raise_app_exceptions: bool = False):
-    """ASGI client with a stub auth override + lifespan so app state is ready."""
-    app.dependency_overrides[get_current_user] = _stub_user_dep
-    transport = ASGITransport(app=app, raise_app_exceptions=raise_app_exceptions)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
-        async with app.router.lifespan_context(app):
-            yield ac
-    app.dependency_overrides.pop(get_current_user, None)
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # CAT-BE-02  empty-q → 422 with NON-EMPTY validation_message_id
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def test_suggest_empty_q_422_with_nonempty_message_id(use_live_valkey):
+async def test_suggest_empty_q_422_with_nonempty_message_id(category_route_client):
     """CAT-BE-02: POST /categories/suggest with empty q → 422; message_id present."""
-    async with _make_client() as ac:
-        resp = await ac.post("/api/v1/categories/suggest", json={"q": ""})
+    resp = await category_route_client.post("/api/v1/categories/suggest", json={"q": ""})
 
     assert resp.status_code == 422, (
         f"Expected 422 for empty q, got {resp.status_code}: {resp.text}"
@@ -91,22 +63,20 @@ async def test_suggest_empty_q_422_with_nonempty_message_id(use_live_valkey):
 # CAT-BE-03  5001-char q → 422;  5000-char q → NOT 422 (boundary)
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def test_suggest_5001_char_q_returns_422(use_live_valkey, monkeypatch):
+async def test_suggest_5001_char_q_returns_422(category_route_client, monkeypatch):
     """CAT-BE-03a: q of length 5001 exceeds the 5000-char limit → 422."""
-    # Stub the tree + AI so the service won't fail on those; the rejection
-    # fires at the SuggestQuery Pydantic validation before service entry.
-    async with _make_client() as ac:
-        resp = await ac.post(
-            "/api/v1/categories/suggest",
-            json={"q": "k" * 5001},
-        )
+    # The rejection fires at the SuggestQuery Pydantic validation before service entry.
+    resp = await category_route_client.post(
+        "/api/v1/categories/suggest",
+        json={"q": "k" * 5001},
+    )
 
     assert resp.status_code == 422, (
         f"Expected 422 for 5001-char q, got {resp.status_code}: {resp.text}"
     )
 
 
-async def test_suggest_5000_char_q_accepted(use_live_valkey, monkeypatch):
+async def test_suggest_5000_char_q_accepted(category_route_client, monkeypatch):
     """CAT-BE-03b: q of exactly 5000 chars is within the limit → NOT 422."""
     from app.modules.category import service as cat_svc
 
@@ -127,11 +97,10 @@ async def test_suggest_5000_char_q_accepted(use_live_valkey, monkeypatch):
 
     monkeypatch.setattr(cat_svc.ai_client, "call_gemini", _fallback_ai)
 
-    async with _make_client() as ac:
-        resp = await ac.post(
-            "/api/v1/categories/suggest",
-            json={"q": "k" * 5000},
-        )
+    resp = await category_route_client.post(
+        "/api/v1/categories/suggest",
+        json={"q": "k" * 5000},
+    )
 
     # The request MUST NOT be rejected at the length guard.
     assert resp.status_code != 422, (
@@ -143,7 +112,7 @@ async def test_suggest_5000_char_q_accepted(use_live_valkey, monkeypatch):
 # CAT-BE-05  plan-guard 402 when smart_picker_hourly is exhausted
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def test_suggest_plan_guard_402_when_limit_exceeded(use_live_valkey, monkeypatch):
+async def test_suggest_plan_guard_402_when_limit_exceeded(category_route_client, monkeypatch):
     """CAT-BE-05: enforce_plan_limit raises PlanLimitExceededError → 402."""
     from app.modules.category import service as cat_svc
     from app.core.plan_guard import PlanLimitExceededError
@@ -162,11 +131,10 @@ async def test_suggest_plan_guard_402_when_limit_exceeded(use_live_valkey, monke
 
     monkeypatch.setattr(cat_svc, "enforce_plan_limit", _raise_limit)
 
-    async with _make_client() as ac:
-        resp = await ac.post(
-            "/api/v1/categories/suggest",
-            json={"q": "cotton kurti"},
-        )
+    resp = await category_route_client.post(
+        "/api/v1/categories/suggest",
+        json={"q": "cotton kurti"},
+    )
 
     assert resp.status_code == 402, (
         f"Expected 402 when plan limit is exhausted, got {resp.status_code}: {resp.text}"
@@ -181,7 +149,7 @@ async def test_suggest_plan_guard_402_when_limit_exceeded(use_live_valkey, monke
 # CAT-BE-08  all-invalid AI category_ids → 200 fallback_offered=true
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def test_suggest_all_invalid_ids_returns_fallback(use_live_valkey, monkeypatch):
+async def test_suggest_all_invalid_ids_returns_fallback(category_route_client, monkeypatch):
     """CAT-BE-08: AI returns IDs that are NOT in the tree → fallback envelope."""
     from app.modules.category import service as cat_svc
 
@@ -225,11 +193,10 @@ async def test_suggest_all_invalid_ids_returns_fallback(use_live_valkey, monkeyp
 
     monkeypatch.setattr(cat_svc.ai_client, "call_gemini", _all_invalid_ai)
 
-    async with _make_client() as ac:
-        resp = await ac.post(
-            "/api/v1/categories/suggest",
-            json={"q": "cotton kurti"},
-        )
+    resp = await category_route_client.post(
+        "/api/v1/categories/suggest",
+        json={"q": "cotton kurti"},
+    )
 
     assert resp.status_code == 200, (
         f"Expected 200 for all-invalid AI IDs, got {resp.status_code}: {resp.text}"
@@ -248,7 +215,7 @@ async def test_suggest_all_invalid_ids_returns_fallback(use_live_valkey, monkeyp
 #            tie-break by category_id (CAT-OBS-1 backend end)
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def test_suggest_caps_at_5_deterministic_order(use_live_valkey, monkeypatch):
+async def test_suggest_caps_at_5_deterministic_order(category_route_client, monkeypatch):
     """CAT-BE-09 (CAT-OBS-1 pin): AI returns 8 valid IDs → exactly 5 returned.
 
     Verifies the ``SuggestResponse.max_length=5`` contract (the deliberate
@@ -306,11 +273,10 @@ async def test_suggest_caps_at_5_deterministic_order(use_live_valkey, monkeypatc
 
     monkeypatch.setattr(cat_svc.ai_client, "call_gemini", _return_8)
 
-    async with _make_client() as ac:
-        resp = await ac.post(
-            "/api/v1/categories/suggest",
-            json={"q": "cotton kurti"},
-        )
+    resp = await category_route_client.post(
+        "/api/v1/categories/suggest",
+        json={"q": "cotton kurti"},
+    )
 
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
     body = resp.json()

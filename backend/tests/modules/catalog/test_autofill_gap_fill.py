@@ -17,16 +17,12 @@ Service-level tests (CAT-BE-37, 38, 39) call the service directly.
 from __future__ import annotations
 
 import uuid
-from contextlib import asynccontextmanager
-from dataclasses import dataclass
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
 from app.ai_ops.budget_cap import BudgetExceededError
-from app.core.auth import CurrentUser, get_current_user
 from app.core.plan_guard import PlanLimitExceededError
-from app.main import app
 from app.modules.catalog import service as catalog_service
 from app.modules.catalog.schemas import AutofillRequest, CreateProductRequest
 
@@ -34,48 +30,25 @@ from app.modules.catalog.schemas import AutofillRequest, CreateProductRequest
 pytestmark = pytest.mark.asyncio
 
 
-@dataclass(frozen=True)
-class _StubUser:
-    user_id: object
-    plan: str = "free"
-
-
-def _stub_user_dep():
-    return _StubUser(user_id=uuid.uuid4())
-
-
-@asynccontextmanager
-async def _make_client():
-    from httpx import ASGITransport, AsyncClient
-
-    app.dependency_overrides[get_current_user] = _stub_user_dep
-    transport = ASGITransport(app=app, raise_app_exceptions=False)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
-        async with app.router.lifespan_context(app):
-            yield ac
-    app.dependency_overrides.pop(get_current_user, None)
-
-
 # ── CAT-BE-36: FEATURE_AI_AUTOFILL_ENABLED=false → 404 ──────────────────────
 
 @pytest.mark.integration
-async def test_autofill_flag_off_returns_404(monkeypatch):
+async def test_autofill_flag_off_returns_404(catalog_route_client, monkeypatch):
     """CAT-BE-36: autofill route returns 404 when flag is disabled."""
     from app.shared.config import settings
 
     monkeypatch.setattr(settings, "FEATURE_AI_AUTOFILL_ENABLED", False)
 
     random_id = uuid.uuid4()
-    async with _make_client() as ac:
-        resp = await ac.post(
-            f"/api/v1/products/{random_id}/autofill",
-            json={"description": "cotton kurti for daily wear"},
-        )
+    resp = await catalog_route_client.post(
+        f"/api/v1/products/{random_id}/autofill",
+        json={"description": "cotton kurti for daily wear"},
+    )
 
     assert resp.status_code == 404, (
         f"Expected 404 when FEATURE_AI_AUTOFILL_ENABLED=false, got {resp.status_code}: {resp.text}"
     )
-    # Reset so flag is restored after this test (monkeypatch handles it automatically).
+    # monkeypatch restores the flag automatically after the test.
 
 
 # ── CAT-BE-37: plan-guard 402 → propagates ───────────────────────────────────
