@@ -670,6 +670,19 @@ async def set_compliance_extension(
         onboarding_complete=onboarding_complete,
     )
     await _invalidate_required_fields_cache(user_id)
+
+    # Category change monitor (Wave 3) — fire on the onboarding false→true edge
+    # only.  ``existing`` was read at the top of this call, BEFORE the
+    # compliance merge, so it carries the prior flag state for the edge test.
+    # A seller completing onboarding via the final compliance step crosses the
+    # edge here; a re-PATCH of an already-complete profile enqueues nothing.
+    await _enqueue_monitor_on_onboarding_edge(
+        user_id,
+        onboarding_complete=onboarding_complete,
+        existing=existing,
+        db=db,
+    )
+
     return _orm_to_domain(row)
 
 
