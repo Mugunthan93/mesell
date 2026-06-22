@@ -337,6 +337,7 @@ export type PricingErrorState =
                 placeholder="e.g. 70"
                 formControlName="selling_price"
                 [error]="sellingPriceError()"
+                [testId]="'pricing-cost-input'"
               />
 
               <!-- commission_pct: optional override (default 0%, omit key when blank) -->
@@ -347,6 +348,7 @@ export type PricingErrorState =
                 placeholder="0"
                 formControlName="commission_pct"
                 [error]="commissionPctError()"
+                [testId]="'pricing-commission-input'"
               />
 
               <!-- Disabled when form invalid OR calculating in-flight (§4.4 disabled-submit) -->
@@ -357,6 +359,7 @@ export type PricingErrorState =
                   [fullWidth]="true"
                   [disabled]="form.invalid || calculating()"
                   (clicked)="onCalculate()"
+                  [testId]="'pricing-calculate-btn'"
                 />
               </div>
             </form>
@@ -437,6 +440,7 @@ export type PricingErrorState =
               -->
               <div
                 #resultRegion
+                data-testid="pricing-breakdown"
                 class="mee-pricing__result-region"
                 tabindex="-1"
                 role="region"
@@ -455,6 +459,7 @@ export type PricingErrorState =
                   <!-- NEGATIVE_SETTLEMENT alert — renders above the table when present -->
                   @if (breakdown()!.alerts.length > 0) {
                     <div
+                      data-testid="pricing-negative-alert"
                       role="list"
                       aria-label="Pricing alerts"
                       class="flex flex-col gap-2"
@@ -503,6 +508,7 @@ export type PricingErrorState =
                       <tr class="mee-pricing__row mee-pricing__row--profit">
                         <td class="mee-pricing__table-label" scope="row">Estimated Bank Settlement</td>
                         <td
+                          data-testid="pricing-settlement-value"
                           class="mee-pricing__table-value"
                           [class.mee-pricing__value--positive]="marginIsPositive()"
                           [class.mee-pricing__value--negative]="!marginIsPositive()"
@@ -515,7 +521,7 @@ export type PricingErrorState =
                   </table>
 
                   <!-- Disclaimer — server-sent literal; muted fine-print below headline -->
-                  <p class="mee-pricing__disclaimer">
+                  <p data-testid="pricing-disclaimer" class="mee-pricing__disclaimer">
                     {{ breakdown()!.disclaimer }}
                   </p>
 

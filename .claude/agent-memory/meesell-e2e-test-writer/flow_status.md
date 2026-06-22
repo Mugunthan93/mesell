@@ -18,6 +18,23 @@ Result: **9 passed, 3 skipped (test.fixme)** — stable across 3 consecutive run
 | Plan guard | flows/plan-guard.spec.ts | COVERED ✅ | /billing/plans shows upgrade-prompt CTAs (free plan); NOT the remote-failure fallback. |
 | Logout + back-nav guard | flows/logout-guard.spec.ts | COVERED ✅ | The FED-1/logout-fix sentinel. Login → cross shell→remote (catalog) → logout → URL=/login → back-nav stays /login, dashboard heading absent. CONFIRMS the logout fix works E2E. Own fresh login (logging out would poison the shared worker context). |
 
+## QA Wave C — qa-pricing (2026-06-22, slot-0 :4200 vs integration tip 7a5193c)
+Result: **5 passed, 1 fixme** (pricing + export targeted run), STABLE ×2
+(`--workers=1`, runs 27.1s then 9.2s). Every passing test asserts a VISIBLE outcome.
+
+| Flow | File | Status | Notes |
+|---|---|---|---|
+| Price-calc happy (PQE-E2E-02) | flows/pricing.spec.ts | COVERED ✅ | createProductViaPicker → real UUID → /catalogs/:id/pricing → enter 70 → Calculate → settlement-value (₹57.62) + breakdown + disclaimer visible; negative-alert count 0. LOCKED model visible: Commission fee (0%)=₹0.00. |
+| Price-calc negative (PQE-E2E-03) | flows/pricing.spec.ts | COVERED ✅ | enter 1 → settlement ₹-11.31 → pricing-negative-alert visible ("This selling price results in a negative settlement…"), a 200+warning NOT an error page. |
+| Export page render (PQE-E2E-01) | flows/export.spec.ts | COVERED ✅ | real product → /catalogs/:id/export → export-trigger visible. (Needed a FRESH mfe-export rebuild — the baseline dist was stale 22:54, pre-testids.) |
+| Export productId-fix outcome | flows/export.spec.ts | COVERED ✅ (NEW) | Generate on a draft product → POST hits the REAL UUID → 422 → "Your product isn't ready / A front image is required" rendered (productId BUG is FIXED via resolveExportProductId). download-link count 0. |
+| Export download (PQE-E2E-05) | flows/export.spec.ts | FIXME (env) | REASON CHANGED from Wave-1: productId bug FIXED; now blocked by no-ready-product + no-GCS-signed-URL in local dev. Un-fixme on a GCS-credentialed env with a ready front-image product. |
+
+PQE-E2E-04 (apply-price→export link) NOT authored this wave: the pricing component's
+"Save & Continue" applies the price but the spec's exit gate listed E2E-02/03/05 as
+the gated set; apply→export is an optional extension — left for a follow-up to avoid
+over-asserting a deferred link the §3.E table marks "(IF selectors)".
+
 ## Auth architecture for the suite (CRITICAL — see federation_quirks.md)
 - Refresh token is SINGLE-USE with rotation → a shared storageState only authes the
   FIRST flow. SOLUTION: `fixtures/auth.ts` worker-scoped authed-context fixture logs
