@@ -3,6 +3,34 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-22
 
+=== UPDATE: 2026-06-22 — qa-pricing/testids — data-testids on mfe-pricing calculator flow ===
+Phase: /catalogs/:id/pricing — mfe-pricing
+Session: mesell-qa-pricing-testids-session-1 (meesell-angular-component-builder)
+Agent: meesell-angular-component-builder (sonnet)
+Branch: feature/qa-pricing/testids (off origin/develop @ 1fc73f4)
+
+Done:
+  Attribute-only additions to frontend/apps/mfe-pricing/src/app/pricing.component.ts:
+    - [testId]="'pricing-cost-input'"   on mee-input formControlName="selling_price"
+    - [testId]="'pricing-commission-input'" on mee-input formControlName="commission_pct"
+    - [testId]="'pricing-calculate-btn'" on mee-button label="Calculate"
+    - data-testid="pricing-breakdown"   on #resultRegion div (P&L container)
+    - data-testid="pricing-settlement-value" on <td> for estimated_bank_settlement
+    - data-testid="pricing-negative-alert"   on <div role="list"> alerts container
+    - data-testid="pricing-disclaimer"  on <p class="mee-pricing__disclaimer">
+  No logic, no restyle, no refactor. OnPush/standalone preserved.
+  mee-input [testId] + mee-button [testId] passthrough pre-existing on develop (PR #381).
+  Native elements received data-testid= directly.
+
+Tests: no spec change (QA lane adds E2E specs separately)
+Build: GREEN — ng build mfe-pricing: Application bundle generation complete [7.741s], zero TS errors
+       Pre-existing warnings only: NG8113 + NG8102 in data-table.component.ts (not this PR)
+In progress: none
+Blockers: none
+Next: PR to feature/qa-pricing/integration (lead merge-gate)
+Hand-offs: QA E2E lane (meesell-e2e-test-writer) — exact testid list above
+=========
+
 === UPDATE: 2026-06-22 (TWO fix-fe-followups PRs — HYBRID step-3 LEAD MERGE-GATE: #429 + #430 both PASS → develop) ===
 Phase: fix-fe-followups — empty-state spec red (#429) + OB-FE-18 shell onboarding sidebar nav (#430)
 Session: mesell-fix-fe-followups-frontend-gate-1
