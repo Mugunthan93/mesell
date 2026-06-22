@@ -3,6 +3,51 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-22
 
+=== UPDATE: 2026-06-22 (catalog-list-delete service layer — Step 1 of 3) ===
+Phase: catalog-list-delete — V1 catalog list DELETE control (FEATURE_PLAN.md SPEC B)
+Session: mesell-catalog-list-delete-frontend-session-1
+Branch: feature/catalog-list-delete/frontend (off develop @ 3c63b55, commit b60df88)
+Agent: meesell-angular-service-builder (Step 1 — service; component-builder does Step 2 next)
+Routes touched: /catalogs (mfe-catalog CatalogListApiService only — NO component/template)
+
+Done:
+  SERVICE LAYER — apps/mfe-catalog/src/app/catalog-list-api.service.ts:
+    - Added `deleteProduct(id: string): Observable<void>` method.
+    - Calls `ApiClient.delete<void>('/api/v1/products/' + id)` — NO raw HttpClient.
+    - Error matrix per FEATURE_PLAN.md §2:
+        204/200 → void completion (map to undefined)
+        401     → EMPTY (refreshInterceptor owns cascade)
+        404     → EMPTY (info-leak-safe treat-as-success: product already gone)
+        5xx/other → rethrow (component surfaces non-blocking error and keeps row)
+    - Import added: `EMPTY` from 'rxjs' (was only `of`).
+    - listProducts() is UNMODIFIED — already correct, wires GET /api/v1/products.
+
+  SPEC — apps/mfe-catalog/src/app/catalog-list-api.service.spec.ts (NEW FILE):
+    - 16 tests in 2 describe blocks (listProducts + deleteProduct).
+    - Harness: TestBed + provideHttpClient(withFetch()) + provideHttpClientTesting() + controller.verify() in afterEach.
+    - listProducts: GET URL+method, default limit=20, no auth header, 200→adapter mapping
+      (product_id→id, null name fallback, onboarding_completeness dropped), 401→emptyListResponse,
+      404→emptyListResponse, 500→rethrow.
+    - deleteProduct: DELETE URL+method, no auth header, 204→completes, 200→completes,
+      401→EMPTY (no next/error, complete only), 404→EMPTY (no next/error, complete only),
+      500→rethrow, 503→rethrow, body=null, exact product id in path.
+    - ALL 16 PASS. tsc --noEmit on tsconfig.spec.json: 0 errors. Pre-existing failures unchanged.
+
+Tests: 16 new PASS / 0 fail (new tests). Pre-existing suite: 1546 pass / 61 fail (all pre-existing, none new).
+Build: N/A — no build step for service-only change; tsc EXIT 0 (tsconfig.app.json + tsconfig.spec.json).
+In progress: Step 2 — meesell-angular-component-builder wires real listProducts + adds delete control + confirm + testids.
+Blockers: none.
+Next: component-builder continues on feature/catalog-list-delete/frontend branch.
+Hand-offs:
+  → meesell-angular-component-builder: CatalogListApiService.deleteProduct(id) + listProducts(params) are ready on branch
+    feature/catalog-list-delete/frontend. Component builder adds Step 2 to the SAME branch (no PR yet).
+    Exact signatures:
+      listProducts(params: ListProductsParams): Observable<CatalogListResponse>  — GET /api/v1/products
+      deleteProduct(id: string): Observable<void>                                 — DELETE /api/v1/products/{id}
+    File: frontend/apps/mfe-catalog/src/app/catalog-list-api.service.ts
+    Model: CatalogListResponse, CatalogListItem — frontend/apps/mfe-catalog/src/app/catalog-list.model.ts
+=========
+
 === UPDATE: 2026-06-22 02:10 (QA-wave-1 service lane COMMIT 1) ===
 Phase: feature/qa-wave-1/testids-logout/frontend — logout cookie-revoke bug fix
 Branch: feature/qa-wave-1/testids-logout/frontend (worktree .claude/worktrees/agent-a6b0cbd5e0ca009d6)
