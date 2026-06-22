@@ -91,3 +91,6 @@ integration→develop merge.
 Procedural: cut the e2e lane branch from the LIVE integration tip (here merge-base ==
 `3476b0e` exactly → zero stale-base; `--diff-filter=D` empty). Always run
 `git diff --diff-filter=D --name-only integration..e2e` before squashing.
+
+## Google Sign-In — COVERED (#483)
+Google Sign-In = COVERED ✅ (render + real POST /auth/google/verify fires + success-to-dashboard via dev-bypass). E2E-AUTH-06 success fixme RETIRED (#483).

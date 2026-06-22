@@ -228,3 +228,6 @@ wrong and `getByTestId(x)` resolves to a non-interactable host:
   — source: `<mee-empty-state role="status">`. NO data-testid.
 - Empty-state CTA: `getByRole('button', { name: /^browse all categories$/i })`. NO data-testid.
 - → HAND-OFF filed → frontend-coordinator: add `data-testid` so CAT-E2E-03/07 can be un-fixme'd.
+
+## gis-stub-button (test-injected, #483)
+- `gis-stub-button` — test-injected (not an app testid) by `AuthPage.installGisStub()`; drives the GIS callback with the dev-bypass sentinel.
