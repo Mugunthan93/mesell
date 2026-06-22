@@ -22,13 +22,18 @@ SuperCategoryNotDeclaredError                 404      customer.super_category.n
 ComplianceExtensionMissingFieldsError         422      customer.compliance.missing_fields
 ProfileIncompleteForCategoryError             422      customer.profile.incomplete_for_category
 MissingRequiredPincodeError                   422      validation.<field>.missing (→ generic)
+MissingRequiredProfileFieldError              422      validation.<field>.missing (→ generic)
 ============================================  =======  ==========================================
 
-Note: ``MissingRequiredPincodeError`` (added 2026-06-22, qa-onboarding) is a
-defensive INSERT-path guard.  Its per-field id ``validation.<field>.missing``
-deliberately uses the ``.missing`` rule segment so the resolver's generic-family
-fallback (resolver.py Step-2b) resolves it to the already-registered
-``validation.generic.missing`` string — NO new i18n key is required.
+Note: ``MissingRequiredPincodeError`` (added 2026-06-22, qa-onboarding) and its
+sibling ``MissingRequiredProfileFieldError`` (added 2026-06-22,
+fix-customer-insert-500) are defensive INSERT-path guards.  Their per-field id
+``validation.<field>.missing`` deliberately uses the ``.missing`` rule segment so
+the resolver's generic-family fallback (resolver.py Step-2b) resolves it to the
+already-registered ``validation.generic.missing`` string — NO new i18n key is
+required.  ``MissingRequiredProfileFieldError`` covers the four NOT-NULL base
+fields without a server default (manufacturer_name/address, packer_name/address);
+``country_of_origin`` is excluded because it carries ``server_default 'India'``.
 
 Note: §8.G prose lists 6 subclass IDs.  ``InvalidPincodeError`` is normally
 fired by Pydantic's ``Field(pattern=r"^\\d{6}$")`` regex producing a 422
@@ -225,12 +230,53 @@ class MissingRequiredPincodeError(CustomerError):
         self.field = field
 
 
+class MissingRequiredProfileFieldError(CustomerError):
+    """Raised by ``customer.service.upsert_profile`` on the FIRST (row-creating)
+    PATCH when a NOT-NULL base field that lacks a DB ``server_default`` is absent /
+    null / empty / whitespace.
+
+    The four guarded fields are ``manufacturer_name``, ``manufacturer_address``,
+    ``packer_name`` and ``packer_address``.  Like the two pincode columns, these
+    ``seller_profiles`` columns are NOT NULL with NO server default — a missing
+    value on the row-creating PATCH would reach asyncpg and surface as a 500
+    (``NotNullViolationError``).  This pre-flight guard converts that into a clean
+    422 with a non-empty ``validation_message_id``.
+
+    ``country_of_origin`` is DELIBERATELY EXCLUDED from this guard: it carries a
+    ``server_default 'India'`` at both the ORM (``seller_profile.py``) and migration
+    level, so a missing value DEFAULTS rather than 500-ing.  Do NOT add it here.
+
+    The per-field id is ``validation.{field}.missing`` (e.g.
+    ``validation.manufacturer_name.missing``).  It uses the ``.missing`` rule
+    segment so the i18n resolver's generic-family fallback (resolver.py Step-2b)
+    resolves it to the already-registered ``validation.generic.missing`` string —
+    NO new i18n key is minted.  The id matches the §5A.H locked 3-segment regex
+    ``^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){2}$``.
+
+    Guard fires ONLY when no profile row exists yet (the INSERT path).  Partial /
+    subset PATCH on an EXISTING row is unaffected — those legitimately omit fields
+    and keep their stored values.
+    """
+
+    code = "customer.missing_required_profile_field"
+    status_code = 422
+    validation_message_id = "validation.manufacturer_name.missing"  # default; overridden per field
+
+    def __init__(self, *, field: str, detail: str | None = None) -> None:
+        super().__init__(
+            detail=detail or f"{field} is required to create your seller profile.",
+            validation_message_id=f"validation.{field}.missing",
+        )
+        self.field = field
+
+
 __all__ = [
     "ComplianceExtensionMissingFieldsError",
     "CustomerError",
     "InvalidPincodeError",
     "InvalidSuperCategoryError",
     "MissingRequiredPincodeError",
+    "MissingRequiredProfileFieldError",
     "ProfileIncompleteForCategoryError",
     "ProfileNotFoundError",
     "SuperCategoryNotDeclaredError",
