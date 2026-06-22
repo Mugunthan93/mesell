@@ -1152,3 +1152,69 @@ describe('refreshShared() — cross-context debounce backstop (B03)', () => {
     vi.useRealTimers();
   });
 });
+
+// ── FE-AUTH-08: access token is in-memory only — never in localStorage (Decision #14) ──
+//
+// CLAUDE.md Decision #14: "access JWT held in-memory by the frontend;
+// refresh token in HttpOnly+Secure+SameSite=Strict cookie owned by backend ...
+// no tokens in localStorage."
+//
+// This describe block is the spec-side guard for Decision #14.
+// Develop had 49 cases covering setSession/logout/refresh/etc. but NO explicit
+// localStorage-never assertion — this block fills that gap.
+
+describe('AuthService — access token is in-memory only (FE-AUTH-08, Decision #14)', () => {
+  it('should not write any value to localStorage when setSession is called with a token and user', () => {
+    const { service } = setup();
+    localStorage.clear();
+
+    service.setSession('secret-token', { phone: '+919876543210' });
+
+    // None of the known auth key names must appear in localStorage
+    expect(localStorage.getItem('access_token')).toBeNull();
+    expect(localStorage.getItem('token')).toBeNull();
+    expect(localStorage.getItem('auth_token')).toBeNull();
+    expect(localStorage.getItem('jwt')).toBeNull();
+    expect(localStorage.getItem('mesell_token')).toBeNull();
+    // Belt-and-suspenders: nothing must be written at all
+    expect(localStorage.length).toBe(0);
+  });
+
+  it('should not write to localStorage even when setSession is called multiple times', () => {
+    const { service } = setup();
+    localStorage.clear();
+
+    service.setSession('tok-1', { phone: '+91x' });
+    service.setSession('tok-2', { phone: '+91x', plan: 'pro' });
+
+    expect(localStorage.length).toBe(0);
+  });
+
+  it('should not persist any auth key to localStorage after logout when previously authenticated', () => {
+    const { service, controller } = setup();
+    localStorage.clear();
+
+    service.setSession('tok', { phone: '+91x' });
+    service.logout();
+    // Drain the fire-and-forget revoke POST so controller.verify() passes
+    controller.match('/api/v1/auth/logout').forEach((r) =>
+      r.flush(null, { status: 204, statusText: 'No Content' }),
+    );
+
+    expect(localStorage.length).toBe(0);
+  });
+
+  it('should return the in-memory token from getToken and NOT any value seeded into localStorage', () => {
+    const { service } = setup();
+    // Seed a decoy to confirm the service does NOT read from localStorage
+    localStorage.setItem('access_token', 'decoy-from-storage');
+
+    service.setSession('real-in-memory-token', { phone: '+91x' });
+
+    // Must return the in-memory value, not the localStorage decoy
+    expect(service.getToken()).toBe('real-in-memory-token');
+
+    // Cleanup decoy so other tests start clean
+    localStorage.clear();
+  });
+});
