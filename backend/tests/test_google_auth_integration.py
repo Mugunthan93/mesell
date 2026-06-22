@@ -55,6 +55,7 @@ import app.core.middleware.audit_mw as _audit_mw
 import app.shared.valkey as _valkey_module
 from app.adapters.google import GoogleClaims
 from app.main import app
+from app.shared.config import settings
 from app.shared.database import Base, get_db
 from app.shared.valkey import get_valkey_otp
 from tests.conftest import _DEV_DATABASE_URL, _valkey_base
@@ -471,3 +472,164 @@ async def test_google_verify_409_on_google_sub_collision(google_client):
     assert "access_token" not in body, (
         f"409 must NOT issue an access_token; got {body!r}"
     )
+
+
+# ── Dev/test Google-verify bypass (PROD-HARD-DISABLED) ──────────────────────
+# These three tests mirror the OTP-bypass contract
+# (test_iam_dev_otp_bypass.py): (a) dev success, (b) prod force-disable —
+# the load-bearing security test, (c) regression.  Unlike the tests above,
+# they DO NOT mock ``verify_id_token`` — the whole point is to exercise the
+# REAL adapter with the sentinel.  Only the lowest-level Google library call
+# (``id_token.verify_oauth2_token``) is mocked, so a non-sentinel credential
+# still flows through the real adapter logic.
+
+_DEV_GOOGLE_SENTINEL = "dev-google:e2e-sub-001:e2e.user@example.com"
+
+
+def _patch_real_google_verify_to_reject(monkeypatch) -> None:
+    """Mock the LOWEST-level Google library call so the real adapter path is
+    deterministic offline: any token reaching ``verify_oauth2_token`` is
+    rejected exactly like a forged credential (ValueError → 401).
+    """
+
+    def _reject(*_args, **_kwargs):
+        raise ValueError("Invalid token signature (mocked real Google verify).")
+
+    monkeypatch.setattr(
+        "app.adapters.google.id_token.verify_oauth2_token", _reject
+    )
+
+
+@pytest.mark.asyncio
+async def test_dev_google_bypass_success(google_client):
+    """(a) APP_ENV != production + feature on + sentinel credential →
+    /auth/google/verify 200; issues tokens; creates the dual-identity user with
+    the SYNTHETIC sub/email landed.  No real Google verify is called.
+    """
+    from app.shared.models.user import User
+
+    client, _iam_service, monkeypatch, Session = google_client
+    monkeypatch.setattr(settings, "APP_ENV", "development")
+    monkeypatch.setattr(settings, "FEATURE_GOOGLE_AUTH_ENABLED", True)
+    monkeypatch.setattr(settings, "DEV_GOOGLE_BYPASS_TOKEN", _DEV_GOOGLE_SENTINEL)
+    # If the bypass ever leaks to the real call, this makes it fail loudly.
+    _patch_real_google_verify_to_reject(monkeypatch)
+
+    resp = await client.post(
+        "/api/v1/auth/google/verify", json={"credential": _DEV_GOOGLE_SENTINEL}
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["access_token"], "bypass success must mint an access token"
+    assert body["token_type"] == "bearer"
+    assert extract_refresh_cookie(resp), "bypass success must emit a refresh cookie"
+
+    # The synthetic identity from the sentinel must have landed as a real
+    # dual-identity Google-only user (phone NULL, google_sub + email set).
+    from sqlalchemy import select
+
+    async with Session() as s:
+        row = (
+            await s.execute(
+                select(User).where(User.google_sub == "e2e-sub-001")
+            )
+        ).scalar_one_or_none()
+    assert row is not None, "bypass must create the synthetic user"
+    assert row.email == "e2e.user@example.com"
+    assert row.phone is None  # Google-only dual-identity user
+
+    # Cleanup the synthetic user.
+    from sqlalchemy import delete
+
+    from app.shared.models.audit_event import AuditEvent
+
+    async with Session() as s:
+        await s.execute(delete(AuditEvent).where(AuditEvent.user_id == row.id))
+        u = await s.get(User, row.id)
+        if u is not None:
+            await s.delete(u)
+        await s.commit()
+
+
+@pytest.mark.asyncio
+async def test_prod_force_disable(google_client):
+    """(b) LOAD-BEARING SECURITY TEST.  APP_ENV=production + the sentinel set →
+    the bypass is FORCE-DISABLED; the sentinel is treated as an ordinary
+    credential and hits the REAL verify → rejected → 401.  No synthetic claims,
+    no user created, no tokens issued.
+    """
+    from sqlalchemy import select
+
+    from app.shared.models.user import User
+
+    client, _iam_service, monkeypatch, Session = google_client
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "FEATURE_GOOGLE_AUTH_ENABLED", True)
+    monkeypatch.setattr(settings, "DEV_GOOGLE_BYPASS_TOKEN", _DEV_GOOGLE_SENTINEL)
+    # In prod the sentinel must reach this real-verify call and be rejected.
+    _patch_real_google_verify_to_reject(monkeypatch)
+
+    resp = await client.post(
+        "/api/v1/auth/google/verify", json={"credential": _DEV_GOOGLE_SENTINEL}
+    )
+    assert resp.status_code == 401, (
+        f"prod must force-disable the bypass and reject the sentinel; "
+        f"got {resp.status_code}: {resp.text}"
+    )
+    body = resp.json()
+    assert body.get("code") == "iam.google_token_invalid", body
+    assert "access_token" not in body
+
+    # Absolutely NO synthetic user may have been created.
+    async with Session() as s:
+        row = (
+            await s.execute(
+                select(User).where(User.google_sub == "e2e-sub-001")
+            )
+        ).scalar_one_or_none()
+    assert row is None, "prod force-disable must NOT create the synthetic user"
+
+
+@pytest.mark.asyncio
+async def test_dev_google_bypass_regression(google_client):
+    """(c) Regression under conditions where the bypass must NOT fire:
+
+    1. Bypass OFF (sentinel empty) + the sentinel-looking credential →
+       real verify → 401 (unchanged behaviour).
+    2. Bypass ON but a NON-sentinel credential → real verify → 401
+       (the bypass only fires on an exact sentinel match).
+    """
+    from sqlalchemy import select
+
+    from app.shared.models.user import User
+
+    client, _iam_service, monkeypatch, Session = google_client
+    monkeypatch.setattr(settings, "APP_ENV", "development")
+    monkeypatch.setattr(settings, "FEATURE_GOOGLE_AUTH_ENABLED", True)
+    _patch_real_google_verify_to_reject(monkeypatch)
+
+    # 1. Bypass OFF — even the sentinel string is just an ordinary credential.
+    monkeypatch.setattr(settings, "DEV_GOOGLE_BYPASS_TOKEN", "")
+    r_off = await client.post(
+        "/api/v1/auth/google/verify", json={"credential": _DEV_GOOGLE_SENTINEL}
+    )
+    assert r_off.status_code == 401, r_off.text
+    assert r_off.json().get("code") == "iam.google_token_invalid", r_off.text
+
+    # 2. Bypass ON, but a credential that is NOT the sentinel → real verify.
+    monkeypatch.setattr(settings, "DEV_GOOGLE_BYPASS_TOKEN", _DEV_GOOGLE_SENTINEL)
+    r_nonmatch = await client.post(
+        "/api/v1/auth/google/verify",
+        json={"credential": "some-other-real-looking-token"},
+    )
+    assert r_nonmatch.status_code == 401, r_nonmatch.text
+    assert r_nonmatch.json().get("code") == "iam.google_token_invalid", r_nonmatch.text
+
+    # No synthetic user from either non-firing path.
+    async with Session() as s:
+        row = (
+            await s.execute(
+                select(User).where(User.google_sub == "e2e-sub-001")
+            )
+        ).scalar_one_or_none()
+    assert row is None, "no bypass should have fired → no synthetic user"

@@ -304,6 +304,25 @@ class Settings(BaseSettings):
     # OpenAPI surface + §17 endpoint count stay at 28 until enabled per env.
     FEATURE_GOOGLE_AUTH_ENABLED: bool = False
 
+    # ── Dev-only Google-verify bypass (dev-google-bypass feature) ──────────────
+    # OFF by default ("" == disabled). When NON-EMPTY *and* APP_ENV != "production"
+    # *and* FEATURE_GOOGLE_AUTH_ENABLED is True, the google adapter treats a
+    # credential whose value EXACTLY equals this sentinel as a verified Google
+    # token and returns SYNTHETIC claims WITHOUT calling Google's real verify
+    # (no network, no published-JWK check). The sentinel encodes the test
+    # identity so e2e/integration lanes can drive different dual-identity users:
+    #
+    #     dev-google:{sub}:{email}
+    #
+    # e.g. "dev-google:e2e-sub-001:e2e.user@example.com" → synthetic claims
+    # sub="e2e-sub-001", email="e2e.user@example.com", email_verified=True,
+    # name="e2e.user". A credential that does NOT exactly equal the sentinel
+    # falls through to the REAL Google verify path unchanged. FORCE-DISABLED in
+    # production by the APP_ENV guard in adapters/google.py regardless of this
+    # value (a leaked prod env var is inert). Dev/e2e sets the sentinel; PROD
+    # MUST leave empty.
+    DEV_GOOGLE_BYPASS_TOKEN: str = ""
+
     # ── Validators ─────────────────────────────────────────────────────────
     @field_validator("CORS_ALLOWED_ORIGINS", "GOOGLE_OAUTH_CLIENT_ID", mode="before")
     @classmethod

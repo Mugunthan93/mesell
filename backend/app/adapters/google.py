@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
 from dataclasses import dataclass
 
 from google.auth.transport import requests as google_requests
@@ -109,6 +110,65 @@ def _verify_sync(credential: str) -> dict:
     )
 
 
+def _resolve_dev_bypass_claims(credential: str) -> GoogleClaims | None:
+    """Return synthetic verified claims iff the dev-google bypass is active AND
+    ``credential`` exactly equals the configured sentinel; otherwise ``None``.
+
+    THREE independent guards — ALL must hold or the bypass is inert and the
+    real Google verify path runs unchanged:
+
+      1. ``settings.APP_ENV != "production"``  — force-disabled in prod
+         regardless of config (mirrors the OTP-bypass ``test_prod_force_disable``
+         contract).  This is checked FIRST so a leaked prod sentinel never
+         even reaches the comparison.
+      2. ``settings.DEV_GOOGLE_BYPASS_TOKEN`` is NON-EMPTY.
+      3. ``settings.FEATURE_GOOGLE_AUTH_ENABLED`` is True (the route is not
+         mounted otherwise, but we gate defensively).
+
+    Sentinel format (``dev-google:{sub}:{email}``) encodes the test identity so
+    e2e/integration lanes can drive different dual-identity users.  The
+    comparison is constant-time and the raw credential is never logged.
+    """
+    # Guard 1 — hard prod kill-switch, checked before anything else.
+    if settings.APP_ENV == "production":
+        return None
+    # Guards 2 + 3 — bypass must be configured AND the feature must be on.
+    configured = settings.DEV_GOOGLE_BYPASS_TOKEN
+    if not configured or not settings.FEATURE_GOOGLE_AUTH_ENABLED:
+        return None
+    # Exact-match the sentinel (constant-time); a non-match → real verify.
+    if not secrets.compare_digest(credential, configured):
+        return None
+
+    # Parse the identity out of the sentinel: dev-google:{sub}:{email}
+    parts = configured.split(":", 2)
+    if len(parts) != 3 or parts[0] != "dev-google" or not parts[1] or not parts[2]:
+        # Malformed sentinel — refuse to synthesise (do NOT silently fall
+        # through to real verify either; a misconfigured dev sentinel is a
+        # config error the developer must fix).
+        logger.warning(
+            "google.verify_id_token dev-bypass sentinel malformed "
+            "(expected 'dev-google:{sub}:{email}') — rejecting."
+        )
+        raise GoogleTokenInvalidError()
+
+    _, sub, email = parts
+    logger.warning(
+        "google.verify_id_token DEV BYPASS ACTIVE (APP_ENV=%s) — synthetic "
+        "claims, NO real Google verify. sub_present=%s email_present=%s.",
+        settings.APP_ENV,
+        bool(sub),
+        bool(email),
+    )
+    return GoogleClaims(
+        sub=sub,
+        email=email,
+        email_verified=True,
+        name=email.split("@", 1)[0],
+        picture=None,
+    )
+
+
 async def verify_id_token(credential: str) -> GoogleClaims:
     """Verify a Google ID-token and return typed claims.
 
@@ -124,6 +184,15 @@ async def verify_id_token(credential: str) -> GoogleClaims:
         GoogleEmailUnverifiedError: token valid but ``email_verified`` not true.
         GoogleUnavailableError: Google's certs endpoint unreachable.
     """
+    # ── Dev/test bypass (PROD-HARD-DISABLED) ───────────────────────────────
+    # When the sentinel matches AND APP_ENV != "production" AND the feature is
+    # on, resolve synthetic verified claims without calling Google.  In prod,
+    # OR when the sentinel does not match, this returns None and the REAL
+    # verify path below runs byte-identically to before this seam existed.
+    bypass_claims = _resolve_dev_bypass_claims(credential)
+    if bypass_claims is not None:
+        return bypass_claims
+
     try:
         # The library call is sync (signature math + a cached cert fetch); run
         # it off the event loop so we never block other requests.
