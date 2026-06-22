@@ -70,14 +70,16 @@ function makePendingImage(idx = 1): ProductImage {
 
 describe('CAT-FE-18a — hidden image-file-input wiring triggers upload on file selection', () => {
   it('should call upload when a file is selected via the file input', () => {
-    const uploadSpy = vi.fn(() => of<ImageUploadResponse>({
-      image_id: 'new-img-uuid',
-      idx: 1,
-      status: 'ready',
-      signed_url: 'https://gcs.example.com/new-img.jpg',
-      precheck_jsonb: makePassPrecheck(),
-      is_front: true,
-    }));
+    // ImageUploadResponse is the 202 upload receipt (status='pending', polling still needed)
+    const uploadSpy = vi.fn((_productId: string, _file: File, _idx: number) =>
+      of<ImageUploadResponse>({
+        image_id: 'new-img-uuid',
+        idx: 1,
+        status: 'pending',
+        gcs_path: 'gs://mesell-dev/images/new-img-uuid.jpg',
+        enqueued_task_id: 'celery-task-uuid-001',
+      }),
+    );
 
     const file = new File(['data'], 'photo.jpg', { type: 'image/jpeg' });
     const productId = 'product-uuid-001';
@@ -92,14 +94,15 @@ describe('CAT-FE-18a — hidden image-file-input wiring triggers upload on file 
   });
 
   it('should use 1-based idx matching the slot position when selecting via hidden input', () => {
-    const uploadSpy = vi.fn(() => of<ImageUploadResponse>({
-      image_id: 'new-img-uuid',
-      idx: 3,
-      status: 'ready',
-      signed_url: 'https://gcs.example.com/new-img.jpg',
-      precheck_jsonb: makePassPrecheck(),
-      is_front: false,
-    }));
+    const uploadSpy = vi.fn((_productId: string, _file: File, _idx: number) =>
+      of<ImageUploadResponse>({
+        image_id: 'new-img-uuid',
+        idx: 3,
+        status: 'pending',
+        gcs_path: 'gs://mesell-dev/images/new-img-uuid.jpg',
+        enqueued_task_id: 'celery-task-uuid-003',
+      }),
+    );
 
     const file = new File(['data'], 'photo3.jpg', { type: 'image/jpeg' });
     // Third slot → idx=3 (1-based, not 0-based)
@@ -111,7 +114,9 @@ describe('CAT-FE-18a — hidden image-file-input wiring triggers upload on file 
   });
 
   it('should not call upload when no file is selected (empty file list)', () => {
-    const uploadSpy = vi.fn(() => of<ImageUploadResponse>({} as ImageUploadResponse));
+    const uploadSpy = vi.fn((_productId: string, _file: File, _idx: number) =>
+      of<ImageUploadResponse>({} as ImageUploadResponse),
+    );
 
     // Simulate: if (!event.target.files?.length) return;
     const fileList: File[] = [];
@@ -123,7 +128,9 @@ describe('CAT-FE-18a — hidden image-file-input wiring triggers upload on file 
   });
 
   it('should not call upload when the slot is already filled (4/4 slots occupied)', () => {
-    const uploadSpy = vi.fn(() => of<ImageUploadResponse>({} as ImageUploadResponse));
+    const uploadSpy = vi.fn((_productId: string, _file: File, _idx: number) =>
+      of<ImageUploadResponse>({} as ImageUploadResponse),
+    );
 
     // Component guard: if filled slots >= 4, return early
     const filledCount = 4;
@@ -205,7 +212,7 @@ describe('CAT-FE-18c — precheck-card NOT rendered when slot is pending (no ima
 describe('CAT-FE-18d — upload error path: slot stays in pending state, no partial slot added', () => {
   it('should return EMPTY on upload error (no next emission, no slot update)', () => {
     // The component's service layer returns EMPTY on upload error → no slot update
-    const errorUpload = vi.fn(() => EMPTY);
+    const errorUpload = vi.fn((_productId: string, _file: File, _idx: number) => EMPTY);
     const emitted: ImageUploadResponse[] = [];
 
     errorUpload('product-uuid', new File(['x'], 'img.jpg'), 1).subscribe({

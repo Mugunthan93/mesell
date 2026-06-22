@@ -330,7 +330,7 @@ describe('CAT-FE-07 — fallback_offered=true with empty suggestions → EmptySt
 
 describe('CAT-FE-08 — onPicked calls selectCategory with the category_id', () => {
   it('should call selectCategory with the correct category_id when a card emits picked', () => {
-    const selectCategorySpy = vi.fn(() => of({ id: 'new-product-id' }));
+    const selectCategorySpy = vi.fn((catId: string) => of({ id: 'new-product-id', catId }));
     const categoryId = 'cat-kurti-uuid';
 
     // Simulate what SmartPickerComponent.onPicked does:
@@ -342,7 +342,7 @@ describe('CAT-FE-08 — onPicked calls selectCategory with the category_id', () 
   });
 
   it('should call selectCategory with a UUID-format category_id', () => {
-    const selectCategorySpy = vi.fn(() => of({ id: 'new-product-id' }));
+    const selectCategorySpy = vi.fn((catId: string) => of({ id: 'new-product-id', catId }));
     const uuid = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
 
     const onPicked = (catId: string) => selectCategorySpy(catId).subscribe();
@@ -354,7 +354,7 @@ describe('CAT-FE-08 — onPicked calls selectCategory with the category_id', () 
   it('should handle selectCategory EMPTY gracefully (no re-throw to caller)', () => {
     // SmartPickerComponent.onPicked wires the error: callback
     // EMPTY completes without emitting — no error propagation
-    const emptySelectSpy = vi.fn(() => of<{ id: string }>());
+    const emptySelectSpy = vi.fn((_catId: string) => of<{ id: string }>());
     const errors: unknown[] = [];
 
     const onPicked = (catId: string) =>

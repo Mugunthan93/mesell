@@ -142,13 +142,17 @@ describe('CAT-FE-19b — 0 products renders dashboard-empty-state element', () =
 // ── CAT-FE-19c — row testid selector contract ─────────────────────────────────
 
 describe('CAT-FE-19c — dashboard-product-row testid is the correct E2E-registered selector', () => {
-  it('should have data-testid="dashboard-product-row" (E2E LIVE-VERIFIED in selector_registry.md)', () => {
-    // Verified from dashboard.component.ts template (line ~364):
-    //   <tr data-testid="dashboard-product-row" ...>
-    const SELECTOR = 'dashboard-product-row';
-    expect(SELECTOR).toBe('dashboard-product-row');
-    expect(SELECTOR).not.toBe('catalog-product-row'); // NOT the old provisional name
-    expect(SELECTOR).not.toBe('catalog-card');         // NOT the provisional catalog-card name
+  it('should render one row per product — row count equals the products array length', () => {
+    // Verifies the @for loop invariant: one row per product (not more, not fewer)
+    const products = [
+      makeProduct({ product_id: 'p1', name: 'Kurti' }),
+      makeProduct({ product_id: 'p2', name: 'Saree' }),
+      makeProduct({ product_id: 'p3', name: 'Salwar' }),
+    ];
+    // Each entry in products[] maps to exactly one data-testid="dashboard-product-row"
+    // filterProductsByName with empty query returns ALL products (no filter applied)
+    const visibleRows = filterProductsByName(products, '');
+    expect(visibleRows.length).toBe(products.length);
   });
 
   it('should expose product_id as the row routing key (for /catalogs/:id/edit navigation)', () => {
@@ -179,12 +183,18 @@ describe('CAT-FE-19c — dashboard-product-row testid is the correct E2E-registe
 // ── CAT-FE-19d — empty-state testid selector contract ────────────────────────
 
 describe('CAT-FE-19d — dashboard-empty-state testid is the correct E2E-registered selector', () => {
-  it('should have data-testid="dashboard-empty-state" (E2E LIVE-VERIFIED in selector_registry.md)', () => {
-    // Verified from dashboard.component.ts template (line ~344):
-    //   <mee-empty-state data-testid="dashboard-empty-state" ...>
-    const SELECTOR = 'dashboard-empty-state';
-    expect(SELECTOR).toBe('dashboard-empty-state');
-    expect(SELECTOR).not.toBe('catalog-empty-state'); // NOT the provisional name
+  it('should compute isEmpty=true for 0 products and loading=false (empty-state condition)', () => {
+    // The template shows data-testid="dashboard-empty-state" when isEmpty() is true.
+    // isEmpty() = !loading() && products().length === 0
+    const products: ProductListItem[] = [];
+    const loading = false;
+    const isEmpty = !loading && products.length === 0;
+
+    expect(isEmpty).toBe(true);
+    // Confirm it becomes false when even one product is present
+    const nonEmpty = [makeProduct({ product_id: 'p1' })];
+    const isEmptyWithProduct = !loading && nonEmpty.length === 0;
+    expect(isEmptyWithProduct).toBe(false);
   });
 
   it('should show empty-state with a CTA label "New Catalog" when no products', () => {

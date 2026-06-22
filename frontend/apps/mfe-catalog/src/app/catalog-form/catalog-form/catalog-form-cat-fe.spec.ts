@@ -140,7 +140,10 @@ describe('CAT-FE-13 — onAutofill() success: fields populated and isAiSuggested
   });
 
   it('should call apiSvc.autofill with the product id and description', () => {
-    const autofillSpy = vi.fn(() => of({ suggestions: AUTOFILL_SUGGESTIONS }));
+    const autofillSpy = vi.fn((
+      _productId: string,
+      _description: string,
+    ) => of({ suggestions: AUTOFILL_SUGGESTIONS }));
     const productId = 'product-uuid-001';
     const description = 'Blue Cotton Kurti Mirror Work'; // from productName()
 
@@ -201,7 +204,9 @@ describe('CAT-FE-14 — onAutofill() error: autofilling reset + error toast, fie
   });
 
   it('should surface an observable error when the autofill service returns a 5xx', () => {
-    const autofillSpy = vi.fn(() => throwError(() => ({ status: 500 })));
+    const autofillSpy = vi.fn((_productId: string, _description: string) =>
+      throwError(() => ({ status: 500 })),
+    );
     const errors: unknown[] = [];
 
     autofillSpy('product-id', 'description').subscribe({
@@ -260,7 +265,10 @@ describe('CAT-FE-15 — autosave debounce trigger: PATCH fires after debounce', 
   });
 
   it('should call autosave API with current fieldValues on trigger', () => {
-    const autosaveSpy = vi.fn(() => of({ status: 'ok' }));
+    const autosaveSpy = vi.fn((
+      _productId: string,
+      _fieldValues: Record<string, unknown>,
+    ) => of({ status: 'ok' }));
     const productId = 'product-uuid-001';
     const fieldValues: Record<string, unknown> = {
       product_name: 'Blue Cotton Kurti',
