@@ -3001,3 +3001,26 @@ Next action: founder reviews + merges PR #350 → develop (founder's gate). No i
 
 **Next action:** founder reviews + merges #375 → develop. Founder re-test: one normal reload of http://localhost:4200 now suffices (incognito once on the very first load only, to flush whatever the tab cached before the restart).
 =========
+
+---
+
+### UPDATE — 2026-06-22 — mesell-qa-wave-1-memory-scribe-infra-session-1 — qa-wave worktree prune + deferred-memory scribe
+
+**Phase:** founder-authorized housekeeping (single-agent fast mode per CLAUDE.md HYBRID — standalone lead executes directly). No playbook resource section applies (repo hygiene + `.claude/` memory writes; no VM/K3s/TF/secret/cluster surface; ₹0). Rule followed: master-tree git via `MESELL_ALLOW_MASTER_GIT=1`; `.claude/` writes via git-plumbing (`hash-object` → `update-index --cacheinfo` → commit from index → `git checkout HEAD -- .claude/`) because Edit/Write are blocked on `.claude/`.
+
+**Task A — worktree prune (DONE):** removed all 7 `.claude/worktrees/agent-*` worktrees (none locked). Pre-prune snapshot of all uncommitted diffs/untracked files saved to `/tmp/meesell-pre-worktree-prune-state-20260622.txt` (zero-loss). One was a nested worktree (`agent-a66186b04bee2028b/.claude/worktrees/agent-a43ca…`). Deleted 6 orphaned `worktree-agent-*` branches (all pointed at the same `6271393`). Removed 3 orphaned filesystem dirs (`agent-a373511…`, `agent-a66186…`, `agent-a9456f…` — no `.git`, never tracked). `git worktree prune` clean. **KEPT** master + `/private/tmp/mesell-wt/qa-wave-1-e2e` (on `feature/qa-wave-1/e2e` — not an `agent-*` worktree) + all 23 `feature/*` branches (no auto-delete). `design-figma-ui-screens` dir left untouched (plain dir, not an `agent-*` worktree, out of scope).
+
+**Task B — deferred backend-test-writer memory scribe (DONE):** the isolated `meesell-backend-test-writer` cannot self-write memory; landed its Wave-1 ledger via git-plumbing. **PR #387** `chore/qa-wave-1-memory-scribe` → develop, **MERGED `--admin`** (merge SHA `6a02669`), 3 files +44/-0 (append-only): `test_files_authored.md` (Wave-1 ledger, 1314 passed / 28 skipped / 0 failed, PR #380), `conftest_patterns.md` (9 fixture pitfalls), `deferred_coverage.md` (P1.11 export-ZIP → Wave 2). Branch cut off true `origin/develop` (stale-ref gotcha avoided); PR file-list verified = exactly the 3 files.
+
+**Task B addendum — own-memory recovery (DONE):** the pruned worktree `agent-ae4db1da0ba50fd5c` (branch `feature/dashboard-liveprobe/infra`, KEPT) held an uncommitted append to MY OWN `meesell-infra-builder/MEMORY.md` (the PR #378 dashboard live-port-probe durable fix + "trust the port not the PID" principle). Recovered from the snapshot, restored via git-plumbing. **PR #388** `chore/infra-memory-restore-liveprobe` → develop, **MERGED `--admin`** (merge SHA `42ba00f`), 1 file +2/-0 pure-insert. develop now @ `42ba00f`.
+
+**Other unscribed memory NOTED (not fixed — out of this brief's scope):** uncommitted MEMORY.md scratch was also discarded (snapshot-preserved) from two FRONTEND-owned worktrees — `meesell-angular-service-builder/MEMORY.md` (qa-wave-1 logout-fix session, branch `feature/qa-wave-1/testids-logout/frontend @ ac52438`, code PUSHED) and `meesell-angular-component-builder/MEMORY.md` (qa-wave-1 data-testid session, PR #381). Also thin/near-bootstrap MEMORY.md (≤30 lines) in: `meesell-qa-coordinator`, `meesell-e2e-test-writer`, `meesell-frontend-test-writer`, `meesell-section-coordinator`, `meesell-category-picker-builder`, `meesell-image-precheck-builder`, `meesell-legal-writer`. These are other agents' memory — flagged for their owners; NOT mine to write.
+
+**Validation:** `git worktree list` after = master (`develop`) + `qa-wave-1-e2e` only. Both PR file-lists verified pre-merge (no foreign commits). Frontend lead's 3 unstaged working-tree edits (`meesell-frontend-coordinator/MEMORY.md`, `STATUS_FRONTEND.md`, `feature_board_frontend.md`) left INTACT (sole-writer boundary).
+
+**Board sweep (session start + end):** housekeeping chore, not a `feature/{name}/infra` group lane → no Active row added/changed. `feature/dashboard-liveprobe/infra` and `feature/qa-wave-1/*` branches preserved (no auto-delete); their feature_board lifecycle is unaffected by worktree removal. No NEW stale-7d flags raised. Inter-lead requests unchanged.
+
+**Cost:** ₹0/mo. No infra/TF/K8s/secret surface → no `terraform plan` / `kubectl --dry-run` applicable.
+
+**Next action:** none — both scribe PRs merged to develop. Frontend lead's in-flight working-tree edits remain its own to commit.
+=========
