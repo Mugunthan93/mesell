@@ -3,6 +3,49 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-22
 
+=== UPDATE: 2026-06-22 (catalog-list-delete Step 2 — component layer) ===
+Phase: /catalogs (CatalogListComponent — mfe-catalog)
+Session: mesell-catalog-list-delete-frontend-session-1 (Step 2 — component layer)
+Branch: feature/catalog-list-delete/frontend
+Routes touched: /catalogs (CatalogListComponent in mfe-catalog)
+Services consumed: CatalogListApiService.listProducts() + .deleteProduct()
+
+Done:
+  CatalogListComponent (apps/mfe-catalog/src/app/catalog-list.component.ts):
+    - Replaced SIMULATED_CATALOGS/setTimeout stub with CatalogListApiService.listProducts({ page: 1, limit: 20 }) in ngOnInit
+    - Added adaptToRow() pure function (CatalogListItem -> CatalogRow; safe defaults for missing V1 wire fields)
+    - Added confirmingDeleteId signal<string|null>(null) and deletingId signal<string|null>(null)
+    - Added per-card Delete button in .mee-card-actions (mee-button)
+    - Added inline confirm affordance: signal-driven @if toggle, no PrimeNG ConfirmDialog (abstraction-wall-safe)
+    - Added onDelete(id)/onDeleteCancel()/onDeleteConfirm(id) with double-submit guard
+    - complete fires -> remove row + reset signals; error fires -> toast.error + keep row
+    - All testids on NATIVE DOM elements (federation strips testids on mee-* wrapper inputs):
+        data-testid="catalog-row" + [attr.data-product-id] on native <div> wrapping mee-card
+        data-testid="catalog-delete-btn" on native <span> wrapping mee-button Delete
+        data-testid="catalog-delete-confirm" on native <span> wrapping mee-button Confirm delete
+        data-testid="catalog-delete-cancel" on native <span> wrapping mee-button Cancel
+        data-testid="catalog-edit-btn" on native <span> wrapping mee-button Edit
+        data-testid="catalog-empty" on native <div> wrapping mee-empty-state
+
+  catalog-list.component.spec.ts (apps/mfe-catalog/src/app/catalog-list.component.spec.ts):
+    - New file: 34 tests, 0 failed
+    - Mock services at Observable level; no HttpTestingController; no fakeAsync
+    - ONE outer describe + ONE beforeEach; TestBed.resetTestingModule() at start of beforeEach
+    - configurable mockState object (listResponse, deleteSubject, deleteResult) per-test
+    - Subject<void> for double-submit guard test
+    - Covers: API wiring, row rendering, all 6 testids on native elements,
+      delete/confirm/cancel, 5xx error+row kept, empty state after last delete, double-submit guard
+
+Tests: 34/34 passing (catalog-list.component.spec.ts, frontend runner)
+Build: mfe-catalog GREEN 3.789s
+Commit: 59e89ff (feature/catalog-list-delete/frontend)
+Blockers: none.
+Next: open PR; Step 3 gate-review by meesell-frontend-coordinator.
+Hand-offs:
+  -> meesell-frontend-coordinator: PR feature/catalog-list-delete/frontend -> develop ready for
+    merge-gate review. Wires CatalogListApiService. Feature board row -> IN REVIEW.
+=========
+
 === UPDATE: 2026-06-22 (catalog-list-delete service layer — Step 1 of 3) ===
 Phase: catalog-list-delete — V1 catalog list DELETE control (FEATURE_PLAN.md SPEC B)
 Session: mesell-catalog-list-delete-frontend-session-1
