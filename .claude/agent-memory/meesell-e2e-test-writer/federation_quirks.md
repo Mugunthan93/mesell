@@ -103,3 +103,56 @@ entry here.
 - @playwright/test@1.52.0 was DECLARED in frontend/package.json but NOT installed in
   node_modules. pnpm-add'd it OFFLINE (it matches the cached chromium-1169, no browser
   download needed). Infra should add it to the lockfile so CI does not re-resolve.
+
+## QA Wave C — qa-pricing VERIFIED LIVE (2026-06-22)
+
+- **STALE BASELINE REMOTE DIST — mfe-export served a 22:54 build PRE-testids
+  (recurrence of "stale remote bundle", HIGH-VALUE).** The slot-0 baseline stack
+  (`/mesell:dev`) served `frontend/dist/mfe-export/browser/main.js` built `Jun 21 22:54`
+  — BEFORE `export-trigger`/`export-download` testids landed. Symptom: `getByTestId('export-
+  trigger')` count 0 even though the export REMOTE rendered fine (body showed "Generate
+  Export"), and the manifest fix was applied (remote-failure-fallback count 0). The string
+  `export-trigger` was simply absent from the served bundle. FIX: rebuild mfe-export from
+  current source into `frontend/dist/mfe-export/browser` + restart its `:4205` serve.js.
+  After the rebuild, `export-trigger` count → 1. LESSON: before exploring a remote's NEW
+  testids, CHECK the served dist's mtime (`stat -f %Sm dist/<remote>/browser/main.js`) and
+  `grep` the testid string in the dist — a baseline `/mesell:dev` stack can be a day stale.
+  (mfe-pricing was rebuilt the same way for the #439 testids — a 4.5s build.)
+
+- **MASTER-TREE WORKING COPY WAS CONTAMINATED — export.component.ts reverted to the
+  productId placeholder.** While rebuilding mfe-export I found the master tree's
+  `frontend/apps/mfe-export/src/app/export.component.ts` had been REVERTED by another
+  session to the OLD bug (`const productId = 'current-product-id'` + a TODO comment),
+  even though develop AND the integration tip carry the fix (`resolveExportProductId`).
+  A naive `ng build mfe-export` from the master tree would have baked the PLACEHOLDER bug
+  back into the dist. FIX: overwrote the master-tree export.component.ts + export.model.ts
+  from `origin/feature/qa-pricing/integration` BEFORE rebuilding. LESSON: never trust the
+  master tree's working copy for a remote rebuild — restore the file from the branch you
+  are testing first, then build.
+
+- **PRODUCTID BUG IS FIXED (Wave-1 reds closed).** `export.component.ts onGenerate()` now
+  calls `resolveExportProductId(this.route.snapshot.paramMap)` (line ~425). VERIFIED LIVE:
+  Generate on `/catalogs/{realPid}/export` POSTs `/api/v1/products/{realPid}/export-xlsx`
+  (the REAL UUID). For a DRAFT product → 422 → real not-ready checklist renders. The
+  Wave-1 PRODUCT BUG memo (export productId placeholder) is CLOSED. The export-download
+  `test.fixme` reason CHANGED: no longer the placeholder bug, now an ENV limit (no ready
+  product + no GCS signed URL in local dev). Un-fixme on a GCS-credentialed env.
+
+- **MANIFEST PORT-MAPPING MISMATCH confirmed again on slot-0.** The running baseline stack
+  binds remotes ALPHABETICALLY (mfe-auth :4201 … mfe-pricing :4207) but the shell's served
+  `federation.manifest.json` maps DECLARATION-order (mfe-pricing→:4201 which actually serves
+  mfe-auth, mfe-billing→:4207 which serves mfe-pricing). Drove the suite with
+  `MEESELL_FIX_MANIFEST_PORTS=1` + the ALPHABETICAL port env overrides
+  (MEESELL_MFE_PRICING_PORT=4207 etc.) so the `applyManifestPortFix` shim rewrites the
+  manifest to the real ports. NOTE: playwright.config.ts's default REMOTE_PORTS are
+  DECLARATION-order — which also does NOT match an alphabetical baseline; always set the
+  per-remote port env to the ACTUAL running ports for the shim to be correct.
+
+## Exploration harness note (Wave C)
+- Ran agent-browser via Playwright `chromium.launch()` in a throwaway `.mjs` probe
+  (deleted after exploration). @playwright/test is CommonJS → import as
+  `import pw from '<abs>/@playwright/test/index.js'; const { chromium } = pw;` and run with
+  `PLAYWRIGHT_BROWSERS_PATH=$HOME/Library/Caches/ms-playwright`. The product list API
+  (`GET /api/v1/products`) returns `data[].product_id` (NOT `id`). `page.request.get` is a
+  SEPARATE API context with NO in-memory token → 401; capture product ids via a
+  `page.on('response')` listener on the browser's own authed fetch instead.
