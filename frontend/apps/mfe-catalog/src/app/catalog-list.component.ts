@@ -429,7 +429,7 @@ export class CatalogListComponent implements OnInit {
   }
 
   onPreview(id: string): void {
-    void this.router.navigate(['/catalogs', id, 'preview']);
+    void this.router.navigate(['/catalogs', id, 'edit']);
   }
 
   onSearch(event: Event): void {
