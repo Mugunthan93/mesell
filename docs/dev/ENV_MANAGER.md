@@ -192,10 +192,21 @@ Smoke-test the orchestration without spending RAM on real builds with `--stub`.
 | `.nexus/env-ports.json`                | worktree → slot registry (persisted)     |
 | `.nexus/env-state.json`                | running env → PIDs/ports/dist roots      |
 | `.nexus/.build.lock`                   | `flock` target — global build mutex      |
-| `.nexus/serve-<port>.log`              | serve.js logs                            |
-| `.nexus/backend-<port>.log`            | uvicorn logs                             |
+| `.nexus/serve-<port>.log`              | serve.js logs (per-port = per-env)       |
+| `.nexus/backend-<port>.log`            | uvicorn logs (per-port = per-env)        |
+| `.nexus/build-slot<N>-<project>.log`   | per-ENV `ng build` log, keyed by slot    |
+| `.nexus/build-history.jsonl`           | append-only build history (per-env rows) |
 | `.nexus/shell-dist-slot-<N>/browser/`  | per-env baseline-shell copy + manifest   |
 | `<served-dist>/federation.manifest.json` | generated per-env runtime manifest     |
+
+> **Per-env build logs (keyed by slot).** Each `ng build`'s stdout+stderr goes to
+> `.nexus/build-slot<N>-<project>.log` — keyed by **slot**, not by project name
+> alone. This is what lets slot 0, slot 1 and slot 2 each build `mfe-catalog`
+> without clobbering one shared log; each env tails its own. (Pre-keying logs at
+> the legacy path `.nexus/build-<project>.log` are still read as a fallback.)
+> Every `build-history.jsonl` row likewise carries `worktree` + `slot` so the
+> dashboard attributes a build to its env card — see
+> [`ENV_DASHBOARD.md`](ENV_DASHBOARD.md).
 
 All shared state lives under the **baseline (develop) tree's** `.nexus/`, so every
 worktree shares one registry and one build lock.
@@ -280,8 +291,9 @@ deadlock and **not** OOM: a standalone `ng build mfe-export` (no orchestrator,
 no PIPE) reproduced the same hang while swap stayed flat at 18.9 % and ~2 GB RAM
 was free throughout.
 
-**Fix:** `ng_build` now (a) writes each build's stdout+stderr to a per-app log
-file `.nexus/build-<project>.log` (never an undrained PIPE), (b) runs the build
+**Fix:** `ng_build` now (a) writes each build's stdout+stderr to a per-ENV log
+file `.nexus/build-slot<N>-<project>.log` (keyed by slot, never an undrained
+PIPE, and never clobbered by a sibling env building the same project), (b) runs the build
 in its own process group (`start_new_session=True`), and (c) waits by tailing
 the log for the completion marker (`Application bundle generation complete` /
 `Output location:`) plus a dist-exists check, then reaps the process group and
