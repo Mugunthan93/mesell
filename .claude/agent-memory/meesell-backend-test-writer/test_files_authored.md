@@ -56,3 +56,18 @@ Rewritten files (carry-forward resolved):
 
 Confirm-only (no new tests, covered): W3-BE-12 (`test_catalog_enum_validation_regression.py`), W3-BE-13 (`test_i18n_generic_fallback.py`), W3-BE-14 (suggest GET->405), W3-BE-16 (route-level create happy), W3-BE-17 (price->export roundtrip).
 Deferred: W3-BE-11 (cost ceiling) — see deferred_coverage.md.
+
+## Wave A ledger (2026-06-22, PR #432 → feature/qa-pricing/integration)
+
+Run result for the wave files: **36 passed / 0 skipped / 0 failed**.
+PQE-BE-02 anchor `TestSettlementFormula::test_real_order` (₹70→₹61.78) PASSED.
+PQE-BE-22 `test_pqe_be_22_zip_member_names_are_basenames` now RUNS (not skipped).
+
+New test files authored:
+
+| Path | Wave | Feature slug | Covers |
+|---|---|---|---|
+| `backend/tests/modules/pricing/test_apply_price_route.py` | A | qa-pricing | pricing — apply-price route 204, commission override, ≤0 rejection, cross-tenant 404, flag-OFF 404, get_last_calc, OFFLINE hard rule (PQE-BE-09/15/16/17/18/19/20/21) |
+| `backend/tests/modules/export/test_package_images_zip.py` | A | qa-pricing | export — `_package_images_zip` ZIP member basenames, empty refs, download-fail skip (PQE-BE-22/23/24) — Wave-1 P1.11 proper un-skip |
+| `backend/tests/modules/export/test_xlsx_round_trip.py` | A | qa-pricing | export — `_write_xlsx` header/value/sanitize, `_round_trip_validate` pass/mismatch, `_value_from_snapshot` precedence (PQE-BE-32/33/34/35/36/42) |
+| `backend/tests/modules/catalog/test_quality_gate.py` | A | qa-pricing | catalog — ready-transition 422, enum-422 msg_id, `_compute_completeness` counts, export snapshot status (PQE-BE-44/45/46/47) |

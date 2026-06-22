@@ -45,3 +45,13 @@ Five further pitfalls hit while authoring the Wave-3 catalog-vertical suite (con
 12. **A fresh worktree's `backend/` dir needs a `.env` symlink** — Pydantic Settings reads `.env` from cwd; without it the test app fails to construct Settings. Symlink the master tree's `backend/.env` (or run from a dir that has one).
 13. **The conftest defaults `VALKEY_URL` to `redis://localhost:6381/15` (the CI Valkey port).** Locally only `:6379` runs, so any test that exercises the rate-limit / plan-guard Valkey path (e.g. `test_flag_gate.py`) 500s with connection-refused. This is an ENV limitation, not a test defect — disclose it (the file is unchanged at the integration base and fails identically there). For local green, point `TEST_VALKEY_URL`/`VALKEY_URL` at a running Valkey OR scope the run to non-Valkey files.
 14. **PIL boundary tests must import the REAL check functions** (`app.modules.image.tasks._check_jpeg`, `_check_resolution`, `_check_white_background`, color-space detection) and assert pass AND fail at the threshold — not re-implement the check in the spec. The module import requires several env vars; set DUMMY values at import time so the import succeeds hermetically without a live config.
+
+## Wave A pitfalls (2026-06-22, PR #432)
+
+15. **Never pass a JWT token via `Authorization: Bearer` for stub-only route tests.** The auth middleware (`auth_mw.py`) validates the JWT then queries the DB for the user row — if the user doesn't exist (stub UUID) the middleware returns 403 `auth.user.not_found` BEFORE the route stub fires. ALWAYS use `app.dependency_overrides[get_current_user] = async_stub_fn` to bypass the DB lookup entirely. The `stub_apply_client` in `test_apply_price_route.py` is the canonical example.
+
+16. **`patch()` target for catalog route service calls** is `"app.modules.catalog.router.catalog_service.patch_product"` (where `catalog_service` is the alias used in `router.py`). Using `"app.modules.catalog.service.patch_product"` patches the module but not the already-bound name in the router module — the stub never fires.
+
+17. **`_package_images_zip` has keyword-only args** — call it as `_package_images_zip(image_refs=..., user_id=..., db=...)`. A positional-style call raises `TypeError`. Check the exact signature before calling.
+
+18. **File-level `pytestmark = pytest.mark.asyncio` applied to sync unit tests** produces `PytestWarning` ("marked with asyncio but not async function"). For files that mix async fixtures + sync unit tests, prefer applying `pytest.mark.asyncio` on the async tests only (or accept the warning — it does NOT fail the test). All 36 Wave A tests pass despite the 7 warnings.
