@@ -70,6 +70,55 @@ def scrape_category_task(self, category_id: str | UUID) -> dict:
     )
 
 
+@shared_task(
+    name="monitor.fanout_category_change",
+    bind=True,
+)
+def fanout_category_change_task(
+    self,
+    category_id: str | UUID,
+    content_hash: str,
+) -> dict:
+    """Celery wrapper for the Wave-4 category-change fan-out + notify.
+
+    Enqueued (fire-and-forget) by the dedupe gate's ``REVIEW_REQUIRED``
+    branch. Synchronous Celery task; the async orchestrator runs inside via
+    ``asyncio.run`` (mirrors ``scrape_category_task``).
+
+    This task takes NO per-user argument — it fans a GLOBAL category change
+    out to every subscriber, so it is deliberately NOT added to
+    ``_TASKS_REQUIRING_USER_REVALIDATION`` (same posture as the dedupe gate
+    and the billing sweeps).
+
+    IDEMPOTENT (Celery retries): re-running with the same
+    ``(category_id, content_hash)`` MUST NOT double-notify (notification
+    insert is ``ON CONFLICT DO NOTHING``) and MUST NOT double-flag (flags are
+    set-only, never toggled off).
+
+    Args:
+        category_id: ``categories.id`` UUID (or its string form — Celery's
+            JSON serialiser strips the UUID type).
+        content_hash: the ``category_snapshots.content_hash`` that triggered
+            this fan-out (idempotency + superseded-snapshot guard key).
+
+    Returns:
+        ``{notified_users, notifications_created, products_flagged,
+        skipped_existing}`` from the orchestrator (for the result backend).
+    """
+    # Lazy import — keep module-level boot light (mirrors image/tasks.py).
+    from app.modules.monitor.service import fanout_category_change
+    from app.shared.database import make_worker_session
+
+    cat_uuid = category_id if isinstance(category_id, UUID) else UUID(str(category_id))
+
+    async def _run() -> dict:
+        async with make_worker_session() as session:
+            return await fanout_category_change(cat_uuid, content_hash, session)
+
+    return asyncio.run(_run())
+
+
 __all__ = [
     "scrape_category_task",
+    "fanout_category_change_task",
 ]

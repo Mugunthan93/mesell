@@ -22,11 +22,14 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.shared.models.category import Category
 from app.shared.models.category_snapshot import CategorySnapshot
+from app.shared.models.notification import Notification
+from app.shared.models.product import Product
 
 logger = logging.getLogger(__name__)
 
@@ -95,3 +98,134 @@ async def get_category_scrape_inputs(
     if row is None:
         return None
     return row[0], row[1]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Wave-4 fan-out reads / writes
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def get_category_name(db: AsyncSession, category_id: UUID) -> str | None:
+    """Return the human-readable leaf name for ``category_id`` (for copy).
+
+    The ``categories`` table has no ``name`` column; ``leaf_name`` is the
+    terminal category display name (e.g. ``"Kurtis"``) used in seller-facing
+    copy. Returns ``None`` when the category does not exist.
+    """
+    result = await db.execute(
+        select(Category.leaf_name).where(Category.id == category_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_distinct_subscribers(
+    db: AsyncSession,
+    category_id: UUID,
+) -> list[UUID]:
+    """Return the distinct ``user_id`` set subscribed to ``category_id``.
+
+    Reads the ``category_subscription`` VIEW (W1 — NOT an ORM table, so a raw
+    ``text()`` query). The VIEW is the UNION of catalog-level + (active)
+    product-level subscriptions, already ``DISTINCT``. Returns ``[]`` when no
+    seller is in the category.
+    """
+    result = await db.execute(
+        text(
+            "SELECT DISTINCT user_id FROM category_subscription "
+            "WHERE category_id = :cid"
+        ),
+        {"cid": str(category_id)},
+    )
+    return [row[0] for row in result.all()]
+
+
+async def get_user_catalog_ids(
+    db: AsyncSession,
+    user_id: UUID,
+    category_id: UUID,
+) -> list[UUID]:
+    """Return the distinct catalog ids a user has subscribed to in a category.
+
+    Reads the ``category_subscription`` VIEW (raw ``text()``). Drives the
+    "{N} of your catalogs are affected" copy fragment + the notification
+    payload's ``affected_catalog_ids``.
+    """
+    result = await db.execute(
+        text(
+            "SELECT DISTINCT catalog_id FROM category_subscription "
+            "WHERE user_id = :uid AND category_id = :cid"
+        ),
+        {"uid": str(user_id), "cid": str(category_id)},
+    )
+    return [row[0] for row in result.all()]
+
+
+async def flag_user_products(
+    db: AsyncSession,
+    user_id: UUID,
+    category_id: UUID,
+    *,
+    recheck: bool,
+    reprice: bool,
+    export: bool,
+) -> int:
+    """Idempotently SET the requested change-flags on a user's products.
+
+    Updates ``products`` scoped to ``(user_id, category_id)`` and excluding
+    soft-deleted rows. Flags are set to ``true`` ONLY — never toggled off —
+    so a Celery retry is a no-op on already-flagged rows. When all three flags
+    are ``False`` this is a no-op (returns 0) without issuing an UPDATE.
+
+    Returns the number of rows the UPDATE touched.
+    """
+    values: dict[str, bool] = {}
+    if recheck:
+        values["needs_recheck"] = True
+    if reprice:
+        values["needs_reprice"] = True
+    if export:
+        values["needs_export"] = True
+    if not values:
+        return 0
+
+    from sqlalchemy import update
+
+    result = await db.execute(
+        update(Product)
+        .where(
+            Product.user_id == user_id,
+            Product.category_id == category_id,
+            Product.deleted_at.is_(None),
+        )
+        .values(**values)
+    )
+    return result.rowcount or 0
+
+
+async def insert_notification(
+    db: AsyncSession,
+    user_id: UUID,
+    category_id: UUID,
+    content_hash: str,
+    payload: dict,
+) -> bool:
+    """Insert one notification row idempotently (ON CONFLICT DO NOTHING).
+
+    The unique constraint ``uq_notification_user_cat_hash``
+    ``(user_id, category_id, content_hash)`` makes a Celery retry a no-op:
+    a duplicate insert is silently skipped. Returns ``True`` when a NEW row
+    was inserted, ``False`` when the row already existed (skipped).
+    """
+    stmt = (
+        pg_insert(Notification)
+        .values(
+            user_id=user_id,
+            category_id=category_id,
+            content_hash=content_hash,
+            payload_jsonb=payload,
+        )
+        .on_conflict_do_nothing(constraint="uq_notification_user_cat_hash")
+        .returning(Notification.id)
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none() is not None

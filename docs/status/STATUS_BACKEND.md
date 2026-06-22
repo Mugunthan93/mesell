@@ -1,6 +1,29 @@
 # STATUS — BACKEND
 
 
+=== UPDATE: 2026-06-22 (meesell-services-builder) — category-monitor Wave-4 Unit F: fan-out + notify worker ===
+Phase: category-monitor — Wave 4 Unit F (fan-out worker)
+Branch: feature/category-monitor/fanout-worker off integration f363db6. PR → feature/category-monitor/integration.
+Session: mesell-category-monitor-backend-session-7
+
+Done:
+- NEW Celery task `monitor.fanout_category_change` (2nd `@shared_task` appended to `app/modules/monitor/tasks.py`, bind=True, sync wrapper + `asyncio.run` mirroring `scrape_category_task`; wraps the orchestrator in `make_worker_session()`). NOT in `_TASKS_REQUIRING_USER_REVALIDATION`. Returns `{notified_users, notifications_created, products_flagged, skipped_existing}`.
+- NEW async orchestrator `monitor.service.fanout_category_change(category_id, content_hash, db)`: superseded-snapshot guard (latest.content_hash != arg → STOP), re-diff (DECISION A — `diff_category_snapshot` on latest vs prior), defensive verdict re-check (BLOCK/non-REVIEW → STOP), distinct-subscriber audience via the `category_subscription` VIEW, per-user product flags + `ON CONFLICT DO NOTHING` notification insert, ONE transaction. Founder-locked copy assembled in `_build_summary` (English-only `payload.summary`, never raw JSON). Flag mapping: compliance→recheck; shipping/cost→reprice; banned→recheck+export (NOT reprice, Director ruling); ANY change→export.
+- Enqueue seam: `run_dedupe_gate` scraped branch — AFTER `evict(...)`, additive `if verdict == "REVIEW_REQUIRED": fanout_category_change_task.delay(...)`. ONLY edit to the frozen W2 gate; function-boundary diff proves the gate body otherwise byte-untouched (8-line additive block). `get_served_category_data` byte-untouched.
+- 5 repository methods (raw `text()` for the VIEW; pg `on_conflict_do_nothing` for notifications; idempotent set-only UPDATE for flags): get_category_name, get_distinct_subscribers, get_user_catalog_ids, flag_user_products, insert_notification.
+- Smoke guard `tests/test_celery_app_include_list.py` user-task set 5→6 (adds `monitor.fanout_category_change`); include MODULE list stays 4 (new task rides existing `monitor.tasks`).
+
+Tests: 45 passed (11 NEW `tests/test_monitor_fanout.py` DB-real on disposable meesell_test + 26 existing monitor/celery + 8 broker/result). Cases: REVIEW fans out + copy assembled (headline + "added required field(s): country_of_origin" + "shipping cost rose ₹6"); idempotency (2nd run skipped_existing, 1 row, flags stay true); BLOCK no fan-out; PASS no fan-out; superseded-hash STOP; flag mapping ×4; tenancy (uninvolved user×category untouched). Gate-enqueue (REVIEW→delay once / PASS,BLOCK→not called) proven in test_monitor_gate.py (`.delay` mocked). ruff clean; lint-imports 27 kept/0 broken; route count UNCHANGED (worker, no router); LOCKED docs byte-untouched.
+In progress: none.
+Blockers: none.
+Next: PR for backend-coordinator gate (step-3). Does NOT self-merge.
+Hand-offs:
+  - backend-coordinator: gate the PR. Founder-gate flag in PR body: §18.B Celery task-NAME inventory 5→6 (LOCKED `BACKEND_ARCHITECTURE.md §18.B` doc count bump is founder's at develop merge — NOT self-applied). §3.I module count stays 4.
+  - api-routes-builder (Unit N): `monitor.service.fanout_category_change` writes `notifications` rows now; `GET /api/v1/notifications` reads them (build in parallel).
+  - INTERPRETATION FLAG: spec copy says `{category_name}` from `categories.name`, but `categories` has NO `name` column — used `leaf_name` (terminal display name, e.g. "Kurtis"). Confirm acceptable.
+=========
+
+
 === UPDATE: 2026-06-22 (meesell-services-builder) — category-monitor Wave-3 Unit T: 3RD onboarding edge site (Director full-coverage ruling) ===
 Phase: category-monitor — Wave 3 Unit T (additive fix to OPEN PR #472)
 Branch: feature/category-monitor/backend-w3-triggers @ bb71c1c. PR #472 → feature/category-monitor/integration.

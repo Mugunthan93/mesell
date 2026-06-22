@@ -228,6 +228,14 @@ async def run_dedupe_gate(category_id: UUID, *, db_url: str) -> dict[str, Any]:
         # get_served_category_data rebuilds from the fresh DB row.
         await evict(_snapshot_cache_key(category_id))
 
+        # Wave-4 fan-out enqueue — ONLY on REVIEW_REQUIRED. PASS = no drift;
+        # BLOCK = scrape anomaly (never spam sellers). Lazy import avoids a
+        # tasks↔service import cycle (mirrors image/tasks lazy import).
+        if verdict == "REVIEW_REQUIRED":
+            from app.modules.monitor.tasks import fanout_category_change_task
+
+            fanout_category_change_task.delay(cat_id_str, new_hash)
+
         return {
             "action": "scraped",
             "category_id": cat_id_str,
@@ -298,7 +306,258 @@ async def get_served_category_data(category_id: UUID, db: AsyncSession) -> dict[
     )
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Wave-4 — fan-out + notify
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _build_summary(category_name: str, n_catalogs: int, diff: dict[str, Any]) -> str:
+    """Assemble the founder-locked seller-facing notification copy.
+
+    English-only plain text (NEVER raw JSON). Only CHANGED dimensions
+    contribute a fragment; fragments are joined with ``'; '`` and embedded in
+    the headline. Currency is ``₹``; shipping deltas are integer rupees (W2
+    casts shipping to int), transfer_price / platform_fee are floats.
+
+    Returns the ``payload.summary`` string.
+    """
+    fragments: list[str] = []
+
+    # ── compliance ──
+    comp = diff.get("compliance_diff") or {}
+    if comp.get("changed"):
+        if comp.get("required_added"):
+            fragments.append(
+                f"added required field(s): {', '.join(comp['required_added'])}"
+            )
+        if comp.get("required_removed"):
+            fragments.append(
+                f"removed required field(s): {', '.join(comp['required_removed'])}"
+            )
+        opt_changed = sorted(
+            set(comp.get("optional_added", [])) | set(comp.get("optional_removed", []))
+        )
+        if opt_changed:
+            fragments.append(f"optional field(s) changed: {', '.join(opt_changed)}")
+
+    # ── shipping ──
+    ship = diff.get("shipping_diff") or {}
+    if ship.get("changed"):
+        ship_delta = ship.get("shipping_delta", 0)
+        if ship_delta > 0:
+            fragments.append(f"shipping cost rose ₹{abs(int(ship_delta))}")
+        elif ship_delta < 0:
+            fragments.append(f"shipping cost fell ₹{abs(int(ship_delta))}")
+        if ship.get("gst_delta"):
+            fragments.append(
+                f"GST changed {ship['gst_percentage_old']}%→{ship['gst_percentage_new']}%"
+            )
+
+    # ── banned words ──
+    banned = diff.get("banned_words_diff") or {}
+    if banned.get("changed"):
+        added: list[str] = []
+        removed: list[str] = []
+        for per_key in (banned.get("per_key") or {}).values():
+            added.extend(per_key.get("added", []))
+            removed.extend(per_key.get("removed", []))
+        if added:
+            fragments.append(f"new banned word(s): {', '.join(added)}")
+        if removed:
+            fragments.append(f"word(s) no longer banned: {', '.join(removed)}")
+
+    # ── cost ──
+    cost = diff.get("cost_fields_diff") or {}
+    if cost.get("changed"):
+        if cost.get("transfer_price_delta"):
+            fragments.append(
+                f"transfer price changed ₹{cost['transfer_price_old']}"
+                f"→₹{cost['transfer_price_new']}"
+            )
+        if cost.get("platform_fee_delta"):
+            fragments.append(
+                f"platform fee changed ₹{cost['platform_fee_old']}"
+                f"→₹{cost['platform_fee_new']}"
+            )
+
+    joined = "; ".join(fragments)
+    return (
+        f"Your category '{category_name}' changed: {joined}. "
+        f"{n_catalogs} of your catalogs are affected — "
+        f"review them before your next upload."
+    )
+
+
+def _changed_dimensions(diff: dict[str, Any]) -> list[str]:
+    """Return the list of dimension names that changed (for the payload)."""
+    changed: list[str] = []
+    for dim, key in (
+        ("compliance", "compliance_diff"),
+        ("shipping", "shipping_diff"),
+        ("banned_words", "banned_words_diff"),
+        ("cost", "cost_fields_diff"),
+    ):
+        if (diff.get(key) or {}).get("changed"):
+            changed.append(dim)
+    return changed
+
+
+async def fanout_category_change(
+    category_id: UUID,
+    content_hash: str,
+    db: AsyncSession,
+) -> dict[str, int]:
+    """Fan a REVIEW_REQUIRED category change out to its subscribers (Wave 4).
+
+    Idempotent end-to-end (Celery retries re-run the whole op safely):
+      * the snapshot row is re-loaded + re-diffed (DECISION A — no W2 re-gate);
+      * a superseded-snapshot guard STOPS if a fresher scrape replaced this one;
+      * a defensive verdict re-check STOPS on BLOCK (never fan out a BLOCK);
+      * per subscriber: products are FLAGGED (set-only, never toggled off) and
+        ONE notification row is inserted ``ON CONFLICT DO NOTHING``.
+
+    Args:
+        category_id: ``categories.id`` whose change is being fanned out.
+        content_hash: the ``category_snapshots.content_hash`` that triggered
+            this fan-out — must match the latest snapshot (else superseded).
+        db: async session; the whole fan-out runs in ONE transaction (the
+            caller — the Celery wrapper or a test — owns commit/rollback).
+
+    Returns:
+        ``{notified_users, notifications_created, products_flagged,
+        skipped_existing}`` (for the Celery result backend / assertions).
+    """
+    from scripts.diff_category_rules import diff_category_snapshot
+
+    from app.modules.monitor import repository as monitor_repo
+
+    cat_id_str = str(category_id)
+    zero = {
+        "notified_users": 0,
+        "notifications_created": 0,
+        "products_flagged": 0,
+        "skipped_existing": 0,
+    }
+
+    # 1. Load latest snapshot + superseded guard.
+    latest = await monitor_repo.get_latest_snapshot(db, category_id)
+    if latest is None:
+        logger.info(
+            "monitor fan-out: category=%s has no snapshot — nothing to fan out",
+            cat_id_str,
+        )
+        return zero
+    if latest.content_hash != content_hash:
+        logger.info(
+            "monitor fan-out: category=%s content_hash=%s superseded by a fresher "
+            "snapshot (latest=%s) — STOPPING (the fresher fan-out will run)",
+            cat_id_str,
+            content_hash,
+            latest.content_hash,
+        )
+        return zero
+
+    # 2. Re-diff against the prior snapshot (DECISION A).
+    prior = await monitor_repo.get_prior_snapshot(db, category_id)
+    prev_dims = prior.dimensions_jsonb if prior is not None else {}
+    prev_hash = prior.content_hash if prior is not None else None
+    diff = diff_category_snapshot(
+        latest.dimensions_jsonb,
+        prev_dims,
+        prev_hash=prev_hash,
+        new_hash=latest.content_hash,
+    )
+
+    # 3. Defensive verdict re-check — ONLY REVIEW_REQUIRED fans out.
+    verdict = diff.get("verdict")
+    if verdict != "REVIEW_REQUIRED":
+        logger.warning(
+            "monitor fan-out: category=%s re-diff verdict=%s (expected "
+            "REVIEW_REQUIRED) — STOPPING, no fan-out",
+            cat_id_str,
+            verdict,
+        )
+        return zero
+
+    # 4. WHO — distinct subscribers in this category.
+    subscribers = await monitor_repo.get_distinct_subscribers(db, category_id)
+    if not subscribers:
+        logger.info(
+            "monitor fan-out: category=%s has no subscribers — nothing to do",
+            cat_id_str,
+        )
+        return zero
+
+    category_name = await monitor_repo.get_category_name(db, category_id) or cat_id_str
+
+    # 5. Flag mapping (built ONCE — same diff for every user).
+    comp_changed = bool((diff.get("compliance_diff") or {}).get("changed"))
+    ship_changed = bool((diff.get("shipping_diff") or {}).get("changed"))
+    cost_changed = bool((diff.get("cost_fields_diff") or {}).get("changed"))
+    banned_changed = bool((diff.get("banned_words_diff") or {}).get("changed"))
+    # compliance → recheck; shipping/cost → reprice; banned → recheck+export
+    # (banned words don't move cost — Director ruling); ANY change → export.
+    flag_recheck = comp_changed or banned_changed
+    flag_reprice = ship_changed or cost_changed
+    flag_export = comp_changed or ship_changed or cost_changed or banned_changed
+    changed_dims = _changed_dimensions(diff)
+
+    # 6. Per-user fan-out — ONE transaction (the caller owns commit).
+    notifications_created = 0
+    skipped_existing = 0
+    products_flagged = 0
+
+    for user_id in subscribers:
+        catalog_ids = await monitor_repo.get_user_catalog_ids(db, user_id, category_id)
+        summary = _build_summary(category_name, len(catalog_ids), diff)
+        payload = {
+            "summary": summary,
+            "diff_dimensions": changed_dims,
+            "affected_catalog_ids": [str(cid) for cid in catalog_ids],
+        }
+
+        products_flagged += await monitor_repo.flag_user_products(
+            db,
+            user_id,
+            category_id,
+            recheck=flag_recheck,
+            reprice=flag_reprice,
+            export=flag_export,
+        )
+
+        inserted = await monitor_repo.insert_notification(
+            db,
+            user_id,
+            category_id,
+            content_hash,
+            payload,
+        )
+        if inserted:
+            notifications_created += 1
+        else:
+            skipped_existing += 1
+
+    await db.commit()
+
+    logger.info(
+        "monitor fan-out: category=%s notified_users=%d created=%d "
+        "skipped=%d products_flagged=%d",
+        cat_id_str,
+        len(subscribers),
+        notifications_created,
+        skipped_existing,
+        products_flagged,
+    )
+    return {
+        "notified_users": len(subscribers),
+        "notifications_created": notifications_created,
+        "products_flagged": products_flagged,
+        "skipped_existing": skipped_existing,
+    }
+
+
 __all__ = [
     "run_dedupe_gate",
     "get_served_category_data",
+    "fanout_category_change",
 ]

@@ -79,6 +79,7 @@ def patched_gate(monkeypatch, fake_cache):
     import scripts.scrape_category as scrape_mod
 
     import app.modules.monitor.repository as monitor_repo
+    import app.modules.monitor.tasks as monitor_tasks
     import app.shared.database as shared_db
     import app.shared.valkey as shared_valkey
 
@@ -128,6 +129,18 @@ def patched_gate(monkeypatch, fake_cache):
     )
     monkeypatch.setattr(scrape_mod, "scrape_category", scrape)
 
+    # ── Wave-4 fan-out enqueue (REVIEW_REQUIRED branch) — MOCK `.delay` so the
+    #    gate test stays unit-isolated (no live Celery broker). The gate lazily
+    #    imports `fanout_category_change_task` from monitor.tasks, so patch the
+    #    SOURCE module's attribute. `.delay` is a plain MagicMock to assert
+    #    call-count per verdict (REVIEW → 1, PASS/BLOCK → 0).
+    from unittest.mock import MagicMock
+
+    fanout_delay = MagicMock()
+    monkeypatch.setattr(
+        monitor_tasks.fanout_category_change_task, "delay", fanout_delay
+    )
+
     # ── diff (Unit B) — real engine by default; tests may override. ──
     # We wrap the real function so verdict logic is exercised end-to-end.
     real_diff = diff_mod.diff_category_snapshot
@@ -142,6 +155,7 @@ def patched_gate(monkeypatch, fake_cache):
             get_inputs=get_inputs,
         ),
         cache=fake_cache,
+        fanout_delay=fanout_delay,
         key=f"catmonitor:snapshot:{_CATEGORY_ID}",
     )
 
@@ -305,6 +319,8 @@ async def test_verdict_pass_hash_equal(patched_gate):
     assert result["verdict"] == "PASS"
     assert result["block_reasons"] == []
     assert await patched_gate.cache.get(patched_gate.key) is None
+    # PASS = no drift → NO Wave-4 fan-out enqueue.
+    patched_gate.fanout_delay.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -327,6 +343,9 @@ async def test_verdict_review_required(patched_gate):
     assert result["verdict"] == "REVIEW_REQUIRED"
     assert result["block_reasons"] == []
     assert await patched_gate.cache.get(patched_gate.key) is None
+    # REVIEW_REQUIRED → Wave-4 fan-out enqueued EXACTLY once with
+    # (str(category_id), new_hash).
+    patched_gate.fanout_delay.assert_called_once_with(str(_CATEGORY_ID), _NEW_HASH)
 
 
 @pytest.mark.asyncio
@@ -360,3 +379,5 @@ async def test_verdict_block_stops_no_fanout(patched_gate, monkeypatch):
     # No notification machinery exists in this module — the result is the
     # only side channel (Wave 4 owns fan-out). Key still released.
     assert await patched_gate.cache.get(patched_gate.key) is None
+    # BLOCK = scrape anomaly → NO Wave-4 fan-out enqueue (never spam sellers).
+    patched_gate.fanout_delay.assert_not_called()
