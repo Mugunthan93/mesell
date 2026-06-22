@@ -1,6 +1,34 @@
 # STATUS — BACKEND
 
 
+=== UPDATE: 2026-06-22 (meesell-backend-coordinator) — category-monitor Wave-1 schema MERGE-GATE PASS ===
+Phase: RETENTION_CATEGORY_MONITOR (#370) — Wave-1 schema
+Session: mesell-category-monitor-backend-session-1 (HYBRID step-3, merge-gate review)
+Board sweep: 1 row landed to Recently-merged (category-monitor Wave-1); session-end sweep — no Active row 7+ days stale (razorpay-W4 3d / price-calculator 4d both NOT stale); no Recently-merged row >14 days; inter-lead requests unchanged.
+
+Done:
+  - Reviewed PR #450 (feature/category-monitor/backend -> feature/category-monitor/integration) against the spec I authored (step-1). All 8 merge-gate criteria PASS — verified independently, not from builder report.
+  - Migration 480c10b0219f (down_revision e9415bdcae20 = live Razorpay-billing merge head; NO head divergence). Additive-only: create_table x2 + add_column x3 (server_default false) + create_index x2 + one op.execute VIEW. ZERO alter/drop of existing columns.
+  - Ran upgrade head + downgrade -1 + re-upgrade round-trip on DISPOSABLE meesell_test (0 cats); alembic heads = single head 480c10b0219f; downgrade fully removes both tables + 3 flag cols + VIEW + 3 indexes.
+  - Schema verified vs live PG catalogs: UUID PK gen_random_uuid, FK CASCADE confdeltype=c, TIMESTAMPTZ, JSONB, content_hash varchar(64), composite idx_category_snapshot_latest, uq_notification_user_cat_hash, idx_notification_user_unread, NO channel column, 3 needs_* flags.
+  - VIEW category_subscription: raw op.execute UNION (catalogs non-null cat + products deleted_at IS NULL), DROP VIEW IF EXISTS down, NOT an ORM table; seeded pair -> returns rows; soft-delete drops product branch.
+  - ORM §5.E: flat app/shared/models/, FK-order registration, no monitor/ subdir, surgical product.py append. ruff clean x5.
+  - Drift claim VERIFIED: autogenerate probe = ONLY pre-existing comment-only ops on pricing_calcs(26)/users(4); ZERO Wave-1 references -> matches ORM exactly. Probe deleted.
+  - Live meesell DB (3,772 cats) UNTOUCHED throughout (still at e9415bdcae20).
+  - LEAD squash-merged PR #450 to integration (b7487e8) — D1 / GIT_WORKFLOW M-step-1.
+
+In progress: none.
+
+Blockers: none.
+
+Next: Wave-2 dispatch (services/repository/router/Celery tasks) on feature/category-monitor/integration when the founder/master opens it.
+
+Hand-offs:
+  - WAVE-2 CONSTRAINT: category_subscription is a VIEW (not ORM) — Wave-2 service/repository MUST query via text()/raw SQL, never a mapped class. Demand-count = COUNT(DISTINCT user_id) over the VIEW. Fan-out idempotency = INSERT ON CONFLICT DO NOTHING on uq_notification_user_cat_hash.
+  - RECOMMENDATION to founder/master: integration->develop FOUNDER gate NOT opened — accumulate Wave-2 before the single develop merge (schema-only is not independently useful).
+=========
+
+
 === UPDATE: 2026-06-22 (meesell-backend-test-writer) — QA Wave 1 gap-fill ===
 Phase: QA Wave 1 -- backend gap-fill + verify-green
 Session: mesell-qa-wave-1-backend-session-1

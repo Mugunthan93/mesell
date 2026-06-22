@@ -145,7 +145,7 @@ This sits between Pattern 2 (fully hidden) and a regular visible field. It respe
 
 Meesho changes their XLSX templates over time. The system:
 - Stores `parsed_from_xlsx_at` + `parser_version` on every template
-- Quarterly refresh re-parses; diff report flags changes
+- Monthly, usage-driven refresh re-parses; diff report flags changes
 - Schema migration only fires if a STRICT universal field changes type
 - Other changes are version-tagged and serve old catalogs the old version until exported
 

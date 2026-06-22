@@ -4,6 +4,22 @@ One entry per QA wave: feature slugs covered, the coverage target set per
 specialist, what was actually achieved, and whether the exit criteria were met.
 Append a new section at the top after each wave.
 
+## qa-auth-contract salvage wave — `integration → develop` PR OPENED for the FOUNDER (2026-06-22, mesell-qa-wave-2-coord-session-1)
+
+**The salvage wave is fully assembled and handed to the founder's gate.** PR **#445** (`feature/qa-auth-contract/integration` → `develop`) is OPEN — NOT merged (D1: integration→develop is the founder's). Title prefixed `[FOUNDER GATE] … DO NOT MERGE until founder review`.
+
+**Refresh outcome:** merged `origin/develop` INTO integration (merge-commit `a2eee1d`) — **ZERO conflicts**; the on-disk board collision flagged at the prior e2e gate did NOT recur (origin/develop's board merged additively with the integration board via ort). Integration tip went `4aa12da` → `f17814c` (the board-reconcile commit on top of the merge). Pushed clean.
+
+**Post-refresh diff `git diff origin/develop...HEAD` = exactly 17 tests-only files + the board (+1596/-67), ZERO app source, ZERO deletions** — 8 backend integration tests, 3 frontend `*.spec.ts`, 6 e2e harness/flow files. Verified twice (`grep -vE` for any non-test/non-board path = NONE).
+
+**15 auth behaviors (all gate-reviewed + independently re-run at their lane gates):** backend 9 (PR #440, `8adbd57`), frontend 3 (PR #438, `3caa18d`), e2e 3 (PR #441, `4aa12da`). #427's clear-cookie-on-401-refresh fix (`e60cedd`) already landed separately on develop — NOT part of this PR.
+
+**Board RECONCILED from origin/develop (NOT clobbered):** took develop's CURRENT board as base (concurrent qa-pricing/qa-image-ai/qa-catalog rows ALL preserved); flipped the backend (PR #440) + e2e (PR #441) rows PLANNED→MERGED-to-integration (frontend #438 was already MERGED on develop's board); added the 3 carry-forwards as Inter-lead requests; added the LAND-prep session-end sweep. This DISCHARGES the "BOARD-RECONCILE OWED" item from the prior e2e gate entry.
+
+**3 carry-forwards filed (Inter-lead requests):** INFRA-1 (manifest port-MAPPING vs running stack + playwright default `REMOTE_PORTS` encode declaration-order = the no-op-by-default trap → align to alphabetical or document the override); INFRA-2 (stale deployed mfe-onboarding pre-#399 bundle → rebuild dev remotes); GIS-seam (a `DEV_GOOGLE_BYPASS` dev-gated google verify seam to un-fixme E2E-AUTH-06 success → auth-builder/ai).
+
+**Worktree cleanup:** the LAND worktree is removed post-push; master tree untouched (all work in worktrees).
+
 ## Onboarding Wave C — Playwright E2E (two-phase) — 2026-06-22 — MERGED TO INTEGRATION
 
 **Session:** `mesell-qa-onboarding-e2e-session-1` (coordinator GATE).

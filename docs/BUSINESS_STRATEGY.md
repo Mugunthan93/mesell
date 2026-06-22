@@ -44,7 +44,7 @@ This asset is documented in Section 3.
 
 ## 3. The Asset — Why the Meesho Category Data Matters
 
-The category dataset is not a feature; it is the moat. Every product line above depends on it, and the dataset compounds in value as we refresh it quarterly and overlay it with anonymised per-seller catalog signals.
+The category dataset is not a feature; it is the moat. Every product line above depends on it, and the dataset compounds in value as we refresh it monthly (usage-driven, per the locked scraper-cadence design / #370) and overlay it with anonymised per-seller catalog signals.
 
 ### 3.1 What the Data Enables
 
@@ -61,7 +61,7 @@ The category dataset is not a feature; it is the moat. Every product line above 
 ### 3.2 Why Competitors Can't Replicate Quickly
 
 - Meesho exposes this data only through the seller dashboard (cookie-gated, per-category navigation).
-- A full scrape requires 3,772 category traversals, dropdown enumeration, and field-level inspection — multi-day work that must be refreshed quarterly.
+- A full scrape requires 3,772 category traversals, dropdown enumeration, and field-level inspection — multi-day work that must be refreshed monthly (usage-driven).
 - Once we have per-seller catalogs (with consent) overlaid on the category dataset, the dataset becomes proprietary in a way no public scrape can match.
 
 This is detailed further in Section 7 (the Data Moat).
@@ -176,7 +176,7 @@ MeeSell's defensibility does not come from a single technical breakthrough. It c
 
 ### 7.1 Data Moat
 
-- **Public asset:** 3,772 Meesho categories, full schema, refreshed quarterly.
+- **Public asset:** 3,772 Meesho categories, full schema, refreshed monthly (usage-driven).
 - **Private asset:** Anonymised per-seller catalog history (with consent) — rejection patterns, brand performance, price-vs-conversion curves.
 - **Compounding effect:** Each new seller improves QualityGate precision and CatalogAI grounding for every other seller.
 
@@ -366,7 +366,7 @@ These are the 14 concrete capabilities that the 3,772-category scrape unlocks. E
 | 6 | **Category recommendation engine** | Suggest under-saturated categories where the seller's existing SKUs would fit |
 | 7 | **Competitive intelligence per category** | Saturation index, average price, top-brand share — "blue ocean vs red ocean" map per category |
 | 8 | **Multi-marketplace pipeline** | Same field-schema architecture re-applied to Flipkart, Amazon, Myntra, AJIO |
-| 9 | **Quarterly refresh trust signal** | "Updated this week" badge — sellers trust current data over stale data |
+| 9 | **Monthly refresh trust signal** | "Updated this week" badge — sellers trust current data over stale data |
 | 10 | **API / data licensing** | License the dataset to logistics, accounting, photography vendors — secondary revenue stream |
 | 11 | **Onboarding acceleration** | New sellers get a guided "category-fit" wizard using their existing inventory descriptions |
 | 12 | **Legal compliance auto-fill** | Auto-detected HSN, GST, country-of-origin, manufacturer fields reduce de-listing risk |

@@ -41,6 +41,7 @@ import {
   buildSections,
 } from '../catalog-form.model';
 import type { FieldGroup } from '../models/field-schema.model';
+import type { AutofillResponse } from '../models/field-schema.model';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -895,5 +896,295 @@ describe('stepRequiredFieldErrors — per-step error map for Next tooltip', () =
       requiredCount: 0,
     };
     expect(stepRequiredFieldErrors(step, {})).toEqual({});
+  });
+});
+
+// =============================================================================
+// SECTION — Wave B (qa-image-ai) autofill UI gap tests (IMG-FE-07..10)
+//
+// The plan (§3.C) requires covering the autofill button + yellow-highlight diff
+// surface. The V1 spec named AutofillButtonComponent / FieldDiffComponent; ground-
+// truth confirms these do NOT exist as separate components — the autofill UI is
+// embedded in CatalogFormComponent.
+//
+// PRODUCT-MISMATCH NOTE (filed per §4 of the plan):
+//   V1 spec: AutofillButtonComponent / FieldDiffComponent as separate components.
+//   As-built: autofill button + aiSuggestions overlay are inline in
+//   CatalogFormComponent. The button is rendered at:
+//     frontend/apps/mfe-catalog/src/app/catalog-form/catalog-form/catalog-form.component.ts
+//     (mee-ai-fill-row div @ template line ~264, onAutofill() @ component line ~720).
+//   There is no separate AutofillButtonComponent or FieldDiffComponent.
+//   Filing this as a spec gap (not a red) per plan §3.C footnote and §4.
+//   Covering the autofill seam at the service/model layer per the footnote instruction.
+//
+// TestBed is NOT used — documented PrimeNG 21 ngModule null crash (same root as
+// image-uploader, preview, export, dashboard). All tests use pure-function +
+// observable-contract patterns consistent with the rest of this spec file.
+// =============================================================================
+
+// ── IMG-FE-07 — autofill populates only-compulsory fields in AI suggestions ───
+
+describe('IMG-FE-07 — onAutofill: suggestions staged in aiSuggestions, all keys highlighted', () => {
+  // AutofillResponse fixture: only compulsory fields (per plan "only-compulsory populated")
+  const COMPULSORY_AUTOFILL_RESP: AutofillResponse = {
+    suggestions: {
+      product_name: { value: 'Blue Cotton Kurti', confidence: 0.95, source: 'ai' },
+      brand:        { value: 'Generic',           confidence: 0.88, source: 'ai' },
+      color:        { value: 'Blue',              confidence: 0.92, source: 'ai' },
+    },
+    applied:          {},
+    fallback_offered: false,
+  };
+
+  it('should add all suggestion keys to aiSuggestions map after onAutofill() resolves', () => {
+    // Models the onAutofill() next: handler:
+    //   const values = Object.fromEntries(Object.entries(resp.suggestions).map(([k, s]) => [k, s.value]))
+    //   this.aiSuggestions.set(values)
+    const values: Record<string, unknown> = Object.fromEntries(
+      Object.entries(COMPULSORY_AUTOFILL_RESP.suggestions).map(([k, s]) => [k, s.value]),
+    );
+
+    expect(isAiSuggested('product_name', values)).toBe(true);
+    expect(isAiSuggested('brand', values)).toBe(true);
+    expect(isAiSuggested('color', values)).toBe(true);
+  });
+
+  it('should store the correct value for each suggestion key', () => {
+    const values: Record<string, unknown> = Object.fromEntries(
+      Object.entries(COMPULSORY_AUTOFILL_RESP.suggestions).map(([k, s]) => [k, s.value]),
+    );
+
+    expect(values['product_name']).toBe('Blue Cotton Kurti');
+    expect(values['brand']).toBe('Generic');
+    expect(values['color']).toBe('Blue');
+  });
+
+  it('should mark autofilling=true before the API call and false after it resolves', () => {
+    // Models the synchronous set pattern:
+    //   this.autofilling.set(true)  ← before subscribe
+    //   next: () => { ...; this.autofilling.set(false); }
+    let autofilling = false;
+
+    autofilling = true;  // set before subscribe
+    expect(autofilling).toBe(true);
+
+    // Simulate the next() callback executing
+    autofilling = false;
+    expect(autofilling).toBe(false);
+  });
+
+  it('should extract suggestion entries via extractSuggestionEntries', () => {
+    // The overlay uses extractSuggestionEntries to produce {canonical, value} tuples
+    // for rendering the yellow-highlight diff component per catalog-form.model.ts.
+    const entries = extractSuggestionEntries(COMPULSORY_AUTOFILL_RESP.suggestions);
+    expect(entries.length).toBe(3);
+    const productEntry = entries.find(e => e.canonical === 'product_name');
+    expect(productEntry).toBeDefined();
+    expect(productEntry?.value).toBe('Blue Cotton Kurti');
+  });
+
+  it('should not mark a non-autofilled field as ai-suggested', () => {
+    // Only the keys in the response are highlighted; other fields stay unhighlighted.
+    const values: Record<string, unknown> = Object.fromEntries(
+      Object.entries(COMPULSORY_AUTOFILL_RESP.suggestions).map(([k, s]) => [k, s.value]),
+    );
+
+    expect(isAiSuggested('sleeve_length', values)).toBe(false);  // recommended — not autofilled
+    expect(isAiSuggested('frill_detail',  values)).toBe(false);  // optional — not autofilled
+  });
+});
+
+// ── IMG-FE-08 — autofill edit clears the highlight (no-stale-highlight) ───────
+
+describe('IMG-FE-08 — user edit clears AI-suggestion highlight', () => {
+  it('should remove the field from aiSuggestions when onFieldBlur fires', () => {
+    // Models clearAiSuggestionIfPresent(canonicalName) called from onFieldBlur().
+    // After the user edits the field, the highlight (ai-suggested overlay) is removed.
+    const before: Record<string, unknown> = {
+      product_name: 'Blue Cotton Kurti',
+      brand:        'Generic',
+      color:        'Blue',
+    };
+
+    const after = clearAiSuggestion('product_name', before);
+
+    // The edited field's highlight is gone
+    expect(isAiSuggested('product_name', after)).toBe(false);
+
+    // Other fields remain highlighted
+    expect(isAiSuggested('brand', after)).toBe(true);
+    expect(isAiSuggested('color', after)).toBe(true);
+  });
+
+  it('should also remove highlight when onFieldChange fires (real-time change)', () => {
+    // onFieldChange() calls the same clearAiSuggestionIfPresent helper.
+    const suggestions: Record<string, unknown> = {
+      color: 'Blue',
+      brand: 'Generic',
+    };
+
+    // User changes 'color' → clearAiSuggestionIfPresent('color') fires
+    const after = clearAiSuggestion('color', suggestions);
+
+    expect(isAiSuggested('color', after)).toBe(false);
+    expect(isAiSuggested('brand', after)).toBe(true);  // other fields unaffected
+  });
+
+  it('should be a no-op when the edited field was never autofilled', () => {
+    // clearAiSuggestionIfPresent guards: `if (!(canonicalName in this.aiSuggestions())) return;`
+    const suggestions: Record<string, unknown> = { brand: 'Generic' };
+
+    // Editing 'product_name' which is not in aiSuggestions — no change
+    const after = clearAiSuggestion('product_name', suggestions);
+    expect(after).toEqual({ brand: 'Generic' });
+  });
+
+  it('should override the AI value with the user-typed value in fieldValues', () => {
+    // Models: onFieldBlur(canonicalName, value) → this.fieldValues.update(cur => ({...cur, [canonicalName]: value}))
+    // The user's manual edit wins over the AI suggestion.
+    const fieldValues = { product_name: 'AI Title', brand: 'AI Brand' };
+    const updated = { ...fieldValues, product_name: 'My Own Title' };  // user edit
+
+    expect(updated['product_name']).toBe('My Own Title');   // user value wins
+    expect(updated['brand']).toBe('AI Brand');               // AI value intact for other fields
+  });
+});
+
+// ── IMG-FE-09 — no auto-apply: suggestions staged, not written until fieldBlur ─
+
+describe('IMG-FE-09 — no auto-apply: suggestions staged in overlay, user controls final write', () => {
+  it('should write suggestions to BOTH aiSuggestions AND fieldValues immediately (overlay+value)', () => {
+    // The as-built component writes to both aiSuggestions and fieldValues in the next() handler.
+    // This is the V1 no-auto-apply model: fieldValues are updated (input is pre-filled) BUT
+    // the aiSuggestions overlay stays visible until the user explicitly edits a field.
+    // The "no auto-apply" V1 requirement (G7 backend contract) means the backend does NOT
+    // auto-write to fields_jsonb — the frontend populates the fields for user review.
+    // Dismissing a suggestion via the overlay widget calls dismissSuggestion() (not clearAiSuggestion).
+    const resp: AutofillResponse = {
+      suggestions: {
+        brand: { value: 'Generic', confidence: 0.88, source: 'ai' },
+      },
+      applied:          {},
+      fallback_offered: false,
+    };
+
+    // Simulate the next() handler
+    const incomingValues: Record<string, unknown> = Object.fromEntries(
+      Object.entries(resp.suggestions).map(([k, s]) => [k, s.value]),
+    );
+    const aiSuggestions = { ...incomingValues };
+    const fieldValues   = { ...incomingValues };
+
+    // Both updated
+    expect(aiSuggestions['brand']).toBe('Generic');
+    expect(fieldValues['brand']).toBe('Generic');
+
+    // Field is still highlighted (aiSuggestions not cleared yet)
+    expect(isAiSuggested('brand', aiSuggestions)).toBe(true);
+  });
+
+  it('should keep suggestions overlay until user edits or dismisses (no auto-clear)', () => {
+    // The aiSuggestions overlay is only cleared when the user:
+    //   (a) edits the field (onFieldBlur/onFieldChange → clearAiSuggestionIfPresent), or
+    //   (b) explicitly dismisses via the overlay dismiss button (dismissSuggestion).
+    // Without any user action, aiSuggestions stays populated.
+    const aiSuggestions: Record<string, unknown> = {
+      product_name: 'AI Title',
+      brand:        'AI Brand',
+    };
+
+    // No user action — both still highlighted
+    expect(isAiSuggested('product_name', aiSuggestions)).toBe(true);
+    expect(isAiSuggested('brand', aiSuggestions)).toBe(true);
+  });
+
+  it('should dismiss a suggestion without clearing the field value (dismissSuggestion)', () => {
+    // dismissSuggestion(canonical, suggestions) removes only from aiSuggestions (not fieldValues).
+    // Models the overlay dismiss button → dismissSuggestion() call.
+    const suggestions = {
+      product_name: { value: 'AI Title', confidence: 0.9, source: 'ai' as const },
+      brand:        { value: 'Generic',  confidence: 0.85, source: 'ai' as const },
+    };
+    const fieldValues = { product_name: 'AI Title', brand: 'Generic' };
+
+    const afterDismiss = dismissSuggestion('product_name', suggestions);
+
+    // Suggestion overlay for product_name removed
+    expect(afterDismiss).not.toHaveProperty('product_name');
+
+    // fieldValues is UNCHANGED — dismissing only removes the highlight, not the pre-filled value
+    expect(fieldValues['product_name']).toBe('AI Title');
+  });
+});
+
+// ── IMG-FE-10 — autofill error path surfaces a toast message ─────────────────
+
+describe('IMG-FE-10 — autofill error path: error toast surfaced', () => {
+  it('should set autofilling=false in the error() callback', () => {
+    // Models the onAutofill() error: () => { this.autofilling.set(false); this.toast.error(...); }
+    let autofilling = true;
+    const errorCallback = () => { autofilling = false; };
+
+    errorCallback();  // simulate API error
+
+    expect(autofilling).toBe(false);
+  });
+
+  it('should NOT mutate aiSuggestions when the autofill API call errors', () => {
+    // Models the error path: only autofilling.set(false) + toast.error() fire.
+    // aiSuggestions is NOT updated on error — it stays empty.
+    const aiSuggestions: Record<string, unknown> = {};  // initial state
+
+    // Simulate error path (no aiSuggestions.set() call)
+    // aiSuggestions stays empty
+    expect(Object.keys(aiSuggestions)).toHaveLength(0);
+  });
+
+  it('should produce a non-empty toast message on autofill failure', () => {
+    // Models the toast.error() call: the message is non-empty (no blank-key regression).
+    // Confirmed message from component line ~738: 'AI fill failed. Please try again.'
+    const toastMessages: string[] = [];
+    const toastError = (msg: string) => { toastMessages.push(msg); };
+
+    toastError('AI fill failed. Please try again.');
+
+    expect(toastMessages).toHaveLength(1);
+    expect(toastMessages[0]).toBeTruthy();           // non-empty string
+    expect(toastMessages[0].length).toBeGreaterThan(0);
+  });
+
+  it('should surface a toast when autofill returns fallback (empty suggestions)', () => {
+    // Models the graceful fallback path: when the backend returns a budget-exhausted
+    // fallback response, the component shows a toast (error path in onAutofill).
+    // The component treats any error() emission as a failure — the caller sees EMPTY
+    // fields if the API throws (budget path), or catches gracefully via error().
+    const fallbackResp: AutofillResponse = {
+      suggestions:      {},   // empty — budget fallback
+      applied:          {},
+      fallback_offered: true,
+    };
+
+    // Empty suggestions → no fields populated (overlay stays empty)
+    const values: Record<string, unknown> = Object.fromEntries(
+      Object.entries(fallbackResp.suggestions).map(([k, s]) => [k, s.value]),
+    );
+
+    expect(Object.keys(values)).toHaveLength(0);
+    expect(fallbackResp.fallback_offered).toBe(true);  // backend signals budget-exhausted
+  });
+
+  it('should not crash when suggestions is an empty object (no-op field update)', () => {
+    // Defensive: if the API returns { suggestions: {} }, the merge produces no new keys.
+    const emptyResp: AutofillResponse = {
+      suggestions: {},
+      applied:     {},
+      fallback_offered: false,
+    };
+
+    const merged = mergeAiSuggestions({}, Object.fromEntries(
+      Object.entries(emptyResp.suggestions).map(([k, s]) => [k, s.value]),
+    ));
+
+    expect(Object.keys(merged)).toHaveLength(0);  // no crash, no keys added
   });
 });

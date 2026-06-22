@@ -1350,7 +1350,7 @@ Each failure points the engineer at which pipeline step likely broke. Step numbe
 
 ### 5.7.7 Fixture maintenance (when Meesho changes templates)
 
-Quarterly Meesho refresh flow (owned by `meesell-scraper-maintainer`):
+Monthly, usage-driven Meesho refresh flow (owned by `meesell-scraper-maintainer`; per the locked scraper-cadence design / #370):
 
 1. Scraper re-fetches XLSX templates → updates `data/meesho_templates/`
 2. Parser produces new `data/parsed/batch_NN_*.json`
@@ -1488,16 +1488,16 @@ Connection: `redis://valkey:6379/3` (Valkey uses Redis protocol; library: `redis
 | Category picker suggestion | 24 h | — | `max-age=86400` |
 | Seller profile | 5 min | — | `no-store` (user-specific, sensitive) |
 
-Rationale: templates and enum values are updated only on the quarterly Meesho refresh cycle. A 24-hour TTL is conservative relative to that cycle. Seller profile is personal compliance data and must never be stale longer than 5 minutes — a seller updating their FSSAI number must see it reflected on the next API call.
+Rationale: templates and enum values are updated only on the monthly, usage-driven Meesho refresh cycle. A 24-hour TTL is conservative relative to that cycle. Seller profile is personal compliance data and must never be stale longer than 5 minutes — a seller updating their FSSAI number must see it reflected on the next API call.
 
 ---
 
 ## 6.4 Cache Key Patterns
 
-Schema versioning is embedded in every key so a quarterly refresh invalidates atomically without a cache flush command.
+Schema versioning is embedded in every key so a monthly, usage-driven refresh invalidates atomically without a cache flush command.
 
 ```
-# Template schema — version-tagged for atomic quarterly refresh
+# Template schema — version-tagged for atomic monthly, usage-driven refresh
 cache:template:{template_id}:v{schema_version}
 
 # Field enum values — keyed by category + field name
@@ -1513,7 +1513,7 @@ cache:category_suggest:{description_sha256}
 cache:seller_profile:{user_id}
 ```
 
-`schema_version` is a short string derived from `templates.parser_version` + the quarterly refresh date stamp, e.g. `"0.2-2026Q1"`. It is stored as a single Valkey key `cache:schema_version` (type: string) and read once at worker startup into a process-level constant.
+`schema_version` is a short string derived from `templates.parser_version` + the monthly refresh date stamp, e.g. `"0.2-2026-01"`. It is stored as a single Valkey key `cache:schema_version` (type: string) and read once at worker startup into a process-level constant.
 
 **Philosophy guardrail (M10 + F8):** template schema cached in Valkey stores the **display + canonical layers only** — `display_label`, `display_help`, `canonical_name`, `primitive`, `marker`, etc. The `meesho_column_header`, `meesho_column_index`, and `enum_codes_map` fields are **stripped before serialisation into cache**. The Export Adapter fetches the full `schema_jsonb` directly from PostgreSQL (or a separate, adapter-internal cache keyed `adapter:template:{template_id}`) so that Meesho wire format is never accessible through the public cache namespace.
 
@@ -1521,7 +1521,7 @@ cache:seller_profile:{user_id}
 
 ## 6.5 Invalidation Flow
 
-### 6.5.1 Quarterly Meesho refresh
+### 6.5.1 Monthly, usage-driven Meesho refresh
 
 1. `meesell-xlsx-parser` re-parses all Meesho XLSX files; `scripts/build_template_schemas.py` runs (idempotent).
 2. Script increments `schema_version` (e.g. `"0.2-2026Q2"`) and writes it to `cache:schema_version` in Valkey.
@@ -1541,7 +1541,7 @@ immediately after committing the database transaction. The 5-minute TTL serves a
 
 ### 6.5.3 No schema hot-patching in V1
 
-If a single template is corrected outside the quarterly cycle (e.g. a critical typo in a help string), the fix is deployed by incrementing `schema_version` for that batch only. This is a deliberate V1 simplification — full refresh is quick enough (<2 min) that selective invalidation is not worth the complexity.
+If a single template is corrected outside the monthly cycle (e.g. a critical typo in a help string), the fix is deployed by incrementing `schema_version` for that batch only. This is a deliberate V1 simplification — full refresh is quick enough (<2 min) that selective invalidation is not worth the complexity.
 
 ---
 
@@ -1750,7 +1750,7 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_categories_super_name_trgm
 -- CREATE INDEX idx_categories_super ON categories(super_id);  -- already exists per §2.3
 ```
 
-All three GIN indexes are built `CONCURRENTLY` so the table remains readable during initial seed and during quarterly refreshes. The existing B-tree on `super_id` (defined in §2.3) handles the filter-only drilldown case without a trigram scan.
+All three GIN indexes are built `CONCURRENTLY` so the table remains readable during initial seed and during monthly refreshes. The existing B-tree on `super_id` (defined in §2.3) handles the filter-only drilldown case without a trigram scan.
 
 ---
 
@@ -1793,7 +1793,7 @@ ORDER BY (match_score * popularity_weight) DESC
 LIMIT :limit OFFSET :offset;
 ```
 
-**V1 popularity weight is uniform (1.0).** Seasonal / category traffic data is not available at launch. When Meesho quarterly refresh data includes view or GMV signals, the `categories` table gains a `popularity_score NUMERIC(6,4) DEFAULT 1.0` column and the weight becomes data-driven without changing the query shape.
+**V1 popularity weight is uniform (1.0).** Seasonal / category traffic data is not available at launch. When Meesho monthly refresh data includes view or GMV signals, the `categories` table gains a `popularity_score NUMERIC(6,4) DEFAULT 1.0` column and the weight becomes data-driven without changing the query shape.
 
 The `%` operator (trigram similarity threshold) uses PostgreSQL's default `pg_trgm.similarity_threshold = 0.3`, which is appropriate for short category-name tokens. Tune downward (e.g. 0.2) if recall is insufficient during acceptance testing.
 
@@ -1840,7 +1840,7 @@ When `q` is absent and `super_id` is absent, the endpoint returns all 3,772 leav
 2. `meesho_categories.json` and `meesho_category_tree.json` (already in `backend/app/data/`) are loaded via the seeding script defined in §2.6 of MVP_ARCHITECTURE.md.
 3. GIN indexes are built automatically after row insertion completes.
 
-**Quarterly Meesho refresh** (new XLSX batch from `meesell-xlsx-parser`):
+**Monthly, usage-driven Meesho refresh** (new XLSX batch from `meesell-xlsx-parser`):
 1. New rows are inserted into `categories` using `INSERT ... ON CONFLICT (meesho_leaf_id) DO UPDATE`.
 2. GIN indexes update incrementally on each row write — no manual `REINDEX` required for normal refreshes.
 3. If a full rebuild is ever needed (e.g. after a bulk schema change), run:
@@ -2709,7 +2709,7 @@ At 1M rows with the two indexes defined above, both query patterns (§11.8) retu
 
 ### 11.4 BACKEND on Caching (§6)
 - Implement Valkey DB 3 cache layer per §6.1 (DBs 0-2 reserved for OTP/Celery)
-- Version-tagged cache keys with auto-invalidation on quarterly Meesho refresh
+- Version-tagged cache keys with auto-invalidation on monthly Meesho refresh
 - Strip `meesho_column_header`, `meesho_column_index`, `enum_codes_map` from cached payloads (philosophy M10/F8 — Meesho format never leaks past Export Adapter)
 - HTTP `Cache-Control` + `ETag` on schema and enum API responses
 - Single-flight `SET NX` on the 291 large Brand-pattern enum keys (stampede protection)
@@ -2718,7 +2718,7 @@ At 1M rows with the two indexes defined above, both query patterns (§11.8) retu
 
 ### 11.5 BACKEND on Search & Indexing (§7)
 - Enable `pg_trgm` extension; create 3 GIN indexes per §7.2 (`path`, `leaf_name`, `super_name`)
-- All indexes built `CONCURRENTLY` so quarterly refresh stays online
+- All indexes built `CONCURRENTLY` so monthly refresh stays online
 - Implement `GET /api/v1/categories/browse?q=&super_id=&limit=&offset=` with breadcrumb path in response
 - Wire Smart Picker fallback: when confidence < 70% or timeout, frontend pivots to `/browse` with original query pre-filled
 - **Acceptance**: P95 browse search ≤ 200 ms on 3,772 rows
@@ -2808,7 +2808,7 @@ All six prior open questions are now resolved. Implementation rules below are no
 | AI hallucination on autofill produces invalid data | Bad listings, seller frustration | Two-layer enum guardrail (prompt + validator). Reject invalid suggestions. |
 | Brand picker P95 latency >2s for 4,000-value categories | Form feels slow | Server-side pagination (50/page). Client-side cache by `(category, query_prefix)`. |
 | Eye-Serum-style template not covered → form breaks | One category unusable | Backend accepts both representations. Frontend `<mee-address-group>` for collapsed format. |
-| Meesho changes XLSX schema (new field marker tier) | Parser may break | Parser handles `recommended` regex already. Quarterly refresh + diff report (scraper-maintainer agent owns). |
+| Meesho changes XLSX schema (new field marker tier) | Parser may break | Parser handles `recommended` regex already. Monthly, usage-driven refresh + diff report (scraper-maintainer agent owns). |
 | 1,831 unique field names → form-renderer bugs in edge cases | Some leaves render badly | Per-template visual test for top 100 leaves by traffic. Bug-fix per leaf as discovered. |
 | Compulsory median 33 in Home & Kitchen overwhelms user | Drop-off mid-wizard | Multi-step wizard with progress bar. AI auto-fill reduces manual input. |
 | FSSAI field is compulsory for Grocery → seller blocked at signup | Lost sign-ups in Grocery segment | Onboarding wizard makes the requirement obvious before signup. "Don't have FSSAI yet? Apply here" link to Indian govt portal. |
