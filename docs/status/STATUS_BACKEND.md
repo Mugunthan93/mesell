@@ -1,6 +1,53 @@
 # STATUS — BACKEND
 
 
+=== UPDATE: 2026-06-22 (meesell-services-builder) — category-monitor Wave-3 Unit T: 3RD onboarding edge site (Director full-coverage ruling) ===
+Phase: category-monitor — Wave 3 Unit T (additive fix to OPEN PR #472)
+Branch: feature/category-monitor/backend-w3-triggers @ bb71c1c. PR #472 → feature/category-monitor/integration.
+Session: mesell-category-monitor-backend-session-5 (continuation)
+
+Done:
+- Director ruling: cover ALL THREE onboarding `onboarding_complete` recompute sites (was 2: upsert_profile + set_active_categories). Wired the existing reusable `customer/service.py::_enqueue_monitor_on_onboarding_edge(...)` into `set_compliance_extension`'s MAIN recompute branch (after `update_compliance_extension` + cache invalidate, ~L673), SAME false→true edge guard — no re-enqueue when already complete. `existing` read at ~L604 BEFORE the merge carries the prior flag. The `no_spec` early-return branch (~L629-637) passes the prior flag unchanged → cannot cross the edge → correctly left untouched.
+- Tests: +3 in `tests/test_monitor_triggers.py` (5→8) mirroring the existing onboarding-edge tests: enqueue-per-distinct-leaf on edge, no-reenqueue on repeat-when-complete, host-survives-raising-`.delay`. New `patched_compliance` fixture (all collaborators mocked; `.delay` mocked on source `monitor.tasks.scrape_category_task`; no live DB).
+- Mutation-verified BOTH gates on the new tests: dropping the try/except → raise-survival test RED; breaking the edge guard → no-reenqueue test RED.
+
+Tests: 8/8 passed under `-m unit` (master 3.11 venv toolchain, no live DB, scrape_category/.delay MOCKED). ruff clean; lint-imports 27 kept / 0 broken (no new cross-module edge — reuses the same `customer→catalog.service`/`customer→monitor.triggers` edges already flagged in §2.D); diff = exactly 2 files (customer/service.py +13, test +154); no router/main.py touched → route inventory unchanged (28); LOCKED docs + import_rules.toml byte-untouched.
+In progress: none.
+Blockers: none.
+Next: PR #472 ready for backend-coordinator re-gate. Does NOT self-merge.
+Hand-offs:
+  - backend-coordinator: re-gate PR #472 (additive 3rd-site diff = customer/service.py + test). §2.D founder-gate flag unchanged (no new edge beyond the already-flagged customer→catalog/customer→monitor).
+=========
+
+
+=== UPDATE: 2026-06-22 (meesell-services-builder) — category-monitor Wave-3 Unit T TRIGGER WIRING COMPLETE ===
+Phase: category-monitor (RETENTION_CATEGORY_MONITOR) — Wave 3 Unit T (trigger wiring — the ONE unit that touches LIVE V1 paths)
+Branch: feature/category-monitor/backend-w3-triggers off integration 0d0abfb (carries W1+W2). PR → feature/category-monitor/integration.
+Session: mesell-category-monitor-backend-session-5
+
+Done:
+- NEW PUBLIC seam `app/modules/monitor/triggers.py::enqueue_category_scrape(category_id) -> None`. Sync, never awaited, lazy-imports `monitor.tasks.scrape_category_task` + `.delay(str(category_id))`. Wraps the enqueue in try/except — a broker outage is swallowed + logged WARNING, NEVER raised into the host seller flow. `triggers.py` is PUBLIC (alongside service.py); repository.py stays private.
+- Hook (a) catalog-add: `catalog/service.py::create_product` — `enqueue_category_scrape(request.category_id)` inserted AFTER `insert_product` (~L562) and BEFORE `return _orm_to_domain(row)` (~L580). Enqueues exactly once with the LEAF `request.category_id`.
+- Hook (b) onboarding-complete: `customer/service.py` — new private `_enqueue_monitor_on_onboarding_edge(...)` fires on the `onboarding_complete` FALSE→TRUE edge ONLY (`onboarding_complete and not (existing and existing.onboarding_complete)`), resolves the seller's DISTINCT PRODUCT leaf categories (Director Q1) and enqueues one per distinct leaf. Wired into `upsert_profile` (~L474 site) + `set_active_categories` (~L519 site). A re-PATCH of an already-complete profile does NOT re-enqueue. Zero-product seller → empty list → enqueues nothing.
+- NEW public read `catalog/service.py::get_distinct_product_category_ids(user_id, db) -> list[UUID]` (added to __all__) backed by new private repo `catalog/repository.py::distinct_product_category_ids` = `SELECT DISTINCT category_id FROM products WHERE user_id=:uid AND deleted_at IS NULL` (tenant-scoped via scope_to_user — Contract-8 scanner green).
+
+New cross-module edges (all confirmed already-allowed by the FORBIDDEN-style import-linter contracts → lint-imports 27 kept / 0 broken with NO import_rules.toml change):
+- catalog → monitor.triggers (monitor not in any forbidden list)
+- customer → monitor.triggers (same)
+- customer → catalog.service (Contract 1/4/7.customer forbid only catalog.repository/.schemas/.router — NOT .service)
+
+§2.D LOCKED-matrix FOUNDER-GATE FLAG (LOCKED doc NOT edited): the §2.D matrix has only the 8 original domain modules. Three new edges are NOT yet represented: `customer → catalog` is a clear `✗ → ✓` flip of an existing cell; `catalog → monitor` and `customer → monitor` need a new `monitor` column. These require a founder-ratified §2.D amendment (deferred per wave protocol). import-linter is already green so no rule change ships here.
+
+Tests (NON-LIVE — V1 regression proof): `tests/test_monitor_triggers.py` — 5/5 PASS. `.delay` MOCKED on the SOURCE module `app.modules.monitor.tasks`; no live DB (host services driven with mocked repo + cross-module surfaces); zero executable live-Meesho refs (grep-proven). Mutation-verified: removing the try/except in triggers.py turns BOTH "host survives enqueue raise" tests RED.
+
+Gates: ruff clean (4 prod files + test); lint-imports 27/0; tests/lint/ 18/18; app boots; route inventory UNCHANGED (no new route); LOCKED docs + import_rules.toml byte-untouched.
+
+Hand-offs:
+- meesell-backend-coordinator: gate the PR (mutation-check by making .delay raise — already verified locally). Decide the §2.D founder-gate amendment (3 new edges).
+- COORDINATOR DECISION NEEDED: a THIRD onboarding-complete recompute site exists — `set_compliance_extension` (~L607) also recomputes `onboarding_complete` and CAN cross the false→true edge (final compliance step completing onboarding). The spec named only `upsert_profile` + `set_active_categories`; I implemented exactly those two per the authored spec. If the founder wants full coverage of the onboarding edge, the same `_enqueue_monitor_on_onboarding_edge(...)` call should be added to `set_compliance_extension` (the helper + edge logic are reusable as-is). NOT added unilaterally (surgical-change discipline).
+=========
+
+
 === UPDATE: 2026-06-22 (meesell-services-builder) — category-monitor Wave-3 Unit S SERVING LAYER COMPLETE ===
 Phase: category-monitor (RETENTION_CATEGORY_MONITOR #370) — Wave 3 Unit S (serving read-through + evict-on-update)
 Session: mesell-category-monitor-backend-session-6
@@ -7596,4 +7643,41 @@ Hand-offs:
   - FOLLOW-UP (flagged, NOT fixed here): SAME latent INSERT-path 500 (NotNullViolationError) class
     exists for manufacturer_name / manufacturer_address / packer_name / packer_address /
     country_of_origin — a SEPARATE follow-up; this PR is pincodes-only per spec scope guard.
+=========
+
+=== UPDATE: 2026-06-22 — category-monitor Wave-3 onboarding-edge bug fix (PR #472 merge-gate REJECT) ===
+Phase: category-monitor Wave 3 (onboarding-complete trigger) — production-bug fix on the REJECT.
+Bug: SQLAlchemy identity-map aliasing. All 3 onboarding sites (upsert_profile,
+  set_active_categories, set_compliance_extension) read existing=find_by_user_id() BEFORE the repo
+  write, then passed that SAME live ORM into _enqueue_monitor_on_onboarding_edge which read
+  existing.onboarding_complete AFTER the write. The repo re-queries the same PK in the same session
+  → identity map returns the SAME Python object → the write mutates existing.onboarding_complete to
+  True before the edge test reads it → crossed_edge = complete and not existing.onboarding_complete
+  was ALWAYS False on the realistic update→complete path → monitor NEVER enqueued in prod. The 8 fast
+  unit tests masked it by mocking find_by_user_id to a DIFFERENT object than the repo write returned.
+Fix (customer/service.py): helper signature changed existing: SellerProfileORM|None → prior_complete:
+  bool (L192-223); crossed_edge = onboarding_complete and not prior_complete (L222). Each call site
+  snapshots prior_complete = bool(existing.onboarding_complete) [if existing] as a plain bool BEFORE
+  the repo write: upsert_profile L471 (call L538), set_active_categories L577 (call L599),
+  set_compliance_extension L633 (call L710). Live ORM never read for the edge after the write.
+Tests: NEW tests/integration/test_customer_monitor_edge_identity.py — 4 identity-faithful REAL-session
+  tests (real async session + real customer_repo, so find_by_user_id + write share ONE identity-mapped
+  object = prod path). Only catalog_service.get_distinct_product_category_ids + Celery .delay mocked;
+  zero live Meesho/broker. PROVEN: all 4 FAIL on old live-ORM code (got 0 enqueues) + PASS on fixed
+  code (2 enqueues/leaf). The 8 fast unit tests in test_monitor_triggers.py preserved (still green).
+  Host-survival preserved (enqueue raise → host flow + completion commit survive). Full local run:
+  test_customer_monitor_edge_identity (4) + test_monitor_triggers (8) + test_monitor_gate +
+  test_customer_routes + app_boot + celery_include = all green. ruff clean. import-linter EXIT=0
+  (27 kept/0 broken). No router touched → route count unchanged.
+In progress: none.
+Blockers: none.
+Next: backend-coordinator re-gates PR #472 (branch feature/category-monitor/backend-w3-triggers). Do
+  NOT merge. §2.D founder-gate flag preserved in PR body.
+Hand-offs:
+  - backend-coordinator: re-gate PR #472. Fix diff = customer/service.py (+42/-14) + 1 new test file.
+  - PRE-EXISTING flake (NOT mine, NOT in scope): test_customer_onboarding_coverage.py::
+    test_active_categories_replace_semantics ERRORs at SETUP only when run AFTER test_customer_routes
+    in the same process (cross-fixture asyncpg loop/teardown ordering with the customer_client +
+    iam_client lifespan fixtures). Passes in isolation; reproduces WITHOUT my new file. Filed as a
+    separate harness ticket.
 =========

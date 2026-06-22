@@ -130,6 +130,26 @@ async def count_active_products(db: AsyncSession, user_id: UUID) -> int:
     return int(result.scalar_one() or 0)
 
 
+async def distinct_product_category_ids(
+    db: AsyncSession, user_id: UUID
+) -> list[UUID]:
+    """``SELECT DISTINCT category_id`` of the caller's non-deleted products.
+
+    Tenant-scoped via :func:`scope_to_user` (the §19 grep-anchor) +
+    ``deleted_at IS NULL`` so soft-deleted products do not contribute.
+    A seller with zero products returns an empty list.
+
+    Used by the category change monitor (Wave 3) onboarding-complete
+    trigger to resolve the distinct leaf categories to enqueue.
+    """
+    stmt = (
+        scope_to_user(select(ProductORM.category_id).distinct(), user_id)
+        .where(ProductORM.deleted_at.is_(None))
+    )
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Catalog reads + writes
 # ─────────────────────────────────────────────────────────────────────────────
