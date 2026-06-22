@@ -51,21 +51,34 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from app.modules.monitor.exceptions import CategoryNotFoundError
 from app.shared.config import settings
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
 # Valkey in-flight claim key namespace (DB 0 — OTP/session/locks per §1.B).
 _INFLIGHT_KEY_PREFIX = "catmonitor:snapshot:"
 
+# Wave-3 SERVE read-through cache (Valkey DB 3 via core/cache — distinct from
+# the DB-0 in-flight LOCK above; do NOT conflate the two keyspaces).
+_SERVE_TTL_SECONDS = 86400  # 1-day cache TTL (locked design)
+_SERVE_KEY_PREFIX = "monitor:snapshot:"
+
 
 def _inflight_key(category_id: UUID) -> str:
-    """Build the atomic-claim Valkey key for a category id."""
+    """Build the atomic-claim Valkey key for a category id (DB 0 lock)."""
     return f"{_INFLIGHT_KEY_PREFIX}{category_id}"
+
+
+def _snapshot_cache_key(category_id: UUID) -> str:
+    """Build the DB-3 read-through serve cache key for a category id."""
+    return f"{_SERVE_KEY_PREFIX}{category_id}"
 
 
 async def run_dedupe_gate(category_id: UUID, *, db_url: str) -> dict[str, Any]:
@@ -96,6 +109,7 @@ async def run_dedupe_gate(category_id: UUID, *, db_url: str) -> dict[str, Any]:
     from scripts.diff_category_rules import diff_category_snapshot
     from scripts.scrape_category import scrape_category
 
+    from app.core.cache import evict
     from app.modules.monitor import repository as monitor_repo
     from app.shared.database import make_worker_session
     from app.shared.valkey import get_valkey_otp
@@ -209,6 +223,11 @@ async def run_dedupe_gate(category_id: UUID, *, db_url: str) -> dict[str, Any]:
                 new_hash,
             )
 
+        # Evict-on-update: a new snapshot row was just inserted, so the
+        # read-through serve cache (DB 3) is now stale — drop it so the next
+        # get_served_category_data rebuilds from the fresh DB row.
+        await evict(_snapshot_cache_key(category_id))
+
         return {
             "action": "scraped",
             "category_id": cat_id_str,
@@ -230,6 +249,56 @@ async def run_dedupe_gate(category_id: UUID, *, db_url: str) -> dict[str, Any]:
             )
 
 
+async def get_served_category_data(category_id: UUID, db: AsyncSession) -> dict[str, Any]:
+    """Serve the latest captured snapshot for a category (cache → DB).
+
+    Wave-3 INTERNAL-ONLY serving read (no public route yet — the customer-
+    facing endpoint lands in Wave 4 with the FE contract). Read-through:
+    the value is served from the Valkey DB-3 cache when warm, else rebuilt
+    from the latest ``category_snapshots`` row and cached for
+    ``_SERVE_TTL_SECONDS`` (1 day).
+
+    The DB fallback reads ONLY ``category_snapshots`` (no live Meesho scrape
+    ever sits in the read path — scraping is the Wave-2 gate's job, gated +
+    de-duped). A fresh scrape evicts this cache via :func:`evict` in
+    :func:`run_dedupe_gate`, so a warm value is never older than the most
+    recent capture.
+
+    Args:
+        category_id: ``categories.id`` UUID to serve.
+        db: Async session for the DB fallback read.
+
+    Returns:
+        ``{"category_id", "captured_at", "content_hash", "dimensions"}`` —
+        all JSON-serialisable (``captured_at`` is ISO-8601 text).
+
+    Raises:
+        CategorySnapshotNotFoundError: the category has no snapshot row.
+    """
+    # Lazy imports — keep module import light (core/cache pulls in valkey).
+    from app.core.cache import get_or_set
+    from app.modules.monitor import repository as monitor_repo
+    from app.modules.monitor.exceptions import CategorySnapshotNotFoundError
+
+    async def _fetch() -> dict[str, Any]:
+        row = await monitor_repo.get_latest_snapshot(db, category_id)
+        if row is None:
+            raise CategorySnapshotNotFoundError(str(category_id))
+        return {
+            "category_id": str(category_id),
+            "captured_at": row.captured_at.isoformat(),
+            "content_hash": row.content_hash,
+            "dimensions": row.dimensions_jsonb,
+        }
+
+    return await get_or_set(
+        _snapshot_cache_key(category_id),
+        _fetch,
+        ttl=_SERVE_TTL_SECONDS,
+    )
+
+
 __all__ = [
     "run_dedupe_gate",
+    "get_served_category_data",
 ]

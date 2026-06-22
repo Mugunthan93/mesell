@@ -134,6 +134,26 @@ async def get_or_set(
     return value
 
 
+async def evict(key: str, version: str | None = None) -> None:
+    """Delete a single read-through cache entry by its logical key.
+
+    The sibling of :func:`get_or_set` for the write path: when a producer
+    updates the underlying source-of-truth (e.g. a fresh category snapshot
+    row is inserted), it calls ``evict(key)`` so the next read rebuilds the
+    value from the DB instead of returning the now-stale cached copy.
+
+    Args:
+        key: Logical key (the version prefix is added internally) — MUST be
+            the same logical key passed to :func:`get_or_set`.
+        version: Override the global ``CACHE_VERSION`` (must match the
+            ``version`` used at write time). Defaults to
+            ``settings.CACHE_VERSION``.
+    """
+    full_key = _versioned_key(key, version)
+    client = await get_valkey_cache()
+    await client.delete(full_key)
+
+
 def etag_for(payload: bytes) -> str:
     """Return a quoted strong ETag per RFC 7232.
 
@@ -254,6 +274,7 @@ async def prewarm_top_categories(n: int = 100) -> None:
 
 __all__ = [
     "get_or_set",
+    "evict",
     "etag_for",
     "prewarm_top_categories",
 ]

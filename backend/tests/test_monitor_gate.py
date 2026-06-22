@@ -82,11 +82,24 @@ def patched_gate(monkeypatch, fake_cache):
     import app.shared.database as shared_db
     import app.shared.valkey as shared_valkey
 
-    # ── Valkey: hand the gate the FakeRedis client ──
+    # ── Valkey DB-0 (in-flight lock): hand the gate the FakeRedis client ──
     async def _get_fake_cache():
         return fake_cache
 
     monkeypatch.setattr(shared_valkey, "get_valkey_otp", _get_fake_cache)
+
+    # ── Valkey DB-3 (serve read-through cache): the gate's evict-on-update
+    #    (W3) calls core.cache.evict in the scraped branch, which reaches the
+    #    DB-3 cache. Fake it so the gate stays NON-LIVE (distinct keyspace
+    #    from the DB-0 lock above). Patch the name bound INTO core.cache.
+    import app.core.cache as core_cache
+
+    serve_fake = fake_aioredis.FakeRedis(decode_responses=True)
+
+    async def _get_fake_serve_cache():
+        return serve_fake
+
+    monkeypatch.setattr(core_cache, "get_valkey_cache", _get_fake_serve_cache)
 
     # ── make_worker_session: no-DB async context manager ──
     @asynccontextmanager
