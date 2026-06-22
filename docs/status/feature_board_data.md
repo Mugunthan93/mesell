@@ -2,7 +2,7 @@
 
 **Lead agent:** `meesell-data-engineer`
 **Domain:** data
-**Last updated:** 2026-06-21 (retention-monitor design spec authored; PR #370 open for founder review)
+**Last updated:** 2026-06-22 (session-start sweep: PR #370 reconciled to MERGED; #370 amended → monthly cadence + scraper-cadence design folded in, on `feature/scraper-cadence-reconcile/data` awaiting founder merge)
 **This file is the single domain-level status surface for the lead.**
 
 ---
@@ -12,14 +12,14 @@
 | Feature | Group branch | Status | Current session | Last touched | Blocking | Notes |
 |---|---|---|---|---|---|---|
 | category-seeding | feature/category-seeding | RESOLVED (local) — PR #245 open for founder merge | mesell-category-seeding-session-1 | 2026-06-16 | founder — merge PR #245 | Architecture APPROVED (rev 1.0). D1=local-only, D2=real-commission-two-phase, D3=pure-upsert. Wave 1 DONE: `make seed` wired, ran 2× idempotent (categories 3772 / aliases 67 / templates 3566 / enum 49259), seed-script stale-import defect fixed (`app.shared.*`). Wave 3 verified: catalog→wizard chain proven end-to-end on localhost (0 FK orphans, 71-field /schema, seeded enums). Visual-gate blocker RESOLVED. Durable landing on PR #245 merge. |
-| retention-monitor-spec | feature/retention-monitor-spec/data | IN REVIEW — PR #370 (design spec, → develop, founder gate) | mesell-retention-monitor-spec-data-session-1 | 2026-06-21 | founder — review/merge PR #370 | DESIGN SPEC ONLY (V1.x/post-V1, no code). `docs/specs/RETENTION_CATEGORY_MONITOR.md`. Category-keyed change monitor: scrape unit = CATEGORY not customer; TTL/dedupe gate; diff via existing `diff_pricing_lookup.py`/`meesho_monthly_refresh.py`; fan-out "your category changed" to all sellers in category. Reuses scraper-maintainer + Celery + Valkey. BACKEND handoff: `category_subscription`+`category_snapshot` tables, `scrape_category`/`fanout` tasks, `notification` model/endpoint. INFRA handoff: CronJob + GCS lifecycle + egress. NO historical snapshots exist → measurement metric+plan defined, not quantified. FLAGS PRICING_LOCKED billing cadence + scraper ToS posture for founder ratification (NOT amended). This is a `feature/{name}`→`develop` PR — founder is sole reviewer per MASTER_PLAN §2.2. |
+| scraper-cadence-reconcile (#370 amendment) | feature/scraper-cadence-reconcile/data | IN PROGRESS — committed @ `f518550`, awaiting founder merge to develop | mesell-scraper-cadence-reconcile-data-session-2 | 2026-06-22 | founder — merge branch to develop | DOCS-ONLY amendment of the now-CANONICAL `docs/specs/RETENTION_CATEGORY_MONITOR.md` per founder ruling 2026-06-22: it absorbs today's locked scraper-cadence-and-caching design (same pipeline). Cadence quarterly/90-day → MONTHLY default (TTL=1 month, monthly sweep); measurement plan preserved (tunes cadence; per-super tighter still allowed). Folded in §2.4 demand-count priority (derived over `category_subscription`, no new table) + 1-month unused-category eviction; §2.5 cache(Valkey ~1d)→DB→background-scrape serving + evict-on-update; §3.2 equivalence map (on-choose=catalog-add trigger, "update your catalog entry"=§4 fan-out, diff-gated). §9.2 ToS posture RATIFIED 2026-06-22 (PLAYWRIGHT §6 unchanged). §9.1 billing cadence LEFT OPEN (measurement-gated; PRICING_LOCKED NOT edited). NO LOCKED doc edited. Branch off prior `7d77adc` (agent-spec cadence reconcile, also unmerged). Founder merge lands BOTH commits. Phase-2 LOCKED-doc quarterly sweep (~34 sites) still pending separate LOCKED escalation. |
 | category-seeding (commission backfill, Wave 1.5) | feature/category-seeding | CLOSED — won't-fix | mesell-category-seeding-session-1 | 2026-06-16 | — | D2 Phase 2 ABANDONED ON EVIDENCE. Scrape method proven (auth WebKit + Akamai bypass) but NO category rate-card exists — only account-level flat `default_monetization_percent=4.0`. Founder observed commission differs per-product/per-date at upload; internet cross-verification CONFIRMED Meesho commission is DYNAMIC (category × price-slab × time-bound promotions; no stable published rate-card). A static `commission_pct` is wrong by construction. DECISION (founder 2026-06-16): keep `commission_pct=NULL` (Wave-1 shipped state); pricing engine's NULL-tolerant 422 stands. Real commission, if needed, = per-product capture at upload time (pricing-feature item, NOT seeded reference data). Scrape scripts + `category_commissions.json` retained as record only, NOT a seed input. |
 
 ## Recently merged (last 14 days)
 
 | Feature | Merged to | Date | PR | Notes |
 |---|---|---|---|---|
-| — | — | — | — | No recent merges. |
+| retention-monitor-spec | develop @ `bbeb1ec` | 2026-06-22 | #370 | DESIGN SPEC `docs/specs/RETENTION_CATEGORY_MONITOR.md` (V1.x/post-V1, no code). Founder-merged to develop (was stale-marked IN REVIEW on the board; reconciled at this session's start sweep). **Subsequently AMENDED 2026-06-22** → now the SINGLE CANONICAL category-scrape/refresh/monitor pipeline spec, cadence monthly, today's scraper-cadence design folded in — see the active `scraper-cadence-reconcile (#370 amendment)` row (`f518550`, awaiting founder merge). |
 
 ## Inter-lead requests open
 

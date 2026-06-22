@@ -1,7 +1,7 @@
 # STATUS — DATA / SCRAPER
 
 **Owner:** DATA sub-session
-**Last update:** 2026-06-04 (track closed for V1 foundation work)
+**Last update:** 2026-06-22 (RETENTION_CATEGORY_MONITOR amended → monthly cadence + scraper-cadence design folded in; see UPDATE block at file end)
 
 **Status:** ✅ FOUNDATION COMPLETE. All deliverables locked — `docs/CORE_PHILOSOPHY.md`, `docs/MVP_ARCHITECTURE.md` (135 KB, 15 sections), `docs/MEESHO_CATEGORY_INTELLIGENCE.md` (SSoT, 424 lines), `data/parsed/canonical_field_aliases.json`, `data/parsed/field_display_overrides.json`, full 12-batch corpus parse (3,772 leaves). Downstream tracks (BACKEND/FRONTEND/AI/DATABASE) fully unblocked. Phase 4-5 deferred per session brief. Quarterly refresh is `meesell-xlsx-parser` + `meesell-scraper-maintainer` work when Meesho schema next changes.
 
@@ -814,4 +814,25 @@ Next:
   - Coordinator + founder write `docs/MEESHO_CATEGORY_INTELLIGENCE.md` (Batch 1 section integrated manually)
   - After hook fix: dispatch real `meesell-xlsx-parser` for Batch 2 (super_id=10 Men Fashion, 106 leaves)
 Hand-offs: none yet — all 12 batches + SSoT must complete before BACKEND/FRONTEND/AI sessions unblock
+=========
+
+=== UPDATE: 2026-06-22 retention-monitor-amend ===
+Session: mesell-scraper-cadence-reconcile-data-session-2
+Phase: docs amendment (single-agent fast mode)
+Done:
+  - Amended `docs/specs/RETENTION_CATEGORY_MONITOR.md` (PR #370, already MERGED to develop @ `bbeb1ec`) per founder ruling 2026-06-22 making it the SINGLE CANONICAL spec for the whole category-scrape/refresh/monitor pipeline. Today's locked scraper-cadence-and-caching design is the SAME pipeline, folded in (not a separate system).
+  - Cadence quarterly/90-day → MONTHLY default everywhere our cadence is named (§1.2 trigger, §2.3 TTL=1 month, §3 CronJob row, §5.1/§5.3 INFRA, §6.2/§6.3 budget per-month, §7.2/§7.3/§7.4 measurement defaults). Measurement plan PRESERVED — still runs to TUNE cadence; per-super tighter (now weekly vs the monthly default) still allowed; TTL still a tunable. Only the lone historical "old quarterly placeholder" mention of "quarter" remains (intentional context).
+  - Folded in 2 refinements: §2.4 demand-count priority (derived over `category_subscription` row-count per category, NOT a new table) + unused-category eviction (1-month watching period, touch resets, re-enters on next use); §2.5 serving layer cache(Valkey ~1d)→DB→background scrape with cache-evict-on-DB-update.
+  - Equivalence note §3.2: on-choose lazy refresh = catalog-add trigger (serve DB/cache instantly, scrape background, never block); "please update your catalog entry" notify = §4 fan-out (diff-gated, non-empty only).
+  - §9.2 scraper ToS posture: flagged → RATIFIED 2026-06-22 (founder); PLAYWRIGHT §6 unchanged, not edited. §10.4 open question marked RESOLVED.
+  - §9.1 billing cadence: LEFT OPEN (measurement-gated, founder-reserved); noted monthly default strengthens option (a). PRICING_LOCKED.md NOT edited.
+  - Status line → "AMENDED 2026-06-22 — canonical pipeline spec; cadence monthly; today's scraper-cadence decisions folded in"; still DRAFT/V1.x.
+Schema version: no derived-JSON change (docs-only). category_attributes.json / meesho_category_tree.json UNCHANGED.
+Board sweep (start): reconciled retention-monitor-spec row — PR #370 is MERGED to develop @ `bbeb1ec` (not IN REVIEW as the board claimed); flipped to MERGED + moved to Recently merged. No 7+ day stale flags actioned beyond this reconcile (category-seeding PR #245 still founder-pending, expected). Board sweep (end): retention-monitor amendment row added under Recently merged note.
+LOCKED docs touched: NONE edited. §9.1 PRICING_LOCKED stays flagged-open; §9.2 ToS posture ratified (posture confirmation recorded in-spec, no PLAYWRIGHT/MEESHO_CATEGORY_INTELLIGENCE edit).
+Residual mismatch vs today's design (beyond cadence): NONE material. The locked design's "demand-count TABLE (NEW)" became a DERIVED count over `category_subscription` in the spec (founder ruling explicitly allowed "not necessarily a separate table") — a deliberate simplification, not a contradiction. Everything else (cache→DB serving, evict-on-update, on-choose=catalog-add, notify=fan-out, 1-month watching, ~1req/2s, OUR creds only, no blocking Meesho call) aligns 1:1.
+Blockers: none.
+Branch: feature/scraper-cadence-reconcile/data @ `f518550` (off prior `7d77adc`). COMMITTED NOT MERGED — founder merges to develop. Do NOT open the integration step.
+Next: founder reviews + merges the branch to develop (this carries both the agent-spec cadence reconcile `7d77adc` and this #370 amendment `f518550`). Phase-2 LOCKED-doc "quarterly" sweep (~34 sites in MVP_ARCHITECTURE/BACKEND/DATABASE/BUSINESS_STRATEGY/AGENT_REGISTRY) still pending founder LOCKED-change escalation — tracked in director memory `project_scraper_cadence_caching.md`.
+Hand-offs: none new. Future build of this pipeline hands off `category_subscription`/`category_snapshot` + `scrape_category`/`fanout` tasks + `notification` to BACKEND; monthly CronJob + GCS lifecycle + egress to INFRA (per §5.2/§5.3) — only after founder authorizes the build.
 =========
