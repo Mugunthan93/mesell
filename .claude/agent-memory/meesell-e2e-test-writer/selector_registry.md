@@ -199,3 +199,32 @@ wrong and `getByTestId(x)` resolves to a non-interactable host:
 - Upgrade CTA (literal `<button>`, on /billing/plans, one per upgradeable paid tier):
   `[data-testid="upgrade-prompt"]`. For a free user, count ≈ 6 (3 tiers × monthly/
   annual), all visible. This is the plan-guard surface.
+
+## qa-catalog Wave C (e2e) — catalog selectors (2026-06-22) [SCRIBED BY QA-COORD, write-protection workaround per #387]
+> The e2e-test-writer's slot-2 stack was torn down by an external event; the Wave-C
+> live exploration was ENVIRONMENT-BLOCKED (8GB-box swap ceiling refused `meesell_env up`).
+> The picker/edit selectors below were RE-CONFIRMED from SOURCE on
+> `feature/qa-catalog/integration` @ `3476b0e`; the gate independently re-ran
+> `playwright test --list` (CLEAN, 19/9). The two browse-fallback/empty-state selectors
+> are SOURCE-DERIVED, NOT yet agent-browser live-verified → their flows are `test.fixme`.
+
+### LIVE-VERIFIED (registry, source-confirmed @ 3476b0e) — used by CAT-E2E-04 GREEN guard
+- Smart-picker description (mee-textarea): `[data-testid="smart-picker-description"]`
+  (smart-picker.component.ts L145) → fill directly.
+- Category suggestion card (literal): `[data-testid="category-suggestion"]`
+  (category-card.component.ts L43). `category-suggestion-select` CTA = L76 `[testId]`.
+- AI-fill button: `[data-testid="catalog-ai-fill"]` → `.locator('button')` (CAT-E2E-06).
+- Save status: `[data-testid="catalog-save-status"]` → `toHaveText(/saved/i)` (CAT-E2E-05).
+- Schema-driven edit fields ship NO testid → structural fallback
+  `mee-input input[type="text"]` (first fillable) / `mee-input input, mee-textarea textarea`
+  (filled-count). Same structural pattern as Wave-3.
+
+### SOURCE-DERIVED, NOT yet live-verified (CAT-E2E-03/07 are test.fixme until verified)
+- Browse-fallback link (under cards when `fallback_offered=true` AND results):
+  `getByRole('button', { name: /browse all categories if none of the suggestions match/i })`
+  — source: `<button class="mee-browse-link">` with that aria-label. NO data-testid.
+- Picker empty-state (when `fallback_offered=true` AND zero suggestions):
+  `getByRole('status', { name: /no automatic suggestions found/i })`
+  — source: `<mee-empty-state role="status">`. NO data-testid.
+- Empty-state CTA: `getByRole('button', { name: /^browse all categories$/i })`. NO data-testid.
+- → HAND-OFF filed → frontend-coordinator: add `data-testid` so CAT-E2E-03/07 can be un-fixme'd.
