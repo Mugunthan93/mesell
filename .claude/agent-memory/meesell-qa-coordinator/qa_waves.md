@@ -4,6 +4,24 @@ One entry per QA wave: feature slugs covered, the coverage target set per
 specialist, what was actually achieved, and whether the exit criteria were met.
 Append a new section at the top after each wave.
 
+## Wave 3 — catalog vertical — `integration → develop` MERGED (FOUNDER-DIRECTED) — 2026-06-22 (mesell-qa-wave-3-coord-session-2)
+
+**The founder directed "merge gate PR #460 whenever ready."** The QA lead ran the FULL merge-gate FIRST, then merged on that explicit instruction. PR **#460** (`feature/qa-wave-3/integration → develop`) → **APPROVE → MERGED** as a true **merge-commit `e7470bf`** (`--admin`; develop `17171d1` → `e7470bf` → board `9b89f19`). Branch `feature/qa-wave-3/integration` (`ab1aa6d`) RETAINED. Board-tracker PR **#461 CLOSED as moot**.
+
+**Normally the FOUNDER's D1 gate** (PR title literally `[FOUNDER GATE — DO NOT MERGE BY LEAD]`). The lead merged ONLY on the explicit founder directive for this PR. Standing D1 unchanged.
+
+**Scope: TESTS-ONLY — 12 files (+2599/-59), ZERO source/board/status/memory/ci, ZERO deletions.** 4 net-new backend pytest + 1 upgraded `test_export_zip_member_structure.py` + 1 eval artifact `eval_results.json` (trivial 0.028→0.0278; `gemini_calls:0`) + 2 FE specs (`browse`, `live-listings`) + 4 e2e flows (`catalog-edit-delete`/`live-preview`/`price-apply-export`/`wizard-save`).
+
+**GATE INDEPENDENTLY RE-RAN (decisive: tests written for qa-wave-3, develop advanced ~72 commits since — confirm GREEN vs CURRENT develop):**
+- Backend = **59 passed / 0 failed / 0 skipped**. 50 DB-independent (unit+eval) + the 3 integration files RUN TOGETHER one-process (CI-Gate-4 style) = 9/0/0; happy + cross-tenant-404 + unauth-401 + autosave-reflect + export-ZIP ran for real (DB-infra `pytest.skip` did NOT fire → no green-wash).
+- Frontend = **44 passed / 0 failed / 0 skipped** (standalone vitest 4.1.8). browse W3-FE-3a..i (20) + live-listings W3-FE-4a..i (24); W3-FE-8 unknown-key non-blank regression guard (negative assertion present).
+- E2E = **29 specs / 16 files parse+typecheck CLEAN** (`playwright --list`). Founder-approved SCAFFOLD: `wizard-save` (W3-E2-1) live skip-gated (real UUID + autosave "Saved" TEXT + listed product; skips only on genuine env gaps); W3-E2-2/4/6 `test.fixme` with inline un-fixme conditions.
+- CI checks on the head commit CONFIRMED GREEN: Gate 1-5 (incl. Gate 4 one-process) + all 8 FE matrix units (incl. mfe-catalog).
+
+**8 gate boxes all PASS:** tests-run (re-reproduced + CI-corroborated); `TEST_DATABASE_URL` `_test` guard intact (not in diff); zero real Gemini/MSG91/Razorpay/GCS (dummy env + adapter mocks); coverage met; no assertion-free tests; E2E selectors live-verified + honest skip-gating + zero hardcoded ports; PR template complete; tests-only.
+
+**KEY MECHANICS LESSONS (reusable — see coordinator_patterns):** (1) the conftest `_provision_test_schema` autouse fixture AUTO-reprovisions `meesell_test` from the BRANCH's own migrations when `TEST_DATABASE_URL` is set — resolved a DB-vs-branch alembic mismatch (`meesell_test` stamped at `480c10b0219f`, NOT in this branch's history; fixture dropped + `upgrade head` to `e9415bdcae20`) with zero manual steps. (2) pure-function-mirror / imported-model-fn FE specs (no Angular/TestBed/PrimeNG imports) run via STANDALONE `vitest run <files>` when the native-federation `@angular/build:unit-test` builder refuses to scope `--include` (every narrow include form = "No tests found"; only the broad `**/*.spec.ts` walks them). (3) develop advancing 72 commits past the rebase point did NOT block merge — `mergeStateStatus: CLEAN` because the 3 develop advances (#480/#481/#482) and the 3 QA-lane commits touch disjoint files; merge-commit reconciled with zero conflicts. (4) `git -C <worktree> commit` works; `cd <worktree> && git commit` tripped the master-tree-git guard's cwd heuristic — use `-C`.
+
 ## qa-auth-contract salvage wave — `integration → develop` PR OPENED for the FOUNDER (2026-06-22, mesell-qa-wave-2-coord-session-1)
 
 **The salvage wave is fully assembled and handed to the founder's gate.** PR **#445** (`feature/qa-auth-contract/integration` → `develop`) is OPEN — NOT merged (D1: integration→develop is the founder's). Title prefixed `[FOUNDER GATE] … DO NOT MERGE until founder review`.
