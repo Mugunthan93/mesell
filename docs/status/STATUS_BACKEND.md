@@ -1,6 +1,50 @@
 # STATUS — BACKEND
 
 
+=== UPDATE: 2026-06-22 (meesell-services-builder) — category-monitor Wave-2 Unit C DEDUPE GATE BUILD COMPLETE ===
+Phase: category-monitor (RETENTION_CATEGORY_MONITOR #370) — Wave 2 Unit C (the dedupe-gate Celery task)
+Session: mesell-category-monitor-backend-session-3
+Branch: feature/category-monitor/backend-unitc (off integration 82c83ea = W1 schema + W2 A scrape + W2 B diff)
+PR: (open against feature/category-monitor/integration — awaiting meesell-backend-coordinator merge-gate)
+
+Done:
+  - NEW module `app/modules/monitor/`:
+    * `tasks.py` — `@shared_task(bind=True, name="monitor.scrape_category")` SYNC wrapper; async gate via
+      `asyncio.run` (mirrors image/tasks.py). Takes NO per-user arg → NOT in `_TASKS_REQUIRING_USER_REVALIDATION`.
+    * `service.py` — `run_dedupe_gate(category_id, *, db_url)` 3-guard gate:
+        (a) TTL freshness: latest `category_snapshots.captured_at`; age < CATEGORY_SNAPSHOT_TTL_SECONDS → reuse,
+            scrape NOTHING, `action=ttl_reuse`, no key touch.
+        (b/c) atomic claim `SET catmonitor:snapshot:<id> <ts> NX EX CATEGORY_INFLIGHT_TTL_SECONDS` (DB-0 OTP client):
+            NX fail → `action=coalesced` (existing key LEFT INTACT, scrape NOTHING);
+            NX win → try/finally: resolve sscat_id=meesho_leaf_id / category_name=leaf_name (no row →
+            CategoryNotFoundError) → `scrape_category(category_id, sscat_id, category_name, db_url=…)` (writes new
+            snapshot row) → load prior (second-latest) snapshot → `diff_category_snapshot(new_dims, prev_dims,
+            prev_hash=, new_hash=)` → return {action: "scraped", content_hash, verdict, block_reasons};
+            `finally` clears key on success AND on any raised exception (never swallowed). INFO on PASS/REVIEW,
+            WARNING on BLOCK. STOPS at store-verdict — NO fan-out / notification / subscription / catalog flags (Wave 4).
+    * `repository.py` — PRIVATE global-table reads (get_latest_snapshot, get_prior_snapshot,
+      get_category_scrape_inputs) via make_worker_session (NullPool). No user_id (global tables; Contract-8 excluded).
+    * `exceptions.py` — `CategoryNotFoundError`.
+  - `app/shared/config.py`: + CATEGORY_SNAPSHOT_TTL_SECONDS=2592000 (30d freshness) + CATEGORY_INFLIGHT_TTL_SECONDS=900
+    (15-min in-flight lock backstop — SEPARATE from freshness). Neither in REQUIRED_FIELDS.
+  - `app/workers/celery_app.py`: include 3→4 (+ app.modules.monitor.tasks).
+  - `tests/test_celery_app_include_list.py`: bumped 3→4 + 5th user-task name; exact-count/named-allowlist style preserved.
+
+Tests: 9 passed (tests/test_monitor_gate.py — pytest.mark.unit; scrape_category MOCKED everywhere, ZERO live-Meesho,
+  fakeredis Valkey, no DB connection) + 4 passed (include-list smoke). ruff clean; import-linter 27 kept/0 broken;
+  Contract-8 scope_to_user PASS. Revert-check structure: strip finally-clear → cases 3/4 red; strip TTL guard → case 1 red.
+
+FOUNDER-GATE FLAG (in PR body, NOT self-applied): BACKEND_ARCHITECTURE.md §3.I/§18.B canonical Celery task inventory
+  3→4 — LOCKED-section amendment, founder ratifies at integration→develop (same as Razorpay W4). Code lands; arch-doc
+  count bump NOT applied here.
+
+Blockers: none.
+Hand-offs: Wave-4 owner — `monitor.scrape_category_task(category_id)` ready; on `action="scraped"` the verdict dict
+  (verdict + block_reasons) is in the Celery result; W4 reads it and owns fan-out/notification/subscription/catalog
+  flags. W4 MUST NOT fan out on verdict=="BLOCK".
+=========
+
+
 === UPDATE: 2026-06-22 15:15 (meesell-database-builder) — category-monitor Wave-1 SCHEMA BUILD COMPLETE ===
 Phase: category-monitor (RETENTION_CATEGORY_MONITOR #370) — Wave 1 (Schema)
 Session: mesell-category-monitor-backend-session-1

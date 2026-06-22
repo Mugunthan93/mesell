@@ -1,19 +1,23 @@
-"""§18.B — Celery ``include=[...]`` MUST list exactly the 3 V1 task modules.
+"""§18.B — Celery ``include=[...]`` MUST list exactly the 4 V1 task modules.
 
 Per BACKEND_ARCHITECTURE.md §3.I canonical workers/ subtree and §18.B
-V1 inventory (founder-ratified §3.I/§18.B canonical-inventory amendment
-2026-06-19 for the Razorpay Wave 4 billing sweeps),
-``celery_app.conf.include`` is locked to exactly three entries:
+V1 inventory (founder-ratified §3.I/§18.B canonical-inventory amendments —
+2026-06-19 for the Razorpay Wave 4 billing sweeps, and the category change
+monitor Wave 2 Unit C bump), ``celery_app.conf.include`` is locked to exactly
+four entries:
 
-* ``app.modules.image.tasks``  — registers ``image.precheck`` (§11.E)
-* ``app.modules.export.tasks`` — registers ``export.xlsx``  (§14.E)
-* ``app.modules.iam.tasks``    — registers ``billing.reconcile`` +
-                                 ``billing.trial_expiry_sweep`` (Razorpay
-                                 Wave 4 beat tasks; FIRST beat_schedule
-                                 in the repo)
+* ``app.modules.image.tasks``   — registers ``image.precheck`` (§11.E)
+* ``app.modules.export.tasks``  — registers ``export.xlsx``  (§14.E)
+* ``app.modules.iam.tasks``     — registers ``billing.reconcile`` +
+                                  ``billing.trial_expiry_sweep`` (Razorpay
+                                  Wave 4 beat tasks; FIRST beat_schedule
+                                  in the repo)
+* ``app.modules.monitor.tasks`` — registers ``monitor.scrape_category``
+                                  (category change monitor Wave 2 Unit C
+                                  dedupe gate)
 
-The cardinality is a hard ceiling — adding a 4th task module beyond these
-three is out-of-scope until a future founder-ratified inventory bump
+The cardinality is a hard ceiling — adding a 5th task module beyond these
+four is out-of-scope until a future founder-ratified inventory bump
 (e.g. audit-events Celery sink per MVP_ARCH §14, or a quarterly
 category-tree refresh task).
 
@@ -31,12 +35,16 @@ import pytest
 pytestmark = pytest.mark.smoke
 
 
-def test_include_list_is_exactly_3_v1_modules():
-    """``celery_app.conf.include`` MUST equal the 3 V1 entries verbatim.
+def test_include_list_is_exactly_4_v1_modules():
+    """``celery_app.conf.include`` MUST equal the 4 V1 entries verbatim.
 
     Razorpay Wave 4 (2026-06-19) added ``app.modules.iam.tasks`` for the two
     periodic billing sweeps (``billing.reconcile`` + ``billing.trial_expiry_sweep``)
     per the founder-ratified §3.I/§18.B canonical-inventory amendment.
+
+    The category change monitor Wave 2 Unit C added ``app.modules.monitor.tasks``
+    for the ``monitor.scrape_category`` dedupe gate (founder ratifies the
+    3→4 inventory bump at the integration→develop merge).
     """
     from app.workers.celery_app import celery_app
 
@@ -44,8 +52,9 @@ def test_include_list_is_exactly_3_v1_modules():
         "app.modules.image.tasks",
         "app.modules.export.tasks",
         "app.modules.iam.tasks",
+        "app.modules.monitor.tasks",
     ], (
-        f"Expected exactly 3 V1 task modules in include list, "
+        f"Expected exactly 4 V1 task modules in include list, "
         f"got: {celery_app.conf.include}"
     )
 
@@ -97,9 +106,11 @@ def test_only_v1_tasks_registered_at_module_level():
 
     Razorpay Wave 4 (2026-06-19) added ``app.modules.iam.tasks`` which
     registers two billing beat tasks (``billing.reconcile`` +
-    ``billing.trial_expiry_sweep``), so the expected user-task set is now
-    four entries.  The set is still pinned exactly so an UNexpected task
-    module is still caught.
+    ``billing.trial_expiry_sweep``).  The category change monitor Wave 2
+    Unit C added ``app.modules.monitor.tasks`` which registers
+    ``monitor.scrape_category``, so the expected user-task set is now five
+    entries.  The set is still pinned exactly so an UNexpected task module
+    is still caught.
     """
     from app.workers.celery_app import celery_app
 
@@ -115,6 +126,7 @@ def test_only_v1_tasks_registered_at_module_level():
         "export.xlsx",
         "billing.reconcile",
         "billing.trial_expiry_sweep",
+        "monitor.scrape_category",
     }, (
-        f"Expected exactly the 4 V1 user tasks, got: {sorted(user_tasks)}"
+        f"Expected exactly the 5 V1 user tasks, got: {sorted(user_tasks)}"
     )
