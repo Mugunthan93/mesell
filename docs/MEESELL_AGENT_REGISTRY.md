@@ -87,7 +87,7 @@ Master Orchestration (founder + master Claude session)
 ├── meesell-data-engineer — XLSX parsing + master tables coordinator
 │   ├── meesell-xlsx-parser — 3,772 templates → category_attributes.json
 │   ├── meesell-brand-master-builder — 3,730 approved brand whitelist
-│   └── meesell-scraper-maintainer — Playwright scraper + quarterly refresh
+│   └── meesell-scraper-maintainer — Playwright scraper + monthly, usage-driven refresh
 │
 └── Cross-cutting (optional, Phase 2)
     ├── meesell-test-writer — pytest + Karma + Playwright E2E suites
@@ -861,7 +861,7 @@ diff vs previous version not reviewed by data-engineer.
 
 | Field | Value |
 |---|---|
-| Purpose | Maintain the Playwright-based Meesho catalogue scraper for quarterly category-tree and brand-whitelist refresh. |
+| Purpose | Maintain the Playwright-based Meesho catalogue scraper for monthly, usage-driven category-tree and brand-whitelist refresh (per the locked scraper-cadence design / #370). |
 | Session | DATA |
 | Reports to | meesell-data-engineer |
 | Model | sonnet |
@@ -1240,7 +1240,7 @@ shipped.**
 > Note vs founder ceiling: the request stated 8–18 agents. The recommended
 > scope of 19 sits one above the ceiling; if 18 is a hard ceiling, the two
 > lowest-priority specialists to defer are **meesell-brand-master-builder**
-> (V1.5 seed only) and **meesell-scraper-maintainer** (quarterly only,
+> (V1.5 seed only) and **meesell-scraper-maintainer** (monthly, usage-driven only,
 > manual run acceptable in V1). Removing either brings the count to 18.
 > Removing both brings it to 17 and is the recommended cut if the founder
 > wants headroom; the V1 picker + form work depends only on the
