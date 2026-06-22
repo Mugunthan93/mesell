@@ -1,6 +1,35 @@
 # STATUS — BACKEND
 
 
+=== UPDATE: 2026-06-22 15:15 (meesell-database-builder) — category-monitor Wave-1 SCHEMA BUILD COMPLETE ===
+Phase: category-monitor (RETENTION_CATEGORY_MONITOR #370) — Wave 1 (Schema)
+Session: mesell-category-monitor-backend-session-1
+Branch: feature/category-monitor/backend
+PR: #450 (OPEN — awaiting meesell-backend-coordinator merge-gate review, target: feature/category-monitor/integration)
+
+Done:
+  - category_snapshots: UUID PK gen_random_uuid(), FK→categories CASCADE, captured_at TIMESTAMPTZ,
+    content_hash String(64), dimensions_jsonb JSONB, blob_uri Text NULLABLE.
+    idx_category_snapshot_latest (category_id, captured_at) composite btree.
+  - notifications: UUID PK, FK→users+categories CASCADE, NO channel column (channel-agnostic).
+    UNIQUE uq_notification_user_cat_hash(user_id, category_id, content_hash) for ON CONFLICT DO NOTHING.
+    idx_notification_user_unread(user_id, is_read).
+  - products: +needs_recheck +needs_reprice +needs_export Boolean NOT NULL server_default false (self-backfills).
+  - category_subscription VIEW (UNION catalogs+products, Director-resolved flag 1). NOT modelled as ORM table.
+  - Alembic migration 480c10b0219f, down_revision=e9415bdcae20. Single head confirmed.
+  - ORM: CategorySnapshot + Notification in flat app/shared/models/ (§5.E). Registered after WebhookEvent.
+  - upgrade+downgrade round-trip on disposable meesell_cat_monitor_test. Dev DB untouched (3772 cats safe).
+  - category_subscription LIMIT 5 returns 1 row with seeded catalog+product pair.
+  - ruff check clean (line-length=100). Drift check: zero table/column/index/constraint drift on Wave 1 objects.
+
+Blockers: none.
+Next: meesell-backend-coordinator runs merge-gate review (HYBRID step 3).
+Hand-offs:
+  - PR #450 open for coordinator gate review.
+  - After merge to integration: Wave 2 (services/tasks) can import CategorySnapshot + Notification.
+  - category_subscription VIEW is raw SQL only — service layer queries via text() or ORM select.
+=========
+
 === UPDATE: 2026-06-22 (meesell-backend-test-writer) — QA Wave 1 gap-fill ===
 Phase: QA Wave 1 -- backend gap-fill + verify-green
 Session: mesell-qa-wave-1-backend-session-1
