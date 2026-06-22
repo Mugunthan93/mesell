@@ -48,6 +48,7 @@ import {
   PageHeaderComponent,
   EmptyStateComponent,
 } from '@mesell/composites';
+import { MeePageComponent } from '@mesell/layout';
 
 import { CategoryService } from './services/category.service';
 import { CategoryCardComponent } from './category-card.component';
@@ -64,22 +65,11 @@ import type { CategorySuggestion, SuggestResponse } from './smart-picker.model';
     PageHeaderComponent,
     EmptyStateComponent,
     CategoryCardComponent,
+    MeePageComponent,
   ],
   providers: [CategoryService],
   styles: [`
     :host { display: block; }
-
-    .mee-picker-page {
-      display: flex;
-      flex-direction: column;
-      gap: var(--mee-space-6);
-      max-width: 64rem;
-      margin: 0 auto;
-      padding: var(--mee-space-6) var(--mee-space-4);
-    }
-    @media (min-width: 640px) {
-      .mee-picker-page { padding: var(--mee-space-8) var(--mee-space-6); }
-    }
 
     /* ── Search / description card ──────────────────────────────────── */
     .mee-search-card {
@@ -121,7 +111,7 @@ import type { CategorySuggestion, SuggestResponse } from './smart-picker.model';
     .mee-browse-link:hover { color: var(--mee-color-primary); }
   `],
   template: `
-    <div class="mee-picker-page">
+    <mee-page maxWidth="xl">
 
       <!-- Page title -->
       <mee-page-header
@@ -200,7 +190,7 @@ import type { CategorySuggestion, SuggestResponse } from './smart-picker.model';
         />
       }
 
-    </div>
+    </mee-page>
   `,
 })
 export class SmartPickerComponent implements OnInit {

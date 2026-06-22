@@ -26,6 +26,7 @@ import { Subscription } from 'rxjs';
 
 import { AuthService } from '@mesell/core';
 import { MeeToastService } from '@mesell/ui-kit';
+import { MeePageComponent } from '@mesell/layout';
 
 import { BillingApiService } from '../billing-api.service';
 import { RazorpayCheckoutService } from '../checkout/razorpay-checkout.service';
@@ -45,10 +46,10 @@ import type {
 @Component({
   selector: 'app-plans',
   standalone: true,
-  imports: [CommonModule, RouterLink, PlanCardComponent],
+  imports: [CommonModule, RouterLink, PlanCardComponent, MeePageComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styles: [`
-    :host { display: block; padding: var(--mee-space-4, 16px); }
+    :host { display: block; }
 
     .plans-header {
       text-align: center;
@@ -306,6 +307,8 @@ import type {
     }
   `],
   template: `
+    <mee-page maxWidth="xl">
+
     <!-- === BILLING UNAVAILABLE (FEATURE_BILLING_ENABLED=off) === -->
     @if (billingUnavailable()) {
       <div class="unavailable-notice" role="status">
@@ -442,6 +445,8 @@ import type {
       }
 
     }
+
+    </mee-page>
   `,
 })
 export class PlansComponent implements OnDestroy {

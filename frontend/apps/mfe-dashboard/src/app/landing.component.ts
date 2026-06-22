@@ -263,7 +263,9 @@ import { MeeButtonComponent } from '@mesell/ui-kit';
 
       .hero-section {
         padding: 96px 80px 72px;
-        max-width: 640px;
+        /* max-width removed: hero spans the marketing layout's full section width
+           (bounded by the 80px side padding above). The 640px cap was the
+           "narrow column floating on wide screen" symptom. See spec §4.1. */
       }
 
       .hero-headline {

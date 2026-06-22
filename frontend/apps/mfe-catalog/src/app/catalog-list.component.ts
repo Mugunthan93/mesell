@@ -20,6 +20,7 @@ import {
   EmptyStateComponent,
 } from '@mesell/composites';
 import type { ProductStatus } from '@mesell/composites';
+import { MeePageComponent } from '@mesell/layout';
 
 import { CatalogListApiService } from './catalog-list-api.service';
 import type { CatalogListItem } from './catalog-list.model';
@@ -62,18 +63,10 @@ function adaptToRow(item: CatalogListItem): CatalogRow {
     PageHeaderComponent,
     StatusBadgeComponent,
     EmptyStateComponent,
+    MeePageComponent,
   ],
   styles: [`
     :host { display: block; }
-
-    .mee-catalog-page {
-      display: flex;
-      flex-direction: column;
-      gap: var(--mee-space-6);
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: var(--mee-space-6) var(--mee-space-4);
-    }
 
     /* ── Search bar ─────────────────────────────────────────────────── */
     .mee-search {
@@ -270,8 +263,8 @@ function adaptToRow(item: CatalogListItem): CatalogRow {
     }
   `],
   template: `
-    <!-- Page wrapper: shell .page-content provides bottom-nav clearance at mobile -->
-    <div class="mee-catalog-page">
+    <!-- Page wrapper: mee-page provides max-width centering; shell .page-content provides bottom-nav clearance at mobile -->
+    <mee-page maxWidth="xl">
 
       <!-- Page header with "New Catalog" CTA -->
       <mee-page-header
@@ -422,7 +415,7 @@ function adaptToRow(item: CatalogListItem): CatalogRow {
         </div>
       }
 
-    </div>
+    </mee-page>
 
     <!-- FAB: new catalog (mobile primary CTA, above bottom nav) -->
     <button

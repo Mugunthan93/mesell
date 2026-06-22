@@ -32,6 +32,7 @@ import { RouterLink } from '@angular/router';
 
 import { AuthService } from '@mesell/core';
 import { MeeConfirmService, MeeToastService } from '@mesell/ui-kit';
+import { MeePageComponent } from '@mesell/layout';
 
 import { BillingApiService } from '../billing-api.service';
 import { BILLING_STRINGS } from '../billing.constants';
@@ -41,10 +42,10 @@ import type { BillingSubscriptionResponse, BillingErrorShape } from '../billing.
 @Component({
   selector: 'app-account-billing',
   standalone: true,
-  imports: [CommonModule, DatePipe, RouterLink],
+  imports: [CommonModule, DatePipe, RouterLink, MeePageComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styles: [`
-    :host { display: block; padding: var(--mee-space-4, 16px); }
+    :host { display: block; }
 
     .account-billing-header {
       margin-bottom: var(--mee-space-6, 24px);
@@ -265,6 +266,8 @@ import type { BillingSubscriptionResponse, BillingErrorShape } from '../billing.
     }
   `],
   template: `
+    <mee-page maxWidth="xl">
+
     <header class="account-billing-header">
       <h1 class="account-billing-title">Billing &amp; Subscription</h1>
       <p class="account-billing-subtitle">Manage your current plan and billing details.</p>
@@ -408,6 +411,8 @@ import type { BillingSubscriptionResponse, BillingErrorShape } from '../billing.
         </div>
       </div>
     }
+
+    </mee-page>
   `,
 })
 export class AccountBillingComponent implements OnInit {

@@ -22,6 +22,7 @@ import {
   MeeOfflineBannerComponent,
   EmptyStateComponent,
 } from '@mesell/composites';
+import { MeePageComponent } from '@mesell/layout';
 import {
   MeeButtonComponent,
   MeeInputComponent,
@@ -60,6 +61,7 @@ export function pincodeValidator(): ValidatorFn {
     MeeInputComponent,
     MeeButtonComponent,
     MeeSkeletonComponent,
+    MeePageComponent,
   ],
   styles: [`
     /* ── Steps wrap ─────────────────────────────────────────────────────────
@@ -147,6 +149,7 @@ export function pincodeValidator(): ValidatorFn {
     }
   `],
   template: `
+    <mee-page maxWidth="md">
     <mee-auth-layout>
       <!-- Progress indicator.
            Wrapped in .steps-wrap to constrain PrimeNG step label overflow at 360px. -->
@@ -243,6 +246,7 @@ export function pincodeValidator(): ValidatorFn {
         >I'll set this up later →</a>
       </p>
     </mee-auth-layout>
+    </mee-page>
   `,
 })
 export class OnboardingComponent implements OnInit {

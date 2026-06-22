@@ -20,6 +20,7 @@ import {
   EmptyStateComponent,
   LoadingSkeletonComponent,
 } from '@mesell/composites';
+import { MeePageComponent } from '@mesell/layout';
 
 import {
   DashboardApiService,
@@ -41,19 +42,11 @@ import { formatRelativeTime } from './dashboard.model';
     EmptyStateComponent,
     LoadingSkeletonComponent,
     MeeIconComponent,
+    MeePageComponent,
   ],
   styles: [`
     :host {
       display: block;
-    }
-
-    .dash-page {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: var(--mee-space-6);
-      display: flex;
-      flex-direction: column;
-      gap: var(--mee-space-6);
     }
 
     /* Loading skeleton wrapper */
@@ -260,9 +253,6 @@ import { formatRelativeTime } from './dashboard.model';
 
     /* ── Mobile-first responsive ──────────────────────────────────── */
     @media (max-width: 639px) {
-      .dash-page {
-        padding: var(--mee-space-4);
-      }
       .stat-grid {
         grid-template-columns: repeat(2, 1fr);
         gap: var(--mee-space-3);
@@ -278,7 +268,7 @@ import { formatRelativeTime } from './dashboard.model';
     }
   `],
   template: `
-    <div class="dash-page">
+    <mee-page maxWidth="xl">
 
       <!-- Page header — F-IA-1: renamed from "My Catalogs" to "Home" so /dashboard and
            /catalogs are no longer both titled "My Catalogs". The /catalogs grid keeps
@@ -417,7 +407,7 @@ import { formatRelativeTime } from './dashboard.model';
           </div>
         }
       }
-    </div>
+    </mee-page>
   `,
 })
 export class DashboardComponent implements OnInit {
