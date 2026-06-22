@@ -4,6 +4,7 @@
 Angular 18 component specialist for MeeSell. Owns 10 page components + shared UI components. Standalone, OnPush, Reactive Forms, Tailwind + Material. Decentralized memory ecosystem.
 
 ## MEMORY.md Index
+- [Session 2026-06-22 — mfe-export-productid — FE-6 / E2-3 ActivatedRoute wiring](#mfe-export-productid-2026-06-22)
 - [Session 2026-06-20 — razorpay-dev-mock — PlansComponent mock guard](#razorpay-dev-mock-2026-06-20)
 - [Session 2026-06-18 — PR #287 slice-2 — PricingComponent §12.M rework](#pricing-slice-2)
 - [Session 2026-06-18 — PR #278 merge-gate fixes — image-uploader nav + th scope](#mll-pr278-fixes)
@@ -26,6 +27,93 @@ Angular 18 component specialist for MeeSell. Owns 10 page components + shared UI
 - [Session 2026-06-06 — Smart Picker Dispatch 1](#smart-picker-dispatch-1)
 - [Session 2026-06-06 — Auth Dispatch 1 — LandingComponent](#landing-dispatch-1)
 - [Session 2026-06-06 — Catalog Wave 2a — catalog-form service layer](#catalog-wave-2a)
+
+---
+
+## Session 2026-06-22 — mfe-export-productid — FE-6 / E2-3 ActivatedRoute wiring {#mfe-export-productid-2026-06-22}
+
+### Task
+Surgical fix: replace placeholder `'current-product-id'` in ExportComponent with real ActivatedRoute read.
+Worktree: /Users/mugunthansrinivasan/Project/mesell/.claude/worktrees/agent-a010813ed25a6566a
+Branch: feature/mfe-export-productid/frontend (created off origin/develop)
+
+### Route touched
+`/catalogs/:id/export` — mfe-export app (ExportComponent)
+
+### Services consumed
+`ExportApiService.initiate(productId)` — already correct signature; just needed real productId.
+
+### Collision check pattern
+Before editing: grep `'current-product-id'` in the export component file + `git log --oneline origin/develop` + check `feature/qa-wave-2/frontend` branch status. Placeholder still present → no collision → proceed.
+
+### Pattern: ActivatedRoute wiring in mfe-* remotes (CANONICAL for all future remotes)
+Mirror `apps/mfe-pricing/src/app/pricing.component.ts` exactly:
+1. `import { ActivatedRoute, Router } from '@angular/router';` (add ActivatedRoute alongside Router)
+2. `private readonly route = inject(ActivatedRoute);` (before router inject)
+3. `private productId = '';` (plain class field, not a signal — not template-reactive)
+4. `ngOnInit(): void { this.productId = this.route.snapshot.paramMap.get('id') ?? ''; }`
+5. Use `this.productId` in the method that calls the API service
+6. Add missing-id guard at TOP of that method (after canGenerate guard, before state mutation):
+   ```typescript
+   if (!this.productId) {
+     this.exportStatus.set('idle');
+     this.notReadyMessage.set('Export could not be started. Please try again.');
+     return;
+   }
+   ```
+   Reuses EXISTING notReadyMessage signal + 'idle' state — do NOT invent new error UI.
+
+### Pattern: mfe-export/main.ts is dev-serve with provideRouter([]) — NO route params in dev mode
+- In federated (shell) mode: shell mounts the remote at `catalogs/:id/export` → ActivatedRoute resolves `:id` inside the remote
+- In standalone dev-serve mode (`ng serve mfe-export`): `provideRouter([])` → empty router → snapshot.paramMap.get('id') returns null → `productId = ''` → missing-id guard fires
+- This is correct behavior; the missing-id guard makes the standalone mode fail gracefully instead of sending a broken request
+
+### Pattern: ExportComponentProxy for spec regression guard (no TestBed)
+Since existing spec explicitly avoids TestBed (Angular 21 + Vitest JIT crash documented), add regression tests via a minimal proxy class:
+```typescript
+class ExportComponentProxy {
+  productId = '';
+  status: 'idle' | 'processing' = 'idle';
+  notReadyMsg: string | null = null;
+  readonly initiateCallArgs: string[] = [];
+  private readonly canGenerate: () => boolean;
+
+  constructor(productId: string, canGenerateFn: () => boolean = () => true) {
+    this.productId = productId;
+    this.canGenerate = canGenerateFn;
+  }
+
+  onGenerate(): void {
+    if (!this.canGenerate()) return;
+    if (!this.productId) {
+      this.status = 'idle';
+      this.notReadyMsg = 'Export could not be started. Please try again.';
+      return;
+    }
+    this.notReadyMsg = null;
+    this.status = 'processing';
+    this.initiateCallArgs.push(this.productId); // record arg passed to initiate()
+  }
+}
+```
+Three tests: (1) real UUID called / NOT placeholder, (2) empty id → no initiate() + idle + msg, (3) canGenerate=false guard fires first.
+
+### Build/test results
+- tsc --noEmit -p apps/mfe-export/tsconfig.app.json: CLEAN
+- vitest run export.component.spec.ts: 65/65 PASS (52 existing + 3 new)
+- ng build mfe-export --configuration=development: GREEN (3.372s, 0 errors, 0 new warnings)
+- Bundle delta: ~0 (ActivatedRoute is a shared Angular singleton already in the federation graph)
+- Pre-existing warnings NG8113/NG8102 on data-table.component.ts — not introduced by this PR
+
+### Commit + PR
+- Commit: 40af677 on feature/mfe-export-productid/frontend
+- PR #393: https://github.com/Mugunthan93/mesell/pull/393 (targeting develop)
+- Files: export.component.ts + export.component.spec.ts ONLY (pnpm-lock.yaml left unstaged)
+
+### Worktree context
+- This session ran in an infra worktree (agent-a010813ed25a6566a) on branch `worktree-agent-a010813ed25a6566a`
+- Created `feature/mfe-export-productid/frontend` tracking `origin/develop` within the same worktree
+- Confirmed: worktree has its own file copies — ALWAYS use absolute path with worktree root when editing
 
 ---
 
