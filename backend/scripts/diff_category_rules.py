@@ -463,7 +463,7 @@ def render_diff_report(result: dict[str, Any], run_date: str | None = None) -> s
             "## shipping_slab changes",
             "",
             (
-                f"| field | old | new | delta |"
+                "| field | old | new | delta |"
             ),
             "|-------|-----|-----|-------|",
         ]

@@ -17,19 +17,10 @@ Additional cases:
 from __future__ import annotations
 
 import json
-import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
-
-# ---------------------------------------------------------------------------
-# Add backend/ to sys.path so imports resolve correctly inside the worktree
-# ---------------------------------------------------------------------------
-
-_BACKEND_DIR = Path(__file__).resolve().parents[2]
-if str(_BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(_BACKEND_DIR))
 
 from scripts.diff_category_rules import (  # type: ignore[import]
     VERDICT_BLOCK,

@@ -217,7 +217,7 @@ async def perform_login(page: Any, username: str, password: str) -> None:  # typ
 
     from playwright.async_api import TimeoutError as PlaywrightTimeoutError  # type: ignore[import]
 
-    log = logging.getLogger(f"scrape-category")
+    log = logging.getLogger("scrape-category")
     log.info("Navigating to login URL")
     await page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=LOGIN_NAV_TIMEOUT_MS)
     await asyncio.sleep(random.uniform(1.5, 2.5))
@@ -721,7 +721,6 @@ async def _amain(category_id: str, sscat_id: str, category_name: str | None, db_
                         log.error("Login failed after 2 attempts — halting")
                         return 3
 
-            abort = AbortFlag()
             try:
                 result = await scrape_category(
                     category_id=category_id,
