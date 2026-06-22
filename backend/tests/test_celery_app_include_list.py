@@ -108,9 +108,12 @@ def test_only_v1_tasks_registered_at_module_level():
     registers two billing beat tasks (``billing.reconcile`` +
     ``billing.trial_expiry_sweep``).  The category change monitor Wave 2
     Unit C added ``app.modules.monitor.tasks`` which registers
-    ``monitor.scrape_category``, so the expected user-task set is now five
-    entries.  The set is still pinned exactly so an UNexpected task module
-    is still caught.
+    ``monitor.scrape_category``; Wave 4 Unit F appended a SECOND task to that
+    SAME module — ``monitor.fanout_category_change`` (the fan-out + notify
+    worker) — so the expected user-task set is now six entries (the module
+    count stays 4; the new task rides the existing ``monitor.tasks`` import).
+    The set is still pinned exactly so an UNexpected task module is still
+    caught.
     """
     from app.workers.celery_app import celery_app
 
@@ -127,6 +130,7 @@ def test_only_v1_tasks_registered_at_module_level():
         "billing.reconcile",
         "billing.trial_expiry_sweep",
         "monitor.scrape_category",
+        "monitor.fanout_category_change",
     }, (
-        f"Expected exactly the 5 V1 user tasks, got: {sorted(user_tasks)}"
+        f"Expected exactly the 6 V1 user tasks, got: {sorted(user_tasks)}"
     )
