@@ -122,12 +122,38 @@ Builds develop's shell **+ all MFEs** once (the shared fallback) and serves them
 on slot 0. Run this before bringing up any worktree that doesn't touch every MFE.
 
 ### `status`
-Table of running envs (worktree, slot, role, port, PID, alive) + live free RAM
-and swap%, plus all slot reservations.
+Reconciles the registries with reality, then prints the result. `status` is
+**self-healing**: before it prints, it runs the same prune `gc` does (drop dead
+pids / empty env entries from `env-state.json`; drop orphan slot reservations for
+removed worktrees) so the picture always matches the OS.
+
+What it shows:
+
+- A table of envs (worktree, slot, role, port, PID, alive, **health**, **note**).
+  **Liveness is derived from reality, not from the tracked PID** — each service's
+  `health` is a live HTTP probe, so a stale PID whose port is silent reads
+  `down`/`dead` (note `stale pid / silent port`), never a false `up`.
+- **DRIFT** — for every reserved slot, the slot's expected ports
+  (backend/shell/each MFE) are listen-probed. A port that is **LISTENING but has
+  no tracked process** is surfaced as a `DRIFT (outside manager)` row and the
+  slot reservation is annotated `DRIFT: ports listening outside manager`. This is
+  how a serve.js/uvicorn started outside the tool (or a `down` that crashed
+  mid-teardown) becomes visible instead of being silently omitted.
+- Live free RAM + swap%, plus all slot reservations (`exists` /
+  `MISSING (gc to prune)`).
+
+Both probes are sub-second and cached for 3 s, so `status` stays responsive and
+never blocks on a mid-build slot. `status` is read-only with respect to builds —
+it never acquires the build lock.
 
 ### `gc`
-Stops orphaned/dead tracked processes and prunes slot reservations for worktrees
-that no longer exist (`git worktree list`).
+Runs the shared reconcile (the same one `status` uses): drops dead/exited tracked
+processes and empty env entries from `env-state.json`, and prunes slot
+reservations for worktrees that no longer exist (`git worktree list`). It also
+**flags DRIFT** — slots with untracked listeners (running outside the manager) —
+but does **not** kill them, since it cannot know they belong to this manager; use
+`down`/`kill` deliberately for those. The baseline (slot 0) reservation is never
+pruned.
 
 ### `ports <worktree>`
 Prints the assigned port block.
@@ -173,6 +199,40 @@ Smoke-test the orchestration without spending RAM on real builds with `--stub`.
 
 All shared state lives under the **baseline (develop) tree's** `.nexus/`, so every
 worktree shares one registry and one build lock.
+
+---
+
+## State reconciliation (registries ↔ OS reality)
+
+`env-state.json` and `env-ports.json` are only mutated by `up` / `down` / `gc`,
+so they drift out of sync with the operating system three ways:
+
+1. **Stale PID** — a serve.js/uvicorn killed and relaunched **outside** the tool
+   (a common workflow here) leaves a recorded PID that no longer matches the
+   process actually serving the port. Trusting that PID would report a live
+   service as `dead`, or a dead one as `up`.
+2. **Orphan reservation** — a removed worktree leaves its slot reserved in
+   `env-ports.json` with no worktree behind it.
+3. **Drift (untracked-but-alive)** — something is serving on a reserved slot's
+   port that `env-state.json` has **no record of** (a manual `ng serve`, a
+   `down` that crashed mid-teardown). The old model silently omitted it.
+
+`status` and the dashboard now **derive liveness from reality** rather than
+trusting the tracked PID:
+
+- A tracked service is `up` only if its **port answers** (live HTTP probe);
+  a silent port reads `down`/`dead` regardless of the recorded PID.
+- Every reserved slot's expected ports are **listen-probed** (a cheap
+  `socket.connect_ex` check, sub-second + 3 s-cached). A listening port with no
+  tracked owner is surfaced as a **`drift`** service (`tracked: false`) and the
+  env carries a `drift: true` flag.
+- `status` (and `gc`) **auto-prune** dead PIDs / empty env entries and orphan
+  slot reservations via one shared reconcile (the baseline slot 0 is never
+  pruned). Registry writes use the atomic `tmp.replace(path)` helper.
+
+All of this is **read-only with respect to builds** — the reconcile and the
+probes never acquire the build lock, so they cannot stall a build, and the probe
+timeouts (≤1 s, cached) mean a mid-build slot never stalls `status` or the page.
 
 ---
 

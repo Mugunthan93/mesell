@@ -94,17 +94,25 @@ with `400`). A project with no log yet returns `{"exists": false, ...}`.
       "path": "/Users/.../mesell",
       "exists": true,                 // present in `git worktree list`
       "running": true,                // has tracked live processes
+      "drift": false,                 // a reserved port is LISTENING but the
+                                      // manager tracks no process for it
+                                      // (running OUTSIDE the manager)
       "ports": {
         "backend": 8000,
         "shell": 4200,
         "mfes": { "mfe-auth": 4201, "mfe-billing": 4202, ... }
       },
       "services": [
+        // tracked: came from env-state. health is a LIVE port probe, so a stale
+        // pid on a silent port reads down/dead (never a false up).
         { "role": "backend", "pid": 67328, "port": 8000,
-          "alive": true, "health": "up" },
-        { "role": "shell",   "pid": 67320, "port": 4200,
-          "alive": true, "health": "up" }
-        // ... one per tracked role
+          "alive": true, "health": "up", "tracked": true, "drift": false },
+        // drift: this port is LISTENING on the slot's block but no tracked
+        // process owns it — surfaced so it isn't silently omitted. pid is null
+        // (we don't know it); alive is false (no tracked pid); health is "up".
+        { "role": "mfe-catalog", "pid": null, "port": 4203,
+          "alive": false, "health": "up", "tracked": false, "drift": true }
+        // ... one per tracked role, plus one per untracked-but-listening port
       ],
       "builds": [
         { "project": "mfe-pricing", "status": "ok",
@@ -119,12 +127,34 @@ with `400`). A project with no log yet returns `{"exists": false, ...}`.
 
 ### `health` values (the service dot colours)
 
+`health` is **derived from a live probe, not from the tracked PID** — a service
+killed and relaunched outside the tool leaves a stale PID, so the verdict comes
+from whether the **port actually answers**.
+
 | `health` | Meaning | Dot |
 |---|---|---|
-| `up` | process alive **and** the port answers HTTP (any status, incl. 404) | green |
-| `dead` | a pid was tracked but the process is gone (crashed/exited) | red |
-| `down` | no process tracked for this role (e.g. reusing the baseline backend), or alive-but-not-yet-answering (mid-serve) | amber |
-| `unknown` | health not probed (CLI `status` only) | grey |
+| `up` | the port answers HTTP (any status, incl. 404) — live, regardless of whether the recorded PID still matches | green |
+| `dead` | the probe is inconclusive (no known port for the role) **and** a tracked PID is gone (crashed/exited) | red |
+| `down` | a known port that is **not** answering (nothing listening / silent), or no process tracked and no live PID | amber |
+| `unknown` | health not probed (only when `collect_dashboard_state(probe=False)`) | grey |
+
+### `drift` / `tracked` (reconciliation fields)
+
+Each env carries a top-level `drift` boolean, and each service carries `tracked`
+and `drift` booleans:
+
+- `tracked: true` — the service comes from `env-state.json` (a process the manager
+  started). Its `health` is the live-probe verdict above.
+- `tracked: false, drift: true` — **nothing in `env-state.json` records this
+  port, but it is LISTENING** within the slot's reserved block (a serve.js /
+  uvicorn started outside the manager, or a `down` that crashed mid-teardown).
+  `pid` is `null`, `alive` is `false`, `health` is `up` (the port answers).
+- An env's `drift: true` ⇔ at least one of its services is `drift: true`.
+
+Drift is detected with a cheap `socket.connect_ex` listen-probe (sub-second, 3 s
+cached) over each reserved slot's expected ports, so it never blocks a mid-build
+slot. It lets the dashboard/`status` say "running outside the manager" instead of
+silently omitting an untracked-but-alive service.
 
 ### Build history (`.nexus/build-history.jsonl`)
 
