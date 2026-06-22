@@ -52,10 +52,15 @@ reflects the **shared** live state.
 |---|---|
 | `GET /` | the self-contained SPA (`tools/env_dashboard/index.html`) |
 | `GET /api/state` | the full JSON model (see below) |
-| `GET /api/log?project=<name>` | tail (≤64 KB, ANSI-stripped) of `.nexus/build-<name>.log` |
+| `GET /api/log?project=<name>&slot=<N>` | tail (≤64 KB, ANSI-stripped) of the per-env log `.nexus/build-slot<N>-<name>.log` |
 
-`project` is validated against `^[A-Za-z0-9_.-]+$` (path-traversal is rejected
-with `400`). A project with no log yet returns `{"exists": false, ...}`.
+Both `project` and `slot` are validated against `^[A-Za-z0-9_.-]+$` (path-traversal
+is rejected with `400`); `slot` must additionally parse as an int. `slot` is the
+per-env key — three slots building the same project keep separate logs, and the
+dashboard passes each build row's own `slot` so the viewer tails the right one.
+`slot` omitted ⇒ slot 0. If the per-env log is absent the handler falls back to a
+legacy project-only `.nexus/build-<name>.log` (so old logs still tail). A project
+with no log at all returns `{"exists": false, ...}`.
 
 ---
 
@@ -94,22 +99,32 @@ with `400`). A project with no log yet returns `{"exists": false, ...}`.
       "path": "/Users/.../mesell",
       "exists": true,                 // present in `git worktree list`
       "running": true,                // has tracked live processes
+      "drift": false,                 // a reserved port is LISTENING but the
+                                      // manager tracks no process for it
+                                      // (running OUTSIDE the manager)
       "ports": {
         "backend": 8000,
         "shell": 4200,
         "mfes": { "mfe-auth": 4201, "mfe-billing": 4202, ... }
       },
       "services": [
+        // tracked: came from env-state. health is a LIVE port probe, so a stale
+        // pid on a silent port reads down/dead (never a false up).
         { "role": "backend", "pid": 67328, "port": 8000,
-          "alive": true, "health": "up" },
-        { "role": "shell",   "pid": 67320, "port": 4200,
-          "alive": true, "health": "up" }
-        // ... one per tracked role
+          "alive": true, "health": "up", "tracked": true, "drift": false },
+        // drift: this port is LISTENING on the slot's block but no tracked
+        // process owns it — surfaced so it isn't silently omitted. pid is null
+        // (we don't know it); alive is false (no tracked pid); health is "up".
+        { "role": "mfe-catalog", "pid": null, "port": 4203,
+          "alive": false, "health": "up", "tracked": false, "drift": true }
+        // ... one per tracked role, plus one per untracked-but-listening port
       ],
       "builds": [
-        { "project": "mfe-pricing", "status": "ok",
+        { "project": "mfe-pricing", "slot": 0, "status": "ok",
           "when": "2026-06-21T12:30:37Z", "duration_s": 30.0 }
-        // ... most-recent-first, capped
+        // ... most-recent-first, capped. Only THIS env's builds (joined by
+        // (slot, project)); `slot` is echoed so the log viewer tails the
+        // matching .nexus/build-slot<N>-<project>.log.
       ]
     }
     // ... one per worktree (union of git worktrees + slot registry)
@@ -119,19 +134,47 @@ with `400`). A project with no log yet returns `{"exists": false, ...}`.
 
 ### `health` values (the service dot colours)
 
+`health` is **derived from a live probe, not from the tracked PID** — a service
+killed and relaunched outside the tool leaves a stale PID, so the verdict comes
+from whether the **port actually answers**.
+
 | `health` | Meaning | Dot |
 |---|---|---|
-| `up` | process alive **and** the port answers HTTP (any status, incl. 404) | green |
-| `dead` | a pid was tracked but the process is gone (crashed/exited) | red |
-| `down` | no process tracked for this role (e.g. reusing the baseline backend), or alive-but-not-yet-answering (mid-serve) | amber |
-| `unknown` | health not probed (CLI `status` only) | grey |
+| `up` | the port answers HTTP (any status, incl. 404) — live, regardless of whether the recorded PID still matches | green |
+| `dead` | the probe is inconclusive (no known port for the role) **and** a tracked PID is gone (crashed/exited) | red |
+| `down` | a known port that is **not** answering (nothing listening / silent), or no process tracked and no live PID | amber |
+| `unknown` | health not probed (only when `collect_dashboard_state(probe=False)`) | grey |
+
+### `drift` / `tracked` (reconciliation fields)
+
+Each env carries a top-level `drift` boolean, and each service carries `tracked`
+and `drift` booleans:
+
+- `tracked: true` — the service comes from `env-state.json` (a process the manager
+  started). Its `health` is the live-probe verdict above.
+- `tracked: false, drift: true` — **nothing in `env-state.json` records this
+  port, but it is LISTENING** within the slot's reserved block (a serve.js /
+  uvicorn started outside the manager, or a `down` that crashed mid-teardown).
+  `pid` is `null`, `alive` is `false`, `health` is `up` (the port answers).
+- An env's `drift: true` ⇔ at least one of its services is `drift: true`.
+
+Drift is detected with a cheap `socket.connect_ex` listen-probe (sub-second, 3 s
+cached) over each reserved slot's expected ports, so it never blocks a mid-build
+slot. It lets the dashboard/`status` say "running outside the manager" instead of
+silently omitting an untracked-but-alive service.
 
 ### Build history (`.nexus/build-history.jsonl`)
 
-Each completed `ng build` appends one JSON line: `{project, start_iso, end_iso,
-status, duration_s}` (`status` ∈ `ok` | `failed`). Append-only, generated, never
-committed (gitignored). The dashboard reads the newest rows per project and joins
-them onto the matching env card (shell project name is `frontend`).
+Each completed `ng build` appends one JSON line: `{project, worktree, slot,
+start_iso, end_iso, status, duration_s}` (`status` ∈ `ok` | `failed`).
+Append-only, generated, never committed (gitignored).
+
+The dashboard joins rows onto an env card by **`(slot, project)`** — not by
+project alone — so when slot 0, slot 1 and slot 2 all build `mfe-catalog`, each
+build appears only on its own card. (Shell project name is `frontend`.) Rows
+written before per-env keying lack `worktree`/`slot`; the reader normalises a
+missing/unparseable `slot` to **slot 0** so old history still attaches to the
+baseline card rather than vanishing.
 
 ---
 

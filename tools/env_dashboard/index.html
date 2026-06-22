@@ -404,9 +404,13 @@ function renderCard(env) {
   });
   // wire click handlers (onclick attr can't carry closures via setAttribute reliably)
   buildRows.forEach((row, i) => {
-    const proj = (env.builds[i] || {}).project;
+    const b = env.builds[i] || {};
+    const proj = b.project;
+    // Pass the build's slot so the viewer tails THIS env's per-env log
+    // (build-slot<N>-<project>.log). Fall back to the card's slot, then 0.
+    const slot = (b.slot != null) ? b.slot : (env.slot != null ? env.slot : 0);
     row.querySelector('[data-testid="build-log-link"]')
-       .addEventListener("click", () => openLog(proj));
+       .addEventListener("click", () => openLog(proj, slot));
   });
   const builds = el("div", { class: "builds", "data-testid": "build-history" },
     buildRows.length ? buildRows
@@ -436,15 +440,17 @@ function render(state) {
     new Date().toLocaleTimeString();
 }
 
-async function openLog(project) {
+async function openLog(project, slot) {
   const bg = document.getElementById("modal-bg");
   const body = document.querySelector('[data-testid="log-modal-body"]');
+  const s = (slot != null) ? slot : 0;
   document.querySelector('[data-testid="log-modal-title"]').textContent =
-    "Build log — " + project;
+    "Build log — " + project + " (slot " + s + ")";
   body.textContent = "Loading…";
   bg.classList.add("open");
   try {
-    const r = await fetch("/api/log?project=" + encodeURIComponent(project));
+    const r = await fetch("/api/log?project=" + encodeURIComponent(project) +
+                          "&slot=" + encodeURIComponent(s));
     const j = await r.json();
     body.textContent = j.log && j.log.length ? j.log
       : (j.note || j.error || "(empty log)");
