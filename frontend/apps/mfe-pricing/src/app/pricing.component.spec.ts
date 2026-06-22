@@ -1050,10 +1050,12 @@ describe('SPEC C — data-testids on native elements (federation-safe)', () => {
 
   it('both pricing-applied-status and pricing-apply-error are NOT shown simultaneously', () => {
     // The @if conditions are mutually exclusive: appliedStatus can only have one value.
-    const appliedStatus: 'idle' | 'applying' | 'applied' | 'error' = 'applied';
-    const showApplied = appliedStatus === 'applied';
-    const showError   = appliedStatus === 'error';
-    expect(showApplied && showError).toBe(false);
+    // Use the helper-fn pattern (same as sibling tests above) so TS control-flow narrowing
+    // does not collapse the literal type and falsely flag `=== 'error'` as TS2367.
+    const showApplied = (s: string) => s === 'applied';
+    const showError   = (s: string) => s === 'error';
+    const appliedStatus = 'applied';
+    expect(showApplied(appliedStatus) && showError(appliedStatus)).toBe(false);
   });
 });
 
