@@ -3,6 +3,37 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-22
 
+=== UPDATE: 2026-06-22 (pricing-apply-price service layer — SPEC C step 1) ===
+Phase: pricing-apply-price / V1 price→export chain close
+Session: mesell-pricing-apply-price-frontend-session-1
+Agent: meesell-angular-service-builder (HYBRID step 1 of 3)
+Branch: feature/pricing-apply-price/frontend @ 88a8af7 (worktree /tmp/mesell-wt/pricing-apply-price)
+Endpoint: POST /api/v1/products/{id}/apply-price (204 No Content — backend pre-existing, W3-BE-17 verified)
+
+Done:
+  pricing.service.ts: add APPLY_PRICE_PATH constant + applyPrice(productId, sellingPrice) method.
+    Body: { selling_price } ONLY (extra="forbid" guard). 204 → void. Reuses _handleError.
+    retryOn503 OFF (non-idempotent). No new imports; no shared-singleton edits.
+  pricing.service.spec.ts: 4 new describe blocks, 11 new tests.
+    URL+body: exact URL / { selling_price } only (Object.keys===1) / productId from arg / no auth header.
+    204 success: completes / exactly one request.
+    Error matrix: 401→EMPTY / 404→unavailable(not_found) / 422-extra→validation /
+      422-zero→validation(detail) / 500→server_error / network→server_error.
+    No retry: 503 fires exactly one request.
+
+Tests: pricing.service.spec.ts PASS (all new + existing calc tests). ng test frontend: 12 pre-existing
+  failing spec files in auth/shell/composites — none in mfe-pricing. tsc EXIT 0.
+
+In progress: none.
+Blockers: none.
+Next: component-builder (step 2) — wire onSaveContinue() to call applyPrice(), add appliedStatus signal,
+  add pricing-apply-btn / pricing-applied-status testids, update component spec. Same branch.
+Hand-offs:
+  → meesell-angular-component-builder: applyPrice(productId: string, sellingPrice: string): Observable<void | PriceCalcErrorShape>
+    Call on deliberate seller action after breakdown() is set. Navigate to export on void (204) success.
+    Error shapes map to existing errorState banners — no new error UI. Branch @ 88a8af7. Do NOT open PR yet.
+=========
+
 === UPDATE: 2026-06-22 02:10 (QA-wave-1 service lane COMMIT 1) ===
 Phase: feature/qa-wave-1/testids-logout/frontend — logout cookie-revoke bug fix
 Branch: feature/qa-wave-1/testids-logout/frontend (worktree .claude/worktrees/agent-a6b0cbd5e0ca009d6)
