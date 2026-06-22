@@ -499,6 +499,108 @@ class TestPatchSellerProfile:
         assert body.get("validation_message_id") == "validation.packer_pincode.missing"
         assert body.get("detail")
 
+    @pytest.mark.parametrize(
+        "field",
+        [
+            "manufacturer_name",
+            "manufacturer_address",
+            "packer_name",
+            "packer_address",
+        ],
+    )
+    async def test_first_patch_missing_base_field_returns_422_not_500(
+        self, customer_client, field
+    ):
+        """First (row-creating) PATCH omitting a NOT-NULL base field → 422, not 500.
+
+        Pre-flight INSERT-path guard (MissingRequiredProfileFieldError) converts the
+        NOT-NULL violation into a clean 422 with a non-empty validation_message_id
+        (resolves via the generic fallback to ``validation.generic.missing``).
+        """
+        payload = {k: v for k, v in _VALID_PROFILE_PAYLOAD.items() if k != field}
+        resp = await customer_client.patch("/api/v1/seller-profile", json=payload)
+        assert resp.status_code == 422, (
+            f"Expected 422 (not 500) for missing {field} on first PATCH, "
+            f"got {resp.status_code}: {resp.text}"
+        )
+        body = resp.json()
+        assert body.get("validation_message_id") == f"validation.{field}.missing"
+        assert body.get("detail"), "detail must be non-empty (generic.missing resolved)"
+
+    @pytest.mark.parametrize(
+        "field",
+        [
+            "manufacturer_name",
+            "manufacturer_address",
+            "packer_name",
+            "packer_address",
+        ],
+    )
+    async def test_first_patch_null_base_field_returns_422_not_500(
+        self, customer_client, field
+    ):
+        """First (row-creating) PATCH with an explicit null base field → 422, not 500."""
+        payload = {**_VALID_PROFILE_PAYLOAD, field: None}
+        resp = await customer_client.patch("/api/v1/seller-profile", json=payload)
+        assert resp.status_code == 422, (
+            f"Expected 422 (not 500) for null {field} on first PATCH, "
+            f"got {resp.status_code}: {resp.text}"
+        )
+        body = resp.json()
+        assert body.get("validation_message_id") == f"validation.{field}.missing"
+        assert body.get("detail")
+
+    async def test_first_patch_missing_country_of_origin_returns_200_defaults_india(
+        self, customer_client
+    ):
+        """First PATCH omitting country_of_origin → 200 (DB server_default 'India').
+
+        Locks the exclusion: country_of_origin carries ``server_default 'India'`` so
+        a missing value DEFAULTS rather than 500-ing — it is NOT guarded.
+        """
+        payload = {
+            k: v for k, v in _VALID_PROFILE_PAYLOAD.items() if k != "country_of_origin"
+        }
+        resp = await customer_client.patch("/api/v1/seller-profile", json=payload)
+        assert resp.status_code == 200, (
+            f"Expected 200 for first PATCH omitting country_of_origin, "
+            f"got {resp.status_code}: {resp.text}"
+        )
+        assert resp.json()["country_of_origin"] == "India"
+
+    async def test_patch_existing_row_partial_omits_base_field_returns_200(
+        self, customer_client
+    ):
+        """Partial PATCH on an EXISTING row omitting a base field → 200, unchanged.
+
+        The INSERT-path guard fires ONLY when ``existing is None``; a subsequent
+        partial PATCH legitimately omits fields and keeps their stored values.
+        """
+        # First, a complete upsert creates the row.
+        create_resp = await customer_client.patch(
+            "/api/v1/seller-profile",
+            json=_VALID_PROFILE_PAYLOAD,
+        )
+        assert create_resp.status_code == 200, (
+            f"Setup PATCH failed: {create_resp.status_code}: {create_resp.text}"
+        )
+
+        # Now a partial PATCH that omits base fields (only changes manufacturer_name).
+        resp = await customer_client.patch(
+            "/api/v1/seller-profile",
+            json={"manufacturer_name": "New Name"},
+        )
+        assert resp.status_code == 200, (
+            f"Expected 200 for partial PATCH on existing row, "
+            f"got {resp.status_code}: {resp.text}"
+        )
+        body = resp.json()
+        assert body["manufacturer_name"] == "New Name"
+        # Other base fields untouched.
+        assert body["manufacturer_address"] == _VALID_PROFILE_PAYLOAD["manufacturer_address"]
+        assert body["packer_name"] == _VALID_PROFILE_PAYLOAD["packer_name"]
+        assert body["packer_pincode"] == _VALID_PROFILE_PAYLOAD["packer_pincode"]
+
     async def test_first_patch_complete_payload_creates_row_200(self, customer_client):
         """Complete first PATCH (all 7 NOT-NULL fields present) → 200, row created."""
         resp = await customer_client.patch(

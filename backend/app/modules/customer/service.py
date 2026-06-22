@@ -56,6 +56,7 @@ from app.modules.customer.exceptions import (
     ComplianceExtensionMissingFieldsError,
     InvalidSuperCategoryError,
     MissingRequiredPincodeError,
+    MissingRequiredProfileFieldError,
     ProfileIncompleteForCategoryError,
     ProfileNotFoundError,
     SuperCategoryNotDeclaredError,
@@ -423,30 +424,39 @@ async def upsert_profile(
     # Load existing (if any) to merge for the recompute.
     existing = await customer_repo.find_by_user_id(db, user_id)
 
-    # ── INSERT-path NOT-NULL guard — pincodes only ─────────────────────────────
-    # When ``existing is None`` this PATCH will INSERT a brand-new row.  The
-    # ``manufacturer_pincode`` / ``packer_pincode`` columns are NOT NULL at the
-    # DB level; a missing/null value would reach asyncpg and surface as a 500
+    # ── INSERT-path NOT-NULL guard ─────────────────────────────────────────────
+    # When ``existing is None`` this PATCH will INSERT a brand-new row.  Six
+    # ``seller_profiles`` columns are NOT NULL at the DB level WITHOUT a server
+    # default — a missing/null value would reach asyncpg and surface as a 500
     # (NotNullViolationError).  Convert that into a clean 422 with a non-empty
-    # validation_message_id BEFORE the repository INSERT.  Deterministic order:
-    # manufacturer first, then packer.
+    # validation_message_id BEFORE the repository INSERT.  Deterministic raise
+    # order: the manufacturer block (name → address → pincode) then the packer
+    # block (name → address → pincode).
     #
-    # Scope: pincodes ONLY.  The same latent 500 class exists on the INSERT path
-    # for manufacturer_name/address, packer_name/address and country_of_origin —
-    # that is a SEPARATE follow-up flagged to the coordinator, deliberately NOT
-    # widened here.
+    # ``country_of_origin`` is DELIBERATELY EXCLUDED: it carries
+    # ``server_default 'India'`` at both the ORM (``seller_profile.py`` L69-73)
+    # and migration level, so a missing value DEFAULTS to 'India' — it never
+    # 500s.  Do NOT add a guard for it.
     #
     # On an EXISTING row (``existing is not None``) we do NOTHING new — partial /
     # subset PATCH semantics are preserved unchanged.
     if existing is None:
-        for _pincode_field in ("manufacturer_pincode", "packer_pincode"):
-            if not _is_field_present(provided.get(_pincode_field)):
-                raise MissingRequiredPincodeError(
-                    field=_pincode_field,
-                    detail=(
-                        f"{_pincode_field} is required to create your seller profile."
-                    ),
-                )
+        for _profile_field in ("manufacturer_name", "manufacturer_address"):
+            if not _is_field_present(provided.get(_profile_field)):
+                raise MissingRequiredProfileFieldError(field=_profile_field)
+        if not _is_field_present(provided.get("manufacturer_pincode")):
+            raise MissingRequiredPincodeError(
+                field="manufacturer_pincode",
+                detail="manufacturer_pincode is required to create your seller profile.",
+            )
+        for _profile_field in ("packer_name", "packer_address"):
+            if not _is_field_present(provided.get(_profile_field)):
+                raise MissingRequiredProfileFieldError(field=_profile_field)
+        if not _is_field_present(provided.get("packer_pincode")):
+            raise MissingRequiredPincodeError(
+                field="packer_pincode",
+                detail="packer_pincode is required to create your seller profile.",
+            )
 
     merged_base: dict[str, Any] = {}
     if existing is not None:
