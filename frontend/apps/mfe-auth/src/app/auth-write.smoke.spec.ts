@@ -101,7 +101,10 @@ describe('SP06 D38 C4 — OtpVerifyComponent WRITE-path: setSession crosses the 
     httpMock    = TestBed.inject(HttpTestingController);
 
     // Ensure we start unauthenticated (clean slate, independent of test order).
+    // logout() fires a fire-and-forget POST /api/v1/auth/logout — flush it so
+    // afterEach httpMock.verify() doesn't see an unmatched request.
     shellAuth.logout();
+    httpMock.match('/api/v1/auth/logout').forEach((r) => r.flush(null));
 
     // Navigate with state so OtpVerifyComponent picks up the phone (avoids redirect-to-login).
     await router.navigate(['/login']);
