@@ -42,3 +42,25 @@ Append a new section at the top after each wave.
 **Merge mechanics:** PR base was a STALE develop (cut before #383/#384) → the only conflict was `feature_board_qa.md` (my sole-writer surface). Hand-resolved in a worktree by combining #383/#384 rows + the e2e updates, pushed to the PR branch, then squash-merged `--admin`. Branch preserved (NO `--delete-branch`).
 
 **Findings owed to the TEST_REPORT / Wave 2:** (1) the mfe-export route-productId product bug (filed → frontend-coordinator); (2) the 3 `test.fixme` (un-fixme conditions logged); (3) carry-forward also includes the 61 pre-existing frontend reds (#383 gate) + the backend P1 export-ZIP self-skip (#380 gate).
+
+
+## QA Wave 3 (catalog vertical) — E2E lane (PR #409) — gate session mesell-qa-wave-3-e2e-session-1
+- VERDICT: PASS -> squash-merged into `feature/qa-wave-3/integration` `c382f84` (was `4571048`; branch preserved `8128b68`).
+- SCAFFOLD lane (founder-approved): W3-E2-1 codified + honestly skip-gated; W3-E2-2/4/6 documented `test.fixme` with exact
+  inline un-fixme conditions; W3-E2-3 un-fixme condition documented; W3-E2-5 fixme (GCS).
+- Gate re-ran `npx playwright test --config e2e/playwright.config.ts --list` = 16 tests / 13 files, parse+typecheck clean.
+  Full live run NOT required (env blocks real + documented + founder-approved). tsc spot-check: zero errors in the spec
+  files themselves (only `process`/`node:fs` lib-resolution noise from an ad-hoc tsc invocation, not project tsconfig).
+- WAVE 3 NOW FULLY ASSEMBLED: backend `edb875f` + frontend `4571048` + e2e `c382f84` coexist in integration. Ready for
+  the FOUNDER's integration->develop gate.
+- STALE-BASE HAZARD (2nd time, after Wave-2 e2e): the e2e branch's merge-base with integration (develop `3c63b55`)
+  pre-dated the #396/#394 lane merges -> naive squash would DELETE 4 BE + 4 FE lane files. Reconcile = merge integration
+  INTO the e2e branch first (zero conflicts) -> clean-additive squash, ZERO deletions.
+- NON-SCOPE-CREEP confirmation: `dead_route_guard.mjs` + `ci.yml` in the diff are develop #403 (already on develop),
+  present only via the stale base — NOT authored by the e2e writer. Always check provenance before flagging scope creep.
+- FOUNDER NOTE captured on the board: integration->develop diff shows mfe-export/auth SOURCE files as changed, but they
+  are byte-identical to the merge-base on integration (QA never touched them) — they differ only because develop advanced
+  (#398 mfe-export + #406 auth). A 3-way merge-commit reconciles cleanly; QA contribution stays tests-only.
+- 6 inter-lead requests logged (FE: catalog-list delete+testids; FE: mfe-pricing apply+testids; FE: Live Preview page
+  reintroduction; infra/backend: Gemini-dev OR no-spend fixture-product seam; FE: PR #398 to develop; infra: lockfile
+  @playwright/test@1.52.0).
