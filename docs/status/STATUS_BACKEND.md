@@ -1,6 +1,31 @@
 # STATUS — BACKEND
 
 
+=== UPDATE: 2026-06-22 (meesell-backend-coordinator) — category-monitor Wave-3 Unit T (triggers) RE-GATE PASS → MERGED; WAVE 3 COMPLETE ===
+Phase: RETENTION_CATEGORY_MONITOR (#370) — Wave-3 Unit T (trigger wiring) RE-GATE after identity-map REJECT
+Session: mesell-category-monitor-monitor-backend-session-4 (HYBRID step-3, re-gate of head 32caeb1)
+Board sweep: Unit T row added to Recently-merged (MERGED to integration f363db6). Session-end sweep — razorpay-W4 IN REVIEW (3d) / price-calculator APPROVE-FOR-FOUNDER (4d) both NOT stale; no Active row 7+ days stale; no Recently-merged row >14 days; BE-DOC-2D-COUNT-1 OPEN (founder §7.3); inter-lead requests unchanged.
+
+VERDICT: PASS — PR #472 SQUASH-MERGED to feature/category-monitor/integration (f363db6). integration->develop FOUNDER gate NOT opened (D1).
+
+Done (independent verification, NOT builder report — re-gate of head 32caeb1 vs the diff + a REAL meesell_test Postgres session):
+  1. Bug FIXED at all 3 onboarding sites. Edge helper signature existing: SellerProfileORM|None -> prior_complete: bool; crossed_edge = onboarding_complete and not prior_complete. Each site snapshots prior_complete = bool(existing.onboarding_complete) [if existing] as a plain bool BEFORE the repo write: upsert_profile L471 (write L522, call L535), set_active_categories L577 (write L585, call L596), set_compliance_extension L633 (spec'd write L692, call L707). Live ORM NEVER read for the edge post-write — the residual existing.onboarding_complete (L661) is the no_spec early-return branch that passes the flag UNCHANGED and returns before the edge helper (cannot cross). Verified by grep of the full current service.py.
+  2. Regression test PROVEN GENUINE (the crux). tests/integration/test_customer_monitor_edge_identity.py = REAL async session + REAL customer_repo (find_by_user_id + repo write share ONE identity-mapped object = prod path); only leaf-resolver + Celery .delay mocked. I reverted service.py to the parent (be89a0f) live-ORM edge while KEEPING the new test -> 4 FAILED ("Expected ... 2; got 0. Zero means the identity-map aliasing suppressed the edge (pre-fix bug)" / assert 0 == 2; host-survival fails on delay.assert_called()). Restored 32caeb1 -> 4 passed (2 enqueues per distinct leaf at each site). The test BITES the old bug.
+  3. Full suite 21 green on meesell_test: 8 fast-unit (test_monitor_triggers.py) + 4 real-session (test_customer_monitor_edge_identity.py) + 9 gate (test_monitor_gate.py). Host-survival preserved across all 4 sites.
+  4. Quality: ruff check app/ clean; import-linter 27 kept/0 broken (no new edge); route table BYTE-IDENTICAL to integration base 0d0abfb (no route added; §17 inventory unchanged); LOCKED docs (BACKEND_ARCHITECTURE §2.D, V1_FEATURE_SPEC) + import_rules.toml byte-untouched; §2.D founder-gate flag preserved in PR body, LOCKED doc not self-edited.
+  5. Flagged artifact CONFIRMED PRE-EXISTING + non-blocking: test_active_categories_replace_semantics setup-ERROR reproduces at integration base 0d0abfb with ZERO of this PR's changes (pytest test_customer_routes.py test_customer_onboarding_coverage.py in one process -> 32 passed, 1 error) and passes in isolation -> cross-fixture asyncpg loop/teardown ordering. Harness-ticket only; did NOT block.
+
+Merge mechanics: PR base moved (Unit S #477 4ca5a56 landed to integration FIRST) -> squash hit a STATUS_BACKEND.md append-collision. Merged integration into the branch, resolved via union keep-both (code files auto-merged clean), re-verified merged-tree monitor suite 26 green (triggers+edge+gate+serving) + ruff + import-linter 27/0, pushed d2d6469, then squash-merged.
+
+WAVE 3 COMPLETE: integration tip f363db6 carries W1 schema (b7487e8) -> W2 dedupe gate (0d0abfb) -> W3 Unit S serving (4ca5a56) -> W3 Unit T triggers (f363db6). Both Unit T (#472) and Unit S (#477) are now on integration.
+
+In progress: none.
+Blockers: none.
+Next: the category-monitor integration branch (f363db6) now carries the full W1+W2+W3 vertical. integration->develop is the FOUNDER gate (D1) — open at founder/master discretion. Wave 4 (FE-contracted public serving route) is the next dispatch; api-routes-builder can call monitor.service.get_served_category_data(category_id, db) (ready from Unit S; raises CategorySnapshotNotFoundError -> 404).
+Hand-offs: founder-gate items stacked for the eventual category-monitor integration->develop merge — §3.I/§18.B Celery worker-count 3->4 (monitor scrape worker) + §2.D matrix amendment (new `monitor` column + customer->catalog cell flip) — both LOCKED, founder-gate, NOT self-applied.
+=========
+
+
 === UPDATE: 2026-06-22 (meesell-backend-coordinator) — category-monitor Wave-3 Unit S (serving + evict) MERGE-GATE PASS ===
 Phase: RETENTION_CATEGORY_MONITOR (#370) — Wave-3 Unit S (serving read-through + evict-on-update)
 Session: mesell-category-monitor-backend-session-6 (HYBRID step-3, merge-gate review)
