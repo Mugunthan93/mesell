@@ -219,7 +219,12 @@ async def test_free_user_at_product_limit_gets_402(plan_guard_client):
     async def _at_limit(*args, **kwargs):
         raise PlanLimitExceededError(resource="product_count", current=50, limit=50)
 
-    with patch("app.core.plan_guard.enforce_plan_limit", new=AsyncMock(side_effect=_at_limit)):
+    # PATCH TARGET FIX (Wave-2 fix): catalog/service.py captures ``enforce_plan_limit``
+    # at import time via ``from app.core.plan_guard import enforce_plan_limit`` (line 82).
+    # Patching ``app.core.plan_guard.enforce_plan_limit`` only updates the source module
+    # attribute — the catalog service's already-captured local reference is NOT updated.
+    # Correct patch target: ``app.modules.catalog.service.enforce_plan_limit``.
+    with patch("app.modules.catalog.service.enforce_plan_limit", new=AsyncMock(side_effect=_at_limit)):
         resp = await client.post(
             "/api/v1/products",
             json={
@@ -255,7 +260,7 @@ async def test_pro_user_under_limit_passes_plan_guard(plan_guard_client):
     async def _passes(*args, **kwargs):
         return  # no-op — limit not exceeded
 
-    with patch("app.core.plan_guard.enforce_plan_limit", new=AsyncMock(side_effect=_passes)):
+    with patch("app.modules.catalog.service.enforce_plan_limit", new=AsyncMock(side_effect=_passes)):
         resp = await client.post(
             "/api/v1/products",
             json={

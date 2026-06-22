@@ -28,7 +28,12 @@ _BAD_PHONES = [
     "9876543210",       # missing + prefix
     "919876543210",     # missing +
     "+0876543210",      # leading zero after + (E.164 requires +[1-9])
-    "+91",              # too short
+    # CORRECTION (Wave-2 fix): "+91" PASSES ^\+[1-9]\d{1,14}$ (9→[1-9], 1→\d{1})
+    # so it is NOT a bad phone per the app's validator.  Replaced with "+9"
+    # (zero digits after the leading [1-9] — fails the \d{1,14} requirement)
+    # and with a clearly too-long number.
+    "+9",               # only the leading digit — \d{1,14} requires ≥1 more digit
+    "+919876543210123456",  # 17 digits total after + — exceeds E.164 max of 15
     "not-a-phone",
 ]
 
