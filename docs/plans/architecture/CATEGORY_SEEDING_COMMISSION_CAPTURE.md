@@ -204,7 +204,7 @@ The founder logs into the Meesho supplier panel interactively, navigates to the 
 
 **Fastest path to unblocking the pricing engine.** The rate-card is a ~30-50 row table and is stable (changes only at Meesho's annual policy revision). Manual capture is proportionate.
 
-### Option B — Add Playwright MCP to Claude Desktop and re-dispatch (PREFERRED for quarterly refresh)
+### Option B — Add Playwright MCP to Claude Desktop and re-dispatch (PREFERRED for monthly refresh — interim; moving to monthly, usage-driven per the locked scraper-cadence design)
 
 Add the `@playwright/mcp` server to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
@@ -226,7 +226,7 @@ Then re-dispatch `meesell-scraper-maintainer` in an interactive session with the
 4. Intercept the API response (network interception per `PLAYWRIGHT_MCP_REFERENCE §5` Strategy 3B)
 5. Write `category_commissions.json` with full rate-card
 
-This is the correct path for quarterly refresh automation.
+This is the correct path for monthly refresh automation.
 
 ### Option C — Deferred NULL (not recommended beyond V1)
 
@@ -234,7 +234,7 @@ Leave `commission_pct = NULL` permanently and handle it at the pricing engine la
 
 ### Recommendation
 
-**Do Option A now** (manual copy, fast), **set up Option B** (Playwright MCP config) for the quarterly refresh path. Do not extend Option C past Wave 1.5.
+**Do Option A now** (manual copy, fast), **set up Option B** (Playwright MCP config) for the monthly refresh path. Do not extend Option C past Wave 1.5.
 
 ---
 
