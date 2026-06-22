@@ -289,3 +289,16 @@ async def iam_client():
             await _cleanup_users_by_phone_prefix(db_url)
         except Exception:
             pass
+
+
+# ── google_client fixture (re-export for integration/ sub-package) ──────────
+# ``google_client`` is defined in ``tests/test_google_auth_integration.py``
+# (a top-level test file, not under tests/integration/).  pytest does NOT
+# auto-discover fixtures from arbitrary test files — only from conftest.py
+# files.  Without this re-export, any integration/ test that requests
+# ``google_client`` gets an ERROR (fixture not found).
+#
+# Importing the fixture function from its source file and re-binding it here
+# is the standard pytest pattern for cross-directory fixture sharing:
+# https://docs.pytest.org/en/stable/how-to/fixtures.html#using-fixtures-from-other-projects
+from tests.test_google_auth_integration import google_client as google_client  # noqa: F401,E402

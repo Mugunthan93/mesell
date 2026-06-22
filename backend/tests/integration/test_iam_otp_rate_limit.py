@@ -120,10 +120,14 @@ async def test_otp_send_rate_limit_recovers_after_window(
     )
 
     # Simulate window expiry by deleting the Valkey sliding-window key.
-    # The rate_limit_mw key format is ``rl:{scope}:{ip}``.
+    # CORRECTION (Wave-2 fix): the rate_limit_mw uses a NAMESPACED key format
+    # per rate_limit_mw.py line 174: ``meesell:rl:route:{scope}:ip:{ip}:{window}``
+    # (anonymous/per-IP path, since /otp/send is unauthenticated).
+    # ``rl:otp_send:{test_ip}`` was wrong — the actual key is:
+    #   meesell:rl:route:otp_send:ip:{ip}:3600
     from app.shared import valkey as _vk_mod  # noqa: PLC0415
     valkey = await _vk_mod.get_valkey_otp()
-    rl_key = f"rl:otp_send:{test_ip}"
+    rl_key = f"meesell:rl:route:otp_send:ip:{test_ip}:3600"
     await valkey.delete(rl_key)
 
     # After key deletion (window reset), the next call must be allowed.
