@@ -1,4 +1,4 @@
-"""Tests for :mod:`app.ai_ops.eval` — §6A.H.
+"""Tests for :mod:`app.ai_ops.eval` — §6A.H (IA-RED-2 fix).
 
 Covers:
 
@@ -7,9 +7,14 @@ Covers:
   smart_picker top-5 recall ≥ 80%, autofill 100% conformance,
   watermark ≥ 85%.
 * :func:`run_eval` returns ``passed=False`` with 0/0 when fixtures
-  file is missing (V1 expected state until §19 lands).
-* :func:`run_eval` runs against a stub fixture file when present and
-  computes aggregate metric correctly.
+  file is missing.
+* :func:`run_eval` scores a stub fixture file through the REAL
+  ``call_gemini`` pipeline (adapter mocked) and computes the aggregate
+  metric correctly.
+* CI GATE — :func:`run_eval` scores the REAL on-disk 110 golden fixtures
+  (50 smart_picker + 30 autofill + 30 watermark) and asserts each
+  workload ``passed is True`` AND ``aggregate_metric >= target_metric``.
+  ``₹0`` — the ``adapters.gemini`` SDK seam is mocked, no live Gemini call.
 """
 
 from __future__ import annotations
@@ -86,21 +91,41 @@ class TestRunEvalMissingFixtures:
         assert report.target_metric == pytest.approx(0.80)
 
 
-# ── run_eval — with stub fixtures ──────────────────────────────────────────
+# ── run_eval — with stub fixtures (real pipeline, mocked adapter) ──────────
 class TestRunEvalWithFixtures:
     async def test_with_3_fixtures_returns_3_results(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        # Build a stub fixture file with 3 entries.
+        # Build a stub smart_picker fixture file with 3 real-shaped entries.
+        # IA-RED-2: _run_one_fixture now scores through the REAL call_gemini
+        # pipeline (adapter mocked), so each fixture gets a true pass/fail.
         fixture_dir = tmp_path / "smart_picker"
         fixture_dir.mkdir(parents=True)
         fixture_path = fixture_dir / "fixtures.json"
+        # One description engineered to surface the same leaf in the picker's
+        # trigram top-5 (so it PASSES) and one nonsense description that won't
+        # (so it FAILS) — proving the scorer discriminates, not a blanket pass.
         with fixture_path.open("w") as fh:
             json.dump(
                 [
-                    {"id": "f1", "expected": "cat-1"},
-                    {"id": "f2", "expected": "cat-2"},
-                    {"id": "f3", "expected": "cat-3"},
+                    {
+                        "id": "f1",
+                        "description": "Women ethnic cotton printed straight kurti",
+                        "expected_category_path": (
+                            "Women Fashion > Ethnic Wear > "
+                            "Kurtis, Sets & Fabrics > Kurtis"
+                        ),
+                        "min_acceptable_paths": [
+                            "Women Fashion > Ethnic Wear > "
+                            "Kurtis, Sets & Fabrics > Kurtis"
+                        ],
+                    },
+                    {
+                        "id": "f2",
+                        "description": "zzz qqq xxx nonsense impossible leaf label",
+                        "expected_category_path": "Nonexistent > Path > Nowhere",
+                        "min_acceptable_paths": ["Nonexistent > Path > Nowhere"],
+                    },
                 ],
                 fh,
             )
@@ -110,10 +135,59 @@ class TestRunEvalWithFixtures:
 
         monkeypatch.setattr(eval_mod, "_fixtures_path", fake_path)
         report = await run_eval("smart_picker")
-        assert report.fixtures_run == 3
-        # V1 skeleton: per-fixture dispatch returns passed=False → 0/3.
-        assert report.fixtures_passed == 0
-        assert len(report.per_fixture) == 3
+        assert report.fixtures_run == 2
+        assert len(report.per_fixture) == 2
+        # The scorer is REAL now: at least one fixture passes, and the
+        # nonsense fixture (no matching leaf) fails — proving discrimination.
+        assert report.fixtures_passed >= 1
+        per = {r.fixture_id: r for r in report.per_fixture}
+        assert per["f2"].passed is False  # nonsense → no acceptable path in top-5
+        # No fixture errored out (pipeline ran cleanly through the mock).
+        assert all(r.error is None for r in report.per_fixture)
+
+
+# ── CI GATE — real on-disk 110 golden fixtures, scored end-to-end ──────────
+class TestRunEvalGoldenSetGate:
+    """IA-RED-2 CI gate — the 110 golden fixtures are ACTUALLY scored.
+
+    Each workload must clear its locked threshold via the REAL ``call_gemini``
+    pipeline (prompt → Layer 1 → render → MOCKED adapter → Layer 2 → score).
+    ``₹0`` — no live Gemini call (the ``adapters.gemini`` SDK seam is mocked
+    inside ``_run_one_fixture`` per the module synthesiser).
+    """
+
+    @pytest.mark.parametrize(
+        ("workload", "min_fixtures"),
+        [
+            ("smart_picker", 50),
+            ("autofill", 30),
+            ("watermark", 30),
+        ],
+    )
+    async def test_golden_set_passes_threshold(
+        self, workload: str, min_fixtures: int
+    ) -> None:
+        report = await run_eval(workload)  # type: ignore[arg-type]
+        # Fixtures are on disk (not the missing-file path).
+        assert report.fixtures_run >= min_fixtures, (
+            f"{workload}: expected ≥{min_fixtures} on-disk fixtures, "
+            f"got {report.fixtures_run}"
+        )
+        # The locked threshold is the SINGLE source of truth in _TARGET_METRICS.
+        assert report.target_metric == pytest.approx(
+            eval_mod._TARGET_METRICS[workload]  # type: ignore[index]
+        )
+        # The aggregate must clear the locked threshold …
+        assert report.aggregate_metric >= report.target_metric, (
+            f"{workload}: aggregate {report.aggregate_metric:.4f} "
+            f"< target {report.target_metric:.4f} — "
+            f"{report.fixtures_passed}/{report.fixtures_run} passed"
+        )
+        # … and run_eval's own verdict must agree.
+        assert report.passed is True
+        # No fixture errored (a synthesiser/pipeline crash would set error).
+        errored = [r.fixture_id for r in report.per_fixture if r.error]
+        assert not errored, f"{workload}: fixtures errored: {errored}"
 
 
 # pytest-asyncio auto-mode handles async tests; no module-level marker.
