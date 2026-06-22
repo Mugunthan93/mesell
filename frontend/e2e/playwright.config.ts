@@ -51,6 +51,10 @@ export const STORAGE_STATE = process.env.MEESELL_STORAGE_STATE ?? './storageStat
 
 export default defineConfig({
   testDir: '.',
+  // ENV RESET (not a spec): clears the OTP `meesell:rl:*` rate-limit keys in Valkey
+  // DB0 ONCE before the suite, so the fresh-user onboarding logins are not 429'd by
+  // the 3/3600s-per-IP OTP-send limit. No-op when no dev Valkey is reachable.
+  globalSetup: './global-setup.ts',
   // Stubs are intentional during bootstrap; do not let a stray test.only slip into CI.
   forbidOnly: !!process.env.CI,
   fullyParallel: false, // federation stack is single-node dev; keep deterministic ordering

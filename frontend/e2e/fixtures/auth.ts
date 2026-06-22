@@ -24,6 +24,7 @@
 import { existsSync } from 'node:fs';
 import { test as base, expect, type Page, type BrowserContext } from '@playwright/test';
 import { STORAGE_STATE } from '../playwright.config';
+import { resetRateLimits } from './rate-limit';
 
 /** Dedicated E2E test identity. 10-digit only (the +91 is a display prefix the
  *  LoginComponent prepends; the validator is /^[6-9]\d{9}$/). Override via env. */
@@ -31,11 +32,34 @@ export const TEST_PHONE_10 = process.env.MEESELL_E2E_PHONE_10 ?? '9700000123';
 export const DEV_OTP = process.env.MEESELL_E2E_OTP ?? '000000';
 
 /**
+ * Fill the seller-profile onboarding form with valid data and submit.
+ *
+ * Post the qa-onboarding persist-fix (#399) the form is the manufacturer/packer/
+ * country set (NOT the old businessName/city/gst). The fields are `mee-input`
+ * wrappers with NO testid — they render a real `<label [for]>` → `<input>`, so they
+ * are driven with `getByLabel` (LIVE-VERIFIED 2026-06-22, see selector_registry.md).
+ * Country of Origin defaults to "India" (pre-valid) and is left untouched.
+ *
+ * Submitting now PERSISTS via PATCH /seller-profile → refreshUser() → /dashboard.
+ */
+export async function fillOnboarding(page: Page): Promise<void> {
+  await page.getByTestId('onboarding-submit').waitFor({ state: 'visible' });
+  await page.getByLabel('Manufacturer Name').fill('E2E QA Manufacturing');
+  await page.getByLabel('Manufacturer Address').fill('12 Industrial Estate, Tirupur');
+  await page.getByLabel('Manufacturer Pincode').fill('641604');
+  await page.getByLabel('Packer Name').fill('E2E QA Packers');
+  await page.getByLabel('Packer Address').fill('12 Industrial Estate, Tirupur');
+  await page.getByLabel('Packer Pincode').fill('641604');
+  // Country of Origin pre-filled "India" — leave it.
+  await page.getByTestId('onboarding-submit').locator('button').click();
+}
+
+/**
  * Drive the real phone-OTP login UI to an authenticated dashboard.
  *
  * login → request OTP → otp-verify → (a fresh user lands on /onboarding: fill the
- * business name + submit, which client-side routes to /dashboard) → assert the
- * dashboard heading. Returns once the dashboard heading is visible.
+ * seller-profile form + submit, which persists then routes to /dashboard) → assert
+ * the dashboard heading. Returns once the dashboard heading is visible.
  *
  * This is the single source of the login sequence — both the onboarding flow and
  * the worker-scoped authed fixture call it.
@@ -65,8 +89,7 @@ export async function loginViaOtp(page: Page, phone10: string = TEST_PHONE_10): 
   // a returning user goes straight to /dashboard.
   await page.waitForURL(/\/(onboarding|dashboard)/);
   if (/\/onboarding/.test(page.url())) {
-    await page.getByTestId('onboarding-business-name').fill('E2E QA Shop');
-    await page.getByTestId('onboarding-submit').locator('button').click();
+    await fillOnboarding(page);
     await page.waitForURL(/\/dashboard/);
   }
 
@@ -107,12 +130,26 @@ export const authedTest = base.extend<AuthTestFixtures, AuthWorkerFixtures>({
         haveSeed ? { storageState: STORAGE_STATE } : undefined,
       );
       const page = await context.newPage();
+      let seeded = false;
       if (haveSeed) {
-        // Activate the seeded session: navigate to a protected route; bootstrap()
-        // refreshes from the seed cookie and rotates it within this context.
+        // Try to activate the seeded session: navigate to a protected route;
+        // bootstrap() refreshes from the seed cookie and rotates it within this
+        // context. The seed cookie is SINGLE-USE with rotation, so it can already be
+        // dead (consumed/rotated before this worker ran, or expired) — in which case
+        // bootstrap()'s refresh 401s and the app bounces to /login. If so, fall
+        // through to a fresh OTP login rather than failing the whole worker.
         await page.goto('/dashboard');
-        await expect(page.getByTestId('dashboard-heading')).toBeVisible();
-      } else {
+        seeded = await page
+          .getByTestId('dashboard-heading')
+          .isVisible()
+          .catch(() => false);
+      }
+      if (!seeded) {
+        // No seed, or the seed cookie was dead → log in fresh into THIS shared
+        // context (clears any /login state first). Clear the OTP rate limit so this
+        // one worker login is not 429'd by accumulated sends (env reset, harness-side).
+        await resetRateLimits();
+        await context.clearCookies();
         await loginViaOtp(page);
       }
       await page.close();
@@ -128,6 +165,29 @@ export const authedTest = base.extend<AuthTestFixtures, AuthWorkerFixtures>({
     await use(page);
     await page.close();
   },
+});
+
+/**
+ * freshLoginTest — for the flows that must start LOGGED OUT and drive a REAL fresh
+ * OTP sign-in (onboarding happy / persist+resume / resume-incomplete / skip / the
+ * logout-guard sentinel). Each such test consumes the per-IP OTP-send budget
+ * (3/3600s), so this fixture performs the dev-env rate-limit reset BEFORE the test
+ * sends its OTP, via an AUTO fixture (guaranteed to run for every test using this
+ * `test` object — more reliable than a module-level beforeEach hook declared in an
+ * imported helper). It clears the Valkey `meesell:rl:*` keys; the reset lives here in
+ * the HARNESS (a fixture), never in a flow spec body, and is a no-op when no dev
+ * Valkey/redis-cli is reachable. The reset runs serially (--workers=1), so it cannot
+ * race a concurrent send.
+ */
+type RlResetFixture = { _rlReset: void };
+export const freshLoginTest = base.extend<RlResetFixture>({
+  _rlReset: [
+    async ({}, use) => {
+      await resetRateLimits();
+      await use();
+    },
+    { auto: true },
+  ],
 });
 
 export { expect };
