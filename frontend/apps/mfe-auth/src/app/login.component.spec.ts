@@ -242,4 +242,63 @@ describe('LoginComponent', () => {
     expect(comp.googleLoading()).toBe(false);
     expect(comp.errorMessage()).toContain('offline');
   });
+
+  // ── FE-AUTH-11: Google host availability (GIS load success vs failure) ───────
+  //
+  // The google-host div (data-testid="login-google-host") is always in the template
+  // (no @if flag-gate); the flag gating is in the backend mount + the GIS SDK load.
+  // The testable seam in the component:
+  //   - When GIS load() succeeds → renderButton() is called on the host element.
+  //   - When GIS load() rejects → errorMessage is set to the "Couldn't load" banner.
+
+  it('FE-AUTH-11: GIS load success → renderButton is called with the host element', () => {
+    const gis = TestBed.inject(GoogleIdentityService) as unknown as GisStub;
+    // The stub's load() already resolves; ngAfterViewInit already ran in beforeEach.
+    expect(gis.load).toHaveBeenCalledOnce();
+    expect(gis.renderButton).toHaveBeenCalledOnce();
+    // The first argument to renderButton must be an HTMLElement (the googleBtn host)
+    const hostArg = (gis.renderButton as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(hostArg).toBeInstanceOf(HTMLElement);
+  });
+
+  it('FE-AUTH-11: GIS load failure → errorMessage is set with "Couldn\'t load" message', async () => {
+    // Rebuild the fixture with a GIS stub whose load() rejects
+    TestBed.resetTestingModule();
+    class GisFailStub {
+      load = vi.fn(() => Promise.reject(new Error('GIS script failed to load')));
+      initialize = vi.fn();
+      renderButton = vi.fn();
+      cancel = vi.fn();
+      isReady = vi.fn(() => false);
+    }
+
+    await TestBed.configureTestingModule({
+      imports: [LoginComponent, ReactiveFormsModule, NoopAnimationsModule],
+      providers: [
+        provideRouter([
+          { path: 'otp-verify', children: [] },
+          { path: 'login', children: [] },
+          { path: 'dashboard', children: [] },
+          { path: 'onboarding', children: [] },
+        ]),
+        provideHttpClient(withFetch()),
+        provideHttpClientTesting(),
+        { provide: GoogleIdentityService, useClass: GisFailStub },
+      ],
+    }).compileComponents();
+
+    const failFixture = TestBed.createComponent(LoginComponent);
+    const failComp = failFixture.componentInstance;
+    failFixture.detectChanges();
+
+    // Wait for ngAfterViewInit's async initGoogleButton() to settle
+    await new Promise<void>((r) => setTimeout(r, 0));
+
+    // errorMessage must contain the load-failure copy
+    expect(failComp.errorMessage()).toContain("Couldn't load Google sign-in");
+
+    // Cleanup: destroy fixture + verify no pending requests
+    failFixture.destroy();
+    TestBed.inject(HttpTestingController).verify();
+  });
 });
