@@ -3241,3 +3241,34 @@ Next action: founder reviews + merges PR #350 → develop (founder's gate). No i
 
 **Next action:** none — fix merged + verified on develop. CI frozen-lockfile install restored; next frontend-touching push/PR will see `frontend-build` + `frontend-boot-smoke` pass `pnpm install` again.
 =========
+
+---
+
+=== UPDATE 2026-06-22 — qa-image-ai integration→develop MERGED ===
+Phase: GIT_WORKFLOW.md §merge step 2 (M3) — integration→develop is a MERGE-COMMIT; rule followed = "CI must be green; --admin past protection only, never past a real RED check (M13)."
+Session: mesell-qa-image-ai-merge-infra-session-1
+
+Pre-merge state:
+- develop tip BEFORE: `671af33`
+- integration tip: `c87d800` (Wave A #431 `0f4bfd9` + IA-RED-2 #434 `93a82eb` + Wave B #442 `c87d800`)
+- merge-base: `1fc73f4` — develop had advanced **22 commits** past it (true 3-way merge, not a fast-forward); integration ahead by 3 commits.
+- `git merge-tree --write-tree origin/develop c87d800` → exit 0, single tree OID `0f69db65...`, **0 conflict markers**.
+- File-level overlap check: integration touched 11 files (`backend/app/ai_ops/eval.py`, 7 backend tests, 1 perf test, 2 mfe-catalog specs); develop's changed-file set since merge-base had **ZERO overlap** with those 11 → no conflict surface even at file granularity. The task-flagged risk files (`eval.py`, backend tests, 2 mfe-catalog specs) all merge clean.
+
+PR + CI:
+- PR #459 opened (`feature/qa-image-ai/integration` → develop), title "merge(qa-image-ai): image-precheck/AI QA wave + IA-RED-2 eval-gate fix → develop", body = 3 lanes + IA-RED-2 fix + carried items (E2E deferred env-blocked, logout-idempotency loop-bug filed to backend).
+- ALL 15 required develop contexts GREEN: CI Gate 1 unit (1m12s), Gate 2 smoke (58s), Gate 3 lint-10 (58s), **Gate 4 integration (1m54s)**, Gate 5 golden_roundtrip (1m28s); FE-lint-5; 9 frontend units (detect/shell/mfe-auth/billing/catalog/dashboard/export/onboarding/pricing). Non-required jobs (build/deploy/nightly/boot-smoke/ai-eval) correctly `skipping` (push-only / PR-skip).
+- `mergeStateStatus=CLEAN`, `mergeable=MERGEABLE`. No RED check; no STOP condition.
+
+Merge result:
+- Merged via `gh pr merge 459 --merge --admin` (merge-commit per M3; `--admin` satisfies single-account protection only — no failing check was bypassed).
+- NEW develop tip: **`c946302`** — verified true merge-commit, 2 parents `671af33` (prev develop) + `c87d800` (integration tip); `c87d800` confirmed ancestor of develop.
+- Branches NOT deleted, no force-push.
+
+Board sweep (session start + end): NO Active-features row untouched 7+ days (all rows dated 2026-06-22 / 2026-06-14 — the 2026-06-14 microservices rows are program-complete authored-only lanes, deploy founder-gated, not stale-by-neglect). Inter-lead requests open: unchanged (none opened/closed this session).
+
+Cost: ₹0/mo — merge only; the single source change is `backend/app/ai_ops/eval.py` (test-scorer path), no live infra / no GCP resource touched.
+
+Note: this board+STATUS update was authored via git-plumbing off the merged develop tip `c946302` and landed on a dedicated chore branch, because the master working tree carried a STALE uncommitted revert of `feature_board_infra.md` (rolling the header back to the 2026-06-14 MS-5 state, losing fe-lockfile-sync + qa-onboarding-merged updates) — NOT inherited, NOT committed (co-tenancy rule: never clobber the shared dirty tree).
+Next action: none — wave merged + verified on develop. Carried items tracked (E2E env-block, backend logout-idempotency loop-bug).
+=========
