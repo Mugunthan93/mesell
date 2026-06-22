@@ -1050,7 +1050,7 @@ describe('SPEC C — data-testids on native elements (federation-safe)', () => {
 
   it('both pricing-applied-status and pricing-apply-error are NOT shown simultaneously', () => {
     // The @if conditions are mutually exclusive: appliedStatus can only have one value.
-    const appliedStatus = 'applied';
+    const appliedStatus: 'idle' | 'applying' | 'applied' | 'error' = 'applied';
     const showApplied = appliedStatus === 'applied';
     const showError   = appliedStatus === 'error';
     expect(showApplied && showError).toBe(false);
