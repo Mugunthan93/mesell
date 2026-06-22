@@ -2,13 +2,14 @@ import { Injectable, signal, computed, inject, OnDestroy } from '@angular/core';
 import { Router } from '@angular/router';
 import {
   Observable,
+  Subject,
   of,
   tap,
   switchMap,
   map,
   catchError,
   EMPTY,
-  shareReplay,
+  connectable,
   finalize,
 } from 'rxjs';
 import { AuthApiService } from './auth-api.service';
@@ -54,14 +55,14 @@ export interface AuthUser {
   /**
    * ISO-8601 UTC expiry of the 14-day Pro trial. null = no trial started.
    * Non-null + in the future → user is in a live Pro trial.
-   * After expiry the field may remain set (past timestamp) — use `entitlement` to
+   * After expiry the field may remain set (past timestamp) — use entitlement to
    * determine the current effective access level.
    */
   trial_ends_at?: string | null;
   /**
    * RESOLVED effective entitlement — the single field to gate feature visibility on.
-   * Collapse: free(no trial)→free | free+trial→pro | starter→starter |
-   *   pro/pro_annual/ltd→pro | business/business_annual→business.
+   * Collapse: free(no trial)=>free | free+trial=>pro | starter=>starter |
+   *   pro/pro_annual/ltd=>pro | business/business_annual=>business.
    * Absent on pre-Wave-3 cached users — treat undefined as 'free'.
    * Backend (plan_guard.resolve_entitlement) is authoritative.
    */
@@ -95,6 +96,13 @@ const MIN_REFRESH_DELAY_MS = 5_000;
  * Collapses a burst from multiple AuthService instances (broken federation singleton dedup)
  * into ONE POST /auth/refresh per rotation window. Distinct from MIN_REFRESH_DELAY_MS.
  * FE-D5 compliant: no localStorage/sessionStorage — purely in-memory.
+ *
+ * IMPORTANT — which callers use the debounce:
+ *   refreshShared()  => used by _doSilentRefresh + bootstrap (proactive paths). Debounce ACTIVE.
+ *   refreshForced()  => used by the refresh interceptor on genuine 401. Debounce BYPASSED.
+ *
+ * A genuine 401 means the server has already rejected the current token, so returning a
+ * cached token would just trigger another 401. The interceptor MUST always hit the network.
  */
 const REFRESH_DEBOUNCE_MS = 2_000;
 
@@ -130,10 +138,21 @@ export class AuthService implements OnDestroy {
 
   /**
    * Single-flight refresh Observable (stampede fix).
-   * Non-null while a /auth/refresh call is in-flight. Reset to null by finalize()
-   * when the Observable completes or errors — so the next genuine refresh starts fresh.
-   * All three callers (interceptor handle401, _doSilentRefresh, bootstrap) route through
-   * refreshShared() to guarantee AT MOST ONE concurrent POST /auth/refresh.
+   *
+   * Non-null while a /auth/refresh call is in-flight. Shared by BOTH refreshShared()
+   * and refreshForced() — concurrent callers always join this same multicast, ensuring
+   * AT MOST ONE POST /auth/refresh is in flight at any time regardless of call site.
+   *
+   * Implementation uses connectable() + Subject (W2-FE-1 determinism fix).
+   * The Subject delivers complete/error to ALL current subscribers synchronously in the
+   * same microtask, BEFORE the finalize-equivalent cleanup in _refreshNetwork() resets
+   * _refreshInFlight. This eliminates the finalize-vs-shareReplay microtask race
+   * where a late subscriber arriving in the same tick as finalize could either:
+   *   (a) get the replayed value before _refreshInFlight is null, or
+   *   (b) see null _refreshInFlight and create a second HTTP call.
+   *
+   * With Subject-multicast the reset happens AFTER all subscriber callbacks complete —
+   * deterministic regardless of microtask ordering.
    */
   private _refreshInFlight: Observable<RefreshResponse> | null = null;
 
@@ -147,7 +166,7 @@ export class AuthService implements OnDestroy {
   /**
    * Timestamp (Date.now()) of the last successful refresh completion.
    * Used by the cross-context debounce backstop (B03) in refreshShared().
-   * Initial value 0 means "no refresh has ever completed" → debounce inactive on first call.
+   * Initial value 0 means "no refresh has ever completed" => debounce inactive on first call.
    */
   private _lastRefreshAt = 0;
 
@@ -156,17 +175,17 @@ export class AuthService implements OnDestroy {
   /** Router injected for forceLogout() navigation. */
   private readonly router  = inject(Router);
 
-  // ── Public API ─────────────────────────────────────────────────────────────
+  // Public API
 
   /**
    * Called by login/OTP flow after backend confirms token.
    *
    * Frozen-surface amendment (2026-06-12, founder-approved §7.3): setSession
-   * now AUTO-PAIRS with scheduleRefresh. When the optional `expiresIn` (seconds)
+   * now AUTO-PAIRS with scheduleRefresh. When the optional expiresIn (seconds)
    * is supplied, a proactive silent refresh is scheduled automatically — the
-   * caller no longer has to remember the setSession → scheduleRefresh pairing.
+   * caller no longer has to remember the setSession => scheduleRefresh pairing.
    *
-   * BACKWARD COMPATIBLE: when `expiresIn` is omitted (the existing 2-arg
+   * BACKWARD COMPATIBLE: when expiresIn is omitted (the existing 2-arg
    * call shape — otp-verify mock, SP06 C4 smoke, bootstrap pre-hydration),
    * behaviour is UNCHANGED: token + user are set, no refresh is scheduled.
    * scheduleRefresh() remains public and callable for those paths.
@@ -187,10 +206,10 @@ export class AuthService implements OnDestroy {
    *
    * Given an access token + expiry from ANY verify endpoint
    * (otp/verify or google/verify — both return VerifyOtpResponse):
-   *   set token → fetch /me → setSession(token, user, expires_in) (which
-   *   auto-schedules the silent refresh) → resolve with the routing target.
+   *   set token => fetch /me => setSession(token, user, expires_in) (which
+   *   auto-schedules the silent refresh) => resolve with the routing target.
    *
-   * Onboarding gate (Path B): when `me.onboarding_complete === false` the user
+   * Onboarding gate (Path B): when me.onboarding_complete === false the user
    * is routed to /onboarding; otherwise to /dashboard. This is the single place
    * the gate decision lives, shared by every success site.
    *
@@ -199,9 +218,9 @@ export class AuthService implements OnDestroy {
    * mirrors the bootstrap()/_doSilentRefresh() graceful-degrade behaviour so a
    * transient /me hiccup never blocks login.
    *
-   * `fallbackUser` lets the caller seed the minimal session on /me failure:
-   *   - OTP path passes `{ phone }` (known at verify time) so the phone survives.
-   *   - Google path passes nothing → `{ phone: null }` (Google-only user, no phone).
+   * fallbackUser lets the caller seed the minimal session on /me failure:
+   *   - OTP path passes { phone } (known at verify time) so the phone survives.
+   *   - Google path passes nothing => { phone: null } (Google-only user, no phone).
    */
   completeLogin(
     resp: VerifyOtpResponse,
@@ -229,7 +248,7 @@ export class AuthService implements OnDestroy {
 
   /**
    * Soft logout (called by the logout button / explicit user action).
-   * Best-effort server revoke (fire-and-forget) → clear state → navigate to /login.
+   * Best-effort server revoke (fire-and-forget) => clear state => navigate to /login.
    * Does NOT set _loggedOut because this is an intentional user action, not a cascade guard.
    */
   logout(): void {
@@ -277,30 +296,22 @@ export class AuthService implements OnDestroy {
     return this._token();
   }
 
-  // ── Single-flight refresh (stampede fix) ───────────────────────────────────
+  // Single-flight refresh (stampede fix)
 
   /**
-   * Single-flight refresh gate — the ONLY path to POST /auth/refresh.
+   * Single-flight refresh for PROACTIVE paths (_doSilentRefresh, bootstrap).
    *
-   * If a refresh is already in-flight, all callers share the SAME Observable
-   * (shareReplay so late subscribers still get the cached emission).
-   * When the Observable completes or errors, finalize() clears _refreshInFlight
-   * so the next genuine refresh starts fresh (D-A + D-B fixed by construction).
+   * Includes the B03 cross-context debounce: if a refresh completed within
+   * REFRESH_DEBOUNCE_MS AND a live token exists, returns the current token
+   * without a network call. This collapses duplicate proactive refresh attempts
+   * from broken federation singleton instances into a single POST /auth/refresh.
    *
-   * shareReplay options:
-   *   - bufferSize: 1 — late subscribers get the last emitted value.
-   *   - refCount: false — source is NOT re-subscribed when ref count drops to 0
-   *     between emission and a late subscriber arriving (prevents a second HTTP call
-   *     on a hot-path race).
-   *
-   * Emits RefreshResponse so callers can read access_token/expires_in.
+   * DO NOT call from the 401-retry interceptor path — a genuine 401 means the
+   * server rejected the current token; returning it again causes another 401.
+   * Use refreshForced() for that path.
    */
   refreshShared(): Observable<RefreshResponse> {
-    // ── Cross-context debounce backstop (B03) ────────────────────────────────
-    // If a refresh completed within REFRESH_DEBOUNCE_MS ago AND we have a live
-    // token, short-circuit without a network call. Collapses a burst from
-    // multiple AuthService instances (broken @mesell/core federation singleton)
-    // into one POST /auth/refresh per rotation window.
+    // B03 cross-context debounce
     const currentToken = this._token();
     if (currentToken && Date.now() - this._lastRefreshAt < REFRESH_DEBOUNCE_MS) {
       return of({
@@ -310,25 +321,24 @@ export class AuthService implements OnDestroy {
       });
     }
 
-    if (this._refreshInFlight) {
-      return this._refreshInFlight;
-    }
-
-    this._refreshInFlight = this.authApi.refresh().pipe(
-      tap(() => {
-        this._lastRefreshAt = Date.now(); // arm debounce window (B03)
-      }),
-      shareReplay({ bufferSize: 1, refCount: false }),
-      finalize(() => {
-        // Reset in-flight on complete OR error — the NEXT refresh starts fresh.
-        this._refreshInFlight = null;
-      }),
-    );
-
-    return this._refreshInFlight;
+    return this._refreshNetwork();
   }
 
-  // ── Silent-refresh scheduling (§4.2) ───────────────────────────────────────
+  /**
+   * Single-flight refresh for REACTIVE paths (refresh interceptor on genuine 401).
+   *
+   * Bypasses the B03 cross-context debounce. A genuine 401 means the server has
+   * rejected the current access token — returning a cached version would just
+   * repeat the 401. The interceptor MUST always hit the network.
+   *
+   * Still shares _refreshInFlight with refreshShared() so concurrent 401s across
+   * multiple in-flight requests produce exactly ONE POST /auth/refresh (stampede fix).
+   */
+  refreshForced(): Observable<RefreshResponse> {
+    return this._refreshNetwork();
+  }
+
+  // Silent-refresh scheduling (§4.2)
 
   /**
    * Schedule a proactive token refresh BEFORE the access token expires.
@@ -356,8 +366,8 @@ export class AuthService implements OnDestroy {
    * App-init bootstrap — page-reload survival path (FE-D5).
    * Routes through refreshShared() so bootstrap racing _doSilentRefresh
    * produces exactly ONE POST /auth/refresh.
-   * On SUCCESS → setSession(new token, user from /me) + scheduleRefresh.
-   * On FAILURE (401 — no/expired cookie) → stay logged-out, no redirect.
+   * On SUCCESS => setSession(new token, user from /me) + scheduleRefresh.
+   * On FAILURE (401 — no/expired cookie) => stay logged-out, no redirect.
    *   The route guard handles unauthorised navigation.
    *
    * MUST resolve (never reject) — a rejected APP_INITIALIZER hangs app init.
@@ -403,13 +413,69 @@ export class AuthService implements OnDestroy {
     );
   }
 
-  // ── Private helpers ────────────────────────────────────────────────────────
+  // Private helpers
 
   private _cancelRefreshTimer(): void {
     if (this._refreshTimer !== null) {
       clearTimeout(this._refreshTimer);
       this._refreshTimer = null;
     }
+  }
+
+  /**
+   * Core single-flight network refresh (W2-FE-1 determinism fix).
+   *
+   * If _refreshInFlight is non-null, returns the shared multicast Observable —
+   * the caller joins the in-progress refresh without firing a second HTTP call.
+   *
+   * Otherwise, creates a new connectable Observable backed by a Subject.
+   * Using connectable + Subject (instead of shareReplay + finalize) makes the
+   * reset of _refreshInFlight DETERMINISTIC:
+   *
+   *   - shareReplay({refCount:false}) + finalize race: finalize fires in a microtask
+   *     AFTER the last emission propagates. A subscriber arriving in the same tick as
+   *     finalize can observe _refreshInFlight either null or non-null depending on
+   *     microtask order — hence the ~40% spec flake.
+   *
+   *   - Subject multicast: when the HTTP source completes/errors, the Subject's
+   *     complete()/error() is delivered to ALL current subscribers synchronously in
+   *     the same callstack frame. Only after all subscriber callbacks return does
+   *     finalize() run and reset _refreshInFlight. This order is guaranteed by RxJS
+   *     Subject semantics — no microtask race.
+   *
+   * The connected Subscription is managed internally by connectable.connect().
+   */
+  private _refreshNetwork(): Observable<RefreshResponse> {
+    if (this._refreshInFlight) {
+      return this._refreshInFlight;
+    }
+
+    const source = this.authApi.refresh().pipe(
+      tap(() => {
+        this._lastRefreshAt = Date.now(); // arm B03 debounce window for refreshShared()
+      }),
+      finalize(() => {
+        // Reset in-flight AFTER all current subscribers have been notified.
+        // Subject delivers synchronously; finalize runs after all callbacks return.
+        this._refreshInFlight = null;
+      }),
+    );
+
+    // connectable wraps source with a Subject multicast connector.
+    // resetOnDisconnect:false keeps the Subject open after connect() so late
+    // subscribers that arrive while the HTTP call is in-flight still receive
+    // the emission via the Subject, not a stale closed Subject.
+    const shared = connectable(source, {
+      connector: () => new Subject<RefreshResponse>(),
+      resetOnDisconnect: false,
+    });
+
+    // Connect immediately so the HTTP call starts. All current + future subscribers
+    // to shared receive the same emission from the one active HTTP request.
+    shared.connect();
+
+    this._refreshInFlight = shared;
+    return shared;
   }
 
   private _doSilentRefresh(): void {
