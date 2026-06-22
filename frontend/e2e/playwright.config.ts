@@ -5,21 +5,27 @@
  * SINGLE source of truth for all base URLs and ports — no spec, page-object, or
  * setup file may hardcode a port. Read everything from the environment here.
  *
- * Port map (local dev federation stack — canonical, from
- * frontend/apps/shell/public/federation.manifest.json):
+ * Port map (local dev federation stack — canonical SORTED regime, from
+ * frontend/apps/shell/public/federation.manifest.json; unified by PR #412 /
+ * Option 1 so the manifest == angular.json == ci.yml == tools/meesell_env.py
+ * slot-0). MFEs are sorted alphabetically: mfe[i] = 4201 + i over the sorted
+ * mfe-* app names. Keep this block + REMOTE_PORTS below in sync with that one
+ * canonical regime — they diverging is what made the auth E2E lane fetch
+ * LoginComponent from the wrong remote (Unknown exposed module → D12 fallback).
  *   shell          :4200   (host — every test navigates here first)
- *   mfe-pricing    :4201
- *   mfe-export     :4202
- *   mfe-onboarding :4203
+ *   mfe-auth       :4201
+ *   mfe-billing    :4202
+ *   mfe-catalog    :4203
  *   mfe-dashboard  :4204
- *   mfe-catalog    :4205
- *   mfe-auth       :4206
- *   mfe-billing    :4207
+ *   mfe-export     :4205
+ *   mfe-onboarding :4206
+ *   mfe-pricing    :4207
  *   backend (API)  :8000   (slot-0; the shell dev server reverse-proxies /api → here)
  *
  * Bring the full stack up with `/mesell:dev` (or `python3 tools/meesell_env.py
  * baseline up`) before running. Override any port via env (e.g. for a non-zero
- * slot N: shell = 4200 + N*10, mfe[i] = 4201 + N*10 + i, backend = 8000 + N*10).
+ * slot N: shell = 4200 + N*10, mfe[i] = 4201 + N*10 + i, backend = 8000 + N*10,
+ * where i is the index of the MFE in the sorted mfe-* app order).
  */
 import { defineConfig, devices } from '@playwright/test';
 
@@ -31,13 +37,13 @@ const SHELL_BASE_URL = process.env.MEESELL_SHELL_URL ?? `http://localhost:${SHEL
 // All app traffic in a real run goes through the shell; these are for targeted
 // remote-availability assertions only.
 export const REMOTE_PORTS: Record<string, number> = {
-  'mfe-pricing': Number(process.env.MEESELL_MFE_PRICING_PORT ?? 4201),
-  'mfe-export': Number(process.env.MEESELL_MFE_EXPORT_PORT ?? 4202),
-  'mfe-onboarding': Number(process.env.MEESELL_MFE_ONBOARDING_PORT ?? 4203),
+  'mfe-auth': Number(process.env.MEESELL_MFE_AUTH_PORT ?? 4201),
+  'mfe-billing': Number(process.env.MEESELL_MFE_BILLING_PORT ?? 4202),
+  'mfe-catalog': Number(process.env.MEESELL_MFE_CATALOG_PORT ?? 4203),
   'mfe-dashboard': Number(process.env.MEESELL_MFE_DASHBOARD_PORT ?? 4204),
-  'mfe-catalog': Number(process.env.MEESELL_MFE_CATALOG_PORT ?? 4205),
-  'mfe-auth': Number(process.env.MEESELL_MFE_AUTH_PORT ?? 4206),
-  'mfe-billing': Number(process.env.MEESELL_MFE_BILLING_PORT ?? 4207),
+  'mfe-export': Number(process.env.MEESELL_MFE_EXPORT_PORT ?? 4205),
+  'mfe-onboarding': Number(process.env.MEESELL_MFE_ONBOARDING_PORT ?? 4206),
+  'mfe-pricing': Number(process.env.MEESELL_MFE_PRICING_PORT ?? 4207),
 };
 
 // Backend base URL — used by auth.setup.ts for the one-time OTP exchange and by
