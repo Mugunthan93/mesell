@@ -69,3 +69,25 @@ over-asserting a deferred link the §3.E table marks "(IF selectors)".
   Real selector is `export-download` (NOT `export-download-button`).
 - W3-E2-5 image precheck: FIXME (per founder) — no local GCS creds (upload 502s before
   rembg). Un-fixme on a GCS-credentialed env / MinIO.
+
+## qa-catalog Wave C (e2e) — CODIFIED (2026-06-22) [SCRIBED BY QA-COORD, write-protection workaround]
+Live run OWED (slot-2 torn down + swap ceiling — see federation_quirks.md). CODIFY
+complete: `playwright test --list` = 19 tests / 9 files transpile + enumerate CLEAN.
+Gate verdict: APPROVE → squash-merged `1fdd5ea` into feature/qa-catalog/integration →
+qa-catalog WAVE COMPLETE (Wave A backend c8f4255/#435 + CAT-BUG-1 fix c20ee0e/#437,
+Wave B frontend 3476b0e/#451, Wave C e2e 1fdd5ea/#462). READY for the FOUNDER's
+integration→develop merge.
+
+| Case | File | Status | Notes |
+|---|---|---|---|
+| CAT-E2E-01 | flows/category-picker.spec.ts | COVERED (existing, kept) | type → suggestions → select → /catalogs/:uuid/edit. |
+| CAT-E2E-04 | flows/category-picker.spec.ts | COVERED (the CAT-BUG-1 LIVE guard) | inject 429 (RETHROWN path) → picker stays on /catalogs/new + enabled → route.fallback() + retype NEW desc → suggestion cards render again. Would FAIL pre-#437. Registry-LIVE-VERIFIED selectors only. |
+| CAT-E2E-02 | flows/catalog-creation.spec.ts | COVERED (existing, kept) | create via picker → dashboard-product-row visible. |
+| CAT-E2E-03 | flows/category-picker.spec.ts | FIXME | browse-fallback link — source-derived role/name, NOT live-verified (env-blocked) + no data-testid. Un-fixme when testid lands + live-verified. |
+| CAT-E2E-07 | flows/category-picker.spec.ts | FIXME | empty-state on zero suggestions — same provenance as 03. |
+| CAT-E2E-05 | flows/catalog-creation.spec.ts | FIXME | autosave persist-then-reload — BLOCKED by category-schema 404 seed gap. Un-fixme on a schema-seeded env. |
+| CAT-E2E-06 | flows/catalog-creation.spec.ts | FIXME | AI auto-fill — same category-schema 404 seed gap. |
+
+Procedural: cut the e2e lane branch from the LIVE integration tip (here merge-base ==
+`3476b0e` exactly → zero stale-base; `--diff-filter=D` empty). Always run
+`git diff --diff-filter=D --name-only integration..e2e` before squashing.
