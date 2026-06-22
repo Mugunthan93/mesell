@@ -538,6 +538,106 @@ describe('visual polish: 360px layout contract (builder-3)', () => {
   });
 });
 
+// ── PQE-FE-12: validation error-list render — i18n non-raw-key guard ─────────
+//
+// Spec requirement: aggregated failed_checks[] → itemized list; each message_key
+// resolves to a non-empty human-readable string (never the raw dotted key shown to
+// the seller). Zero raw keys in the rendered output is the quality-gate invariant.
+
+describe('PQE-FE-12: export validation error-list — i18n non-raw-key guard', () => {
+  const BOTH_FAILED_CHECKS: ExportFailedCheck[] = [
+    { check_id: 'quality_status',    message_key: 'export.check.quality_status' },
+    { check_id: 'front_image_missing', message_key: 'export.check.front_image_missing' },
+  ];
+
+  it('should resolve every message_key to a non-empty string (no blank render)', () => {
+    BOTH_FAILED_CHECKS.forEach(check => {
+      const resolved = resolveCheckMessage(check);
+      expect(resolved.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('should NOT show the raw dotted message_key to the seller (i18n-blank pattern)', () => {
+    BOTH_FAILED_CHECKS.forEach(check => {
+      const resolved = resolveCheckMessage(check);
+      // resolved must NOT equal the raw key (that would be the blank-key bug class)
+      expect(resolved).not.toBe(check.message_key);
+      // resolved must NOT contain the dotted namespace prefix
+      expect(resolved).not.toContain('export.check.');
+    });
+  });
+
+  it('should resolve quality_status check to human-readable copy mentioning required fields', () => {
+    const check = BOTH_FAILED_CHECKS.find(c => c.check_id === 'quality_status')!;
+    const resolved = resolveCheckMessage(check);
+    expect(resolved).toContain("ready");
+    expect(resolved.length).toBeGreaterThan(10);
+  });
+
+  it('should resolve front_image_missing check to human-readable copy mentioning image upload', () => {
+    const check = BOTH_FAILED_CHECKS.find(c => c.check_id === 'front_image_missing')!;
+    const resolved = resolveCheckMessage(check);
+    expect(resolved).toContain("image");
+    expect(resolved.length).toBeGreaterThan(10);
+  });
+
+  it('should surface both failed checks in the list (not just the first — collect-all)', () => {
+    // The aggregated 422 contains BOTH checks; the itemized list must render ALL of them.
+    const resolvedMessages = BOTH_FAILED_CHECKS.map(resolveCheckMessage);
+    expect(resolvedMessages).toHaveLength(2);
+    resolvedMessages.forEach(msg => {
+      expect(msg.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('should fall back to EXPORT_CHECK_FALLBACK for an unknown message_key (future-proof)', () => {
+    const unknownCheck: ExportFailedCheck = {
+      check_id:    'future_check',
+      message_key: 'export.check.future_check_not_in_map',
+    };
+    const resolved = resolveCheckMessage(unknownCheck);
+    // Fallback must be non-empty (no blank) and must NOT be the raw key
+    expect(resolved).toBe(EXPORT_CHECK_FALLBACK);
+    expect(resolved).not.toBe(unknownCheck.message_key);
+    expect(resolved.length).toBeGreaterThan(0);
+  });
+});
+
+// ── PQE-FE-13: onGenerate productId resolution (NON-OWNED bug + post-fix contract) ─
+//
+// The original V1 bug: export.component.ts onGenerate() L431 hardcoded
+// `const productId = 'current-product-id'` instead of reading the route param.
+// Owned by the `fix-fe-followups` track; the fix landed as `resolveExportProductId`
+// in export.model.ts. The post-fix contract is asserted in the
+// `resolveExportProductId — route param resolution` describe block below.
+//
+// This annotated block documents that the bug IS the known non-owned item (§0.1) and
+// MUST NOT lock the placeholder `'current-product-id'` as the correct product ID.
+// The `resolveExportProductId` tests (further below) ARE the green post-fix guard.
+
+describe('PQE-FE-13: onGenerate productId placeholder — NON-OWNED bug documentation', () => {
+  it('should NOT use the literal string "current-product-id" as the product id after fix', () => {
+    // The placeholder was `const productId = 'current-product-id'` (component L431).
+    // Post fix-fe-followups: resolveExportProductId reads ActivatedRoute.snapshot.paramMap.
+    // This test documents the invariant: the hardcoded string is WRONG and must not be sent.
+    const KNOWN_PLACEHOLDER = 'current-product-id';
+    const paramMapWithRealId = { get: (key: string) => key === 'id' ? 'real-uuid-from-route' : null };
+    const resolvedId = resolveExportProductId(paramMapWithRealId);
+    // The resolved id must never equal the placeholder (that would be the bug)
+    expect(resolvedId).not.toBe(KNOWN_PLACEHOLDER);
+    expect(resolvedId).toBe('real-uuid-from-route');
+  });
+
+  it('should read the route :id param (not a hardcoded constant) when the fix is applied', () => {
+    // TODO: un-xit once fix-fe-followups lands the ActivatedRoute wiring in the component.
+    // As of qa-pricing Wave B, the fix IS on this branch via resolveExportProductId.
+    const paramMap = { get: (key: string) => key === 'id' ? 'abc-product-uuid' : null };
+    const productId = resolveExportProductId(paramMap);
+    expect(productId).toBe('abc-product-uuid');
+    expect(productId).not.toBeNull();
+  });
+});
+
 // ── resolveExportProductId — null-guard pure unit (fix/export-productid) ──────────
 //
 // Proves the onGenerate() null-guard short-circuits when ActivatedRoute has no ':id'.
