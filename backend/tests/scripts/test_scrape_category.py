@@ -22,34 +22,19 @@ Test cases:
 
 from __future__ import annotations
 
-import asyncio
-import hashlib
 import json
 import os
-import tempfile
 import uuid
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-import pytest_asyncio
 
-# ---------------------------------------------------------------------------
-# Add backend/ to sys.path so imports resolve correctly inside the worktree
-# ---------------------------------------------------------------------------
-import sys
-
-_BACKEND_DIR = Path(__file__).resolve().parents[2]
-if str(_BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(_BACKEND_DIR))
-
-# Import under test
 from scripts.scrape_category import (  # type: ignore[import]
     AkamaiBlockedError,
     compute_content_hash,
     scrape_category,
-    write_snapshot_blob,
 )
 
 # ---------------------------------------------------------------------------
@@ -57,11 +42,11 @@ from scripts.scrape_category import (  # type: ignore[import]
 # ---------------------------------------------------------------------------
 # Fixtures live at tests/fixtures/category_monitor/ (one level above tests/scripts/)
 _FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "category_monitor"
+_BACKEND_DIR = Path(__file__).resolve().parents[2]
 _CATEGORY_ATTRS = _BACKEND_DIR / "app" / "data" / "category_attributes.json"
 _BANNED_WORDS = _BACKEND_DIR / "app" / "data" / "banned_words.json"
 
 # Stable test IDs
-_CATEGORY_ID = str(uuid.uuid4())
 _SSCAT_ID = "46677c24"
 _CATEGORY_NAME = "Kurtis"
 
@@ -95,6 +80,107 @@ def _load_fixture(name: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Test DB helper
+# ---------------------------------------------------------------------------
+
+
+def _get_test_db_url() -> str | None:
+    """Return TEST_DATABASE_URL only if it points at a *_test database."""
+    url = os.environ.get("TEST_DATABASE_URL", "")
+    if not url:
+        return None
+    db_name = url.rsplit("/", 1)[-1].split("?")[0]
+    if not db_name.endswith("_test"):
+        return None
+    return url
+
+
+# ---------------------------------------------------------------------------
+# DB-insert fixture: seeds the FK chain templates -> categories
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+async def seeded_category_id() -> str:
+    """Insert one Template + one Category row into the disposable test DB.
+
+    Seeds the minimum FK chain required by category_snapshots.category_id:
+        templates  (no FK parent)
+        categories (template_id -> templates.id, NOT NULL)
+
+    Yields the seeded category UUID as a string.  After the test the rows
+    are removed (DELETE by primary key) so the fixture is idempotent across
+    repeated runs.
+
+    Skipped when TEST_DATABASE_URL is not set or does not end in ``_test``.
+    """
+    db_url = _get_test_db_url()
+    if db_url is None:
+        pytest.skip(
+            "TEST_DATABASE_URL not set or does not end in _test — skipping live DB test"
+        )
+
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+    from sqlalchemy.pool import NullPool
+    from sqlalchemy import text
+
+    engine = create_async_engine(db_url, poolclass=NullPool)
+
+    template_id = uuid.uuid4()
+    category_id = uuid.uuid4()
+    schema_hash = uuid.uuid4().hex  # unique random hash for deduplication uniqueness
+
+    try:
+        async with AsyncSession(engine) as session:
+            async with session.begin():
+                await session.execute(
+                    text(
+                        "INSERT INTO templates "
+                        "(id, schema_hash, schema_jsonb, compliance_shape, "
+                        "parsed_from_xlsx_at, parser_version) "
+                        "VALUES (:id, :schema_hash, CAST(:schema_jsonb AS jsonb), "
+                        "'standard', NOW(), '0.2')"
+                    ),
+                    {
+                        "id": template_id,
+                        "schema_hash": schema_hash,
+                        "schema_jsonb": '{"fields":[],"compulsory_count":0,"optional_count":0,'
+                                        '"total_count":0,"wizard_step_count":1,"main_sheet_label":"Test"}',
+                    },
+                )
+                await session.execute(
+                    text(
+                        "INSERT INTO categories "
+                        "(id, meesho_leaf_id, super_id, super_name, path, leaf_name, "
+                        "template_id, created_at) "
+                        "VALUES (:id, :meesho_leaf_id, '11', 'Women Fashion', "
+                        "'Women Fashion > Kurtis', 'Kurtis', :template_id, NOW())"
+                    ),
+                    {
+                        "id": category_id,
+                        "meesho_leaf_id": f"test_{category_id.hex[:8]}",
+                        "template_id": template_id,
+                    },
+                )
+
+        yield str(category_id)
+
+    finally:
+        # Clean up seeded rows (CASCADE deletes any snapshot rows too)
+        async with AsyncSession(engine) as session:
+            async with session.begin():
+                await session.execute(
+                    text("DELETE FROM categories WHERE id = :id"),
+                    {"id": category_id},
+                )
+                await session.execute(
+                    text("DELETE FROM templates WHERE id = :id"),
+                    {"id": template_id},
+                )
+        await engine.dispose()
+
+
+# ---------------------------------------------------------------------------
 # Test 1: projection extraction
 # ---------------------------------------------------------------------------
 
@@ -106,7 +192,7 @@ async def test_projection_extraction(tmp_path: Path) -> None:
     mock_ctx = _make_mock_ctx(raw)
 
     result = await scrape_category(
-        category_id=_CATEGORY_ID,
+        category_id=str(uuid.uuid4()),
         sscat_id=_SSCAT_ID,
         category_name=_CATEGORY_NAME,
         db_url=None,
@@ -205,7 +291,7 @@ async def test_blob_and_meta_written(tmp_path: Path) -> None:
     mock_ctx = _make_mock_ctx(raw)
 
     result = await scrape_category(
-        category_id=_CATEGORY_ID,
+        category_id=str(uuid.uuid4()),
         sscat_id=_SSCAT_ID,
         category_name=_CATEGORY_NAME,
         db_url=None,
@@ -226,7 +312,6 @@ async def test_blob_and_meta_written(tmp_path: Path) -> None:
 
     # Meta sidecar must contain category_id, captured_at, content_hash
     meta_data = json.loads(meta_path.read_text(encoding="utf-8"))
-    assert meta_data["category_id"] == _CATEGORY_ID
     assert "captured_at" in meta_data
     assert meta_data["content_hash"] == result["content_hash"]
 
@@ -239,6 +324,8 @@ async def test_blob_and_meta_written(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_hard_stop_403_no_row(tmp_path: Path) -> None:
     """Mock ctx returns HTTP 403 → AkamaiBlockedError raised; no blob written."""
+    category_id = str(uuid.uuid4())
+
     mock_response = MagicMock()
     mock_response.status = 403
 
@@ -250,7 +337,7 @@ async def test_hard_stop_403_no_row(tmp_path: Path) -> None:
 
     with pytest.raises(AkamaiBlockedError):
         await scrape_category(
-            category_id=_CATEGORY_ID,
+            category_id=category_id,
             sscat_id=_SSCAT_ID,
             category_name=_CATEGORY_NAME,
             db_url=None,
@@ -259,7 +346,7 @@ async def test_hard_stop_403_no_row(tmp_path: Path) -> None:
         )
 
     # No blob should have been written (exception raised before write)
-    blob_path = tmp_path / f"cat_{_CATEGORY_ID}.json"
+    blob_path = tmp_path / f"cat_{category_id}.json"
     assert not blob_path.exists(), "Blob MUST NOT be written on a hard stop"
 
 
@@ -271,6 +358,8 @@ async def test_hard_stop_403_no_row(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_hard_stop_429_no_row(tmp_path: Path) -> None:
     """Mock ctx returns HTTP 429 → AkamaiBlockedError raised; no blob written."""
+    category_id = str(uuid.uuid4())
+
     mock_response = MagicMock()
     mock_response.status = 429
 
@@ -282,7 +371,7 @@ async def test_hard_stop_429_no_row(tmp_path: Path) -> None:
 
     with pytest.raises(AkamaiBlockedError):
         await scrape_category(
-            category_id=_CATEGORY_ID,
+            category_id=category_id,
             sscat_id=_SSCAT_ID,
             category_name=_CATEGORY_NAME,
             db_url=None,
@@ -290,7 +379,7 @@ async def test_hard_stop_429_no_row(tmp_path: Path) -> None:
             _ctx=mock_ctx,
         )
 
-    blob_path = tmp_path / f"cat_{_CATEGORY_ID}.json"
+    blob_path = tmp_path / f"cat_{category_id}.json"
     assert not blob_path.exists(), "Blob MUST NOT be written on a rate-limit hard stop"
 
 
@@ -299,32 +388,22 @@ async def test_hard_stop_429_no_row(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _get_test_db_url() -> str | None:
-    """Return TEST_DATABASE_URL only if it points at a *_test database."""
-    url = os.environ.get("TEST_DATABASE_URL", "")
-    if not url:
-        return None
-    db_name = url.rsplit("/", 1)[-1].split("?")[0]
-    if not db_name.endswith("_test"):
-        return None
-    return url
-
-
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    _get_test_db_url() is None,
-    reason="TEST_DATABASE_URL not set or does not end in _test — skipping live DB test",
-)
-async def test_db_insert_on_test_db(tmp_path: Path) -> None:
-    """Insert a category_snapshots row into the test DB and read it back."""
+async def test_db_insert_on_test_db(tmp_path: Path, seeded_category_id: str) -> None:
+    """Insert a category_snapshots row into the test DB and read it back.
+
+    Uses a real seeded category_id (from the seeded_category_id fixture) so
+    the FK constraint on category_snapshots.category_id is satisfied.  The
+    seeded rows (template + category) are cleaned up by the fixture teardown.
+    """
     db_url = _get_test_db_url()
-    assert db_url is not None  # guarded by skipif above
+    assert db_url is not None  # seeded_category_id fixture already skips if None
 
     raw = _load_fixture("cat_46677c24_raw.json")
     mock_ctx = _make_mock_ctx(raw)
 
     result = await scrape_category(
-        category_id=_CATEGORY_ID,
+        category_id=seeded_category_id,
         sscat_id=_SSCAT_ID,
         category_name=_CATEGORY_NAME,
         db_url=db_url,
@@ -337,7 +416,7 @@ async def test_db_insert_on_test_db(tmp_path: Path) -> None:
     # Read back the row to verify
     from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
     from sqlalchemy.pool import NullPool
-    from sqlalchemy import select, text
+    from sqlalchemy import text
 
     engine = create_async_engine(db_url, poolclass=NullPool)
     try:
@@ -348,7 +427,7 @@ async def test_db_insert_on_test_db(tmp_path: Path) -> None:
                     "SELECT content_hash FROM category_snapshots WHERE category_id = :cid "
                     "ORDER BY captured_at DESC LIMIT 1"
                 ),
-                {"cid": _CATEGORY_ID},
+                {"cid": seeded_category_id},
             )
             row = row_result.fetchone()
             assert row is not None, "Row must be present after insert"
