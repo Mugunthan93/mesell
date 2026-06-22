@@ -24,6 +24,7 @@ export type { ApiErrorEnvelope } from './interceptors/error.interceptor';
 
 // ── Guards ───────────────────────────────────────────────────────────────────
 export { authGuard } from './guards/auth.guard';
+export { onboardingGuard } from './guards/onboarding.guard';
 
 // ── Models (export type — erased at runtime, zero chunk cost — R-W6-3) ───────
 export type { Product, ProductStatus } from './models/product.model';
