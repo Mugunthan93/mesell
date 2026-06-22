@@ -51,3 +51,19 @@ STILL OPEN after Wave A:
   no test until a `consent` column exists.
 - Onboarding Waves B (frontend OB-FE-01..20) + C (e2e OB-E2E-01..08) — PENDING, not yet dispatched.
   Wave B carries the onboarding-`onSubmit` PRODUCT bug fix (data-loss; owner angular-component-builder).
+## Onboarding Wave C e2e CLOSED + SCRIBED writer-memory findings (PR #411, 2026-06-22, mesell-qa-onboarding-e2e-session-1 GATE)
+Onboarding e2e merged to `feature/qa-onboarding/integration` (`e5a44a3`); 11 passed / 3 test.fixme / 0 failed (writer; gate static + source ground-truth — the live re-run was blocked by a contaminated dev stack, disclosed). The e2e-test-writer could NOT write its own memory (worktree write-protection) — the gate SCRIBES its findings here, in the qa-coordinator memory, per the brief.
+
+**SCRIBED → `selector_registry.md` (newly LIVE-VERIFIED 2026-06-22, slot-1 shell :4210, integration tip `7e86054`; all also ground-truthed in source by the gate):**
+- **mfe-onboarding — onboarding form (post-#399 persist-fix).** The OLD businessName/city/gst mock form is GONE; `onboarding-business-name` testid is REMOVED (0 occurrences in source). The shipped form is the seller-profile manufacturer/packer/country set:
+  - Form fields are `mee-input` wrappers with NO testid → driven by `getByLabel(<substring>)` (each renders a real `<label [for]>`→`<input>`; substring match tolerates required "… *" labels). Verified labels: `Manufacturer Name` (L176), `Manufacturer Address`, `Manufacturer Pincode` (L188), `Packer Name` (L194), `Packer Address`, `Packer Pincode` (L206); Country of Origin defaults "India" (pre-valid, left untouched).
+  - Submit button = the ONE testid on the page: `getByTestId('onboarding-submit')` (L224) → click `.locator('button')`. Also the "fresh user routed to onboarding" visible marker.
+  - Skip link = `<a role="button">I'll set this up later →</a>` (L239), NO testid → `getByRole('button', { name: /set this up later/i })`.
+  - Submit-error banner = `mee-alert-banner` (no testid) emitting `role="alert"` → `getByRole('alert')`.
+- **mfe-auth — error banner** is the same `mee-alert-banner` → `getByRole('alert')` (shared by /login + /otp-verify). The pre-existing auth testids (login-phone-input, login-request-otp, login-google-host, otp-input, otp-verify-submit) remain LIVE.
+
+**SCRIBED → `federation_quirks.md` (re-confirmed §5-note-3):** the WHOLE stack (shell + ALL 7 remotes) must be rebuilt + aligned from the integration tip before e2e exploration — rebuilding remotes alone is INSUFFICIENT (the shell is the `@mesell/core`/`@mesell/ui-kit` singleton host; a stale shell silently no-ops `[testId]` passthroughs). The writer rebuilt slot-1 shell :4210 + all 7 remotes from integration tip `7e86054` (the baseline reuse was pre-#381 and lacked the testids). RE-CONFIRMED live this wave. (Corollary observed by the gate: a half-rebuilt/contaminated stack — some remotes on slot-0 ports, no backend — is the default broken state; do not trust a partial running stack for a gate re-run.)
+
+## Onboarding Wave C — NEW product bug + carry (2026-06-22)
+- **NEW PRODUCT BUG — onboarding pincode NOT-NULL 500.** The onboarding form sends `null` for empty manufacturer/packer pincode but `seller_profile` DB columns are NOT NULL → submit-without-pincode = 500 `NotNullViolationError`. Filed → frontend-coordinator (Director deciding fix owner). Fix: FE make pincode required and/or BE nullable-or-422. E2E tests fill valid pincodes so they pass.
+- **Carry (unchanged):** mfe-export route-productId product bug (export-download fixme); image-precheck (GCS/MinIO env); google-click (cross-origin GIS OAuth); CI wiring memo → infra.

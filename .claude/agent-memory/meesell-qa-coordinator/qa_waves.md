@@ -3,6 +3,26 @@
 One entry per QA wave: feature slugs covered, the coverage target set per
 specialist, what was actually achieved, and whether the exit criteria were met.
 Append a new section at the top after each wave.
+
+## Onboarding Wave C — Playwright E2E (two-phase) — 2026-06-22 — MERGED TO INTEGRATION
+
+**Session:** `mesell-qa-onboarding-e2e-session-1` (coordinator GATE).
+**PR #411** `feature/qa-onboarding/e2e` (`1a13128`) → `feature/qa-onboarding/integration` (`7e86054`).
+**Verdict:** APPROVE (8/8) → squash-merged → integration tip **`e5a44a3`** (was `7e86054`). Branch preserved. `integration → develop` is the FOUNDER's gate — NOT touched. **ALL THREE qa-onboarding lanes now coexist in integration** (backend `aa4345d`, frontend #407 `7e86054`, e2e #411 `e5a44a3`).
+
+**Coverage:** OB-E2E-01..08, 11 passed / 3 test.fixme / 0 failed, stable ×2 (writer's run). All 8 IDs covered (01/03 folded into one persist+resume flow; 02/04 folded into one wrong-OTP→resume flow to stay under the OTP-send budget). New page objects `auth.page.ts` + `onboarding.page.ts`; new fixtures `rate-limit.ts` + `global-setup.ts`; extended `fixtures/auth.ts` + `flows/onboarding.spec.ts` + `flows/logout-guard.spec.ts`.
+
+**OB-E2E-03 = the #399 data-loss regression guard (CONFIRMED not assertion-free):** asserts `expect((await patch).status()).toBe(200)` on `PATCH /seller-profile` AND, after `clearCookies()` + re-login the SAME user, `waitForURL(/\/dashboard/)` + `expect(page.url()).not.toMatch(/\/onboarding/)` + dashboard heading visible. Ground-truthed against integration SOURCE: `onboarding.component.ts` L314 genuinely `this.sellerProfile.patchProfile(payload).subscribe(...)` (NOT the old setTimeout mock).
+
+**What the gate executed vs reviewed statically:** the live Playwright re-run was NOT performed — the running dev stack was CONTAMINATED/inconsistent (slot-1 shell :4210 + mfe-auth :4211 + mfe-onboarding :4216 up; other remotes on slot-0-style ports; NO backend reachable: :8000/health=404, :8010 down). Per the checklist's explicit allowance, fell back to RIGOROUS static review: full diff (clean, 9 files = 8 e2e + board, ZERO app source), every page-object/fixture/spec read line-by-line, and SOURCE ground-truthing of every selector + the persist fix against integration tip `7e86054`. All 5 selector claims verified present in source (onboarding-submit L224; Manufacturer/Packer Name+Pincode labels L176/188/194/206; "set this up later" `<a>` L239; patchProfile L314; onboarding-business-name = 0 occurrences/removed).
+
+**Gate boxes (all PASS):** (1) writer pasted 11/3/0 ×2; gate static + source ground-truth (live re-run blocked, disclosed). (2) N/A backend DB guard. (3) no real external calls — dev OTP `000000`, no real Google/MSG91; GCS/Google are the `test.fixme` blockers. (4) coverage met — every GREEN flow asserts a VISIBLE outcome (URL/DOM/redirect/PATCH-200). (5) no assertion-free tests; 3 fixme carry real assertions in-body. (6) selectors LIVE-VERIFIED + source-ground-truthed; zero hardcoded ports (from `playwright.config.ts`); getByLabel/getByRole/getByTestId. (7) PR template complete. (8) board flipped IN REVIEW by the specialist (`f787541`) — discipline improvement.
+
+**NO stale-base hazard:** merge-base(e2e, integration) == integration tip `7e86054` exactly → `git diff integration..e2e --name-status | grep '^D'` empty. Wave B frontend specs verified PRESERVED.
+
+**3 test.fixme (honest, logged):** google-click (cross-origin GIS OAuth iframe, not drivable headless); export-download (mfe-export route-productId PRODUCT BUG, Wave-1 carry); image-precheck-result (local dev has no GCS creds → 502 before rembg). Each body keeps the real assertions.
+
+**2 product bugs found LIVE (filed → frontend-coordinator, NOT swallowed):** (1) NEW — onboarding pincode NOT-NULL 500: form sends `null` for empty manufacturer/packer pincode but `seller_profile` columns are NOT NULL → 500 `NotNullViolationError`. Fix candidates: FE make pincode required and/or BE make columns nullable / 422-not-500 (Director deciding owner). (2) mfe-export route-productId placeholder (Wave-1 carry, still blocking export-download). Tests fill valid pincodes so they pass.
 ## Wave 3 — catalog vertical (backend + frontend EXECUTED + MERGED to integration) — 2026-06-22
 
 **Session:** `mesell-qa-wave-3-coord-session-1` (merge-gate execution — HYBRID step 3, both lanes).
