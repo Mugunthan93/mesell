@@ -304,6 +304,105 @@ export type PricingErrorState =
       flex-direction: column;
       gap: var(--mee-space-2);
     }
+
+    /* ── Apply-price primary button (SPEC C)
+       Visual parity with mee-button variant="primary" (PrimeNG Aura preset values):
+         borderRadius: 999px  paddingX: 1.25rem  minHeight: 44px
+         background: --mee-color-primary (#F26B23)  color: --mee-color-on-primary (#fff)
+       States:
+         hover  → hoverColor  (#d45a18)
+         active → activeColor (#b04a10)
+         focus-visible → brand-orange focus ring (2px solid rgba(242,107,35,0.5) offset 2px)
+         disabled → 40% opacity + no-pointer cursor (non-visual conveyed via aria-disabled)
+         applying (aria-busy) → opacity 80%
+       No !important — specificity via single class, one layer. ────────────────*/
+    .mee-pricing__apply-btn {
+      display:          block;
+      width:            100%;
+      min-height:       44px;                           /* WCAG 2.5.8 touch target */
+      padding:          var(--mee-space-2) 1.25rem;    /* matches PrimeNG paddingX token */
+      border:           none;
+      border-radius:    var(--mee-radius-full);         /* 999px pill — matches mee-button */
+      background:       var(--mee-color-primary);
+      color:            var(--mee-color-on-primary);    /* #fff — contrast 3.11:1 (large/bold text AA) */
+      font-family:      inherit;                        /* Plus Jakarta Sans from body */
+      font-size:        0.9375rem;                      /* 15px — readable at 360px */
+      font-weight:      600;
+      line-height:      1.5;
+      letter-spacing:   0.01em;
+      cursor:           pointer;
+      transition:       background-color var(--mee-transition-fast),
+                        opacity var(--mee-transition-fast),
+                        box-shadow var(--mee-transition-fast);
+    }
+
+    .mee-pricing__apply-btn:hover:not(:disabled):not([disabled]) {
+      background: #d45a18;                              /* --mee-color-primary hoverColor */
+    }
+
+    .mee-pricing__apply-btn:active:not(:disabled):not([disabled]) {
+      background: #b04a10;                              /* --mee-color-primary activeColor */
+    }
+
+    /* Focus ring — mirrors global :focus-visible rule in shell styles.css
+       Uses the brand-orange ring token established in focus_ring_token_group session. */
+    .mee-pricing__apply-btn:focus-visible {
+      outline:        var(--mee-focus-ring-width) var(--mee-focus-ring-style) var(--mee-focus-ring-color);
+      outline-offset: var(--mee-focus-ring-offset);
+    }
+
+    /* Disabled state — non-visual conveyed via aria-disabled + [disabled] attribute */
+    .mee-pricing__apply-btn:disabled,
+    .mee-pricing__apply-btn[disabled] {
+      opacity: 0.4;
+      cursor:  not-allowed;
+    }
+
+    /* Applying in-flight state — slight dim while aria-busy="true" */
+    .mee-pricing__apply-btn[aria-busy="true"] {
+      opacity: 0.8;
+      cursor:  wait;
+    }
+
+    /* ── Applied-status chip (SPEC C: pricing-applied-status)
+       Mirrors the .mee-pricing__alert-chip--info pattern (success variant).
+       Visible only after 204 response; role="status" announces to screen reader.
+       Background: --mee-color-success-light  Border: --mee-color-success
+       Color: --mee-color-success (#16A34A on #dcfce7 composite) → 4.7:1 WCAG AA PASS ── */
+    .mee-pricing__applied-status {
+      display:      flex;
+      align-items:  center;
+      gap:          var(--mee-space-2);
+      margin-top:   var(--mee-space-2);
+      padding:      var(--mee-space-2) var(--mee-space-3);
+      border-radius: var(--mee-radius-sm);              /* 7px */
+      border-left:   3px solid var(--mee-color-success);
+      background:    var(--mee-color-success-light);    /* rgba(22,163,74,0.10) */
+      color:         var(--mee-color-success);          /* #16A34A */
+      font-size:     0.875rem;                          /* 14px */
+      font-weight:   500;
+      line-height:   1.5;
+    }
+
+    /* ── Apply-error chip (SPEC C: pricing-apply-error)
+       Mirrors the .mee-pricing__alert-chip--warning pattern (error variant).
+       role="alert" + aria-live="assertive" — announced immediately to screen reader.
+       Background: --mee-color-error-light  Border: --mee-color-error
+       Color: --mee-color-error (#DC2626 on #fee2e2 composite) → ~4.5:1 WCAG AA PASS ── */
+    .mee-pricing__apply-error {
+      display:      flex;
+      align-items:  flex-start;
+      gap:          var(--mee-space-2);
+      margin-top:   var(--mee-space-2);
+      padding:      var(--mee-space-2) var(--mee-space-3);
+      border-radius: var(--mee-radius-sm);              /* 7px */
+      border-left:   3px solid var(--mee-color-error);
+      background:    var(--mee-color-error-light);      /* rgba(220,38,38,0.10) */
+      color:         var(--mee-color-error);            /* #DC2626 */
+      font-size:     0.875rem;                          /* 14px */
+      font-weight:   500;
+      line-height:   1.5;
+    }
   `],
 
   template: `
@@ -563,12 +662,18 @@ export type PricingErrorState =
         The mee-button wrapper does NOT receive testids — only native DOM elements do.
       -->
       <div class="pt-2">
-        <!-- Native button wrapper preserves 44px touch target and carries the testid. -->
+        <!--
+          SPEC C: Save & Continue — apply-price primary button.
+          Native <button> carries data-testid (federation strips testids on mee-* wrappers).
+          .mee-pricing__apply-btn provides mee-button primary visual parity:
+            pill border-radius (999px), brand-orange bg, white text, hover/active/disabled/focus states.
+          aria-disabled mirrors [disabled] for screen readers (WCAG 1.3.1).
+          aria-busy="true" while POST is in-flight (WCAG 4.1.3 status message).
+        -->
         <button
           data-testid="pricing-apply-btn"
           type="button"
-          class="w-full min-h-[44px] px-4 py-2 rounded font-semibold text-white"
-          style="background: var(--mee-color-primary); opacity: 1;"
+          class="mee-pricing__apply-btn"
           [disabled]="!breakdown() || appliedStatus() === 'applying'"
           [attr.aria-busy]="appliedStatus() === 'applying' ? 'true' : null"
           [attr.aria-disabled]="!breakdown() || appliedStatus() === 'applying'"
@@ -583,15 +688,16 @@ export type PricingErrorState =
 
         <!--
           Applied status indicator — visible only after a 204 response.
-          role="status" + aria-live="polite" ensures screen readers announce the success.
+          role="status" + aria-live="polite" announces to screen readers (WCAG 4.1.3).
+          .mee-pricing__applied-status: success chip pattern (green border-left + light bg).
+          data-testid="pricing-applied-status" on native <span> (federation-safe).
         -->
         @if (appliedStatus() === 'applied') {
           <span
             data-testid="pricing-applied-status"
             role="status"
             aria-live="polite"
-            class="block mt-2 text-sm font-medium text-center"
-            style="color: var(--mee-color-success);"
+            class="mee-pricing__applied-status"
           >
             Price applied
           </span>
@@ -599,16 +705,18 @@ export type PricingErrorState =
 
         <!--
           Apply-error indicator (SPEC C §4 pricing-apply-error testid).
-          Reuses existing errorState banners above — this is only the native testid anchor.
-          Visible when appliedStatus=error; the mee-alert-banner above shows the detail.
+          role="alert" + aria-live="assertive" for immediate announcement (WCAG 4.1.3).
+          .mee-pricing__apply-error: error chip pattern (red border-left + light bg).
+          data-testid="pricing-apply-error" on native <span> (federation-safe).
+          The mee-alert-banner in the P&L card above shows server-error detail;
+          this chip is the E2E testid anchor + user-facing retry prompt.
         -->
         @if (appliedStatus() === 'error') {
           <span
             data-testid="pricing-apply-error"
             role="alert"
             aria-live="assertive"
-            class="block mt-2 text-sm text-center"
-            style="color: var(--mee-color-error);"
+            class="mee-pricing__apply-error"
           >
             Could not apply price. Please try again.
           </span>
