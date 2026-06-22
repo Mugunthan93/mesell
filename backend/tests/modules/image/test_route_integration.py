@@ -22,6 +22,21 @@ Ground-truth for GCS-fail (IMG-BE-07)
 which has ``status_code: int = 502``.  The ``core/errors.register_error_handlers``
 translates this to HTTP 502.  The V1-spec note mentions 503 but the AS-BUILT
 is 502.  This test asserts 502.
+
+D2 fix (Gate-4 repair pattern — matched from integration/conftest.py)
+----------------------------------------------------------------------
+``rate_limit_mw._check_window`` calls ``await get_valkey_otp()`` as a plain
+function — NOT through FastAPI DI.  So a FastAPI ``dependency_overrides``
+override has no effect on it.  After test N's function loop closes, the
+``_otp_client`` singleton retains a ``StreamWriter`` whose transport's
+``_loop`` is the now-closed loop N.  When test N+1 boots a new lifespan
+and the middleware makes a Valkey pipeline call, that writer tries
+``self._loop.call_soon(...)`` → ``RuntimeError: Event loop is closed``.
+
+Fix: in ``image_route_client`` we replace ``_valkey_module._otp_client``
+with a fresh function-loop-bound client for the fixture's duration, exactly
+as ``integration/conftest.py::iam_client`` does (the D2 fix / Gate-4
+repair-1 canon pattern).  The original singleton is restored in teardown.
 """
 
 from __future__ import annotations
@@ -36,9 +51,11 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
+import app.shared.valkey as _valkey_module
 from app.adapters import GcsAdapterError
 from app.core.auth import CurrentUser, get_current_user
 from app.main import app
+from tests.conftest import _valkey_base
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 
@@ -61,16 +78,66 @@ async def _stub_get_current_user() -> CurrentUser:
 
 # ---------------------------------------------------------------------------
 # ASGI client fixture (stub auth only; DB from conftest db_session)
+# D2 fix applied: patch _valkey_module._otp_client to a fresh function-loop
+# client so rate_limit_mw never calls call_soon() on a closed loop.
 # ---------------------------------------------------------------------------
 @pytest_asyncio.fixture(loop_scope="function")
 async def image_route_client():
-    """ASGI client with stub auth.  DB + Valkey come from the conftest."""
+    """ASGI client with stub auth.  DB + Valkey come from the conftest.
+
+    Applies the D2 fix (Gate-4 repair-1 canon): replaces the module-level
+    ``_otp_client`` singleton with a fresh client born in this test's function
+    loop for the fixture's duration.  Restores the original on teardown.
+    Without this, a combined ``pytest -m integration`` run triggers
+    ``RuntimeError: Event loop is closed`` on ``TestPostImageGCSFail`` and
+    ``TestGetImageListCrossTenant`` because the lifespan boot causes
+    rate_limit_mw to call ``call_soon()`` on the previous test's dead loop.
+    """
+    import redis.asyncio as _redis_lib
+
+    valkey_base = _valkey_base()
+
+    # ── D2 fix: swap in a fresh function-loop OTP client ─────────────────────
+    _original_otp_client = _valkey_module._otp_client
+    _test_otp_client = _redis_lib.from_url(f"{valkey_base}/0", decode_responses=True)
+    _valkey_module._otp_client = _test_otp_client  # type: ignore[assignment]
+
     app.dependency_overrides[get_current_user] = _stub_get_current_user
     transport = ASGITransport(app=app, raise_app_exceptions=False)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
-        async with app.router.lifespan_context(app):
-            yield ac
-    app.dependency_overrides.pop(get_current_user, None)
+
+    lifespan_db_engine = None
+    lifespan_valkey_client = None
+
+    try:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            async with app.router.lifespan_context(app):
+                lifespan_db_engine = getattr(app.state, "db_engine", None)
+                lifespan_valkey_client = getattr(app.state, "valkey", None)
+                yield ac
+
+            # Drain pending asyncpg pool callbacks before the function loop tears down.
+            if lifespan_db_engine is not None:
+                try:
+                    await lifespan_db_engine.dispose()
+                except Exception:
+                    pass
+            if lifespan_valkey_client is not None:
+                try:
+                    await lifespan_valkey_client.aclose()
+                except Exception:
+                    pass
+    finally:
+        # ── Teardown ─────────────────────────────────────────────────────────
+        app.dependency_overrides.pop(get_current_user, None)
+
+        # Restore the original _otp_client singleton.
+        _valkey_module._otp_client = _original_otp_client  # type: ignore[assignment]
+
+        # Close the function-loop OTP client.
+        try:
+            await _test_otp_client.aclose()
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------

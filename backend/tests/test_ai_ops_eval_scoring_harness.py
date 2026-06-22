@@ -1,37 +1,22 @@
-"""AI-BE-15/16 — Eval scoring harness guard tests (IA-RED-2 guard).
+"""AI-BE-15/16 — Eval scoring harness runner-logic tests (IA-RED-2 guard).
 
 Wave: qa-image-ai (Wave A).
 
 IA-RED-2 status
 ---------------
-``app.ai_ops.eval._run_one_fixture`` is a STUB returning ``passed=False``
-for every fixture unconditionally (see eval.py L186-193 docstring note:
-"body here returns a placeholder passed=False").  This means ``run_eval``
-can NEVER report a real metric — the 30 watermark + 30 autofill golden
-fixtures EXIST on disk but are never scored.
+``app.ai_ops.eval._run_one_fixture`` was originally a STUB.  PR #434
+(``meesell-prompt-engineer``) wired the real scorer, so the stub-state
+guards (``TestStubStateGuards``) that asserted ``fixtures_passed == 0``
+are now self-contradicting and have been DROPPED (gate-reject fix).
 
-Per the plan §2 Wave A contract:
-  - IA-RED-2 is APP CODE owned by the AI lead
-    (``meesell-ai-coordinator`` / ``meesell-prompt-engineer``).
-  - The QA writer's obligation is: write the MOCKED scoring harness tests
-    that will be green ONCE the AI lead wires ``_run_one_fixture``.
-  - Until then these tests assert the STUB behaviour (0/0 fail-loud) so
-    CI does NOT silently green-pass with 0 coverage.
+What remains — ``TestRunnerAggregationLogic`` — patches ``_run_one_fixture``
+with a mock scorer and asserts the RUNNER aggregation logic (how ``run_eval``
+aggregates per-fixture results into an ``EvalReport``).  These tests are
+scorer-independent: they will stay green regardless of what the real scorer
+returns, because the mock controls the per-fixture outcome.
 
-This file therefore does TWO things:
-1. **Stub-state guards** — assert the current ``run_eval`` behavior is the
-   documented stub (0/N passed=False) so any silent regression from the stub
-   is caught.
-2. **Mocked-scorer tests** — patch ``_run_one_fixture`` to return a real
-   scoring function and assert the aggregate metrics are computed correctly
-   by ``run_eval`` — testing the RUNNER logic (which the AI lead must not
-   break while wiring the scorer).
-
-When the AI lead wires ``_run_one_fixture``, the mocked-scorer tests already
-pass (runner logic correct); only the stub-state tests need to be
-re-evaluated and the fixture file paths will be live.
-
-No real Gemini calls.  All scoring is against pre-written fixtures.
+No real Gemini calls.  All scoring is against synthetic fixtures written
+in-test via ``tmp_path``.
 """
 
 from __future__ import annotations
@@ -48,62 +33,7 @@ pytestmark = pytest.mark.unit
 
 
 # ===========================================================================
-# Part 1: Stub-state guards (document the current _run_one_fixture behavior)
-# ===========================================================================
-
-class TestStubStateGuards:
-    """Assert the stub returns passed=False for all fixtures.
-
-    These tests LOCK the current stub behavior so any accidental change to
-    the stub (making it return True without real scoring) is caught.
-    """
-
-    async def test_watermark_with_real_fixtures_all_return_false_per_stub(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """With real watermark fixtures, stub returns 0/30 passed=False."""
-        # Point _fixtures_path at the real watermark fixtures
-        backend_root = Path(__file__).resolve().parents[1]
-        wm_path = backend_root / "tests" / "eval" / "watermark" / "fixtures.json"
-        if not wm_path.exists():
-            pytest.skip(f"Watermark fixtures not found at {wm_path}")
-
-        monkeypatch.setattr(
-            eval_mod,
-            "_fixtures_path",
-            lambda workload: wm_path if workload == "watermark" else wm_path,
-        )
-
-        report = await run_eval("watermark")
-        # Stub: all fixtures return passed=False
-        assert report.fixtures_passed == 0
-        assert report.fixtures_run == 30
-        # Stub state: NOT passing (no real scoring)
-        assert report.passed is False
-
-    async def test_autofill_with_real_fixtures_all_return_false_per_stub(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """With real autofill fixtures, stub returns 0/30 passed=False."""
-        backend_root = Path(__file__).resolve().parents[1]
-        af_path = backend_root / "tests" / "eval" / "autofill" / "fixtures.json"
-        if not af_path.exists():
-            pytest.skip(f"Autofill fixtures not found at {af_path}")
-
-        monkeypatch.setattr(
-            eval_mod,
-            "_fixtures_path",
-            lambda workload: af_path if workload == "autofill" else af_path,
-        )
-
-        report = await run_eval("autofill")
-        assert report.fixtures_passed == 0
-        assert report.fixtures_run == 30
-        assert report.passed is False
-
-
-# ===========================================================================
-# Part 2: Mocked-scorer tests (runner logic validation)
+# Mocked-scorer tests (runner logic validation)
 #
 # These tests REPLACE _run_one_fixture with a scoring function that mirrors
 # what the AI lead must implement.  They assert the RUNNER aggregation logic
