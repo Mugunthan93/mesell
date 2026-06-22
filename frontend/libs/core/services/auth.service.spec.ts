@@ -1152,3 +1152,70 @@ describe('refreshShared() — cross-context debounce backstop (B03)', () => {
     vi.useRealTimers();
   });
 });
+
+// ── FE-AUTH-08: access token is in-memory only (Decision #14) ────────────────
+//
+// Decision #14 (CLAUDE.md): "access JWT held in-memory by the frontend;
+// refresh token in HttpOnly+Secure+SameSite=Strict cookie owned by backend ...
+// no tokens in localStorage."
+//
+// These tests assert that setSession() NEVER writes ANY auth-related key to
+// localStorage, regardless of how many times it is called.
+
+describe('AuthService — access token is in-memory only (FE-AUTH-08, Decision #14)', () => {
+  it('should not write any value to localStorage when setSession is called', () => {
+    const { service } = setup();
+    // Clear storage first so we baseline from empty
+    localStorage.clear();
+
+    service.setSession('secret-token', { phone: '+919876543210' });
+
+    // No auth key may appear in localStorage
+    expect(localStorage.getItem('access_token')).toBeNull();
+    expect(localStorage.getItem('token')).toBeNull();
+    expect(localStorage.getItem('auth_token')).toBeNull();
+    expect(localStorage.getItem('jwt')).toBeNull();
+    expect(localStorage.getItem('mesell_token')).toBeNull();
+    // Belt-and-suspenders: the entire storage must be empty
+    expect(localStorage.length).toBe(0);
+  });
+
+  it('should not write to localStorage even when setSession is called multiple times', () => {
+    const { service } = setup();
+    localStorage.clear();
+
+    service.setSession('tok-1', { phone: '+91x' });
+    service.setSession('tok-2', { phone: '+91x', plan: 'pro' });
+
+    expect(localStorage.length).toBe(0);
+  });
+
+  it('should not persist any auth key to localStorage after logout', () => {
+    const { service, controller } = setup();
+    localStorage.clear();
+
+    service.setSession('tok', { phone: '+91x' });
+    service.logout();
+    // Drain the fire-and-forget revoke POST
+    controller.match('/api/v1/auth/logout').forEach((r) =>
+      r.flush(null, { status: 204, statusText: 'No Content' }),
+    );
+
+    expect(localStorage.length).toBe(0);
+  });
+
+  it('should return the in-memory token from getToken — not any value from localStorage', () => {
+    const { service } = setup();
+    // Seed localStorage with a decoy token to confirm service does NOT read from it
+    localStorage.setItem('access_token', 'decoy-from-storage');
+
+    // setSession stores in memory only
+    service.setSession('real-in-memory-token', { phone: '+91x' });
+
+    // Service returns the in-memory value, not the localStorage decoy
+    expect(service.getToken()).toBe('real-in-memory-token');
+
+    // Cleanup decoy
+    localStorage.clear();
+  });
+});

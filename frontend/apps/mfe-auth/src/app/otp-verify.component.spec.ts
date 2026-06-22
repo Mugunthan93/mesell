@@ -43,7 +43,12 @@ describe('OtpVerifyComponent', () => {
     router   = TestBed.inject(Router);
     httpMock = TestBed.inject(HttpTestingController);
     authSvc  = TestBed.inject(AuthService);
+    // Reset auth state. logout() fires a fire-and-forget POST /auth/logout —
+    // drain it immediately so it does NOT leak into httpMock.verify() later.
     authSvc.logout();
+    httpMock.match('/api/v1/auth/logout').forEach((r) =>
+      r.flush(null, { status: 204, statusText: 'No Content' }),
+    );
 
     // Provide phone via navigation state spy so ngOnInit doesn't redirect to /login
     vi.spyOn(router, 'getCurrentNavigation').mockReturnValue({
@@ -57,16 +62,28 @@ describe('OtpVerifyComponent', () => {
 
   beforeEach(async () => {
     vi.useRealTimers();
-    TestBed.resetTestingModule();
+    // NOTE: do NOT call TestBed.resetTestingModule() here — the @angular/build:unit-test
+    // runner already resets between spec FILES. An explicit reset inside beforeEach breaks
+    // cross-suite isolation (causes "Cannot configure when already instantiated" in the NEXT
+    // spec file that runs after this one). Let the runner own the lifecycle.
     await makeFixture();
   });
 
   afterEach(() => {
     fixture.destroy();
+    // Final drain of any stray logout POSTs (defensive — makeFixture already drains
+    // the initial logout(); this catches any extra logout() calls a test might add).
+    httpMock.match('/api/v1/auth/logout').forEach((r) =>
+      r.flush(null, { status: 204, statusText: 'No Content' }),
+    );
     httpMock.verify();
     vi.useRealTimers();
     vi.restoreAllMocks();
-    TestBed.resetTestingModule();
+    // NOTE: do NOT call TestBed.resetTestingModule() here — Angular's global afterEach
+    // hook (registered by testing.mjs at module load time) calls it automatically after
+    // each test. An explicit second call in the local afterEach causes issues when test
+    // bodies that set up sub-fixtures (resend-timer, history-state) have already run
+    // their own configure/destroy cycle within the same test.
   });
 
   // ── Initial state ──────────────────────────────────────────────────────────

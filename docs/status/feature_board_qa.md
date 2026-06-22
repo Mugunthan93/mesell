@@ -13,9 +13,9 @@
 
 | Wave | Group branch | Status | Current session | Last touched | Blocking | Notes |
 |---|---|---|---|---|---|---|
-| _(no active rows — Wave-1 e2e lane MERGED 2026-06-22 → Recently merged; backend + frontend lanes already merged. Wave-1 codify complete. Wave-2 backlog tracked in the carry-forward section.)_ | | | | | | |
+| qa-wave-2 (frontend) | `feature/qa-wave-2/frontend` | **IN REVIEW** | mesell-qa-wave-2-frontend-session-1 | 2026-06-22 | none | PR #397 open (`feature/qa-wave-2/frontend` → `feature/qa-wave-2/integration`). 8 files +474/-13. All 11 FE-AUTH cases delivered: 5 FIX-RED (W2-FE-1/2/7 high signals GREEN), 1 net-new `auth-error-map.spec.ts`, 5 HARDEN. `ng test frontend`: 1587 passed / 34 failed / 20 skipped — 5 failing files are all PRE-EXISTING (none in our diff). Pre-existing fail count dropped 61 → 34. Awaiting QA coordinator merge-gate review. |
 
-> **Session-end sweep (2026-06-22, mesell-qa-wave-1-e2e-session-1):** the e2e codify lane (PR #385) is now MERGED → moved to Recently merged. **ZERO Active rows remain** — Wave-1 (backend #380, frontend #381/#383, e2e #385) is fully landed on develop. No rows >7 days stale. Inter-lead requests: **1 OPEN** (frontend / mfe-export route-productId product bug, found live in the e2e run); the mfe-pricing-spec request was RESOLVED by #383. **Wave-2 carry-forward = the 61 pre-existing frontend reds + the 1 backend P1 skip (export-ZIP) + the mfe-export product bug — all belong in the final TEST_REPORT.**
+> **Session-end sweep (2026-06-22, mesell-qa-wave-1-e2e-session-1 + mesell-qa-wave-2-frontend-session-1):** Wave-1 (backend #380, frontend #381/#383, e2e #385) fully landed on develop. Wave-2 frontend lane IN REVIEW (PR #397). Inter-lead requests: **1 OPEN** (frontend / mfe-export route-productId product bug). The Wave-2 backend and e2e lanes are pending their specialist dispatches.
 
 ## Recently merged (last 14 days)
 

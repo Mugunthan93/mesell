@@ -149,7 +149,14 @@ function setupReal() {
 }
 
 afterEach(() => {
-  TestBed.inject(HttpTestingController).verify();
+  // Drain any fire-and-forget POST /auth/logout calls that forceLogout() emits
+  // (forceLogout is a one-way revoke; the response is irrelevant to test assertions).
+  // controller.match() returns [] when no logout was sent, so this is a safe no-op.
+  const ctrl = TestBed.inject(HttpTestingController);
+  ctrl.match('/api/v1/auth/logout').forEach((r) =>
+    r.flush(null, { status: 204, statusText: 'No Content' }),
+  );
+  ctrl.verify();
 });
 
 // ── (a) A 401 on a protected call triggers ONE POST /auth/refresh ──────────────
@@ -403,6 +410,12 @@ describe('refreshInterceptor (i): fresh window after stampede — no stale-token
     expect(results).toContain('first-result');
 
     // ── Second cycle — gate MUST be reset (finalize cleared _refreshInFlight) ─
+    // The cross-context debounce backstop (REFRESH_DEBOUNCE_MS=2000ms) returns the
+    // cached token if a refresh completed within the last 2 s. Advance Date.now past
+    // the debounce window so the second 401 triggers a genuine new network call.
+    const realDateNow = Date.now;
+    Date.now = () => realDateNow() + 3_000;
+    try {
     http.get<{ id: string }>('/api/v1/products/second').subscribe((r) => results.push(r.id));
 
     const second = controller.expectOne('/api/v1/products/second');
@@ -417,6 +430,9 @@ describe('refreshInterceptor (i): fresh window after stampede — no stale-token
     secondRetry.flush({ id: 'second-result' });
 
     expect(results).toContain('second-result');
+    } finally {
+      Date.now = realDateNow;
+    }
   });
 });
 

@@ -80,13 +80,17 @@ describe('SP06 D38 C4 — OtpVerifyComponent WRITE-path: setSession crosses the 
     await TestBed.configureTestingModule({
       imports: [OtpVerifyComponent],
       providers: [
-        // Stub /login + /dashboard routes (SP03 NG04002 gotcha: a router.navigate(['/dashboard'])
-        // with no matching route throws NavigationError and silently poisons the suite even if
-        // the test "passes"). Both stubs are required here because the guard redirects to /login
-        // (pre-write) and onSubmit navigates to /dashboard (post-write).
+        // Stub /login + /dashboard + /onboarding routes.
+        // SP03 NG04002 gotcha: a router.navigate() with no matching route throws NavigationError
+        // and silently poisons the suite even if the test "passes".
+        // /login  — guard redirects here (pre-write)
+        // /dashboard — onSubmit navigates here after login (onboarding_complete:false → /onboarding)
+        // /onboarding — completeLogin routes here when me.onboarding_complete === false
+        //   (FAKE_ME_RESP.onboarding_complete is false → this route MUST exist to prevent NG04002)
         provideRouter([
-          { path: 'login', children: [] },
-          { path: 'dashboard', children: [] },
+          { path: 'login',      children: [] },
+          { path: 'dashboard',  children: [] },
+          { path: 'onboarding', children: [] },
         ]),
         provideAnimationsAsync('noop'),
         provideHttpClient(withFetch()),
@@ -101,7 +105,12 @@ describe('SP06 D38 C4 — OtpVerifyComponent WRITE-path: setSession crosses the 
     httpMock    = TestBed.inject(HttpTestingController);
 
     // Ensure we start unauthenticated (clean slate, independent of test order).
+    // Drain the fire-and-forget POST /auth/logout immediately — if not drained here
+    // it surfaces as an "open request" in httpMock.verify() in afterEach.
     shellAuth.logout();
+    httpMock.match('/api/v1/auth/logout').forEach((r) =>
+      r.flush(null, { status: 204, statusText: 'No Content' }),
+    );
 
     // Navigate with state so OtpVerifyComponent picks up the phone (avoids redirect-to-login).
     await router.navigate(['/login']);
