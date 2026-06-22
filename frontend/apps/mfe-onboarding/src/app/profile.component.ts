@@ -12,6 +12,7 @@ import {
   ReactiveFormsModule,
   ValidationErrors,
   ValidatorFn,
+  Validators,
 } from '@angular/forms';
 import { Router } from '@angular/router';
 import {
@@ -315,8 +316,9 @@ function pincodeValidator(): ValidatorFn {
         <mee-input
           label="Manufacturer PIN code"
           placeholder="6-digit PIN"
+          [required]="true"
           formControlName="manufacturer_pincode"
-          [error]="fieldError('manufacturer_pincode') || (form.controls.manufacturer_pincode.touched && form.controls.manufacturer_pincode.hasError('pincodeInvalid') ? 'Enter a valid 6-digit pincode.' : undefined)"
+          [error]="fieldError('manufacturer_pincode') || (form.controls.manufacturer_pincode.touched && form.controls.manufacturer_pincode.hasError('required') ? 'Manufacturer pincode is required.' : (form.controls.manufacturer_pincode.touched && form.controls.manufacturer_pincode.hasError('pincodeInvalid') ? 'Enter a valid 6-digit pincode.' : undefined))"
         />
 
         <!-- Packer fields -->
@@ -339,8 +341,9 @@ function pincodeValidator(): ValidatorFn {
         <mee-input
           label="Packer PIN code"
           placeholder="6-digit PIN"
+          [required]="true"
           formControlName="packer_pincode"
-          [error]="fieldError('packer_pincode') || (form.controls.packer_pincode.touched && form.controls.packer_pincode.hasError('pincodeInvalid') ? 'Enter a valid 6-digit pincode.' : undefined)"
+          [error]="fieldError('packer_pincode') || (form.controls.packer_pincode.touched && form.controls.packer_pincode.hasError('required') ? 'Packer pincode is required.' : (form.controls.packer_pincode.touched && form.controls.packer_pincode.hasError('pincodeInvalid') ? 'Enter a valid 6-digit pincode.' : undefined))"
         />
 
         <!-- Country of origin -->
@@ -420,10 +423,10 @@ export class ProfileComponent implements OnInit {
   readonly form = this.fb.group({
     manufacturer_name:    [''],
     manufacturer_address: [''],
-    manufacturer_pincode: ['', [pincodeValidator()]],
+    manufacturer_pincode: ['', [Validators.required, pincodeValidator()]],
     packer_name:          [''],
     packer_address:       [''],
-    packer_pincode:       ['', [pincodeValidator()]],
+    packer_pincode:       ['', [Validators.required, pincodeValidator()]],
     country_of_origin:    ['India'],
   });
 
