@@ -1,6 +1,32 @@
 # STATUS — BACKEND
 
 
+=== UPDATE: 2026-06-22 (meesell-backend-coordinator) — category-monitor Wave-3 Unit S (serving + evict) MERGE-GATE PASS ===
+Phase: RETENTION_CATEGORY_MONITOR (#370) — Wave-3 Unit S (serving read-through + evict-on-update)
+Session: mesell-category-monitor-backend-session-6 (HYBRID step-3, merge-gate review)
+Board sweep: category-monitor Wave-3 Unit S row added to Active features as MERGED-to-integration. Session-end sweep — razorpay-W4 IN REVIEW (2026-06-19, 3d) / price-calculator APPROVE-FOR-FOUNDER (2026-06-18, 4d) / category-monitor Unit T IN REVIEW (rejected, fix in flight) all NOT stale; no Active row 7+ days untouched; no Recently-merged row >14 days; BE-DOC-2D-COUNT-1 OPEN (founder §7.3); inter-lead requests unchanged.
+
+VERDICT: PASS — PR #477 squash-merged to feature/category-monitor/integration (tip 0d0abfb -> 4ca5a56). integration->develop FOUNDER gate NOT opened (D1).
+
+Done (independent verification, NOT builder report):
+  - Reviewed PR #477 (feature/category-monitor/backend-w3-serving -> feature/category-monitor/integration) vs the diff + a REAL meesell_test Postgres session in a dedicated review worktree (master venv py3.11).
+  - All 6 criteria PASS:
+    1. get_served_category_data = read-through core.cache.get_or_set on Valkey DB-3 (get_valkey_cache, NOT the DB-0 W2 in-flight lock); _fetch reads ONLY monitor_repo.get_latest_snapshot; None -> CategorySnapshotNotFoundError; TTL 86400 (1-day).
+    2. Zero live-Meesho in the serve path — serve method imports only get_or_set/monitor_repo/the exception; static grep test green.
+    3. evict-on-update — new core.cache.evict(key, version=None) (versioned-key delete via get_valkey_cache); W2 gate "scraped" branch calls await evict(_snapshot_cache_key(category_id)) AFTER snapshot insert, BEFORE return. W2 gate body diffed BYTE-UNTOUCHED except the evict import + the comment+evict call. MUTATION-PROVEN: stripping the evict line turns test_evict_on_update_clears_stale_serve_cache RED, restored clean.
+    4. gate-fixture edit MINIMAL/non-live-preserving — patches core_cache.get_valkey_cache onto a SEPARATE FakeRedis (distinct from the DB-0 lock client); no gate assertion weakened; all 9 gate tests still genuinely exercise gate logic.
+    5. Internal-only (Q2) — no router file in app/modules/monitor/; diff touches no main.py/router/__init__/schemas; route delta=0 PROVEN (base app 36 method-routes == head 36; test_app_boot_integration green).
+    6. ruff check app/ clean; lint-imports 27/0 (monitor->core.cache normal layering); LOCKED docs byte-untouched; PR template filled.
+  - Independent runs (disposable meesell_test): test_monitor_serving + test_monitor_gate -m unit = 14 passed (5 serving + 9 gate); test_core_cache.py 5 passed; test_app_boot_integration.py 8 passed; evict mutation RED.
+  - Diff scope EXACTLY: core/cache.py + monitor/exceptions.py + monitor/service.py + 2 test files + STATUS. Branch PRESERVED.
+
+Wave-3 status: Unit T (trigger-wiring, PR #472 REJECTED 2026-06-22 — back to meesell-services-builder, identity-map-aliasing fix in re-gate) + Unit S (this, MERGED) — BOTH must land for Wave 3 done. Unit T fix is the ONLY remaining Wave-3 item.
+
+Blockers: none.
+Next: Unit T fix re-gate (parallel session). On both landing -> Wave 3 complete; founder opens the single feature/category-monitor/integration -> develop gate.
+Hand-offs: none new.
+=========
+
 === UPDATE: 2026-06-22 (meesell-backend-coordinator) — category-monitor Wave-1 schema MERGE-GATE PASS ===
 Phase: RETENTION_CATEGORY_MONITOR (#370) — Wave-1 schema
 Session: mesell-category-monitor-backend-session-1 (HYBRID step-3, merge-gate review)
