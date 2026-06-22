@@ -989,6 +989,22 @@ jobs:
         # Catches that drift at config-review time, before any build. Dependency-free Node ESM.
         run: node tools/contracts/federation_singleton_guard.mjs
 
+      - name: Dead-route navigation guard (FED-2)
+        working-directory: frontend
+        # FED-2: asserts every STATIC navigation target (router.navigate([...]),
+        # navigateByUrl(), routerLink, and nav-item route:/routerLink: config literals)
+        # resolves to a route that actually EXISTS in the mounted route table. The table is
+        # DERIVED from the route files (apps/shell/app.routes.ts + the loadChildren-expanded
+        # mfe-catalog/mfe-billing route arrays via each remote's federation.config.js exposes),
+        # so it stays correct as routes change. WHY: the shell ends in `{ path: '**',
+        # redirectTo: 'login' }`, so a navigate to an UNDEFINED route does not 404 — it silently
+        # falls through to /login, which a logged-in user reads as a sudden "logout". We hit this
+        # twice from a single typo'd navigate literal (image-uploader #278, Preview :id/preview
+        # #395). This guard makes such a navigate a build failure at lint time, before any build.
+        # Fully-dynamic targets (navigate(routeVar), [routerLink]="item.route") are printed as
+        # UNVERIFIABLE and never fail the build. Dependency-free Node ESM.
+        run: node tools/contracts/dead_route_guard.mjs
+
   # =============================================================================
   # BUILD — Docker images via Cloud Build
   # FOUNDER RULING 2026-06-12: dev deploys fire from develop; main is reserved for staging/prod
