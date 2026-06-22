@@ -86,3 +86,25 @@ PR #442 (`feature/qa-image-ai/frontend` → integration, squash `c87d800`) — A
 - **AutofillButtonComponent / FieldDiffComponent DO NOT EXIST as separate components** (V1 spec §3.C named them; ground-truth `grep -rl 'class AutofillButtonComponent|class FieldDiffComponent'` = NONE). The autofill button + yellow-highlight diff overlay are **INLINE in `CatalogFormComponent`**: button at template L264 (`mee-ai-fill-row`), `onAutofill()` at component L720. Filed as a SPEC GAP (not a red). Any future autofill-UI test/E2E must target the inline surface, NOT a phantom component. Coverage delivered at the service/model seam (`catalog-form.model.ts`: `isAiSuggested`/`clearAiSuggestion`/`mergeAiSuggestions`/`extractSuggestionEntries`/`dismissSuggestion`).
 - **onAutofill DUAL-WRITE note (source L732-733):** the `next:` handler writes BOTH `this.aiSuggestions.set(values)` (the highlight overlay) AND `this.fieldValues.update(cur => ({...cur, ...values}))` (pre-fills the inputs) in the SAME tick. So the V1 "no auto-apply" model is: fields ARE pre-filled for review, but the overlay highlight persists until the user edits (`clearAiSuggestionIfPresent` on blur/change) or dismisses (`dismissSuggestion`, removes overlay only, keeps the field value). IMG-FE-09 asserts exactly this dual-write. Error path L736-738 = `autofilling.set(false)` + toast `'AI fill failed. Please try again.'` (non-empty, no blank-key regression). Any contract test on autofill MUST account for the dual-write — asserting only-overlay or only-fieldValues misreads the as-built.
 - **IMG-FE-06 is PRE-COVERED, do not re-spec:** `image.service.spec.ts` (mfe-catalog/images/image-uploader/) has the 22-test `HttpTestingController` error matrix (upload 401→logout+EMPTY / 404→EMPTY / 500→EMPTY; pollImages 401→logout / 404→`of({images:[]})` / 500→`of({images:[]})`). The Wave B uploader spec correctly did NOT duplicate it.
+
+## qa-catalog Wave C (e2e) gate outcome (2026-06-22, mesell-qa-wave-catalog-e2e-session-1) — APPROVED → WAVE COMPLETE
+PR #462 squash-merged `1fdd5ea` into `feature/qa-catalog/integration`. qa-catalog COMPLETE
+(A backend c8f4255/#435 + CAT-BUG-1 fix c20ee0e/#437; B frontend 3476b0e/#451; C e2e
+1fdd5ea/#462). READY for the FOUNDER's integration→develop merge.
+
+CLOSED this lane:
+- **CAT-E2E-04** = the CAT-BUG-1 LIVE regression guard (smart-picker outer-stream survival).
+  CONFIRMED real: injects a 429 (the RETHROWN path) → inner `catchError` keeps `valueChanges`
+  alive → retype recovers. Would FAIL pre-#437. Registry-live-verified selectors.
+- CAT-E2E-01/02 existing happy paths kept.
+
+STILL OPEN (carried, filed as inter-lead requests):
+- **Category-schema seed gap (NEW, real)** — `GET /categories/{id}/schema` 404s for
+  picker-suggestable categories (schema seeded ~100 prewarmed; picker suggests from the full
+  3,772-leaf tree) → empty edit form. Blocks CAT-E2E-05 (autosave) + CAT-E2E-06 (AI-fill).
+  → data-engineer + backend (Director also tracking).
+- **Browse-fallback link + empty-state CTA ship NO data-testid** — CAT-E2E-03/07 fixme on
+  source-derived role/name selectors. → frontend-coordinator (add data-testid).
+- **Live `--workers=1` run OWED** — slot-2 torn down + 8GB swap ceiling refused a rebuild;
+  the gate fell back to source ground-truth + a CLEAN `--list` re-run. Re-run when the swap
+  ceiling clears.
