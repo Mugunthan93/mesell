@@ -1,9 +1,16 @@
-"""Integration §7.J #2 — logout revocation.
+"""Integration §7.J #2 + QA Wave 2 (BE-AUTH-11) — logout revocation chain.
 
 Per BACKEND_ARCHITECTURE.md §7.J integration 2:
 
     "Logout revocation — verify → logout → refresh → 401 `auth.refresh.invalid`
     (allowlist entry is gone; Lua returns nil)."
+
+QA Wave 2 hardening (BE-AUTH-11):
+The existing test covers the full verify→logout→refresh→401 chain.
+BE-AUTH-11 strengthens the assertion to also verify:
+  * The 401 refresh response carries a Max-Age=0 clear-cookie (§7.B.3 failure path).
+  * No new refresh token is leaked on the 401 path.
+  * The validation_message_id is the exact locked value.
 """
 
 from __future__ import annotations
@@ -25,7 +32,7 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.integration]
 async def test_logout_revokes_then_refresh_returns_401(
     iam_client, use_live_valkey, monkeypatch
 ):
-    """End-to-end: verify → logout → refresh must 401."""
+    """End-to-end: verify → logout → refresh must 401 (§7.J integration 2)."""
     # ── Arrange ────────────────────────────────────────────────────────────
     phone = "+915550000102"
     otp = "525252"
@@ -64,3 +71,73 @@ async def test_logout_revokes_then_refresh_returns_401(
     assert r3.status_code == 401, r3.text
     envelope = r3.json()
     assert envelope.get("validation_message_id") == "auth.refresh.invalid"
+
+
+async def test_refresh_after_logout_full_chain_401_with_cleared_cookie(
+    iam_client, use_live_valkey
+):
+    """BE-AUTH-11: Full revocation chain — verify → logout (204) → refresh → 401 + cleared cookie.
+
+    Strengthens the §7.J test with additional BE-AUTH-11 assertions:
+      * logout returns 204 (explicit gate).
+      * refresh after logout returns 401 with auth.refresh.invalid.
+      * The 401 refresh response carries a Max-Age=0 clear-cookie (§7.B.3 failure path).
+      * No valid new refresh token is leaked on the 401 path.
+
+    Arrange: seed OTP directly; perform real verify to get cookie.
+    Act: logout → refresh with the revoked cookie.
+    Assert: 401 + auth.refresh.invalid + Max-Age=0 clear-cookie + no new valid token.
+    """
+    phone = "+9155500110"
+    otp = "110110"
+
+    # Arrange
+    from app.shared import valkey as _vk_mod  # noqa: PLC0415
+    valkey = await _vk_mod.get_valkey_otp()
+    otp_hash = hashlib.sha256(otp.encode("utf-8")).hexdigest()
+    raw = json.dumps({"otp_hash": otp_hash, "attempts": 0, "expires_at": int(time.time()) + 300})
+    await valkey.set(f"otp:{phone}", raw, ex=300)
+
+    verify_r = await iam_client.post(
+        "/api/v1/auth/otp/verify", json={"phone": phone, "otp": otp}
+    )
+    assert verify_r.status_code == 200, f"verify failed: {verify_r.text}"
+    cookie = extract_refresh_cookie(verify_r)
+    assert cookie, "verify must emit a refresh_token cookie"
+
+    # Logout — must be 204.
+    logout_r = await iam_client.post(
+        "/api/v1/auth/logout",
+        headers={"Cookie": f"refresh_token={cookie}"},
+    )
+    assert logout_r.status_code == 204, f"logout must be 204; got {logout_r.status_code}: {logout_r.text}"
+
+    # Refresh with the now-revoked cookie — must be 401.
+    refresh_r = await iam_client.post(
+        "/api/v1/auth/refresh",
+        headers={"Cookie": f"refresh_token={cookie}"},
+    )
+
+    assert refresh_r.status_code == 401, (
+        f"refresh after logout must be 401; got {refresh_r.status_code}: {refresh_r.text}"
+    )
+    body = refresh_r.json()
+    assert body.get("validation_message_id") == "auth.refresh.invalid", (
+        f"validation_message_id must be 'auth.refresh.invalid'; got {body!r}"
+    )
+
+    # §7.B.3 failure path: the router must clear the cookie on 401.
+    raw_headers = refresh_r.headers.get_list("set-cookie")
+    has_clear = any(
+        "max-age=0" in h.lower() and "refresh_token" in h.lower()
+        for h in raw_headers
+    )
+    assert has_clear, (
+        f"401 refresh must carry Max-Age=0 clear-cookie; headers: {raw_headers}"
+    )
+
+    # No valid new refresh token leaked.
+    new_cookie = extract_refresh_cookie(refresh_r)
+    assert new_cookie is None, (
+        f"401 refresh must not issue a new refresh cookie; got {new_cookie!r}"
+    )

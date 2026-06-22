@@ -16,10 +16,14 @@ import {
   provideHttpClientTesting,
   HttpTestingController,
 } from '@angular/common/http/testing';
+import { provideRouter, Router } from '@angular/router';
 import { vi } from 'vitest';
 
+import { AuthService } from '../services/auth.service';
+import { AuthApiService } from '../services/auth-api.service';
 import { ErrorService } from '../services/error.service';
 import { errorInterceptor, ApiErrorEnvelope } from './error.interceptor';
+import { refreshInterceptor } from './refresh.interceptor';
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
@@ -189,5 +193,110 @@ describe('errorInterceptor — ErrorService.clear()', () => {
     expect(errorService.lastError()).not.toBeNull();
     errorService.clear();
     expect(errorService.lastError()).toBeNull();
+  });
+});
+
+// ── FE-AUTH-10: refresh-exhausted 401 → forceLogout (terminal path) ───────────
+//
+// Chain order: jwt → refresh → error (LAST).
+// When a protected API request returns 401 AND the refresh call also returns 401
+// (cookie revoked / allowlist miss), refreshInterceptor calls auth.forceLogout()
+// + rethrows. The error then propagates to errorInterceptor (LAST) which records
+// the envelope. This test wires BOTH interceptors in the chain and asserts that
+// AuthService.forceLogout() is called and the router navigates to /login.
+//
+// Because forceLogout() fires a best-effort POST /api/v1/auth/logout (fire-and-
+// forget), we drain that request before controller.verify().
+
+describe('FE-AUTH-10: refresh-exhausted 401 → AuthService.forceLogout() + navigate /login', () => {
+  function setupWithBothInterceptors() {
+    TestBed.configureTestingModule({
+      providers: [
+        AuthService,
+        AuthApiService,
+        ErrorService,
+        provideHttpClient(
+          withFetch(),
+          // refreshInterceptor first, then errorInterceptor (chain: refresh → error)
+          withInterceptors([refreshInterceptor, errorInterceptor]),
+        ),
+        provideHttpClientTesting(),
+        provideRouter([
+          { path: 'login', children: [] },
+        ]),
+      ],
+    });
+
+    return {
+      http:         TestBed.inject(HttpClient),
+      controller:   TestBed.inject(HttpTestingController),
+      errorService: TestBed.inject(ErrorService),
+      authService:  TestBed.inject(AuthService),
+      router:       TestBed.inject(Router),
+    };
+  }
+
+  it('should call AuthService.forceLogout() and navigate to /login when refresh returns 401', () => {
+    const { http, controller, authService, router } = setupWithBothInterceptors();
+
+    // Prime an authenticated session so the interceptor has a token
+    authService.setSession('stale-token', { phone: '+919876543210' });
+
+    const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    const forceLogoutSpy = vi.spyOn(authService, 'forceLogout');
+
+    let errorCaught = false;
+    http.get('/api/v1/products').subscribe({ error: () => { errorCaught = true; } });
+
+    // 1. The API request returns 401 → refreshInterceptor fires refresh
+    const apiReq = controller.expectOne('/api/v1/products');
+    apiReq.flush(
+      { detail: 'Unauthorized', code: 'AUTH_REQUIRED', validation_message_id: '', request_id: 'r1' },
+      { status: 401, statusText: 'Unauthorized' },
+    );
+
+    // 2. The refresh call also returns 401 (cookie revoked / single-use exhausted)
+    const refreshReqs = controller.match('/api/v1/auth/refresh');
+    expect(refreshReqs.length).toBe(1);
+    refreshReqs[0].flush(
+      { detail: 'Refresh invalid', code: 'REFRESH_INVALID', validation_message_id: '', request_id: 'r2' },
+      { status: 401, statusText: 'Unauthorized' },
+    );
+
+    // 3. forceLogout() should have been called exactly once
+    expect(forceLogoutSpy).toHaveBeenCalledOnce();
+
+    // 4. Router navigated to /login
+    expect(navigateSpy).toHaveBeenCalledWith(['/login']);
+
+    // 5. Error was rethrown to the caller (not swallowed)
+    expect(errorCaught).toBe(true);
+
+    // 6. Drain the fire-and-forget POST /auth/logout fired by forceLogout()
+    controller.match('/api/v1/auth/logout').forEach((r) =>
+      r.flush(null, { status: 204, statusText: 'No Content' }),
+    );
+
+    controller.verify();
+  });
+
+  it('should NOT call forceLogout() when a 500 error occurs (non-401 terminal path)', () => {
+    const { http, controller, authService } = setupWithBothInterceptors();
+
+    authService.setSession('tok', { phone: '+91x' });
+    const forceLogoutSpy = vi.spyOn(authService, 'forceLogout');
+
+    http.get('/api/v1/products').subscribe({ error: () => {} });
+
+    const req = controller.expectOne('/api/v1/products');
+    req.flush(
+      { detail: 'Server Error', code: 'SERVER_ERROR', validation_message_id: '', request_id: 'r3' },
+      { status: 500, statusText: 'Internal Server Error' },
+    );
+
+    // 500 does not trigger refresh → forceLogout not called
+    expect(forceLogoutSpy).not.toHaveBeenCalled();
+
+    controller.verify();
   });
 });
