@@ -33,3 +33,22 @@ Result: **9 passed, 3 skipped (test.fixme)** — stable across 3 consecutive run
   runner; only bare `playwright` was declared before).
 - Ports from playwright.config.ts via env (MEESELL_SHELL_URL/PORT); all app + API
   traffic goes through the shell (/api proxied). Never hardcoded in specs.
+
+
+## Wave-3 dispositions (catalog vertical, PR #409, develop @ a94e013)
+- W3-E2-1 wizard step-through -> SAVED catalog: CODIFIED (`flows/wizard-save.spec.ts`),
+  HONESTLY skip-gated. Skips when (a) smart-picker returns 0 suggestions (dev Gemini
+  suggest unconfigured) or (b) the category has 0 schema-driven fields. Asserts real
+  UUID + `catalog-save-status` reaches "Saved" TEXT + product listed. Green-or-skipped,
+  never falsely red.
+- W3-E2-2 Live Preview: BLOCKED -> `test.fixme`. Preview PAGE RETIRED (#278); "Preview"
+  button -> /edit (#395). No frontend surface. Un-fixme only if a preview page returns.
+- W3-E2-4 list->edit->delete: BLOCKED -> `test.fixme`. No delete control + no per-row
+  testids in catalog-list. Edit leg covered by E2-1. Un-fixme on delete control + testids.
+- W3-E2-6 price->apply->export: BLOCKED -> `test.fixme`. mfe-pricing has no testids + no
+  apply control; export leg gated on E2-3. Backend round-trip covered by W3-BE-17.
+- W3-E2-3 export download: FIXME, un-fixme condition documented inline. Gated on PR #398
+  (mfe-export onGenerate() still hardcodes productId='current-product-id' on develop).
+  Real selector is `export-download` (NOT `export-download-button`).
+- W3-E2-5 image precheck: FIXME (per founder) — no local GCS creds (upload 502s before
+  rembg). Un-fixme on a GCS-credentialed env / MinIO.

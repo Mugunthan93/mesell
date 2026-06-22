@@ -102,6 +102,40 @@ wrong and `getByTestId(x)` resolves to a non-interactable host:
   the provisional `precheck-score` does NOT exist).
 - categories browse page exposed at /categories/browse.
 
+### Wave-3 RE-VERIFIED LIVE (develop @ a94e013, agent-browser, baseline shell :4200)
+- `catalog-save-status` host is ALWAYS present on `/catalogs/:id/edit` — its TEXT
+  switches idle('' empty) -> "Saving…" -> "Saved" -> error. ASSERT THE "Saved" TEXT,
+  NOT mere visibility (visibility alone is not a save proof; the host never hides).
+  Used by W3-E2-1 `flows/wizard-save.spec.ts`.
+- `catalog-form-next` (mee-button -> inner `<button>`) — RE-VERIFIED present on edit form.
+- `catalog-ai-fill` (mee-button -> inner `<button>`) — RE-VERIFIED present on edit form
+  (page-object helper `CatalogPage.aiFill`).
+- EDIT A SCHEMA-DRIVEN FIELD (no per-field testid): category-schema fields render inside
+  `mee-input` / `mee-textarea` wrappers. Target the first editable field with the
+  STRUCTURAL selector `mee-input input, mee-textarea textarea`
+  (`CatalogPage.firstEditableField`). Callers MUST guard on `.count()` before
+  interacting — when the dev backend has not populated the field schema the accordion
+  shows "Compulsory (0)" and there are NONE. Only non-testid selector in the Wave-3
+  codified path (structural fallback; schema fields carry no stable testid).
+
+### Wave-3 CONFIRMED-ABSENT (do NOT invent — verified live + grep on develop @ a94e013)
+- LIVE PREVIEW PAGE IS RETIRED (#278). No `/catalogs/:id/preview` route, no preview
+  component. catalog-list "Preview" button repointed to `/edit` (#395). No frontend
+  preview surface -> W3-E2-2 is `test.fixme`. Backend `GET /products/{id}/preview` still
+  exists (BE lane covers it). Un-fixme ONLY if a frontend preview page is reintroduced.
+- catalog-list has NO per-row data-testid and NO delete control. List renders per-product
+  cards with "Edit" + "Preview" mee-buttons ONLY (grep: zero delete|remove|trash); cards/
+  buttons carry no testid/[testId] -> W3-E2-4 is `test.fixme`. Un-fixme when the list
+  gains a delete control + per-row testids (e.g. catalog-list-row / catalog-list-delete),
+  LIVE-VERIFIED.
+- mfe-pricing has NO data-testid and NO apply-price control. `pricing.component.ts` has a
+  "Calculate" mee-button (no testid) + a read-only P&L breakdown; no apply button ->
+  W3-E2-6 is `test.fixme`. Un-fixme when pricing gains testids on calc + result + an apply
+  control, LIVE-VERIFIED.
+- The real export download selector is `export-download` (NOT `export-download-button`).
+  Literal `<a download href>` rendered ONLY in the `ready` state; trigger is
+  `export-trigger`. (`export-download-button` / `export-status` do NOT exist.)
+
 ## mfe-export (:4205/:421x) — export  [VERIFIED]
 - Generate button (mee-button): `[data-testid="export-trigger"]` →
   `.locator('button').click()`.

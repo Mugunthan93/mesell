@@ -87,3 +87,19 @@ entry here.
   storage credential gap). The PrimeNG advanced uploader interaction itself WORKS
   (setInputFiles on `p-fileupload input` + click the `Upload` button → real POST).
   image-precheck is `test.fixme()` pending a GCS-credentialed env (or a fake/MinIO).
+
+
+## Wave-3 build/dep quirks (catalog vertical)
+- STALE-REMOTE-DIST analogue (the shell ui-kit singleton): after a [testId] passthrough
+  or any ui-kit/component change lands on develop, REBUILD THE REMOTE TOO, not just the
+  shell. Wave-3 exploration ran on baseline shell :4200 only after a fresh
+  `ng build mfe-auth` + `ng build mfe-dashboard` so the shell's ui-kit singleton carried
+  the [testId] passthrough; without rebuilding the remote the shell federates the OLD
+  remote dist and the new testids/passthrough are absent. (Same class as the stale-bundle
+  logout in master-session memory.)
+- ng-build 0%-CPU post-write HANG: `ng build <remote>` sometimes drops to 0% CPU AFTER
+  the dist is already written to disk (the process does not exit). The dist IS complete —
+  verify the dist files exist, then KILL the PID. Do not wait for a clean exit.
+- @playwright/test@1.52.0 was DECLARED in frontend/package.json but NOT installed in
+  node_modules. pnpm-add'd it OFFLINE (it matches the cached chromium-1169, no browser
+  download needed). Infra should add it to the lockfile so CI does not re-resolve.

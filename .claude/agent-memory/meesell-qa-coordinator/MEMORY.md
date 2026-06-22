@@ -20,3 +20,14 @@ Pillar created via `feature/qa-wave-infra` (QA pillar bootstrap, fleet 19→23).
 wave has run yet. First expected dispatch: "Run QA Wave 1 against: auth-otp,
 xlsx-export, catalog-wizard." Read `docs/superpowers/specs/2026-06-22-meesell-testing-agent-design.md`
 for the full design.
+
+## Wave 3 — catalog vertical EXECUTED + MERGED to integration (2026-06-22)
+Merge-gate (session `mesell-qa-wave-3-coord-session-1`): backend #396 (squash `edb875f`, 59 passed/0 failed) + frontend #394 (squash `4571048`, all 5 authored files GREEN) → both PASS → squash-merged into `feature/qa-wave-3/integration` (fast-forwarded base `6a02669`→develop `3c63b55` first). Backend memory scribed PR #400 `804d317`. Board published PR #401 `4ea1974`. `integration → develop` is READY for the FOUNDER and contains BOTH backend + frontend lanes. E2E lane (W3-E2-*) NOT dispatched; W3-FE-6/E2-3 gated on the mfe-export productId fix (branch exists, not on develop); W3-BE-11 (cost ceiling) + W3-E2-5 (GCS env) deferred. See qa_waves.md + coordinator_patterns.md for the stale-integration-base merge lesson + the pure-function-mirror gate stance.
+
+
+## Wave-3 e2e gate (2026-06-22, mesell-qa-wave-3-e2e-session-1)
+PR #409 (e2e) PASS -> squash `c382f84` into qa-wave-3/integration. WAVE 3 FULLY ASSEMBLED (BE `edb875f` + FE `4571048`
++ E2E `c382f84`). Scaffold lane (W3-E2-1 codified/skip-gated; E2-2/4/6 fixme; E2-3 fixme #398; E2-5 fixme GCS).
+`playwright --list` = 16 tests clean. Stale-base hazard reconciled (merge integration into e2e first). 6 inter-lead
+requests logged. E2E-writer memory scribed (selector_registry/federation_quirks/flow_status). See qa_waves.md +
+coordinator_patterns.md for detail. Founder owns integration->develop.

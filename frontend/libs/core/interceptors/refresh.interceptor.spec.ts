@@ -1,13 +1,13 @@
 /**
  * refresh.interceptor.spec.ts — Wave 6 Wave A (R-W6-11) + stampede fix (h/i/j/k)
  *
- * Tests the 401→refresh→retry single-flight gate using HttpTestingController.
+ * Tests the 401=>refresh=>retry single-flight gate using HttpTestingController.
  * Pure-function / fake-http — NO live backend tunnel required.
  *
  * Spec cases (per R-W6-11):
  * (a) A 401 on a protected call triggers exactly ONE POST /api/v1/auth/refresh
  * (b) On refresh-200 the original request is retried with the new Bearer and succeeds
- * (c) On refresh-401 → AuthService.forceLogout() called + navigate('/login') + original errors
+ * (c) On refresh-401 => AuthService.forceLogout() called + navigate('/login') + original errors
  * (d) Single-flight: TWO concurrent 401s fire ONE refresh; BOTH retry with the new token
  * (e) A 401 on /auth/refresh itself does NOT re-enter refresh (no loop)
  *
@@ -16,16 +16,22 @@
  * (g) Non-401 errors pass through untouched
  *
  * Stampede-fix specs (new — h/i/j/k):
- * (h) 20 concurrent 401s → EXACTLY ONE POST /auth/refresh; all 20 retry with new Bearer
+ * (h) 20 concurrent 401s => EXACTLY ONE POST /auth/refresh; all 20 retry with new Bearer
  * (i) After first refresh window, a NEW 401 starts a fresh single-flight refresh
- * (j) refresh-401 → forceLogout ONCE + navigate ONCE, no further refresh
+ * (j) refresh-401 => forceLogout ONCE + navigate ONCE, no further refresh
  * (k) After cascade, a NEW 401 can start a fresh refresh (gate not wedged)
  *
- * Tests (a)–(g) use a lightweight mock AuthService that delegates refreshShared()
+ * Tests (a)-(g) use a lightweight mock AuthService that delegates refreshForced()
  * to the TestBed HttpClient so controller.expectOne('/api/v1/auth/refresh') works.
  *
- * Tests (d), (h)–(k) use the REAL AuthService (with a spy on AuthApiService.refresh)
- * because they need the actual single-flight shareReplay logic in refreshShared().
+ * Tests (d), (h)-(k) use the REAL AuthService (with the real HttpTestingController)
+ * because they need the actual single-flight connectable+Subject logic in refreshForced().
+ *
+ * NOTE on fire-and-forget /auth/logout in tests (j)/(k):
+ *   AuthService.forceLogout() calls authApi.logout() (POST /api/v1/auth/logout) as a
+ *   fire-and-forget. HttpTestingController.verify() treats open requests as test failures.
+ *   Tests that trigger forceLogout() MUST consume the logout request before afterEach
+ *   by calling controller.match('/api/v1/auth/logout') and flushing it.
  */
 
 import { TestBed } from '@angular/core/testing';
@@ -49,7 +55,7 @@ import { AuthApiService } from '../services/auth-api.service';
 import type { RefreshResponse } from '../services/auth-api.service';
 import { refreshInterceptor } from './refresh.interceptor';
 
-// ── Lightweight mock AuthService (for a–g) ────────────────────────────────────
+// Lightweight mock AuthService (for a-g)
 
 type AuthMock = {
   getToken: () => string | null;
@@ -60,6 +66,7 @@ type AuthMock = {
   forceLogout: ReturnType<typeof vi.fn>;
   scheduleRefresh: ReturnType<typeof vi.fn>;
   refreshShared: ReturnType<typeof vi.fn>;
+  refreshForced: ReturnType<typeof vi.fn>;
 };
 
 function makeAuthMock(http: HttpClient): AuthMock {
@@ -83,16 +90,22 @@ function makeAuthMock(http: HttpClient): AuthMock {
       _user.set(null);
     }),
     scheduleRefresh: vi.fn(),
-    // Routes through HttpClient so controller.expectOne('/api/v1/auth/refresh') works.
+    // refreshShared is the proactive path (not called by the interceptor).
     refreshShared: vi.fn(() =>
+      http.post<RefreshResponse>('/api/v1/auth/refresh', {}, { withCredentials: true }),
+    ),
+    // refreshForced is the interceptor's 401-retry path — routes through HttpClient so
+    // controller.expectOne('/api/v1/auth/refresh') works.
+    refreshForced: vi.fn(() =>
       http.post<RefreshResponse>('/api/v1/auth/refresh', {}, { withCredentials: true }),
     ),
   };
 }
 
-// ── Setup with mock AuthService (a–g + e/f) ───────────────────────────────────
+// Setup with mock AuthService (a-g + e/f)
 
 function setup() {
+  TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     providers: [
       provideHttpClient(withFetch(), withInterceptors([refreshInterceptor])),
@@ -117,12 +130,12 @@ function setup() {
   return { http, controller, authMock, router };
 }
 
-// ── Setup with REAL AuthService (d, h, i, j, k) ───────────────────────────────
+// Setup with REAL AuthService (d, h, i, j, k)
 //
-// Use the real AuthService so refreshShared()'s single-flight gate is exercised.
-// Spy on AuthApiService.refresh() to control responses via a Subject.
+// Use the real AuthService so refreshForced()'s single-flight gate is exercised.
 
 function setupReal() {
+  TestBed.resetTestingModule();
   TestBed.configureTestingModule({
     providers: [
       AuthService,
@@ -159,7 +172,7 @@ afterEach(() => {
   ctrl.verify();
 });
 
-// ── (a) A 401 on a protected call triggers ONE POST /auth/refresh ──────────────
+// (a) A 401 on a protected call triggers ONE POST /auth/refresh
 
 describe('refreshInterceptor (a): 401 triggers one POST /api/v1/auth/refresh', () => {
   it('fires exactly one refresh call on 401', () => {
@@ -182,9 +195,9 @@ describe('refreshInterceptor (a): 401 triggers one POST /api/v1/auth/refresh', (
   });
 });
 
-// ── (b) On refresh-200 retry succeeds with new Bearer ──────────────────────────
+// (b) On refresh-200 retry succeeds with new Bearer
 
-describe('refreshInterceptor (b): refresh-200 → retry with new Bearer', () => {
+describe('refreshInterceptor (b): refresh-200 => retry with new Bearer', () => {
   it('retries original request with the new access token', () => {
     const { http, controller } = setup();
     const emitted: unknown[] = [];
@@ -206,9 +219,9 @@ describe('refreshInterceptor (b): refresh-200 → retry with new Bearer', () => 
   });
 });
 
-// ── (c) On refresh-401 → forceLogout + navigate /login ────────────────────────
+// (c) On refresh-401 => forceLogout + navigate /login
 
-describe('refreshInterceptor (c): refresh-401 → forceLogout + navigate /login', () => {
+describe('refreshInterceptor (c): refresh-401 => forceLogout + navigate /login', () => {
   it('calls forceLogout and navigates to /login when refresh fails with 401', () => {
     const { http, controller, authMock, router } = setup();
     const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
@@ -235,8 +248,8 @@ describe('refreshInterceptor (c): refresh-401 → forceLogout + navigate /login'
   });
 });
 
-// ── (d) Single-flight: TWO concurrent 401s fire ONE refresh ───────────────────
-// Uses real AuthService so refreshShared() gating is exercised.
+// (d) Single-flight: TWO concurrent 401s fire ONE refresh
+// Uses real AuthService so refreshForced() gating is exercised.
 
 describe('refreshInterceptor (d): single-flight — two concurrent 401s fire ONE refresh', () => {
   it('queues second 401 request; both retry with the new token after ONE refresh', () => {
@@ -252,7 +265,7 @@ describe('refreshInterceptor (d): single-flight — two concurrent 401s fire ONE
     reqA.flush({ detail: 'Unauthorized' }, { status: 401, statusText: 'Unauthorized' });
     reqB.flush({ detail: 'Unauthorized' }, { status: 401, statusText: 'Unauthorized' });
 
-    // Exactly ONE refresh call — gated by real refreshShared()
+    // Exactly ONE refresh call — gated by real refreshForced()
     const refreshRequests = controller.match('/api/v1/auth/refresh');
     expect(refreshRequests).toHaveLength(1);
     refreshRequests[0].flush({ access_token: 'shared-token', expires_in: 900, token_type: 'bearer' });
@@ -270,7 +283,7 @@ describe('refreshInterceptor (d): single-flight — two concurrent 401s fire ONE
   });
 });
 
-// ── (e) 401 on /auth/refresh itself does NOT re-enter refresh (no loop) ────────
+// (e) 401 on /auth/refresh itself does NOT re-enter refresh (no loop)
 
 describe('refreshInterceptor (e): 401 on /auth/refresh does not cause refresh loop', () => {
   it('/api/v1/auth/refresh 401 is passed through without triggering a second refresh', () => {
@@ -290,7 +303,7 @@ describe('refreshInterceptor (e): 401 on /auth/refresh does not cause refresh lo
   });
 });
 
-// ── (f) /api/v1/auth/* requests skipped entirely ──────────────────────────────
+// (f) /api/v1/auth/* requests skipped entirely
 
 describe('refreshInterceptor (f): /api/v1/auth/* requests are not retried on 401', () => {
   it('passes 401 from /api/v1/auth/otp/verify through without refresh', () => {
@@ -309,7 +322,7 @@ describe('refreshInterceptor (f): /api/v1/auth/* requests are not retried on 401
   });
 });
 
-// ── (g) Non-401 errors pass through untouched ─────────────────────────────────
+// (g) Non-401 errors pass through untouched
 
 describe('refreshInterceptor (g): non-401 errors pass through without refresh', () => {
   it('500 error is rethrown without firing refresh', () => {
@@ -343,11 +356,11 @@ describe('refreshInterceptor (g): non-401 errors pass through without refresh', 
   });
 });
 
-// ── (h) 20 concurrent 401s → EXACTLY ONE POST /auth/refresh ───────────────────
-// Uses real AuthService so the shareReplay single-flight gate is exercised.
+// (h) 20 concurrent 401s => EXACTLY ONE POST /auth/refresh
+// Uses real AuthService so the connectable+Subject single-flight gate is exercised.
 
 describe('refreshInterceptor (h): stampede — 20 concurrent 401s fire exactly ONE refresh', () => {
-  it('20 concurrent 401s → 1 refresh call; all 20 retry with new Bearer', () => {
+  it('20 concurrent 401s => 1 refresh call; all 20 retry with new Bearer', () => {
     const { http, controller } = setupReal();
     const N = 20;
     const results: string[] = [];
@@ -365,7 +378,7 @@ describe('refreshInterceptor (h): stampede — 20 concurrent 401s fire exactly O
       req.flush({ detail: 'Unauthorized' }, { status: 401, statusText: 'Unauthorized' });
     }
 
-    // Real refreshShared() → exactly ONE POST /auth/refresh
+    // Real refreshForced() => exactly ONE POST /auth/refresh
     const refreshRequests = controller.match('/api/v1/auth/refresh');
     expect(refreshRequests.length).toBe(1);
 
@@ -386,15 +399,16 @@ describe('refreshInterceptor (h): stampede — 20 concurrent 401s fire exactly O
   });
 });
 
-// ── (i) After first refresh window, a NEW 401 starts a fresh refresh ───────────
-// Uses real AuthService — finalize() in refreshShared resets _refreshInFlight.
+// (i) After first refresh window, a NEW 401 starts a fresh refresh
+// Uses real AuthService — finalize() in _refreshNetwork resets _refreshInFlight.
+// refreshForced() bypasses B03 debounce so the second cycle hits the network.
 
 describe('refreshInterceptor (i): fresh window after stampede — no stale-token replay', () => {
   it('a second 401 (after a completed refresh cycle) starts a new single-flight refresh', () => {
     const { http, controller } = setupReal();
     const results: string[] = [];
 
-    // ── First cycle ──────────────────────────────────────────────────────────
+    // First cycle
     http.get<{ id: string }>('/api/v1/products/first').subscribe((r) => results.push(r.id));
 
     const first = controller.expectOne('/api/v1/products/first');
@@ -409,13 +423,8 @@ describe('refreshInterceptor (i): fresh window after stampede — no stale-token
 
     expect(results).toContain('first-result');
 
-    // ── Second cycle — gate MUST be reset (finalize cleared _refreshInFlight) ─
-    // The cross-context debounce backstop (REFRESH_DEBOUNCE_MS=2000ms) returns the
-    // cached token if a refresh completed within the last 2 s. Advance Date.now past
-    // the debounce window so the second 401 triggers a genuine new network call.
-    const realDateNow = Date.now;
-    Date.now = () => realDateNow() + 3_000;
-    try {
+    // Second cycle — gate MUST be reset (finalize cleared _refreshInFlight).
+    // refreshForced() bypasses B03 so the second 401 always hits the network.
     http.get<{ id: string }>('/api/v1/products/second').subscribe((r) => results.push(r.id));
 
     const second = controller.expectOne('/api/v1/products/second');
@@ -430,17 +439,17 @@ describe('refreshInterceptor (i): fresh window after stampede — no stale-token
     secondRetry.flush({ id: 'second-result' });
 
     expect(results).toContain('second-result');
-    } finally {
-      Date.now = realDateNow;
-    }
   });
 });
 
-// ── (j) refresh-401 → forceLogout called ONCE + navigate ONCE ─────────────────
+// (j) refresh-401 => forceLogout called ONCE + navigate ONCE
 // Uses real AuthService — forceLogout's _loggedOut guard prevents repeat navigates.
+//
+// NOTE: AuthService.forceLogout() fires a fire-and-forget POST /api/v1/auth/logout.
+// We consume it via controller.match() before afterEach() calls verify().
 
 describe('refreshInterceptor (j): cascade — forceLogout called ONCE, navigate ONCE', () => {
-  it('5 concurrent 401s → refresh-401 → navigate(["/login"]) ONCE, no further refresh', () => {
+  it('5 concurrent 401s => refresh-401 => navigate(["/login"]) ONCE, no further refresh', () => {
     const { http, controller, router } = setupReal();
     const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
     const errors: unknown[] = [];
@@ -476,12 +485,19 @@ describe('refreshInterceptor (j): cascade — forceLogout called ONCE, navigate 
 
     // No further refresh attempt after forceLogout
     controller.expectNone('/api/v1/auth/refresh');
+
+    // Consume the fire-and-forget POST /auth/logout from forceLogout()
+    // so afterEach(controller.verify()) does not fail.
+    const logoutReqs = controller.match('/api/v1/auth/logout');
+    logoutReqs.forEach((r) => r.flush(null, { status: 200, statusText: 'OK' }));
   });
 });
 
-// ── (k) After cascade, a NEW 401 can start a fresh refresh (gate not wedged) ───
+// (k) After cascade, a NEW 401 can start a fresh refresh (gate not wedged)
 // Uses real AuthService — after forceLogout, _refreshInFlight is null.
 // A fresh setSession re-arms the guard, then a new 401 can refresh again.
+//
+// NOTE: forceLogout() fires fire-and-forget POST /auth/logout — consumed below.
 
 describe('refreshInterceptor (k): gate not wedged after cascade logout', () => {
   it('after a cascade logout, a re-authenticated session can refresh again on new 401', () => {
@@ -490,7 +506,7 @@ describe('refreshInterceptor (k): gate not wedged after cascade logout', () => {
     const errors: unknown[] = [];
     const results: string[] = [];
 
-    // ── Cascade: first request → 401 → refresh-401 → forceLogout ────────────
+    // Cascade: first request => 401 => refresh-401 => forceLogout
     http.get('/api/v1/products/first').subscribe({ error: (e) => errors.push(e) });
 
     const firstOrig = controller.expectOne('/api/v1/products/first');
@@ -503,11 +519,15 @@ describe('refreshInterceptor (k): gate not wedged after cascade logout', () => {
     expect(navigateSpy).toHaveBeenCalledOnce();
     expect(auth.isAuthenticated()).toBe(false);
 
-    // ── Re-login: setSession re-arms the logout guard ─────────────────────────
+    // Consume fire-and-forget logout from forceLogout()
+    const logoutReqs1 = controller.match('/api/v1/auth/logout');
+    logoutReqs1.forEach((r) => r.flush(null, { status: 200, statusText: 'OK' }));
+
+    // Re-login: setSession re-arms the logout guard
     auth.setSession('re-auth-token', { phone: '+91x' });
     expect(auth.isAuthenticated()).toBe(true);
 
-    // ── New request → 401 → should trigger a FRESH refresh (gate not wedged) ──
+    // New request => 401 => should trigger a FRESH refresh (gate not wedged)
     http.get<{ id: string }>('/api/v1/products/second').subscribe((r) => results.push(r.id));
 
     const secondOrig = controller.expectOne('/api/v1/products/second');

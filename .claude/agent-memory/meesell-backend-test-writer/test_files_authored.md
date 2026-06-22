@@ -30,3 +30,29 @@ Extended (added cases to) existing files:
 | `test_ai_ops_budget_cap` | 1 | qa-wave-1 | ai_ops — budget cap enforcement |
 | `test_suggest_unit` | 1 | qa-wave-1 | catalog/ai — category suggest (unit) |
 | `test_catalog_enum_validation_regression` | 1 | qa-wave-1 | catalog — enum validation regression (size_in_ltrs class) |
+
+## Wave-3 ledger (2026-06-22, PR #396 — scribed by meesell-qa-coordinator, write-protection workaround)
+
+Run result for the wave: **59 passed / 0 failed** (scoped, the 5 files); broader
+catalog+image+eval suite **122 passed / 2 pre-existing Valkey-6381 infra failures**
+(`test_flag_gate.py` — byte-identical at the integration base, NOT introduced).
+Gate (qa-coordinator) independently re-ran the 5 files vs `meesell_test`: 59 passed / 0 failed.
+Squash-merged to `feature/qa-wave-3/integration` @ `edb875f`.
+
+New test files authored:
+
+| Path | Wave | Feature slug | Covers |
+|---|---|---|---|
+| `backend/tests/modules/catalog/test_live_preview_route.py` | 3 | qa-wave-3 | catalog — `GET /products/{id}/preview` (W3-BE-1,2,3,5): happy 200+locked-shape, cross-tenant 404, unauth 401, autosave-reflect |
+| `backend/tests/modules/catalog/test_catalog_delete_route.py` | 3 | qa-wave-3 | catalog — `DELETE /products/{id}` (W3-BE-15a,15b): owner 204 + re-GET 404; cross-tenant 404 non-empty detail |
+| `backend/tests/modules/image/test_pil_check_boundaries.py` | 3 | qa-wave-3 | image — PIL checks (W3-BE-7,8,9): CMYK/RGB color space, resolution >=1500x1500 pass+fail, white-BG threshold pass+fail |
+| `backend/tests/eval/watermark/test_watermark_asserting.py` | 3 | qa-wave-3 | image/eval — watermark (W3-BE-10): per-fixture flag + aggregate >=85% accuracy threshold (replaces non-asserting run script) |
+
+Rewritten files (carry-forward resolved):
+
+| Path | Wave | Feature slug | Covers |
+|---|---|---|---|
+| `backend/tests/integration/test_export_zip_member_structure.py` | 3 | qa-wave-3 | export — ZIP member structure (W3-BE-6a,6b,6c): **un-skips** the Wave-1 P1.11 self-skip; asserts XLSX/ZIP member names against the correct `_write_xlsx(XlsxRowSpec)` / `_package_images_zip()` signatures; GCS mocked |
+
+Confirm-only (no new tests, covered): W3-BE-12 (`test_catalog_enum_validation_regression.py`), W3-BE-13 (`test_i18n_generic_fallback.py`), W3-BE-14 (suggest GET->405), W3-BE-16 (route-level create happy), W3-BE-17 (price->export roundtrip).
+Deferred: W3-BE-11 (cost ceiling) — see deferred_coverage.md.
