@@ -23,6 +23,14 @@ so all category-module route tests run without a live app Valkey.
 
 Note: this mirrors the identical pattern in tests/modules/catalog/conftest.py
 (§10-CATALOG-D1 test isolation).
+
+Added: ``category_route_client`` fixture (PR #435 re-do / Gate-4 loop-affinity fix)
+------------------------------------------------------------------------------------
+D1+D2 fix: overrides ``get_db`` with a function-loop NullPool engine AND patches
+``_valkey_module._otp_client`` to a fresh function-loop client.  Without these patches
+the combined ``pytest -m integration`` run produces RuntimeError: Event loop is closed /
+got Future attached to a different loop → 500 before any route runs.  Mirrors the
+``integration/conftest.py::iam_client`` canon pattern.
 """
 
 from __future__ import annotations

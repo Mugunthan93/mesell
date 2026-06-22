@@ -16,6 +16,10 @@ The ``db`` fixture is the top-level conftest's ``db_session`` — fresh
 ephemeral test DB (Postgres on :5432 via ``DATABASE_URL`` env in
 ``tests/conftest.py``).  The DB is reset per test (drop_all +
 create_all).
+
+``catalog_route_client`` fixture (PR #435 re-do / Gate-4 loop-affinity fix)
+adds D1+D2: function-loop NullPool engine + ``get_db`` override + ``audit_mw``
+patch + fresh ``_otp_client`` swap.  Mirrors ``integration/conftest.py::iam_client``.
 """
 
 from __future__ import annotations
