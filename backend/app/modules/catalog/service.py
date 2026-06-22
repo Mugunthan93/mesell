@@ -100,6 +100,7 @@ from app.modules.catalog.exceptions import (
 )
 from app.modules.category import service as category_service
 from app.modules.customer import service as customer_service
+from app.modules.monitor.triggers import enqueue_category_scrape
 
 logger = logging.getLogger(__name__)
 
@@ -562,6 +563,14 @@ async def create_product(
         request.category_id,
         request.name,
     )
+
+    # Category change monitor (Wave 3) — fire-and-forget enqueue of a scrape
+    # for this product's LEAF category.  Failure-isolated: a broker outage
+    # NEVER breaks catalog-add (the enqueue helper swallows + logs).  Enqueued
+    # exactly once with the leaf ``request.category_id``; dedupe happens
+    # downstream inside the task's gate.
+    enqueue_category_scrape(request.category_id)
+
     return _orm_to_domain(row)
 
 
@@ -1287,6 +1296,21 @@ async def get_validation_summary(
     )
 
 
+async def get_distinct_product_category_ids(
+    user_id: UUID, db: AsyncSession
+) -> list[UUID]:
+    """Return the distinct LEAF category ids of the caller's products.
+
+    Public cross-module read used by the category change monitor (Wave 3)
+    onboarding-complete trigger.  Resolves
+    ``SELECT DISTINCT category_id FROM products WHERE user_id=:uid AND
+    deleted_at IS NULL`` (tenant-scoped in the repository).  A brand-new
+    seller with zero products returns an empty list — the caller enqueues
+    nothing, which is correct.
+    """
+    return await catalog_repo.distinct_product_category_ids(db, user_id)
+
+
 # Hash export — used by router to compute audit_event payload
 # description_sha256 per §10.B.3 audit posture (PII compromise).
 def description_sha256(description: str) -> str:
@@ -1303,6 +1327,7 @@ __all__ = [
     "autofill_product",
     "create_product",
     "description_sha256",
+    "get_distinct_product_category_ids",
     "get_draft",
     "get_product_detail",
     "get_preview",

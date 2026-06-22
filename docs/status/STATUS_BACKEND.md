@@ -1,6 +1,32 @@
 # STATUS — BACKEND
 
 
+=== UPDATE: 2026-06-22 (meesell-services-builder) — category-monitor Wave-3 Unit T TRIGGER WIRING COMPLETE ===
+Phase: category-monitor (RETENTION_CATEGORY_MONITOR) — Wave 3 Unit T (trigger wiring — the ONE unit that touches LIVE V1 paths)
+Branch: feature/category-monitor/backend-w3-triggers off integration 0d0abfb (carries W1+W2). PR → feature/category-monitor/integration.
+Session: mesell-category-monitor-backend-session-5
+
+Done:
+- NEW PUBLIC seam `app/modules/monitor/triggers.py::enqueue_category_scrape(category_id) -> None`. Sync, never awaited, lazy-imports `monitor.tasks.scrape_category_task` + `.delay(str(category_id))`. Wraps the enqueue in try/except — a broker outage is swallowed + logged WARNING, NEVER raised into the host seller flow. `triggers.py` is PUBLIC (alongside service.py); repository.py stays private.
+- Hook (a) catalog-add: `catalog/service.py::create_product` — `enqueue_category_scrape(request.category_id)` inserted AFTER `insert_product` (~L562) and BEFORE `return _orm_to_domain(row)` (~L580). Enqueues exactly once with the LEAF `request.category_id`.
+- Hook (b) onboarding-complete: `customer/service.py` — new private `_enqueue_monitor_on_onboarding_edge(...)` fires on the `onboarding_complete` FALSE→TRUE edge ONLY (`onboarding_complete and not (existing and existing.onboarding_complete)`), resolves the seller's DISTINCT PRODUCT leaf categories (Director Q1) and enqueues one per distinct leaf. Wired into `upsert_profile` (~L474 site) + `set_active_categories` (~L519 site). A re-PATCH of an already-complete profile does NOT re-enqueue. Zero-product seller → empty list → enqueues nothing.
+- NEW public read `catalog/service.py::get_distinct_product_category_ids(user_id, db) -> list[UUID]` (added to __all__) backed by new private repo `catalog/repository.py::distinct_product_category_ids` = `SELECT DISTINCT category_id FROM products WHERE user_id=:uid AND deleted_at IS NULL` (tenant-scoped via scope_to_user — Contract-8 scanner green).
+
+New cross-module edges (all confirmed already-allowed by the FORBIDDEN-style import-linter contracts → lint-imports 27 kept / 0 broken with NO import_rules.toml change):
+- catalog → monitor.triggers (monitor not in any forbidden list)
+- customer → monitor.triggers (same)
+- customer → catalog.service (Contract 1/4/7.customer forbid only catalog.repository/.schemas/.router — NOT .service)
+
+§2.D LOCKED-matrix FOUNDER-GATE FLAG (LOCKED doc NOT edited): the §2.D matrix has only the 8 original domain modules. Three new edges are NOT yet represented: `customer → catalog` is a clear `✗ → ✓` flip of an existing cell; `catalog → monitor` and `customer → monitor` need a new `monitor` column. These require a founder-ratified §2.D amendment (deferred per wave protocol). import-linter is already green so no rule change ships here.
+
+Tests (NON-LIVE — V1 regression proof): `tests/test_monitor_triggers.py` — 5/5 PASS. `.delay` MOCKED on the SOURCE module `app.modules.monitor.tasks`; no live DB (host services driven with mocked repo + cross-module surfaces); zero executable live-Meesho refs (grep-proven). Mutation-verified: removing the try/except in triggers.py turns BOTH "host survives enqueue raise" tests RED.
+
+Gates: ruff clean (4 prod files + test); lint-imports 27/0; tests/lint/ 18/18; app boots; route inventory UNCHANGED (no new route); LOCKED docs + import_rules.toml byte-untouched.
+
+Hand-offs:
+- meesell-backend-coordinator: gate the PR (mutation-check by making .delay raise — already verified locally). Decide the §2.D founder-gate amendment (3 new edges).
+- COORDINATOR DECISION NEEDED: a THIRD onboarding-complete recompute site exists — `set_compliance_extension` (~L607) also recomputes `onboarding_complete` and CAN cross the false→true edge (final compliance step completing onboarding). The spec named only `upsert_profile` + `set_active_categories`; I implemented exactly those two per the authored spec. If the founder wants full coverage of the onboarding edge, the same `_enqueue_monitor_on_onboarding_edge(...)` call should be added to `set_compliance_extension` (the helper + edge logic are reusable as-is). NOT added unilaterally (surgical-change discipline).
+
 === UPDATE: 2026-06-22 (meesell-services-builder) — category-monitor Wave-2 Unit C DEDUPE GATE BUILD COMPLETE ===
 Phase: category-monitor (RETENTION_CATEGORY_MONITOR #370) — Wave 2 Unit C (the dedupe-gate Celery task)
 Session: mesell-category-monitor-backend-session-3
