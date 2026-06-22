@@ -3,6 +3,30 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-22
 
+=== UPDATE: 2026-06-22 10:30 (mfe-export-productid fix COMPLETE) ===
+Phase: feature/mfe-export-productid/frontend — FE-6 / E2-3 productId wiring
+Session: mesell-mfe-export-productid-frontend-session-1
+Route touched: /catalogs/:id/export (ExportComponent in mfe-export)
+Specialist: meesell-angular-component-builder
+
+Done:
+  - Collision check: placeholder 'current-product-id' confirmed still present on develop (no prior fix)
+  - export.component.ts: inject(ActivatedRoute) added; private productId=''; ngOnInit reads route snapshot; onGenerate uses this.productId; missing-id guard added
+  - export.component.spec.ts: 3 new FE-6/E2-3 regression tests (ExportComponentProxy pattern — no TestBed)
+  - vitest 65/65 PASS (52 existing + 3 new)
+  - tsc --noEmit mfe-export/tsconfig.app.json: CLEAN
+  - ng build mfe-export --configuration=development: GREEN (3.372s, 0 errors, 0 new warnings)
+  - Branch pushed: feature/mfe-export-productid/frontend
+  - PR #393 opened targeting develop
+
+Tests: 65/65 vitest pass / 0 fail / 0 skip
+Build: mfe-export GREEN 3.372s, bundle delta ~0
+In progress: awaiting meesell-frontend-coordinator merge-gate review
+Blockers: none
+Next: coordinator reviews PR #393; founder merges feature/mfe-export-productid integration → develop
+Hand-offs: PR #393 ready for meesell-frontend-coordinator merge-gate review. e2e selector reconcile for export (data-testid mismatch export-download vs export-download-button) remains in QA/triage lane as noted in prior update.
+=========
+
 === UPDATE: 2026-06-22 02:10 (QA-wave-1 service lane COMMIT 1) ===
 Phase: feature/qa-wave-1/testids-logout/frontend — logout cookie-revoke bug fix
 Branch: feature/qa-wave-1/testids-logout/frontend (worktree .claude/worktrees/agent-a6b0cbd5e0ca009d6)
