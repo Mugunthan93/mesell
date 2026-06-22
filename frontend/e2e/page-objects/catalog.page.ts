@@ -33,10 +33,47 @@ export class CatalogPage {
     return this.page.getByTestId('category-suggestion-select').locator('button');
   }
 
+  // ── Smart-picker browse-fallback + empty-state (CAT-E2E-03 / 04 / 07) ──
+  // SELECTOR PROVENANCE: these two surfaces ship NO data-testid in the
+  // integration-tip source (smart-picker.component.ts + the EmptyState composite).
+  // They are targeted by accessible role/name, DERIVED FROM SOURCE on
+  // feature/qa-catalog/integration @ 3476b0e — NOT yet agent-browser LIVE-VERIFIED
+  // (the Wave-C live exploration was environment-blocked; see federation_quirks.md
+  // "Wave-C environment blocker"). The flows that rely on these are test.fixme until
+  // live-verified, and a data-testid is requested via the coordinator memo.
+
+  /**
+   * Secondary "Browse if none match" link, shown UNDER the suggestion cards when
+   * fallback_offered=true AND there are results. Source: a bare
+   * <button class="mee-browse-link"> with aria-label
+   * "Browse all categories if none of the suggestions match".
+   */
+  get browseIfNoneMatch(): Locator {
+    return this.page.getByRole('button', {
+      name: /browse all categories if none of the suggestions match/i,
+    });
+  }
+  /**
+   * The picker empty-state shown when fallback_offered=true AND zero suggestions.
+   * Source: <mee-empty-state role="status"> whose aria-label is the message
+   * "No automatic suggestions found. Browse the full category list manually."
+   */
+  get pickerEmptyState(): Locator {
+    return this.page.getByRole('status', { name: /no automatic suggestions found/i });
+  }
+  /** The empty-state's "Browse all categories" CTA (mee-empty-state cta_label). */
+  get pickerEmptyStateBrowse(): Locator {
+    return this.page.getByRole('button', { name: /^browse all categories$/i });
+  }
+
   // ── Catalog form (/catalogs/:id/edit) ──
   /** mee-button → inner <button>. */
   get formNext(): Locator {
     return this.page.getByTestId('catalog-form-next').locator('button');
+  }
+  /** AI auto-fill button (mee-button → inner <button>). */
+  get aiFill(): Locator {
+    return this.page.getByTestId('catalog-ai-fill').locator('button');
   }
   /** Autosave status (renders during/after an autosave). */
   get saveStatus(): Locator {
