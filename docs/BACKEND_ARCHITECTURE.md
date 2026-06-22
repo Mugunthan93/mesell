@@ -259,7 +259,7 @@ Representative job: image pre-check pipeline (Feature 5, §11 owner).
 
 ### F. Cross-cutting flow callouts
 
-- **Caching read-path.** Any module reading `templates` / `categories` / `field_enum_values` / `seller_profile` MUST go through `core/cache.py`, which checks Valkey DB 3 first, falls back to Postgres, populates cache. Keys are version-tagged per MVP_ARCH §6.4 so the quarterly Meesho refresh invalidates atomically without `FLUSHDB`. Cited from MVP_ARCH §6.
+- **Caching read-path.** Any module reading `templates` / `categories` / `field_enum_values` / `seller_profile` MUST go through `core/cache.py`, which checks Valkey DB 3 first, falls back to Postgres, populates cache. Keys are version-tagged per MVP_ARCH §6.4 so the monthly, usage-driven Meesho refresh invalidates atomically without `FLUSHDB`. Cited from MVP_ARCH §6.
 - **Rate limit enforcement.** Per-user sliding-window counters in Valkey DB 0 are checked by middleware BEFORE the route handler runs (per the §4-locked order). Soft caps from MVP_ARCH §10.7 (OTP 3/h, autofill 50/h, picker 100/h, create-product 20/h) are enforced as hard 429s in V1; soft-cap-with-alarm posture lives in §6A for AI calls only.
 - **Audit log write-path.** Middleware AFTER successful HTTP 2xx response writes an `audit_events` row. In V1 this is a synchronous append per MVP_ARCH §11.3; V1.5 moves it to a Celery sink. Failed transactions never log — the rule is "if it committed, it logged; if it didn't commit, it never happened" (philosophy M8 traceability).
 
@@ -351,7 +351,7 @@ The Module Catalog is the **ownership map** for specialists. When the founder di
 
 **NOT responsible for:** AI prompt content (`meesell-prompt-engineer` owns prompts); validation of a seller's product values against schema (that is `catalog`'s job); writing to `categories`/`templates` at runtime (those are seed-time only, owned by the DATABASE track — `category` is **read-only** against these tables in V1).
 
-**Database tables — WRITE-OWNS:** **none.** The `categories`, `templates`, `field_enum_values`, and `field_aliases` tables are populated by the DATABASE track's seed scripts (per coordinator memory `session 2 close-out`) and the backend never INSERT/UPDATE/DELETEs them at runtime. The quarterly Meesho refresh re-runs the seed per `MVP_ARCH §6.5.1` — not a `category` module operation.
+**Database tables — WRITE-OWNS:** **none.** The `categories`, `templates`, `field_enum_values`, and `field_aliases` tables are populated by the DATABASE track's seed scripts (per coordinator memory `session 2 close-out`) and the backend never INSERT/UPDATE/DELETEs them at runtime. The monthly, usage-driven Meesho refresh re-runs the seed per `MVP_ARCH §6.5.1` — not a `category` module operation.
 **Database tables — READS-FROM:** `categories`, `templates`, `field_enum_values`, `field_aliases`.
 
 **Cross-module dependencies (service calls only, per §16):**
@@ -970,7 +970,7 @@ async def get_or_set(
 meesell:v{cache_version}:{key}
 ```
 
-`cache_version` lives in `shared/config.py` and bumps on quarterly Meesho refresh — invalidates all schema/enum/category-tree keys atomically without `FLUSHDB`. When the caller passes `version=None`, the helper reads `settings.cache_version` automatically.
+`cache_version` lives in `shared/config.py` and bumps on the monthly Meesho refresh — invalidates all schema/enum/category-tree keys atomically without `FLUSHDB`. When the caller passes `version=None`, the helper reads `settings.cache_version` automatically.
 
 **Stampede protection** per `MVP_ARCH §6.8`: when `single_flight=True`, the helper uses Valkey `SET NX EX` to elect one fetcher; concurrent callers wait + read the populated value. Mandatory for the **291 large Brand-pattern enum keys** (`MVP_ARCH §0` premise #5 + §6.8) where simultaneous cache-miss requests on a hot category could each trigger a 200 KB JSON build.
 
@@ -1416,7 +1416,7 @@ settings = Settings()  # singleton
 
 | Variable | Type / Default | Required | Notes |
 |---|---|---|---|
-| `CACHE_VERSION` | `str = "v1"` | no | bumps on quarterly Meesho refresh; consumed by `core/cache.py` per §4.D |
+| `CACHE_VERSION` | `str = "v1"` | no | bumps on monthly Meesho refresh; consumed by `core/cache.py` per §4.D |
 
 **Audit (PII scrubbing per §4.G)**
 
@@ -3196,7 +3196,7 @@ The 5 endpoint contracts below are normative. Request/response shapes reference 
 - **Status codes:** 200; 400 (`validation.browse.invalid_pagination` if `limit > 100` or `offset < 0`); 401.
 - **Audit:** NONE (read-only, polled incrementally — same flood-prevention reasoning as §7.B.5 `/me`).
 - **JWT required:** yes.
-- **Cache eligibility:** YES per `(q, super_id, limit, offset)` hash; TTL 5 min (browse results change only on quarterly Meesho refresh, but 5 min strikes a balance with the `MVP_ARCH §6.9` cache memory budget). Cache key: `browse:{sha256(q|super_id|limit|offset)}:v{cache_version}`.
+- **Cache eligibility:** YES per `(q, super_id, limit, offset)` hash; TTL 5 min (browse results change only on the monthly Meesho refresh, but 5 min strikes a balance with the `MVP_ARCH §6.9` cache memory budget). Cache key: `browse:{sha256(q|super_id|limit|offset)}:v{cache_version}`.
 - **Flow:**
   1. Pydantic validates `BrowseQuery` (§9.E): `limit ≤ 100`, `offset ≥ 0`. Raises `BrowseQueryInvalidError` (400) per §9.G.
   2. `category.service.browse_categories(q, super_id, limit, offset)`:
@@ -3522,7 +3522,7 @@ class BrowseQueryInvalidError(CategoryError):
   - `/categories` GLOBAL (1 h TTL, ETag, pre-warmed at worker startup).
   - `/{id}/schema` per-category (1 h TTL, ETag, pre-warmed for top 100 per §6.7).
   - `/{id}/field-enum/{name}` per-(category,field) (1 h TTL, **mandatory `single_flight=True`** per `MVP_ARCH §6.8` for the 291 Brand-pattern enum payloads).
-  All keys version-tagged with `:v{cache_version}` per §6.4 — quarterly Meesho category refresh bumps `CACHE_VERSION` env var (§5.D) to invalidate every cached entry atomically.
+  All keys version-tagged with `:v{cache_version}` per §6.4 — the monthly Meesho category refresh bumps `CACHE_VERSION` env var (§5.D) to invalidate every cached entry atomically.
 - **i18n (§5A.I):** 4 category-specific `validation_message_id` strings land in `i18n/messages_en.py` during the services-builder dispatch: `category.not_found`, `category.field_enum_not_found`, `validation.suggest_q.too_short_or_long`, `validation.browse.invalid_pagination`.
 
 ### 9.J Test plan
@@ -3549,7 +3549,7 @@ class BrowseQueryInvalidError(CategoryError):
 
 ### 9.L What §9 does NOT cover
 
-The DDL of `categories`/`templates`/`field_enum_values`/`field_aliases` (`MVP_ARCH §2.3`). The Smart Picker AI prompt content — `meesell-prompt-engineer` per §6A.G. The Smart Picker ranking algorithm (compressed-tree heuristics, confidence calibration, top-K selection logic) — `meesell-category-picker-builder` per §2.3 AI-track collaboration. The AI cost tracking, guardrails Layer 1+2, budget cap, ₹500 daily cap (§6A — owned by `ai_ops/`). The pg_trgm GIN index DDL (`MVP_ARCH §7.4` — shipped by database-builder in session 2 G4 per coordinator memory). The quarterly Meesho refresh seed pipeline (DATABASE track). The `core/cache.py` ETag + single-flight + pre-warm IMPLEMENTATION (§4.D). The frontend wizard renderer that consumes the schema response (`FRONTEND_ARCHITECTURE.md`). The Export Adapter Layer 3 guardrail that re-validates field-enum values at XLSX-emission time (§14 + `MVP_ARCH §9.7`).
+The DDL of `categories`/`templates`/`field_enum_values`/`field_aliases` (`MVP_ARCH §2.3`). The Smart Picker AI prompt content — `meesell-prompt-engineer` per §6A.G. The Smart Picker ranking algorithm (compressed-tree heuristics, confidence calibration, top-K selection logic) — `meesell-category-picker-builder` per §2.3 AI-track collaboration. The AI cost tracking, guardrails Layer 1+2, budget cap, ₹500 daily cap (§6A — owned by `ai_ops/`). The pg_trgm GIN index DDL (`MVP_ARCH §7.4` — shipped by database-builder in session 2 G4 per coordinator memory). The monthly, usage-driven Meesho refresh seed pipeline (DATABASE track). The `core/cache.py` ETag + single-flight + pre-warm IMPLEMENTATION (§4.D). The frontend wizard renderer that consumes the schema response (`FRONTEND_ARCHITECTURE.md`). The Export Adapter Layer 3 guardrail that re-validates field-enum values at XLSX-emission time (§14 + `MVP_ARCH §9.7`).
 
 ---
 
@@ -6202,7 +6202,7 @@ Per-module participation cross-references the cross-cutting bullets locked in ea
 - DB 2 — Celery result backend
 - DB 3 — **app cache** (dedicated)
 
-**Version-tagged key format.** Per `MVP_ARCH §6.4` + §4.D: `meesell:v{cache_version}:{key}`. Bumping `CACHE_VERSION` env var on the quarterly Meesho refresh atomically invalidates the entire cache — no `FLUSHDB`, no staggered invalidation. The DB 3 keyspace silently rolls over as new key prefixes start being written.
+**Version-tagged key format.** Per `MVP_ARCH §6.4` + §4.D: `meesell:v{cache_version}:{key}`. Bumping `CACHE_VERSION` env var on the monthly Meesho refresh atomically invalidates the entire cache — no `FLUSHDB`, no staggered invalidation. The DB 3 keyspace silently rolls over as new key prefixes start being written.
 
 **Single-flight (SET NX EX).** Per `MVP_ARCH §6.8`, single-flight is MANDATORY for the 291 large Brand-pattern enum keys (`field_enum:{cat_id}:brand`) — a 14 MB payload re-computed by 50 concurrent workers would lock up the worker pool. The `single_flight=True` parameter to `get_or_set` activates the SET NX EX lock pattern: only one worker fetches and populates the cache; the rest poll the lock key for up to 5 seconds before erroring or retrying the cache.
 
@@ -8189,7 +8189,7 @@ A reviewer evaluating §22A asks: "are all 12 risks correctly scoped to the back
 - **Likelihood:** 3 / 5 (Meesho has changed schemas before; quarterly is plausible).
 - **Impact:** 4 / 5 (all exports break across all categories until parser updated).
 - **Risk score:** 12 / 25.
-- **Mitigation:** Parser handles "Recommended" regex per `MVP_ARCH §0` premise #2 (binary Compulsory/Optional, no Recommended tier). Quarterly refresh + diff report owned by `meesell-scraper-maintainer` agent. Round-trip golden fixtures per §14.K detect drift — if Meesho adds a column, the round-trip test fails and the regression surfaces in CI. Brand-master and template seeds are versioned per `MVP_ARCH §2.6`.
+- **Mitigation:** Parser handles "Recommended" regex per `MVP_ARCH §0` premise #2 (binary Compulsory/Optional, no Recommended tier). Monthly, usage-driven refresh + diff report owned by `meesell-scraper-maintainer` agent. Round-trip golden fixtures per §14.K detect drift — if Meesho adds a column, the round-trip test fails and the regression surfaces in CI. Brand-master and template seeds are versioned per `MVP_ARCH §2.6`.
 - **Defense citation:** §14.K + `MVP_ARCH §0` + scraper-maintainer agent + §22A.B R4.
 
 **R5 — Compulsory median 33 fields in Home & Kitchen overwhelms user.**
