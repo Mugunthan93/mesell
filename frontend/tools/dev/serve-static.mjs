@@ -39,30 +39,32 @@ const YELLOW = '\x1b[33m';
 const CYAN   = '\x1b[36m';
 const WHITE  = '\x1b[37m';
 
-// One colour per server (matches start-all.mjs ordering).
+// One colour per server (matches start-all.mjs SORTED-CANONICAL ordering).
 const LABEL_COLOURS = [
   '\x1b[96m',  // bright cyan    — shell (frontend)
-  '\x1b[93m',  // bright yellow  — mfe-pricing
-  '\x1b[95m',  // bright magenta — mfe-export
-  '\x1b[92m',  // bright green   — mfe-onboarding
-  '\x1b[94m',  // bright blue    — mfe-dashboard
-  '\x1b[91m',  // bright red     — mfe-catalog
   '\x1b[97m',  // bright white   — mfe-auth
   '\x1b[33m',  // yellow         — mfe-billing
+  '\x1b[91m',  // bright red     — mfe-catalog
+  '\x1b[94m',  // bright blue    — mfe-dashboard
+  '\x1b[95m',  // bright magenta — mfe-export
+  '\x1b[92m',  // bright green   — mfe-onboarding
+  '\x1b[93m',  // bright yellow  — mfe-pricing
 ];
 
 // ─── Server definitions — port map MUST match federation.manifest.json ────────
+// SORTED-CANONICAL (alphabetical by remote name) — identical to angular.json
+// serve ports, the committed federation.manifest.json, and meesell_env.py slot-0.
 // 'frontend' is the shell project (angular.json) and serves on :4200.
 
 const SERVERS = [
   { label: 'shell',          app: 'frontend',       port: 4200 },
-  { label: 'mfe-pricing',    app: 'mfe-pricing',    port: 4201 },
-  { label: 'mfe-export',     app: 'mfe-export',     port: 4202 },
-  { label: 'mfe-onboarding', app: 'mfe-onboarding', port: 4203 },
+  { label: 'mfe-auth',       app: 'mfe-auth',       port: 4201 },
+  { label: 'mfe-billing',    app: 'mfe-billing',    port: 4202 },
+  { label: 'mfe-catalog',    app: 'mfe-catalog',    port: 4203 },
   { label: 'mfe-dashboard',  app: 'mfe-dashboard',  port: 4204 },
-  { label: 'mfe-catalog',    app: 'mfe-catalog',    port: 4205 },
-  { label: 'mfe-auth',       app: 'mfe-auth',       port: 4206 },
-  { label: 'mfe-billing',    app: 'mfe-billing',    port: 4207 },
+  { label: 'mfe-export',     app: 'mfe-export',     port: 4205 },
+  { label: 'mfe-onboarding', app: 'mfe-onboarding', port: 4206 },
+  { label: 'mfe-pricing',    app: 'mfe-pricing',    port: 4207 },
 ];
 
 // ─── Working directory: two levels up from this file = frontend/ ─────────────

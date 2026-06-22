@@ -843,13 +843,17 @@ jobs:
           }
           # Shell: poll root path (ng serve SPA — always 200)
           check http://localhost:4200/
-          # Remotes: poll remoteEntry.json (proves federation entry point is live)
-          check http://localhost:4201/remoteEntry.json
-          check http://localhost:4202/remoteEntry.json
-          check http://localhost:4203/remoteEntry.json
-          check http://localhost:4204/remoteEntry.json
-          check http://localhost:4205/remoteEntry.json
-          check http://localhost:4206/remoteEntry.json
+          # Remotes: poll remoteEntry.json (proves federation entry point is live).
+          # SORTED-CANONICAL port map (alphabetical by remote name) — must match
+          # angular.json serve ports + federation.manifest.json + meesell_env.py
+          # slot-0. All 7 remotes (incl. mfe-billing on :4207) are waited on.
+          check http://localhost:4201/remoteEntry.json   # mfe-auth
+          check http://localhost:4202/remoteEntry.json   # mfe-billing
+          check http://localhost:4203/remoteEntry.json   # mfe-catalog
+          check http://localhost:4204/remoteEntry.json   # mfe-dashboard
+          check http://localhost:4205/remoteEntry.json   # mfe-export
+          check http://localhost:4206/remoteEntry.json   # mfe-onboarding
+          check http://localhost:4207/remoteEntry.json   # mfe-pricing
           # SPA fallback proof: /login MUST return 200 (ng serve history fallback).
           HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4200/login)
           echo "SPA fallback check: /login → HTTP $HTTP_CODE"

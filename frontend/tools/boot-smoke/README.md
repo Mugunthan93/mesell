@@ -19,15 +19,20 @@ This gate is immune to that failure mode because:
 
 ## Port map (must match `apps/shell/public/federation.manifest.json`)
 
+SORTED-CANONICAL (alphabetical by remote name). This is the SINGLE port regime —
+identical to `angular.json` serve ports, the committed `federation.manifest.json`,
+`tools/meesell_env.py` slot-0, and the `ci.yml` boot-smoke readiness loop.
+
 | App            | Port |
 |----------------|------|
 | shell          | 4200 |
-| mfe-pricing    | 4201 |
-| mfe-export     | 4202 |
-| mfe-onboarding | 4203 |
+| mfe-auth       | 4201 |
+| mfe-billing    | 4202 |
+| mfe-catalog    | 4203 |
 | mfe-dashboard  | 4204 |
-| mfe-catalog    | 4205 |
-| mfe-auth       | 4206 |
+| mfe-export     | 4205 |
+| mfe-onboarding | 4206 |
+| mfe-pricing    | 4207 |
 
 ## SPA fallback requirement
 
@@ -46,7 +51,7 @@ curl -s -o /dev/null -w '%{http_code}' http://localhost:4200/login
 ## CORS requirement
 
 `serve.js` sets `Access-Control-Allow-Origin: *` on ALL responses. This is required
-because the shell (port 4200) fetches `remoteEntry.json` from the remote ports (4201-4206)
+because the shell (port 4200) fetches `remoteEntry.json` from the remote ports (4201-4207)
 via cross-origin `fetch()`. Without CORS headers, the browser blocks those fetches and
 the federation runtime falls back to `RemoteFailureComponent` for every remote — which
 would cause the gate to FAIL even on a clean build (false negative).
@@ -59,31 +64,33 @@ static server must handle it explicitly.
 Prerequisites: Node 22, pnpm 11.5.2, Playwright chromium installed.
 
 ```bash
-# 1. Build all apps (from frontend/)
+# 1. Build all apps (from frontend/) — shell + all 8 remotes
 pnpm exec ng build frontend --configuration production
-pnpm exec ng build mfe-pricing --configuration production
+pnpm exec ng build mfe-auth --configuration production
+pnpm exec ng build mfe-billing --configuration production
+pnpm exec ng build mfe-catalog --configuration production
+pnpm exec ng build mfe-dashboard --configuration production
 pnpm exec ng build mfe-export --configuration production
 pnpm exec ng build mfe-onboarding --configuration production
-pnpm exec ng build mfe-dashboard --configuration production
-pnpm exec ng build mfe-catalog --configuration production
-pnpm exec ng build mfe-auth --configuration production
+pnpm exec ng build mfe-pricing --configuration production
 
 # 2. Install Playwright chromium (if not already installed)
 cd frontend && npx playwright install chromium
 
-# 3. Start the 7 static servers (from frontend/)
-node tools/boot-smoke/serve.js dist/frontend/browser    4200 &
-node tools/boot-smoke/serve.js dist/mfe-pricing/browser 4201 &
-node tools/boot-smoke/serve.js dist/mfe-export/browser  4202 &
-node tools/boot-smoke/serve.js dist/mfe-onboarding/browser 4203 &
+# 3. Start the 8 static servers (from frontend/) — SORTED-CANONICAL ports
+node tools/boot-smoke/serve.js dist/frontend/browser       4200 &
+node tools/boot-smoke/serve.js dist/mfe-auth/browser       4201 &
+node tools/boot-smoke/serve.js dist/mfe-billing/browser    4202 &
+node tools/boot-smoke/serve.js dist/mfe-catalog/browser    4203 &
 node tools/boot-smoke/serve.js dist/mfe-dashboard/browser  4204 &
-node tools/boot-smoke/serve.js dist/mfe-catalog/browser    4205 &
-node tools/boot-smoke/serve.js dist/mfe-auth/browser    4206 &
+node tools/boot-smoke/serve.js dist/mfe-export/browser     4205 &
+node tools/boot-smoke/serve.js dist/mfe-onboarding/browser 4206 &
+node tools/boot-smoke/serve.js dist/mfe-pricing/browser    4207 &
 
-# 4. Wait for remoteEntry.json readiness
-until curl -sf http://localhost:4201/remoteEntry.json >/dev/null; do sleep 1; done
-until curl -sf http://localhost:4206/remoteEntry.json >/dev/null; do sleep 1; done
-# ... (repeat for all remotes)
+# 4. Wait for remoteEntry.json readiness (all 7 remotes)
+for p in 4201 4202 4203 4204 4205 4206 4207; do
+  until curl -sf http://localhost:$p/remoteEntry.json >/dev/null; do sleep 1; done
+done
 
 # 5. Run the gate (from frontend/)
 node tools/boot-smoke/boot-smoke.js
@@ -129,7 +136,7 @@ pnpm exec ng build mfe-auth --configuration production
 
 # Step 3: Restart the mfe-auth server.
 kill <mfe-auth-pid> 2>/dev/null
-node tools/boot-smoke/serve.js dist/mfe-auth/browser 4206 &
+node tools/boot-smoke/serve.js dist/mfe-auth/browser 4201 &
 
 # Step 4: Run the gate — expect RED.
 node tools/boot-smoke/boot-smoke.js
