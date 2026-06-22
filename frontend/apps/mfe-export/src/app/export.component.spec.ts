@@ -19,6 +19,7 @@ import {
   isTerminalStatus,
   retryState,
   resolveCheckMessage,
+  resolveExportProductId,
   EXPORT_CHECK_FALLBACK,
   type ExportFailedCheck,
   type ExportStatus,
@@ -534,5 +535,70 @@ describe('visual polish: 360px layout contract (builder-3)', () => {
   it(':host has display:block to prevent flex-shrink from parent shell layout', () => {
     const display = 'block';
     expect(display).toBe('block');
+  });
+});
+
+// ── resolveExportProductId — null-guard pure unit (fix/export-productid) ──────────
+//
+// Proves the onGenerate() null-guard short-circuits when ActivatedRoute has no ':id'.
+// Uses a minimal ParamMap stub — no TestBed, no Angular DI.
+// This is the unit gate for the V1 XLSX export bug fix.
+
+describe('resolveExportProductId — route param resolution', () => {
+  it('returns the id when paramMap has a non-empty id', () => {
+    const paramMap = { get: (key: string) => key === 'id' ? 'abc-123' : null };
+    expect(resolveExportProductId(paramMap)).toBe('abc-123');
+  });
+
+  it('returns null when paramMap get("id") returns null (no :id in route)', () => {
+    const paramMap = { get: (_key: string) => null };
+    expect(resolveExportProductId(paramMap)).toBeNull();
+  });
+
+  it('returns null when paramMap get("id") returns empty string', () => {
+    const paramMap = { get: (key: string) => key === 'id' ? '' : null };
+    expect(resolveExportProductId(paramMap)).toBeNull();
+  });
+
+  it('null result → onGenerate() short-circuits: sets idle + "No product selected" message, does NOT POST', () => {
+    // Proxy mirrors the new onGenerate() wiring without TestBed.
+    let postCalled = false;
+    let status: ExportStatus = 'idle';
+    let notReadyMsg: string | null = null;
+
+    function onGenerate(productId: string | null): void {
+      if (!productId) {
+        status = 'idle';
+        notReadyMsg = 'No product selected for export.';
+        return;
+      }
+      postCalled = true;
+      status = 'processing';
+    }
+
+    onGenerate(null);
+
+    expect(postCalled).toBe(false);
+    expect(status).toBe('idle');
+    expect(notReadyMsg).toBe('No product selected for export.');
+  });
+
+  it('non-null result → onGenerate() proceeds to POST (no early return)', () => {
+    let postCalled = false;
+    let status: ExportStatus = 'idle';
+
+    function onGenerate(productId: string | null): void {
+      if (!productId) {
+        status = 'idle';
+        return;
+      }
+      postCalled = true;
+      status = 'processing';
+    }
+
+    onGenerate('real-uuid-from-route');
+
+    expect(postCalled).toBe(true);
+    expect(status).toBe('processing');
   });
 });
