@@ -55,6 +55,7 @@ from app.modules.customer.domain import (
 from app.modules.customer.exceptions import (
     ComplianceExtensionMissingFieldsError,
     InvalidSuperCategoryError,
+    MissingRequiredPincodeError,
     ProfileIncompleteForCategoryError,
     ProfileNotFoundError,
     SuperCategoryNotDeclaredError,
@@ -421,6 +422,32 @@ async def upsert_profile(
 
     # Load existing (if any) to merge for the recompute.
     existing = await customer_repo.find_by_user_id(db, user_id)
+
+    # ── INSERT-path NOT-NULL guard — pincodes only ─────────────────────────────
+    # When ``existing is None`` this PATCH will INSERT a brand-new row.  The
+    # ``manufacturer_pincode`` / ``packer_pincode`` columns are NOT NULL at the
+    # DB level; a missing/null value would reach asyncpg and surface as a 500
+    # (NotNullViolationError).  Convert that into a clean 422 with a non-empty
+    # validation_message_id BEFORE the repository INSERT.  Deterministic order:
+    # manufacturer first, then packer.
+    #
+    # Scope: pincodes ONLY.  The same latent 500 class exists on the INSERT path
+    # for manufacturer_name/address, packer_name/address and country_of_origin —
+    # that is a SEPARATE follow-up flagged to the coordinator, deliberately NOT
+    # widened here.
+    #
+    # On an EXISTING row (``existing is not None``) we do NOTHING new — partial /
+    # subset PATCH semantics are preserved unchanged.
+    if existing is None:
+        for _pincode_field in ("manufacturer_pincode", "packer_pincode"):
+            if not _is_field_present(provided.get(_pincode_field)):
+                raise MissingRequiredPincodeError(
+                    field=_pincode_field,
+                    detail=(
+                        f"{_pincode_field} is required to create your seller profile."
+                    ),
+                )
+
     merged_base: dict[str, Any] = {}
     if existing is not None:
         for name in BASE_FIELD_NAMES:

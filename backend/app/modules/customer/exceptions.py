@@ -21,7 +21,14 @@ InvalidSuperCategoryError                     422      validation.super_category
 SuperCategoryNotDeclaredError                 404      customer.super_category.not_declared
 ComplianceExtensionMissingFieldsError         422      customer.compliance.missing_fields
 ProfileIncompleteForCategoryError             422      customer.profile.incomplete_for_category
+MissingRequiredPincodeError                   422      validation.<field>.missing (→ generic)
 ============================================  =======  ==========================================
+
+Note: ``MissingRequiredPincodeError`` (added 2026-06-22, qa-onboarding) is a
+defensive INSERT-path guard.  Its per-field id ``validation.<field>.missing``
+deliberately uses the ``.missing`` rule segment so the resolver's generic-family
+fallback (resolver.py Step-2b) resolves it to the already-registered
+``validation.generic.missing`` string — NO new i18n key is required.
 
 Note: §8.G prose lists 6 subclass IDs.  ``InvalidPincodeError`` is normally
 fired by Pydantic's ``Field(pattern=r"^\\d{6}$")`` regex producing a 422
@@ -184,11 +191,46 @@ class ProfileIncompleteForCategoryError(CustomerError):
         self.missing_keys = missing_keys or []
 
 
+class MissingRequiredPincodeError(CustomerError):
+    """Raised by ``customer.service.upsert_profile`` on the FIRST (row-creating)
+    PATCH when ``manufacturer_pincode`` or ``packer_pincode`` is absent / null /
+    empty / whitespace.
+
+    The ``seller_profiles`` table keeps both pincode columns NOT NULL.  Before
+    this guard, a missing pincode on the row-creating PATCH reached the DB and
+    surfaced as a 500 (asyncpg ``NotNullViolationError``).  This pre-flight guard
+    converts that into a clean 422 with a non-empty ``validation_message_id``.
+
+    The per-field id is ``validation.{field}.missing`` (e.g.
+    ``validation.manufacturer_pincode.missing``).  It uses the ``.missing`` rule
+    segment so the i18n resolver's generic-family fallback (resolver.py Step-2b)
+    resolves it to the already-registered ``validation.generic.missing`` string —
+    NO new i18n key is minted.  The id matches the §5A.H locked 3-segment regex
+    ``^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*){2}$``.
+
+    Guard fires ONLY when no profile row exists yet (the INSERT path).  Partial /
+    subset PATCH on an EXISTING row is unaffected — those legitimately omit
+    fields and keep their stored values.
+    """
+
+    code = "customer.missing_required_pincode"
+    status_code = 422
+    validation_message_id = "validation.manufacturer_pincode.missing"  # default; overridden per field
+
+    def __init__(self, *, field: str, detail: str | None = None) -> None:
+        super().__init__(
+            detail=detail or "Manufacturer and packer pincodes are required to complete your profile.",
+            validation_message_id=f"validation.{field}.missing",
+        )
+        self.field = field
+
+
 __all__ = [
     "ComplianceExtensionMissingFieldsError",
     "CustomerError",
     "InvalidPincodeError",
     "InvalidSuperCategoryError",
+    "MissingRequiredPincodeError",
     "ProfileIncompleteForCategoryError",
     "ProfileNotFoundError",
     "SuperCategoryNotDeclaredError",
