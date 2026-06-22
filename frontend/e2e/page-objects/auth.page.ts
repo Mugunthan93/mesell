@@ -10,6 +10,11 @@
  */
 import type { Page, Locator } from '@playwright/test';
 
+/** The fake credential the GIS stub sends through the REAL verify pipeline. */
+export const FAKE_GIS_CREDENTIAL = 'FAKE_E2E_GIS_CREDENTIAL';
+/** testid the GIS stub puts on the button it renders into the GIS host. */
+export const GIS_STUB_BUTTON_TESTID = 'gis-stub-button';
+
 export class AuthPage {
   constructor(private readonly page: Page) {}
 
@@ -23,6 +28,10 @@ export class AuthPage {
   /** The Google Identity Services host div (GIS injects its button iframe into it). */
   get googleHost(): Locator {
     return this.page.getByTestId('login-google-host');
+  }
+  /** The GIS-stub button (only present after installGisStub() + the app's render). */
+  get gisStubButton(): Locator {
+    return this.page.getByTestId(GIS_STUB_BUTTON_TESTID);
   }
 
   // ── /otp-verify ──
@@ -63,5 +72,50 @@ export class AuthPage {
   /** Submit the OTP verify form (mee-button → click the inner <button>). */
   async submitOtp(): Promise<void> {
     await this.verifyButton.locator('button').click();
+  }
+
+  /**
+   * installGisStub() — inject a fake `window.google.accounts.id` BEFORE the app
+   * boots so GoogleIdentityService.isReady() is true, initialize() captures the
+   * LoginComponent's REAL credential callback, and renderButton() renders a
+   * clickable test button into the GIS host. Clicking it invokes the captured
+   * callback with a fake credential → the app runs its REAL pipeline
+   * (LoginComponent.onGoogleCredential → AuthApiService.googleVerify → POST
+   * /api/v1/auth/google/verify), WITHOUT the cross-origin Google OAuth iframe.
+   *
+   * MUST be called before navigating to /login — addInitScript runs on every
+   * navigation in the page/context. Stubbing the browser GIS API (not the app DOM)
+   * is the only way to drive the real wiring headlessly; the host selector itself
+   * (login-google-host) is LIVE-VERIFIED in selector_registry.md.
+   */
+  async installGisStub(credential: string = FAKE_GIS_CREDENTIAL): Promise<void> {
+    await this.page.addInitScript(
+      ({ cred, btnTestId }) => {
+        let captured: ((r: { credential: string }) => void) | null = null;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (window as any).google = {
+          accounts: {
+            id: {
+              initialize: (cfg: { callback: (r: { credential: string }) => void }) => {
+                captured = cfg.callback;
+              },
+              renderButton: (el: HTMLElement) => {
+                const b = document.createElement('button');
+                b.setAttribute('data-testid', btnTestId);
+                b.type = 'button';
+                b.textContent = 'Stub Google sign-in';
+                b.addEventListener('click', () => {
+                  if (captured) captured({ credential: cred });
+                });
+                el.appendChild(b);
+              },
+              cancel: () => {},
+              disableAutoSelect: () => {},
+            },
+          },
+        };
+      },
+      { cred: credential, btnTestId: GIS_STUB_BUTTON_TESTID },
+    );
   }
 }

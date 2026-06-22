@@ -242,4 +242,57 @@ describe('LoginComponent', () => {
     expect(comp.googleLoading()).toBe(false);
     expect(comp.errorMessage()).toContain('offline');
   });
+
+  // ── FE-AUTH-11: GIS load FAILURE → errorMessage set (unique salvage case) ────
+  //
+  // Develop covers the GIS happy/new-user/401/429 paths.
+  // The GIS-LOAD-FAILURE path (load() rejects → catch → errorMessage) is ABSENT.
+  // The GIS-success render case ("renderButton called with HTMLElement host") is
+  // effectively already covered by the existing "wires the GIS button on init" test;
+  // only the failure case is net-new.
+  //
+  // The test rebuilds the TestBed with a GisFailStub whose load() rejects, then
+  // waits one microtask tick for the async initGoogleButton() to settle.
+
+  it('should set errorMessage containing "Couldn\'t load Google sign-in" when GIS load fails', async () => {
+    // A stub whose load() rejects to simulate the GIS script failing to load
+    class GisFailStub {
+      load = vi.fn(() => Promise.reject(new Error('GIS script failed to load')));
+      initialize = vi.fn();
+      renderButton = vi.fn();
+      cancel = vi.fn();
+      isReady = vi.fn(() => false);
+    }
+
+    TestBed.resetTestingModule();
+
+    await TestBed.configureTestingModule({
+      imports: [LoginComponent, ReactiveFormsModule, NoopAnimationsModule],
+      providers: [
+        provideRouter([
+          { path: 'otp-verify', children: [] },
+          { path: 'login', children: [] },
+          { path: 'dashboard', children: [] },
+          { path: 'onboarding', children: [] },
+        ]),
+        provideHttpClient(withFetch()),
+        provideHttpClientTesting(),
+        { provide: GoogleIdentityService, useClass: GisFailStub },
+      ],
+    }).compileComponents();
+
+    const failFixture = TestBed.createComponent(LoginComponent);
+    const failComp = failFixture.componentInstance;
+    failFixture.detectChanges();
+
+    // Wait one microtask tick for ngAfterViewInit's async initGoogleButton() to settle
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    // The catch block in initGoogleButton() must have set the errorMessage signal
+    expect(failComp.errorMessage()).toContain("Couldn't load Google sign-in");
+
+    // Cleanup: ensure no pending HTTP requests leak into other tests
+    failFixture.destroy();
+    TestBed.inject(HttpTestingController).verify();
+  });
 });

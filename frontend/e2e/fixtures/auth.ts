@@ -22,9 +22,50 @@
  * playwright.config.ts (never hardcoded).
  */
 import { existsSync } from 'node:fs';
-import { test as base, expect, type Page, type BrowserContext } from '@playwright/test';
-import { STORAGE_STATE } from '../playwright.config';
+import {
+  test as base,
+  expect,
+  type Page,
+  type BrowserContext,
+  type Route,
+} from '@playwright/test';
+import { STORAGE_STATE, REMOTE_PORTS } from '../playwright.config';
 import { resetRateLimits } from './rate-limit';
+
+/**
+ * applyManifestPortFix — OPT-IN dev-stack repair (env: MEESELL_FIX_MANIFEST_PORTS=1).
+ *
+ * WHY (federation_quirks.md — manifest port-MAPPING mismatch): a dev stack brought
+ * up with the remotes bound to ALPHABETICAL ports (mfe-auth :4201, mfe-billing :4202,
+ * …, mfe-pricing :4207) while the SERVED federation.manifest.json still maps remotes
+ * in DECLARATION order (mfe-auth → :4206, which is actually serving mfe-onboarding)
+ * makes the shell load the WRONG remote: navigating to /login fetches `./LoginComponent`
+ * from the remote on :4206 → "Unknown exposed module ./LoginComponent in remote
+ * mfe-auth" → the D12 remote-failure fallback renders instead of the login form.
+ * VERIFIED LIVE this session against slot-0.
+ *
+ * This shim is the TEST-SIDE repair of that MISCONFIGURED DEV STACK (the real fix is
+ * infra's: bring the stack up with a manifest whose ports match the running remotes).
+ * It is NOT a hardcoded port in a spec: it rewrites the served manifest using the
+ * canonical REMOTE_PORTS from playwright.config.ts (env-overridable). It is OFF by
+ * default, so a correctly-wired stack is untouched. Apply it to a CONTEXT (so every
+ * page inherits the route) before the first navigation.
+ */
+export async function applyManifestPortFix(target: BrowserContext | Page): Promise<void> {
+  if (process.env.MEESELL_FIX_MANIFEST_PORTS !== '1') return;
+  const host = process.env.MEESELL_REMOTE_HOST ?? 'localhost';
+  const fixed: Record<string, string> = {};
+  for (const [name, port] of Object.entries(REMOTE_PORTS)) {
+    fixed[name] = `http://${host}:${port}/remoteEntry.json`;
+  }
+  await target.route('**/federation.manifest.json', (route: Route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(fixed),
+    }),
+  );
+}
 
 /** Dedicated E2E test identity. 10-digit only (the +91 is a display prefix the
  *  LoginComponent prepends; the validator is /^[6-9]\d{9}$/). Override via env. */
@@ -129,6 +170,8 @@ export const authedTest = base.extend<AuthTestFixtures, AuthWorkerFixtures>({
       const context = await browser.newContext(
         haveSeed ? { storageState: STORAGE_STATE } : undefined,
       );
+      // Repair the dev-stack manifest port mismatch (no-op unless opted in).
+      await applyManifestPortFix(context);
       const page = await context.newPage();
       let seeded = false;
       if (haveSeed) {
@@ -179,11 +222,20 @@ export const authedTest = base.extend<AuthTestFixtures, AuthWorkerFixtures>({
  * Valkey/redis-cli is reachable. The reset runs serially (--workers=1), so it cannot
  * race a concurrent send.
  */
-type RlResetFixture = { _rlReset: void };
+type RlResetFixture = { _rlReset: void; _manifestFix: void };
 export const freshLoginTest = base.extend<RlResetFixture>({
   _rlReset: [
     async ({}, use) => {
       await resetRateLimits();
+      await use();
+    },
+    { auto: true },
+  ],
+  // Repair the dev-stack manifest port mismatch on the test's page context BEFORE the
+  // test navigates (no-op unless MEESELL_FIX_MANIFEST_PORTS=1). Auto so it always runs.
+  _manifestFix: [
+    async ({ page }, use) => {
+      await applyManifestPortFix(page.context());
       await use();
     },
     { auto: true },

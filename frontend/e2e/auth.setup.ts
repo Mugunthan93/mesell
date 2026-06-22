@@ -24,9 +24,13 @@
  */
 import { test as setup, expect } from '@playwright/test';
 import { STORAGE_STATE } from './playwright.config';
-import { loginViaOtp } from './fixtures/auth';
+import { loginViaOtp, applyManifestPortFix } from './fixtures/auth';
 
 setup('authenticate via phone OTP, complete onboarding, persist storageState', async ({ page }) => {
+  // Repair the dev-stack manifest port mismatch before navigating (no-op unless
+  // MEESELL_FIX_MANIFEST_PORTS=1 — see federation_quirks.md).
+  await applyManifestPortFix(page.context());
+
   // Drive login → OTP verify → onboarding → dashboard (shared helper).
   await loginViaOtp(page);
 

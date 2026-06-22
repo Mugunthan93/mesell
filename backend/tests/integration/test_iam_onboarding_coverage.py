@@ -420,41 +420,42 @@ async def test_google_verify_email_unverified_401(
 # ─────────────────────────────────────────────────────────────────────────────
 # OB-BE-24  Google flag-OFF → 404 (route not mounted)
 # ─────────────────────────────────────────────────────────────────────────────
-async def test_google_verify_flag_off_404(iam_client, use_live_valkey):
-    """OB-BE-24: When FEATURE_GOOGLE_AUTH_ENABLED=False the google/verify route is
-    not mounted → 404.
+async def test_google_verify_flag_off_404(use_live_valkey):
+    """OB-BE-24 / BE-AUTH-16: FEATURE_GOOGLE_AUTH_ENABLED=False → /auth/google/verify is 404.
 
-    The ``iam_client`` fixture boots the app WITHOUT manually mounting the
-    google router (the router is flag-gated in app.main).  In the default
-    test environment with FEATURE_GOOGLE_AUTH_ENABLED=False the route is absent.
+    REPLACED (qa-auth-contract BE-AUTH-16): the prior version relied on the shared
+    ``iam_client`` (which boots the live app singleton) and used ``pytest.skip`` when
+    a prior test in the process had already mounted the google router — making the
+    assertion fragile / order-dependent.
 
-    This test probes an iam_client that has NOT had the google router injected
-    by the OB-BE-22/23 tests (those inject into the shared app object — if
-    those tests run first the route IS mounted and this test must skip).
+    CLEAN PATTERN: build a SEPARATE minimal FastAPI app with ONLY the iam router
+    (the google router intentionally OMITTED) and send the request against it.
+    This gives a deterministic 404 regardless of the shared app's route state.
+    No shared ``app`` singleton is mutated; no ``pytest.skip`` is needed.
 
-    Strategy: create a fresh ASGI client without the google router to simulate
-    flag-off cleanly, OR rely on the per-function lifespan isolation.
+    Arrange: minimal FastAPI app with iam_router but WITHOUT iam_google_router.
+    Act: POST /api/v1/auth/google/verify.
+    Assert: 404 — route not mounted (mirrors the flag-OFF branch in main.py).
     """
-    from app.main import app as _main_app
+    from fastapi import FastAPI
+    from httpx import ASGITransport, AsyncClient
 
-    # Check whether the route was already injected by a prior test in this session.
-    google_route_mounted = any(
-        getattr(r, "path", "") == "/api/v1/auth/google/verify"
-        for r in _main_app.routes
-    )
+    from app.core.errors import register_error_handlers
+    from app.modules.iam import iam_router
+    # iam_google_router intentionally NOT imported — mirrors FEATURE_GOOGLE_AUTH_ENABLED=False.
 
-    if google_route_mounted:
-        pytest.skip(
-            "Google router was already mounted by a prior test in this process; "
-            "flag-OFF isolation requires a fresh app instance. "
-            "This case is covered at the app-factory level via settings.FEATURE_GOOGLE_AUTH_ENABLED."
+    minimal_app = FastAPI(title="test-google-flag-off")
+    register_error_handlers(minimal_app)
+    minimal_app.include_router(iam_router)
+    # The google router is NOT mounted — this is the flag-OFF state.
+
+    transport = ASGITransport(app=minimal_app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+        resp = await ac.post(
+            "/api/v1/auth/google/verify", json={"credential": "dummy-token"}
         )
 
-    resp = await iam_client.post(
-        "/api/v1/auth/google/verify", json={"credential": "any-token"}
-    )
-
     assert resp.status_code == 404, (
-        f"Flag-OFF google/verify must be 404 (route not mounted); "
+        f"With google router NOT mounted, /auth/google/verify must be 404; "
         f"got {resp.status_code}: {resp.text}"
     )
