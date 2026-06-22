@@ -101,6 +101,80 @@ Lanes landed (per PR body): Lane A backend pytest (#432, 36 tests 0 fail — pri
   export-download E2E carries a documented env FIXME (headless download wiring in CI).
 === SESSION END ===
 
+## UPDATE — 2026-06-22 — mesell-infra-housekeeping-scribe-infra-session-1 — LATE-SCRIBE of the e2e-port-reconcile session (its STATUS block + MEMORY were stranded uncommitted in the master tree; recovered during post-QA-wave housekeeping; the work itself — PR #447 — is already on develop)
+
+## UPDATE — 2026-06-22 — mesell-e2e-port-reconcile-infra-session-1 — fix the two dev-stack issues the auth E2E lane surfaced (INFRA-1 playwright port fix PR #447 + INFRA-2 slot-0 rebuild)
+
+=== SESSION START ===
+Phase: NOT a playbook §-resource op (no VM/K3s/ns/Postgres/Valkey/ingress/secret/cost change, ₹0,
+       dev-only). This is dev-tooling / local-stack work — same class as the meesell_env.py /
+       federation-manifest-reconcile lane; no INFRASTRUCTURE_PLAYBOOK §0-15 section maps. Governing
+       rule (own memory): "committing worktree-pinned ports into federation.manifest.json broke the
+       shell" → keep ONE canonical port regime; never git the contaminated master tree.
+Board sweep (session start): no NEW row crossed the 7-day-untouched stall line that isn't an explicit
+       external-gate hold. The 6 microservices rows + qa-wave-infra + dev-proxy + the two federation
+       rows remain IN REVIEW under FOUNDER/FE GATE (external holds, not stalls).
+
+=== INFRA-1 — federation.manifest port-MAPPING mismatch — diagnosed COMMITTED-FILE bug (1 surface left) ===
+Diagnosis: PR #412 (Option 1, founder-chosen; merge-commit `437c68d`, IN origin/develop) already
+  unified the dev port regime to SORTED — mfe-auth=4201 … mfe-pricing=4207 — across
+  federation.manifest.json == angular.json serve ports == ci.yml boot-smoke == serve-static.mjs ==
+  tools/meesell_env.py slot-0 (enumerate(sorted(mfes))). VERIFIED all consistent on current
+  origin/develop `9d5f5b4`. (My local develop `e82d52f` was 2 days stale and showed the OLD order —
+  the source of my initial mis-read.) The ONE remaining committed divergence: `frontend/e2e/
+  playwright.config.ts` `REMOTE_PORTS` defaults + header comment still carried the PRE-#412 order
+  (mfe-pricing=4201, mfe-auth=4206) — it was added on the parallel qa-wave-infra branch which never
+  saw #412. That is EXACTLY the reported symptom: shell serves canonical mfe-auth=4201 while playwright
+  thinks mfe-auth=4206 (= mfe-onboarding's port) → /login resolves LoginComponent from the wrong remote
+  → "Unknown exposed module" → D12 fallback. The e2e lane even authored a workaround for this verbatim
+  (`applyManifestPortFix`, env MEESELL_FIX_MANIFEST_PORTS, doc'd in federation_quirks.md) — but it
+  rewrites the served manifest FROM playwright's REMOTE_PORTS, so with the stale defaults it would have
+  written the WRONG map. Fix: **PR #447** (feature/e2e-port-reconcile/infra → develop, off `9d5f5b4`)
+  aligns playwright.config.ts to the sorted-canonical regime — 1 file, port literals + comment only,
+  +21/-15, zero spec/page-object/app change. PROOF: REMOTE_PORTS now == committed manifest for all 7
+  remotes (verified name→port identical). Founder's gate (D1) — DO NOT MERGE.
+
+=== INFRA-2 — stale slot-0 dev stack — rebuilt shell + mfe-onboarding + mfe-auth from clean develop-tip ===
+Confirmed stale: running :4206 mfe-onboarding bundle had 0× manufacturer_pincode/packer_pincode (pre
+  #399/#416 7-field Manufacturer/Packer Legal-Metrology form). DISCOVERY: slot-0 baseline = the master
+  tree on stale local develop `e82d52f`, AND its `apps/mfe-onboarding/src/app/onboarding.component.ts`
+  working copy is CONTAMINATED by a live sibling FE session (369→259 lines, the 7-field form removed in
+  WIP) — so building slot-0 from the master tree would re-bake the sibling's WIP, NOT develop tip.
+  Master tree carries 75 uncommitted files across concurrent sibling sessions → NEVER git it.
+Action: built shell (project `frontend`) + mfe-onboarding + mfe-auth from a CLEAN origin/develop-tip
+  worktree `/private/tmp/mesell-wt/e2e-port-reconcile` (pnpm install --frozen-lockfile reused the store,
+  4s). Hit the documented esbuild --service deadlock once on the first (master-tree) attempt — killed +
+  retried clean. Re-served the 3 on slot-0 ports via boot-smoke/serve.js: :4200 (shell, w/ /api proxy →
+  :8000), :4201 (mfe-auth), :4206 (mfe-onboarding). Killed ONLY the 3 serve.js pids (verified each is a
+  serve.js node proc before kill); backend :8000 (uvicorn pid 12722) + the 5 other remotes UNTOUCHED.
+VERIFIED: served onboarding chunk byte-identical to the clean build; contains all 6 LM fields
+  (manufacturer/packer name+address+pincode, 10× each pincode) + pincodeValidator; shell :4200 serves
+  the canonical SORTED manifest; agent-browser http://localhost:4200/login renders LoginComponent
+  (login-phone-input + login-request-otp testids present, body = real "Welcome back" login form),
+  federationFailure=false → the auth E2E root cause (wrong-remote → Unknown exposed module → D12) is
+  GONE; shell /api proxy returns real 401 JSON (not index.html); all 7 remotes + backend = 200. The
+  other 5 remotes' only e82d52f..tip delta is `.spec.ts` files (zero runtime delta) so their
+  master-tree-served bundles are NOT runtime-stale.
+
+=== CANONICAL CONVENTION SETTLED ===
+SORTED / alphabetical (= #412 Option 1, founder-chosen): shell=4200; mfe-auth=4201, mfe-billing=4202,
+  mfe-catalog=4203, mfe-dashboard=4204, mfe-export=4205, mfe-onboarding=4206, mfe-pricing=4207;
+  slot N: shell=4200+N*10, mfe[i]=4201+N*10+i over sorted mfe-* names, backend=8000+N*10. This is now
+  identical across federation.manifest.json, angular.json, ci.yml, serve-static.mjs, start-all.mjs,
+  tools/meesell_env.py slot-0, AND (after PR #447) frontend/e2e/playwright.config.ts.
+
+=== login.spec.ts verdict ===
+WOULD run GREEN on the federation/port axis: auth.setup.ts loginViaOtp → /login now renders
+  LoginComponent from the correct remote (browser-confirmed). The remaining gate to a FULL green
+  authed run is the dev OTP rate-limit (the dev-proxy audit's 3/3600s finding; the suite clears it in
+  globalSetup) and the deferred-go-live GIS-403 on the Google button (gauth localhost origin) — both
+  pre-existing, unrelated to ports, and out of this task's scope.
+
+=== SESSION END ===
+Board sweep (session end): added e2e-port-reconcile row (IN REVIEW, founder gate). No row newly crossed
+  the 7-day stall line outside the standing external-gate holds. Stack LEFT RUNNING on
+  http://localhost:4200 (rebuilt shell+auth+onboarding) for the e2e lane / re-audit. ₹0/mo.
+
 ## UPDATE — 2026-06-22 — mesell-onboarding-testing-session-1 — qa-onboarding integration→develop merge (founder-authorized) + #417 STOP + session handoff doc
 
 === SESSION START ===
