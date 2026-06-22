@@ -32,29 +32,34 @@ const YELLOW = '\x1b[33m';
 const CYAN   = '\x1b[36m';
 const WHITE  = '\x1b[37m';
 
-// One colour per server (cycles through the 8 bright colours).
+// One colour per server. Order is SORTED-CANONICAL (alphabetical by remote name)
+// so the spawn order, colours, and printed PORT MAP all match angular.json /
+// federation.manifest.json / meesell_env.py slot-0 — the single port regime
+// (see tools/boot-smoke/README.md).
 const LABEL_COLOURS = [
-  '\x1b[96m',  // bright cyan   — shell
-  '\x1b[93m',  // bright yellow — mfe-pricing
-  '\x1b[95m',  // bright magenta — mfe-export
-  '\x1b[92m',  // bright green   — mfe-onboarding
-  '\x1b[94m',  // bright blue    — mfe-dashboard
-  '\x1b[91m',  // bright red     — mfe-catalog
+  '\x1b[96m',  // bright cyan    — shell
   '\x1b[97m',  // bright white   — mfe-auth
   '\x1b[33m',  // yellow         — mfe-billing
+  '\x1b[91m',  // bright red     — mfe-catalog
+  '\x1b[94m',  // bright blue    — mfe-dashboard
+  '\x1b[95m',  // bright magenta — mfe-export
+  '\x1b[92m',  // bright green   — mfe-onboarding
+  '\x1b[93m',  // bright yellow  — mfe-pricing
 ];
 
 // ─── Server definitions (reuse existing pnpm scripts) ────────────────────────
+// SORTED-CANONICAL order. Ports come from angular.json via these scripts; the
+// order here governs spawn order + colour assignment + the banner PORT MAP.
 
 const SERVERS = [
-  { label: 'shell',         script: 'start:shell'         },
-  { label: 'mfe-pricing',   script: 'start:mfe-pricing'   },
-  { label: 'mfe-export',    script: 'start:mfe-export'    },
-  { label: 'mfe-onboarding',script: 'start:mfe-onboarding'},
-  { label: 'mfe-dashboard', script: 'start:mfe-dashboard' },
-  { label: 'mfe-catalog',   script: 'start:mfe-catalog'   },
-  { label: 'mfe-auth',      script: 'start:mfe-auth'      },
-  { label: 'mfe-billing',   script: 'start:mfe-billing'   },
+  { label: 'shell',          script: 'start:shell'          },
+  { label: 'mfe-auth',       script: 'start:mfe-auth'       },
+  { label: 'mfe-billing',    script: 'start:mfe-billing'    },
+  { label: 'mfe-catalog',    script: 'start:mfe-catalog'    },
+  { label: 'mfe-dashboard',  script: 'start:mfe-dashboard'  },
+  { label: 'mfe-export',     script: 'start:mfe-export'     },
+  { label: 'mfe-onboarding', script: 'start:mfe-onboarding' },
+  { label: 'mfe-pricing',    script: 'start:mfe-pricing'    },
 ];
 
 // ─── Working directory: two levels up from this file = frontend/ ─────────────
@@ -71,15 +76,15 @@ function printBanner() {
   console.log(`${BOLD}${WHITE}  MeeSell — Native Federation Dev Boot (FRONTEND ONLY)${RESET}`);
   console.log(`${BOLD}${CYAN}${line}${RESET}`);
 
-  console.log(`\n${BOLD}${YELLOW}  PORT MAP${RESET}`);
+  console.log(`\n${BOLD}${YELLOW}  PORT MAP${RESET}  ${DIM}(SORTED-CANONICAL — matches federation.manifest.json)${RESET}`);
   console.log(`${GREEN}    4200${RESET}  shell        (host application)`);
-  console.log(`${GREEN}    4201${RESET}  mfe-pricing`);
-  console.log(`${GREEN}    4202${RESET}  mfe-export`);
-  console.log(`${GREEN}    4203${RESET}  mfe-onboarding`);
+  console.log(`${GREEN}    4201${RESET}  mfe-auth`);
+  console.log(`${GREEN}    4202${RESET}  mfe-billing`);
+  console.log(`${GREEN}    4203${RESET}  mfe-catalog`);
   console.log(`${GREEN}    4204${RESET}  mfe-dashboard`);
-  console.log(`${GREEN}    4205${RESET}  mfe-catalog`);
-  console.log(`${GREEN}    4206${RESET}  mfe-auth`);
-  console.log(`${GREEN}    4207${RESET}  mfe-billing`);
+  console.log(`${GREEN}    4205${RESET}  mfe-export`);
+  console.log(`${GREEN}    4206${RESET}  mfe-onboarding`);
+  console.log(`${GREEN}    4207${RESET}  mfe-pricing`);
 
   console.log(`\n${BOLD}${YELLOW}  PREREQUISITES — still required for a working session:${RESET}`);
   console.log(`${RED}    (a)${RESET} Backend on ${BOLD}:8000${RESET}  (docker-compose or k3s)`);

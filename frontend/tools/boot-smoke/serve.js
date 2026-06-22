@@ -27,7 +27,7 @@
  *
  * Example:
  *   node serve.js ../../dist/frontend/browser 4200 http://127.0.0.1:8000
- *   node serve.js ../../dist/mfe-auth/browser  4206          # no proxy, static only
+ *   node serve.js ../../dist/mfe-auth/browser  4201          # no proxy, static only
  */
 
 'use strict';
@@ -195,7 +195,7 @@ function serve(req, res) {
       // are NEVER cached in dev. See NO_STORE_HEADERS note above.
       ...NO_STORE_HEADERS,
       // CORS required: the shell (port 4200) fetches remoteEntry.json from the remote
-      // ports (4201-4206) — a cross-origin fetch. Without this header the browser
+      // ports (4201-4207) — a cross-origin fetch. Without this header the browser
       // blocks the request with "No 'Access-Control-Allow-Origin' header" and the
       // federation runtime falls back to RemoteFailureComponent for every remote.
       'Access-Control-Allow-Origin':  '*',
