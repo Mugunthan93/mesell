@@ -1,6 +1,54 @@
 # STATUS — BACKEND
 
 
+=== UPDATE: 2026-06-22 (meesell-services-builder) — category-monitor Wave-3 Unit S SERVING LAYER COMPLETE ===
+Phase: category-monitor (RETENTION_CATEGORY_MONITOR #370) — Wave 3 Unit S (serving read-through + evict-on-update)
+Session: mesell-category-monitor-backend-session-6
+Branch: feature/category-monitor/backend-w3-serving (off integration 0d0abfb = W1 schema + W2 gate)
+PR: (open against feature/category-monitor/integration — awaiting meesell-backend-coordinator merge-gate)
+
+Director rulings baked in:
+  - Q2: serving is INTERNAL-ONLY in W3 — NO new public route (Wave-4 owns the FE-contracted endpoint). So this is a
+    service method only (no router, no schema mount) → §17 endpoint count UNCHANGED (route delta = 0; verified by
+    stash-and-recount: base 36 ops == my-tree 36 ops; the locked "28" is the no-dev-flag count, my change adds nothing).
+  - Q3: evict-on-update = a 1-line additive edit in the W2 gate's "scraped" success branch (no verdict-logic change).
+
+Done:
+  - `app/modules/monitor/service.py`:
+    * NEW `get_served_category_data(category_id, db) -> dict` — read-through serve. Cache via `core.cache.get_or_set`
+      on Valkey DB-3 (NOT DB-0; DB-0 is the W2 in-flight LOCK). `_fetch` reads ONLY `category_snapshots` via
+      `monitor_repo.get_latest_snapshot` (DB fallback) — NO live Meesho in the read path (grep-proven). None row →
+      `CategorySnapshotNotFoundError`. Returns {category_id, captured_at(iso), content_hash, dimensions}.
+    * NEW module constants `_SERVE_TTL_SECONDS=86400` (1-day) + `_SERVE_KEY_PREFIX="monitor:snapshot:"` +
+      helper `_snapshot_cache_key(category_id)`. Distinct keyspace from the DB-0 `catmonitor:snapshot:` lock prefix.
+    * Evict-on-update: in `run_dedupe_gate` "scraped" branch (after snapshot row inserted, before return) →
+      `await evict(_snapshot_cache_key(category_id))`. ONLY change to the W2 gate; verdict logic byte-untouched.
+      `evict` added to the gate's lazy-import block.
+  - `app/core/cache.py`: NEW sibling helper `evict(key, version=None)` → `delete(_versioned_key(...))`. Added to __all__.
+  - `app/modules/monitor/exceptions.py`: NEW `CategorySnapshotNotFoundError(category_id)`.
+  - `tests/test_monitor_serving.py` (NEW, @pytest.mark.unit, fakeredis + mocked repo, NON-LIVE): 5 cases —
+    (1) cache MISS reads DB + populates; (2) cache HIT skips DB (mock asserted once); (3) no snapshot →
+    CategorySnapshotNotFoundError; (4) evict-on-update: serve(OLD) → gate scrape inserts NEW + evicts → next serve
+    REBUILDS from DB → NEW content_hash (REVERT-CHECK: removing the evict line turns this RED — verified); (5) grep-proof
+    zero live Meesho in the serve method source.
+  - `tests/test_monitor_gate.py`: fixture extended to also fake the DB-3 serve cache (the new evict line reaches DB-3;
+    without the fake the gate suite goes live → "Event loop closed" cross-file pollution). Minimal, change-driven edit.
+
+Tests: 14 passed (5 serving + 9 gate) together; test_core_cache.py 5 passed (evict addition safe).
+Quality gates: ruff clean (app/ + both test files); lint-imports 27 kept / 0 broken (monitor→core.cache is normal
+  layering — no new import rule needed); Contract 8 + Contract 9 scanners PASS; route count UNCHANGED; LOCKED docs untouched.
+In progress: none.
+Blockers: none.
+Next: backend-coordinator merge-gate on the PR.
+Hand-offs:
+  - api-routes-builder (Wave 4): `monitor.service.get_served_category_data(category_id, db)` ready — the customer-facing
+    GET route can call it once the FE contract is locked (returns {category_id, captured_at, content_hash, dimensions};
+    raises CategorySnapshotNotFoundError → map to 404).
+  - All services: `core.cache.evict(key, version=None)` is now the locked write-path sibling of `get_or_set` for
+    cache invalidation on source-of-truth update.
+=========
+
+
 === UPDATE: 2026-06-22 (meesell-services-builder) — category-monitor Wave-2 Unit C DEDUPE GATE BUILD COMPLETE ===
 Phase: category-monitor (RETENTION_CATEGORY_MONITOR #370) — Wave 2 Unit C (the dedupe-gate Celery task)
 Session: mesell-category-monitor-backend-session-3
