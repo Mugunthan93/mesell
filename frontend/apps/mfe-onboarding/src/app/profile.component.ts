@@ -7,26 +7,65 @@ import {
   signal,
 } from '@angular/core';
 import {
+  AbstractControl,
   FormBuilder,
   ReactiveFormsModule,
+  ValidationErrors,
+  ValidatorFn,
   Validators,
 } from '@angular/forms';
 import { Router } from '@angular/router';
-import { MeeCardComponent, MeeBadgeComponent, MeeInputComponent, MeeButtonComponent, MeeIconComponent } from '@mesell/ui-kit';
+import {
+  MeeAlertBannerComponent,
+  MeeOfflineBannerComponent,
+  EmptyStateComponent,
+} from '@mesell/composites';
+import {
+  MeeCardComponent,
+  MeeBadgeComponent,
+  MeeInputComponent,
+  MeeButtonComponent,
+  MeeIconComponent,
+  MeeSkeletonComponent,
+} from '@mesell/ui-kit';
 import type { MeeBadgeSeverity } from '@mesell/ui-kit';
 import { AuthService } from '@mesell/core';
+import type { ApiErrorEnvelope } from '@mesell/core';
+import {
+  SellerProfileService,
+  ProfileValidationError,
+  ProfileNetworkError,
+} from './services/seller-profile.service';
+import type { PatchProfileRequest, SellerProfile } from './seller-profile.model';
+
+/**
+ * Optional pincode validator — mirrors onboarding.component.ts pincodeValidator().
+ * Empty string → valid; non-empty must match ^\d{6}$ else error key `pincodeInvalid`.
+ */
+function pincodeValidator(): ValidatorFn {
+  return (control: AbstractControl): ValidationErrors | null => {
+    const value = (control.value as string | null | undefined) ?? '';
+    if (!value.trim()) return null;
+    return /^\d{6}$/.test(value) ? null : { pincodeInvalid: true };
+  };
+}
 
 @Component({
   selector: 'app-profile',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  providers: [SellerProfileService],
   imports: [
     ReactiveFormsModule,
+    MeeAlertBannerComponent,
+    MeeOfflineBannerComponent,
+    EmptyStateComponent,
     MeeCardComponent,
     MeeBadgeComponent,
     MeeInputComponent,
     MeeButtonComponent,
     MeeIconComponent,
+    MeeSkeletonComponent,
   ],
   styles: [`
     :host {
@@ -116,15 +155,18 @@ import { AuthService } from '@mesell/core';
       gap: var(--mee-space-4);
     }
 
+    .form-section-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--mee-color-on-surface-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin: 0 0 var(--mee-space-2);
+    }
+
     .form-actions {
       display: flex;
       justify-content: flex-end;
-    }
-
-    .form-error-msg {
-      font-size: 14px;
-      color: var(--mee-color-error);
-      margin: 0;
     }
 
     .plan-card-body {
@@ -220,7 +262,7 @@ import { AuthService } from '@mesell/core';
     <!-- Centered content column -->
     <div class="profile-content">
 
-      <!-- Section 2: Identity card -->
+      <!-- Section 1: Identity card (read-only — sourced from AuthService) -->
       <mee-card>
         <div class="identity-card-body">
           <!-- Avatar initial circle -->
@@ -246,24 +288,78 @@ import { AuthService } from '@mesell/core';
         </div>
       </mee-card>
 
-      <!-- Section 3: Edit form (no card wrapper) -->
+      <!-- Section 2: Legal-Metrology edit form -->
       <form [formGroup]="form" (ngSubmit)="onSubmit()" novalidate class="edit-form-row">
 
-        <!-- Display name -->
+        <!-- Global error banner (network or generic 422) -->
+        @if (errorMessage()) {
+          <mee-alert-banner variant="error" [message]="errorMessage()!" />
+        }
+
+        <!-- Manufacturer fields -->
+        <p class="form-section-label">Manufacturer</p>
+
         <mee-input
-          [label]="'Display Name'"
-          [placeholder]="'Your name'"
-          [required]="true"
-          [error]="nameError()"
-          formControlName="name"
+          label="Manufacturer name"
+          placeholder="e.g. Acme Textiles Pvt. Ltd."
+          formControlName="manufacturer_name"
+          [error]="fieldError('manufacturer_name') || undefined"
         />
 
-        <!-- Error message -->
-        @if (errorMessage()) {
-          <p class="form-error-msg" role="alert">
-            {{ errorMessage() }}
-          </p>
-        }
+        <mee-input
+          label="Manufacturer address"
+          placeholder="Street, city, state"
+          formControlName="manufacturer_address"
+          [error]="fieldError('manufacturer_address') || undefined"
+        />
+
+        <mee-input
+          label="Manufacturer PIN code"
+          placeholder="6-digit PIN"
+          [required]="true"
+          formControlName="manufacturer_pincode"
+          [error]="fieldError('manufacturer_pincode') || (form.controls.manufacturer_pincode.touched && form.controls.manufacturer_pincode.hasError('required') ? 'Manufacturer pincode is required.' : (form.controls.manufacturer_pincode.touched && form.controls.manufacturer_pincode.hasError('pincodeInvalid') ? 'Enter a valid 6-digit pincode.' : undefined))"
+        />
+
+        <!-- Packer fields -->
+        <p class="form-section-label">Packer</p>
+
+        <mee-input
+          label="Packer name"
+          placeholder="e.g. Acme Packaging Ltd."
+          formControlName="packer_name"
+          [error]="fieldError('packer_name') || undefined"
+        />
+
+        <mee-input
+          label="Packer address"
+          placeholder="Street, city, state"
+          formControlName="packer_address"
+          [error]="fieldError('packer_address') || undefined"
+        />
+
+        <mee-input
+          label="Packer PIN code"
+          placeholder="6-digit PIN"
+          [required]="true"
+          formControlName="packer_pincode"
+          [error]="fieldError('packer_pincode') || (form.controls.packer_pincode.touched && form.controls.packer_pincode.hasError('required') ? 'Packer pincode is required.' : (form.controls.packer_pincode.touched && form.controls.packer_pincode.hasError('pincodeInvalid') ? 'Enter a valid 6-digit pincode.' : undefined))"
+        />
+
+        <!-- Country of origin -->
+        <mee-input
+          label="Country of origin"
+          placeholder="e.g. India"
+          formControlName="country_of_origin"
+          [error]="fieldError('country_of_origin') || undefined"
+        />
+
+        <!-- Phone read-only — displayed via placeholder; no CVA binding needed -->
+        <mee-input
+          label="Phone"
+          [disabled]="true"
+          [placeholder]="displayPhone()"
+        />
 
         <!-- Save button — right-aligned, not full-width -->
         <div class="form-actions">
@@ -278,7 +374,7 @@ import { AuthService } from '@mesell/core';
         </div>
       </form>
 
-      <!-- Section 4: Plan card -->
+      <!-- Section 3: Plan card -->
       <mee-card>
         <div class="plan-card-body">
           <p class="plan-label">Current plan</p>
@@ -305,7 +401,7 @@ import { AuthService } from '@mesell/core';
         </div>
       </mee-card>
 
-      <!-- Section 5: Logout button (no card wrapper) -->
+      <!-- Section 4: Logout button -->
       <button
         type="button"
         class="logout-btn"
@@ -319,12 +415,19 @@ import { AuthService } from '@mesell/core';
   `,
 })
 export class ProfileComponent implements OnInit {
-  protected readonly auth   = inject(AuthService);
-  private  readonly router  = inject(Router);
-  private  readonly fb      = inject(FormBuilder);
+  protected readonly auth            = inject(AuthService);
+  private  readonly router           = inject(Router);
+  private  readonly fb               = inject(FormBuilder);
+  private  readonly sellerProfile    = inject(SellerProfileService);
 
   readonly form = this.fb.group({
-    name: ['', [Validators.required, Validators.minLength(2), Validators.maxLength(60)]],
+    manufacturer_name:    [''],
+    manufacturer_address: [''],
+    manufacturer_pincode: ['', [Validators.required, pincodeValidator()]],
+    packer_name:          [''],
+    packer_address:       [''],
+    packer_pincode:       ['', [Validators.required, pincodeValidator()]],
+    country_of_origin:    ['India'],
   });
 
   // Local reactive state
@@ -332,7 +435,9 @@ export class ProfileComponent implements OnInit {
   readonly saved        = signal(false);
   readonly errorMessage = signal<string | null>(null);
 
-  // Derived display values
+  private readonly _fieldErrors = signal<Record<string, string>>({});
+
+  // Derived display values — VERBATIM from the original (identity card, not editable)
   readonly displayPhone = computed<string>(() => {
     const p = this.auth.currentUser()?.phone ?? '';
     return p.startsWith('+91') ? p.slice(3) : p;
@@ -355,24 +460,20 @@ export class ProfileComponent implements OnInit {
     return name.charAt(0).toUpperCase() || 'S';
   });
 
-  /**
-   * Not a computed() signal — FormControl state is not reactive to Angular signals.
-   * Must be called as a method in the template: nameError()
-   * Re-evaluated on every change detection cycle (OnPush: triggered by markAllAsTouched
-   * or manual detectChanges in tests).
-   */
-  nameError(): string | undefined {
-    const ctrl = this.form.get('name');
-    if (!ctrl || ctrl.valid || ctrl.pristine) return undefined;
-    if (ctrl.hasError('required'))   return 'Name is required';
-    if (ctrl.hasError('minlength'))  return 'Name must be at least 2 characters';
-    if (ctrl.hasError('maxlength'))  return 'Name must be 60 characters or fewer';
-    return undefined;
-  }
-
   ngOnInit(): void {
-    this.form.patchValue({
-      name: this.auth.currentUser()?.name ?? '',
+    this.sellerProfile.getProfile().subscribe({
+      next: (profile: SellerProfile) => {
+        this.form.patchValue({
+          manufacturer_name:    profile.manufacturer_name    ?? '',
+          manufacturer_address: profile.manufacturer_address ?? '',
+          manufacturer_pincode: profile.manufacturer_pincode ?? '',
+          packer_name:          profile.packer_name          ?? '',
+          packer_address:       profile.packer_address       ?? '',
+          packer_pincode:       profile.packer_pincode       ?? '',
+          country_of_origin:    profile.country_of_origin    ?? 'India',
+        });
+      },
+      // Service maps 404 → FRESH_SELLER_PROFILE (no error banner needed for 404)
     });
   }
 
@@ -385,19 +486,73 @@ export class ProfileComponent implements OnInit {
     this.saving.set(true);
     this.errorMessage.set(null);
 
-    // Simulated save — Wave 6 will replace with real PATCH /api/v1/seller-profile
-    // Direct setTimeout (no Promise wrapper) so vi.advanceTimersByTime() works in tests.
-    setTimeout(() => {
-      this.saving.set(false);
-      this.saved.set(true);
-      setTimeout(() => {
-        if (this.saved()) this.saved.set(false);
-      }, 3000);
-    }, 800);
+    const raw = this.form.value;
+    const payload: PatchProfileRequest = {
+      manufacturer_name:    raw.manufacturer_name    ?? null,
+      manufacturer_address: raw.manufacturer_address ?? null,
+      manufacturer_pincode: raw.manufacturer_pincode?.trim() || null,
+      packer_name:          raw.packer_name          ?? null,
+      packer_address:       raw.packer_address       ?? null,
+      packer_pincode:       raw.packer_pincode?.trim() || null,
+      country_of_origin:    raw.country_of_origin    ?? null,
+    };
+
+    this.sellerProfile.patchProfile(payload).subscribe({
+      next: () => {
+        this.saving.set(false);
+        this.saved.set(true);
+        // The ONLY remaining setTimeout — resets the "Saved!" label after 3s
+        setTimeout(() => {
+          if (this.saved()) this.saved.set(false);
+        }, 3000);
+      },
+      error: (err: unknown) => {
+        this.saving.set(false);
+        // Do NOT clear the form — keep field values so the seller can correct them
+        if (err instanceof ProfileValidationError) {
+          this._mapValidationError(err.envelope);
+        } else if (err instanceof ProfileNetworkError) {
+          this.errorMessage.set(err.message);
+        } else {
+          this.errorMessage.set('A network error occurred. Please try again.');
+        }
+      },
+    });
+    // NOTE: No AuthService.refreshUser() call — editing optional Legal-Metrology fields
+    // cannot regress onboarding_complete for an already-onboarded seller, and adding
+    // a /auth/me GET would break spec httpMock.verify(). Contrast: onboarding.component.ts
+    // DOES call refreshUser() because first-run flips the onboarding_complete flag.
+    // No nav-visible flag concern detected for this PATCH endpoint.
+  }
+
+  /**
+   * Returns the per-field validation error message for the given form control name.
+   * Populated by _mapValidationError() on 422 responses from patchProfile().
+   */
+  fieldError(controlName: string): string | null {
+    return this._fieldErrors()[controlName] ?? null;
   }
 
   onLogout(): void {
     this.auth.logout();
     void this.router.navigate(['/login']);
+  }
+
+  private _mapValidationError(envelope: Partial<ApiErrorEnvelope>): void {
+    const errors = (envelope.errors ?? []) as Array<{
+      field?: string;
+      constraint?: string;
+      msg?: string;
+    }>;
+    const mapped: Record<string, string> = {};
+    for (const e of errors) {
+      if (e.field) {
+        mapped[e.field] = e.msg ?? 'Invalid value.';
+      }
+    }
+    this._fieldErrors.set(mapped);
+    this.errorMessage.set(
+      envelope.detail ?? 'Validation failed — check the highlighted fields.',
+    );
   }
 }

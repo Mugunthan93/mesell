@@ -186,8 +186,10 @@ export function pincodeValidator(): ValidatorFn {
 
           <mee-input
             [label]="'Manufacturer Pincode'"
+            [required]="true"
             [hint]="'6-digit PIN code'"
             formControlName="manufacturer_pincode"
+            [error]="(form.controls.manufacturer_pincode.touched || submitted()) && form.controls.manufacturer_pincode.hasError('required') ? 'Manufacturer pincode is required.' : (form.controls.manufacturer_pincode.touched && form.controls.manufacturer_pincode.hasError('pincodeInvalid') ? 'Enter a valid 6-digit pincode.' : undefined)"
           />
 
           <mee-input
@@ -204,8 +206,10 @@ export function pincodeValidator(): ValidatorFn {
 
           <mee-input
             [label]="'Packer Pincode'"
+            [required]="true"
             [hint]="'6-digit PIN code'"
             formControlName="packer_pincode"
+            [error]="(form.controls.packer_pincode.touched || submitted()) && form.controls.packer_pincode.hasError('required') ? 'Packer pincode is required.' : (form.controls.packer_pincode.touched && form.controls.packer_pincode.hasError('pincodeInvalid') ? 'Enter a valid 6-digit pincode.' : undefined)"
           />
 
           <mee-input
@@ -265,10 +269,10 @@ export class OnboardingComponent implements OnInit {
   readonly form = this.fb.group({
     manufacturer_name:    ['', [Validators.required, Validators.maxLength(140)]],
     manufacturer_address: ['', [Validators.required, Validators.maxLength(280)]],
-    manufacturer_pincode: ['', [pincodeValidator()]],
+    manufacturer_pincode: ['', [Validators.required, pincodeValidator()]],
     packer_name:          ['', [Validators.required, Validators.maxLength(140)]],
     packer_address:       ['', [Validators.required, Validators.maxLength(280)]],
-    packer_pincode:       ['', [pincodeValidator()]],
+    packer_pincode:       ['', [Validators.required, pincodeValidator()]],
     country_of_origin:    ['India', [Validators.required]],
   });
 
