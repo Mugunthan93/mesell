@@ -1,6 +1,33 @@
 # STATUS — BACKEND
 
 
+=== UPDATE: 2026-06-22 (meesell-backend-coordinator) — category-monitor Wave-4 Unit F (fan-out + notify) MERGE-GATE PASS → MERGED to integration ===
+Phase: RETENTION_CATEGORY_MONITOR (#370) — Wave-4 Unit F (fan-out + notify worker)
+Session: mesell-category-monitor-backend-session-7 (HYBRID step-3, merge-gate review of PR #481)
+Board sweep: Wave-4 Unit F row added to Active features (MERGED to integration dba57ff). Session-end sweep — razorpay-W4 IN REVIEW (last touched 2026-06-19, 3d, NOT stale); price-calculator APPROVE-FOR-FOUNDER (2026-06-18, 4d, NOT stale); no Active row 7+ days stale; no Recently-merged row >14 days; BE-DOC-2D-COUNT-1 OPEN (founder §7.3); inter-lead requests unchanged.
+
+VERDICT: PASS — PR #481 SQUASH-MERGED feature/category-monitor/fanout-worker → feature/category-monitor/integration (f363db6 → dba57ff). integration→develop FOUNDER gate NOT opened (D1).
+
+Done (independent verification, NOT builder report — vs the diff at fanout tip 208421f + a REAL meesell_test Postgres session; base merge-base == integration tip f363db6 = clean cut):
+  1. Fan-out correctness: enqueue = additive `if verdict=="REVIEW_REQUIRED": fanout_category_change_task.delay(cat_id_str, new_hash)` in the W2 gate scraped branch (vars cat_id_str L117 / new_hash L191 / verdict L206 all in scope before L234). PASS/BLOCK never enqueue. Orchestrator re-diffs (DECISION A — re-load latest+prior category_snapshots, re-call diff_category_snapshot); superseded-hash guard (arg≠latest.content_hash → log INFO + STOP zeros); defensive non-REVIEW STOP (log WARNING + zeros).
+  2. Idempotency (LOAD-BEARING): TestFanoutIdempotency double-run on same (category,content_hash) → 1st created=1/skipped=0, 2nd created=0/skipped=1, exactly ONE notification row, flags stay true. REVERT-CHECK: cp repository.py /tmp/bak; python-strip the .on_conflict_do_nothing(constraint="uq_notification_user_cat_hash") (assert count==1); ran TestFanoutIdempotency → RED (asyncpg UniqueViolation on 2nd insert); restored, git diff --quiet clean.
+  3. Flag mapping: flag_recheck = comp∨banned; flag_reprice = ship∨cost; flag_export = comp∨ship∨cost∨banned. Idempotent set-only UPDATE products WHERE user_id=:uid AND category_id=:cid AND deleted_at IS NULL. All 4 flag-mapping tests pass (compliance→recheck+export-not-reprice / shipping→reprice+export / cost→reprice+export / banned→recheck+export-NOT-reprice).
+  4. Tenancy: get_distinct_subscribers / get_user_catalog_ids over the category_subscription VIEW via raw text() (VIEW not in Base.metadata). test_uninvolved_user_untouched — user B in category Y never flagged/notified when X fans out.
+  5. Copy: _build_summary assembles only-changed-dimension fragments to the founder template; {category_name} = categories.leaf_name (Director-confirmed, no `name` column — builder interpretation-flag correct); ₹ + int() shipping, float transfer_price/platform_fee; English-only in payload.summary; never raw JSON. Verified live: "Your category 'Kurtis' changed: added required field(s): country_of_origin; shipping cost rose ₹6. 1 of your catalogs are affected — review them before your next upload."
+  6. W2 gate untouched except enqueue: git show base+head service.py; function-boundary diff (grep ^async def/^def/^__all__ → sed each fn → diff). run_dedupe_gate differs ONLY by the additive 8-line REVIEW_REQUIRED enqueue block (0 modified/deleted lines); get_served_category_data BYTE-IDENTICAL (the 5 nearby diff lines are the new section-separator comment AFTER the fn). .delay mocked in the gate fixture (monkeypatch monitor_tasks.fanout_category_change_task.delay = MagicMock); 3 verdict tests pass (REVIEW→assert_called_once_with(str(_CATEGORY_ID),_NEW_HASH); PASS/BLOCK→assert_not_called). REVERT-CHECK: defeating the defensive verdict guard (`if verdict=="__NEVER__"`) → test_block_verdict_no_fanout RED; restored clean.
+  7. §18.B founder-gate: test_celery_app_include_list.py user-task set bumped 5→6 (adds monitor.fanout_category_change); test_only_v1_tasks_registered_at_module_level pins exactly 6 (verified the 6 register: billing.reconcile, billing.trial_expiry_sweep, export.xlsx, image.precheck, monitor.fanout_category_change, monitor.scrape_category). Include MODULE list still exactly 4 (image/export/iam/monitor — celery_app.py NOT in diff). LOCKED BACKEND_ARCHITECTURE.md §18.B byte-untouched (NOT in diff, NOT self-applied) — flagged in PR body for the founder integration→develop gate. §3.I module count stays 4. _TASKS_REQUIRING_USER_REVALIDATION unchanged {image.precheck, export.xlsx} (no per-user arg).
+  8. Quality: full monitor suite 45 passed on disposable meesell_test (11 NEW DB-real test_monitor_fanout.py + gate/serving/triggers/celery/broker/result); live meesell 3772-cat untouched (count 3772 before+after); ZERO live Meesho (grep monitor source diff = NONE; orchestrator never scrapes — reads seeded snapshots); ruff check clean; lint-imports --config tests/lint/import_rules.toml = 27 kept/0 broken; app boot route count UNCHANGED (36 APIRoute, no /notifications route — worker only).
+
+PR template fully filled (no <> placeholders). Diff scope EXACTLY: monitor/tasks.py + service.py + repository.py + test_celery_app_include_list.py + test_monitor_gate.py + test_monitor_fanout.py + STATUS/board. NO migration / router / main.py / schema / LOCKED-doc.
+
+Merge mechanics: gh pr review --approve blocked (author==merger) → verdict posted as gh pr comment; gh pr merge --squash --admin. Branch PRESERVED (no auto-delete).
+
+WAVE 4 STATUS: Unit F (this, MERGED dba57ff) + Unit N (notifications route GET /api/v1/notifications, flag-gated FEATURE_CATEGORY_MONITOR_ENABLED — meesell-api-routes-builder) CLEAR TO DISPATCH NEXT — N reads the notifications table Unit F now writes; both on integration after this merge. integration tip dba57ff carries W1 schema → W2 gate → W3 Unit S serving → W3 Unit T triggers → W4 Unit F fan-out.
+
+Next: dispatch Unit N (HYBRID step-1 spec exists in spec_category-monitor_wave4_backend.md §UNIT N).
+Hand-offs: none new (Unit N's §17 28→29 LOCKED amendment will be the founder-gate flag at its PR; the §18.B 5→6 + copy-product-decision flags ride PR #481 to the founder integration→develop gate).
+=========
+
 === UPDATE: 2026-06-22 (meesell-backend-coordinator) — category-monitor Wave-3 Unit T (triggers) RE-GATE PASS → MERGED; WAVE 3 COMPLETE ===
 Phase: RETENTION_CATEGORY_MONITOR (#370) — Wave-3 Unit T (trigger wiring) RE-GATE after identity-map REJECT
 Session: mesell-category-monitor-monitor-backend-session-4 (HYBRID step-3, re-gate of head 32caeb1)
