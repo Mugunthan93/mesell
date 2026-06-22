@@ -1,25 +1,35 @@
-"""§19.E perf budget 4 — Per-call AI cost average.
+"""§19.E perf budget 4 — Per-call AI cost average.  IA-RED-1 FIX.
 
-Locked budget (BACKEND_ARCHITECTURE.md §19.E + ``MVP_ARCH §8.2`` + §6A.D):
+Wave: qa-image-ai · fix: IA-RED-1 — column-drift repair.
 
-* Per-call AI cost ≤ **₹0.05 average** measured against a 7-day rolling
-  window over the ``audit_events`` table (events named ``ai_ops.cost``
-  per §6A.D ``cost_tracker``).
+Root cause of IA-RED-1
+----------------------
+The original test queried ``AuditEvent.event_name``, ``AuditEvent.data``,
+``AuditEvent.created_at`` and filtered on ``event_name='ai_ops.cost'``.
+Those columns do NOT exist on the ORM model.  The real model has:
 
-Methodology:
+* ``event_type  (VARCHAR 40)`` — ``cost_tracker._write_audit_row`` writes
+  ``"ai.call"`` (NOT ``"ai_ops.cost"``).
+* ``metadata_jsonb (JSONB)``   — carries ``{"workload": …, "cost_inr": …, …}``.
+* ``occurred_at (TIMESTAMPTZ)`` — the timestamp column.
 
-1. SELECT every ``audit_events`` row with ``event_name='ai_ops.cost'``
-   in the last 7 days. The payload's ``data->>'inr_cost'`` JSONB field
+This file is the corrected version that reads the CANONICAL columns so
+the ₹0.05/call ceiling is genuinely asserted against real producer data.
+The companion unit test in ``test_cost_tracker_canonical_shape.py`` asserts
+the producer writes exactly these field names on every call.
+
+Methodology
+-----------
+1. SELECT every ``audit_events`` row with ``event_type='ai.call'`` in the
+   last 7 days.  The payload's ``metadata_jsonb->>'cost_inr'`` JSONB field
    carries the per-call cost in rupees.
 2. Compute the arithmetic mean.
 3. Assert mean ≤ ₹0.05 + 10% noise band per §19.E.
 
-This test is a steady-state economy check — it does NOT exercise the
-guardrail or budget-cap paths (those are §6A unit-test surfaces). It
-ensures that as prompt-content evolves, the AVERAGE cost stays within
-budget; outliers are caught by the §6A daily ₹500 cap.
-
-The 7-day window is the §19.E lock; reducing it would amplify noise.
+This test is a steady-state economy check.  In CI without live AI traffic,
+the test SKIPS gracefully (< 20 events).  The guard that matters is the
+NEW unit-level test ``test_cost_tracker_canonical_shape.py`` which asserts
+the producer writes the right columns on EVERY call.
 """
 
 from __future__ import annotations
@@ -47,10 +57,14 @@ ROLLING_WINDOW_DAYS = 7
 async def test_ai_cost_per_call_average(db) -> None:
     """7-day rolling mean AI cost per call ≤ ₹0.05 per §19.E + §6A.D.
 
-    Reads the ``audit_events`` rows where ``event_name='ai_ops.cost'`` and
-    averages the ``data->>'inr_cost'`` field. Skips gracefully (with the
-    sample-count surfaced) when the window contains fewer than 20 events
-    — the average is statistically meaningless below that floor.
+    IA-RED-1 FIX: reads the CANONICAL audit shape written by
+    ``cost_tracker._write_audit_row``:
+      - ``event_type = 'ai.call'``            (NOT 'ai_ops.cost')
+      - ``metadata_jsonb->>'cost_inr'``        (NOT data->>'inr_cost')
+      - ``occurred_at``                        (NOT created_at)
+
+    Skips gracefully (with sample count surfaced) when the window contains
+    fewer than 20 events — statistically meaningless below that floor.
     """
     skip_unless_slow_enabled()
 
@@ -65,27 +79,32 @@ async def test_ai_cost_per_call_average(db) -> None:
         days=ROLLING_WINDOW_DAYS
     )
 
+    # IA-RED-1 FIX: use the canonical ORM columns.
+    # event_type = "ai.call"    (cost_tracker._write_audit_row sets this)
+    # occurred_at               (the timestamp column on AuditEvent)
+    # metadata_jsonb            (carries cost_inr)
     rows = (
         await db.execute(
-            select(AuditEvent.data).where(
-                AuditEvent.event_name == "ai_ops.cost",
-                AuditEvent.created_at >= cutoff,
+            select(AuditEvent.metadata_jsonb).where(
+                AuditEvent.event_type == "ai.call",
+                AuditEvent.occurred_at >= cutoff,
             )
         )
     ).all()
 
     if len(rows) < 20:
         pytest.skip(
-            f"ai_ops.cost audit events in last {ROLLING_WINDOW_DAYS}d: "
+            f"ai.call audit events in last {ROLLING_WINDOW_DAYS}d: "
             f"only {len(rows)} (< 20) — average is statistically "
-            "meaningless. Run once production traffic accumulates."
+            "meaningless.  Run once production traffic accumulates."
         )
 
     costs: list[float] = []
-    for (data,) in rows:
-        if not isinstance(data, dict):
+    for (metadata_jsonb,) in rows:
+        if not isinstance(metadata_jsonb, dict):
             continue
-        raw = data.get("inr_cost")
+        # IA-RED-1 FIX: read 'cost_inr' (NOT 'inr_cost').
+        raw = metadata_jsonb.get("cost_inr")
         if raw is None:
             continue
         try:
@@ -95,7 +114,7 @@ async def test_ai_cost_per_call_average(db) -> None:
 
     if not costs:
         pytest.skip(
-            "ai_ops.cost rows in window carry no `inr_cost` payload — "
+            "ai.call rows in window carry no `cost_inr` in metadata_jsonb — "
             "verify §6A.D cost_tracker emits the expected shape."
         )
 
@@ -103,7 +122,7 @@ async def test_ai_cost_per_call_average(db) -> None:
     assert_value_within_budget(
         mean_cost,
         budget=BUDGET_AI_COST_PER_CALL_INR,
-        label=f"ai_ops.cost mean over last {ROLLING_WINDOW_DAYS}d "
+        label=f"ai.call mean over last {ROLLING_WINDOW_DAYS}d "
               f"(n={len(costs)})",
         unit=" INR",
     )
