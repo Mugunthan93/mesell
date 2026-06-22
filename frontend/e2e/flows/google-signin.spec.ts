@@ -15,22 +15,32 @@
  *      route is MOUNTED (response != 404) — proving the GIS →
  *      LoginComponent.onGoogleCredential → AuthApiService.googleVerify wiring
  *      end-to-end without a real Google token.
- *   3. (FIXME — E2E-AUTH-06 success path, BLOCKED) The full success path (stubbed
- *      credential → dashboard) is blocked: the backend google adapter verifies the
- *      credential against Google's REAL published JWKs and there is NO dev/test
- *      google-verify seam (no DEV_GOOGLE_BYPASS analogue of DEV_OTP_BYPASS_CODE), so
- *      a fake credential is rejected with 401 and the dashboard is unreachable through
- *      the UI. VERIFIED LIVE this session (slot-0 :4200 → backend :8000): POST
- *      /api/v1/auth/google/verify with a fake credential → 401 (route mounted,
- *      flag-ON — NOT a 404). Un-fixme requires a backend test-google-adapter seam.
- *      Recorded in federation_quirks.md (owner: auth/ai-builder).
+ *   3. (GREEN — E2E-AUTH-06 success path, UN-FIXME'd by PR #480) The full success
+ *      path (stubbed credential → authed dashboard). The backend now ships a
+ *      prod-hard-disabled dev/test seam (adapters/google.py): when it runs non-prod
+ *      with FEATURE_GOOGLE_AUTH_ENABLED=True and DEV_GOOGLE_BYPASS_TOKEN set to a
+ *      `dev-google:{sub}:{email}` sentinel, POST /auth/google/verify with that exact
+ *      sentinel as the credential returns 200 + an access JWT + refresh cookie + a
+ *      synthetic dual-identity user — WITHOUT calling real Google. We drive the GIS
+ *      stub with the sentinel, the app fires the REAL POST, the seam answers 200, and
+ *      the session is fully authed. VERIFIED LIVE (slot-0 :4200 → backend :8000):
+ *      verify → 200; the app navigates off /login; /auth/me returns the synthetic
+ *      user (phone NULL); the authed dashboard heading renders. (PRODUCT REALITY: the
+ *      synthetic user is brand-new → onboarding_complete=false → the default landing
+ *      is /onboarding, but the session is authed and /dashboard is reachable — see
+ *      selector_registry.md. We assert the authed dashboard heading: the VISIBLE
+ *      authed outcome the brief requires.) The test SKIPS (not fails) if the running
+ *      backend lacks the dev seam env, so it is green-or-skipped, never falsely red.
  *
  * The login page is public — no authentication needed. Selectors come from
- * selector_registry.md via the AuthPage page object (GIS host + stub button);
- * ports come from playwright.config.ts (never hardcoded).
+ * selector_registry.md via the AuthPage / DashboardPage page objects (GIS host +
+ * stub button + dashboard heading); ports come from playwright.config.ts (never
+ * hardcoded). The bypass sentinel is a TEST sentinel (env-overridable), never a real
+ * credential.
  */
 import { test, expect } from '@playwright/test';
-import { AuthPage } from '../page-objects/auth.page';
+import { AuthPage, DEV_GOOGLE_BYPASS_CREDENTIAL } from '../page-objects/auth.page';
+import { DashboardPage } from '../page-objects/dashboard.page';
 import { applyManifestPortFix } from '../fixtures/auth';
 
 test.describe('Google Sign-In', () => {
@@ -87,22 +97,51 @@ test.describe('Google Sign-In', () => {
     );
   });
 
-  test.fixme(
-    'a stubbed GIS credential signs in and lands on the dashboard',
-    async ({ page }) => {
-      // BLOCKED: no backend test-google-adapter seam. The google adapter verifies the
-      // credential against Google's REAL published JWKs and there is no
-      // DEV_GOOGLE_BYPASS, so a fake credential returns 401 and the dashboard is
-      // unreachable through the UI. VERIFIED LIVE (slot-0 :4200 → backend :8000): POST
-      // /api/v1/auth/google/verify with a fake credential → 401 (route mounted,
-      // flag-ON). Un-fixme when the backend exposes a dev/test google-verify seam.
-      // See federation_quirks.md.
-      const auth = new AuthPage(page);
-      await auth.installGisStub();
-      await auth.gotoLogin();
-      await auth.gisStubButton.click();
-      await expect(page).toHaveURL(/\/dashboard/);
-      await expect(page.getByTestId('dashboard-heading')).toBeVisible();
-    },
-  );
+  test('a stubbed GIS credential with the dev-bypass sentinel signs in to the authed dashboard', async ({
+    page,
+  }) => {
+    const auth = new AuthPage(page);
+
+    // Stub GIS so the captured callback fires with the DEV-BYPASS SENTINEL (not the
+    // generic fake credential). The app POSTs the sentinel → the backend seam answers
+    // 200 only when it runs non-prod with FEATURE_GOOGLE_AUTH_ENABLED + the matching
+    // DEV_GOOGLE_BYPASS_TOKEN. Capture the verify status to honestly skip (not fail)
+    // when the running stack lacks the seam env.
+    await auth.installGisStub(DEV_GOOGLE_BYPASS_CREDENTIAL);
+    await auth.gotoLogin();
+
+    await expect(auth.googleHost).toBeVisible();
+    await expect(auth.gisStubButton).toBeVisible();
+
+    let verifyStatus = 0;
+    page.on('response', (r) => {
+      if (r.url().includes('/auth/google/verify') && r.request().method() === 'POST') {
+        verifyStatus = r.status();
+      }
+    });
+
+    // Drive the stub → real pipeline → seam → 200 → app navigates off /login. The
+    // synthetic user is brand-new so the default landing is /onboarding; the session
+    // is fully authed regardless (see selector_registry.md).
+    await auth.clickGisStub();
+
+    // Honest skip if the seam is not configured in the target stack: the verify came
+    // back non-2xx (e.g. 401 real-verify of the sentinel) → the success path is not
+    // exercisable here, so skip rather than red. The render + POST-fires cases above
+    // still prove the wiring.
+    test.skip(
+      verifyStatus < 200 || verifyStatus >= 300,
+      `dev-google bypass seam not active on this stack (verify → ${verifyStatus}); ` +
+        'run the backend non-prod with FEATURE_GOOGLE_AUTH_ENABLED=True + ' +
+        'DEV_GOOGLE_BYPASS_TOKEN matching MEESELL_DEV_GOOGLE_BYPASS_TOKEN.',
+    );
+
+    // VISIBLE authed outcome: the authed dashboard heading renders (and the URL is
+    // not /login). /dashboard is reachable for the authed session even though the
+    // brand-new synthetic user's default landing is /onboarding.
+    const dashboard = new DashboardPage(page);
+    await dashboard.goto();
+    await expect(page).not.toHaveURL(/\/login(\b|$)/);
+    await expect(dashboard.heading).toBeVisible();
+  });
 });
