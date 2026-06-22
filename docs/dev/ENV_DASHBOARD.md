@@ -52,10 +52,15 @@ reflects the **shared** live state.
 |---|---|
 | `GET /` | the self-contained SPA (`tools/env_dashboard/index.html`) |
 | `GET /api/state` | the full JSON model (see below) |
-| `GET /api/log?project=<name>` | tail (≤64 KB, ANSI-stripped) of `.nexus/build-<name>.log` |
+| `GET /api/log?project=<name>&slot=<N>` | tail (≤64 KB, ANSI-stripped) of the per-env log `.nexus/build-slot<N>-<name>.log` |
 
-`project` is validated against `^[A-Za-z0-9_.-]+$` (path-traversal is rejected
-with `400`). A project with no log yet returns `{"exists": false, ...}`.
+Both `project` and `slot` are validated against `^[A-Za-z0-9_.-]+$` (path-traversal
+is rejected with `400`); `slot` must additionally parse as an int. `slot` is the
+per-env key — three slots building the same project keep separate logs, and the
+dashboard passes each build row's own `slot` so the viewer tails the right one.
+`slot` omitted ⇒ slot 0. If the per-env log is absent the handler falls back to a
+legacy project-only `.nexus/build-<name>.log` (so old logs still tail). A project
+with no log at all returns `{"exists": false, ...}`.
 
 ---
 
@@ -107,9 +112,11 @@ with `400`). A project with no log yet returns `{"exists": false, ...}`.
         // ... one per tracked role
       ],
       "builds": [
-        { "project": "mfe-pricing", "status": "ok",
+        { "project": "mfe-pricing", "slot": 0, "status": "ok",
           "when": "2026-06-21T12:30:37Z", "duration_s": 30.0 }
-        // ... most-recent-first, capped
+        // ... most-recent-first, capped. Only THIS env's builds (joined by
+        // (slot, project)); `slot` is echoed so the log viewer tails the
+        // matching .nexus/build-slot<N>-<project>.log.
       ]
     }
     // ... one per worktree (union of git worktrees + slot registry)
@@ -128,10 +135,16 @@ with `400`). A project with no log yet returns `{"exists": false, ...}`.
 
 ### Build history (`.nexus/build-history.jsonl`)
 
-Each completed `ng build` appends one JSON line: `{project, start_iso, end_iso,
-status, duration_s}` (`status` ∈ `ok` | `failed`). Append-only, generated, never
-committed (gitignored). The dashboard reads the newest rows per project and joins
-them onto the matching env card (shell project name is `frontend`).
+Each completed `ng build` appends one JSON line: `{project, worktree, slot,
+start_iso, end_iso, status, duration_s}` (`status` ∈ `ok` | `failed`).
+Append-only, generated, never committed (gitignored).
+
+The dashboard joins rows onto an env card by **`(slot, project)`** — not by
+project alone — so when slot 0, slot 1 and slot 2 all build `mfe-catalog`, each
+build appears only on its own card. (Shell project name is `frontend`.) Rows
+written before per-env keying lack `worktree`/`slot`; the reader normalises a
+missing/unparseable `slot` to **slot 0** so old history still attaches to the
+baseline card rather than vanishing.
 
 ---
 

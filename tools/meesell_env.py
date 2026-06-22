@@ -127,6 +127,18 @@ STATE_FILE = NEXUS_DIR / "env-state.json"
 BUILD_LOCK = NEXUS_DIR / ".build.lock"
 BUILD_HISTORY = NEXUS_DIR / "build-history.jsonl"  # append-only build log (jsonl)
 
+
+def build_log_path(slot: int | None, project: str) -> Path:
+    """Per-ENV build log path: `.nexus/build-slot<N>-<project>.log`.
+
+    Keyed by slot so concurrent worktrees building the SAME project (e.g. three
+    slots each building mfe-catalog) never clobber one shared log. `slot=None`
+    (slot unknown) degrades to slot 0 so a build still records somewhere
+    deterministic. The writer (`ng_build`) and the `/api/log` tail handler both
+    compute the path through this one helper so they always agree.
+    """
+    return NEXUS_DIR / f"build-slot{0 if slot is None else slot}-{project}.log"
+
 # Default dashboard port. 7700 sits OUTSIDE every slot range (slots 0-9 use
 # backend 8000-8090, shell 4200-4290, mfe 4201-4297) so the monitor never
 # collides with a served env.
@@ -501,15 +513,33 @@ def _service_health(pid: int | None, alive: bool, port: int) -> str:
     return "down"
 
 
-def load_build_history(limit_per_project: int = 5) -> dict[str, list[dict]]:
-    """Read .nexus/build-history.jsonl -> {project: [most-recent-first rows]}.
+def _row_slot(row: dict) -> int:
+    """Normalise a history row's slot for keying/joining.
 
-    Returns at most `limit_per_project` newest rows per project. Tolerant of a
-    missing file or a partially written final line.
+    Rows written before per-env keying lack `slot` (and `worktree`); treat a
+    missing/None/unparseable slot as slot 0 so old history still attaches to the
+    baseline card rather than vanishing.
+    """
+    slot = row.get("slot")
+    try:
+        return int(slot)
+    except (TypeError, ValueError):
+        return 0
+
+
+def load_build_history(limit_per_project: int = 5) -> dict[tuple[int, str], list[dict]]:
+    """Read .nexus/build-history.jsonl -> {(slot, project): [most-recent-first rows]}.
+
+    Keyed by `(slot, project)` so the dashboard joins a build onto ITS OWN env
+    card (a build done by slot 1 never shows on slot 0's or slot 2's card even
+    when all three built the same project). Returns at most `limit_per_project`
+    newest rows per `(slot, project)`. Tolerant of a missing file, a partially
+    written final line, and OLD rows lacking `slot`/`worktree` (those normalise
+    to slot 0 via `_row_slot`).
     """
     if not BUILD_HISTORY.exists():
         return {}
-    by_project: dict[str, list[dict]] = {}
+    by_key: dict[tuple[int, str], list[dict]] = {}
     try:
         lines = BUILD_HISTORY.read_text(errors="replace").splitlines()
     except OSError:
@@ -525,11 +555,11 @@ def load_build_history(limit_per_project: int = 5) -> dict[str, list[dict]]:
         proj = row.get("project")
         if not proj:
             continue
-        by_project.setdefault(proj, []).append(row)
-    # Newest first; cap per project.
-    for proj in by_project:
-        by_project[proj] = by_project[proj][::-1][:limit_per_project]
-    return by_project
+        by_key.setdefault((_row_slot(row), proj), []).append(row)
+    # Newest first; cap per (slot, project).
+    for key in by_key:
+        by_key[key] = by_key[key][::-1][:limit_per_project]
+    return by_key
 
 
 def collect_dashboard_state(*, probe: bool = True) -> dict:
@@ -588,13 +618,19 @@ def collect_dashboard_state(*, probe: bool = True) -> dict:
                 "alive": alive, "health": health,
             })
 
-        # Build rows for this worktree's projects (shell + this slot's mfes).
+        # Build rows for THIS env only: join history by (slot, project) so a
+        # card shows only its own builds. An unreserved worktree (slot None)
+        # normalises to slot 0 — same rule the reader uses for old rows. The
+        # emitted row carries `slot` so the log viewer can tail the right
+        # per-env log via /api/log?project=<p>&slot=<N>.
         builds = []
+        join_slot = 0 if slot is None else slot
         proj_names = ["frontend"] + mfes
         for proj in proj_names:
-            for row in history.get(proj, []):
+            for row in history.get((join_slot, proj), []):
                 builds.append({
                     "project": proj,
+                    "slot": join_slot,
                     "status": row.get("status"),
                     "when": row.get("end_iso") or row.get("start_iso"),
                     "duration_s": row.get("duration_s"),
@@ -753,8 +789,15 @@ def _now_iso() -> str:
 
 
 def record_build(project: str, start_iso: str, end_iso: str,
-                 status: str, duration_s: float) -> None:
+                 status: str, duration_s: float,
+                 worktree: str | None = None, slot: int | None = None) -> None:
     """Append one build outcome to .nexus/build-history.jsonl (append-only).
+
+    Each row carries `worktree` + `slot` so the dashboard can join a build onto
+    ITS OWN env card by `(slot, project)` rather than by project alone — three
+    slots building the same `mfe-catalog` now produce distinguishable rows.
+    Old rows that predate this change lack both fields; the reader treats them
+    as slot 0 / "unknown" worktree (see `load_build_history`).
 
     Best-effort: a recorder failure must never break a build. The file is a
     JSON-Lines stream (one object per line) so it is cheap to append and tail.
@@ -763,6 +806,8 @@ def record_build(project: str, start_iso: str, end_iso: str,
         NEXUS_DIR.mkdir(parents=True, exist_ok=True)
         row = {
             "project": project,
+            "worktree": worktree,
+            "slot": slot,
             "start_iso": start_iso,
             "end_iso": end_iso,
             "status": status,
@@ -774,20 +819,24 @@ def record_build(project: str, start_iso: str, end_iso: str,
         info(f"build-history record skipped ({project}): {exc}")
 
 
-def ng_build(root: Path, project: str, *, stub: bool) -> None:
+def ng_build(root: Path, project: str, *, stub: bool,
+             slot: int | None = None, worktree: str | None = None) -> None:
     """Build one Angular project as a one-shot, under the global lock.
 
-    Each build's stdout+stderr go to a per-app log file (never an undrained
-    PIPE), the build runs in its OWN process group, and we reap that group once
-    the bundle is written — because `ng build` does not exit on its own on this
-    Angular version (it leaks a persistent esbuild --service child). See
-    _wait_for_build for the full root-cause note.
+    Each build's stdout+stderr go to a per-ENV log file keyed by `slot`
+    (`.nexus/build-slot<N>-<project>.log`, via `build_log_path`) — never an
+    undrained PIPE and never a project-only path shared across worktrees. The
+    build runs in its OWN process group, and we reap that group once the bundle
+    is written — because `ng build` does not exit on its own on this Angular
+    version (it leaks a persistent esbuild --service child). See _wait_for_build
+    for the full root-cause note. `slot`/`worktree` are also stamped onto the
+    build-history row so the dashboard can attribute the build to its env.
     """
     if stub:
         info(f"[stub] would run: ng build {project}  (cwd={root}/frontend)")
         return
     kill_esbuild()  # clear any stray service from a prior build BEFORE starting
-    logpath = NEXUS_DIR / f"build-{project}.log"
+    logpath = build_log_path(slot, project)
     NEXUS_DIR.mkdir(parents=True, exist_ok=True)
     info(f"ng build {project} ... (log {logpath})")
     # Build-history bookkeeping (additive — does not change build behaviour).
@@ -812,7 +861,8 @@ def ng_build(root: Path, project: str, *, stub: bool) -> None:
         # so this finally records "ok" on success and "failed" on any exit.
         record_build(project, start_iso, _now_iso(),
                      "ok" if build_ok else "failed",
-                     time.monotonic() - start_mono)
+                     time.monotonic() - start_mono,
+                     worktree=worktree, slot=slot)
 
 
 def served_dist_root(root: Path, project_dist_name: str) -> Path:
@@ -1006,9 +1056,9 @@ def cmd_up(args) -> None:
     procs: dict[str, dict] = {}
     with BuildLock():
         if shell_touched:
-            ng_build(root, "frontend", stub=stub)
+            ng_build(root, "frontend", stub=stub, slot=slot, worktree=args.worktree)
         for name in touched:
-            ng_build(root, name, stub=stub)
+            ng_build(root, name, stub=stub, slot=slot, worktree=args.worktree)
 
     # 5. Determine which shell dist to serve.
     #    - shell touched -> this worktree's freshly built shell (its own dist).
@@ -1142,11 +1192,12 @@ def cmd_baseline(args) -> None:
         die(f"RAM budget refused baseline build: {summary}")
     info(f"budget ok: {summary}")
 
-    # Build shell + ALL MFEs, serialized.
+    # Build shell + ALL MFEs, serialized. Baseline is always slot 0.
+    base_wt = baseline_name()
     with BuildLock():
-        ng_build(root, "frontend", stub=stub)
+        ng_build(root, "frontend", stub=stub, slot=0, worktree=base_wt)
         for name in all_mfes:
-            ng_build(root, name, stub=stub)
+            ng_build(root, name, stub=stub, slot=0, worktree=base_wt)
 
     # Baseline manifest: all remotes at baseline ports.
     shell_dist = served_dist_root(root, SHELL_DIST_NAME)
@@ -1547,12 +1598,30 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         if not proj or not _PROJECT_RE.match(proj):
             self._send_json({"error": "missing or invalid project"}, code=400)
             return
-        logpath = NEXUS_DIR / f"build-{proj}.log"
-        if not logpath.exists():
-            self._send_json(
-                {"project": proj, "log": "", "exists": False,
-                 "note": "no build log yet (project not built in this baseline)"})
+        # `slot` selects the per-env log (build-slot<N>-<project>.log). It is
+        # validated with the SAME path-component allowlist as `project` so a
+        # crafted value can never escape .nexus/. Omitted/blank -> slot 0.
+        slot_raw = (qs.get("slot") or [""])[0]
+        if slot_raw and not _PROJECT_RE.match(slot_raw):
+            self._send_json({"error": "invalid slot"}, code=400)
             return
+        try:
+            slot = int(slot_raw) if slot_raw else 0
+        except ValueError:
+            self._send_json({"error": "invalid slot"}, code=400)
+            return
+        logpath = build_log_path(slot, proj)
+        if not logpath.exists():
+            # Backward compatibility: fall back to the legacy project-only log
+            # (`build-<project>.log`) so old logs still tail after the upgrade.
+            legacy = NEXUS_DIR / f"build-{proj}.log"
+            if legacy.exists():
+                logpath = legacy
+            else:
+                self._send_json(
+                    {"project": proj, "slot": slot, "log": "", "exists": False,
+                     "note": "no build log yet (project not built in this env)"})
+                return
         try:
             with open(logpath, "rb") as fh:
                 fh.seek(0, os.SEEK_END)
@@ -1560,12 +1629,13 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 fh.seek(max(0, size - _LOG_TAIL_BYTES))
                 raw = fh.read()
         except OSError as exc:
-            self._send_json({"project": proj, "error": str(exc)}, code=500)
+            self._send_json({"project": proj, "slot": slot, "error": str(exc)},
+                            code=500)
             return
         text = raw.decode("utf-8", errors="replace")
         # Strip ANSI colour codes so the in-browser <pre> reads cleanly.
         text = re.sub(r"\x1b\[[0-9;]*m", "", text)
-        self._send_json({"project": proj, "exists": True,
+        self._send_json({"project": proj, "slot": slot, "exists": True,
                          "truncated": size > _LOG_TAIL_BYTES, "log": text})
 
     # ----- DEV LOG MONITOR (V1) endpoints --------------------------------
@@ -1631,7 +1701,7 @@ def cmd_dashboard(args) -> None:
     info(f"env dashboard (read-only) on http://127.0.0.1:{port}")
     info("  GET /              the dashboard SPA")
     info("  GET /api/state     full JSON model")
-    info("  GET /api/log?project=<name>   tail of .nexus/build-<name>.log")
+    info("  GET /api/log?project=<name>&slot=<N>  tail of .nexus/build-slot<N>-<name>.log")
     info("  GET /api/logs?service=<name>  poll-tail of a service's RUNTIME log (redacted)")
     info("  GET /api/radar                error-radar detector counters (redacted)")
     info("Ctrl-C to stop. This server NEVER builds and NEVER holds the build lock.")
