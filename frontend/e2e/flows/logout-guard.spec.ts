@@ -15,8 +15,7 @@
  * Asserted VISIBLE outcomes: logout lands on /login; browser-back stays on /login
  * and does NOT re-render the protected dashboard heading.
  */
-import { test, expect } from '@playwright/test';
-import { loginViaOtp } from '../fixtures/auth';
+import { freshLoginTest as test, expect, loginViaOtp } from '../fixtures/auth';
 import { ShellPage } from '../page-objects/shell.page';
 import { DashboardPage } from '../page-objects/dashboard.page';
 import { CatalogPage } from '../page-objects/catalog.page';

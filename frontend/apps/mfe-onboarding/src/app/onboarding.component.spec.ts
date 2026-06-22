@@ -7,6 +7,7 @@ import {
 } from '@angular/forms';
 import { Router } from '@angular/router';
 import { provideRouter } from '@angular/router';
+import { vi } from 'vitest';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { provideHttpClient, withFetch } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
@@ -58,6 +59,8 @@ class MeeInputStub implements ControlValueAccessor {
   @Input() label: string | undefined = undefined;
   @Input() required = false;
   @Input() error: string | undefined = undefined;
+  /** Added: OnboardingComponent template uses [hint] on pincode inputs. */
+  @Input() hint: string | undefined = undefined;
   writeValue(_v: unknown): void {}
   registerOnChange(_fn: (_: unknown) => void): void {}
   registerOnTouched(_fn: () => void): void {}
@@ -75,6 +78,8 @@ class MeeButtonStub {
   @Input() disabled = false;
   @Input() fullWidth = false;
   @Input() variant: MeeButtonVariant = 'primary';
+  /** Added: OnboardingComponent template uses [testId] on the submit button. */
+  @Input() testId: string | undefined = undefined;
 }
 
 /** Minimal stub for mee-offline-banner. */
@@ -238,46 +243,49 @@ describe('OnboardingComponent', () => {
 
   // Gates 4-5 skipped: form fields (manufacturer_pincode, manufacturer_name etc.)
   // do not exist on current OnboardingComponent — stale spec aligned to current API.
-  it.skip('should reject a non-6-digit pincode', () => {
+  it('should reject a non-6-digit pincode', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (component.form.get('manufacturer_pincode') as any)?.setValue('12345');
     expect(component.form.get('manufacturer_pincode')!.hasError('pincodeInvalid')).toBeTruthy();
   });
 
-  it.skip('should reject an alpha pincode', () => {
+  it('should reject an alpha pincode', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (component.form.get('manufacturer_pincode') as any)?.setValue('ABCDEF');
     expect(component.form.get('manufacturer_pincode')!.hasError('pincodeInvalid')).toBeTruthy();
   });
 
-  it.skip('should accept a valid 6-digit pincode', () => {
+  it('should accept a valid 6-digit pincode', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (component.form.get('manufacturer_pincode') as any)?.setValue('641604');
     expect(component.form.get('manufacturer_pincode')!.valid).toBeTruthy();
   });
 
-  it.skip('should not flag pincodeInvalid for empty pincode (format validator is optional)', () => {
+  it('should not flag pincodeInvalid for empty pincode (required error fires; pincodeInvalid does not)', () => {
+    // pincodeValidator() returns null for empty — only Validators.required fires.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (component.form.get('manufacturer_pincode') as any)?.setValue('');
     const errs = component.form.get('manufacturer_pincode')!.errors;
     expect(errs?.['pincodeInvalid']).toBeFalsy();
+    // required error IS present (pincode is now required):
+    expect(errs?.['required']).toBeTruthy();
   });
 
   // ── Gate 5: Form validity ──────────────────────────────────────────────────
 
-  it.skip('should be invalid when manufacturer_name is empty', () => {
+  it('should be invalid when manufacturer_name is empty', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (component.form.get('manufacturer_name') as any)?.setValue('');
     expect(component.form.invalid).toBeTruthy();
   });
 
-  it.skip('should be invalid when packer_name is empty', () => {
+  it('should be invalid when packer_name is empty', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (component.form.get('packer_name') as any)?.setValue('');
     expect(component.form.invalid).toBeTruthy();
   });
 
-  it.skip('should be valid when all required fields are filled correctly', () => {
+  it('should be valid when all required fields are filled correctly', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (component.form as any).setValue({
       manufacturer_name: 'Acme',
@@ -291,9 +299,71 @@ describe('OnboardingComponent', () => {
     expect(component.form.valid).toBeTruthy();
   });
 
+  // ── Gate 5b: Required pincodes — form invalid + submit blocked ──────────────
+  // (pincode-required change: d521bde; both pincodes now carry Validators.required)
+
+  it('should be invalid when manufacturer_pincode is empty (required)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (component.form.get('manufacturer_pincode') as any)?.setValue('');
+    expect(component.form.invalid).toBeTruthy();
+  });
+
+  it('should be invalid when packer_pincode is empty (required)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (component.form.get('packer_pincode') as any)?.setValue('');
+    expect(component.form.invalid).toBeTruthy();
+  });
+
+  it('should have required error on manufacturer_pincode when empty', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (component.form.get('manufacturer_pincode') as any)?.setValue('');
+    expect(component.form.get('manufacturer_pincode')?.hasError('required')).toBeTruthy();
+  });
+
+  it('should have required error on packer_pincode when empty', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (component.form.get('packer_pincode') as any)?.setValue('');
+    expect(component.form.get('packer_pincode')?.hasError('required')).toBeTruthy();
+  });
+
+  it('should NOT call patchProfile when manufacturer_pincode is empty (submit blocked by form.invalid)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (component.form as any).setValue({
+      manufacturer_name: 'Acme',
+      manufacturer_address: '12 Industrial',
+      manufacturer_pincode: '',        // ← empty: required error
+      packer_name: 'Pack Co',
+      packer_address: '12 Industrial',
+      packer_pincode: '641604',
+      country_of_origin: 'India',
+    });
+
+    component.onSubmit();
+    // form.invalid → onSubmit returns early → no PATCH
+    httpMock.expectNone('/api/v1/seller-profile');
+    expect(component.loading()).toBeFalsy();
+  });
+
+  it('should NOT call patchProfile when packer_pincode is empty (submit blocked by form.invalid)', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (component.form as any).setValue({
+      manufacturer_name: 'Acme',
+      manufacturer_address: '12 Industrial',
+      manufacturer_pincode: '641604',
+      packer_name: 'Pack Co',
+      packer_address: '12 Industrial',
+      packer_pincode: '',              // ← empty: required error
+      country_of_origin: 'India',
+    });
+
+    component.onSubmit();
+    httpMock.expectNone('/api/v1/seller-profile');
+    expect(component.loading()).toBeFalsy();
+  });
+
   // ── Gate 6: onSubmit → patchProfile() → navigate /dashboard ─────────────────
 
-  it.skip('should call PATCH /api/v1/seller-profile on valid submit', () => {
+  it('should call PATCH /api/v1/seller-profile on valid submit', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (component.form as any).setValue({
       manufacturer_name: 'Acme',
@@ -329,7 +399,7 @@ describe('OnboardingComponent', () => {
     expect(navSpy).toHaveBeenCalledWith(['/dashboard']);
   });
 
-  it.skip('should set loading=true while PATCH is in-flight', () => {
+  it('should set loading=true while PATCH is in-flight', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (component.form as any).setValue({
       manufacturer_name: 'Acme',
@@ -361,7 +431,7 @@ describe('OnboardingComponent', () => {
 
   // ── Gate 7: 422 → per-field error mapping — skipped: form shape diverged from current OnboardingComponent ──
 
-  it.skip('should map 422 errors to fieldErrors and set errorMessage', () => {
+  it('should map 422 errors to fieldErrors and set errorMessage', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (component.form as any).setValue({
       manufacturer_name: 'Acme',
@@ -400,7 +470,7 @@ describe('OnboardingComponent', () => {
 
   // ── Gate 8: submit resolves via HTTP, not fake timers ─────────────────────
 
-  it.skip('should NOT need fake timers to resolve — loading clears when HTTP completes', () => {
+  it('should NOT need fake timers to resolve — loading clears when HTTP completes', () => {
     // The original mock used setTimeout(1500). The new implementation resolves when
     // the HTTP observable completes. No fake timer advancement needed.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

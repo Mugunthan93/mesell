@@ -7447,3 +7447,32 @@ Hand-offs:
   - backend-coordinator: merge-gate review of fix/export-unit-tests. Confirm test-only diff + the
     aggregated contract is the intended one (464d914 + test_export_validation_aggregation.py).
 =========
+
+=== UPDATE: 2026-06-22 ===
+Phase: QA — onboarding seller-profile pincode 422-not-500 (founder-approved defensive fix)
+Done: customer.service.upsert_profile INSERT-path pre-flight guard (existing is None) raising new
+  MissingRequiredPincodeError (422) when manufacturer_pincode then packer_pincode is absent/null/
+  empty/whitespace. New exception added to customer/exceptions.py (mirrors
+  ComplianceExtensionMissingFieldsError) + __all__ + docstring inventory. Per-field
+  validation_message_id = validation.<field>.missing → resolves via resolver Step-2b generic-family
+  fallback to validation.generic.missing (ZERO new i18n keys).
+Service-layer guard only — NO schema change, NO migration, columns stay NOT NULL, schemas.py
+  untouched, repository.py untouched.
+Tests: backend/tests/test_customer_routes.py → 22 passed (19 pre-existing + 3 new regression:
+  missing-manufacturer→422, null-packer→422, complete-first-PATCH→200) vs meesell_test
+  (TEST_DATABASE_URL guard honored). ruff clean. import-linter 27 kept / 0 broken (no new
+  cross-module call — intra-module import only).
+Behavioral exit criteria confirmed: (1) first PATCH missing/null pincode → 422 not 500 with
+  non-empty validation_message_id; (2) complete first PATCH → 200 row created;
+  (3) partial PATCH on existing row → 200 (test_patch_subset_semantics_preserves_existing_fields
+  still passes).
+In progress: none.
+Blockers: none.
+Next: PR #419 feature/qa-onboarding/backend-pincode → feature/qa-onboarding/integration. Do NOT
+  merge (lead/backend-coordinator gates).
+Hand-offs:
+  - backend-coordinator: merge-gate review of PR #419 (diff = service.py + exceptions.py + test file).
+  - FOLLOW-UP (flagged, NOT fixed here): SAME latent INSERT-path 500 (NotNullViolationError) class
+    exists for manufacturer_name / manufacturer_address / packer_name / packer_address /
+    country_of_origin — a SEPARATE follow-up; this PR is pincodes-only per spec scope guard.
+=========

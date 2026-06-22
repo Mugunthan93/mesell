@@ -43,7 +43,11 @@ describe('OtpVerifyComponent', () => {
     router   = TestBed.inject(Router);
     httpMock = TestBed.inject(HttpTestingController);
     authSvc  = TestBed.inject(AuthService);
+    // logout() fires POST /api/v1/auth/logout (fire-and-forget cookie revoke).
+    // Flush it immediately so afterEach httpMock.verify() doesn't see an open request.
     authSvc.logout();
+    const logoutReq = httpMock.match('/api/v1/auth/logout');
+    logoutReq.forEach((r) => r.flush(null));
 
     // Provide phone via navigation state spy so ngOnInit doesn't redirect to /login
     vi.spyOn(router, 'getCurrentNavigation').mockReturnValue({

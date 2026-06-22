@@ -3,6 +3,73 @@
 **Owner:** meesell-frontend-coordinator (master session)
 **Last update:** 2026-06-22
 
+=== UPDATE: 2026-06-22 11:55 ===
+Phase: QA Wave B — qa-onboarding frontend spec rewrite
+Branch: feature/qa-onboarding/frontend @ c529bb5 (PR #416 READY FOR REVIEW)
+Agent: meesell-frontend-test-writer
+Session: meesell-qa-wave-B-frontend-session-1
+
+Done:
+  profile.component.spec.ts — FULL REWRITE (48 tests, all GREEN)
+    Covers: ngOnInit GET→patchValue 7 controls; 404→FRESH (no error banner);
+    required pincode errors; pincodeInvalid for non-6-digit; valid 6-digit;
+    onSubmit PATCH→saved()=true; no /auth/me (expectNone); no navigate;
+    onSubmit 422→fieldError+errorMessage; network error→errorMessage;
+    avatarInitial/displayPhone/formattedPhone/planLabel/planSeverity; onLogout.
+
+  onboarding.component.spec.ts — UPDATED (20→27 tests, all GREEN)
+    Gate 4 updated: required error NOW asserted for empty pincode.
+    Gate 5b (7 new): form invalid + submit blocked when manufacturer_pincode or
+    packer_pincode is empty; patchProfile NOT called (httpMock.expectNone).
+
+ng test frontend --no-watch:
+  BEFORE: 1597 passed / 17 failed / 7 skipped (3 files failing)
+  AFTER:  1652 passed /  1 failed / 7 skipped (1 file failing — pre-existing empty-state)
+  Net: +55 passing, -16 failing
+
+Pre-existing failure NOT fixed (out of scope — file to frontend-coordinator):
+  libs/composites/empty-state/empty-state.component.spec.ts: 1 test asserts
+  textContent contains 'inventory' but component renders 'No products yet'.
+  This was failing before my commits; NOT introduced by the profile rewrite.
+
+Blockers: none.
+Hand-offs: PR #416 marked READY FOR REVIEW → meesell-frontend-coordinator runs merge-gate.
+
+=== UPDATE: 2026-06-22 06:10 ===
+Phase: feature/qa-onboarding/frontend — pincode NOT-NULL 500 fix (frontend half)
+Branch: feature/qa-onboarding/frontend @ d521bde (extends PR #416 — DRAFT)
+Agent: meesell-angular-component-builder
+
+Done:
+  PINCODE REQUIRED — onboarding.component.ts:
+    - manufacturer_pincode: ['', [pincodeValidator()]] → ['', [Validators.required, pincodeValidator()]]
+    - packer_pincode:       ['', [pincodeValidator()]] → ['', [Validators.required, pincodeValidator()]]
+    - Validators already imported; no new imports needed.
+    - Template: [required]="true" added to both pincode mee-input elements.
+    - Error binding: required error "Manufacturer/Packer pincode is required." before format error.
+      Uses (touched || submitted()) gate so required error shows on submit-attempt too.
+
+  PINCODE REQUIRED — profile.component.ts:
+    - Added Validators to @angular/forms import (was missing).
+    - manufacturer_pincode: ['', [pincodeValidator()]] → ['', [Validators.required, pincodeValidator()]]
+    - packer_pincode:       ['', [pincodeValidator()]] → ['', [Validators.required, pincodeValidator()]]
+    - Template: [required]="true" added to both pincode mee-input elements.
+    - Error binding: required error "Manufacturer/Packer pincode is required." before format error.
+      Uses .touched gate (profile form uses markAllAsTouched on submit).
+
+Tests: spec files untouched (QA's lane per task spec).
+Build: ng build mfe-onboarding GREEN (3.942s, 0 TS errors, 0 new warnings).
+       All warnings are pre-existing (unused MeeOfflineBannerComponent, EmptyStateComponent,
+       MeeSkeletonComponent in ProfileComponent imports; unrelated data-table NG8102/NG8113).
+tsc --noEmit -p apps/mfe-onboarding/tsconfig.app.json: EXIT 0.
+
+In progress: none.
+Blockers: none.
+Next: QA spec rewrite on this branch (QA's lane), then lead merge-gate review.
+Hand-offs: "OnboardingComponent + ProfileComponent pincode controls are now [Validators.required,
+pincodeValidator()]; form.invalid blocks submit when either pincode is empty. Draft PR #416
+extended. Lead (meesell-frontend-coordinator) gates next."
+
 === UPDATE: 2026-06-22 09:39 (fix/export-productid — ExportComponent ActivatedRoute fix) ===
 Phase: /catalogs/:id/export — mfe-export ExportComponent productId resolution
 Branch: fix/export-productid/frontend (worktree: .claude/worktrees/agent-ac2eee68ffbc83662)
