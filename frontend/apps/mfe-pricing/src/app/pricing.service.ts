@@ -1,10 +1,17 @@
 /**
  * pricing.service.ts — PricingApiService.
  * Wires POST /api/v1/products/{id}/price-calc (endpoint #25, V1_FEATURE_SPEC §5).
+ * Wires POST /api/v1/products/{id}/apply-price (SPEC C — pricing-apply-price, 2026-06-22).
  *
  * W3 REWRITE (2026-06-19): binds to W2 §2.1/§2.2 contract.
  *   NEW request body: { selling_price, commission_pct? } — backend extra="forbid".
  *   NEW 422 path: pricing.category.no_pricing_data (replaces retired commission_missing).
+ *
+ * apply-price (SPEC C):
+ *   POST /api/v1/products/{id}/apply-price — body { selling_price } ONLY (extra="forbid").
+ *   204 No Content on success → emits void. Reuses _handleError for all error paths.
+ *   retryOn503: OFF (non-idempotent — mutates fields_jsonb["meesho_price"] in place).
+ *   This is the FE link that writes meesho_price so export carries the applied value.
  *
  * Scoping: @Injectable() with NO providedIn — component-scoped.
  * Listed in PricingComponent.providers[] → tree-shakes with the lazy route chunk.
@@ -45,6 +52,10 @@ import type {
 const PRICE_CALC_PATH = (productId: string) =>
   `/api/v1/products/${productId}/price-calc`;
 
+/** Endpoint path for apply-price (SPEC C — writes meesho_price to fields_jsonb). */
+const APPLY_PRICE_PATH = (productId: string) =>
+  `/api/v1/products/${productId}/apply-price`;
+
 /** error_code emitted by W2 router when the product's category leaf is absent from the lookup. */
 const NO_PRICING_DATA_CODE = 'pricing.category.no_pricing_data';
 
@@ -70,6 +81,37 @@ export class PricingApiService {
   ): Observable<PriceCalcResponse | PriceCalcErrorShape> {
     return this.api
       .post<PriceCalcResponse>(PRICE_CALC_PATH(productId), body)
+      .pipe(
+        catchError((err: unknown) => this._handleError(err)),
+      );
+  }
+
+  /**
+   * POST /api/v1/products/{productId}/apply-price (SPEC C — pricing-apply-price, 2026-06-22).
+   *
+   * Persists the seller's chosen selling price to `fields_jsonb["meesho_price"]` so the
+   * XLSX export carries the applied value (closes the calc → apply → export chain).
+   *
+   * On 204: emits void (no body from backend).
+   * On error: emits a typed PriceCalcErrorShape or EMPTY (401).
+   *
+   * Body contract: `{ selling_price }` ONLY — backend `ApplyPriceRequest` has
+   * `extra="forbid"`; any additional key causes a 422. The selling_price string must be
+   * > 0 and have at most 2 decimal places (matches `PriceCalcRequest.selling_price` format).
+   *
+   * retryOn503: OFF — non-idempotent POST (mutates fields_jsonb in place).
+   * Call ONLY on deliberate seller action ("Save & Continue" or explicit apply button).
+   * DO NOT call silently on calc() success — per backend founder ruling.
+   *
+   * @param productId    UUID of the product (from route :id param)
+   * @param sellingPrice Decimal string e.g. "299.00" — the price the seller wants to apply
+   */
+  applyPrice(
+    productId: string,
+    sellingPrice: string,
+  ): Observable<void | PriceCalcErrorShape> {
+    return this.api
+      .post<void>(APPLY_PRICE_PATH(productId), { selling_price: sellingPrice })
       .pipe(
         catchError((err: unknown) => this._handleError(err)),
       );
