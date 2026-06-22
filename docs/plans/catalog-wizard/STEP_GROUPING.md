@@ -263,7 +263,7 @@ There are **40 distinct step combinations** across the catalog. The long tail is
 
 ## 6. Regenerating this manifest
 
-Read-only; not in CI. After a re-seed / quarterly refresh:
+Read-only; not in CI. After a re-seed / monthly refresh (interim; moving to monthly, usage-driven per the locked scraper-cadence design):
 
 ```sh
 set -a; . backend/.env; set +a

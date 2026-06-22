@@ -20,7 +20,7 @@
 ## §1 Purpose + scope
 
 ### 1.1 What this architecture governs
-MeeSell's `categories` / `templates` / `field_enum_values` / `field_aliases` tables are **GLOBAL reference data** — not user-scoped, not tenant data (per `MVP_ARCHITECTURE.md §10.2 / §4.C`, `DATABASE_ARCHITECTURE.md` Group A "Reference Data (seeded; read-mostly)"). They are loaded **once per environment** from a **fixed, committed corpus** and **refreshed quarterly**. This document defines the architecture that moves those ~53,000 rows from disk into every environment's Postgres deterministically.
+MeeSell's `categories` / `templates` / `field_enum_values` / `field_aliases` tables are **GLOBAL reference data** — not user-scoped, not tenant data (per `MVP_ARCHITECTURE.md §10.2 / §4.C`, `DATABASE_ARCHITECTURE.md` Group A "Reference Data (seeded; read-mostly)"). They are loaded **once per environment** from a **fixed, committed corpus** and **refreshed monthly, usage-driven** (interim; moving to monthly, usage-driven per the locked scraper-cadence design). This document defines the architecture that moves those ~53,000 rows from disk into every environment's Postgres deterministically.
 
 The numbers this architecture must reproduce in every environment (per `seed_all.py` smoke targets + `DATABASE_ARCHITECTURE.md` §2):
 
@@ -32,11 +32,11 @@ The numbers this architecture must reproduce in every environment (per `seed_all
 | `field_enum_values` | ~49,259 | ±0.5% (SSoT 49,295) | `(category_id, canonical_field_name, value)` |
 
 ### 1.2 Why this is an architecture, not a one-off run
-The immediate trigger (local dev `categories` = 0 rows → visual gate BLOCKED, per #239 §1) is solved by a single seeder run. But the **same load must hold for**: every fresh local DB, every `dev`/`staging` deploy, and every quarterly corpus refresh. A one-off run does not survive a DB reset or a deploy to a new namespace. Therefore the seed is modelled as a **standing, layered, idempotent pipeline**, not a command someone remembers to type.
+The immediate trigger (local dev `categories` = 0 rows → visual gate BLOCKED, per #239 §1) is solved by a single seeder run. But the **same load must hold for**: every fresh local DB, every `dev`/`staging` deploy, and every monthly corpus refresh. A one-off run does not survive a DB reset or a deploy to a new namespace. Therefore the seed is modelled as a **standing, layered, idempotent pipeline**, not a command someone remembers to type.
 
 ### 1.3 Non-goals (explicit)
 - **No DDL.** Schema (tables, FKs, indexes, the pg_trgm extension) is owned by Alembic. This layer loads rows only.
-- **No scrape.** The committed `meesho_category_tree.json` (dated 2026-06-03) is fresh; seeding consumes it directly. A scrape is the quarterly-refresh *upstream* path (§7), not part of a seed.
+- **No scrape.** The committed `meesho_category_tree.json` (dated 2026-06-03) is fresh; seeding consumes it directly. A scrape is the monthly-refresh *upstream* path (§7), not part of a seed.
 - **No tenant/user data.** This is global reference data, seeded identically in every environment.
 - **No production.** V1 environments are `dev` + `staging` only (per `MASTER_PLAN §3`); `prod` is V1.5 and inherits the same Job (§2 ④, §4).
 
@@ -95,7 +95,7 @@ The immediate trigger (local dev `categories` = 0 rows → visual gate BLOCKED, 
 
 ### ① UPSTREAM SOURCE (cold)
 - **Inputs:** `data/meesho_templates/*.xlsx` — 3,772 files, **GITIGNORED**, never committed, never present in CI or any deployed pod.
-- **Tools:** `meesell-xlsx-parser` (parse) and, for the quarterly refresh only, `meesell-scraper-maintainer` (re-capture the tree).
+- **Tools:** `meesell-xlsx-parser` (parse) and, for the monthly refresh only, `meesell-scraper-maintainer` (re-capture the tree).
 - **Property:** This is the *only* place a parse or scrape ever runs. It is **cold** — it executes on the data-engineer's workstation on the parse/refresh cadence, never on the seed path. A fresh DB is seeded without ever touching layer ①.
 - **Owner:** `meesell-data-engineer` (this lead) via the two data specialists.
 
@@ -177,7 +177,7 @@ Full detail in **§6**. In brief, five guards make the seed safe to run automati
 
 ### (a) Schema vs data separation — Alembic owns DDL, the seed layer owns rows
 **Decision:** DDL (tables, FKs, indexes, `CREATE EXTENSION pg_trgm`) lives in Alembic migrations; the ~53k reference-data rows are loaded by the seed engine (layer ③), **never inside a migration**.
-**Rationale:** **Option B (Alembic data-migration) is REJECTED.** Bulk reference data in the migration chain means: (1) large, un-diffable, slow migrations; (2) every quarterly refresh would require *another* migration → unbounded chain growth; (3) downgrades must delete rows; and critically (4) **Alembic head divergence between `dev` and `staging` from a data migration is a P0 per `MASTER_PLAN §3.3`.** Keeping data out of the chain keeps the migration history pure-DDL, fast to review, and refresh-able by re-run rather than re-revision.
+**Rationale:** **Option B (Alembic data-migration) is REJECTED.** Bulk reference data in the migration chain means: (1) large, un-diffable, slow migrations; (2) every monthly refresh would require *another* migration → unbounded chain growth; (3) downgrades must delete rows; and critically (4) **Alembic head divergence between `dev` and `staging` from a data migration is a P0 per `MASTER_PLAN §3.3`.** Keeping data out of the chain keeps the migration history pure-DDL, fast to review, and refresh-able by re-run rather than re-revision.
 
 ### (b) Committed JSON as the release artifact
 **Decision:** the seed input is the committed `meesho_category_tree.json` + parsed JSONs (layer ②), not the gitignored `.xlsx` corpus.
@@ -192,7 +192,7 @@ Full detail in **§6**. In brief, five guards make the seed safe to run automati
 **Rationale:** one place enforces order and tolerances. No environment can run the steps out of order or skip the gate. Idempotent upsert means re-running is always safe — there is no "already seeded?" branching to get wrong.
 
 ### (e) Refresh = re-run, not rebuild
-**Decision:** a quarterly corpus refresh produces a **new committed artifact** (②); seeding it is the **same `seed_all.py` re-run** (upsert reconciles changed rows in place).
+**Decision:** a monthly corpus refresh produces a **new committed artifact** (②); seeding it is the **same `seed_all.py` re-run** (upsert reconciles changed rows in place).
 **Rationale:** there is no separate "update" path to maintain. The upsert-on-natural-key engine *is* the refresh mechanism. (Open question on prune-vs-pure-upsert for removed leaves → §9 Q3.)
 
 ---
@@ -271,7 +271,7 @@ The acceptance proof (#5) is the definition of done for any seed run, local or K
 
 ## §7 Refresh cadence + ownership
 
-**Cadence:** quarterly (manual run acceptable for V1).
+**Cadence:** monthly, usage-driven (interim; moving to monthly, usage-driven per the locked scraper-cadence design; manual run acceptable for V1).
 
 **Refresh flow:**
 ```
@@ -333,7 +333,7 @@ All three are **RESOLVED**. The approved architecture holds under each resolutio
    - **Phase 2 (Wave 1.5 backfill):** `meesell-scraper-maintainer` captures Meesho's published category commission **rate-card** → `backend/app/data/category_commissions.json` → idempotent backfill re-seed (`scripts/seed_category_commissions.py`, consuming that JSON; NOT a migration — the column exists). The upsert reconciles real values in place with zero re-architecture. **Source = scraped Meesho rate-card** (refresh-path style; robots/rate-limit care per `PLAYWRIGHT_MCP_REFERENCE §6.4`; founder accuracy review before it seeds). This extends layer ②'s artifact set (adds `category_commissions.json`) and the §5.2 mapping (`commission_pct` sourced from the rate-card map, NULL fallback when a leaf is unmatched).
 
 3. **Refresh idempotency posture — RESOLVED: PURE UPSERT.**
-   The quarterly refresh updates changed rows and inserts new leaves via upsert on natural keys; it does **not** prune leaves that disappear from a new tree (orphan rows remain, blocked from delete by `ON DELETE RESTRICT` if referenced). No prune logic is built. Affects only the refresh path (§7), not the initial seed.
+   The monthly refresh updates changed rows and inserts new leaves via upsert on natural keys; it does **not** prune leaves that disappear from a new tree (orphan rows remain, blocked from delete by `ON DELETE RESTRICT` if referenced). No prune logic is built. Affects only the refresh path (§7), not the initial seed.
 
 ---
 

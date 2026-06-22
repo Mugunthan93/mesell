@@ -106,7 +106,7 @@ FastAPI pod  (BEA §1, BEA §2)
    │     [FSSAI / BIS / DCA / WPC — depending on super-category, additional registers apply (§13)]
    ├── category module — Smart Picker + browse + schema fetch
    │     [Database Right (no Indian statute; ToS protects via contract) — the 3,772-category dataset is MeeSell's moat asset]
-   │     [Meesho ToS — quarterly scrape sits on a gray legal line; BUSINESS_STRATEGY §11.1 risk register acknowledges]
+   │     [Meesho ToS — the monthly, usage-driven scrape (interim; moving to monthly, usage-driven per the locked scraper-cadence design) sits on a gray legal line; BUSINESS_STRATEGY §11.1 risk register acknowledges]
    ├── catalog module — product CRUD, AI Auto-fill, draft autosave
    │     [Copyright Act 1957 — seller-supplied product text + AI-modified text; ownership clause in ToS]
    │     [Consumer Protection Act 2019 — MeeSell is an "intermediary" assisting product listing; IT Act §79 safe-harbour]
@@ -427,7 +427,7 @@ Per-table retention, derived from `DBA §10`, `BEA §4.G`, and DPDP §10(3) (dat
 | `product_drafts` | 30 days from `saved_at` (proposed — §15) | None | Celery beat (DBA §13 — pending founder ruling) | DPDP §10(3) |
 | `exports` | 1 year | 1 year archived in GCS | Manual archive workflow | Consumer dispute window + Razorpay chargeback windows |
 | `audit_events` | 90 days hot in Postgres | 1 year archived in GCS | Celery beat (deferred per DBA §13) | DPDP §8(5) record-of-processing + IT Act audit duty |
-| `templates`, `categories`, `field_enum_values`, `field_aliases` | Lifetime (refreshed quarterly) | None | Quarterly re-seed (IA refresh) | Operational; no PII |
+| `templates`, `categories`, `field_enum_values`, `field_aliases` | Lifetime (refreshed monthly, usage-driven — interim; moving to monthly, usage-driven per the locked scraper-cadence design) | None | Monthly re-seed (IA refresh) | Operational; no PII |
 
 **Cross-cascade rule:** because `exports.user_id` and `audit_events.user_id` are `ON DELETE RESTRICT` (DBA §3 cascade chain), user deletion CANNOT hard-delete those rows. Erasure workflow (§7) MUST anonymise the FK-linked data:
 - `audit_events.diff_jsonb` is PII-scrubbed at write (BEA §4.G) — already compliant.
@@ -485,7 +485,7 @@ Four IP surfaces, each governed by a different clause:
 
 - `templates`, `categories`, `field_enum_values`, `field_aliases` — collectively the "MeeSell Catalog Schema Library".
 - India has no statutory database right; MeeSell's protection is contractual via ToS §"Intellectual Property" and via the "no scraping" clause.
-- The Meesho-scrape source carries a separate risk (BUSINESS_STRATEGY §11.1 + §11.2). ToS must acknowledge MeeSell's quarterly refresh process — NOT a clause that creates a duty to Meesho.
+- The Meesho-scrape source carries a separate risk (BUSINESS_STRATEGY §11.1 + §11.2). ToS must acknowledge MeeSell's monthly, usage-driven refresh process (interim; moving to monthly, usage-driven per the locked scraper-cadence design) — NOT a clause that creates a duty to Meesho.
 
 ### 11.4 Third-party brand / watermark presence in images
 

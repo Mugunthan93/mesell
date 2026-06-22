@@ -461,7 +461,7 @@ Verify (and tighten where drift is found) category.service.suggest_categories() 
 - DO NOT modify backend/app/modules/category/router.py — that's api-routes-builder's slice.
 - DO NOT modify backend/app/modules/category/picker.py — that's category-picker-builder's slice.
 - DO NOT modify any file under backend/app/ai_ops/ — that's prompt-engineer/AI lead's slice.
-- DO NOT alter §9.B.1 cache key format — it's a contract used by ops to invalidate the global cache during quarterly category refresh.
+- DO NOT alter §9.B.1 cache key format — it's a contract used by ops to invalidate the global cache during the monthly category refresh.
 - DO NOT widen the route's max_length for the suggestions list — §9.E locks it at 5; D1 confirms.
 
 ## Files you may touch

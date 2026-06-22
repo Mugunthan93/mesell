@@ -189,7 +189,7 @@ Change to:
 COMMISSION_API_ENDPOINT: str = "https://supplier.meesho.com/api/cataloging/referral-fees"
 ```
 
-This constant is the only line that needs editing between runs. Commit the update to pin the endpoint for quarterly refreshes.
+This constant is the only line that needs editing between runs. Commit the update to pin the endpoint for monthly refreshes (interim; moving to monthly, usage-driven per the locked scraper-cadence design).
 
 ---
 
@@ -349,9 +349,9 @@ When the data lead is satisfied with the reviewed `category_commissions.json`:
 
 ---
 
-## §9 Quarterly Refresh
+## §9 Monthly Refresh (interim; moving to monthly, usage-driven per the locked scraper-cadence design)
 
-For the next quarterly refresh:
+For the next monthly refresh:
 1. Confirm `COMMISSION_API_ENDPOINT` is still set correctly (endpoint may have changed).
 2. Run in direct mode (Run 2 only, if endpoint is stable).
 3. Diff the new `rate_card` against the prior committed JSON — Meesho commission changes are rare but happen at annual policy revisions.

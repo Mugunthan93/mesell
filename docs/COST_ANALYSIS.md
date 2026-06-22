@@ -749,7 +749,7 @@ The shared VM (Aletheia + LLM_Manager + MeeSell) has 2 vCPU and 8 GiB RAM. Postg
 
 ### 10.6 Meesho Policy / Template Changes
 
-The 3,738 templates already scraped will go stale as Meesho updates categories. The existing scraper (`backend/scripts/meesho_batch_scraper.py`) runs as a scheduled job — re-run quarterly. Cost: ~6 hours of compute per refresh + founder review (~4 hrs). Negligible.
+The 3,738 templates already scraped will go stale as Meesho updates categories. The existing scraper (`backend/scripts/meesho_batch_scraper.py`) runs as a scheduled job — re-run monthly (interim; moving to monthly, usage-driven per the locked scraper-cadence design). Cost: ~6 hours of compute per refresh + founder review (~4 hrs). Negligible.
 
 **Bigger risk:** Meesho noticing the scraping. The strategy doc already flags this. Mitigation: per-seller cookie model (each seller authenticates their own session, templates fetched via their own credentials) is documented in `mesell_MEESHO_FORM_RND.md`. Engineering effort: ~3 weeks. Defer until template-block signal is observed.
 
