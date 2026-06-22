@@ -38,6 +38,7 @@ import logging
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Cookie, Depends, Request, Response, status
+from fastapi.responses import JSONResponse
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -176,13 +177,22 @@ async def auth_refresh(
     valkey: Annotated[Redis, Depends(get_valkey_otp)],
     refresh_token: Annotated[Optional[str], Cookie()] = None,
 ) -> RefreshResponse:
-    """§7.B.3 contract.  On any 401 path the failure handler ALSO clears the cookie.
+    """§7.B.3 contract.  On the 401 failure path the cookie is ALSO cleared.
 
-    The 401-path clear-cookie behaviour is implemented via a try/except so
-    the §7.B.3 "clear cookie on 401" requirement is honoured without relying
-    on the global error handler (which has no view of this route's
-    ``response`` instance).
+    The 401 clear-cookie behaviour is built INSIDE this handler (option a):
+    on ``RefreshInvalidError`` we construct the locked error envelope as a
+    :class:`JSONResponse` here and attach the ``Set-Cookie: refresh_token;
+    Max-Age=0`` header to THAT response.  We cannot let the exception
+    propagate to the global ``_meesell_error_handler`` for the clear-cookie:
+    that handler returns a brand-new ``JSONResponse`` and so discards the
+    ``Set-Cookie`` header set on the FastAPI-injected ``response`` instance,
+    leaving a stale refresh cookie in the browser after a rejected/replayed
+    refresh.  The envelope shape (``detail`` / ``code`` /
+    ``validation_message_id`` / ``request_id``) is identical to the global
+    handler's output — we reuse its builders — so only the missing
+    ``Set-Cookie`` is added.
     """
+    from app.core.errors import _build_envelope, _resolve_message_id
     from app.modules.iam.exceptions import RefreshInvalidError
 
     client_ip = request.client.host if request.client else "unknown"
@@ -190,10 +200,23 @@ async def auth_refresh(
         result = await iam_service.rotate_refresh_token(
             refresh_token, client_ip, db, valkey
         )
-    except RefreshInvalidError:
-        # Per §7.B.3 failure path — clear the (possibly stale) cookie too.
+    except RefreshInvalidError as exc:
+        # §7.B.3 failure path — clear the (possibly stale) cookie AND emit the
+        # locked 401 envelope here so the clear-cookie header survives (the
+        # global handler would otherwise drop it — see docstring).
         _clear_refresh_cookie(response)
-        raise
+        detail = _resolve_message_id(exc.validation_message_id, fallback=exc.detail)
+        envelope = _build_envelope(
+            request,
+            code=exc.code,
+            validation_message_id=exc.validation_message_id,
+            detail=detail,
+        )
+        error_response = JSONResponse(status_code=exc.status_code, content=envelope)
+        # Carry the clear-cookie Set-Cookie header(s) onto the error response.
+        for header_value in response.headers.getlist("set-cookie"):
+            error_response.headers.append("set-cookie", header_value)
+        return error_response  # type: ignore[return-value]
 
     _set_refresh_cookie(response, result.new_refresh_token, result.refresh_expires_in)
     return RefreshResponse(
