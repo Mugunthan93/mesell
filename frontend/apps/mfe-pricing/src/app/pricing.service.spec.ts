@@ -459,3 +459,216 @@ describe('PricingApiService — no retryOn503 (spec §3.2 POST non-idempotent)',
     // controller.verify() in afterEach confirms no subsequent retry request
   });
 });
+
+// ── applyPrice — SPEC C (pricing-apply-price, 2026-06-22) ────────────────────
+//
+// Contract under test:
+//   POST /api/v1/products/{id}/apply-price
+//   Body: { selling_price } ONLY (extra="forbid" on backend — no other key)
+//   204 No Content on success → void emission
+//   Error matrix: same _handleError as calc() — 401→EMPTY / 404→unavailable /
+//     422→validation / 400→validation / 5xx/network→server_error
+//   retryOn503: OFF (non-idempotent)
+
+const APPLY_PRICE_PRODUCT_ID = 'prod-uuid-apply-001';
+const APPLY_PRICE_ENDPOINT   = `/api/v1/products/${APPLY_PRICE_PRODUCT_ID}/apply-price`;
+const SELLING_PRICE_STRING   = '299.00';
+
+describe('PricingApiService.applyPrice — URL + body contract (SPEC C)', () => {
+  afterEach(() => TestBed.inject(HttpTestingController).verify());
+
+  it('sends POST to the exact /apply-price URL', () => {
+    const { service, controller } = setup();
+    service.applyPrice(APPLY_PRICE_PRODUCT_ID, SELLING_PRICE_STRING).subscribe();
+
+    const req = controller.expectOne(APPLY_PRICE_ENDPOINT);
+    expect(req.request.method).toBe('POST');
+    req.flush(null, { status: 204, statusText: 'No Content' });
+  });
+
+  it('sends body with { selling_price } ONLY — no extra keys (guards against extra="forbid" 422)', () => {
+    const { service, controller } = setup();
+    service.applyPrice(APPLY_PRICE_PRODUCT_ID, SELLING_PRICE_STRING).subscribe();
+
+    const req = controller.expectOne(APPLY_PRICE_ENDPOINT);
+    const body = req.request.body as Record<string, unknown>;
+
+    // Required key present with the supplied value
+    expect(body['selling_price']).toBe(SELLING_PRICE_STRING);
+
+    // Exactly ONE key — no extra keys that would trip extra="forbid"
+    expect(Object.keys(body).length).toBe(1);
+
+    // Dead keys that must NOT be sent
+    expect(body).not.toHaveProperty('commission_pct');
+    expect(body).not.toHaveProperty('meesho_price');
+    expect(body).not.toHaveProperty('product_id');
+    expect(body).not.toHaveProperty('price');
+
+    req.flush(null, { status: 204, statusText: 'No Content' });
+  });
+
+  it('uses the productId from the argument, not a hardcoded path', () => {
+    const { service, controller } = setup();
+    const customId   = 'custom-product-xyz';
+    const customPath = `/api/v1/products/${customId}/apply-price`;
+
+    service.applyPrice(customId, '150.00').subscribe();
+
+    // expectOne() asserts the URL exactly — will throw if hardcoded path used
+    const req = controller.expectOne(customPath);
+    expect(req.request.url).toBe(customPath);
+    req.flush(null, { status: 204, statusText: 'No Content' });
+  });
+
+  it('does NOT add Authorization header manually (jwtInterceptor owns auth)', () => {
+    const { service, controller } = setup();
+    service.applyPrice(APPLY_PRICE_PRODUCT_ID, SELLING_PRICE_STRING).subscribe();
+
+    const req = controller.expectOne(APPLY_PRICE_ENDPOINT);
+    expect(req.request.headers.has('Authorization')).toBe(false);
+    req.flush(null, { status: 204, statusText: 'No Content' });
+  });
+});
+
+describe('PricingApiService.applyPrice — 204 success path (SPEC C)', () => {
+  afterEach(() => TestBed.inject(HttpTestingController).verify());
+
+  it('204 → emits void and completes (no body from backend)', async () => {
+    const { service, controller } = setup();
+    let emitted = false;
+    let completed = false;
+
+    service.applyPrice(APPLY_PRICE_PRODUCT_ID, SELLING_PRICE_STRING).subscribe({
+      next:     () => { emitted = true; },
+      complete: () => { completed = true; },
+    });
+
+    controller.expectOne(APPLY_PRICE_ENDPOINT).flush(
+      null, { status: 204, statusText: 'No Content' },
+    );
+
+    // void is emitted (HttpClient emits null body on 204 as the "success" value)
+    expect(completed).toBe(true);
+  });
+
+  it('sends exactly ONE request on 204 success (no side-effects or duplicate calls)', () => {
+    const { service, controller } = setup();
+    service.applyPrice(APPLY_PRICE_PRODUCT_ID, SELLING_PRICE_STRING).subscribe();
+
+    // expectOne() throws if more than one request was dispatched
+    controller.expectOne(APPLY_PRICE_ENDPOINT).flush(
+      null, { status: 204, statusText: 'No Content' },
+    );
+    // controller.verify() in afterEach confirms no extra requests
+  });
+});
+
+describe('PricingApiService.applyPrice — error matrix (SPEC C)', () => {
+  afterEach(() => TestBed.inject(HttpTestingController).verify());
+
+  it('401 → EMPTY (refreshInterceptor/logout path; no emission, completes silently)', async () => {
+    const { service, controller } = setup();
+    let emitted = false;
+    let completed = false;
+
+    service.applyPrice(APPLY_PRICE_PRODUCT_ID, SELLING_PRICE_STRING).subscribe({
+      next:     () => { emitted = true; },
+      complete: () => { completed = true; },
+    });
+
+    controller.expectOne(APPLY_PRICE_ENDPOINT).flush(
+      { detail: 'Unauthorized' },
+      { status: 401, statusText: 'Unauthorized' },
+    );
+
+    expect(emitted).toBe(false);
+    expect(completed).toBe(true);
+  });
+
+  it('404 → PriceCalcUnavailableError (product not found or flag off)', async () => {
+    const { service, controller } = setup();
+    const result$ = service.applyPrice(APPLY_PRICE_PRODUCT_ID, SELLING_PRICE_STRING);
+    const promise = firstValueFrom(result$);
+
+    controller.expectOne(APPLY_PRICE_ENDPOINT).flush(
+      { detail: 'Product not found or access denied.' },
+      { status: 404, statusText: 'Not Found' },
+    );
+
+    const result = await promise as PriceCalcUnavailableError;
+    expect(result.kind).toBe('unavailable');
+    expect(result.reason).toBe('not_found');
+  });
+
+  it('422 extra="forbid" (stale key sent) → PriceCalcValidationError', async () => {
+    const { service, controller } = setup();
+    const result$ = service.applyPrice(APPLY_PRICE_PRODUCT_ID, SELLING_PRICE_STRING);
+    const promise = firstValueFrom(result$);
+
+    controller.expectOne(APPLY_PRICE_ENDPOINT).flush(
+      { detail: 'Extra inputs are not permitted', error_code: 'validation.extra_forbidden' },
+      { status: 422, statusText: 'Unprocessable Entity' },
+    );
+
+    const result = await promise as PriceCalcValidationError;
+    expect(result.kind).toBe('validation');
+  });
+
+  it('422 selling_price <= 0 → PriceCalcValidationError', async () => {
+    const { service, controller } = setup();
+    const result$ = service.applyPrice(APPLY_PRICE_PRODUCT_ID, '0.00');
+    const promise = firstValueFrom(result$);
+
+    controller.expectOne(`/api/v1/products/${APPLY_PRICE_PRODUCT_ID}/apply-price`).flush(
+      { detail: 'selling_price must be greater than 0.' },
+      { status: 422, statusText: 'Unprocessable Entity' },
+    );
+
+    const result = await promise as PriceCalcValidationError;
+    expect(result.kind).toBe('validation');
+    expect(result.detail).toBe('selling_price must be greater than 0.');
+  });
+
+  it('500 → emits {kind:"server_error"} — NOT EMPTY (retry affordance required)', async () => {
+    const { service, controller } = setup();
+    const result$ = service.applyPrice(APPLY_PRICE_PRODUCT_ID, SELLING_PRICE_STRING);
+    const promise = firstValueFrom(result$);
+
+    controller.expectOne(APPLY_PRICE_ENDPOINT).flush(
+      { detail: 'Internal Server Error' },
+      { status: 500, statusText: 'Internal Server Error' },
+    );
+
+    const result = await promise as PriceCalcServerError;
+    expect(result.kind).toBe('server_error');
+  });
+
+  it('network/non-HTTP error → emits {kind:"server_error"}', async () => {
+    const { service, controller } = setup();
+    const result$ = service.applyPrice(APPLY_PRICE_PRODUCT_ID, SELLING_PRICE_STRING);
+    const promise = firstValueFrom(result$);
+
+    controller.expectOne(APPLY_PRICE_ENDPOINT).error(new ProgressEvent('error'));
+
+    const result = await promise;
+    expect(result).toMatchObject({ kind: 'server_error' });
+  });
+});
+
+describe('PricingApiService.applyPrice — no retryOn503 (non-idempotent POST)', () => {
+  afterEach(() => TestBed.inject(HttpTestingController).verify());
+
+  it('sends exactly ONE request on 503 (no retry — mutates fields_jsonb)', () => {
+    const { service, controller } = setup();
+    service.applyPrice(APPLY_PRICE_PRODUCT_ID, SELLING_PRICE_STRING).subscribe();
+
+    // expectOne() throws if more than one request is dispatched
+    const req = controller.expectOne(APPLY_PRICE_ENDPOINT);
+    req.flush(
+      { detail: 'Service Unavailable' },
+      { status: 503, statusText: 'Service Unavailable' },
+    );
+    // controller.verify() in afterEach confirms no subsequent retry request
+  });
+});
