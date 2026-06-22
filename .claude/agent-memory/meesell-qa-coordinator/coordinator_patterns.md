@@ -67,3 +67,28 @@ the next wave's spec automatically so every wave is smarter than the last. Forma
 - **No stale-base hazard when the lane branch is cut from the CURRENT integration tip** → all lanes → merge-base(e2e, integration) == integration tip exactly → `git diff integration..e2e --name-status | grep '^D'` empty → clean-additive squash, no reconcile needed. This is the FIRST later-lane in the qa-onboarding wave to NOT hit a stale base (Wave B #407 was also clean). The fix is procedural: cut the lane branch from the LIVE integration tip, not from develop. Still ALWAYS run the `grep '^D'` check before merging.
 - **A no-testid form is still cleanly E2E-testable via `getByLabel` / `getByRole`** → e2e/frontend → the post-#399 onboarding form ships zero field testids (mee-input wrappers), but each renders a real `<label [for]>` so `getByLabel(substring)` is a stable, accessibility-grounded selector; the error banner's `role="alert"` and the skip link's `role="button"` are likewise stable. Prefer role/label selectors over begging the FE for testids when the semantic HTML is already correct — fewer cross-lead memos. (Still record them in `selector_registry.md` as LIVE-VERIFIED.)
 - **A contaminated/half-rebuilt running stack is the DEFAULT state the gate finds** → e2e gate mechanics → when the gate wants to independently re-run Playwright, the already-running stack is frequently a mix of slots (some remotes on slot-0 ports, others on slot-1) with no reachable backend. Do NOT trust it for a gate re-run; either stand up a clean fully-aligned slot or DISCLOSE the fallback to rigorous static + source ground-truthing (the checklist explicitly allows this). SOURCE ground-truthing (grep the integration-tip SOURCE for every claimed selector + the persist fix) is a HIGH-confidence substitute for a live re-run on a tests-only e2e PR.
+
+## From qa-image-ai Wave A gate (PR #431, 2026-06-22) — REJECTED (one file)
+- **A new full-stack `AsyncClient(ASGITransport(app=app))` integration test that hand-rolls its OWN
+  client fixture (instead of reusing the established `tests/integration/conftest.py` client) RE-OPENS
+  a KNOWN, already-solved `_otp_client` event-loop bug** -> backend lane -> `rate_limit_mw._check_window`
+  calls the `get_valkey_otp()` SINGLETON; across multiple `AsyncClient` lifespans in one process the
+  singleton keeps a redis conn bound to a CLOSED loop -> `RuntimeError: Event loop is closed` -> the
+  middleware returns 500 BEFORE the route logic runs. Symptom: each test PASSES ALONE but the file
+  FAILS as a unit (here 2/4). Fix documented verbatim in `integration/conftest.py` ("D2 fix /
+  Gate-4 repair-1": patch `_valkey_module._otp_client` to a fresh function-loop-bound client).
+  PRE-EMPT in every backend spec that drives the full ASGI middleware stack: REQUIRE reuse of the
+  loop-bound-`_otp_client` client fixture. A new ad-hoc `AsyncClient(app=app)` fixture is a gate
+  smell — check it runs as a UNIT, not just per-test.
+- **Run the file/lane AS CI WILL run it, not just per-test** -> all lanes -> CI Gate-4 runs
+  `pytest -m "integration"` = ALL integration tests in ONE process. A test that passes in isolation
+  but fails in-process WILL red the integration->develop gate (the Wave-2 PR #421 lesson, new costume).
+  At the gate, run the new files TOGETHER in one process. "Passes when I run just this test" is NOT proof.
+- **A stale integration-branch base inflates the PR diff but is NOT a content defect** -> all QA waves ->
+  when `feature/<slug>/integration` lags develop, the PR-vs-base diff balloons with already-merged
+  history (here 67 files vs the real 7). Compute `git diff origin/develop...<branch>` for the TRUE
+  lane delta, and fast-forward integration to develop's tip BEFORE merging. Don't reject on diff size.
+- **A stub-locking guard becomes a landmine when the parallel lane removes the stub** -> AI/eval lane ->
+  `TestStubStateGuards` (asserts the `_run_one_fixture` stub's 0/N) reds the instant the IA-RED-2 real
+  scorer lands. A guard asserting a TEMPORARY state must have its retirement OWNED by whoever lands the
+  state change; record it on the board + a memo at gate time. (handoff_eval_stubguard_iared2_image_ai.md.)

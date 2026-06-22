@@ -67,3 +67,16 @@ Onboarding e2e merged to `feature/qa-onboarding/integration` (`e5a44a3`); 11 pas
 ## Onboarding Wave C — NEW product bug + carry (2026-06-22)
 - **NEW PRODUCT BUG — onboarding pincode NOT-NULL 500.** The onboarding form sends `null` for empty manufacturer/packer pincode but `seller_profile` DB columns are NOT NULL → submit-without-pincode = 500 `NotNullViolationError`. Filed → frontend-coordinator (Director deciding fix owner). Fix: FE make pincode required and/or BE nullable-or-422. E2E tests fill valid pincodes so they pass.
 - **Carry (unchanged):** mfe-export route-productId product bug (export-download fixme); image-precheck (GCS/MinIO env); google-click (cross-origin GIS OAuth); CI wiring memo → infra.
+
+## qa-image-ai Wave A gate outcome (2026-06-22) — what closed / what remains
+- **IA-RED-1 (cost-meter column drift)** — FIX AUTHORED & VERIFIED in PR #431 (perf test +
+  cost_tracker canonical-shape contract). NOT yet landed (PR REJECTED for the unrelated
+  test_route_integration.py fixture bug). Closes on the corrected re-do PR.
+- **image pipeline gaps (CMYK/sub-res/non-white-BG/invalid-JPEG/watermark true|false|uncertain/audit)**
+  — covered by test_precheck_pipeline_gaps.py (10 cases), VERIFIED GREEN as a group; lands on re-do.
+- **image ROUTE gaps (IMG-BE-01/07/09/11)** — authored but the FILE fails 2/4 in-process
+  (`_otp_client` event-loop fixture bug). OPEN until the writer reuses the loop-bound conftest client.
+- **IA-RED-2 (eval `_run_one_fixture` stub)** — STILL OPEN. Guard harness authored; the real-scorer
+  wiring is the AI lane's product change (`feature/qa-image-ai/ai`). Stub-guard retirement OWED at the
+  ai-coordinator `/ai` gate (memo filed).
+- **autofill UI component naming / E2E** — untouched this lane (Wave B/C scope).
