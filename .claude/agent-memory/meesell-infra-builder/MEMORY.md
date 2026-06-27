@@ -44,6 +44,7 @@ Infrastructure builder for MeeSell. Owns VM lifecycle, K3s cluster, namespaces, 
 ## Index
 > Bodies live in `mem/`. ⭐ = contains reusable pattern / gotcha / ground-truth.
 
+- ⭐ [agent-memory size guard — SessionStart prose-drift hook + restructure/verify tooling, closes W10 (2026-06-27)](mem/mem_74_agent-memory-size-guard-2026-06-27.md)
 - [auth-otp (Feature 1 — active)](mem/mem_01_auth-otp-feature-1-active.md)
 - ⭐ [Agent Routing Override — 2026-06-04](mem/mem_02_agent-routing-override-2026-06-04.md)
 - [Secret Manager Population Status — 2026-06-04](mem/mem_03_secret-manager-population-status-2026-06-04.md)
