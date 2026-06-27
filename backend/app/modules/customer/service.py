@@ -43,6 +43,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import get_or_set
+from app.modules.catalog import service as catalog_service
 from app.modules.customer import repository as customer_repo
 from app.modules.customer.domain import (
     BASE_FIELD_NAMES,
@@ -65,6 +66,7 @@ from app.modules.customer.schemas import (
     PatchProfileRequest,
     RequiredFieldsResponse,
 )
+from app.modules.monitor.triggers import enqueue_category_scrape
 from app.shared.models.category import Category as CategoryORM
 from app.shared.models.seller_profile import SellerProfile as SellerProfileORM
 
@@ -185,6 +187,44 @@ def _recompute_onboarding_complete(
             if not _is_field_present(ext.get(required_key)):
                 return False
     return True
+
+
+async def _enqueue_monitor_on_onboarding_edge(
+    user_id: UUID,
+    *,
+    onboarding_complete: bool,
+    prior_complete: bool,
+    db: AsyncSession,
+) -> None:
+    """Fire the category change monitor on the onboarding false→true EDGE.
+
+    Wave 3 onboarding trigger.  Enqueues ONE ``monitor.scrape_category`` job
+    per distinct product LEAF category the seller owns (Director Q1 ruling:
+    PRODUCT categories, NOT super-category fan-out).  Fires ONLY on the
+    false→true transition — a re-PATCH of an already-complete profile (or any
+    PATCH that leaves the flag false) enqueues nothing, so there is no
+    re-enqueue storm.
+
+    A brand-new seller with zero products resolves an empty leaf list and
+    enqueues nothing — correct.  The enqueue helper is itself
+    failure-isolated, so onboarding-complete always survives a broker outage.
+
+    CRITICAL — ``prior_complete`` is a PLAIN BOOL snapshotted at the call site
+    BEFORE the repository write, NOT read off a live ORM instance here.  The
+    repository re-queries the same PK in the same session, so SQLAlchemy's
+    identity map hands back the SAME Python object as the pre-write
+    ``find_by_user_id`` read — meaning the write mutates that object's
+    ``onboarding_complete`` to the NEW value before this edge test could ever
+    read the OLD one.  Reading the live ORM here would make ``crossed_edge``
+    always False on the realistic update→complete path (the monitor would
+    never fire).  Snapshotting to a bool pre-write is the fix.
+    """
+    crossed_edge = onboarding_complete and not prior_complete
+    if not crossed_edge:
+        return
+    leaf_ids = await catalog_service.get_distinct_product_category_ids(user_id, db)
+    for cid in leaf_ids:
+        enqueue_category_scrape(cid)
 
 
 def _missing_required_keys(
@@ -424,6 +464,12 @@ async def upsert_profile(
     # Load existing (if any) to merge for the recompute.
     existing = await customer_repo.find_by_user_id(db, user_id)
 
+    # Snapshot the PRIOR onboarding flag as a plain bool BEFORE the repository
+    # write.  ``existing`` is a live ORM instance the upsert re-queries in the
+    # same session (identity map → SAME object), so its ``onboarding_complete``
+    # is mutated to the NEW value by the write.  Capture the OLD value now.
+    prior_complete: bool = bool(existing.onboarding_complete) if existing else False
+
     # ── INSERT-path NOT-NULL guard ─────────────────────────────────────────────
     # When ``existing is None`` this PATCH will INSERT a brand-new row.  Six
     # ``seller_profiles`` columns are NOT NULL at the DB level WITHOUT a server
@@ -482,6 +528,17 @@ async def upsert_profile(
 
     await _invalidate_required_fields_cache(user_id)
 
+    # Category change monitor (Wave 3) — fire on the onboarding false→true edge
+    # only.  ``prior_complete`` was snapshotted as a bool BEFORE the upsert, so
+    # it carries the OLD flag state (the live ``existing`` ORM was mutated by
+    # the write via the session identity map).
+    await _enqueue_monitor_on_onboarding_edge(
+        user_id,
+        onboarding_complete=onboarding_complete,
+        prior_complete=prior_complete,
+        db=db,
+    )
+
     return _orm_to_domain(row)
 
 
@@ -514,6 +571,11 @@ async def set_active_categories(
     if existing is None:
         raise ProfileNotFoundError()
 
+    # Snapshot the PRIOR onboarding flag as a plain bool BEFORE the repository
+    # write — the update re-queries the same PK in the same session (identity
+    # map → SAME object), so the write mutates ``existing.onboarding_complete``.
+    prior_complete: bool = bool(existing.onboarding_complete)
+
     base_state = {name: getattr(existing, name) for name in BASE_FIELD_NAMES}
     ext = dict(existing.compliance_extensions or {})
     onboarding_complete = _recompute_onboarding_complete(
@@ -528,6 +590,16 @@ async def set_active_categories(
     )
 
     await _invalidate_required_fields_cache(user_id)
+
+    # Category change monitor (Wave 3) — fire on the onboarding false→true edge
+    # only.  ``prior_complete`` is the bool snapshot taken before the update.
+    await _enqueue_monitor_on_onboarding_edge(
+        user_id,
+        onboarding_complete=onboarding_complete,
+        prior_complete=prior_complete,
+        db=db,
+    )
+
     return _orm_to_domain(row)
 
 
@@ -552,6 +624,13 @@ async def set_compliance_extension(
     existing = await customer_repo.find_by_user_id(db, user_id)
     if existing is None:
         raise ProfileNotFoundError()
+
+    # Snapshot the PRIOR onboarding flag as a plain bool BEFORE any repository
+    # write — the compliance update re-queries the same PK in the same session
+    # (identity map → SAME object), so the write mutates
+    # ``existing.onboarding_complete`` before the edge test could read the OLD
+    # value.  Capture it now.
+    prior_complete: bool = bool(existing.onboarding_complete)
 
     if super_id not in (existing.active_super_categories or []):
         raise SuperCategoryNotDeclaredError(
@@ -618,6 +697,20 @@ async def set_compliance_extension(
         onboarding_complete=onboarding_complete,
     )
     await _invalidate_required_fields_cache(user_id)
+
+    # Category change monitor (Wave 3) — fire on the onboarding false→true edge
+    # only.  ``prior_complete`` was snapshotted as a bool BEFORE the compliance
+    # merge, so it carries the OLD flag state (the live ``existing`` ORM was
+    # mutated by the write via the session identity map).  A seller completing
+    # onboarding via the final compliance step crosses the edge here; a re-PATCH
+    # of an already-complete profile enqueues nothing.
+    await _enqueue_monitor_on_onboarding_edge(
+        user_id,
+        onboarding_complete=onboarding_complete,
+        prior_complete=prior_complete,
+        db=db,
+    )
+
     return _orm_to_domain(row)
 
 

@@ -195,6 +195,19 @@ class Settings(BaseSettings):
     # ── Cache (§5.D table 10) ──────────────────────────────────────────────
     CACHE_VERSION: str = "v1"  # bumps on quarterly Meesho corpus refresh
 
+    # ── Category change monitor (Wave 2 Unit C) ────────────────────────────
+    # Two SEPARATE TTLs — do NOT conflate them:
+    #   * CATEGORY_SNAPSHOT_TTL_SECONDS — the FRESHNESS / reuse window. If the
+    #     latest snapshot is younger than this, the dedupe gate reuses it and
+    #     scrapes nothing. 30 days = the #370 monthly-cadence freshness window.
+    #   * CATEGORY_INFLIGHT_TTL_SECONDS — the short in-flight LOCK backstop on
+    #     the ``catmonitor:snapshot:<id>`` atomic-claim key (SET NX EX). It
+    #     caps how long a crashed/stuck scrape can hold the claim; it is NOT a
+    #     freshness window and must NEVER be set to the month-long value.
+    # Not in REQUIRED_FIELDS — both carry safe defaults.
+    CATEGORY_SNAPSHOT_TTL_SECONDS: int = 2592000  # 30 days (#370 monthly cadence)
+    CATEGORY_INFLIGHT_TTL_SECONDS: int = 900  # 15 min in-flight lock backstop
+
     # ── Audit (§5.D table 11) ──────────────────────────────────────────────
     AUDIT_PII_SALT: str = ""
 

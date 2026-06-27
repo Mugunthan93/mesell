@@ -107,6 +107,197 @@ Hand-offs:
 =========
 
 
+=== UPDATE: 2026-06-22 (meesell-services-builder) — category-monitor Wave-4 Unit F: fan-out + notify worker ===
+Phase: category-monitor — Wave 4 Unit F (fan-out worker)
+Branch: feature/category-monitor/fanout-worker off integration f363db6. PR → feature/category-monitor/integration.
+Session: mesell-category-monitor-backend-session-7
+
+Done:
+- NEW Celery task `monitor.fanout_category_change` (2nd `@shared_task` appended to `app/modules/monitor/tasks.py`, bind=True, sync wrapper + `asyncio.run` mirroring `scrape_category_task`; wraps the orchestrator in `make_worker_session()`). NOT in `_TASKS_REQUIRING_USER_REVALIDATION`. Returns `{notified_users, notifications_created, products_flagged, skipped_existing}`.
+- NEW async orchestrator `monitor.service.fanout_category_change(category_id, content_hash, db)`: superseded-snapshot guard (latest.content_hash != arg → STOP), re-diff (DECISION A — `diff_category_snapshot` on latest vs prior), defensive verdict re-check (BLOCK/non-REVIEW → STOP), distinct-subscriber audience via the `category_subscription` VIEW, per-user product flags + `ON CONFLICT DO NOTHING` notification insert, ONE transaction. Founder-locked copy assembled in `_build_summary` (English-only `payload.summary`, never raw JSON). Flag mapping: compliance→recheck; shipping/cost→reprice; banned→recheck+export (NOT reprice, Director ruling); ANY change→export.
+- Enqueue seam: `run_dedupe_gate` scraped branch — AFTER `evict(...)`, additive `if verdict == "REVIEW_REQUIRED": fanout_category_change_task.delay(...)`. ONLY edit to the frozen W2 gate; function-boundary diff proves the gate body otherwise byte-untouched (8-line additive block). `get_served_category_data` byte-untouched.
+- 5 repository methods (raw `text()` for the VIEW; pg `on_conflict_do_nothing` for notifications; idempotent set-only UPDATE for flags): get_category_name, get_distinct_subscribers, get_user_catalog_ids, flag_user_products, insert_notification.
+- Smoke guard `tests/test_celery_app_include_list.py` user-task set 5→6 (adds `monitor.fanout_category_change`); include MODULE list stays 4 (new task rides existing `monitor.tasks`).
+
+Tests: 45 passed (11 NEW `tests/test_monitor_fanout.py` DB-real on disposable meesell_test + 26 existing monitor/celery + 8 broker/result). Cases: REVIEW fans out + copy assembled (headline + "added required field(s): country_of_origin" + "shipping cost rose ₹6"); idempotency (2nd run skipped_existing, 1 row, flags stay true); BLOCK no fan-out; PASS no fan-out; superseded-hash STOP; flag mapping ×4; tenancy (uninvolved user×category untouched). Gate-enqueue (REVIEW→delay once / PASS,BLOCK→not called) proven in test_monitor_gate.py (`.delay` mocked). ruff clean; lint-imports 27 kept/0 broken; route count UNCHANGED (worker, no router); LOCKED docs byte-untouched.
+In progress: none.
+Blockers: none.
+Next: PR for backend-coordinator gate (step-3). Does NOT self-merge.
+Hand-offs:
+  - backend-coordinator: gate the PR. Founder-gate flag in PR body: §18.B Celery task-NAME inventory 5→6 (LOCKED `BACKEND_ARCHITECTURE.md §18.B` doc count bump is founder's at develop merge — NOT self-applied). §3.I module count stays 4.
+  - api-routes-builder (Unit N): `monitor.service.fanout_category_change` writes `notifications` rows now; `GET /api/v1/notifications` reads them (build in parallel).
+  - INTERPRETATION FLAG: spec copy says `{category_name}` from `categories.name`, but `categories` has NO `name` column — used `leaf_name` (terminal display name, e.g. "Kurtis"). Confirm acceptable.
+=========
+
+
+=== UPDATE: 2026-06-22 (meesell-services-builder) — category-monitor Wave-3 Unit T: 3RD onboarding edge site (Director full-coverage ruling) ===
+Phase: category-monitor — Wave 3 Unit T (additive fix to OPEN PR #472)
+Branch: feature/category-monitor/backend-w3-triggers @ bb71c1c. PR #472 → feature/category-monitor/integration.
+Session: mesell-category-monitor-backend-session-5 (continuation)
+
+Done:
+- Director ruling: cover ALL THREE onboarding `onboarding_complete` recompute sites (was 2: upsert_profile + set_active_categories). Wired the existing reusable `customer/service.py::_enqueue_monitor_on_onboarding_edge(...)` into `set_compliance_extension`'s MAIN recompute branch (after `update_compliance_extension` + cache invalidate, ~L673), SAME false→true edge guard — no re-enqueue when already complete. `existing` read at ~L604 BEFORE the merge carries the prior flag. The `no_spec` early-return branch (~L629-637) passes the prior flag unchanged → cannot cross the edge → correctly left untouched.
+- Tests: +3 in `tests/test_monitor_triggers.py` (5→8) mirroring the existing onboarding-edge tests: enqueue-per-distinct-leaf on edge, no-reenqueue on repeat-when-complete, host-survives-raising-`.delay`. New `patched_compliance` fixture (all collaborators mocked; `.delay` mocked on source `monitor.tasks.scrape_category_task`; no live DB).
+- Mutation-verified BOTH gates on the new tests: dropping the try/except → raise-survival test RED; breaking the edge guard → no-reenqueue test RED.
+
+Tests: 8/8 passed under `-m unit` (master 3.11 venv toolchain, no live DB, scrape_category/.delay MOCKED). ruff clean; lint-imports 27 kept / 0 broken (no new cross-module edge — reuses the same `customer→catalog.service`/`customer→monitor.triggers` edges already flagged in §2.D); diff = exactly 2 files (customer/service.py +13, test +154); no router/main.py touched → route inventory unchanged (28); LOCKED docs + import_rules.toml byte-untouched.
+In progress: none.
+Blockers: none.
+Next: PR #472 ready for backend-coordinator re-gate. Does NOT self-merge.
+Hand-offs:
+  - backend-coordinator: re-gate PR #472 (additive 3rd-site diff = customer/service.py + test). §2.D founder-gate flag unchanged (no new edge beyond the already-flagged customer→catalog/customer→monitor).
+=========
+
+
+=== UPDATE: 2026-06-22 (meesell-services-builder) — category-monitor Wave-3 Unit T TRIGGER WIRING COMPLETE ===
+Phase: category-monitor (RETENTION_CATEGORY_MONITOR) — Wave 3 Unit T (trigger wiring — the ONE unit that touches LIVE V1 paths)
+Branch: feature/category-monitor/backend-w3-triggers off integration 0d0abfb (carries W1+W2). PR → feature/category-monitor/integration.
+Session: mesell-category-monitor-backend-session-5
+
+Done:
+- NEW PUBLIC seam `app/modules/monitor/triggers.py::enqueue_category_scrape(category_id) -> None`. Sync, never awaited, lazy-imports `monitor.tasks.scrape_category_task` + `.delay(str(category_id))`. Wraps the enqueue in try/except — a broker outage is swallowed + logged WARNING, NEVER raised into the host seller flow. `triggers.py` is PUBLIC (alongside service.py); repository.py stays private.
+- Hook (a) catalog-add: `catalog/service.py::create_product` — `enqueue_category_scrape(request.category_id)` inserted AFTER `insert_product` (~L562) and BEFORE `return _orm_to_domain(row)` (~L580). Enqueues exactly once with the LEAF `request.category_id`.
+- Hook (b) onboarding-complete: `customer/service.py` — new private `_enqueue_monitor_on_onboarding_edge(...)` fires on the `onboarding_complete` FALSE→TRUE edge ONLY (`onboarding_complete and not (existing and existing.onboarding_complete)`), resolves the seller's DISTINCT PRODUCT leaf categories (Director Q1) and enqueues one per distinct leaf. Wired into `upsert_profile` (~L474 site) + `set_active_categories` (~L519 site). A re-PATCH of an already-complete profile does NOT re-enqueue. Zero-product seller → empty list → enqueues nothing.
+- NEW public read `catalog/service.py::get_distinct_product_category_ids(user_id, db) -> list[UUID]` (added to __all__) backed by new private repo `catalog/repository.py::distinct_product_category_ids` = `SELECT DISTINCT category_id FROM products WHERE user_id=:uid AND deleted_at IS NULL` (tenant-scoped via scope_to_user — Contract-8 scanner green).
+
+New cross-module edges (all confirmed already-allowed by the FORBIDDEN-style import-linter contracts → lint-imports 27 kept / 0 broken with NO import_rules.toml change):
+- catalog → monitor.triggers (monitor not in any forbidden list)
+- customer → monitor.triggers (same)
+- customer → catalog.service (Contract 1/4/7.customer forbid only catalog.repository/.schemas/.router — NOT .service)
+
+§2.D LOCKED-matrix FOUNDER-GATE FLAG (LOCKED doc NOT edited): the §2.D matrix has only the 8 original domain modules. Three new edges are NOT yet represented: `customer → catalog` is a clear `✗ → ✓` flip of an existing cell; `catalog → monitor` and `customer → monitor` need a new `monitor` column. These require a founder-ratified §2.D amendment (deferred per wave protocol). import-linter is already green so no rule change ships here.
+
+Tests (NON-LIVE — V1 regression proof): `tests/test_monitor_triggers.py` — 5/5 PASS. `.delay` MOCKED on the SOURCE module `app.modules.monitor.tasks`; no live DB (host services driven with mocked repo + cross-module surfaces); zero executable live-Meesho refs (grep-proven). Mutation-verified: removing the try/except in triggers.py turns BOTH "host survives enqueue raise" tests RED.
+
+Gates: ruff clean (4 prod files + test); lint-imports 27/0; tests/lint/ 18/18; app boots; route inventory UNCHANGED (no new route); LOCKED docs + import_rules.toml byte-untouched.
+
+Hand-offs:
+- meesell-backend-coordinator: gate the PR (mutation-check by making .delay raise — already verified locally). Decide the §2.D founder-gate amendment (3 new edges).
+- COORDINATOR DECISION NEEDED: a THIRD onboarding-complete recompute site exists — `set_compliance_extension` (~L607) also recomputes `onboarding_complete` and CAN cross the false→true edge (final compliance step completing onboarding). The spec named only `upsert_profile` + `set_active_categories`; I implemented exactly those two per the authored spec. If the founder wants full coverage of the onboarding edge, the same `_enqueue_monitor_on_onboarding_edge(...)` call should be added to `set_compliance_extension` (the helper + edge logic are reusable as-is). NOT added unilaterally (surgical-change discipline).
+=========
+
+
+=== UPDATE: 2026-06-22 (meesell-services-builder) — category-monitor Wave-3 Unit S SERVING LAYER COMPLETE ===
+Phase: category-monitor (RETENTION_CATEGORY_MONITOR #370) — Wave 3 Unit S (serving read-through + evict-on-update)
+Session: mesell-category-monitor-backend-session-6
+Branch: feature/category-monitor/backend-w3-serving (off integration 0d0abfb = W1 schema + W2 gate)
+PR: (open against feature/category-monitor/integration — awaiting meesell-backend-coordinator merge-gate)
+
+Director rulings baked in:
+  - Q2: serving is INTERNAL-ONLY in W3 — NO new public route (Wave-4 owns the FE-contracted endpoint). So this is a
+    service method only (no router, no schema mount) → §17 endpoint count UNCHANGED (route delta = 0; verified by
+    stash-and-recount: base 36 ops == my-tree 36 ops; the locked "28" is the no-dev-flag count, my change adds nothing).
+  - Q3: evict-on-update = a 1-line additive edit in the W2 gate's "scraped" success branch (no verdict-logic change).
+
+Done:
+  - `app/modules/monitor/service.py`:
+    * NEW `get_served_category_data(category_id, db) -> dict` — read-through serve. Cache via `core.cache.get_or_set`
+      on Valkey DB-3 (NOT DB-0; DB-0 is the W2 in-flight LOCK). `_fetch` reads ONLY `category_snapshots` via
+      `monitor_repo.get_latest_snapshot` (DB fallback) — NO live Meesho in the read path (grep-proven). None row →
+      `CategorySnapshotNotFoundError`. Returns {category_id, captured_at(iso), content_hash, dimensions}.
+    * NEW module constants `_SERVE_TTL_SECONDS=86400` (1-day) + `_SERVE_KEY_PREFIX="monitor:snapshot:"` +
+      helper `_snapshot_cache_key(category_id)`. Distinct keyspace from the DB-0 `catmonitor:snapshot:` lock prefix.
+    * Evict-on-update: in `run_dedupe_gate` "scraped" branch (after snapshot row inserted, before return) →
+      `await evict(_snapshot_cache_key(category_id))`. ONLY change to the W2 gate; verdict logic byte-untouched.
+      `evict` added to the gate's lazy-import block.
+  - `app/core/cache.py`: NEW sibling helper `evict(key, version=None)` → `delete(_versioned_key(...))`. Added to __all__.
+  - `app/modules/monitor/exceptions.py`: NEW `CategorySnapshotNotFoundError(category_id)`.
+  - `tests/test_monitor_serving.py` (NEW, @pytest.mark.unit, fakeredis + mocked repo, NON-LIVE): 5 cases —
+    (1) cache MISS reads DB + populates; (2) cache HIT skips DB (mock asserted once); (3) no snapshot →
+    CategorySnapshotNotFoundError; (4) evict-on-update: serve(OLD) → gate scrape inserts NEW + evicts → next serve
+    REBUILDS from DB → NEW content_hash (REVERT-CHECK: removing the evict line turns this RED — verified); (5) grep-proof
+    zero live Meesho in the serve method source.
+  - `tests/test_monitor_gate.py`: fixture extended to also fake the DB-3 serve cache (the new evict line reaches DB-3;
+    without the fake the gate suite goes live → "Event loop closed" cross-file pollution). Minimal, change-driven edit.
+
+Tests: 14 passed (5 serving + 9 gate) together; test_core_cache.py 5 passed (evict addition safe).
+Quality gates: ruff clean (app/ + both test files); lint-imports 27 kept / 0 broken (monitor→core.cache is normal
+  layering — no new import rule needed); Contract 8 + Contract 9 scanners PASS; route count UNCHANGED; LOCKED docs untouched.
+In progress: none.
+Blockers: none.
+Next: backend-coordinator merge-gate on the PR.
+Hand-offs:
+  - api-routes-builder (Wave 4): `monitor.service.get_served_category_data(category_id, db)` ready — the customer-facing
+    GET route can call it once the FE contract is locked (returns {category_id, captured_at, content_hash, dimensions};
+    raises CategorySnapshotNotFoundError → map to 404).
+  - All services: `core.cache.evict(key, version=None)` is now the locked write-path sibling of `get_or_set` for
+    cache invalidation on source-of-truth update.
+=========
+
+
+=== UPDATE: 2026-06-22 (meesell-services-builder) — category-monitor Wave-2 Unit C DEDUPE GATE BUILD COMPLETE ===
+Phase: category-monitor (RETENTION_CATEGORY_MONITOR #370) — Wave 2 Unit C (the dedupe-gate Celery task)
+Session: mesell-category-monitor-backend-session-3
+Branch: feature/category-monitor/backend-unitc (off integration 82c83ea = W1 schema + W2 A scrape + W2 B diff)
+PR: (open against feature/category-monitor/integration — awaiting meesell-backend-coordinator merge-gate)
+
+Done:
+  - NEW module `app/modules/monitor/`:
+    * `tasks.py` — `@shared_task(bind=True, name="monitor.scrape_category")` SYNC wrapper; async gate via
+      `asyncio.run` (mirrors image/tasks.py). Takes NO per-user arg → NOT in `_TASKS_REQUIRING_USER_REVALIDATION`.
+    * `service.py` — `run_dedupe_gate(category_id, *, db_url)` 3-guard gate:
+        (a) TTL freshness: latest `category_snapshots.captured_at`; age < CATEGORY_SNAPSHOT_TTL_SECONDS → reuse,
+            scrape NOTHING, `action=ttl_reuse`, no key touch.
+        (b/c) atomic claim `SET catmonitor:snapshot:<id> <ts> NX EX CATEGORY_INFLIGHT_TTL_SECONDS` (DB-0 OTP client):
+            NX fail → `action=coalesced` (existing key LEFT INTACT, scrape NOTHING);
+            NX win → try/finally: resolve sscat_id=meesho_leaf_id / category_name=leaf_name (no row →
+            CategoryNotFoundError) → `scrape_category(category_id, sscat_id, category_name, db_url=…)` (writes new
+            snapshot row) → load prior (second-latest) snapshot → `diff_category_snapshot(new_dims, prev_dims,
+            prev_hash=, new_hash=)` → return {action: "scraped", content_hash, verdict, block_reasons};
+            `finally` clears key on success AND on any raised exception (never swallowed). INFO on PASS/REVIEW,
+            WARNING on BLOCK. STOPS at store-verdict — NO fan-out / notification / subscription / catalog flags (Wave 4).
+    * `repository.py` — PRIVATE global-table reads (get_latest_snapshot, get_prior_snapshot,
+      get_category_scrape_inputs) via make_worker_session (NullPool). No user_id (global tables; Contract-8 excluded).
+    * `exceptions.py` — `CategoryNotFoundError`.
+  - `app/shared/config.py`: + CATEGORY_SNAPSHOT_TTL_SECONDS=2592000 (30d freshness) + CATEGORY_INFLIGHT_TTL_SECONDS=900
+    (15-min in-flight lock backstop — SEPARATE from freshness). Neither in REQUIRED_FIELDS.
+  - `app/workers/celery_app.py`: include 3→4 (+ app.modules.monitor.tasks).
+  - `tests/test_celery_app_include_list.py`: bumped 3→4 + 5th user-task name; exact-count/named-allowlist style preserved.
+
+Tests: 9 passed (tests/test_monitor_gate.py — pytest.mark.unit; scrape_category MOCKED everywhere, ZERO live-Meesho,
+  fakeredis Valkey, no DB connection) + 4 passed (include-list smoke). ruff clean; import-linter 27 kept/0 broken;
+  Contract-8 scope_to_user PASS. Revert-check structure: strip finally-clear → cases 3/4 red; strip TTL guard → case 1 red.
+
+FOUNDER-GATE FLAG (in PR body, NOT self-applied): BACKEND_ARCHITECTURE.md §3.I/§18.B canonical Celery task inventory
+  3→4 — LOCKED-section amendment, founder ratifies at integration→develop (same as Razorpay W4). Code lands; arch-doc
+  count bump NOT applied here.
+
+Blockers: none.
+Hand-offs: Wave-4 owner — `monitor.scrape_category_task(category_id)` ready; on `action="scraped"` the verdict dict
+  (verdict + block_reasons) is in the Celery result; W4 reads it and owns fan-out/notification/subscription/catalog
+  flags. W4 MUST NOT fan out on verdict=="BLOCK".
+=========
+
+
+=== UPDATE: 2026-06-22 15:15 (meesell-database-builder) — category-monitor Wave-1 SCHEMA BUILD COMPLETE ===
+Phase: category-monitor (RETENTION_CATEGORY_MONITOR #370) — Wave 1 (Schema)
+Session: mesell-category-monitor-backend-session-1
+Branch: feature/category-monitor/backend
+PR: #450 (OPEN — awaiting meesell-backend-coordinator merge-gate review, target: feature/category-monitor/integration)
+
+Done:
+  - category_snapshots: UUID PK gen_random_uuid(), FK→categories CASCADE, captured_at TIMESTAMPTZ,
+    content_hash String(64), dimensions_jsonb JSONB, blob_uri Text NULLABLE.
+    idx_category_snapshot_latest (category_id, captured_at) composite btree.
+  - notifications: UUID PK, FK→users+categories CASCADE, NO channel column (channel-agnostic).
+    UNIQUE uq_notification_user_cat_hash(user_id, category_id, content_hash) for ON CONFLICT DO NOTHING.
+    idx_notification_user_unread(user_id, is_read).
+  - products: +needs_recheck +needs_reprice +needs_export Boolean NOT NULL server_default false (self-backfills).
+  - category_subscription VIEW (UNION catalogs+products, Director-resolved flag 1). NOT modelled as ORM table.
+  - Alembic migration 480c10b0219f, down_revision=e9415bdcae20. Single head confirmed.
+  - ORM: CategorySnapshot + Notification in flat app/shared/models/ (§5.E). Registered after WebhookEvent.
+  - upgrade+downgrade round-trip on disposable meesell_cat_monitor_test. Dev DB untouched (3772 cats safe).
+  - category_subscription LIMIT 5 returns 1 row with seeded catalog+product pair.
+  - ruff check clean (line-length=100). Drift check: zero table/column/index/constraint drift on Wave 1 objects.
+
+Blockers: none.
+Next: meesell-backend-coordinator runs merge-gate review (HYBRID step 3).
+Hand-offs:
+  - PR #450 open for coordinator gate review.
+  - After merge to integration: Wave 2 (services/tasks) can import CategorySnapshot + Notification.
+  - category_subscription VIEW is raw SQL only — service layer queries via text() or ORM select.
+=========
+
 === UPDATE: 2026-06-22 (meesell-backend-test-writer) — QA Wave 1 gap-fill ===
 Phase: QA Wave 1 -- backend gap-fill + verify-green
 Session: mesell-qa-wave-1-backend-session-1
@@ -7615,4 +7806,39 @@ Hand-offs:
     {"credential": "<that exact sentinel>"}. APP_ENV must be != production (dev/staging).
   - PROD safety: leave DEV_GOOGLE_BYPASS_TOKEN empty in prod; even if leaked, the APP_ENV guard
     force-disables it (test_prod_force_disable locks this).
+=== UPDATE: 2026-06-22 — category-monitor Wave-3 onboarding-edge bug fix (PR #472 merge-gate REJECT) ===
+Phase: category-monitor Wave 3 (onboarding-complete trigger) — production-bug fix on the REJECT.
+Bug: SQLAlchemy identity-map aliasing. All 3 onboarding sites (upsert_profile,
+  set_active_categories, set_compliance_extension) read existing=find_by_user_id() BEFORE the repo
+  write, then passed that SAME live ORM into _enqueue_monitor_on_onboarding_edge which read
+  existing.onboarding_complete AFTER the write. The repo re-queries the same PK in the same session
+  → identity map returns the SAME Python object → the write mutates existing.onboarding_complete to
+  True before the edge test reads it → crossed_edge = complete and not existing.onboarding_complete
+  was ALWAYS False on the realistic update→complete path → monitor NEVER enqueued in prod. The 8 fast
+  unit tests masked it by mocking find_by_user_id to a DIFFERENT object than the repo write returned.
+Fix (customer/service.py): helper signature changed existing: SellerProfileORM|None → prior_complete:
+  bool (L192-223); crossed_edge = onboarding_complete and not prior_complete (L222). Each call site
+  snapshots prior_complete = bool(existing.onboarding_complete) [if existing] as a plain bool BEFORE
+  the repo write: upsert_profile L471 (call L538), set_active_categories L577 (call L599),
+  set_compliance_extension L633 (call L710). Live ORM never read for the edge after the write.
+Tests: NEW tests/integration/test_customer_monitor_edge_identity.py — 4 identity-faithful REAL-session
+  tests (real async session + real customer_repo, so find_by_user_id + write share ONE identity-mapped
+  object = prod path). Only catalog_service.get_distinct_product_category_ids + Celery .delay mocked;
+  zero live Meesho/broker. PROVEN: all 4 FAIL on old live-ORM code (got 0 enqueues) + PASS on fixed
+  code (2 enqueues/leaf). The 8 fast unit tests in test_monitor_triggers.py preserved (still green).
+  Host-survival preserved (enqueue raise → host flow + completion commit survive). Full local run:
+  test_customer_monitor_edge_identity (4) + test_monitor_triggers (8) + test_monitor_gate +
+  test_customer_routes + app_boot + celery_include = all green. ruff clean. import-linter EXIT=0
+  (27 kept/0 broken). No router touched → route count unchanged.
+In progress: none.
+Blockers: none.
+Next: backend-coordinator re-gates PR #472 (branch feature/category-monitor/backend-w3-triggers). Do
+  NOT merge. §2.D founder-gate flag preserved in PR body.
+Hand-offs:
+  - backend-coordinator: re-gate PR #472. Fix diff = customer/service.py (+42/-14) + 1 new test file.
+  - PRE-EXISTING flake (NOT mine, NOT in scope): test_customer_onboarding_coverage.py::
+    test_active_categories_replace_semantics ERRORs at SETUP only when run AFTER test_customer_routes
+    in the same process (cross-fixture asyncpg loop/teardown ordering with the customer_client +
+    iam_client lifespan fixtures). Passes in isolation; reproduces WITHOUT my new file. Filed as a
+    separate harness ticket.
 =========

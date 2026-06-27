@@ -21,7 +21,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Index, String, Text, text
+from sqlalchemy import Boolean, ForeignKey, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -99,6 +99,29 @@ class Product(Base):
         TIMESTAMP(timezone=True),
         nullable=False,
         server_default=text("NOW()"),
+    )
+
+    # ── Category-monitor flag columns (Wave 1, 2026-06-22) ───────────────────
+    # Set to True by the fan-out worker when the product's category changes.
+    # Cleared by the seller's action (re-check / re-price / re-export).
+    # No Wave-1 index — flag queries are always scoped by user_id (existing index).
+    needs_recheck: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+        comment="Category compliance fields changed; seller should review this product",
+    )
+    needs_reprice: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+        comment="Category shipping/cost fields changed; seller should re-price",
+    )
+    needs_export: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+        comment="Any rule change alters XLSX output; seller should re-export",
     )
 
     # Relationships
