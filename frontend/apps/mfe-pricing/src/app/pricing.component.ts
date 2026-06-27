@@ -19,6 +19,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { MeeAlertBannerComponent }  from '@mesell/composites';
 import { MeeOfflineBannerComponent } from '@mesell/composites';
 import { PageHeaderComponent }       from '@mesell/composites';
+import { MeePageComponent }          from '@mesell/layout';
 import { MeeBadgeComponent }         from '@mesell/ui-kit';
 import { MeeButtonComponent }        from '@mesell/ui-kit';
 import { MeeCardComponent }          from '@mesell/ui-kit';
@@ -57,6 +58,7 @@ export type PricingErrorState =
     MeeButtonComponent,
     MeeCardComponent,
     MeeInputComponent,
+    MeePageComponent,
   ],
 
   // ─── Component-scoped CSS ─────────────────────────────────────────────────
@@ -406,7 +408,7 @@ export type PricingErrorState =
   `],
 
   template: `
-    <div class="max-w-5xl mx-auto px-4 py-6 space-y-6">
+    <mee-page maxWidth="xl">
 
       <!-- Offline banner (R-W6-1 degradation matrix) -->
       <mee-offline-banner />
@@ -729,7 +731,7 @@ export type PricingErrorState =
         }
       </div>
 
-    </div>
+    </mee-page>
   `,
 })
 export class PricingComponent implements OnInit, AfterViewChecked {

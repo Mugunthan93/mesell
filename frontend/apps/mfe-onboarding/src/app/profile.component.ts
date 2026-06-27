@@ -31,6 +31,7 @@ import {
 import type { MeeBadgeSeverity } from '@mesell/ui-kit';
 import { AuthService } from '@mesell/core';
 import type { ApiErrorEnvelope } from '@mesell/core';
+import { MeePageComponent } from '@mesell/layout';
 import {
   SellerProfileService,
   ProfileValidationError,
@@ -66,11 +67,12 @@ function pincodeValidator(): ValidatorFn {
     MeeButtonComponent,
     MeeIconComponent,
     MeeSkeletonComponent,
+    MeePageComponent,
   ],
   styles: [`
     :host {
       display: block;
-      padding: var(--mee-space-4);
+      /* padding-bottom kept to clear shell bottom-tab at mobile (mee-page owns horizontal padding) */
       padding-bottom: calc(var(--mee-space-8) + env(safe-area-inset-bottom, 0px));
     }
 
@@ -91,9 +93,8 @@ function pincodeValidator(): ValidatorFn {
       margin: 0;
     }
 
+    /* .profile-content: max-width centering removed (now provided by mee-page maxWidth="md"). */
     .profile-content {
-      max-width: 560px;
-      margin: 0 auto;
       display: flex;
       flex-direction: column;
       gap: var(--mee-space-6);
@@ -253,6 +254,8 @@ function pincodeValidator(): ValidatorFn {
     }
   `],
   template: `
+    <mee-page maxWidth="md">
+
     <!-- Page heading -->
     <div class="profile-header">
       <h1 class="profile-title">Profile</h1>
@@ -412,6 +415,8 @@ function pincodeValidator(): ValidatorFn {
       </button>
 
     </div>
+
+    </mee-page>
   `,
 })
 export class ProfileComponent implements OnInit {

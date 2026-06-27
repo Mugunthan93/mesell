@@ -20,6 +20,7 @@ import {
   MeeAlertBannerComponent,
   PageHeaderComponent,
 } from '@mesell/composites';
+import { MeePageComponent } from '@mesell/layout';
 
 import {
   InvalidInventoryFileError,
@@ -52,9 +53,10 @@ type PageState = 'idle' | 'parsing' | 'parsed' | 'invalid-file' | 'all-skipped';
     EmptyStateComponent,
     MeeAlertBannerComponent,
     PageHeaderComponent,
+    MeePageComponent,
   ],
   template: `
-    <div class="flex flex-col gap-6 p-4 max-w-screen-xl mx-auto">
+    <mee-page maxWidth="xl">
 
       <!-- Page header -->
       <mee-page-header
@@ -246,7 +248,7 @@ type PageState = 'idle' | 'parsing' | 'parsed' | 'invalid-file' | 'all-skipped';
 
       }
 
-    </div>
+    </mee-page>
   `,
 })
 export class LiveListingsComponent implements OnInit {

@@ -62,6 +62,7 @@ import {
   LoadingSkeletonComponent,
   EmptyStateComponent,
 } from '@mesell/composites';
+import { MeePageComponent } from '@mesell/layout';
 
 import {
   buildPrecheckItems,
@@ -93,9 +94,10 @@ import { ImageService } from './image.service';
     StatusBadgeComponent,
     LoadingSkeletonComponent,
     EmptyStateComponent,
+    MeePageComponent,
   ],
   template: `
-    <div class="max-w-3xl mx-auto px-4 py-6 flex flex-col gap-6">
+    <mee-page maxWidth="xl">
 
       <!-- Page header -->
       <mee-page-header
@@ -336,7 +338,7 @@ import { ImageService } from './image.service';
         />
 
       } <!-- end @else featureDisabled -->
-    </div>
+    </mee-page>
   `,
 })
 export class ImageUploaderComponent implements OnInit, OnDestroy {
