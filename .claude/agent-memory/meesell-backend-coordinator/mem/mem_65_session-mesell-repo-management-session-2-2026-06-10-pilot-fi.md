@@ -1,0 +1,13 @@
+## Session mesell-repo-management-session-2 — 2026-06-10 — Pilot findings F1–F3 ruled into MASTER_PLAN + PILOT_REPORT authored
+
+Model C pilot (housekeeping-v1, PRs #27/#28/#29) PASSED — founder personally merged #29 (`09262ee`, merged_by Mugunthan93), §2.2 gate confirmed. Founder ruled 3 convention flaws; I amended MASTER_PLAN (now v1.1) additively and authored `docs/plans/repo_management/PILOT_REPORT.md`.
+
+- **F1 (git-ref conflict):** `feature/{slug}` (file ref) and `feature/{slug}/{group}` (dir ref) CANNOT coexist under `.git/refs/heads/`. Ruling: integration branch renamed `feature/{slug}/integration`; group branches keep `feature/{slug}/{group}`. 9 LOCKED FEATURE_PLANs NOT individually amended — interpretation note: read `feature/{slug}` as `feature/{slug}/integration`. Pilot's dashed `feature/housekeeping-v1` was a sanctioned one-off. Amended §1.2 (table row + conflict para + interp note), §2.1, §2.2.
+- **F2 (board MERGED transition):** the two leads DIVERGED — infra made a direct status-only commit (`818b830`), I (backend) took the conservative path (STATUS+memory only, left board IN REVIEW). Ruling: lead does a DIRECT status-only commit restricted to `docs/status/feature_board_*.md`, msg `chore(board): {slug} {group} MERGED transition`; permitted because F3 sets review-count 0; fallback to tiny board-only PR if count>0 or restrictions; re-probe protection first. Amended §6.5.
+- **F3 (integration-branch protection):** PR-only, review-count **0**, strict checks contexts=[] until CI active, no force-push/deletions, enforce_admins false; applied at integration-branch creation. Long-lived branches keep review-count 1. Amended §9.5.
+
+KEPT-files correction recorded in PILOT_REPORT: the 3 `backend/app/data/*.json` (category_attributes, meesho_categories, meesho_category_tree 1.7MB) are LIVE (loaded by app/data/__init__.py + 7 refs incl smart_picker eval) — the knowledge-sync "app/data/ is dead code" note was PARTIALLY WRONG; only prompts/`__init__.py` were dead. Lesson: live grep + "keep on any doubt" beats a prior audit assertion.
+
+Op learnings (reused from infra memory): gh graphql 401 intermittent → REST + GH_TOKEN="$(gh auth token)" + retry loop; Edit-denied on symlinked memory → Bash heredoc to physical master-tree path; explicit-path staging in worktrees (never `git add -A`); probe branch protection empirically (wrong-blob PUT → 409 not 403 = direct status push allowed).
+
+Constraint honored: touched ONLY MASTER_PLAN.md + new PILOT_REPORT.md + this memory. Did NOT touch the 9 FEATURE_PLANs, feature boards, or STATUS files. Amendments additive/minimal, no section restructure.

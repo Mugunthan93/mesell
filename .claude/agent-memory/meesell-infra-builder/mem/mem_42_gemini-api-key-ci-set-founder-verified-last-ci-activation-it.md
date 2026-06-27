@@ -1,0 +1,13 @@
+## GEMINI_API_KEY_CI SET + founder-verified — last CI-activation item DONE; flag dead meesell-gemini-api-key — 2026-06-12
+
+**Docs chore (CLAUDE.md Rule 7 single-agent fast mode). Branch `docs/gemini-ci-key-done` off origin/develop, worktree. Files: STATUS_INFRA + feature_board_infra + this MEMORY. ₹0, no terraform, no cluster, no secret values printed.**
+
+**GEMINI_API_KEY_CI is now SET (the last pending CI-activation tail item).** GitHub Actions secret, updated_at `2026-06-12T01:55:12Z` (verified via `gh api repos/Mugunthan93/mesell/actions/secrets --jq '.secrets[]|{name,updated_at}'` — names only, value never readable via that API). Sourced from GCP SM `gemini-api-key` (the proven-valid key, HTTP 200 against Gemini API; founder visually verified in AI Studio). Consumer = nightly cron `0 1 * * *` `pytest -m ai_eval` ONLY — gates+build+deploy never used it, so it was never blocking. All prior close-outs that listed it "founder-pending, nightly-only, non-blocking" are now superseded → DONE.
+
+**CAVEAT (durable):** `GEMINI_API_KEY_CI` is the SAME key as prod/local (both source SM `gemini-api-key`). There is NO separate quota cap. The original DEVOPS_ARCHITECTURE.md plan called for a distinct low-quota CI-only key — that capped-key swap is now OPTIONAL future hardening, NOT required for V1. If nightly ai_eval ever burns prod quota, this is the lever to pull.
+
+**NEW FLAG — SM `meesell-gemini-api-key` is DEAD (HTTP 400, placeholder/revoked).** This is a DIFFERENT container from the valid `gemini-api-key` (note the `meesell-` prefix). All live workloads + CI + the `backend-secrets` K8s secret + dev/staging templates source the VALID `gemini-api-key` (verified in prior sessions). But the dead `meesell-gemini-api-key` container EXISTS in SM and is a footgun: if any future k8s secret/manifest/backend config sources THAT name, runtime Gemini calls fail with 400. Logged an inter-lane ask for backend/AI to one-time grep secret refs and confirm nothing reads `meesell-gemini-api-key`. (I did NOT delete the dead container — deletes need explicit founder approval per hard constraints; just flagged it.)
+
+**Divergence noted (NOT acted on):** origin/develop's MEMORY.md was 801 lines; my master-tree local HEAD was ~1050 (branch-protection-infra-session-1 + other recent sessions are committed locally but NOT pushed to origin/develop). I appended ONLY to the END of the origin/develop copy (purely additive, won't clobber). The unpushed local-only memory sessions are a separate reconciliation for whoever pushes the master tree — out of scope for this chore. RULE reaffirmed: edit status/memory off origin/develop, and keep appends strictly additive at EOF so divergent histories merge cleanly.
+
+---

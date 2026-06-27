@@ -1,0 +1,8 @@
+## §12 pricing — CONSTRUCTED 2026-06-07 (sub-session: meesell-backend-construction-12-pricing-1)
+
+| Memory key | type | content |
+| ---------- | ---- | ------- |
+| §12 pricing router (1 endpoint) | reference | POST /api/v1/products/{id}/price-calc — 200 OK; @rate_limit(scope="price_calc", limit=600, window=3600) per-IP only (typing-rapid-iteration UX); @audit_event("pricing.calculated"); NO plan_guard per §12.I (pricing is one of 3 V1 modules excluded with customer + dashboard) |
+| §12 pricing schemas (3 Pydantic v2) | reference | PriceCalcRequest{input_cost gt=0, target_margin_pct ge=0 le=500 default=30, override_commission_pct V1.5+ ignored, override_gst_pct V1.5+ ignored}; PriceCalcAlert{code Literal LOW_MARGIN/HIGH_MRP_MULTIPLIER/THIN_PROFIT, message_id, severity warning/info}; PriceCalcResponse{mrp/meesho_price/seller_price/commission_pct/commission_amount/gst_pct/gst_amount/profit/profit_pct + alerts list + calculated_at} — all Decimal, all 2 dp, ConfigDict(extra="forbid") on request |
+| §12 boot test route count: 25 → 27 | reference | folded in §11 image cleanup (image dispatch had not updated boot test); added /api/v1/products/{id}/images + /api/v1/products/{id}/price-calc to allowed_paths; expected_count 25 → 27 (+1 image +1 pricing) |
+| §12 use_live_valkey fixture chain pattern | reference | pricing module tests + integration tests must include `use_live_valkey` fixture arg even though pricing does NOT use Valkey directly — required for pytest-asyncio loop_scope="function" propagation. Without it, fixtures default to session loop scope per asyncio_default_fixture_loop_scope=session in pytest.ini, but test runs in function loop → asyncpg cross-loop Future binding error. Same fix as §8 customer cross-loop discovery. |
