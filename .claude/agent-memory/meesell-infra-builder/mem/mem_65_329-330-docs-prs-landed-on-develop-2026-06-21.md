@@ -1,0 +1,4 @@
+## #329 + #330 docs PRs landed on develop (2026-06-21)
+Founder-authorized squash --admin merges in strict order (#329 first — it introduces docs/GIT_WORKFLOW.md; #330 second — CLAUDE.md pointer that refs it). #329 squash `fde46c4`, #330 squash `f5e5d3a`; origin/develop HEAD now `f5e5d3a` (was 68568b7). Verified both artifacts in origin/develop tree (GIT_WORKFLOW.md present; CLAUDE.md L402 pointer). GOTCHA: right after merging #329, GitHub reported #330 mergeable=UNKNOWN — that's GitHub recomputing mergeability, NOT a conflict; poll a few sec and it flips to MERGEABLE. Also: `git ls-tree <new-sha>` fails locally until you `git fetch` the new objects (fetch updates origin/develop ref only, leaves local checkout untouched — safe, no working-tree sync). Branches NOT deleted (B7). Local develop checkout left 2 commits behind for a later sync.
+
+---
