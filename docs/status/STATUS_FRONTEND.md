@@ -9976,3 +9976,18 @@ Next: PR feature/fed-auth-singleton/frontend → develop (DO NOT MERGE — per d
 Hand-offs: none new. Carries the standing infra MF-hosting rows (CDN must serve identical _mesell_core.js
    URL to shell + all remotes at cutover — the prod analogue of this static guard).
 =========
+
+=== UPDATE: 2026-06-27 ===
+Phase: mfe-export route productId fix — HYBRID step 3 merge-gate review
+Session: mesell-mfe-export-productid-frontend-session-1
+Board sweep: no frontend rows touched (cross-lead QA-originated request); see memo for QA-board handoff
+Done:
+- Reviewed feature/mfe-export-productid/frontend (worktree commit 40af677). Fix is surgical + correct in isolation (route-derived productId + missing-id guard + 3 proxy tests).
+- DISCOVERED base-divergence: branch base 122 commits behind develop. Bug ALREADY fixed on develop by PR #404 (8d0801f) via a superior resolveExportProductId() helper in export.model.ts; 'current-product-id' placeholder GONE on develop. QA-pricing PR #436 (PQE-FE-13) already regression-tests it.
+- GATE VERDICT: REJECT — OBSOLETED by base-divergence. No push, no PR, no revision dispatch (code correct, redundant).
+- Wrote resolving-lead handoff memo for QA coordinator (handoff_mfe-export-productid-already-on-develop.md): W3-FE-6 + W3-E2-3 + Wave-1 export carry are ALL unblocked on develop; QA flips their two OPEN rows CLOSED.
+In progress: none
+Blockers: none
+Next: QA coordinator authors W3-FE-6 spec + un-fixmes W3-E2-3 against develop; founder/QA can prune the stale feature/mfe-export-productid/frontend branch.
+Hand-offs: meesell-qa-coordinator (memo — flip the 2 OPEN mfe-export inter-lead rows to CLOSED on feature_board_qa.md; sole-writer rule prevents me editing their board)
+=========
