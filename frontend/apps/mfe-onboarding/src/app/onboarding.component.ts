@@ -22,6 +22,7 @@ import {
   MeeOfflineBannerComponent,
   EmptyStateComponent,
 } from '@mesell/composites';
+import { MeePageComponent } from '@mesell/layout';
 import {
   MeeButtonComponent,
   MeeInputComponent,
@@ -60,6 +61,7 @@ export function pincodeValidator(): ValidatorFn {
     MeeInputComponent,
     MeeButtonComponent,
     MeeSkeletonComponent,
+    MeePageComponent,
   ],
   styles: [`
     /* ── Steps wrap ─────────────────────────────────────────────────────────
@@ -147,6 +149,7 @@ export function pincodeValidator(): ValidatorFn {
     }
   `],
   template: `
+    <mee-page maxWidth="md">
     <mee-auth-layout>
       <!-- Progress indicator.
            Wrapped in .steps-wrap to constrain PrimeNG step label overflow at 360px. -->
@@ -170,18 +173,20 @@ export function pincodeValidator(): ValidatorFn {
           <mee-alert-banner variant="error" [message]="errorMessage()!" />
         }
 
-        <form [formGroup]="form" (ngSubmit)="onSubmit()" novalidate class="form-fields">
+        <form [formGroup]="form" (ngSubmit)="onSubmit()" novalidate class="form-fields" data-testid="onboarding-wizard">
 
           <mee-input
             [label]="'Manufacturer Name'"
             [required]="true"
             formControlName="manufacturer_name"
+            [testId]="'onboarding-manufacturer-name'"
           />
 
           <mee-input
             [label]="'Manufacturer Address'"
             [required]="true"
             formControlName="manufacturer_address"
+            [testId]="'onboarding-manufacturer-address'"
           />
 
           <mee-input
@@ -189,6 +194,7 @@ export function pincodeValidator(): ValidatorFn {
             [required]="true"
             [hint]="'6-digit PIN code'"
             formControlName="manufacturer_pincode"
+            [testId]="'onboarding-manufacturer-pincode'"
             [error]="(form.controls.manufacturer_pincode.touched || submitted()) && form.controls.manufacturer_pincode.hasError('required') ? 'Manufacturer pincode is required.' : (form.controls.manufacturer_pincode.touched && form.controls.manufacturer_pincode.hasError('pincodeInvalid') ? 'Enter a valid 6-digit pincode.' : undefined)"
           />
 
@@ -196,12 +202,14 @@ export function pincodeValidator(): ValidatorFn {
             [label]="'Packer Name'"
             [required]="true"
             formControlName="packer_name"
+            [testId]="'onboarding-packer-name'"
           />
 
           <mee-input
             [label]="'Packer Address'"
             [required]="true"
             formControlName="packer_address"
+            [testId]="'onboarding-packer-address'"
           />
 
           <mee-input
@@ -209,6 +217,7 @@ export function pincodeValidator(): ValidatorFn {
             [required]="true"
             [hint]="'6-digit PIN code'"
             formControlName="packer_pincode"
+            [testId]="'onboarding-packer-pincode'"
             [error]="(form.controls.packer_pincode.touched || submitted()) && form.controls.packer_pincode.hasError('required') ? 'Packer pincode is required.' : (form.controls.packer_pincode.touched && form.controls.packer_pincode.hasError('pincodeInvalid') ? 'Enter a valid 6-digit pincode.' : undefined)"
           />
 
@@ -216,6 +225,7 @@ export function pincodeValidator(): ValidatorFn {
             [label]="'Country of Origin'"
             [required]="true"
             formControlName="country_of_origin"
+            [testId]="'onboarding-country-of-origin'"
           />
 
           <mee-button
@@ -236,6 +246,7 @@ export function pincodeValidator(): ValidatorFn {
       <p class="skip-text">
         <a
           class="skip-link"
+          data-testid="onboarding-skip"
           (click)="skipSetup()"
           role="button"
           tabindex="0"
@@ -243,6 +254,7 @@ export function pincodeValidator(): ValidatorFn {
         >I'll set this up later →</a>
       </p>
     </mee-auth-layout>
+    </mee-page>
   `,
 })
 export class OnboardingComponent implements OnInit {

@@ -1,4 +1,4 @@
-"""ORM model registry — 13 V1 tables + 3 Razorpay billing tables.
+"""ORM model registry — 13 V1 tables + 3 Razorpay billing + 2 monitor tables.
 
 Per BACKEND_ARCHITECTURE.md §5.E + §3.E, this package is the **single
 canonical import surface** for any ORM model class in the codebase::
@@ -9,6 +9,8 @@ canonical import surface** for any ORM model class in the codebase::
         ProductDraft,
         # Razorpay Wave 1 (2026-06-19)
         Subscription, Payment, WebhookEvent,
+        # Category monitor Wave 1 (2026-06-22)
+        CategorySnapshot, Notification,
     )
 
 Locked rules (§5.E)
@@ -40,6 +42,8 @@ Follows the FK dependency chain per MVP_ARCHITECTURE §2.6 + billing extension:
   14. subscriptions       (→ users)                   [Razorpay Wave 1]
   15. payments            (→ users, subscriptions)    [Razorpay Wave 1]
   16. webhook_events      (standalone)                [Razorpay Wave 1]
+  17. category_snapshots  (→ categories)              [Monitor Wave 1]
+  18. notifications       (→ users, categories)       [Monitor Wave 1]
 
 All models use ``from __future__ import annotations`` + ``TYPE_CHECKING``-
 guarded forward references so that sibling imports are deferred to
@@ -104,6 +108,12 @@ from app.shared.models.subscription import Subscription  # noqa: F401
 from app.shared.models.payment import Payment  # noqa: F401
 from app.shared.models.webhook_event import WebhookEvent  # noqa: F401
 
+# ── 17–18. Category monitor (Wave 1, 2026-06-22) ────────────────────────────
+# CategorySnapshot FKs to categories; Notification FKs to users + categories.
+# Both must be imported after their FK targets are registered above.
+from app.shared.models.category_snapshot import CategorySnapshot  # noqa: F401
+from app.shared.models.notification import Notification  # noqa: F401
+
 
 __all__ = [
     "Base",
@@ -129,4 +139,7 @@ __all__ = [
     "Subscription",
     "Payment",
     "WebhookEvent",
+    # Category monitor (Wave 1)
+    "CategorySnapshot",
+    "Notification",
 ]

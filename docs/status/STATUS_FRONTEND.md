@@ -31,6 +31,95 @@ Next: PR to feature/qa-pricing/integration (lead merge-gate)
 Hand-offs: QA E2E lane (meesell-e2e-test-writer) — exact testid list above
 =========
 
+=== UPDATE: 2026-06-22 — TWO-TASK: pricing-apply-price RE-GATE (#456) + export-productid RE-LAND (NO-OP, already on develop) ===
+Phase: (1) /catalogs/:id/pricing — mfe-pricing apply-price (SPEC C) ; (2) /catalogs/:id/export — productid forensics
+Session: mesell-pricing-apply-price-frontend-gate-1
+Board sweep: pricing-apply-price row ADDED to Active features (founder gate). No Active rows untouched 7+ days. 1 inter-lead request open (infra federation-manifest-port-regime, carried).
+Routes touched: /catalogs/:id/pricing (apply-price control); /catalogs/:id/export (read-only forensics).
+Specialists: pricing service/component/ui-styler builders (built earlier); this session = lead re-gate + 1-line lead spec fix.
+
+TASK 1 — pricing-apply-price RE-GATE → PASS → FOUNDER-GATE #456:
+  PR #418 was earlier REJECTED for TS2367; builder pushed 8790650 ("type appliedStatus as union").
+  Lead re-verify found 8790650 INCOMPLETE: `ng build mfe-pricing` GREEN (3.3s) but `ng build` does NOT
+    compile .spec.ts — the real CI builder `@angular/build:unit-test` still FAILED with one TS2367 at
+    pricing.component.spec.ts:1055 (`const appliedStatus = 'applied'` is control-flow-narrowed to type
+    '"applied"' DESPITE the union annotation, so `=== 'error'` is no-overlap). The suite never ran ⇒
+    "147/147 pass" was not achievable on the branch.
+  Lead applied the 1-line completion fix `364647e` (helper-fn pattern, same as the sibling tests), pushed
+    to feature/pricing-apply-price/frontend.
+  Re-cert PASS: ng build mfe-pricing GREEN 3.267s (≪90s D12); @angular/build:unit-test now COMPILES;
+    mfe-pricing specs green (147 component it() + 33 service it()); neither pricing spec in the failing set;
+    tsc -p apps/mfe-pricing/tsconfig.app.json EXIT 0; boundary 0 primeng / 0 deep @mesell/*/src.
+  Feature correctness verified: applyPrice() → POST /api/v1/products/{id}/apply-price body {selling_price}
+    (extra=forbid), 204→void, retryOn503 OFF (non-idempotent); onSaveContinue() persists BEFORE navigate,
+    navigates ONLY on 204; native testids pricing-apply-btn/pricing-applied-status/pricing-apply-error.
+  Squash → NEW `feature/pricing-apply-price/integration` @ `c8bc49c` (off develop) = develop + exactly the
+    4 mfe-pricing files; builder's STATUS_FRONTEND.md edit DROPPED (lead sole-writer; recurring discipline
+    gap — same as #430/#163/#437); STATUS authored by lead (this block).
+  PR #418 (frontend→develop, mis-targeted base) CLOSED (superseded). FOUNDER-GATE PR #456 (integration→develop)
+    OPEN — lead does NOT approve (D1). Unblocks W3-E2-6.
+  Pricing-apply-price squash SHA: c8bc49c. Founder-gate PR: #456.
+
+TASK 2 — export-productid RE-LAND = NO-OP (fix already on develop):
+  Forensics (read-only): `git merge-base --is-ancestor 8d0801f origin/develop` = EXIT 0 (YES, ancestor);
+    origin/develop in `git branch -r --contains 8d0801f`; `git log -S resolveExportProductId` on develop →
+    introducing commit = 8d0801f.
+  PR #404 (`fix/export-productid/frontend` → develop) state=MERGED, mergedAt 2026-06-22T04:14:36Z,
+    mergeCommit 8d0801f. develop export.component.ts L425 = `resolveExportProductId(this.route.snapshot.paramMap)`
+    + missing-id guard + `initiate(productId)`; 0 occurrences of `current-product-id`; resolveExportProductId()
+    helper present in export.model.ts. THE FIX IS LIVE ON DEVELOP.
+  PR #398 (integration→develop founder gate) CLOSED unmerged 2026-06-22T07:09:52Z by founder (Mugunthan93),
+    comment: "Superseded by #404 (merged to develop as 8d0801f)."
+  Conclusion: the master-session read ("fix absent from develop / #404 vanished") was STALE — taken before
+    develop advanced to 671af33 (54+ commits incl 8d0801f). The stale `feature/mfe-export-productid/integration`
+    branch is 55 behind / 2 ahead and now MOOT. Re-merging it would re-open a redundant founder-gate PR for an
+    already-merged fix and risk colliding with the live qa-catalog Wave A/B effort. NOT re-landed by design.
+
+Blockers: none
+Next: founder owns develop promotion (develop→staging→main) and the founder-gate merge queue (#456, #425, etc.).
+Hand-offs: none new. Pricing E2E (W3-E2-6) can build a stack from integration tip c8bc49c once #456 merges to develop.
+develop tip at session start: 671af33
+=========
+
+=== UPDATE: 2026-06-22 — CAT-BUG-1 smart-picker PR #437 MERGE-GATE: APPROVE → integration ===
+Phase: catalog-form smart-picker (qa-catalog) — CAT-BUG-1
+Session: mesell-qa-catalog-frontend-session-1 (gate)
+Board sweep: CAT-BUG-1 row → Recently merged. No Active rows untouched 7+ days.
+Done:
+  HYBRID step-3 lead merge-gate of PR #437 (feature/qa-catalog/frontend → feature/qa-catalog/integration).
+  Rebased onto the new integration tip c8f4255 (catalog backend lane) — CLEAN (smart-picker file on c8f4255 byte-identical to pre-fix base).
+  SOLE-WRITER FIX: builder commit 1dc3c40 bundled STATUS_FRONTEND.md (a second file + lead-sole-writer surface) → rebuilt the branch atop c8f4255 with ONLY smart-picker.component.ts (force-with-lease 1dc3c40→daffd8c); STATUS authored by lead (this block). PR #430 precedent.
+  Fix verified: of+catchError imported from rxjs; inner catchError inside switchMap wraps categoryService.suggest(q) → of<SuggestResponse>({suggestions:[],fallback_offered:true}); outer error: callback REMOVED → subscribe { next } only. NO errorMessage signal / derivePickerState. OnPush+standalone preserved. Browse-CTA empty-state still lights (fallback flows through next).
+Build: ng build mfe-catalog 5.039s (≪90s, D12); smart-picker-component chunk 31.17 kB (delta ~0).
+tsc: --noEmit -p apps/mfe-catalog/tsconfig.app.json = EXIT 0.
+Boundary: 0 primeng / 0 deep @mesell/*/src; NO comment drift / adjacent reformat (PR #430 regression check clean).
+Merge: squash-merged → feature/qa-catalog/integration. INTEGRATION TIP = c20ee0e.
+Branch retained: feature/qa-catalog/frontend @ daffd8c (clean, code-only) for the qa-catalog FE TEST lane (CAT-FE specs incl CAT-FE-12) to land cleanly on top.
+Blockers: none
+Next: qa-catalog FE test lane (CAT-FE-12 error-then-retry guard) on the same retained branch atop c20ee0e.
+Hand-offs: none (intra-frontend). Discipline note → memory: builder wrote the lead's STATUS surface again.
+=========
+
+=== UPDATE: 2026-06-22 — qa-pricing/testids PR #439 MERGE-GATE: APPROVE → integration ===
+Phase: /catalogs/:id/pricing — mfe-pricing (QA E2E enablement)
+Session: mesell-qa-pricing-testids-frontend-gate-1
+Board sweep: no frontend-board row (feature is QA-owned; tracked on feature_board_qa.md). No stale rows flagged this pass.
+Done:
+  APPROVED + squash-merged PR #439 (feature/qa-pricing/testids → feature/qa-pricing/integration).
+  Squash commit 7a5193c on integration (tip: 7a5193c, prev 4dd32ca). develop untouched. Branch NOT deleted.
+  Verification: net diff = pricing.component.ts (7 testids, attribute-only) + STATUS. OnPush/standalone preserved,
+    no logic/restyle/refactor. The 13 other 3-dot-diff files = develop catch-up (branch cut @ develop 1fc73f4,
+    identical content / empty diffs) — benign, NOT foreign work. Boundary grep clean (0 primeng, 0 deep @mesell/*/src).
+    ng build mfe-pricing GREEN; all 7 testids compiled into emitted PricingComponent-*.js. mee-input/mee-button
+    [testId] passthrough renders data-testid on native inner elements (ui-kit PR #381).
+  Testids landed on integration: pricing-cost-input, pricing-commission-input, pricing-calculate-btn,
+    pricing-breakdown, pricing-settlement-value, pricing-negative-alert, pricing-disclaimer.
+In progress: none
+Blockers: none
+Next: QA E2E lane (meesell-e2e-test-writer) builds a stack from integration tip 7a5193c to live-verify the 7 testids.
+Hand-offs: QA E2E lane — selectors are stable on integration.
+=========
+
 === UPDATE: 2026-06-22 (TWO fix-fe-followups PRs — HYBRID step-3 LEAD MERGE-GATE: #429 + #430 both PASS → develop) ===
 Phase: fix-fe-followups — empty-state spec red (#429) + OB-FE-18 shell onboarding sidebar nav (#430)
 Session: mesell-fix-fe-followups-frontend-gate-1

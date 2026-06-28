@@ -49,3 +49,19 @@ PR #409 (e2e) PASS -> squash `c382f84` into qa-wave-3/integration. WAVE 3 FULLY 
 `playwright --list` = 16 tests clean. Stale-base hazard reconciled (merge integration into e2e first). 6 inter-lead
 requests logged. E2E-writer memory scribed (selector_registry/federation_quirks/flow_status). See qa_waves.md +
 coordinator_patterns.md for detail. Founder owns integration->develop.
+
+## qa-image-ai D2 fix merged + mfe-export inter-lead CLOSED (2026-06-28, mesell-qa-wave-3-coord-session-2)
+PR #498 (`fix/qa-image-ai-iam-logout-d2/backend`) — D2 event-loop fix in
+`backend/tests/modules/iam/test_iam_logout_idempotency.py`: both test signatures swapped
+`use_live_valkey`→`valkey` fixture, removed both `from app.shared import valkey as _vk_mod` +
+`get_valkey_otp()` singleton calls, bound `vk = valkey["otp"]` (DB-0 client, no collision with the
+`otp="777888"` local string), assertions unchanged. Merge-gate: all 7 boxes PASS, surgical (1 file,
+1 commit, +12/-15). Squash-MERGED to develop `1028e36` via `--admin` (CI tunnel-less; structural diff
+deterministic). Test-only → no Rule-B rebuild.
+mfe-export inter-lead rows CLOSED: the two OPEN `frontend-coordinator` rows (qa-wave-1 gating
+W3-FE-6+E2-3, and qa-wave-3 W3-E2-3 "PR #398 must land") flipped to CLOSED — resolved by **PR #404**
+on develop (route-:id fix, MERGED 2026-06-22; PR #398 branch never merged, superseded). Independently
+verified `export.component.ts` on origin/develop has ZERO `'current-product-id'`. **W3-FE-6 + W3-E2-3
+unblocked — author against develop, no dependency remaining.** NOTE: the referenced frontend-coordinator
+handoff memo `handoff_mfe-export-productid-already-on-develop.md` was NOT present in their memory dir;
+closure justified by independent verification (PR #404 MERGED + clean component source).

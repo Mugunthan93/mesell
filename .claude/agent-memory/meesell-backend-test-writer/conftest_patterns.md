@@ -55,3 +55,17 @@ Five further pitfalls hit while authoring the Wave-3 catalog-vertical suite (con
 17. **`_package_images_zip` has keyword-only args** — call it as `_package_images_zip(image_refs=..., user_id=..., db=...)`. A positional-style call raises `TypeError`. Check the exact signature before calling.
 
 18. **File-level `pytestmark = pytest.mark.asyncio` applied to sync unit tests** produces `PytestWarning` ("marked with asyncio but not async function"). For files that mix async fixtures + sync unit tests, prefer applying `pytest.mark.asyncio` on the async tests only (or accept the warning — it does NOT fail the test). All 36 Wave A tests pass despite the 7 warnings.
+
+19. **Asserting a route is NOT mounted (flag-OFF 404)** — never use the shared `app` singleton (route may be mounted from a prior test) — build a separate minimal `FastAPI()` with only the needed routers + `ASGITransport`.
+
+20. **plan-guard two-user fixtures** — seed free+pro users in ONE lifespan context and yield `(client, Session, free_token, pro_token)`; nested `lifespan_context` calls conflict on `app.state`.
+
+## D2 pitfall — `get_valkey_otp()` module singleton is loop-bound (2026-06-28)
+
+21. **`get_valkey_otp()` (and `get_valkey_broker()` etc.) return a module-level singleton client
+    created in a prior event-loop.** In a combined `pytest -m integration` run, the first
+    test that calls this inside an `async def` body silently binds the singleton to that loop;
+    subsequent tests in a different function-scoped event-loop hit
+    `RuntimeError: Event loop is closed`. The `valkey` conftest fixture (`loop_scope="function"`,
+    built from `_valkey_base()` per-call, flushed before+after) is the correct replacement.
+    Always use `valkey["otp"]` (the DB-0 OTP client) rather than the singleton accessor.

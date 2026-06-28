@@ -13,6 +13,7 @@ import { MeeButtonComponent }       from '@mesell/ui-kit';
 import { MeeCardComponent }         from '@mesell/ui-kit';
 import { MeeIconComponent }         from '@mesell/ui-kit';
 import { PageHeaderComponent }      from '@mesell/composites';
+import { MeePageComponent }         from '@mesell/layout';
 
 import {
   type ExportStatus,
@@ -43,21 +44,11 @@ const TICK_INTERVAL_MS = 2000;
     MeeCardComponent,
     MeeIconComponent,
     PageHeaderComponent,
+    MeePageComponent,
   ],
   styles: [`
     /* ── Page layout ─────────────────────────────────────────────── */
     :host { display: block; }
-    .export-page {
-      max-width: 900px;
-      margin: 0 auto;
-      padding: var(--mee-space-4);
-      display: flex;
-      flex-direction: column;
-      gap: var(--mee-space-6);
-    }
-    @media (min-width: 768px) {
-      .export-page { padding: var(--mee-space-6); }
-    }
     .export-layout {
       display: flex;
       flex-direction: column;
@@ -227,7 +218,7 @@ const TICK_INTERVAL_MS = 2000;
     }
   `],
   template: `
-    <div class="export-page">
+    <mee-page maxWidth="xl">
 
       <!-- Page Header -->
       <mee-page-header
@@ -362,7 +353,7 @@ const TICK_INTERVAL_MS = 2000;
         </div>
       </div>
 
-    </div>
+    </mee-page>
   `,
 })
 export class ExportComponent implements OnInit, OnDestroy {

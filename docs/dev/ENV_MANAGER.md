@@ -122,12 +122,38 @@ Builds develop's shell **+ all MFEs** once (the shared fallback) and serves them
 on slot 0. Run this before bringing up any worktree that doesn't touch every MFE.
 
 ### `status`
-Table of running envs (worktree, slot, role, port, PID, alive) + live free RAM
-and swap%, plus all slot reservations.
+Reconciles the registries with reality, then prints the result. `status` is
+**self-healing**: before it prints, it runs the same prune `gc` does (drop dead
+pids / empty env entries from `env-state.json`; drop orphan slot reservations for
+removed worktrees) so the picture always matches the OS.
+
+What it shows:
+
+- A table of envs (worktree, slot, role, port, PID, alive, **health**, **note**).
+  **Liveness is derived from reality, not from the tracked PID** — each service's
+  `health` is a live HTTP probe, so a stale PID whose port is silent reads
+  `down`/`dead` (note `stale pid / silent port`), never a false `up`.
+- **DRIFT** — for every reserved slot, the slot's expected ports
+  (backend/shell/each MFE) are listen-probed. A port that is **LISTENING but has
+  no tracked process** is surfaced as a `DRIFT (outside manager)` row and the
+  slot reservation is annotated `DRIFT: ports listening outside manager`. This is
+  how a serve.js/uvicorn started outside the tool (or a `down` that crashed
+  mid-teardown) becomes visible instead of being silently omitted.
+- Live free RAM + swap%, plus all slot reservations (`exists` /
+  `MISSING (gc to prune)`).
+
+Both probes are sub-second and cached for 3 s, so `status` stays responsive and
+never blocks on a mid-build slot. `status` is read-only with respect to builds —
+it never acquires the build lock.
 
 ### `gc`
-Stops orphaned/dead tracked processes and prunes slot reservations for worktrees
-that no longer exist (`git worktree list`).
+Runs the shared reconcile (the same one `status` uses): drops dead/exited tracked
+processes and empty env entries from `env-state.json`, and prunes slot
+reservations for worktrees that no longer exist (`git worktree list`). It also
+**flags DRIFT** — slots with untracked listeners (running outside the manager) —
+but does **not** kill them, since it cannot know they belong to this manager; use
+`down`/`kill` deliberately for those. The baseline (slot 0) reservation is never
+pruned.
 
 ### `ports <worktree>`
 Prints the assigned port block.
@@ -159,6 +185,51 @@ Smoke-test the orchestration without spending RAM on real builds with `--stub`.
 
 ---
 
+## Post-merge rebuild (Rule B — rebuild-localhost-on-merge)
+
+> Founder-ruled standing process, 2026-06-22 (canonical text:
+> [`.claude/skills/meesell-task-completion-protocol/SKILL.md`](../../.claude/skills/meesell-task-completion-protocol/SKILL.md);
+> also in `docs/GIT_WORKFLOW.md` M20 and `CLAUDE.md`). **Every merge to `develop`
+> MUST be followed by an affected-scope localhost rebuild so the running dev stack
+> matches `develop`. A merge is not "done" until localhost matches `develop`.** The
+> merging agent (or the master session that performed the merge) triggers it.
+
+The develop checkout is the **baseline (slot 0)** — the shared fallback every
+worktree federates from — so a merge to develop is refreshed against the baseline.
+Scope the rebuild to what the merge touched:
+
+```bash
+# 0. Be in the baseline (develop) checkout = slot 0.
+
+# 1. Pull the merge into the baseline checkout.
+git pull --ff-only origin develop
+
+# 2A. FRONTEND / FEDERATION merge — rebuild the baseline (shell + all MFEs,
+#     serialized under the single build lock; the baseline is kept consistent as a
+#     unit because every worktree reuses it).
+python3 tools/meesell_env.py baseline refresh
+
+# 2B. BACKEND merge — restart the baseline backend (uvicorn --reload on :8000)
+#     against the pulled tree (stop the old uvicorn, relaunch it).
+
+# 2C. DOCS-ONLY merge — skip the rebuild. Do NOT force a full 8-port rebuild for a
+#     trivial docs/board/status merge.
+
+# 3. Verify the affected ports are healthy — live HTTP probes, not stale PIDs.
+python3 tools/meesell_env.py status
+#     Expect shell :4200, MFEs :4201-4207 (changed ones rebuilt), backend :8000 = up.
+#     Spot-check: curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:4200/
+
+# 4. Refresh the :7700 dev-manager dashboard so it reflects the new state.
+#     (Start it if needed: python3 tools/meesell_env.py dashboard --port 7700)
+```
+
+This is the same machinery documented above (slot model, RAM guard, single build
+lock, baseline reuse) — Rule B simply makes the rebuild mandatory after a develop
+merge, scoped to the affected surface.
+
+---
+
 ## Generated files (all gitignored)
 
 | Path                                   | Purpose                                  |
@@ -166,13 +237,58 @@ Smoke-test the orchestration without spending RAM on real builds with `--stub`.
 | `.nexus/env-ports.json`                | worktree → slot registry (persisted)     |
 | `.nexus/env-state.json`                | running env → PIDs/ports/dist roots      |
 | `.nexus/.build.lock`                   | `flock` target — global build mutex      |
-| `.nexus/serve-<port>.log`              | serve.js logs                            |
-| `.nexus/backend-<port>.log`            | uvicorn logs                             |
+| `.nexus/serve-<port>.log`              | serve.js logs (per-port = per-env)       |
+| `.nexus/backend-<port>.log`            | uvicorn logs (per-port = per-env)        |
+| `.nexus/build-slot<N>-<project>.log`   | per-ENV `ng build` log, keyed by slot    |
+| `.nexus/build-history.jsonl`           | append-only build history (per-env rows) |
 | `.nexus/shell-dist-slot-<N>/browser/`  | per-env baseline-shell copy + manifest   |
 | `<served-dist>/federation.manifest.json` | generated per-env runtime manifest     |
 
+> **Per-env build logs (keyed by slot).** Each `ng build`'s stdout+stderr goes to
+> `.nexus/build-slot<N>-<project>.log` — keyed by **slot**, not by project name
+> alone. This is what lets slot 0, slot 1 and slot 2 each build `mfe-catalog`
+> without clobbering one shared log; each env tails its own. (Pre-keying logs at
+> the legacy path `.nexus/build-<project>.log` are still read as a fallback.)
+> Every `build-history.jsonl` row likewise carries `worktree` + `slot` so the
+> dashboard attributes a build to its env card — see
+> [`ENV_DASHBOARD.md`](ENV_DASHBOARD.md).
+
 All shared state lives under the **baseline (develop) tree's** `.nexus/`, so every
 worktree shares one registry and one build lock.
+
+---
+
+## State reconciliation (registries ↔ OS reality)
+
+`env-state.json` and `env-ports.json` are only mutated by `up` / `down` / `gc`,
+so they drift out of sync with the operating system three ways:
+
+1. **Stale PID** — a serve.js/uvicorn killed and relaunched **outside** the tool
+   (a common workflow here) leaves a recorded PID that no longer matches the
+   process actually serving the port. Trusting that PID would report a live
+   service as `dead`, or a dead one as `up`.
+2. **Orphan reservation** — a removed worktree leaves its slot reserved in
+   `env-ports.json` with no worktree behind it.
+3. **Drift (untracked-but-alive)** — something is serving on a reserved slot's
+   port that `env-state.json` has **no record of** (a manual `ng serve`, a
+   `down` that crashed mid-teardown). The old model silently omitted it.
+
+`status` and the dashboard now **derive liveness from reality** rather than
+trusting the tracked PID:
+
+- A tracked service is `up` only if its **port answers** (live HTTP probe);
+  a silent port reads `down`/`dead` regardless of the recorded PID.
+- Every reserved slot's expected ports are **listen-probed** (a cheap
+  `socket.connect_ex` check, sub-second + 3 s-cached). A listening port with no
+  tracked owner is surfaced as a **`drift`** service (`tracked: false`) and the
+  env carries a `drift: true` flag.
+- `status` (and `gc`) **auto-prune** dead PIDs / empty env entries and orphan
+  slot reservations via one shared reconcile (the baseline slot 0 is never
+  pruned). Registry writes use the atomic `tmp.replace(path)` helper.
+
+All of this is **read-only with respect to builds** — the reconcile and the
+probes never acquire the build lock, so they cannot stall a build, and the probe
+timeouts (≤1 s, cached) mean a mid-build slot never stalls `status` or the page.
 
 ---
 
@@ -220,8 +336,9 @@ deadlock and **not** OOM: a standalone `ng build mfe-export` (no orchestrator,
 no PIPE) reproduced the same hang while swap stayed flat at 18.9 % and ~2 GB RAM
 was free throughout.
 
-**Fix:** `ng_build` now (a) writes each build's stdout+stderr to a per-app log
-file `.nexus/build-<project>.log` (never an undrained PIPE), (b) runs the build
+**Fix:** `ng_build` now (a) writes each build's stdout+stderr to a per-ENV log
+file `.nexus/build-slot<N>-<project>.log` (keyed by slot, never an undrained
+PIPE, and never clobbered by a sibling env building the same project), (b) runs the build
 in its own process group (`start_new_session=True`), and (c) waits by tailing
 the log for the completion marker (`Application bundle generation complete` /
 `Output location:`) plus a dist-exists check, then reaps the process group and

@@ -1,0 +1,10 @@
+{
+  "_fixture_note": "Recorded Meesho getTransferPrice response for sscat_id=46677c24 (Kurtis). Used by Unit A tests with ctx.request fully mocked — NO live call.",
+  "transfer_price": 68.0,
+  "shipping_charges": 55,
+  "gst_percentage": 5,
+  "platform_fee": 0,
+  "mrp": 100,
+  "sscat_id": "46677c24",
+  "supplier_id": 4359160
+}

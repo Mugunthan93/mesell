@@ -107,6 +107,11 @@ celery_app = Celery(
         # canonical-inventory bump 2026-06-19): billing.reconcile +
         # billing.trial_expiry_sweep periodic sweeps.
         "app.modules.iam.tasks",
+        # Category change monitor Wave 2 Unit C — 4th task module. Registers
+        # monitor.scrape_category (the dedupe gate). Founder ratifies the
+        # §3.I/§18.B canonical Celery task inventory 3→4 at the
+        # integration→develop merge (same gate as the Razorpay W4 bump).
+        "app.modules.monitor.tasks",
     ],
 )
 

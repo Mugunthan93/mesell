@@ -65,6 +65,7 @@ import os
 import re
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -126,6 +127,18 @@ PORTS_REGISTRY = NEXUS_DIR / "env-ports.json"
 STATE_FILE = NEXUS_DIR / "env-state.json"
 BUILD_LOCK = NEXUS_DIR / ".build.lock"
 BUILD_HISTORY = NEXUS_DIR / "build-history.jsonl"  # append-only build log (jsonl)
+
+
+def build_log_path(slot: int | None, project: str) -> Path:
+    """Per-ENV build log path: `.nexus/build-slot<N>-<project>.log`.
+
+    Keyed by slot so concurrent worktrees building the SAME project (e.g. three
+    slots each building mfe-catalog) never clobber one shared log. `slot=None`
+    (slot unknown) degrades to slot 0 so a build still records somewhere
+    deterministic. The writer (`ng_build`) and the `/api/log` tail handler both
+    compute the path through this one helper so they always agree.
+    """
+    return NEXUS_DIR / f"build-slot{0 if slot is None else slot}-{project}.log"
 
 # Default dashboard port. 7700 sits OUTSIDE every slot range (slots 0-9 use
 # backend 8000-8090, shell 4200-4290, mfe 4201-4297) so the monitor never
@@ -422,6 +435,16 @@ _HEALTH_CACHE_TTL = 3.0   # seconds — re-probe at most this often per port
 _HEALTH_TIMEOUT = 1.0     # seconds — per-probe urllib timeout
 _HEALTH_LOCK = threading.Lock()
 
+# Listen-probe cache: port -> (epoch_checked, bool). Separate from _HEALTH_CACHE
+# because this is a cheap TCP-connect test ("is ANYTHING listening?"), not an HTTP
+# request. Used for DRIFT detection across a whole slot's port block, where we only
+# need "occupied vs free", not a full HTTP round-trip. Same 3 s cache / ≤1 s timeout
+# discipline as the health probe so a mid-build slot can never stall status/dashboard.
+_LISTEN_CACHE: dict[int, tuple[float, bool]] = {}
+_LISTEN_CACHE_TTL = 3.0   # seconds
+_LISTEN_TIMEOUT = 0.5     # seconds — connect_ex timeout (well under the 1 s ceiling)
+_LISTEN_LOCK = threading.Lock()
+
 
 def build_lock_held() -> bool:
     """True if a build is in progress (the global flock is held elsewhere).
@@ -473,6 +496,36 @@ def probe_health(port: int) -> str:
     return result
 
 
+def port_listening(port: int) -> bool:
+    """True if SOMETHING is accepting TCP connections on 127.0.0.1:<port>.
+
+    A cheap, stdlib-only liveness primitive used for DRIFT detection (probing a
+    whole reserved slot's port block for occupants the manager isn't tracking).
+    Unlike `probe_health` it does not speak HTTP — it just asks "is the port
+    bound and accepting?" via `socket.connect_ex`. Cached for `_LISTEN_CACHE_TTL`
+    seconds with a sub-second timeout so probing a full slot block (9 ports) can
+    never stall the status table or the dashboard page, even mid-build.
+    """
+    if not port:
+        return False
+    now = time.monotonic()
+    with _LISTEN_LOCK:
+        cached = _LISTEN_CACHE.get(port)
+        if cached and (now - cached[0]) < _LISTEN_CACHE_TTL:
+            return cached[1]
+    result = False
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(_LISTEN_TIMEOUT)
+            # connect_ex returns 0 on success (a listener accepted), errno otherwise.
+            result = sock.connect_ex(("127.0.0.1", port)) == 0
+    except OSError:
+        result = False
+    with _LISTEN_LOCK:
+        _LISTEN_CACHE[port] = (time.monotonic(), result)
+    return result
+
+
 def _service_health(pid: int | None, alive: bool, port: int) -> str:
     """Map (live port probe, pid liveness) to a single dot state.
 
@@ -501,15 +554,33 @@ def _service_health(pid: int | None, alive: bool, port: int) -> str:
     return "down"
 
 
-def load_build_history(limit_per_project: int = 5) -> dict[str, list[dict]]:
-    """Read .nexus/build-history.jsonl -> {project: [most-recent-first rows]}.
+def _row_slot(row: dict) -> int:
+    """Normalise a history row's slot for keying/joining.
 
-    Returns at most `limit_per_project` newest rows per project. Tolerant of a
-    missing file or a partially written final line.
+    Rows written before per-env keying lack `slot` (and `worktree`); treat a
+    missing/None/unparseable slot as slot 0 so old history still attaches to the
+    baseline card rather than vanishing.
+    """
+    slot = row.get("slot")
+    try:
+        return int(slot)
+    except (TypeError, ValueError):
+        return 0
+
+
+def load_build_history(limit_per_project: int = 5) -> dict[tuple[int, str], list[dict]]:
+    """Read .nexus/build-history.jsonl -> {(slot, project): [most-recent-first rows]}.
+
+    Keyed by `(slot, project)` so the dashboard joins a build onto ITS OWN env
+    card (a build done by slot 1 never shows on slot 0's or slot 2's card even
+    when all three built the same project). Returns at most `limit_per_project`
+    newest rows per `(slot, project)`. Tolerant of a missing file, a partially
+    written final line, and OLD rows lacking `slot`/`worktree` (those normalise
+    to slot 0 via `_row_slot`).
     """
     if not BUILD_HISTORY.exists():
         return {}
-    by_project: dict[str, list[dict]] = {}
+    by_key: dict[tuple[int, str], list[dict]] = {}
     try:
         lines = BUILD_HISTORY.read_text(errors="replace").splitlines()
     except OSError:
@@ -525,11 +596,82 @@ def load_build_history(limit_per_project: int = 5) -> dict[str, list[dict]]:
         proj = row.get("project")
         if not proj:
             continue
-        by_project.setdefault(proj, []).append(row)
-    # Newest first; cap per project.
-    for proj in by_project:
-        by_project[proj] = by_project[proj][::-1][:limit_per_project]
-    return by_project
+        by_key.setdefault((_row_slot(row), proj), []).append(row)
+    # Newest first; cap per (slot, project).
+    for key in by_key:
+        by_key[key] = by_key[key][::-1][:limit_per_project]
+    return by_key
+
+
+def reconcile_state() -> dict:
+    """Reconcile the persisted registries with OS + git reality. Read-mostly.
+
+    `.nexus/env-state.json` and `.nexus/env-ports.json` are only ever mutated by
+    `up`/`down`/`gc`, so they drift out of sync with the OS: a service killed
+    outside the tool leaves a stale pid; a removed worktree leaves an orphan slot
+    reservation. This is the single place that prunes both, reused by `status`
+    (so a plain `status` self-heals) and `gc` (so it does not duplicate the logic).
+
+    Two prunes, both honest about reality:
+      1. ENV-STATE — drop any tracked service whose pid is dead. If an env ends up
+         with no live tracked processes, drop the whole env entry.
+      2. SLOT RESERVATIONS — drop reservations for worktrees no longer in
+         `git worktree list` (the baseline is never pruned).
+
+    NOTE: a pid being dead does NOT mean the slot is idle — something may be
+    serving on the slot's ports outside the tool (drift). Pruning here only
+    removes *tracked* records the OS has invalidated; live-but-untracked occupancy
+    is surfaced separately as `drift` in `collect_dashboard_state()`. Both
+    registry writes use the atomic `tmp.replace(path)` helper (`save_*`).
+
+    Returns {"pruned_envs": [...], "pruned_slots": [(name, slot), ...],
+             "pruned_procs": [(name, role), ...]} — empty lists if nothing changed.
+    """
+    pruned_envs: list[str] = []
+    pruned_procs: list[tuple[str, str]] = []
+    pruned_slots: list[tuple[str, int]] = []
+
+    # 1. Prune dead tracked processes / empty env entries from env-state.
+    state = load_state()
+    state_changed = False
+    for wt_name in list(state):
+        env = state[wt_name]
+        procs = env.get("procs", {})
+        live = {}
+        for role, meta in procs.items():
+            pid = meta.get("pid")
+            if pid and pid_alive(pid):
+                live[role] = meta
+            else:
+                pruned_procs.append((wt_name, role))
+        if not live:
+            del state[wt_name]
+            pruned_envs.append(wt_name)
+            state_changed = True
+        elif len(live) != len(procs):
+            env["procs"] = live
+            state_changed = True
+    if state_changed:
+        save_state(state)
+
+    # 2. Prune slot reservations for worktrees that no longer exist.
+    reg = load_ports()
+    existing = set(git_worktrees())
+    reg_changed = False
+    for wt_name in list(reg):
+        if wt_name == baseline_name():
+            continue
+        if wt_name not in existing:
+            pruned_slots.append((wt_name, reg.pop(wt_name)))
+            reg_changed = True
+    if reg_changed:
+        save_ports(reg)
+
+    return {
+        "pruned_envs": pruned_envs,
+        "pruned_procs": pruned_procs,
+        "pruned_slots": pruned_slots,
+    }
 
 
 def collect_dashboard_state(*, probe: bool = True) -> dict:
@@ -574,32 +716,74 @@ def collect_dashboard_state(*, probe: bool = True) -> dict:
             except SystemExit:
                 pass  # frontend/apps missing in this tree — leave ports empty
 
-        # Per-service status from the tracked procs.
+        # Per-service status from the tracked procs. `tracked` is always True for
+        # these — they came from env-state. Liveness is DERIVED FROM REALITY: the
+        # live HTTP probe in `_service_health` is the verdict (a stale pid whose
+        # port is silent reads `down`/`dead`, not a false `up`).
         procs = running_by_name.get(name, {}).get("procs", {})
         services = []
+        tracked_ports: set[int] = set()
         for role in sorted(procs):
             meta = procs[role]
             pid = meta.get("pid")
             port = meta.get("port")
+            if port:
+                tracked_ports.add(port)
             alive = bool(pid and pid_alive(pid))
             health = _service_health(pid, alive, port) if probe else "unknown"
             services.append({
                 "role": role, "pid": pid, "port": port,
-                "alive": alive, "health": health,
+                "alive": alive, "health": health, "tracked": True, "drift": False,
             })
 
-        # Build rows for this worktree's projects (shell + this slot's mfes).
+        # DRIFT (the other direction): this slot RESERVES a known port block, but
+        # env-state may not record a process for every role — yet something can be
+        # LISTENING there anyway (a serve.js / uvicorn started outside the tool, or
+        # a leftover from a crashed `down`). Probe each expected slot port; if it is
+        # listening but no tracked service owns it, surface it as an untracked/drift
+        # service so the dashboard/status say "running outside the manager" instead
+        # of silently omitting it. Cheap socket probe (cached, sub-second) — only
+        # when probing is requested (the dashboard and the reconciling `status`).
+        env_drift = False
+        if probe and slot is not None:
+            expected: list[tuple[str, int | None]] = [
+                ("backend", ports.get("backend")),
+                ("shell", ports.get("shell")),
+            ]
+            for mfe_name, mfe_port in (ports.get("mfes") or {}).items():
+                expected.append((mfe_name, mfe_port))
+            for role, port in expected:
+                if not port or port in tracked_ports:
+                    continue  # no port for this role, or already tracked above
+                if port_listening(port):
+                    env_drift = True
+                    services.append({
+                        "role": role, "pid": None, "port": port,
+                        "alive": False, "health": "up",
+                        "tracked": False, "drift": True,
+                    })
+
+        # Build rows for THIS env only: join history by (slot, project) so a
+        # card shows only its own builds. An unreserved worktree (slot None)
+        # normalises to slot 0 — same rule the reader uses for old rows. The
+        # emitted row carries `slot` so the log viewer can tail the right
+        # per-env log via /api/log?project=<p>&slot=<N>.
         builds = []
+        join_slot = 0 if slot is None else slot
         proj_names = ["frontend"] + mfes
         for proj in proj_names:
-            for row in history.get(proj, []):
+            for row in history.get((join_slot, proj), []):
                 builds.append({
                     "project": proj,
+                    "slot": join_slot,
                     "status": row.get("status"),
                     "when": row.get("end_iso") or row.get("start_iso"),
                     "duration_s": row.get("duration_s"),
                 })
         builds.sort(key=lambda b: (b.get("when") or ""), reverse=True)
+
+        # Keep a stable display order even with appended drift entries.
+        services.sort(key=lambda s: s["role"])
 
         envs.append({
             "worktree": name,
@@ -608,6 +792,9 @@ def collect_dashboard_state(*, probe: bool = True) -> dict:
             "path": path,
             "exists": name in worktrees,
             "running": name in running_by_name,
+            # `drift` = at least one port in this slot's block is LISTENING but the
+            # manager has no tracked process for it (running outside the manager).
+            "drift": env_drift,
             "ports": ports,
             "services": services,
             "builds": builds[:8],
@@ -753,8 +940,15 @@ def _now_iso() -> str:
 
 
 def record_build(project: str, start_iso: str, end_iso: str,
-                 status: str, duration_s: float) -> None:
+                 status: str, duration_s: float,
+                 worktree: str | None = None, slot: int | None = None) -> None:
     """Append one build outcome to .nexus/build-history.jsonl (append-only).
+
+    Each row carries `worktree` + `slot` so the dashboard can join a build onto
+    ITS OWN env card by `(slot, project)` rather than by project alone — three
+    slots building the same `mfe-catalog` now produce distinguishable rows.
+    Old rows that predate this change lack both fields; the reader treats them
+    as slot 0 / "unknown" worktree (see `load_build_history`).
 
     Best-effort: a recorder failure must never break a build. The file is a
     JSON-Lines stream (one object per line) so it is cheap to append and tail.
@@ -763,6 +957,8 @@ def record_build(project: str, start_iso: str, end_iso: str,
         NEXUS_DIR.mkdir(parents=True, exist_ok=True)
         row = {
             "project": project,
+            "worktree": worktree,
+            "slot": slot,
             "start_iso": start_iso,
             "end_iso": end_iso,
             "status": status,
@@ -774,20 +970,24 @@ def record_build(project: str, start_iso: str, end_iso: str,
         info(f"build-history record skipped ({project}): {exc}")
 
 
-def ng_build(root: Path, project: str, *, stub: bool) -> None:
+def ng_build(root: Path, project: str, *, stub: bool,
+             slot: int | None = None, worktree: str | None = None) -> None:
     """Build one Angular project as a one-shot, under the global lock.
 
-    Each build's stdout+stderr go to a per-app log file (never an undrained
-    PIPE), the build runs in its OWN process group, and we reap that group once
-    the bundle is written — because `ng build` does not exit on its own on this
-    Angular version (it leaks a persistent esbuild --service child). See
-    _wait_for_build for the full root-cause note.
+    Each build's stdout+stderr go to a per-ENV log file keyed by `slot`
+    (`.nexus/build-slot<N>-<project>.log`, via `build_log_path`) — never an
+    undrained PIPE and never a project-only path shared across worktrees. The
+    build runs in its OWN process group, and we reap that group once the bundle
+    is written — because `ng build` does not exit on its own on this Angular
+    version (it leaks a persistent esbuild --service child). See _wait_for_build
+    for the full root-cause note. `slot`/`worktree` are also stamped onto the
+    build-history row so the dashboard can attribute the build to its env.
     """
     if stub:
         info(f"[stub] would run: ng build {project}  (cwd={root}/frontend)")
         return
     kill_esbuild()  # clear any stray service from a prior build BEFORE starting
-    logpath = NEXUS_DIR / f"build-{project}.log"
+    logpath = build_log_path(slot, project)
     NEXUS_DIR.mkdir(parents=True, exist_ok=True)
     info(f"ng build {project} ... (log {logpath})")
     # Build-history bookkeeping (additive — does not change build behaviour).
@@ -812,7 +1012,8 @@ def ng_build(root: Path, project: str, *, stub: bool) -> None:
         # so this finally records "ok" on success and "failed" on any exit.
         record_build(project, start_iso, _now_iso(),
                      "ok" if build_ok else "failed",
-                     time.monotonic() - start_mono)
+                     time.monotonic() - start_mono,
+                     worktree=worktree, slot=slot)
 
 
 def served_dist_root(root: Path, project_dist_name: str) -> Path:
@@ -927,34 +1128,58 @@ def cmd_ports(args) -> None:
 
 
 def cmd_status(args) -> None:
+    # RECONCILE FIRST — `status` self-heals: prune dead pids / empty env entries
+    # from env-state and orphan slot reservations for removed worktrees, so the
+    # printed picture matches reality. This is the same prune `gc` runs (shared
+    # `reconcile_state()`), only here it is a side effect of asking "what's up?".
+    rec = reconcile_state()
+    for n in rec["pruned_envs"]:
+        info(f"status: pruned dead env entry '{n}' from env-state")
+    for n, s in rec["pruned_slots"]:
+        info(f"status: pruned slot {s} reservation for removed worktree '{n}'")
+
     # Shares ONE code path with the dashboard via collect_dashboard_state().
-    # probe=False keeps `status` instant (no HTTP health probes / blocking).
-    model = collect_dashboard_state(probe=False)
+    # probe=True DERIVES liveness from reality: each tracked service's health is a
+    # live HTTP probe (a stale pid on a silent port reads down/dead, not a false
+    # up), and each reserved slot's ports are listen-probed for DRIFT (something
+    # serving outside the manager). Both probes are sub-second + 3 s-cached, so
+    # `status` stays responsive and never blocks on a mid-build slot.
+    model = collect_dashboard_state(probe=True)
     lock = "HELD (build in progress)" if model["build_lock_held"] else "free"
     print(f"RAM free: {model['free_mb']} MB    swap used: {model['swap_pct']:.1f}%"
           f"    build lock: {lock}    "
           f"(guard: free>={MIN_FREE_MB}MB, swap<={MAX_SWAP_PCT:.0f}%)")
     print()
-    running = [e for e in model["envs"] if e["services"]]
-    if not running:
-        print("No running envs tracked.")
+    # An env is worth listing if it has tracked services OR live drift.
+    listed = [e for e in model["envs"] if e["services"]]
+    if not listed:
+        print("No running envs tracked, and nothing listening on any reserved slot.")
     else:
-        print(f"{'worktree':<24}{'slot':<6}{'role':<14}{'port':<8}{'pid':<8}{'alive'}")
-        print("-" * 70)
-        for env in running:
+        print(f"{'worktree':<24}{'slot':<6}{'role':<14}{'port':<8}"
+              f"{'pid':<8}{'alive':<7}{'health':<7}{'note'}")
+        print("-" * 86)
+        for env in listed:
             slot = env.get("slot", "?")
             for svc in env["services"]:
                 pid = svc.get("pid")
                 port = svc.get("port") or ""
-                alive = "yes" if svc.get("alive") else "DEAD"
+                alive = "yes" if svc.get("alive") else "no"
+                health = svc.get("health") or "?"
+                if svc.get("drift"):
+                    note = "DRIFT (outside manager)"
+                elif svc.get("health") in ("dead", "down") and svc.get("pid"):
+                    note = "stale pid / silent port"
+                else:
+                    note = ""
                 print(f"{env['worktree']:<24}{str(slot):<6}{svc['role']:<14}"
-                      f"{str(port):<8}{str(pid):<8}{alive}")
+                      f"{str(port):<8}{str(pid):<8}{alive:<7}{health:<7}{note}")
     print()
     print("Slot reservations:")
     for env in sorted((e for e in model["envs"] if e["slot"] is not None),
                       key=lambda e: e["slot"]):
         exists = "exists" if env["exists"] else "MISSING (gc to prune)"
-        print(f"  slot {env['slot']}: {env['worktree']}  [{exists}]")
+        drift = "  DRIFT: ports listening outside manager" if env.get("drift") else ""
+        print(f"  slot {env['slot']}: {env['worktree']}  [{exists}]{drift}")
 
 
 def cmd_up(args) -> None:
@@ -1006,9 +1231,9 @@ def cmd_up(args) -> None:
     procs: dict[str, dict] = {}
     with BuildLock():
         if shell_touched:
-            ng_build(root, "frontend", stub=stub)
+            ng_build(root, "frontend", stub=stub, slot=slot, worktree=args.worktree)
         for name in touched:
-            ng_build(root, name, stub=stub)
+            ng_build(root, name, stub=stub, slot=slot, worktree=args.worktree)
 
     # 5. Determine which shell dist to serve.
     #    - shell touched -> this worktree's freshly built shell (its own dist).
@@ -1142,11 +1367,12 @@ def cmd_baseline(args) -> None:
         die(f"RAM budget refused baseline build: {summary}")
     info(f"budget ok: {summary}")
 
-    # Build shell + ALL MFEs, serialized.
+    # Build shell + ALL MFEs, serialized. Baseline is always slot 0.
+    base_wt = baseline_name()
     with BuildLock():
-        ng_build(root, "frontend", stub=stub)
+        ng_build(root, "frontend", stub=stub, slot=0, worktree=base_wt)
         for name in all_mfes:
-            ng_build(root, name, stub=stub)
+            ng_build(root, name, stub=stub, slot=0, worktree=base_wt)
 
     # Baseline manifest: all remotes at baseline ports.
     shell_dist = served_dist_root(root, SHELL_DIST_NAME)
@@ -1185,37 +1411,32 @@ def cmd_baseline(args) -> None:
 
 
 def cmd_gc(args) -> None:
-    # 1. Stop dead/orphaned tracked processes.
-    state = load_state()
-    changed = False
-    for wt_name in list(state):
-        env = state[wt_name]
-        live = {r: m for r, m in env.get("procs", {}).items()
-                if m.get("pid") and pid_alive(m["pid"])}
-        if not live:
-            info(f"gc: env '{wt_name}' has no live processes — removing from state")
-            del state[wt_name]
-            changed = True
-        elif len(live) != len(env.get("procs", {})):
-            env["procs"] = live
-            changed = True
-    if changed:
-        save_state(state)
+    # Reuse the SHARED reconcile (the same prune `status` runs): drop dead tracked
+    # processes / empty env entries from env-state, and orphan slot reservations
+    # for worktrees no longer in `git worktree list`. Single source of truth — gc
+    # no longer duplicates the prune logic, it just reports what was reconciled.
+    rec = reconcile_state()
+    for n, role in rec["pruned_procs"]:
+        info(f"gc: dropped dead/exited '{role}' from env '{n}'")
+    for n in rec["pruned_envs"]:
+        info(f"gc: env '{n}' has no live processes — removed from state")
+    for n, s in rec["pruned_slots"]:
+        info(f"gc: pruned slot {s} reservation for dead worktree '{n}'")
 
-    # 2. Prune slot reservations for worktrees that no longer exist.
-    reg = load_ports()
-    existing = set(git_worktrees())
-    pruned = []
-    for wt_name in list(reg):
-        if wt_name == baseline_name():
-            continue
-        if wt_name not in existing:
-            pruned.append((wt_name, reg.pop(wt_name)))
-    if pruned:
-        save_ports(reg)
-        for n, s in pruned:
-            info(f"gc: pruned slot {s} reservation for dead worktree '{n}'")
-    if not pruned and not changed:
+    # Flag DRIFT for the operator: slots whose ports are LISTENING but the manager
+    # tracks no process for them (something serving outside the tool). gc does NOT
+    # kill these — it cannot know they belong to this manager — it just surfaces
+    # them so the operator can `down`/`kill` deliberately.
+    model = collect_dashboard_state(probe=True)
+    drift_envs = [e for e in model["envs"] if e.get("drift")]
+    for e in drift_envs:
+        ports = sorted(s["port"] for s in e["services"]
+                       if s.get("drift") and s.get("port"))
+        info(f"gc: DRIFT — slot {e['slot']} ({e['worktree']}) has untracked "
+             f"listeners on {ports} (running outside the manager; not killed)")
+
+    if not (rec["pruned_envs"] or rec["pruned_slots"] or rec["pruned_procs"]
+            or drift_envs):
         info("gc: nothing to do.")
 
 
@@ -1547,12 +1768,30 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         if not proj or not _PROJECT_RE.match(proj):
             self._send_json({"error": "missing or invalid project"}, code=400)
             return
-        logpath = NEXUS_DIR / f"build-{proj}.log"
-        if not logpath.exists():
-            self._send_json(
-                {"project": proj, "log": "", "exists": False,
-                 "note": "no build log yet (project not built in this baseline)"})
+        # `slot` selects the per-env log (build-slot<N>-<project>.log). It is
+        # validated with the SAME path-component allowlist as `project` so a
+        # crafted value can never escape .nexus/. Omitted/blank -> slot 0.
+        slot_raw = (qs.get("slot") or [""])[0]
+        if slot_raw and not _PROJECT_RE.match(slot_raw):
+            self._send_json({"error": "invalid slot"}, code=400)
             return
+        try:
+            slot = int(slot_raw) if slot_raw else 0
+        except ValueError:
+            self._send_json({"error": "invalid slot"}, code=400)
+            return
+        logpath = build_log_path(slot, proj)
+        if not logpath.exists():
+            # Backward compatibility: fall back to the legacy project-only log
+            # (`build-<project>.log`) so old logs still tail after the upgrade.
+            legacy = NEXUS_DIR / f"build-{proj}.log"
+            if legacy.exists():
+                logpath = legacy
+            else:
+                self._send_json(
+                    {"project": proj, "slot": slot, "log": "", "exists": False,
+                     "note": "no build log yet (project not built in this env)"})
+                return
         try:
             with open(logpath, "rb") as fh:
                 fh.seek(0, os.SEEK_END)
@@ -1560,12 +1799,13 @@ class _DashboardHandler(BaseHTTPRequestHandler):
                 fh.seek(max(0, size - _LOG_TAIL_BYTES))
                 raw = fh.read()
         except OSError as exc:
-            self._send_json({"project": proj, "error": str(exc)}, code=500)
+            self._send_json({"project": proj, "slot": slot, "error": str(exc)},
+                            code=500)
             return
         text = raw.decode("utf-8", errors="replace")
         # Strip ANSI colour codes so the in-browser <pre> reads cleanly.
         text = re.sub(r"\x1b\[[0-9;]*m", "", text)
-        self._send_json({"project": proj, "exists": True,
+        self._send_json({"project": proj, "slot": slot, "exists": True,
                          "truncated": size > _LOG_TAIL_BYTES, "log": text})
 
     # ----- DEV LOG MONITOR (V1) endpoints --------------------------------
@@ -1631,7 +1871,7 @@ def cmd_dashboard(args) -> None:
     info(f"env dashboard (read-only) on http://127.0.0.1:{port}")
     info("  GET /              the dashboard SPA")
     info("  GET /api/state     full JSON model")
-    info("  GET /api/log?project=<name>   tail of .nexus/build-<name>.log")
+    info("  GET /api/log?project=<name>&slot=<N>  tail of .nexus/build-slot<N>-<name>.log")
     info("  GET /api/logs?service=<name>  poll-tail of a service's RUNTIME log (redacted)")
     info("  GET /api/radar                error-radar detector counters (redacted)")
     info("Ctrl-C to stop. This server NEVER builds and NEVER holds the build lock.")

@@ -1,0 +1,2 @@
+## LAND: PR #427 fix/auth-refresh-clear-cookie → develop MERGE-COMMIT 2026-06-22
+- Founder-approved land via Director. `gh pr merge 427 --merge` (merge commit, history preserved). develop merge SHA = `1fc73f4983fcf22b98f017914028f9fd217aa77c`. All 5 CI gates GREEN (1/2/3 required + 4 integration + 5 golden_roundtrip all pass); mergeStateStatus CLEAN, no --admin needed; branch PRESERVED (no --delete-branch). The clear-cookie-on-401-refresh fix (rebuild JSONResponse to preserve Set-Cookie past global error handler) is now on develop.

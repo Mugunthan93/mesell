@@ -1,0 +1,23 @@
+## Session mesell-repo-management-session-2 — Planning consolidation + lockdown (2026-06-10)
+
+Founder-approved 4-step close-out of the planning stage. All steps completed clean.
+
+**Step (a) — two pre-merge micro-fixes:**
+- a1: image-precheck `_status/image-precheck.yaml` flipped PLAN_READY → IN_REVIEW (interrupted amendment session completion). Commit on feature/image-precheck/planning → updated PR #14. New tip 1903d93.
+- a2: `_CANONICAL_PATTERN.md` audit command made fence-aware. Replaced naive `grep -nE "^## "` (counts h2 INSIDE fenced dispatch-prompt blocks = false positives) with `awk '/^(```|~~~)/{f=!f; next} !f && /^## /'`. Used 4-BACKTICK OUTER FENCE so the inner 3-backtick token renders. Functionally validated against image-precheck FEATURE_PLAN.md → exactly 11 lines in order, line-1532 `## Iteration` (inside fence) correctly excluded. Revision-history row v2.1 added. Commit on repo-management/planning-infra → updated PR #12.
+
+**Step (b) — merged all 11 PRs with `--merge` (Model C precedent), order #12,#13 then #14-#22 ascending.** All MERGED, verified per-PR via gh pr view state. Merge SHAs: #12=35af73d #13=a9afba9 #14=f9dc41b #15=89416c8 #16=e9d8191 #17=550ef38 #18=31404cf #19=43bf888 #20=12f2e83 #21=06e2b77 #22=88038f4.
+- **ANOMALY (recurring, benign):** `gh pr merge --delete-branch` LOCAL branch delete fails when a worktree holds the branch ("cannot delete branch X used by worktree") AND gh then SKIPS the remote delete too. The remote merge itself always succeeded. Had to `git push origin --delete` all 11 branches explicitly afterward. CARRY-FORWARD: when merging PRs whose branches are checked out in worktrees, expect `--delete-branch` to no-op on the remote; plan an explicit remote-delete pass + worktree cleanup. Don't trust the gh success message for branch deletion.
+
+**Step (c) — planning lockdown PR #23.** Fresh worktree on repo-management/planning-lockdown from origin/develop (was 88038f4). Flipped all 9 `_status/{slug}.yaml` → LOCKED + lockdown note. Regenerated feature_planning_master.md (9 rows LOCKED w/ amendment PR #14-#22 mapped, vocabulary/protocol/dependency-map preserved, 3 newest-first log entries). PR #23 merged via `--merge`. **FINAL develop tip = 4258e033.**
+- NOTE: 9 status yamls had MIXED notes formats (block-scalar `|` for image-precheck, inline quoted string for others). Wrote a Python normalizer that converts all to uniform block-scalar `notes: |` preserving existing content + appending lockdown line. yaml.safe_load validated all 9. PR→feature map (amendment PRs): image-precheck#14 catalog-form#15 live-preview#16 smart-picker#17 ai-autofill#18 tracking-dashboard#19 price-calculator#20 auth-otp#21 xlsx-export#22.
+
+**Step (d) — worktree cleanup.** All 12 planning-era worktrees removed; `git worktree prune`; master tree (repo-management/foundation, 59f30cd, 22 uncommitted founder files) NEVER touched.
+- **ANOMALY (important):** the 9 FEATURE worktrees each showed ~75-78 "dirty" entries — ALL `D` (deleted) on `.claude/agent-memory/*` + `.claude/agents/*` PLUS `.claude/agent-memory` & `.claude/agents` as `??` untracked. DIAGNOSIS: phantom git index state — files were simultaneously `D` in index and `??` as untracked dirs, but PROVEN byte-for-byte identical to HEAD (`git cat-file -p HEAD:<f> | diff - <f>` → IDENTICAL). Zero real content divergence, zero uncommitted work. All 9 branch tips confirmed ancestors of origin/develop (merged). Therefore `git worktree remove --force` was safe (no content loss possible) — distinct from genuine uncommitted work which the dispatch says to report-not-force. The 3 governance worktrees (planning-infra, pre-existing-plans, planning-lockdown) were clean (dirty=0), removed without force.
+- Deleted 11 local branches (9 feature/*/planning + planning-lockdown + pre-existing-plans). Final local branches: develop, main, repo-management/foundation only.
+
+**Carry-forward learnings:**
+1. Worktree-held branches + `gh pr merge --delete-branch` = remote branch survives; always run explicit `git push origin --delete` pass after.
+2. Long-lived worktrees created from older index states can develop phantom `D`+`??` index artifacts on `.claude/` dirs that LOOK like uncommitted deletions but are byte-identical to HEAD. Verify with `git cat-file -p HEAD:<f> | diff - <f>` before deciding force-remove vs report. Genuine uncommitted work → report; proven-identical phantom → force-safe.
+3. `_status/{slug}.yaml` notes formats drift (block vs inline) across parallel sub-sessions — normalize programmatically + yaml.safe_load-validate when batch-editing all 9.
+4. Planning stage is now LOCKED. Coding stage (feature/{slug}/{group} specialist dispatch) is unblocked for all 9 V1 features. develop tip 4258e033.

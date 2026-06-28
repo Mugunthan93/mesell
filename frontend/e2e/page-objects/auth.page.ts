@@ -12,6 +12,21 @@ import type { Page, Locator } from '@playwright/test';
 
 /** The fake credential the GIS stub sends through the REAL verify pipeline. */
 export const FAKE_GIS_CREDENTIAL = 'FAKE_E2E_GIS_CREDENTIAL';
+
+/**
+ * The dev/test google-verify BYPASS SENTINEL (PR #480) — a TEST sentinel, NEVER a
+ * real credential. When the backend runs non-prod with FEATURE_GOOGLE_AUTH_ENABLED
+ * =True and DEV_GOOGLE_BYPASS_TOKEN set to this exact `dev-google:{sub}:{email}`
+ * string, POST /api/v1/auth/google/verify with this value as the credential returns
+ * 200 + an access JWT + refresh cookie + a synthetic dual-identity user (phone NULL,
+ * google_sub/email from the sentinel) — WITHOUT calling real Google. Driving the GIS
+ * stub with this credential exercises the FULL Google sign-in SUCCESS path headlessly.
+ * Overridable via env so the test identity stays in lockstep with the backend's
+ * configured DEV_GOOGLE_BYPASS_TOKEN (no hardcoded coupling).
+ */
+export const DEV_GOOGLE_BYPASS_CREDENTIAL =
+  process.env.MEESELL_DEV_GOOGLE_BYPASS_TOKEN ?? 'dev-google:e2e-sub-001:e2e.user@example.com';
+
 /** testid the GIS stub puts on the button it renders into the GIS host. */
 export const GIS_STUB_BUTTON_TESTID = 'gis-stub-button';
 
@@ -117,5 +132,27 @@ export class AuthPage {
       },
       { cred: credential, btnTestId: GIS_STUB_BUTTON_TESTID },
     );
+  }
+
+  /**
+   * Drive the GIS stub button → invoke the captured credential callback with the
+   * dev-google BYPASS SENTINEL → the app runs its REAL pipeline
+   * (LoginComponent.onGoogleCredential → AuthApiService.googleVerify → POST
+   * /api/v1/auth/google/verify) which the backend bypass seam answers 200 + an
+   * access JWT + refresh cookie. Waits for the app to navigate OFF /login. MUST be
+   * preceded by `installGisStub(DEV_GOOGLE_BYPASS_CREDENTIAL)` + `gotoLogin()`.
+   *
+   * LIVE PRODUCT REALITY (selector_registry.md): the synthetic Google user is brand
+   * new (onboarding_complete=false), so the post-login default landing is
+   * /onboarding — but the session IS fully authed (the authed shell sidebar renders
+   * and /dashboard is reachable directly). So this resolves once the URL is no longer
+   * /login; the caller asserts the authed dashboard outcome separately.
+   */
+  async clickGisStub(): Promise<void> {
+    await this.gisStubButton.waitFor({ state: 'visible' });
+    await this.gisStubButton.click();
+    await this.page.waitForURL((url) => !/\/login(\b|$)/.test(url.pathname), {
+      timeout: 20_000,
+    });
   }
 }

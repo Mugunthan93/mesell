@@ -156,3 +156,41 @@ entry here.
   (`GET /api/v1/products`) returns `data[].product_id` (NOT `id`). `page.request.get` is a
   SEPARATE API context with NO in-memory token → 401; capture product ids via a
   `page.on('response')` listener on the browser's own authed fetch instead.
+
+## qa-catalog Wave C (e2e) — 2026-06-22 [SCRIBED BY QA-COORD, write-protection workaround]
+
+### Wave-C environment blocker — slot-2 torn down + swap ceiling
+- The e2e writer's slot-2 stack was TORN DOWN by an external event mid-wave; on the
+  retry `meesell_env.py up` REFUSED: `RAM budget refused up: swap used 73.0% > 70%
+  ceiling` (founder-locked `MAX_SWAP_PCT=70.0`, no override). `sudo purge` freed real
+  RAM but swap stayed ~73%, pinned by long-lived HOST processes (claude.exe ×2 + VS
+  Code helpers) that may not be killed; reboot not permitted. → the live exploration +
+  the `--workers=1` STABLE×2 run + screenshots are OWED. CODIFY phase is complete
+  (`playwright test --list` transpiles + lists all 19 tests / 9 files CLEAN).
+- For the gate: the dev stack was fully DOWN (:4200/:4205/:8000 unreachable). Per the
+  checklist's explicit allowance the gate fell back to rigorous static + SOURCE
+  ground-truth @ integration tip `3476b0e` and DID re-run `--list` (CLEAN). A live
+  `--workers=1` re-run remains owed on a box that clears the swap ceiling.
+
+### CAT-BUG-1 — the 429 rethrow seam (load-bearing for CAT-E2E-04)
+- `CategoryService.handleSuggestError` (category.service.ts L55-64) maps **402/404/5xx →
+  fallback shape** (`of({suggestions:[],fallback_offered:true})`) but **RETHROWS
+  400/422/429** (`throwError(() => err)`). The CAT-BUG-1 fix (smart-picker.component.ts
+  L252-258) puts `catchError` INSIDE the `switchMap` to absorb the rethrown error and
+  keep the OUTER `valueChanges` stream alive.
+- THEREFORE the only Playwright `route` injection that exercises CAT-BUG-1 is a **429**
+  (or 400/422). A `route.abort()` or a 5xx is SWALLOWED into the fallback shape and NEVER
+  reaches the component's inner catch — it would be a FALSE guard. CAT-E2E-04 injects a
+  429 on the FIRST suggest only, then `route.fallback()`s so the retype hits the real
+  backend and the recovery (suggestions render again) is provable.
+
+### Wave-C category-schema seed gap (CAT-E2E-05/06 fixme reason — also a LIVE data finding)
+- `GET /api/v1/categories/{id}/schema` returns **404** for picker-suggestable categories:
+  schema/attributes are seeded for only ~100 "prewarmed" categories, but the picker
+  (Gemini) suggests from the FULL 3,772-leaf tree → a picker-created product lands on an
+  edit form with NO fields. NOT a spec/product UI defect, but it BLOCKS CAT-E2E-05
+  (autosave-persist) + CAT-E2E-06 (AI-fill). Filed → data-engineer + backend. Un-fixme on
+  a schema-seeded env (or a known-schema'd fixture category).
+
+## Dev-google bypass seam (#480) + sorted dev-port regime (#447)
+Dev-google bypass (PR #480): backend env `APP_ENV=development` (NOT `dev` — Pydantic Literal), `FEATURE_GOOGLE_AUTH_ENABLED=true`, `DEV_GOOGLE_BYPASS_TOKEN=dev-google:{sub}:{email}`; POST that exact sentinel as `credential` → 200 synthetic dual-identity user, no real Google call. Google-only synthetic user lands on `/onboarding` (onboarding_complete=false), not `/dashboard`. Master-tree `adapters/google.py` was stale pre-#480 — run backend from a develop-tip worktree. Dev port regime is now SORTED/alphabetical (shell 4200, mfe-auth 4201…mfe-pricing 4207) after #447 — `applyManifestPortFix` is a no-op on a correct stack.

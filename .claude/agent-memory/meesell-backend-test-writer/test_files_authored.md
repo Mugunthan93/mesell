@@ -71,3 +71,44 @@ New test files authored:
 | `backend/tests/modules/export/test_package_images_zip.py` | A | qa-pricing | export — `_package_images_zip` ZIP member basenames, empty refs, download-fail skip (PQE-BE-22/23/24) — Wave-1 P1.11 proper un-skip |
 | `backend/tests/modules/export/test_xlsx_round_trip.py` | A | qa-pricing | export — `_write_xlsx` header/value/sanitize, `_round_trip_validate` pass/mismatch, `_value_from_snapshot` precedence (PQE-BE-32/33/34/35/36/42) |
 | `backend/tests/modules/catalog/test_quality_gate.py` | A | qa-pricing | catalog — ready-transition 422, enum-422 msg_id, `_compute_completeness` counts, export snapshot status (PQE-BE-44/45/46/47) |
+
+## CAT-BE-17-GUARD — all seeded categories resolve schema (2026-06-22, PR #474 → develop, squash `11da147`)
+
+Closes the spurious category-schema-404 class (QA Wave-1 CAT-E2E-05/06) as an
+ENV/seed-state issue, not a data gap. Gate-reviewed by `meesell-qa-coordinator`
+(APPROVE) → squash-merged direct to develop (this is a `feature/.../backend → develop`
+test PR, NOT a qa-wave integration→develop founder gate).
+
+New test file authored:
+
+| Path | Feature slug | Covers |
+|---|---|---|
+| `backend/tests/modules/category/test_all_seeded_categories_resolve_schema.py` | fix-category-schema-guard | category — iterates EVERY `categories.id` → `category_service.fetch_schema_dto(category_id, db)` (the real `categories→templates` JOIN, `fetch_schema` + §5A.C DTO projection); collects ALL failures (`CategoryNotFoundError`/empty `fields[]`) then `assert len(failures) == 0`. Honest seed-conditional skip via `_seed_data_absent` (`field_enum_values == 0`) — skips on schema-only `meesell_test`, NEVER false-greens. `@pytest.mark.integration`. |
+
+Run result (gate, this session): on schema-only `meesell_test` (categories=0,
+field_enum_values=0) under full CI dummy env → **1 SKIPPED** (BE-SEED-1 reason),
+not a false-pass. The seeded green (3,772 categories, 0 failures expected) is OWED
+at the next tunnel/CI window — local seeded data lives only in the non-`_test`
+`meesell` DB and the `meesell` role lacks CREATEDB to clone a seeded `*_test`.
+No real external calls; service-level call so no `_otp_client` event-loop hazard.
+
+LESSON: a guard test that turns an env-dependent runtime 404 into a loud,
+bisectable failure on a seeded DB — while honestly skipping (not green-washing)
+on an unseeded DB — is the right shape for closing a "seed gap" finding. The skip
+predicate must key off a table NO fixture commits to (`field_enum_values`), not a
+fixture-polluted one (`categories`).
+
+## qa-auth-contract backend lane (PR #440)
+qa-auth-contract backend lane (PR #440): 6 net-new (BE-AUTH-05/08-recovery/10/12/14/15) + 3 upgrades (04/16/02-03); ran 61 passed live vs meesell_test. BE-AUTH-09/11 dropped (covered by #427 `test_refresh_401_clears_stale_cookie`).
+
+## D2 event-loop fix — `test_iam_logout_idempotency.py` (2026-06-27, PR #498 → develop)
+
+Pre-existing bug fix (not a qa-wave lane PR). One file edited, zero files created.
+
+| Path | Task | Covers |
+|---|---|---|
+| `backend/tests/modules/iam/test_iam_logout_idempotency.py` | D2-fix | iam — logout idempotency (both tests now use `valkey["otp"]` from the loop-scoped conftest fixture, not the `get_valkey_otp()` module singleton) |
+
+Run result: environment-blocked (PostgreSQL :5433 + Valkey :6381 tunnels not running locally).
+Static diff confirms: both `use_live_valkey` signatures → `valkey`; both `_vk_mod` imports + `get_valkey_otp()` calls removed; `vk = valkey["otp"]` binding in each body; all body references `valkey` → `vk`; zero assertions changed.
+Spec: `docs/plans/qa/spec_qa-image-ai-iam-logout-idempotency-d2-fix.md`.

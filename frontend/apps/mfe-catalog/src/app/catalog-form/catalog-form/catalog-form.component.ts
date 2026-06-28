@@ -36,6 +36,7 @@ import {
   PageHeaderComponent,
   StatusBadgeComponent,
 } from '@mesell/composites';
+import { MeePageComponent } from '@mesell/layout';
 
 import type { AutofillResponse, FieldGroup, FieldSchema, DependencyRuleDTO } from '../models/field-schema.model';
 import { CatalogFormApiService } from '../services/catalog-form-api.service';
@@ -55,15 +56,16 @@ import type { DependencyRule, FieldOverride } from '../catalog-form.rules';
     LoadingSkeletonComponent,
     PageHeaderComponent,
     StatusBadgeComponent,
+    MeePageComponent,
   ],
   styles: [`
     /* ── Host ─────────────────────────────────────────────────────────── */
     :host { display: block; }
 
-    /* ── Page wrapper: mobile-first 360px baseline ─────────────────────── */
+    /* ── Page inner padding: mobile-first 360px baseline ───────────────── */
+    /* mee-page (maxWidth="xl" padding="none") provides the 1280px centering.
+       .mee-form-page provides padding + sticky-nav clearance padding-bottom. */
     .mee-form-page {
-      max-width: 100%;
-      margin: 0 auto;
       padding: var(--mee-space-4);
       /* Default mobile: form-nav (64px) sits above shell bottom-tab (60px),
          so page only needs to clear the form-nav itself.
@@ -226,7 +228,6 @@ import type { DependencyRule, FieldOverride } from '../catalog-form.rules';
     /* ── Tablet+ (≥768px): 2-col field grid ───────────────────────────── */
     @media (min-width: 768px) {
       .mee-form-page {
-        max-width: 42rem;
         padding: var(--mee-space-6) var(--mee-space-8);
         /* On tablet+ there's no shell bottom-tab (640px+ hides it).
            Only the sticky form nav (64px) needs clearance. */
@@ -245,13 +246,13 @@ import type { DependencyRule, FieldOverride } from '../catalog-form.rules';
     /* ── Desktop (≥1280px) ─────────────────────────────────────────────── */
     @media (min-width: 1280px) {
       .mee-form-page {
-        max-width: 64rem;
         padding: var(--mee-space-8) var(--mee-space-10);
         padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
       }
     }
   `],
   template: `
+    <mee-page maxWidth="xl" padding="none">
     <div class="mee-form-page">
 
       <!-- Page Header -->
@@ -534,6 +535,7 @@ import type { DependencyRule, FieldOverride } from '../catalog-form.rules';
         </div>
       </nav>
     }
+    </mee-page>
   `,
 })
 export class CatalogFormComponent implements OnInit {

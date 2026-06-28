@@ -38,6 +38,7 @@ import {
   EmptyStateComponent,
   PageHeaderComponent,
 } from '@mesell/composites';
+import { MeePageComponent } from '@mesell/layout';
 
 import { CategoryService } from '../../smart-picker/services/category.service';
 import type { BrowseResultRow } from '../../smart-picker/smart-picker.model';
@@ -61,10 +62,11 @@ const GENERIC_BROWSE_ERROR_COPY = 'Something went wrong. Please try again.';
     MeeCardComponent,
     EmptyStateComponent,
     PageHeaderComponent,
+    MeePageComponent,
   ],
   providers: [CategoryService],
   template: `
-    <div class="max-w-2xl mx-auto px-4 py-8">
+    <mee-page maxWidth="xl">
 
       <mee-page-header
         title="Browse categories"
@@ -137,7 +139,7 @@ const GENERIC_BROWSE_ERROR_COPY = 'Something went wrong. Please try again.';
         </div>
       }
 
-    </div>
+    </mee-page>
   `,
 })
 export class BrowseComponent implements OnInit {

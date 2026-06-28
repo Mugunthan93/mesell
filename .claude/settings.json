@@ -19,6 +19,20 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/heal-agent-memory-perms.sh\""
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/warn-agent-memory-size.sh\""
+          }
+        ]
+      }
     ]
   },
   "enabledPlugins": {
