@@ -4,6 +4,40 @@
 **Last update:** 2026-06-22 (**qa-catalog integration→develop merge (founder-authorized) — DONE. THE LAST OF THE THREE/FOUR QA WAVES — ALL QA WAVES NOW ON DEVELOP.** Integration `1fdd5ea` → develop merge-commit **`494c783`** (#470, parents `532775f`+`1fdd5ea`). CLEANEST of the four: `git merge-tree --write-tree origin/develop 1fdd5ea` = **ZERO conflicts** (not even benign docs/board — no union-resolve). Two-dot `develop..integration` diff was a RED HERRING (105 files, big deletions = develop advanced past merge-base); TRUE landing = merge-RESULT vs develop = **21 files, +4253/−17, fully additive**. The 1 product-code change `smart-picker.component.ts` (CAT-BUG-1 #437, +10/−5 inner-catchError stream-keep-alive) PROVEN clean-merge (develop copy == merge-base; preserved byte-identical in result), guarded by CAT-FE-12 unit + CAT-E2E-04 e2e. 3 lanes: Wave A backend pytest #435 (370 passed/0 failed pre-gate) + Wave B FE Vitest CAT-FE-03..19 #451 (94 green) + Wave C Playwright CAT-E2E-03..07 #462. ALL 15 required develop CI contexts GREEN incl. Gate4 integration 2m2s + Gate5 golden_roundtrip 1m31s + boot-smoke; merged `--merge --admin` (single-account protection only, no red bypassed). 2 carried findings (non-blocking): category-schema seed gap (data/backend) + browse/empty-state testids (frontend). ₹0. See UPDATE block below. PRIOR: **qa-pricing integration→develop merge (founder-authorized) — DONE.** Integration `305f2fc` → develop merge-commit **`af1c06a`** (#465). 5 benign boards/journals conflicts (founder-whitelisted), ZERO code/test conflicts; union-resolved via a throwaway worktree merge-into-integration (`23e7320`) to clear GitHub's CONFLICTING flag; all 5 CI gates GREEN incl. Gate4 integration + Gate5 golden_roundtrip; merged with plain `--merge`. ₹0. See UPDATE block below. PRIOR: **Federation port-regime reconcile — OPTION 1 (sorted-canonical), founder-chosen — PR #412 → develop, DO NOT MERGE (FE coordinator gates).** Permanently kills the TWO-PORT-REGIME bug (committed manifest [hand-pinned] vs meesell_env [sorted] disagreed → shell loaded wrong remote per port). Made the SORTED order (meesell_env slot-0 formula) the SINGLE regime everywhere. 7 files, ₹0, dev-only, surgical (port literals + ordering only — 0 .ts/component/app touched): `apps/shell/public/federation.manifest.json` sorted (strict JSON); `angular.json` serve+serve-original ports sorted; `ci.yml` boot-smoke readiness now waits ALL 7 remotes (was :4201-:4206, MISSING :4207); `tools/dev/{serve-static,start-all}.mjs` + `tools/boot-smoke/{README.md,serve.js}` sorted. `meesell_env.py` UNCHANGED (it IS the canonical ref; its override is now IDEMPOTENT == committed). 3 PROOFS green: 4-way (5-surface) static map IDENTICAL; live boot-smoke port→served-name all match + served runtime manifest == committed (idempotency); route-check.mjs federation 100% clean (0 RemoteFailure/0 specifier-miss across 12 routes — its exit-1 is a PRE-EXISTING GIS-403 on auth routes, unrelated) + contracts run-all.mjs EXIT 0. Resolves the BLOCKED stale-federation-manifest row + inter-lead row 75 (FE memo delegated the full reconcile to me). Session `mesell-federation-manifest-reconcile-infra-session-1`. See UPDATE block below. PRIOR: Add `/api` reverse-proxy to the static `:4200` dev shell — `serve.js` + `meesell_env.py` (UI/UX audit PR #367 fix). 2 files, stdlib `http` only, zero new deps, surgical (static-SPA serving untouched, proxy OFF by default). Proxies `/api`+`/health`+`/docs`+`/openapi.json` → backend (slot 0 = `:8000`); shell-only (MFEs serve static). VERIFIED LIVE via curl (GET /api/v1/auth/me → 401 backend JSON, OTP POST → 429 backend JSON, all 7 MFE remoteEntry 200, static / → 200 html). Branch `feature/dev-proxy/infra`→develop, FOUNDER-GATED. Stack LEFT RUNNING on http://localhost:4200 for re-audit. ₹0. See UPDATE block below. PRIOR: Codify isolated-builder memory-persistence rule + land stranded auth-builder L_iam_1 learning (PR #361, squash `1951199`, develop HEAD `1951199`).** Two edits, one PR: (1) `docs/dev/WORKTREE_ISOLATION.md` new "Persisting an isolated builder's memory" section — isolated worktree builders can't write their own MEMORY.md/docs/status (boundary-blocked) so the dispatching coordinator transcribes the builder's REPORTED learning as a sanctioned NARROW scribe-exception to CLAUDE.md rule #4; (2) appended the stranded auth-builder L_iam_1 learning (core/auth 2→3-segment i18n migration, PR #359) via git-plumbing, additions-only. Master tree FF-synced + clean. Board sweep flagged several ≥7-day-untouched rows as external-gate holds (not stalls). ₹0. See UPDATE block below. PRIOR: **MS-4 Sub-Plan F — svc-category INFRA lane AUTHORED + offline-VALIDATED (₹0, dev-only).** 8 files on `feature/microservices-category/infra` (tip `e1b890a`). Recipe blend: AI-bearing (svc-image: GEMINI + LANGFUSE_SECRET) + api-only (svc-pricing/customer — NO worker). **CRITICAL grants in schema-role.sql:** `CREATE SCHEMA category` + `category_user` owns schema (for the c4f1e7a9d302 schema-move + Alembic) + the cross-schema `GRANT INSERT ON public.audit_events` (AI cost ledger F3.c). Valkey budget-keyspace carve-out HONORED (`ai:*` global/un-prefixed DB 0; category cache `category:`-prefixed DB 3). TLS `api-tls`. NO razorpay/msg91. New SM secret `dev-category-db-password` (→founder). Cluster /32-firewalled → 27 yaml assertions + SQL grant check + secret-scan PASS; server dry-run + dev smoke deferred (§15 F3). **I push + report; backend-coordinator runs the infra→integration merge gate.** See MS-4 Sub-Plan F UPDATE below.)
 **SSOT:** `docs/INFRASTRUCTURE_ARCHITECTURE.md` (read this first for the full live picture)
 
+## UPDATE — 2026-06-22 — mesell-infra-housekeeping-scribe-infra-session-1 — post-QA-wave master-tree reconcile + close superseded board-scribe PRs
+
+=== SESSION ===
+Phase: NOT a playbook §-resource op (no VM/K3s/ns/Postgres/Valkey/ingress/secret/cost change, Rs.0).
+       Pure git housekeeping — close superseded board-scribe PRs + reconcile the dirty master tree.
+
+=== TASK 1 — superseded qa-catalog board-scribe PRs ===
+- CLOSED #443 (qa-catalog Wave A RE-GATE board, board-only +4/-2) — superseded by the qa-catalog
+  wave merge #470 (494c783, develop tip 4138ead); merging it would REGRESS the qa board to an
+  in-flight gate snapshot. No memory/code lost.
+- LEFT OPEN + REPORTED #454 (Wave B REJECT) and #466 (Wave C scribe): each bundles GENUINELY
+  UN-LANDED qa-coordinator / e2e-test-writer MEMORY (Wave B "0-arg vi.fn / vitest!=ng-test typecheck"
+  learnings; Wave C CAT-BUG-1 429-rethrow seam + category-schema seed-gap + CAT-E2E selector registry)
+  that is NOT on develop. Per the brief's guardrail (do not close a PR carrying un-landed content),
+  these were NOT closed — flagged for founder/qa-coordinator decision.
+- DID NOT TOUCH #457/#460/#461 (different qa-wave-3 session; #460 is a FOUNDER-GATE PR).
+
+=== TASK 2 — dirty master tree reconcile + FF stale local develop ===
+- Master tree was a stale snapshot at 0100c55 (2 local data-engineer STATUS_DATA commits ahead;
+  48 behind origin/develop). 60 dirty tracked files + 17 untracked.
+- DISPOSITION: code/spec/test edits + deletions (backend/**, frontend/**, ci.yml, pnpm-lock,
+  angular.json, federation.manifest, boot-smoke, dead_route_guard.mjs delete, ...) = STALE reverts,
+  develop has the newer versions (forensically confirmed: 0-added/N-removed vs develop) = DISCARDED.
+- PRESERVED-via-PR (#473, sole-writer infra only): infra MEMORY 2 un-landed sections +
+  STATUS_INFRA e2e-port-reconcile block + the federation port-regime handoff memo.
+- NOT-LANDED (sole-writer boundary) + REPORTED: NON-infra leads' stranded STATUS_AI/BACKEND/DATA/
+  FRONTEND + boards + 15 other memory dirs + the 2 data-engineer STATUS_DATA commits. All preserved
+  zero-loss in stash@{0} + backup/master-develop-presync-20260622 + /tmp tar — for those leads to
+  re-scribe.
+- FF: stash -u (zero-loss) -> reset --hard origin/develop -> master tree CLEAN on 4138ead.
+Board sweep (start+end): IN-REVIEW/IN-PROGRESS rows (microservices-* lanes, dev-proxy, auth-otp,
+  federation reconcile) are standing EXTERNAL-GATE holds (FOUNDER/FE/backend-coordinator), NOT stalls.
+  No new row crossed the 7-day stall line outside those holds.
+Rs.0/mo.
 ## UPDATE — 2026-06-22 — mesell-fix-agent-memory-selfheal-infra-session-1 — agent-memory permission self-heal (Option 3)
 
 === SESSION START ===
@@ -143,6 +177,80 @@ Lanes landed (per PR body): Lane A backend pytest (#432, 36 tests 0 fail — pri
   PQE-E2E-01/02/03/05). Anchors: ₹61.78 settlement regression anchor; banned-words = OUT of V1 scope;
   export-download E2E carries a documented env FIXME (headless download wiring in CI).
 === SESSION END ===
+
+## UPDATE — 2026-06-22 — mesell-infra-housekeeping-scribe-infra-session-1 — LATE-SCRIBE of the e2e-port-reconcile session (its STATUS block + MEMORY were stranded uncommitted in the master tree; recovered during post-QA-wave housekeeping; the work itself — PR #447 — is already on develop)
+
+## UPDATE — 2026-06-22 — mesell-e2e-port-reconcile-infra-session-1 — fix the two dev-stack issues the auth E2E lane surfaced (INFRA-1 playwright port fix PR #447 + INFRA-2 slot-0 rebuild)
+
+=== SESSION START ===
+Phase: NOT a playbook §-resource op (no VM/K3s/ns/Postgres/Valkey/ingress/secret/cost change, ₹0,
+       dev-only). This is dev-tooling / local-stack work — same class as the meesell_env.py /
+       federation-manifest-reconcile lane; no INFRASTRUCTURE_PLAYBOOK §0-15 section maps. Governing
+       rule (own memory): "committing worktree-pinned ports into federation.manifest.json broke the
+       shell" → keep ONE canonical port regime; never git the contaminated master tree.
+Board sweep (session start): no NEW row crossed the 7-day-untouched stall line that isn't an explicit
+       external-gate hold. The 6 microservices rows + qa-wave-infra + dev-proxy + the two federation
+       rows remain IN REVIEW under FOUNDER/FE GATE (external holds, not stalls).
+
+=== INFRA-1 — federation.manifest port-MAPPING mismatch — diagnosed COMMITTED-FILE bug (1 surface left) ===
+Diagnosis: PR #412 (Option 1, founder-chosen; merge-commit `437c68d`, IN origin/develop) already
+  unified the dev port regime to SORTED — mfe-auth=4201 … mfe-pricing=4207 — across
+  federation.manifest.json == angular.json serve ports == ci.yml boot-smoke == serve-static.mjs ==
+  tools/meesell_env.py slot-0 (enumerate(sorted(mfes))). VERIFIED all consistent on current
+  origin/develop `9d5f5b4`. (My local develop `e82d52f` was 2 days stale and showed the OLD order —
+  the source of my initial mis-read.) The ONE remaining committed divergence: `frontend/e2e/
+  playwright.config.ts` `REMOTE_PORTS` defaults + header comment still carried the PRE-#412 order
+  (mfe-pricing=4201, mfe-auth=4206) — it was added on the parallel qa-wave-infra branch which never
+  saw #412. That is EXACTLY the reported symptom: shell serves canonical mfe-auth=4201 while playwright
+  thinks mfe-auth=4206 (= mfe-onboarding's port) → /login resolves LoginComponent from the wrong remote
+  → "Unknown exposed module" → D12 fallback. The e2e lane even authored a workaround for this verbatim
+  (`applyManifestPortFix`, env MEESELL_FIX_MANIFEST_PORTS, doc'd in federation_quirks.md) — but it
+  rewrites the served manifest FROM playwright's REMOTE_PORTS, so with the stale defaults it would have
+  written the WRONG map. Fix: **PR #447** (feature/e2e-port-reconcile/infra → develop, off `9d5f5b4`)
+  aligns playwright.config.ts to the sorted-canonical regime — 1 file, port literals + comment only,
+  +21/-15, zero spec/page-object/app change. PROOF: REMOTE_PORTS now == committed manifest for all 7
+  remotes (verified name→port identical). Founder's gate (D1) — DO NOT MERGE.
+
+=== INFRA-2 — stale slot-0 dev stack — rebuilt shell + mfe-onboarding + mfe-auth from clean develop-tip ===
+Confirmed stale: running :4206 mfe-onboarding bundle had 0× manufacturer_pincode/packer_pincode (pre
+  #399/#416 7-field Manufacturer/Packer Legal-Metrology form). DISCOVERY: slot-0 baseline = the master
+  tree on stale local develop `e82d52f`, AND its `apps/mfe-onboarding/src/app/onboarding.component.ts`
+  working copy is CONTAMINATED by a live sibling FE session (369→259 lines, the 7-field form removed in
+  WIP) — so building slot-0 from the master tree would re-bake the sibling's WIP, NOT develop tip.
+  Master tree carries 75 uncommitted files across concurrent sibling sessions → NEVER git it.
+Action: built shell (project `frontend`) + mfe-onboarding + mfe-auth from a CLEAN origin/develop-tip
+  worktree `/private/tmp/mesell-wt/e2e-port-reconcile` (pnpm install --frozen-lockfile reused the store,
+  4s). Hit the documented esbuild --service deadlock once on the first (master-tree) attempt — killed +
+  retried clean. Re-served the 3 on slot-0 ports via boot-smoke/serve.js: :4200 (shell, w/ /api proxy →
+  :8000), :4201 (mfe-auth), :4206 (mfe-onboarding). Killed ONLY the 3 serve.js pids (verified each is a
+  serve.js node proc before kill); backend :8000 (uvicorn pid 12722) + the 5 other remotes UNTOUCHED.
+VERIFIED: served onboarding chunk byte-identical to the clean build; contains all 6 LM fields
+  (manufacturer/packer name+address+pincode, 10× each pincode) + pincodeValidator; shell :4200 serves
+  the canonical SORTED manifest; agent-browser http://localhost:4200/login renders LoginComponent
+  (login-phone-input + login-request-otp testids present, body = real "Welcome back" login form),
+  federationFailure=false → the auth E2E root cause (wrong-remote → Unknown exposed module → D12) is
+  GONE; shell /api proxy returns real 401 JSON (not index.html); all 7 remotes + backend = 200. The
+  other 5 remotes' only e82d52f..tip delta is `.spec.ts` files (zero runtime delta) so their
+  master-tree-served bundles are NOT runtime-stale.
+
+=== CANONICAL CONVENTION SETTLED ===
+SORTED / alphabetical (= #412 Option 1, founder-chosen): shell=4200; mfe-auth=4201, mfe-billing=4202,
+  mfe-catalog=4203, mfe-dashboard=4204, mfe-export=4205, mfe-onboarding=4206, mfe-pricing=4207;
+  slot N: shell=4200+N*10, mfe[i]=4201+N*10+i over sorted mfe-* names, backend=8000+N*10. This is now
+  identical across federation.manifest.json, angular.json, ci.yml, serve-static.mjs, start-all.mjs,
+  tools/meesell_env.py slot-0, AND (after PR #447) frontend/e2e/playwright.config.ts.
+
+=== login.spec.ts verdict ===
+WOULD run GREEN on the federation/port axis: auth.setup.ts loginViaOtp → /login now renders
+  LoginComponent from the correct remote (browser-confirmed). The remaining gate to a FULL green
+  authed run is the dev OTP rate-limit (the dev-proxy audit's 3/3600s finding; the suite clears it in
+  globalSetup) and the deferred-go-live GIS-403 on the Google button (gauth localhost origin) — both
+  pre-existing, unrelated to ports, and out of this task's scope.
+
+=== SESSION END ===
+Board sweep (session end): added e2e-port-reconcile row (IN REVIEW, founder gate). No row newly crossed
+  the 7-day stall line outside the standing external-gate holds. Stack LEFT RUNNING on
+  http://localhost:4200 (rebuilt shell+auth+onboarding) for the e2e lane / re-audit. ₹0/mo.
 
 ## UPDATE — 2026-06-22 — mesell-onboarding-testing-session-1 — qa-onboarding integration→develop merge (founder-authorized) + #417 STOP + session handoff doc
 
