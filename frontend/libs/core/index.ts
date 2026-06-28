@@ -18,9 +18,13 @@ export { NetworkService } from './services/network.service';
 
 // ── Interceptors ─────────────────────────────────────────────────────────────
 export { jwtInterceptor } from './interceptors/jwt.interceptor';
+export { retryInterceptor } from './interceptors/retry.interceptor';
 export { refreshInterceptor } from './interceptors/refresh.interceptor';
 export { errorInterceptor } from './interceptors/error.interceptor';
 export type { ApiErrorEnvelope } from './interceptors/error.interceptor';
+
+// ── Error handling ────────────────────────────────────────────────────────────
+export { GlobalErrorHandler } from './errors/global-error-handler';
 
 // ── Guards ───────────────────────────────────────────────────────────────────
 export { authGuard } from './guards/auth.guard';

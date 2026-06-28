@@ -9,6 +9,7 @@
 // analysis graph so they stay shared+singleton and resolve to the shell's import-map
 // instances. Referencing only one expose would let a lib used solely by the OTHER expose
 // get inlined into that component's chunk → silent singleton drift. (Mirrors mfe-onboarding.)
+import { ErrorHandler, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
 import { provideRouter, type Routes } from '@angular/router';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
@@ -17,7 +18,13 @@ import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/
 import { LandingComponent } from './app/landing.component';
 import { DashboardComponent } from './app/dashboard.component';
 
-import { jwtInterceptor, refreshInterceptor, errorInterceptor } from '@mesell/core';
+import {
+  GlobalErrorHandler,
+  jwtInterceptor,
+  retryInterceptor,
+  refreshInterceptor,
+  errorInterceptor,
+} from '@mesell/core';
 
 const devRoutes: Routes = [
   { path: '', component: LandingComponent },
@@ -26,13 +33,16 @@ const devRoutes: Routes = [
 
 bootstrapApplication(LandingComponent, {
   providers: [
+    provideBrowserGlobalErrorListeners(),
+    { provide: ErrorHandler, useClass: GlobalErrorHandler },
     provideRouter(devRoutes),
     provideAnimationsAsync(),
-    // Wave 6 Wave A: interceptor chain for dev-serve standalone parity.
+    // Wave 6 Wave A + observability wave: interceptor chain for dev-serve standalone parity.
     // In federated mode the shell injector provides HttpClient (proven #101 ruling).
+    // Chain: jwt sets Bearer → retry backs off on network/5xx → refresh handles 401 → error records.
     provideHttpClient(
       withFetch(),
-      withInterceptors([jwtInterceptor, refreshInterceptor, errorInterceptor]),
+      withInterceptors([jwtInterceptor, retryInterceptor, refreshInterceptor, errorInterceptor]),
     ),
   ],
 }).catch((err) => console.error(err));

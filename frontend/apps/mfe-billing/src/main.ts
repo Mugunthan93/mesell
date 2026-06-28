@@ -7,6 +7,7 @@
 // them in the shared[] map. provideRouter(BILLING_ROUTES) here ensures both
 // plans/account components (and thus @mesell/core AuthService, @mesell/ui-kit)
 // are reachable. Do NOT trim BILLING_ROUTES to a subset here.
+import { ErrorHandler, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
@@ -15,22 +16,29 @@ import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/
 import { PlansComponent } from './app/plans/plans.component';
 import { BILLING_ROUTES } from './app/billing.routes';
 
-import { jwtInterceptor, refreshInterceptor, errorInterceptor } from '@mesell/core';
+import {
+  GlobalErrorHandler,
+  jwtInterceptor,
+  retryInterceptor,
+  refreshInterceptor,
+  errorInterceptor,
+} from '@mesell/core';
 import { provideMeeUi } from '@mesell/ui-kit';
 
 bootstrapApplication(PlansComponent, {
   providers: [
+    provideBrowserGlobalErrorListeners(),
+    { provide: ErrorHandler, useClass: GlobalErrorHandler },
     provideRouter(BILLING_ROUTES),
     provideAnimationsAsync(),
     // PrimeNG theme + services — mirrors shell app.config.ts (dev-serve parity)
     ...provideMeeUi(),
     // HttpClient for standalone dev-serve (pnpm start:mfe-billing).
     // In federation the shell injector provides HttpClient (proven #101 ruling).
-    // Interceptor chain: jwt sets Bearer header → refresh catches 401 →
-    // error surfaces envelope. Matches every other remote's main.ts chain.
+    // Chain: jwt sets Bearer → retry backs off on network/5xx → refresh handles 401 → error records.
     provideHttpClient(
       withFetch(),
-      withInterceptors([jwtInterceptor, refreshInterceptor, errorInterceptor]),
+      withInterceptors([jwtInterceptor, retryInterceptor, refreshInterceptor, errorInterceptor]),
     ),
   ],
 }).catch((err: unknown) => console.error(err));

@@ -12,6 +12,7 @@
 // loadComponent targets, so every page (and thus every shared lib any page consumes)
 // stays in the analysis graph. Do NOT trim CATALOG_ROUTES here or short-circuit to a
 // subset — the FULL route set must be reachable from main.ts (forward rule from SP03).
+import { ErrorHandler, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
@@ -20,11 +21,19 @@ import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/
 import { CatalogListComponent } from './app/catalog-list.component';
 import { CATALOG_ROUTES } from './app/catalog.routes';
 
-import { jwtInterceptor, refreshInterceptor, errorInterceptor } from '@mesell/core';
+import {
+  GlobalErrorHandler,
+  jwtInterceptor,
+  retryInterceptor,
+  refreshInterceptor,
+  errorInterceptor,
+} from '@mesell/core';
 import { provideMeeUi } from '@mesell/ui-kit';
 
 bootstrapApplication(CatalogListComponent, {
   providers: [
+    provideBrowserGlobalErrorListeners(),
+    { provide: ErrorHandler, useClass: GlobalErrorHandler },
     provideRouter(CATALOG_ROUTES),
     provideAnimationsAsync(),
     // PrimeNG theme + services — mirrors shell app.config.ts (dev-serve parity)
@@ -33,12 +42,12 @@ bootstrapApplication(CatalogListComponent, {
     // In federation the shell injector (app.config.ts) provides HttpClient;
     // this entry is the fallback for the remote's own bootstrap context.
     // withFetch() = Fetch API backend (Angular 18+).
-    // Wave 6 Wave A: interceptor chain matches shell (jwt → refresh → error).
+    // Chain: jwt sets Bearer → retry backs off on network/5xx → refresh handles 401 → error records.
     // NOTE: in federated mode the shell injector provides HttpClient; this
     // registration is for dev-serve standalone parity (proven #101 ruling).
     provideHttpClient(
       withFetch(),
-      withInterceptors([jwtInterceptor, refreshInterceptor, errorInterceptor]),
+      withInterceptors([jwtInterceptor, retryInterceptor, refreshInterceptor, errorInterceptor]),
     ),
   ],
 }).catch((err) => console.error(err));
