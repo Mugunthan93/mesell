@@ -1301,6 +1301,7 @@ def cmd_up(args) -> None:
             "shell_dist": str(shell_dist),
         }
         save_state(state)
+        sync_log_symlinks()  # DF-1: (re)build .nexus/logs/<service>.log farm
 
     info(f"env '{args.worktree}' up on slot {slot}. "
          f"Open shell: http://localhost:{block['shell']}")
@@ -1350,6 +1351,7 @@ def cmd_down(args) -> None:
             shutil.rmtree(copy_dir, ignore_errors=True)
     del state[args.worktree]
     save_state(state)
+    sync_log_symlinks()  # DF-1: rebuild from the shrunken state -> prunes this env
     info(f"env '{args.worktree}' down ({stopped} processes). Slot reservation kept.")
 
 
@@ -1406,6 +1408,7 @@ def cmd_baseline(args) -> None:
             "shell_dist": str(shell_dist),
         }
         save_state(state)
+        sync_log_symlinks()  # DF-1: (re)build .nexus/logs/<service>.log farm
     info(f"baseline {args.action} complete on slot 0. "
          f"Shell: http://localhost:{block['shell']}")
 
@@ -1434,6 +1437,8 @@ def cmd_gc(args) -> None:
                        if s.get("drift") and s.get("port"))
         info(f"gc: DRIFT — slot {e['slot']} ({e['worktree']}) has untracked "
              f"listeners on {ports} (running outside the manager; not killed)")
+
+    sync_log_symlinks()  # DF-1: reconcile the .nexus/logs/ farm to live services
 
     if not (rec["pruned_envs"] or rec["pruned_slots"] or rec["pruned_procs"]
             or drift_envs):
@@ -1527,10 +1532,17 @@ def redact(text: str) -> str:
 
 # ---------------------------------------------------------------------------
 # §3.1 Service-keyed log registry (in-memory name->path resolver).
-# DF-1 decision: pure resolver (no symlink farm) so up/down/baseline/gc
-# lifecycle behaviour is untouched. Build logs stay separate (already exposed
-# via /api/log). Out-of-band procs (celery/postgres/valkey) are best-effort
-# via the optional logmonitor.json extra-path config (DF-3, default-empty).
+# The resolver below stays the single READ path for the dashboard + radar — it
+# maps a service key to the REAL per-port log on disk, robust regardless of any
+# symlink state. DF-1 (founder-locked 2026-06-28): a `.nexus/logs/<service>.log`
+# SYMLINK FARM is additionally maintained over those real files purely for human
+# convenience (`tail -f .nexus/logs/backend.log`) — zero copies, no double-write,
+# no extra RAM. The farm is (re)built at `up`/`baseline up` and pruned at
+# `down`/`gc` (see sync_log_symlinks / prune_log_symlinks); it is a side layer,
+# never the read path, so lifecycle behaviour and the read path are unchanged.
+# Build logs stay separate (already exposed via /api/log). Out-of-band procs
+# (celery/postgres/valkey) are best-effort via the optional logmonitor.json
+# extra-path config (DF-3, default-empty).
 # ---------------------------------------------------------------------------
 
 def _load_logmonitor_extra() -> dict[str, str]:
@@ -1571,6 +1583,71 @@ def service_log_index(state: dict | None = None) -> dict[str, Path]:
 
 
 # ---------------------------------------------------------------------------
+# DF-1 symlink farm — `.nexus/logs/<service>.log` -> the real per-port log.
+# (Re)built at `up`/`baseline up`; pruned at `down`/`gc`. Symlinks only — a pure
+# convenience layer for `tail -f`, NEVER a copy and NEVER the dashboard read path
+# (the resolver above reads the real files). Best-effort + idempotent: any error
+# is swallowed so the symlink farm can never affect the env lifecycle. All paths
+# stay inside .nexus/ (gitignored scratch); the farm writes nothing elsewhere.
+# ---------------------------------------------------------------------------
+
+LOGS_SYMLINK_DIR = NEXUS_DIR / "logs"
+
+
+def sync_log_symlinks() -> None:
+    """Rebuild the .nexus/logs/<service>.log symlink farm from the live index.
+
+    Idempotent: existing correct symlinks are left as-is; stale ones (wrong
+    target, or a service no longer live) are removed. Real log files are never
+    touched. Called at `up` / `baseline up` (create) and reused at `down` / `gc`
+    (where the shrunken state naturally prunes the gone services).
+    """
+    try:
+        index = service_log_index()
+    except Exception:  # noqa: BLE001 — the farm must never break the lifecycle
+        return
+    try:
+        LOGS_SYMLINK_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return
+    wanted: set[str] = set()
+    for svc, target in index.items():
+        link = LOGS_SYMLINK_DIR / f"{svc}.log"
+        wanted.add(link.name)
+        try:
+            if link.is_symlink():
+                if os.path.realpath(link) == os.path.realpath(target):
+                    continue
+                link.unlink()
+            elif link.exists():
+                continue  # a real file collides — never clobber it
+            link.symlink_to(target)
+        except OSError:
+            continue
+    prune_log_symlinks(keep=wanted)
+
+
+def prune_log_symlinks(keep: set[str] | None = None) -> None:
+    """Remove farm symlinks whose service is gone (keep=names to retain), or all
+    of them when keep is None. Only ever unlinks SYMLINKS inside .nexus/logs/."""
+    if not LOGS_SYMLINK_DIR.exists():
+        return
+    try:
+        entries = list(LOGS_SYMLINK_DIR.iterdir())
+    except OSError:
+        return
+    for link in entries:
+        if not link.is_symlink():
+            continue  # never delete a real file
+        if keep is not None and link.name in keep:
+            continue
+        try:
+            link.unlink()
+        except OSError:
+            continue
+
+
+# ---------------------------------------------------------------------------
 # §3.2 Line parsing — normalize a raw log line into {ts, service, level, msg}.
 # Level is parsed from uvicorn / Python-logging tokens; serve.js lines default
 # INFO unless an error signature upgrades them.
@@ -1602,18 +1679,31 @@ def parse_log_line(line: str, service: str) -> dict:
     return {"service": service, "level": level, "msg": safe}
 
 
-def tail_service_log(path: Path, *, max_bytes: int, max_lines: int) -> tuple[list[str], int, bool]:
-    """Return (lines, size, truncated). Read at most max_bytes from the tail."""
+def tail_service_log(path: Path, *, max_bytes: int, max_lines: int,
+                     since: int | None = None) -> tuple[list[str], int, bool]:
+    """Return (lines, size, truncated). Read at most max_bytes from the tail.
+
+    `since` (byte offset) enables incremental fetch: read only bytes written
+    after `since` so a poller pulls just the new tail. `size` is returned as the
+    next cursor. If `since` is out of range (file rotated/truncated, or > size)
+    it is ignored and a fresh tail is read. `since=None` => exact legacy tail.
+    """
     if not path.exists():
         return [], 0, False
     with open(path, "rb") as fh:
         fh.seek(0, os.SEEK_END)
         size = fh.tell()
-        fh.seek(max(0, size - max_bytes))
+        if since is not None and 0 <= since <= size:
+            start = since
+            if size - start > max_bytes:  # cap a huge first incremental read
+                start = size - max_bytes
+        else:
+            start = max(0, size - max_bytes)
+        fh.seek(start)
         raw = fh.read()
     text = _ANSI_RE.sub("", raw.decode("utf-8", errors="replace"))
     lines = [ln for ln in text.split("\n") if ln.strip()]
-    truncated = size > max_bytes
+    truncated = start > 0
     if len(lines) > max_lines:
         lines = lines[-max_lines:]
         truncated = True
@@ -1805,7 +1895,12 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         text = raw.decode("utf-8", errors="replace")
         # Strip ANSI colour codes so the in-browser <pre> reads cleanly.
         text = re.sub(r"\x1b\[[0-9;]*m", "", text)
+        # §6 retrofit: route build logs through the same redaction filter as the
+        # runtime-log + radar paths (defence in depth — build logs shouldn't carry
+        # creds, but a one-place filter means nothing is ever echoed raw).
+        text = redact(text)
         self._send_json({"project": proj, "slot": slot, "exists": True,
+                         "redacted": True,
                          "truncated": size > _LOG_TAIL_BYTES, "log": text})
 
     # ----- DEV LOG MONITOR (V1) endpoints --------------------------------
@@ -1816,6 +1911,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         Mirrors the /api/log guards: service-name validation, ANSI strip,
         byte-bounded read. Every line is redacted (§6) before it is returned.
         `service` omitted/`all` => merged across every live service.
+        `since` => byte offset for incremental single-service fetch (pull only
+        new bytes); the response carries `cursor` (next offset) to pass back.
+        `since` is ignored for the merged `all` view (multiple files).
         `n` => max lines (capped at _LOGS_MAX_LINES).
         """
         index = service_log_index()
@@ -1825,14 +1923,20 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         except ValueError:
             n = _LOGS_MAX_LINES
         n = max(1, min(n, _LOGS_MAX_LINES))
+        since_raw = (qs.get("since") or [""])[0]
+        try:
+            since = max(0, int(since_raw)) if since_raw else None
+        except ValueError:
+            since = None
 
-        if req_svc and req_svc not in ("", "all"):
+        single = bool(req_svc and req_svc not in ("", "all"))
+        if single:
             if not _SERVICE_RE.match(req_svc):
                 self._send_json({"error": "invalid service"}, code=400)
                 return
             if req_svc not in index:
                 self._send_json({"service": req_svc, "lines": [], "exists": False,
-                                 "services": sorted(index),
+                                 "services": sorted(index), "cursor": 0,
                                  "note": "no runtime log for this service"})
                 return
             targets = {req_svc: index[req_svc]}
@@ -1840,21 +1944,29 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             targets = index
 
         out = []
+        cursor = None
         for service in sorted(targets):
-            lines, _size, _trunc = tail_service_log(
-                targets[service], max_bytes=_LOGS_TAIL_BYTES, max_lines=n)
+            # `since` only applies to a single-service incremental poll.
+            lines, size, _trunc = tail_service_log(
+                targets[service], max_bytes=_LOGS_TAIL_BYTES, max_lines=n,
+                since=since if single else None)
+            if single:
+                cursor = size
             for ln in lines:
                 out.append(parse_log_line(ln, service))  # redacts inside
         # Newest-last; for merged view cap the total to n*services already done.
-        if req_svc in ("", "all") and len(out) > _LOGS_MAX_LINES:
+        if not single and len(out) > _LOGS_MAX_LINES:
             out = out[-_LOGS_MAX_LINES:]
-        self._send_json({
+        resp = {
             "service": req_svc or "all",
             "services": sorted(index),
             "count": len(out),
             "lines": out,
             "generated_iso": _now_iso(),
-        })
+        }
+        if single:
+            resp["cursor"] = cursor
+        self._send_json(resp)
 
     def _serve_radar(self) -> None:
         """Current error-radar counters + firing alerts. Ingests the tail of
@@ -1872,7 +1984,7 @@ def cmd_dashboard(args) -> None:
     info("  GET /              the dashboard SPA")
     info("  GET /api/state     full JSON model")
     info("  GET /api/log?project=<name>&slot=<N>  tail of .nexus/build-slot<N>-<name>.log")
-    info("  GET /api/logs?service=<name>  poll-tail of a service's RUNTIME log (redacted)")
+    info("  GET /api/logs?service=<name>&since=<offset>  poll-tail of a service's RUNTIME log (redacted)")
     info("  GET /api/radar                error-radar detector counters (redacted)")
     info("Ctrl-C to stop. This server NEVER builds and NEVER holds the build lock.")
     try:
