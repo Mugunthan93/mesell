@@ -214,11 +214,16 @@
 </header>
 
 <main>
+  <!-- Error radar — ALWAYS visible above the env-grid (spec §3.3 / task).
+       Independent 3s poll; the first thing the eye hits. -->
+  <div class="radar" id="radar" data-testid="radar-panel"></div>
+  <div class="radar-alerts" id="radar-alerts" data-testid="radar-alerts"></div>
+
   <div class="tabs" data-testid="tabs">
     <button class="tab-btn active" id="tab-envs" data-testid="envs-tab"
             onclick="showTab('envs')">Environments</button>
     <button class="tab-btn" id="tab-logs" data-testid="logs-tab"
-            onclick="showTab('logs')">Logs &amp; Radar</button>
+            onclick="showTab('logs')">Logs</button>
   </div>
 
   <div id="envs-panel">
@@ -229,9 +234,6 @@
   </div>
 
   <div id="logs-panel" data-testid="logs-panel">
-    <div class="radar" id="radar" data-testid="radar-panel"></div>
-    <div class="radar-alerts" id="radar-alerts" data-testid="radar-alerts"></div>
-
     <div class="log-controls" data-testid="log-controls">
       <span class="pill-toggle lvl-error on" id="lvl-error" data-testid="log-filter-level-error"
             onclick="toggleLevel('ERROR')">ERROR</span>
@@ -478,7 +480,8 @@ setInterval(poll, POLL_MS);
    Dev Log Monitor (V1) — timeline + error radar (poll-tail).
    Default-collapsed tab; the env-grid above is unchanged on load.
    ============================================================ */
-const LOG_POLL_MS = 2000;
+const LOG_POLL_MS = 1000;         // 1s tail poll (per spec §3.2 / DF-2)
+const RADAR_POLL_MS = 3000;       // 3s radar poll, ALWAYS on (spec §3.3 / task)
 const RING_MAX = 2000;            // client-side ring buffer cap
 const SVC_HUES = {};              // service -> stable hue
 let SVC_HUE_SEED = 0;
@@ -509,7 +512,7 @@ function showTab(name) {
 }
 function ensureLogTimer() {
   if (!logTimer) logTimer = setInterval(() => {
-    if (activeTab === "logs") { pollLogs(); pollRadar(); }
+    if (activeTab === "logs") pollLogs();
   }, LOG_POLL_MS);
 }
 
@@ -647,6 +650,11 @@ async function pollRadar() {
     renderRadar(await r.json());
   } catch (e) { /* radar is best-effort */ }
 }
+
+// Radar is ALWAYS visible (above the env-grid) and polls independently of the
+// logs tab, every RADAR_POLL_MS (spec §3.3 / task).
+pollRadar();
+setInterval(pollRadar, RADAR_POLL_MS);
 </script>
 </body>
 </html>

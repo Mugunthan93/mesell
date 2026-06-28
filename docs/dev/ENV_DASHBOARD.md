@@ -53,6 +53,8 @@ reflects the **shared** live state.
 | `GET /` | the self-contained SPA (`tools/env_dashboard/index.html`) |
 | `GET /api/state` | the full JSON model (see below) |
 | `GET /api/log?project=<name>&slot=<N>` | tail (≤64 KB, ANSI-stripped) of the per-env log `.nexus/build-slot<N>-<name>.log` |
+| `GET /api/logs?service=<name>&since=<offset>&n=<lines>` | Dev Log Monitor poll-tail of one service's RUNTIME log (`backend`/`shell`/`mfe-<name>`/opt-in extras), each line redacted (§6) + parsed to `{service, level, msg}`. `since` = byte offset for incremental fetch; the response carries `cursor` (next offset). `service` omitted/`all` ⇒ merged across every live service (no cursor). `n` capped at 400. |
+| `GET /api/radar` | Dev Log Monitor error-radar: per-detector rolling-window counters + firing alerts (redacted samples). Ingests the tail of every service log on each call (no background thread). |
 
 Both `project` and `slot` are validated against `^[A-Za-z0-9_.-]+$` (path-traversal
 is rejected with `400`); `slot` must additionally parse as an int. `slot` is the
@@ -61,6 +63,23 @@ dashboard passes each build row's own `slot` so the viewer tails the right one.
 `slot` omitted ⇒ slot 0. If the per-env log is absent the handler falls back to a
 legacy project-only `.nexus/build-<name>.log` (so old logs still tail). A project
 with no log at all returns `{"exists": false, ...}`.
+
+**Secret redaction (Dev Log Monitor, §6).** Every line returned by `/api/logs`
+and every radar sample is passed through one ordered redaction filter
+(`redact()`) BEFORE it is parsed, returned, or counted — masking `Bearer`/JWT
+tokens, OTP codes, secret env-var values (`JWT_SECRET`, `GEMINI_API_KEY`, …),
+cookies, and PII (phone middle masked; email local-part masked, domain kept —
+DF-4). The `/api/log` build-log path is retrofitted through the same filter
+(`"redacted": true`) so nothing is ever echoed raw. The filter list is the one
+place patterns live — adding a pattern is a one-line edit.
+
+**Service-log symlink farm (DF-1, founder-locked 2026-06-28).** At `up` /
+`baseline up` the tool (re)builds a `.nexus/logs/<service>.log` symlink farm
+pointing at the real per-port logs (`backend-<port>.log`, `serve-<port>.log`),
+and prunes it at `down` / `gc`. It is a human convenience
+(`tail -f .nexus/logs/backend.log`) — symlinks only, zero copies, never the
+dashboard read path (the resolver always reads the real files), and best-effort
+so it can never affect the env lifecycle.
 
 ---
 
@@ -206,6 +225,19 @@ skill to navigate, assert, and screenshot. Every meaningful element carries a
 | `build-history`, `build-row`, `build-log-link` | build list, row, clickable project |
 | `log-modal`, `log-modal-title`, `log-modal-body`, `log-modal-close` | log viewer modal |
 | `last-update`, `footer` | poll timestamp / footer |
+| `tabs`, `envs-tab`, `logs-tab` | tab strip + the Environments / Logs tab buttons |
+| `radar-panel` | the error-radar strip (always visible above the env-grid) |
+| `radar-counter-<name>` | one detector counter (e.g. `radar-counter-auth-401-storm`); class `firing` when over threshold |
+| `radar-count-<name>` | the numeric count inside a counter |
+| `radar-alerts`, `radar-alert` | the fired-alert container / one alert row |
+| `logs-panel` | the Dev Log Monitor timeline container (default-collapsed tab) |
+| `log-controls` | the filter/search control bar |
+| `log-filter-level-error`, `-warn`, `-info` | level filter pills |
+| `log-filter-service-<name>` | per-service show/hide chip (e.g. `log-filter-service-mfe-pricing`) |
+| `log-search` | the debounced text-search input |
+| `log-follow-toggle` | auto-scroll-to-bottom toggle |
+| `log-stream`, `log-stream-status` | the scrolling timeline / connected\|polling\|stalled indicator |
+| `log-line` | one rendered line; carries `data-service` + `data-level` attrs |
 
 ### Typical agent flow
 
