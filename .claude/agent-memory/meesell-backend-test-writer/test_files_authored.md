@@ -100,3 +100,15 @@ fixture-polluted one (`categories`).
 
 ## qa-auth-contract backend lane (PR #440)
 qa-auth-contract backend lane (PR #440): 6 net-new (BE-AUTH-05/08-recovery/10/12/14/15) + 3 upgrades (04/16/02-03); ran 61 passed live vs meesell_test. BE-AUTH-09/11 dropped (covered by #427 `test_refresh_401_clears_stale_cookie`).
+
+## D2 event-loop fix — `test_iam_logout_idempotency.py` (2026-06-27, PR #498 → develop)
+
+Pre-existing bug fix (not a qa-wave lane PR). One file edited, zero files created.
+
+| Path | Task | Covers |
+|---|---|---|
+| `backend/tests/modules/iam/test_iam_logout_idempotency.py` | D2-fix | iam — logout idempotency (both tests now use `valkey["otp"]` from the loop-scoped conftest fixture, not the `get_valkey_otp()` module singleton) |
+
+Run result: environment-blocked (PostgreSQL :5433 + Valkey :6381 tunnels not running locally).
+Static diff confirms: both `use_live_valkey` signatures → `valkey`; both `_vk_mod` imports + `get_valkey_otp()` calls removed; `vk = valkey["otp"]` binding in each body; all body references `valkey` → `vk`; zero assertions changed.
+Spec: `docs/plans/qa/spec_qa-image-ai-iam-logout-idempotency-d2-fix.md`.
