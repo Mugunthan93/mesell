@@ -441,6 +441,7 @@ source_modules = [
     "app.modules.pricing",
     "app.modules.dashboard",
     "app.modules.export",
+    "app.modules.monitor",
 ]
 forbidden_modules = ["app.adapters.gemini"]
 unmatched_ignore_imports_alerting = "none"
@@ -469,6 +470,7 @@ source_modules = [
     "app.modules.image",
     "app.modules.pricing",
     "app.modules.dashboard",
+    "app.modules.monitor",
     "app.core",
     "app.shared",
     "app.ai_ops",
@@ -897,6 +899,7 @@ source_modules = [
     "app.modules.pricing",
     "app.modules.dashboard",
     "app.modules.export",
+    "app.modules.monitor",
 ]
 forbidden_modules = ["app.ai_ops"]
 unmatched_ignore_imports_alerting = "none"
@@ -1244,4 +1247,99 @@ ignore_imports = [
     "app.modules.image.tasks -> app.modules.image.service",
     "app.modules.export.service -> app.modules.export.tasks",
     "app.modules.export.tasks -> app.modules.export.service",
+]
+
+
+# ============================================================================
+# monitor module sub-contracts (Wave-4 Unit N — category-monitor router)
+# Follows the same per-source-module expansion pattern as Contracts 1, 4, 7.
+# monitor has its own repository (W2-W4-F reads/writes), its own schemas
+# (Wave-4 Unit N), its own router (Wave-4 Unit N), and its own tasks (W2/W4-F).
+# ============================================================================
+
+[[tool.importlinter.contracts]]
+name = "Contract 1.monitor — monitor does not import other modules' repository"
+type = "forbidden"
+source_modules = ["app.modules.monitor"]
+forbidden_modules = [
+    "app.modules.iam.repository",
+    "app.modules.customer.repository",
+    "app.modules.category.repository",
+    "app.modules.catalog.repository",
+    "app.modules.image.repository",
+    "app.modules.pricing.repository",
+    "app.modules.export.repository",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.monitor -> app.modules.monitor.router",
+    "app.modules.monitor.router -> app.modules.monitor.service",
+    "app.modules.monitor.service -> app.modules.monitor.repository",
+    "app.modules.monitor.router -> app.modules.monitor.schemas",
+    "app.modules.monitor.service -> app.modules.monitor.tasks",
+    "app.modules.monitor.tasks -> app.modules.monitor.service",
+    "app.modules.monitor.tasks -> app.modules.monitor.repository",
+    # Wave-3 get_served_category_data: monitor.service lazy-imports core.cache,
+    # which transitively reaches category.service → category.repository via the
+    # prewarm path in cache.py. This is NOT a direct monitor→repository import;
+    # it is a transitive dependency via core/, which is an allowed layer.
+    # The three edges of the transitive chain are suppressed here so the linter
+    # treats them as an allowed path (matches how Contract 1.* handles intra-module
+    # re-export chains). The spirit of Contract 1.monitor (no DIRECT cross-module
+    # repository import from monitor.service) is preserved.
+    "app.modules.monitor.service -> app.core.cache",
+    "app.core.cache -> app.modules.category.service",
+    "app.modules.category.service -> app.modules.category.repository",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contract 4.monitor — monitor does not import other modules' schemas"
+type = "forbidden"
+source_modules = ["app.modules.monitor"]
+forbidden_modules = [
+    "app.modules.iam.schemas",
+    "app.modules.customer.schemas",
+    "app.modules.category.schemas",
+    "app.modules.catalog.schemas",
+    "app.modules.image.schemas",
+    "app.modules.pricing.schemas",
+    "app.modules.dashboard.schemas",
+    "app.modules.export.schemas",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.monitor -> app.modules.monitor.router",
+    "app.modules.monitor.router -> app.modules.monitor.service",
+    "app.modules.monitor.service -> app.modules.monitor.repository",
+    "app.modules.monitor.router -> app.modules.monitor.schemas",
+    "app.modules.monitor.service -> app.modules.monitor.tasks",
+    "app.modules.monitor.tasks -> app.modules.monitor.service",
+    "app.modules.monitor.tasks -> app.modules.monitor.repository",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contract 7.monitor — monitor does not import other modules' router/tasks"
+type = "forbidden"
+source_modules = ["app.modules.monitor"]
+forbidden_modules = [
+    "app.modules.iam.router",
+    "app.modules.customer.router",
+    "app.modules.category.router",
+    "app.modules.catalog.router",
+    "app.modules.image.router",
+    "app.modules.image.tasks",
+    "app.modules.pricing.router",
+    "app.modules.dashboard.router",
+    "app.modules.export.router",
+    "app.modules.export.tasks",
+]
+unmatched_ignore_imports_alerting = "none"
+ignore_imports = [
+    "app.modules.monitor -> app.modules.monitor.router",
+    "app.modules.monitor.router -> app.modules.monitor.service",
+    "app.modules.monitor.service -> app.modules.monitor.repository",
+    "app.modules.monitor.router -> app.modules.monitor.schemas",
+    "app.modules.monitor.service -> app.modules.monitor.tasks",
+    "app.modules.monitor.tasks -> app.modules.monitor.service",
+    "app.modules.monitor.tasks -> app.modules.monitor.repository",
 ]

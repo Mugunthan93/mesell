@@ -284,6 +284,14 @@ class Settings(BaseSettings):
     # Set FEATURE_LIVE_PREVIEW_ENABLED=true in .env to enable in development.
     FEATURE_LIVE_PREVIEW_ENABLED: bool = False
 
+    # FEATURE_CATEGORY_MONITOR_ENABLED: default FALSE — mirrors google-auth
+    # precedent.  The GET /api/v1/notifications router is NOT mounted when
+    # False, so the §17 endpoint count stays at 28 until the flag is flipped
+    # per-namespace by the founder.  §17 28→29 LOCKED amendment is the
+    # founder's gate at the integration→develop merge; do NOT self-apply.
+    # Not in REQUIRED_FIELDS — safe default False until per-namespace flip.
+    FEATURE_CATEGORY_MONITOR_ENABLED: bool = False
+
     # ── Dev-only OTP bypass (dev-otp-bypass feature) ───────────────────────────
     # OFF by default ("" == disabled). When NON-EMPTY *and* APP_ENV != "production",
     # the OTP-verify path treats a submitted code equal to this value as a match

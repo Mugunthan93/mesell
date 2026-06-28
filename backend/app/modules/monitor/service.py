@@ -556,8 +556,75 @@ async def fanout_category_change(
     }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Wave-4 Unit N — notification read service
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+async def list_notifications(
+    user_id: UUID,
+    page: int,
+    limit: int,
+    unread_only: bool,
+    db: AsyncSession,
+) -> tuple[list[Any], int, int]:
+    """Return a paginated list of notifications for one seller.
+
+    Tenancy is enforced by scoping every query to ``user_id`` via
+    :func:`app.core.tenancy.scope_to_user`.  No other user's rows are ever
+    returned.
+
+    Args:
+        user_id:      The caller's authenticated ``user_id``.
+        page:         1-based page number (``?page=``).
+        limit:        Page size (``?limit=``).
+        unread_only:  When ``True``, only ``is_read=false`` rows are returned.
+        db:           Async database session (injected via ``Depends(get_db)``).
+
+    Returns:
+        ``(items, total, unread_count)`` where:
+          * ``items`` — the ``Notification`` ORM rows for the requested page,
+            ordered ``created_at DESC``.
+          * ``total`` — total matching rows (respects ``unread_only`` filter).
+          * ``unread_count`` — TOTAL unread rows for this user (always across
+            ALL pages, so the FE bell badge is accurate regardless of
+            which page is requested).
+    """
+    from sqlalchemy import func, select
+
+    from app.core.tenancy import scope_to_user
+    from app.shared.models.notification import Notification
+
+    offset = (page - 1) * limit
+
+    # ── Base tenant-scoped query ──────────────────────────────────────────────
+    base_q = scope_to_user(select(Notification), user_id)
+    if unread_only:
+        base_q = base_q.where(Notification.is_read.is_(False))
+
+    # ── Count (total matching rows) ──────────────────────────────────────────
+    count_q = select(func.count()).select_from(base_q.subquery())
+    total: int = (await db.execute(count_q)).scalar_one()
+
+    # ── Unread badge count (always full-table, ignores unread_only) ──────────
+    # Uses select(Notification) so scope_to_user can resolve the entity; the
+    # result is then wrapped in a count subquery — same pattern as total above.
+    unread_base_q = scope_to_user(select(Notification), user_id).where(
+        Notification.is_read.is_(False)
+    )
+    unread_q = select(func.count()).select_from(unread_base_q.subquery())
+    unread_count: int = (await db.execute(unread_q)).scalar_one()
+
+    # ── Page items ────────────────────────────────────────────────────────────
+    items_q = base_q.order_by(Notification.created_at.desc()).offset(offset).limit(limit)
+    rows = (await db.execute(items_q)).scalars().all()
+
+    return list(rows), total, unread_count
+
+
 __all__ = [
     "run_dedupe_gate",
     "get_served_category_data",
     "fanout_category_change",
+    "list_notifications",
 ]
