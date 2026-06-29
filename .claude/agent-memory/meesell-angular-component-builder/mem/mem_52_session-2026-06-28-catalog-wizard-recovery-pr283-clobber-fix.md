@@ -38,3 +38,28 @@ PR #283 was a design-branch merge that overwrote a working feature file with the
 
 ## Outcome
 PR #505 open. `feature/catalog-wizard-recovery/frontend -> develop`. Awaiting founder-gate merge.
+
+## Gate-failure remediation (2026-06-28 follow-up session)
+
+### Problem found
+Scribe commit `1cc335b` gutted `docs/status/STATUS_FRONTEND.md` from 9993 → 5797 lines.
+The scribe used a `Write` tool with only the tail portion of the file instead of the full content + append.
+The wizard component itself (c0e5d12) was correctly written and passed TS check — no accordion terms, 14 wizard terms.
+
+### Fix applied
+1. `git checkout c0e5d12 -- docs/status/STATUS_FRONTEND.md` — restores from pre-scribe baseline (9993 lines).
+2. Appended proper update block via Edit tool.
+3. Staged + committed as `a2c3f09` with `fix(status):` prefix.
+4. Pushed to remote. PR #505 diff now shows 15 wizard terms in `^+` lines, zero accordion terms.
+
+### LESSON: Scribe agents must Read the FULL STATUS_FRONTEND.md before writing
+STATUS_FRONTEND.md is a long append-only file (9000+ lines). Any Write tool call that doesn't
+read the full file first will silently discard earlier content. Pattern for safe append:
+- Use Bash: `echo "..." >> docs/status/STATUS_FRONTEND.md` (pure append, no read needed)
+- OR: use Edit tool with `old_string` = the last few lines (unique tail anchor) + `new_string` = old + new block
+- NEVER use Write tool on STATUS_FRONTEND.md or any large file without full Read first.
+
+### PR #505 final state
+- Commits: c0e5d12 (wizard), 1cc335b (scribe, bad), a2c3f09 (STATUS fix)
+- Step-7 final-check count: 15 (wizard terms in `^+` lines of PR diff)
+- STATUS_FRONTEND.md: 10018 lines (append-only invariant holds)
