@@ -13,3 +13,4 @@ Angular 18 service specialist for MeeSell. Owns services + RxJS state + HttpClie
 - ⭐ [Session: federation-version-pin (2026-06-20)](mem/mem_05_session-federation-version-pin-2026-06-20.md)
 - ⭐ [Session: razorpay-dev-mock FE model (2026-06-20)](mem/mem_06_session-razorpay-dev-mock-fe-model-2026-06-20.md)
 - ⭐ [Session: otp-verify-pending-phone — AuthService pendingPhone signal (2026-06-20)](mem/mem_07_session-otp-verify-pending-phone-authservice-pendingphone-si.md)
+- ⭐ [Session: angular-observability — GlobalErrorHandler + retryInterceptor (2026-06-28)](mem/mem_08_session-angular-observability-global-error-handler-retry-interceptor.md)
