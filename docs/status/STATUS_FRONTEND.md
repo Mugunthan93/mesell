@@ -1,7 +1,47 @@
 # STATUS — FRONTEND
 
 **Owner:** meesell-frontend-coordinator (master session)
-**Last update:** 2026-06-22
+**Last update:** 2026-06-28
+
+=== UPDATE: 2026-06-28 — angular-observability — GlobalErrorHandler + RetryInterceptor + remote rejection capture ===
+Phase: Cross-cutting observability (shell + all 7 remotes)
+Session: meesell-angular-service-builder
+Agent: meesell-angular-service-builder (sonnet)
+Branch: feature/angular-observability/frontend (off origin/develop @ 6d6ead4)
+PR: #506 (open, base=develop)
+
+Done:
+  NEW: frontend/libs/core/errors/global-error-handler.ts
+    - GlobalErrorHandler implements ErrorHandler; normalises HttpErrorResponse/Error/unknown
+      → typed ApiErrorEnvelope → ErrorService.record(). isDevMode() console.error in dev.
+  NEW: frontend/libs/core/interceptors/retry.interceptor.ts
+    - 3× exponential-backoff (1 s / 2 s / 4 s).
+    - Retriable: status===0 (any method) OR (status>=500 AND method in {GET,HEAD,OPTIONS,PUT}).
+    - Non-retriable: 4xx, POST/PATCH/DELETE 5xx.
+  UPDATED: frontend/libs/core/index.ts — exports GlobalErrorHandler + retryInterceptor.
+  UPDATED: frontend/apps/shell/src/app/app.config.ts
+    - Added { provide: ErrorHandler, useClass: GlobalErrorHandler }
+    - Inserted retryInterceptor: [jwt, retry, refresh, error]
+  UPDATED: all 7 remote main.ts (mfe-auth/billing/catalog/dashboard/export/onboarding/pricing)
+    - Added provideBrowserGlobalErrorListeners() (was missing from ALL remotes)
+    - Added { provide: ErrorHandler, useClass: GlobalErrorHandler }
+    - Inserted retryInterceptor: [jwt, retry, refresh, error]
+  NEW: frontend/libs/core/errors/global-error-handler.spec.ts (12 Vitest cases)
+  NEW: frontend/libs/core/interceptors/retry.interceptor.spec.ts (8 Vitest cases)
+
+TS check: EXIT 0 on all 8 tsconfigs (shell + 7 remotes), tsc --noEmit clean.
+No @mesell/core version bump. No mappingVersion change. No new npm deps.
+
+Tests: 20 spec cases authored (12 GlobalErrorHandler + 8 retry)
+Build: TS check clean. Full ng build pending CI.
+Blockers: none
+Next: founder merge-gate PR #506 (develop).
+Hand-offs:
+  - retryInterceptor + GlobalErrorHandler live in @mesell/core barrel; all shells/remotes
+    wire them on bootstrap. No component changes needed.
+  - meesell-qa-coordinator: retry.interceptor.spec.ts + global-error-handler.spec.ts
+    are ready for QA wave inclusion.
+=========
 
 === UPDATE: 2026-06-22 — qa-pricing/testids — data-testids on mfe-pricing calculator flow ===
 Phase: /catalogs/:id/pricing — mfe-pricing

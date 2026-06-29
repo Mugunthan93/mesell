@@ -11,6 +11,7 @@
 // never sees authentication = the P0 WRITE-path drift (R-SP6-1 / MASTER_PLAN R1). Login + Signup
 // are routed too for completeness (they consume @mesell/composites + @mesell/ui-kit). (Mirrors
 // mfe-onboarding / mfe-dashboard.)
+import { ErrorHandler, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
 import { provideRouter, type Routes } from '@angular/router';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
@@ -20,7 +21,13 @@ import { LoginComponent } from './app/login.component';
 import { SignupComponent } from './app/signup.component';
 import { OtpVerifyComponent } from './app/otp-verify.component';
 
-import { jwtInterceptor, refreshInterceptor, errorInterceptor } from '@mesell/core';
+import {
+  GlobalErrorHandler,
+  jwtInterceptor,
+  retryInterceptor,
+  refreshInterceptor,
+  errorInterceptor,
+} from '@mesell/core';
 
 const devRoutes: Routes = [
   { path: '', component: LoginComponent },
@@ -30,13 +37,16 @@ const devRoutes: Routes = [
 
 bootstrapApplication(LoginComponent, {
   providers: [
+    provideBrowserGlobalErrorListeners(),
+    { provide: ErrorHandler, useClass: GlobalErrorHandler },
     provideRouter(devRoutes),
     provideAnimationsAsync(),
-    // Wave 6 Wave A: interceptor chain for dev-serve standalone parity.
+    // Wave 6 Wave A + observability wave: interceptor chain for dev-serve standalone parity.
     // In federated mode the shell injector provides HttpClient (proven #101 ruling).
+    // Chain: jwt sets Bearer → retry backs off on network/5xx → refresh handles 401 → error records.
     provideHttpClient(
       withFetch(),
-      withInterceptors([jwtInterceptor, refreshInterceptor, errorInterceptor]),
+      withInterceptors([jwtInterceptor, retryInterceptor, refreshInterceptor, errorInterceptor]),
     ),
   ],
 }).catch((err) => console.error(err));

@@ -14,6 +14,7 @@
 // keeps profile (and thus @mesell/core) in the analysis graph so @mesell/core stays
 // shared+singleton and resolves to the shell's import-map instance. This mirrors how
 // SP05 (a Routes-array expose) will reference its full route component set.
+import { ErrorHandler, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
 import { provideRouter, type Routes } from '@angular/router';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
@@ -22,7 +23,13 @@ import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/
 import { OnboardingComponent } from './app/onboarding.component';
 import { ProfileComponent } from './app/profile.component';
 
-import { jwtInterceptor, refreshInterceptor, errorInterceptor } from '@mesell/core';
+import {
+  GlobalErrorHandler,
+  jwtInterceptor,
+  retryInterceptor,
+  refreshInterceptor,
+  errorInterceptor,
+} from '@mesell/core';
 
 const devRoutes: Routes = [
   { path: '', component: OnboardingComponent },
@@ -31,13 +38,16 @@ const devRoutes: Routes = [
 
 bootstrapApplication(OnboardingComponent, {
   providers: [
+    provideBrowserGlobalErrorListeners(),
+    { provide: ErrorHandler, useClass: GlobalErrorHandler },
     provideRouter(devRoutes),
     provideAnimationsAsync(),
-    // Wave 6 Wave A: interceptor chain for dev-serve standalone parity.
+    // Wave 6 Wave A + observability wave: interceptor chain for dev-serve standalone parity.
     // In federated mode the shell injector provides HttpClient (proven #101 ruling).
+    // Chain: jwt sets Bearer → retry backs off on network/5xx → refresh handles 401 → error records.
     provideHttpClient(
       withFetch(),
-      withInterceptors([jwtInterceptor, refreshInterceptor, errorInterceptor]),
+      withInterceptors([jwtInterceptor, retryInterceptor, refreshInterceptor, errorInterceptor]),
     ),
   ],
 }).catch((err) => console.error(err));
