@@ -9991,3 +9991,28 @@ Blockers: none
 Next: QA coordinator authors W3-FE-6 spec + un-fixmes W3-E2-3 against develop; founder/QA can prune the stale feature/mfe-export-productid/frontend branch.
 Hand-offs: meesell-qa-coordinator (memo — flip the 2 OPEN mfe-export inter-lead rows to CLOSED on feature_board_qa.md; sole-writer rule prevents me editing their board)
 =========
+
+=== UPDATE: 2026-06-28 — catalog-wizard-recovery — wizard confirmed + STATUS_FRONTEND gutting fixed ===
+Phase: /catalogs/:id/edit — mfe-catalog CatalogFormComponent (PR #505)
+Session: meesell-angular-component-builder (gate-failure remediation)
+Branch: feature/catalog-wizard-recovery/frontend
+
+Done:
+- Verified CatalogFormComponent on branch: wizard IS present (14 matches for
+  MeeStepsComponent/activeStepIndex/groupIntoSteps; 1030 lines; zero accordion terms).
+  The wizard restoration from commit 1133ab5 + three patches (ca8e9ed/456494e/d6b2824)
+  were correctly committed in c0e5d12.
+- Fixed STATUS_FRONTEND.md: scribe commit 1cc335b had gutted the file from 9993 to 5797
+  lines (overwrote with only the tail portion instead of appending). Restored from
+  c0e5d12 (pre-scribe baseline = 9993 lines) and appended this update block only.
+  Append-only invariant now holds.
+- tsc -p apps/mfe-catalog/tsconfig.app.json --noEmit: EXIT 0 (zero errors)
+
+Tests: tsc --noEmit GREEN (wizard was already type-checked in c0e5d12; no code changed)
+Build: no code change; TS gate sufficient
+In progress: none
+Blockers: none
+Next: Founder-gate PR #505 (feature/catalog-wizard-recovery/frontend -> develop)
+Hand-offs: meesell-e2e-test-writer — testids catalog-form-next / catalog-save-status /
+           catalog-ai-fill present on wizard (not accordion). Available for E2E targeting.
+=========
