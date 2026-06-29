@@ -132,6 +132,20 @@ const NO_STORE_HEADERS = {
 };
 
 function serve(req, res) {
+  // Per-request logging (added 2026-06-29, feature/dev-log-monitor/infra-serve-logging):
+  //   The dev-manager dashboard radar tails .nexus/serve-<port>.log per MFE/shell, but
+  //   serve.js previously emitted only the startup banner — the shell + 7 remotes gave
+  //   no runtime signal (uvicorn logs every request; this did not). Log exactly one line
+  //   per response on the 'finish' event (fires for BOTH the proxy and static branches):
+  //     [ISO-timestamp] METHOD /path STATUS_CODE duration_ms
+  //   Path only (query string stripped) so no query-param values leak into the log.
+  const startNs = process.hrtime.bigint();
+  const logPath = req.url.split('?')[0];
+  res.on('finish', () => {
+    const durMs = Math.round(Number(process.hrtime.bigint() - startNs) / 1e6);
+    console.log(`${new Date().toISOString()} ${req.method} ${logPath} ${res.statusCode} ${durMs}ms`);
+  });
+
   // Reverse-proxy FIRST: any /api|/health|/docs|/openapi.json request goes to the
   // backend (method/headers/body preserved, response streamed). This is what lets
   // OTP login + every authenticated screen work in the static dev shell. Only
