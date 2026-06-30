@@ -38,7 +38,10 @@ failures.
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 import logging
+import os
 from datetime import timedelta
 from typing import Literal
 
@@ -64,18 +67,40 @@ def _get_init_lock() -> asyncio.Lock:
 
 
 async def _get_client() -> storage.Client:
-    """Lazy GCS client — single instance per process.  ADC sourced from metadata."""
+    """Lazy GCS client — single instance per process.
+
+    Auth priority:
+    1. ``GCS_SA_KEY_B64`` env var (base64-encoded service-account JSON) —
+       used on Fly.io where ADC/instance metadata is not available.
+    2. Application Default Credentials (ADC) — used on K3s/GCE where the
+       pod/VM service account carries the required IAM bindings.
+    """
     global _client
     if _client is not None:
         return _client
     async with _get_init_lock():
         if _client is None:
-            # ``storage.Client`` reads ADC from environment / instance metadata.
-            # ``project`` is wired explicitly so error responses include it
-            # rather than the SDK's "unknown" placeholder.
-            _client = await asyncio.to_thread(
-                storage.Client, project=settings.GCS_PROJECT_ID
-            )
+            sa_key_b64 = os.environ.get("GCS_SA_KEY_B64", "").strip()
+            if sa_key_b64:
+                # Fly.io: decode base64 SA JSON and use explicit credentials.
+                from google.oauth2 import service_account
+                sa_info = json.loads(base64.b64decode(sa_key_b64))
+                creds = service_account.Credentials.from_service_account_info(
+                    sa_info,
+                    scopes=["https://www.googleapis.com/auth/cloud-platform"],
+                )
+                _client = await asyncio.to_thread(
+                    storage.Client,
+                    project=settings.GCS_PROJECT_ID,
+                    credentials=creds,
+                )
+                logger.info("GCS client initialised with explicit SA credentials (Fly.io path)")
+            else:
+                # K3s / GCE: ADC reads from instance metadata automatically.
+                _client = await asyncio.to_thread(
+                    storage.Client, project=settings.GCS_PROJECT_ID
+                )
+                logger.info("GCS client initialised with Application Default Credentials")
     return _client
 
 

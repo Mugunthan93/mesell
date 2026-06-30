@@ -1,0 +1,51 @@
+# fly.toml — MeeSell API + Celery worker deployment
+# Region: bom (Mumbai) — closest to Indian sellers
+# Docs: https://fly.io/docs/reference/configuration/
+
+app            = "meesell-api"
+primary_region = "bom"
+
+# ── Build ──────────────────────────────────────────────────────────────────
+[build]
+  dockerfile = "Dockerfile.fly"
+
+# ── Processes ──────────────────────────────────────────────────────────────
+# Two machines from one image; CMD is overridden per process.
+[processes]
+  api    = "gunicorn app.main:app -w 2 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000 --timeout 120"
+  worker = "celery -A app.workers.celery_app worker --concurrency=4 --max-tasks-per-child=100 --loglevel=info"
+
+# ── HTTP service (api process only) ────────────────────────────────────────
+[http_service]
+  internal_port       = 8000
+  force_https         = true
+  processes           = ["api"]
+  auto_stop_machines  = "stop"   # Stops when idle → zero cost when unused
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type       = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+# ── Health check ───────────────────────────────────────────────────────────
+[[http_service.checks]]
+  grace_period = "30s"
+  interval     = "15s"
+  method       = "GET"
+  path         = "/health"
+  timeout      = "10s"
+
+# ── VM sizes (free tier: shared-cpu-1x counts against 3 free VM allowance) ─
+[[vm]]
+  memory    = "512mb"
+  cpu_kind  = "shared"
+  cpus      = 1
+  processes = ["api"]
+
+[[vm]]
+  memory    = "256mb"
+  cpu_kind  = "shared"
+  cpus      = 1
+  processes = ["worker"]
