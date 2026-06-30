@@ -121,11 +121,19 @@ class Settings(BaseSettings):
                 v = "postgresql" + v[len("postgres"):]
             if v.startswith("postgresql://"):
                 v = "postgresql+asyncpg" + v[len("postgresql"):]
-            # Step 3: strip ?sslmode=... (asyncpg uses its own ssl parameter)
+            # Step 3: convert sslmode=disable/allow/prefer → ssl=disable/require
+            # asyncpg does NOT accept the 'sslmode' key — it uses 'ssl' instead.
+            # Fly.io's internal WireGuard network uses no SSL, so sslmode=disable
+            # is the common case; we map it to the asyncpg-native equivalent.
             from urllib.parse import urlparse, urlencode, parse_qs, urlunparse
             parsed = urlparse(v)
             qs = parse_qs(parsed.query, keep_blank_values=True)
-            qs.pop("sslmode", None)  # asyncpg rejects this key
+            sslmode = qs.pop("sslmode", [None])[0]
+            if sslmode in ("disable", "allow", "prefer"):
+                qs["ssl"] = ["disable"]
+            elif sslmode in ("require", "verify-ca", "verify-full"):
+                qs["ssl"] = ["require"]
+            # If no sslmode was present, leave ssl param untouched (asyncpg default)
             cleaned = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
             v = cleaned
         return v
