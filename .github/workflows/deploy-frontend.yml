@@ -1,0 +1,87 @@
+# .github/workflows/deploy-frontend.yml
+#
+# MeeSell — Frontend deploy to GitHub Pages (2026-06-30 platform pivot).
+#
+# The federated Angular workspace is built and published to GitHub Pages under
+# /mesell/. The HOST (shell) project in angular.json is named `frontend` (root
+# apps/shell) — NOT "shell". The seven cutover remotes are mfe-auth, mfe-billing,
+# mfe-catalog, mfe-dashboard, mfe-export, mfe-onboarding, mfe-pricing (verified
+# against frontend/angular.json — the template's mfe-quality/categories/account
+# do not exist; the real set is used here).
+#
+# Native federation: the shell index.html is the served entrypoint (base-href
+# /mesell/). Each remote is loaded at runtime via its remoteEntry.json, so the
+# remotes are published UNDER /mesell/remotes/<name>/ and the prod federation
+# manifest (apps/shell/src/main.ts, env-aware) points there. Remote chunks resolve
+# relative to their own remoteEntry.json URL, so remotes need no base-href.
+name: Deploy Frontend to GitHub Pages
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'frontend/**'
+
+# Allow the workflow to publish to the gh-pages branch.
+permissions:
+  contents: write
+
+jobs:
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build shell (production, base-href /mesell/)
+        working-directory: frontend
+        # angular.json host project is `frontend` (root apps/shell). Output: dist/frontend/browser.
+        run: npx ng build frontend --configuration production --base-href /mesell/
+
+      - name: Build MFE remotes (production)
+        working-directory: frontend
+        # The real remote project names per angular.json. Each builds to dist/<name>/browser.
+        run: |
+          for mfe in mfe-auth mfe-billing mfe-catalog mfe-dashboard mfe-export mfe-onboarding mfe-pricing; do
+            if npx ng build $mfe --configuration production; then
+              echo "Built $mfe"
+            else
+              echo "WARN: build failed for $mfe — continuing"
+            fi
+          done
+
+      - name: Assemble GitHub Pages publish dir (shell at root + remotes/<name>/)
+        working-directory: frontend
+        # The prod federation manifest expects remotes at /mesell/remotes/<name>/remoteEntry.json,
+        # so lay the shell at the publish root and each remote under remotes/<name>/.
+        run: |
+          rm -rf dist/gh-pages
+          mkdir -p dist/gh-pages
+          cp -r dist/frontend/browser/. dist/gh-pages/
+          for mfe in mfe-auth mfe-billing mfe-catalog mfe-dashboard mfe-export mfe-onboarding mfe-pricing; do
+            if [ -d "dist/$mfe/browser" ]; then
+              mkdir -p "dist/gh-pages/remotes/$mfe"
+              cp -r "dist/$mfe/browser/." "dist/gh-pages/remotes/$mfe/"
+              echo "Staged remote $mfe"
+            fi
+          done
+          # SPA fallback for GitHub Pages deep links, and disable Jekyll (_-prefixed NF chunks).
+          cp dist/gh-pages/index.html dist/gh-pages/404.html
+          touch dist/gh-pages/.nojekyll
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: frontend/dist/gh-pages
+          cname: ''
