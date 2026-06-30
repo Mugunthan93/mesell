@@ -8,18 +8,18 @@
  * a circular import: fileReplacements makes environment.prod.ts the effective
  * ./environment, so importing from './environment' would be self-referential.
  *
- * apiBase: '' — same-origin in production (K3s Traefik Ingress routes /api → api svc
- * on the same host). This means all /api/v1/... calls are byte-identical to dev.
- *
- * Cross-origin apiBase note:
- *   If a future deployment splits FE and API onto different origins (e.g.
- *   app.meesell.in and api.meesell.in), set apiBase: 'https://api.meesell.in'.
- *   That change REQUIRES backend changes IN LOCKSTEP:
- *     - CORS_ALLOWED_ORIGINS must include the FE origin
- *     - allow_credentials=True (for the HttpOnly refresh cookie)
- *     - COOKIE_DOMAIN must span both origins (e.g. '.meesell.in')
- *     - COOKIE_SECURE=true
- *   DO NOT change apiBase without those backend env-var changes.
+ * apiBase — CROSS-ORIGIN in production (2026-06-30 platform pivot).
+ *   The FE ships to GitHub Pages (https://Mugunthan93.github.io/mesell/) while the
+ *   API runs on Fly.io (https://meesell-api.fly.dev). These are DIFFERENT origins,
+ *   so apiBase is the absolute Fly URL and the backend env is set IN LOCKSTEP:
+ *     - CORS_ALLOWED_ORIGINS includes https://Mugunthan93.github.io   (fly secret set)
+ *     - CORS_ALLOW_CREDENTIALS=true  (for the HttpOnly refresh cookie) (already set)
+ *     - COOKIE_SECURE=true                                             (already set)
+ *     - COOKIE_DOMAIN=.fly.dev  (interim, until a custom apex domain)  (fly secret set)
+ *   NOTE: a custom domain spanning both FE+API (e.g. *.meesell.in) is the durable
+ *   fix for first-party refresh cookies; until then the refresh cookie is a
+ *   third-party cookie (SameSite=None;Secure) scoped to *.fly.dev.
+ *   DO NOT change apiBase without the matching backend env-var changes above.
  */
 import type { Environment } from './environment.interface';
 
@@ -27,10 +27,11 @@ export const environment: Environment = {
   production: true,
   name: 'production',
   /**
-   * '' = same-origin: production Ingress routes /api → api svc on the same host.
-   * All /api/v1/... URLs remain relative — no CORS or cookie-domain changes needed.
+   * Cross-origin: the GitHub Pages FE calls the Fly.io API at a different origin.
+   * All /api/v1/... URLs are prefixed with this absolute base. Requires the
+   * backend CORS + cookie env set in lockstep (see header doc above).
    */
-  apiBase: '',
+  apiBase: 'https://meesell-api.fly.dev',
   /**
    * PROD Google OAuth Web client id. Authorized JS origin = the production app
    * (shell) origin. Provisioned in GCP by infra (see handoff memo). The backend
