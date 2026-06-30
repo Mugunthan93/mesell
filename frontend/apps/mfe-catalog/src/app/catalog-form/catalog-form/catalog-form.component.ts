@@ -31,6 +31,7 @@ import { debounceTime } from 'rxjs/operators';
 import {
   MeeButtonComponent,
   MeeInputComponent,
+  MeeInputNumberComponent,
   MeeSelectComponent,
   MeeTextareaComponent,
   MeeStepsComponent,
@@ -71,6 +72,7 @@ import {
   imports: [
     MeeButtonComponent,
     MeeInputComponent,
+    MeeInputNumberComponent,
     MeeSelectComponent,
     MeeTextareaComponent,
     MeeStepsComponent,
@@ -143,18 +145,11 @@ import {
     }
 
     /* ── Fields layout within a step ──────────────────────────────────── */
-    .mee-step-fields {
-      display: flex;
-      flex-direction: column;
-      gap: var(--mee-space-4);
-    }
+    /* Grid is now Tailwind-driven: grid-cols-1 md:grid-cols-2 lg:grid-cols-3.
+       col-span-full is used for wide fields (text_long / image). */
 
-    /* Full-width spanner: text_long (textarea) fields always occupy both columns */
-    .mee-field--full {
-      grid-column: 1 / -1;
-    }
-
-    /* ── "More details" sub-section (Basics step B) ───────────────────── */
+    /* ── "More details" collapsible section ───────────────────────────── */
+    /* mee-more-details-fields grid is Tailwind-driven, same as mee-step-fields. */
     .mee-more-details-toggle {
       display: flex;
       width: 100%;
@@ -177,9 +172,6 @@ import {
       outline-offset: 2px;
     }
     .mee-more-details-fields {
-      display: flex;
-      flex-direction: column;
-      gap: var(--mee-space-4);
       padding-top: var(--mee-space-3);
     }
 
@@ -291,15 +283,6 @@ import {
         padding: var(--mee-space-6) var(--mee-space-8);
         padding-bottom: 88px;
       }
-
-      /* Two-column field grid — required block and optional ("More details") block */
-      .mee-step-fields,
-      .mee-more-details-fields {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        column-gap: var(--mee-space-6);
-        row-gap: var(--mee-space-4);
-      }
     }
 
     /* ── Desktop ───────────────────────────────────────────────────────── */
@@ -339,7 +322,7 @@ import {
             variant="error"
             message="Cannot load form: product category not found. Return to the dashboard and try again." />
           <div class="mee-error-cta">
-            <mee-button label="Return to dashboard" variant="secondary" (clicked)="onBack()" />
+            <mee-button label="Return to dashboard" variant="secondary" (clicked)="onCancel()" />
           </div>
         </div>
       }
@@ -445,18 +428,18 @@ import {
                   <!-- Required fields block -->
                   @let requiredFields = activeStepRequiredFields();
                   @if (requiredFields.length > 0) {
-                    <div class="mee-step-fields" aria-label="Required fields">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" aria-label="Required fields">
                       @for (field of requiredFields; track field.canonical_name) {
                         <div class="field-wrapper"
                              [class.mee-ai-suggested]="isAiSuggested(field.canonical_name)"
-                             [class.mee-field--full]="field.primitive === 'text_long'">
+                             [class.col-span-full]="field.primitive === 'text_long'">
                           @switch (field.primitive) {
                             @case ('text_long') {
                               <mee-textarea
                                 [label]="field.display_name"
                                 [required]="field.required"
                                 [error]="getFieldError(field.canonical_name)"
-                                [hint]="field.help_text"
+                                [tooltip]="field.help_text"
                                 [rows]="4"
                                 (blur)="onFieldBlur(field.canonical_name, $any($event))" />
                             }
@@ -465,6 +448,15 @@ import {
                                 [label]="field.display_name"
                                 [options]="getFieldOptions(field)"
                                 [error]="getFieldError(field.canonical_name)"
+                                [tooltip]="field.help_text"
+                                (value_change)="onFieldChange(field.canonical_name, $event)" />
+                            }
+                            @case ('number') {
+                              <mee-input-number
+                                [label]="field.display_name"
+                                [required]="field.required"
+                                [error]="getFieldError(field.canonical_name)"
+                                [tooltip]="field.help_text"
                                 (value_change)="onFieldChange(field.canonical_name, $event)" />
                             }
                             @default {
@@ -472,8 +464,7 @@ import {
                                 [label]="field.display_name"
                                 [required]="field.required"
                                 [error]="getFieldError(field.canonical_name)"
-                                [hint]="field.help_text"
-                                [type]="field.primitive === 'number' ? 'number' : 'text'"
+                                [tooltip]="field.help_text"
                                 (blur)="onFieldBlur(field.canonical_name, $any($event))" />
                             }
                           }
@@ -495,18 +486,18 @@ import {
                       <span aria-hidden="true">{{ moreDetailsOpen() ? '▲' : '▼' }}</span>
                     </button>
                     @if (moreDetailsOpen()) {
-                      <div id="more-details-panel" class="mee-more-details-fields">
+                      <div id="more-details-panel" class="mee-more-details-fields grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         @for (field of optionalFields; track field.canonical_name) {
                           <div class="field-wrapper"
                                [class.mee-ai-suggested]="isAiSuggested(field.canonical_name)"
-                               [class.mee-field--full]="field.primitive === 'text_long'">
+                               [class.col-span-full]="field.primitive === 'text_long'">
                             @switch (field.primitive) {
                               @case ('text_long') {
                                 <mee-textarea
                                   [label]="field.display_name"
                                   [required]="field.required"
                                   [error]="getFieldError(field.canonical_name)"
-                                  [hint]="field.help_text"
+                                  [tooltip]="field.help_text"
                                   [rows]="4"
                                   (blur)="onFieldBlur(field.canonical_name, $any($event))" />
                               }
@@ -515,6 +506,15 @@ import {
                                   [label]="field.display_name"
                                   [options]="getFieldOptions(field)"
                                   [error]="getFieldError(field.canonical_name)"
+                                  [tooltip]="field.help_text"
+                                  (value_change)="onFieldChange(field.canonical_name, $event)" />
+                              }
+                              @case ('number') {
+                                <mee-input-number
+                                  [label]="field.display_name"
+                                  [required]="field.required"
+                                  [error]="getFieldError(field.canonical_name)"
+                                  [tooltip]="field.help_text"
                                   (value_change)="onFieldChange(field.canonical_name, $event)" />
                               }
                               @default {
@@ -522,8 +522,7 @@ import {
                                   [label]="field.display_name"
                                   [required]="field.required"
                                   [error]="getFieldError(field.canonical_name)"
-                                  [hint]="field.help_text"
-                                  [type]="field.primitive === 'number' ? 'number' : 'text'"
+                                  [tooltip]="field.help_text"
                                   (blur)="onFieldBlur(field.canonical_name, $any($event))" />
                               }
                             }
@@ -606,35 +605,40 @@ import {
             {{ autosaveStatusLabel() }}
           </span>
         </div>
-        <!-- Back / Next / Save & Finish actions -->
+        <!-- Cancel / Previous / Next actions -->
         <div class="mee-wizard-nav__actions">
+          <!-- Cancel: always visible, far-left, ghost → /dashboard -->
+          <mee-button
+            label="Cancel"
+            variant="ghost"
+            class="mr-auto"
+            (clicked)="onCancel()"
+            [testId]="'catalog-form-cancel'"
+            aria-label="Cancel and return to dashboard" />
+          <!-- Previous: hidden on step 0; no validation -->
           @if (activeStepIndex() > 0) {
             <mee-button
-              label="Back"
-              variant="ghost"
-              (clicked)="onBack()"
+              label="Previous"
+              variant="secondary"
+              (clicked)="onPreviousStep()"
+              [testId]="'catalog-form-prev'"
               aria-label="Go to previous step" />
-          } @else {
-            <mee-button
-              label="Dashboard"
-              variant="ghost"
-              (clicked)="onDashboard()"
-              aria-label="Return to dashboard" />
           }
+          <!-- Primary: Save & finish on last step, else Next -->
           @if (isLastStep()) {
             <mee-button
               label="Save & finish"
               variant="primary"
               (clicked)="onNext()"
-              aria-label="Save and finish — navigate to images" />
+              [testId]="'catalog-form-finish'"
+              aria-label="Save and finish" />
           } @else {
             <mee-button
               label="Next"
               variant="primary"
-              [disabled]="!canAdvance()"
               [testId]="'catalog-form-next'"
               (clicked)="onNextStep()"
-              [attr.aria-label]="canAdvance() ? 'Next step' : 'Fill required fields to continue'" />
+              aria-label="Next step" />
           }
         </div>
       </nav>
@@ -672,6 +676,11 @@ export class CatalogFormComponent implements OnInit, AfterViewInit {
   readonly moreDetailsOpen     = signal(false);
   /** Whether the front image (slot 1) has been uploaded — for photos warning. */
   readonly hasFrontImage       = signal(false);
+  /**
+   * touchedSteps — the set of step indexes the user has attempted to leave.
+   * Only steps in this set reveal validation errors (Fix 1: deferred validation).
+   */
+  readonly touchedSteps        = signal<Set<number>>(new Set<number>());
 
   private readonly autosaveTrigger$ = new Subject<void>();
 
@@ -722,15 +731,6 @@ export class CatalogFormComponent implements OnInit, AfterViewInit {
   /** Optional fields for the active step. */
   readonly activeStepOptionalFields = computed<FieldSchema[]>(() =>
     (this.activeStep()?.fields ?? []).filter((f: FieldSchema) => !f.required),
-  );
-
-  /**
-   * canAdvance — whether the Next button is enabled.
-   * Blocks only when current step has unfilled required fields.
-   * Photos step never blocks (warn-only). Steps with requiredCount===0 are freely skippable.
-   */
-  readonly canAdvance = computed<boolean>(() =>
-    canAdvanceFromStep(this.activeStep(), this.fieldValues()),
   );
 
   /**
@@ -878,21 +878,66 @@ export class CatalogFormComponent implements OnInit, AfterViewInit {
   // ── Step navigation ───────────────────────────────────────────────────────────
 
   /**
-   * onStepChange — called when the user clicks a stepper header item.
-   * Allows free navigation (clicking any step header); canAdvance is only
-   * enforced by the Next button.
+   * goToStep — internal: sets the active step, resets "More details", lazily loads enums.
+   * Called by all navigation paths (forward, back, tab-click).
    */
-  onStepChange(index: number): void {
+  private goToStep(index: number): void {
     const catId = this.categoryId();
     this.activeStepIndex.set(index);
     this.moreDetailsOpen.set(false);
     if (catId) this.loadStepEnums(catId, index);
   }
 
+  /**
+   * markStepTouched — marks a step as "the user attempted to leave it".
+   * After marking, getFieldError() will surface validation errors for that step.
+   */
+  private markStepTouched(index: number): void {
+    this.touchedSteps.update(s => {
+      if (s.has(index)) return s;
+      const next = new Set(s);
+      next.add(index);
+      return next;
+    });
+  }
+
+  /**
+   * onStepChange — called when the user clicks a stepper header tab.
+   * Fix 1 linear navigation:
+   *   - backward or same → free, no validation
+   *   - forward by one → same gate as Next
+   *   - forward skip (2+) → forbidden; reveal current-step errors, no jump
+   */
+  onStepChange(target: number): void {
+    const current = this.activeStepIndex();
+    if (target <= current) {
+      // Backward or same — always allowed, no validation
+      this.goToStep(target);
+      return;
+    }
+    if (target === current + 1) {
+      // Advance one — run the same gate as the Next button
+      this.onNextStep();
+      return;
+    }
+    // Illegal skip (target > current + 1) — reveal errors, stay
+    this.markStepTouched(current);
+  }
+
+  /**
+   * onNextStep — validates current step before advancing.
+   * Fix 1: marks step touched to reveal errors, shows toast, stays if invalid.
+   */
   onNextStep(): void {
-    const nextIndex = this.activeStepIndex() + 1;
-    if (nextIndex >= this.wizardSteps().length) return;
-    this.onStepChange(nextIndex);
+    const current = this.activeStepIndex();
+    this.markStepTouched(current);
+    if (!canAdvanceFromStep(this.activeStep(), this.fieldValues())) {
+      this.toast.error('Please complete the required fields before continuing.');
+      return;
+    }
+    const next = current + 1;
+    if (next >= this.wizardSteps().length) return;
+    this.goToStep(next);
   }
 
   toggleMoreDetails(): void {
@@ -912,6 +957,8 @@ export class CatalogFormComponent implements OnInit, AfterViewInit {
   }
 
   getFieldError(canonicalName: string): string | undefined {
+    // Fix 1: deferred validation — errors are only shown after the user tries to leave the step.
+    if (!this.touchedSteps().has(this.activeStepIndex())) return undefined;
     const allFields: FieldSchema[] = this.schema().flatMap(g => g.fields);
     const field = allFields.find(f => f.canonical_name === canonicalName);
     if (!field?.required) return undefined;
@@ -994,15 +1041,15 @@ export class CatalogFormComponent implements OnInit, AfterViewInit {
     this.loadSchema(catId);
   }
 
-  onBack(): void {
-    const prevIndex = this.activeStepIndex() - 1;
-    if (prevIndex >= 0) {
-      this.onStepChange(prevIndex);
-    }
+  /** Fix 4: Cancel — always navigates to /dashboard, no validation. */
+  onCancel(): void {
+    void this.router.navigate(['/dashboard']);
   }
 
-  onDashboard(): void {
-    void this.router.navigate(['/dashboard']);
+  /** Fix 4: Previous — steps back one step, no validation (always free). */
+  onPreviousStep(): void {
+    const prev = this.activeStepIndex() - 1;
+    if (prev >= 0) this.goToStep(prev);
   }
 
   /** Last step primary action: navigate to /images (existing behaviour). */
