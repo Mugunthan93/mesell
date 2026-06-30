@@ -18,6 +18,7 @@ import {
 } from '@angular/forms';
 import { Select } from 'primeng/select';
 import type { SelectChangeEvent, SelectFilterEvent } from 'primeng/select';
+import { Tooltip } from 'primeng/tooltip';
 import { Subject, debounceTime, merge } from 'rxjs';
 import type { MeeSelectOption } from './select.types';
 
@@ -36,7 +37,7 @@ function resolveErrorMessage(errors: ValidationErrors): string {
   selector: 'mee-select',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Select, FormsModule],
+  imports: [Select, Tooltip, FormsModule],
   // NO providers[] — NgControl injected directly to avoid circular dep
   styles: [`
     :host { display: block; }
@@ -65,10 +66,20 @@ function resolveErrorMessage(errors: ValidationErrors): string {
   `],
   template: `
     @if (label()) {
-      <label class="mee-label">
-        {{ label() }}
+      <label class="mee-label flex items-center gap-1">
+        <span>{{ label() }}</span>
         @if (required()) {
           <span aria-hidden="true" class="mee-required"> *</span>
+        }
+        @if (tooltip()) {
+          <i class="pi pi-info-circle text-xs"
+             style="color: var(--mee-color-on-surface-muted); cursor: help;"
+             [pTooltip]="tooltip()!"
+             tooltipPosition="top"
+             [tooltipOptions]="{ tooltipStyleClass: 'mee-help-tooltip' }"
+             tabindex="0"
+             [attr.aria-label]="'Help: ' + tooltip()"
+             role="img"></i>
         }
       </label>
     }
@@ -108,6 +119,7 @@ export class MeeSelectComponent implements ControlValueAccessor, OnInit {
   readonly error                = input<string | undefined>(undefined);
   readonly hint                 = input<string | undefined>(undefined);
   readonly required             = input<boolean>(false);
+  readonly tooltip              = input<string | undefined>(undefined);
   readonly showErrorOn          = input<MeeShowErrorOn>('touched');
   /** Show filter input inside the dropdown. */
   readonly filter               = input<boolean>(false);

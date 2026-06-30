@@ -61,6 +61,22 @@ describe('MeeInputComponent', () => {
     expect(touched).toBe(true);
   });
 
+  describe('tooltip icon', () => {
+    it('should NOT render info icon when tooltip is not set', () => {
+      fixture.detectChanges();
+      const icon = fixture.nativeElement.querySelector('i.pi-info-circle');
+      expect(icon).toBeNull();
+    });
+
+    it('should render info icon when tooltip is set', () => {
+      fixture.componentRef.setInput('tooltip', 'Help text for this field');
+      fixture.componentRef.setInput('label', 'Product Name');
+      fixture.detectChanges();
+      const icon = fixture.nativeElement.querySelector('i.pi-info-circle');
+      expect(icon).toBeTruthy();
+    });
+  });
+
   describe('testId passthrough', () => {
     it('sets data-testid on the inner input when testId is provided', () => {
       fixture.componentRef.setInput('testId', 'login-phone-input');
