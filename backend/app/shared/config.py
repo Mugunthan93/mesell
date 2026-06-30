@@ -100,6 +100,23 @@ class Settings(BaseSettings):
     DB_POOL_RECYCLE: int = 1800  # 30 min — recycle stale conns proactively
     DB_ECHO: bool = False
 
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def _normalise_database_url(cls, v: str) -> str:
+        """Normalise Fly.io/Heroku-style postgres:// URLs for SQLAlchemy asyncpg.
+
+        Fly.io Postgres addon sets DATABASE_URL as ``postgres://...``.
+        SQLAlchemy asyncpg requires ``postgresql+asyncpg://``.
+        This validator auto-converts so neither the Fly.io secret nor the
+        local .env need manual adjustment.
+        """
+        if isinstance(v, str):
+            if v.startswith("postgres://"):
+                v = "postgresql" + v[len("postgres"):]
+            if v.startswith("postgresql://"):
+                v = "postgresql+asyncpg" + v[len("postgresql"):]
+        return v
+
     # ── Valkey (§5.D table 2) ──────────────────────────────────────────────
     # DB number is selected by the factories in shared.valkey, NOT by the URL.
     VALKEY_URL: str = ""
