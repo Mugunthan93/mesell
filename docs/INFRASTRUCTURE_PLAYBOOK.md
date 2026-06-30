@@ -8,6 +8,18 @@ Single source of truth for MeeSell infrastructure. Runbook-grade: every command 
 
 ---
 
+## [OPERATIONAL BANNER] GCP resources STOPPED — credit conservation
+
+**GCP resources STOPPED on 2026-06-30 — founder credit conservation (~10% free credit remaining; goal: ZERO further charges).**
+
+- `meesell-dev` (zone `asia-south1-a`, `e2-standard-2`) was **STOPPED (TERMINATED)** — data preserved on its boot disk, NOT deleted.
+- **Restart command:** `gcloud compute instances start meesell-dev --zone=asia-south1-a`
+- On restart, `meesell-dev` receives a **NEW ephemeral external IP** (the prior `35.234.223.66` is released on stop — it was ephemeral, not reserved). Update any kubeconfig / DNS / firewall references to the new IP after restart.
+- NOT stopped (out of MeeSell-infra scope per Section 0): `meesell-vm`, `shotfox-platform`, `shotfox-mvp1-alpha-dev` — these share this GCP project + billing account `01620D-6785AB-0E4698` but belong to other workspace projects; founder must stop them separately if zero-billing is required.
+- No Cloud SQL / GKE / Cloud Run / Cloud Functions / load balancers exist (APIs disabled). All 3 reserved static IPs are `IN_USE` by the off-limits VMs (no unattached IPs to release). Disks preserved (minimal at-rest cost).
+
+---
+
 ## Section 0: Critical Rules (Cannot Be Violated)
 
 These rules override convenience, speed, and personal judgment. If a rule conflicts with a step, STOP and escalate.
