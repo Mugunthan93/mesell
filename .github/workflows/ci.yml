@@ -1216,6 +1216,47 @@ jobs:
           done
 
   # =============================================================================
+  # DEPLOY-BACKEND — Fly.io ship of the FastAPI backend (app: meesell-api)
+  #
+  # PLATFORM PIVOT (2026-06-30, founder-directed): the V1 backend now runs on
+  # Fly.io (app meesell-api, bom region) backed by Fly Postgres (meesell-db) +
+  # Upstash Redis (meesell-cache) — NOT the K3s dev cluster. This job ships every
+  # push to develop to Fly.io and applies the Alembic chain on the deployed machine.
+  #
+  # Independent of the K3s build/deploy jobs above (separate `needs` — it gates
+  # ONLY on the 5 backend CI gates). The K3s build/deploy jobs target meesell-dev,
+  # which is currently TERMINATED (GCP credit stop, 2026-06-30); they will go RED on
+  # develop pushes until the founder retires them. Because this job shares no `needs`
+  # with them, the Fly ship is unaffected by that red (and vice-versa). Retiring the
+  # K3s build/deploy jobs is an architecture change — left for a founder ruling
+  # (flagged in STATUS_INFRA.md).
+  #
+  # Auth: FLY_API_TOKEN repo secret (already configured in repo settings). No
+  # GCP/WIF here — Fly is a separate platform.
+  # =============================================================================
+  deploy-backend:
+    name: "Deploy backend to Fly.io"
+    runs-on: ubuntu-latest
+    needs: [unit, smoke, lint, integration, golden_roundtrip]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    timeout-minutes: 20
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy to Fly.io (meesell-api)
+        run: flyctl deploy --dockerfile Dockerfile.fly --app meesell-api --remote-only --ha=false
+
+      - name: Apply Alembic migrations (upgrade head)
+        # Run AFTER the new image is live so the migrations match the shipped code.
+        run: flyctl ssh console --app meesell-api -C "alembic -c /app/alembic.ini upgrade head"
+
+  # =============================================================================
   # NIGHTLY — slow/perf + ai_eval, schedule-only
   # Fires only on the cron trigger. No build / no deploy.
   # See DEVOPS_ARCHITECTURE.md §5.5.
