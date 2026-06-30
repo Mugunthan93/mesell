@@ -105,16 +105,29 @@ class Settings(BaseSettings):
     def _normalise_database_url(cls, v: str) -> str:
         """Normalise Fly.io/Heroku-style postgres:// URLs for SQLAlchemy asyncpg.
 
-        Fly.io Postgres addon sets DATABASE_URL as ``postgres://...``.
-        SQLAlchemy asyncpg requires ``postgresql+asyncpg://``.
-        This validator auto-converts so neither the Fly.io secret nor the
-        local .env need manual adjustment.
+        Fly.io Postgres addon sets DATABASE_URL as ``postgres://...?sslmode=disable``.
+        SQLAlchemy asyncpg requires ``postgresql+asyncpg://`` and does NOT accept
+        the ``sslmode`` query parameter (asyncpg uses ``ssl=`` instead).
+
+        Transforms applied in order:
+        1. ``postgres://``  → ``postgresql://``     (SQLAlchemy rejects bare "postgres")
+        2. ``postgresql://`` → ``postgresql+asyncpg://``  (async dialect)
+        3. Strip ``sslmode=...`` query param  (asyncpg rejects it; Fly.io private
+           network is already encrypted so stripping is safe)
         """
         if isinstance(v, str):
+            # Step 1 + 2: scheme normalisation
             if v.startswith("postgres://"):
                 v = "postgresql" + v[len("postgres"):]
             if v.startswith("postgresql://"):
                 v = "postgresql+asyncpg" + v[len("postgresql"):]
+            # Step 3: strip ?sslmode=... (asyncpg uses its own ssl parameter)
+            from urllib.parse import urlparse, urlencode, parse_qs, urlunparse
+            parsed = urlparse(v)
+            qs = parse_qs(parsed.query, keep_blank_values=True)
+            qs.pop("sslmode", None)  # asyncpg rejects this key
+            cleaned = urlunparse(parsed._replace(query=urlencode(qs, doseq=True)))
+            v = cleaned
         return v
 
     # ── Valkey (§5.D table 2) ──────────────────────────────────────────────
