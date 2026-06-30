@@ -12,13 +12,14 @@ import {
   FormsModule,
 } from '@angular/forms';
 import { InputText } from 'primeng/inputtext';
+import { Tooltip } from 'primeng/tooltip';
 import type { MeeInputType } from './input.types';
 
 @Component({
   selector: 'mee-input',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [InputText, FormsModule],
+  imports: [InputText, Tooltip, FormsModule],
   providers: [
     {
       provide: NG_VALUE_ACCESSOR,
@@ -28,10 +29,20 @@ import type { MeeInputType } from './input.types';
   ],
   template: `
     @if (label()) {
-      <label [for]="inputId" class="block text-sm font-medium mb-1" style="color: var(--mee-color-on-surface)">
-        {{ label() }}
+      <label [for]="inputId" class="flex items-center gap-1 text-sm font-medium mb-1" style="color: var(--mee-color-on-surface)">
+        <span>{{ label() }}</span>
         @if (required()) {
           <span aria-hidden="true" style="color: var(--mee-color-error)"> *</span>
+        }
+        @if (tooltip()) {
+          <i class="pi pi-info-circle text-xs"
+             style="color: var(--mee-color-on-surface-muted); cursor: help;"
+             [pTooltip]="tooltip()!"
+             tooltipPosition="top"
+             [tooltipOptions]="{ tooltipStyleClass: 'mee-help-tooltip' }"
+             tabindex="0"
+             [attr.aria-label]="'Help: ' + tooltip()"
+             role="img"></i>
         }
       </label>
     }
@@ -77,6 +88,7 @@ export class MeeInputComponent implements ControlValueAccessor {
   readonly disabled = input<boolean>(false);
   readonly required = input<boolean>(false);
   readonly testId = input<string | undefined>(undefined);
+  readonly tooltip = input<string | undefined>(undefined);
 
   readonly blur = output<string>();
 

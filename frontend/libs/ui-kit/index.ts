@@ -32,6 +32,9 @@ export { MeeRadioComponent }           from './radio/radio.component';
 export { MeeBreadcrumbComponent }      from './breadcrumb/breadcrumb.component';
 export { MeeTabsComponent }            from './tabs/tabs.component';
 export { MeeMessageComponent }         from './message/message.component';
+// Input-number wrapper (Fix 5 — catalog wizard UX)
+export { MeeInputNumberComponent }     from './input-number/input-number.component';
+
 // P2 — Wave Sakai-Gaps
 export { MeePanelComponent }           from './panel/panel.component';
 export { MeeDividerComponent }         from './divider/divider.component';

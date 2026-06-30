@@ -57,4 +57,20 @@ describe('MeeSelectComponent', () => {
     comp.writeValue(null);
     expect(comp.innerValue()).toBeNull();
   });
+
+  describe('tooltip icon', () => {
+    it('should NOT render info icon when tooltip is not set', () => {
+      fixture.detectChanges();
+      const icon = fixture.nativeElement.querySelector('i.pi-info-circle');
+      expect(icon).toBeNull();
+    });
+
+    it('should render info icon when tooltip is set', () => {
+      fixture.componentRef.setInput('tooltip', 'Select from available options');
+      fixture.componentRef.setInput('label', 'Category');
+      fixture.detectChanges();
+      const icon = fixture.nativeElement.querySelector('i.pi-info-circle');
+      expect(icon).toBeTruthy();
+    });
+  });
 });

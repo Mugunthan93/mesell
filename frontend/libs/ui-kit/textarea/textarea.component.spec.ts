@@ -63,6 +63,22 @@ describe('MeeTextareaComponent', () => {
     expect(touched).toBe(true);
   });
 
+  describe('tooltip icon', () => {
+    it('should NOT render info icon when tooltip is not set', () => {
+      fixture.detectChanges();
+      const icon = fixture.nativeElement.querySelector('i.pi-info-circle');
+      expect(icon).toBeNull();
+    });
+
+    it('should render info icon when tooltip is set', () => {
+      fixture.componentRef.setInput('tooltip', 'Describe the product in detail');
+      fixture.componentRef.setInput('label', 'Description');
+      fixture.detectChanges();
+      const icon = fixture.nativeElement.querySelector('i.pi-info-circle');
+      expect(icon).toBeTruthy();
+    });
+  });
+
   describe('testId passthrough', () => {
     it('sets data-testid on the textarea when testId is provided', () => {
       fixture.componentRef.setInput('testId', 'smart-picker-description');

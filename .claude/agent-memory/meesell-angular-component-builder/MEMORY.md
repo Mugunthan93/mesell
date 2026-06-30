@@ -4,7 +4,8 @@
 Angular 18 component specialist for MeeSell. Owns 10 page components + shared UI components. Standalone, OnPush, Reactive Forms, Tailwind + Material. Decentralized memory ecosystem.
 
 ## MEMORY.md Index
-- ⭐ [Session 2026-06-28 — catalog-wizard-recovery — CatalogFormComponent clobber fix (PR #505) {#catalog-wizard-recovery-2026-06-28}](mem/mem_52_session-2026-06-28-catalog-wizard-recovery-pr283-clobber-fix.md)
+- ⭐ [Session 2026-06-30 — catalog-wizard-ux-fixes — 5 UX fixes PR #509 {#catalog-wizard-ux-fixes-2026-06-30}](mem/mem_53_session-2026-06-30-catalog-wizard-ux-fixes-pr509.md)
+- [Session 2026-06-28 — catalog-wizard-recovery — CatalogFormComponent clobber fix (PR #505) {#catalog-wizard-recovery-2026-06-28}](mem/mem_52_session-2026-06-28-catalog-wizard-recovery-pr283-clobber-fix.md)
 - [Session 2026-06-10 — Wave 5 F12 Export + F11 pricing route EXECUTED](#wave5-f12-export)
 - [Session 2026-06-10 — Wave 5 F11 Pricing EXECUTED](#wave5-f11-pricing)
 - [Session 2026-06-10 — Wave 5 F10 Preview EXECUTED](#wave5-f10-preview)

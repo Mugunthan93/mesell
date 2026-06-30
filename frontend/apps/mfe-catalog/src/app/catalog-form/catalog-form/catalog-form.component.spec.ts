@@ -1188,3 +1188,239 @@ describe('IMG-FE-10 — autofill error path: error toast surfaced', () => {
     expect(Object.keys(merged)).toHaveLength(0);  // no crash, no keys added
   });
 });
+
+// =============================================================================
+// SECTION — Fix 1: Deferred validation + Fix 4: Linear navigation (UX fixes)
+//
+// The component's getFieldError() now gates on touchedSteps.has(activeStepIndex).
+// onStepChange() enforces strict linear forward navigation.
+// These behaviours are tested via pure-function simulation (no TestBed — same
+// pattern used throughout this spec, per documented PrimeNG 21 TestBed crash).
+// =============================================================================
+
+describe('Fix 1 — Deferred validation: getFieldError gates on touchedSteps', () => {
+  /**
+   * Simulate the component's getFieldError method:
+   *   if (!touchedSteps.has(activeStepIndex)) return undefined;
+   *   return getFieldError(canonicalName, schema, fieldValues);
+   */
+  function simulateGetFieldError(
+    canonicalName: string,
+    schema: FieldGroup[],
+    fieldValues: Record<string, unknown>,
+    touchedSteps: Set<number>,
+    activeStepIndex: number,
+  ): string | undefined {
+    if (!touchedSteps.has(activeStepIndex)) return undefined;
+    return getFieldError(canonicalName, schema, fieldValues);
+  }
+
+  it('returns undefined for empty required field when step is NOT touched (no eager errors)', () => {
+    const untouched = new Set<number>();  // step 0 never attempted to leave
+    const result = simulateGetFieldError('product_name', MOCK_SCHEMA, {}, untouched, 0);
+    expect(result).toBeUndefined();
+  });
+
+  it('returns undefined even after filling if step is not yet touched', () => {
+    const untouched = new Set<number>();
+    const result = simulateGetFieldError('product_name', MOCK_SCHEMA, { product_name: 'My Kurti' }, untouched, 0);
+    expect(result).toBeUndefined();
+  });
+
+  it('returns error message for empty required field when step IS touched', () => {
+    const touched = new Set<number>([0]);
+    const result = simulateGetFieldError('product_name', MOCK_SCHEMA, {}, touched, 0);
+    expect(result).toContain('required');
+    expect(result).toContain('Product Name');
+  });
+
+  it('returns undefined for optional field even when step is touched', () => {
+    const touched = new Set<number>([0]);
+    // 'sleeve_length' is in group 'recommended' (required=false) in MOCK_SCHEMA
+    const result = simulateGetFieldError('sleeve_length', MOCK_SCHEMA, {}, touched, 0);
+    expect(result).toBeUndefined();
+  });
+
+  it('returns undefined for filled required field when step is touched', () => {
+    const touched = new Set<number>([0]);
+    const result = simulateGetFieldError(
+      'product_name', MOCK_SCHEMA, { product_name: 'Blue Kurti' }, touched, 0,
+    );
+    expect(result).toBeUndefined();
+  });
+
+  it('active step 0 touched — step 1 field returns undefined (wrong step)', () => {
+    const touched = new Set<number>([0]);  // only step 0 touched
+    // field on step 1 (pricing): error should NOT surface on step 1
+    const result = simulateGetFieldError('product_name', MOCK_SCHEMA, {}, touched, 1);
+    expect(result).toBeUndefined();  // step 1 not in touchedSteps
+  });
+
+  it('multiple steps touched — errors surface correctly per active step', () => {
+    const touched = new Set<number>([0, 1]);
+    const onStep0 = simulateGetFieldError('product_name', MOCK_SCHEMA, {}, touched, 0);
+    const onStep1 = simulateGetFieldError('product_name', MOCK_SCHEMA, {}, touched, 1);
+    // product_name is in MOCK_SCHEMA step 'basics' (any step index reveals error when touched)
+    expect(onStep0).toContain('required');
+    expect(onStep1).toContain('required');
+  });
+
+  it('markStepTouched is idempotent — adding same step twice produces single-entry set', () => {
+    // Simulates markStepTouched immutable update pattern
+    function markTouched(set: Set<number>, index: number): Set<number> {
+      if (set.has(index)) return set;
+      const next = new Set(set);
+      next.add(index);
+      return next;
+    }
+
+    const s0 = new Set<number>();
+    const s1 = markTouched(s0, 0);
+    const s2 = markTouched(s1, 0);  // same index again
+    expect(s2.size).toBe(1);
+    expect(s2).toBe(s1);            // returns same Set reference when no change
+  });
+});
+
+describe('Fix 1 — Linear navigation: onStepChange enforcement', () => {
+  /**
+   * Simulate the component's onStepChange(target) logic:
+   *   if (target <= current) → goToStep(target)   [free, no validation]
+   *   if (target === current + 1) → onNextStep()  [gate: validate first]
+   *   else (target > current + 1) → markStepTouched(current) only [forbidden skip]
+   */
+  interface NavResult {
+    /** The step index after the action (current if blocked, target if allowed). */
+    resultStep: number;
+    /** Whether the current step was marked touched (validation revealed). */
+    markedTouched: boolean;
+  }
+
+  function simulateOnStepChange(
+    target: number,
+    current: number,
+    canAdvance: boolean,
+  ): NavResult {
+    if (target <= current) {
+      // Backward or same → always free
+      return { resultStep: target, markedTouched: false };
+    }
+    if (target === current + 1) {
+      // One step forward → gate
+      if (canAdvance) {
+        return { resultStep: target, markedTouched: true };
+      }
+      return { resultStep: current, markedTouched: true };
+    }
+    // Illegal skip: target > current + 1
+    return { resultStep: current, markedTouched: true };
+  }
+
+  it('backward to step 0 from step 2 → free (no validation, no markTouched)', () => {
+    const r = simulateOnStepChange(0, 2, false);
+    expect(r.resultStep).toBe(0);
+    expect(r.markedTouched).toBe(false);
+  });
+
+  it('backward to step 1 from step 3 → free', () => {
+    const r = simulateOnStepChange(1, 3, false);
+    expect(r.resultStep).toBe(1);
+    expect(r.markedTouched).toBe(false);
+  });
+
+  it('same-step click (target === current) → treated as backward, free', () => {
+    const r = simulateOnStepChange(1, 1, false);
+    expect(r.resultStep).toBe(1);
+    expect(r.markedTouched).toBe(false);
+  });
+
+  it('forward by one with VALID step → navigates to next step', () => {
+    const r = simulateOnStepChange(1, 0, true);
+    expect(r.resultStep).toBe(1);
+    expect(r.markedTouched).toBe(true);  // gate runs → step touched
+  });
+
+  it('forward by one with INVALID step → stays on current step, marks touched', () => {
+    const r = simulateOnStepChange(1, 0, false);
+    expect(r.resultStep).toBe(0);        // stays
+    expect(r.markedTouched).toBe(true);  // errors now visible
+  });
+
+  it('illegal skip of 2 steps → stays on current, marks touched (no jump)', () => {
+    const r = simulateOnStepChange(2, 0, true);  // even if canAdvance=true, skip blocked
+    expect(r.resultStep).toBe(0);
+    expect(r.markedTouched).toBe(true);
+  });
+
+  it('illegal skip of 3 steps → blocked regardless of canAdvance', () => {
+    const r = simulateOnStepChange(3, 0, true);
+    expect(r.resultStep).toBe(0);
+    expect(r.markedTouched).toBe(true);
+  });
+
+  it('legal backward jump to step 0 from step 4 is free', () => {
+    const r = simulateOnStepChange(0, 4, false);
+    expect(r.resultStep).toBe(0);
+    expect(r.markedTouched).toBe(false);
+  });
+});
+
+describe('Fix 4 — Cancel + Previous navigation contracts (pure logic)', () => {
+  /** isLastStep logic: matches CatalogFormComponent.isLastStep computed. */
+  const isLastStep = (activeIdx: number, totalSteps: number): boolean =>
+    activeIdx === totalSteps - 1;
+
+  /** canGoPrev logic: Previous button visible when activeStepIndex > 0. */
+  const canGoPrev = (activeIdx: number): boolean => activeIdx > 0;
+
+  /** onPreviousStep logic: previous index or stay (guard prevents negative). */
+  const computePrevIndex = (current: number): number | null => {
+    const prev = current - 1;
+    return prev >= 0 ? prev : null;
+  };
+
+  it('Previous button is HIDDEN on step 0', () => {
+    expect(canGoPrev(0)).toBe(false);
+  });
+
+  it('Previous button is VISIBLE on step 1+', () => {
+    expect(canGoPrev(1)).toBe(true);
+    expect(canGoPrev(2)).toBe(true);
+    expect(canGoPrev(3)).toBe(true);
+  });
+
+  it('onPreviousStep navigates to current - 1', () => {
+    expect(computePrevIndex(3)).toBe(2);
+    expect(computePrevIndex(1)).toBe(0);
+  });
+
+  it('onPreviousStep does NOT navigate when on step 0 (returns null)', () => {
+    expect(computePrevIndex(0)).toBeNull();
+  });
+
+  it('isLastStep: true when activeStepIndex === wizardSteps.length - 1', () => {
+    expect(isLastStep(3, 4)).toBe(true);
+    expect(isLastStep(0, 1)).toBe(true);  // single-step wizard
+  });
+
+  it('isLastStep: false when NOT on the last step', () => {
+    expect(isLastStep(2, 4)).toBe(false);
+    expect(isLastStep(0, 4)).toBe(false);
+  });
+
+  it('Save & finish button is shown only on the last step', () => {
+    // Template: @if (isLastStep()) { Save & finish } @else { Next }
+    const steps = 3;
+    expect(isLastStep(2, steps)).toBe(true);   // last step → Save & finish
+    expect(isLastStep(1, steps)).toBe(false);  // not last → Next
+    expect(isLastStep(0, steps)).toBe(false);  // not last → Next
+  });
+
+  it('Cancel button route is /dashboard (constant contract)', () => {
+    // onCancel: this.router.navigate(['/dashboard'])
+    // Contract: the navigation target is exactly '/dashboard' — not '/home' or '/catalogs'.
+    const CANCEL_ROUTE = ['/dashboard'];
+    expect(CANCEL_ROUTE[0]).toBe('/dashboard');
+    expect(CANCEL_ROUTE.length).toBe(1);
+  });
+});

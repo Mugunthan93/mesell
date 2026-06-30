@@ -1,7 +1,32 @@
 # STATUS — FRONTEND
 
 **Owner:** meesell-frontend-coordinator (master session)
-**Last update:** 2026-06-28
+**Last update:** 2026-06-30
+
+=== UPDATE: 2026-06-30 ===
+Phase: `/catalogs/:id/edit` — catalog-wizard-ux-fixes (5 UX items)
+Done:
+  Lane A (libs/ui-kit/):
+    - `MeeInputNumberComponent` (CVA wrapping PrimeNG InputNumber) — authored + barrel-exported
+    - `MeeInputComponent`, `MeeSelectComponent`, `MeeTextareaComponent` — `tooltip` input + info-icon
+  Lane B (apps/mfe-catalog/):
+    - `CatalogFormComponent` — Fix 1 deferred-validation (touchedSteps signal pattern)
+    - `CatalogFormComponent` — Fix 2 tooltip wire ([hint] → [tooltip] on all mee-* bindings)
+    - `CatalogFormComponent` — Fix 3 3-col Tailwind grid (grid-cols-1 md:grid-cols-2 lg:grid-cols-3)
+    - `CatalogFormComponent` — Fix 4 Cancel+Previous nav (onCancel, onPreviousStep extracted)
+    - `CatalogFormComponent` — Fix 5 mee-input-number @case ('number') in both @switch blocks
+Tests: 23 new pure-function tests (no TestBed — PrimeNG TestBed crash documented)
+Build: ng build mfe-catalog --configuration development GREEN (3.965s, 0 errors); tsc --noEmit EXIT 0
+Boundary: grep -rn "primeng" apps --include='*.ts' → 0 results
+PR: #509 https://github.com/Mugunthan93/mesell/pull/509 (base=develop, FOUNDER GATE)
+In progress: none (HYBRID step-3 lead merge-gate review pending)
+Blockers: none
+Next: frontend-coordinator merge-gate review (HYBRID step-3)
+Hand-offs:
+  - `CatalogFormComponent` wired to `MeeInputNumberComponent` (Lane A) — both committed in same PR
+  - optional: meesell-angular-ui-styler to add `.mee-help-tooltip { max-width: 300px }` global rule
+    (PrimeNG tooltip teleports to <body>; not a merge blocker)
+===
 
 === UPDATE: 2026-06-28 — angular-observability — GlobalErrorHandler + RetryInterceptor + remote rejection capture ===
 Phase: Cross-cutting observability (shell + all 7 remotes)

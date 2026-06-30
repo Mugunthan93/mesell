@@ -12,12 +12,13 @@ import {
   FormsModule,
 } from '@angular/forms';
 import { Textarea } from 'primeng/textarea';
+import { Tooltip } from 'primeng/tooltip';
 
 @Component({
   selector: 'mee-textarea',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [Textarea, FormsModule],
+  imports: [Textarea, Tooltip, FormsModule],
   providers: [
     {
       provide: NG_VALUE_ACCESSOR,
@@ -27,10 +28,20 @@ import { Textarea } from 'primeng/textarea';
   ],
   template: `
     @if (label()) {
-      <label [for]="textareaId" class="block text-sm font-medium mb-1" style="color: var(--mee-color-on-surface)">
-        {{ label() }}
+      <label [for]="textareaId" class="flex items-center gap-1 text-sm font-medium mb-1" style="color: var(--mee-color-on-surface)">
+        <span>{{ label() }}</span>
         @if (required()) {
           <span aria-hidden="true" style="color: var(--mee-color-error)"> *</span>
+        }
+        @if (tooltip()) {
+          <i class="pi pi-info-circle text-xs"
+             style="color: var(--mee-color-on-surface-muted); cursor: help;"
+             [pTooltip]="tooltip()!"
+             tooltipPosition="top"
+             [tooltipOptions]="{ tooltipStyleClass: 'mee-help-tooltip' }"
+             tabindex="0"
+             [attr.aria-label]="'Help: ' + tooltip()"
+             role="img"></i>
         }
       </label>
     }
@@ -70,6 +81,7 @@ export class MeeTextareaComponent implements ControlValueAccessor {
   readonly required = input<boolean>(false);
   readonly autoResize = input<boolean>(false);
   readonly testId = input<string | undefined>(undefined);
+  readonly tooltip = input<string | undefined>(undefined);
 
   readonly blur = output<string>();
 
