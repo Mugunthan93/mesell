@@ -90,12 +90,31 @@ jobs:
         working-directory: frontend
         # Shell gets the Pages base-href; remotes resolve relative to their own
         # remoteEntry.json URL and need none.
+        #
+        # The NF builder has TWO CI pathologies (both observed live 2026-07-02):
+        #  (a) cold "Preparing shared npm packages" stalls ~24 min, then proceeds;
+        #  (b) it EMITS the full dist output and then never exits (open esbuild/
+        #      watcher handles keep node alive) — the step hangs until the job
+        #      timeout kills everything, skipping the artifact upload.
+        # Remedy: hard-timeout the build (35 min < 45-min job cap) and judge
+        # success by the emitted artifacts, NOT the exit code.
         run: |
+          set +e
           if [ "${{ matrix.project }}" = "frontend" ]; then
-            pnpm exec ng build frontend --configuration production --base-href /mesell/
+            timeout -k 15s 35m pnpm exec ng build frontend --configuration production --base-href /mesell/
           else
-            pnpm exec ng build ${{ matrix.project }} --configuration production
+            timeout -k 15s 35m pnpm exec ng build ${{ matrix.project }} --configuration production
           fi
+          code=$?
+          set -e
+          echo "ng build exit code: $code (124/137 = killed post-emit hang — tolerated)"
+          # Hard artifact gate — the real success signal.
+          if [ "${{ matrix.project }}" = "frontend" ]; then
+            test -f dist/frontend/browser/index.html
+          else
+            test -f "dist/${{ matrix.project }}/browser/remoteEntry.json"
+          fi
+          echo "artifact gate passed for ${{ matrix.project }}"
 
       - name: Upload dist artifact
         uses: actions/upload-artifact@v4
