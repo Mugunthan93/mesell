@@ -1020,7 +1020,11 @@ jobs:
     name: "Build container images"
     runs-on: ubuntu-latest
     needs: [unit, smoke, lint, integration, golden_roundtrip, frontend-build]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    # DISABLED 2026-07-01 (founder-ruled): meesell-dev K3s VM is TERMINATED
+    # (GCP credit stop 2026-06-30). Backend now deploys to Fly.io via the
+    # deploy-backend job. Re-enable by restoring the original condition:
+    #   if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    if: false
     timeout-minutes: 30
 
     permissions:
@@ -1063,7 +1067,11 @@ jobs:
     name: "Deploy to K3s (dev namespace)"
     runs-on: ubuntu-latest
     needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    # DISABLED 2026-07-01 (founder-ruled): meesell-dev K3s VM is TERMINATED
+    # (GCP credit stop 2026-06-30). Backend now deploys to Fly.io via the
+    # deploy-backend job. Re-enable by restoring the original condition:
+    #   if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    if: false
     timeout-minutes: 20
 
     permissions:
