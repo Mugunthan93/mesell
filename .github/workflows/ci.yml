@@ -1260,6 +1260,13 @@ jobs:
       - name: Deploy to Fly.io (meesell-api)
         run: flyctl deploy --dockerfile Dockerfile.fly --app meesell-api --remote-only --ha=false
 
+      - name: Wake API machine (auto_stop idles it — ssh needs a started VM)
+        # fly.toml sets auto_stop_machines="stop" + min_machines_running=0, so the
+        # api machine may be stopped by the time the migration step runs — and
+        # `fly ssh console` fails with "app has no started VMs". A proxied HTTP
+        # request auto-starts a machine; retry until healthy (cold start ~5-10s).
+        run: curl -sf --retry 10 --retry-delay 6 --retry-all-errors https://meesell-api.fly.dev/health
+
       - name: Apply Alembic migrations (upgrade head)
         # Run AFTER the new image is live so the migrations match the shipped code.
         run: flyctl ssh console --app meesell-api -C "alembic -c /app/alembic.ini upgrade head"
