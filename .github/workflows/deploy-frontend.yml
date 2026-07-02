@@ -125,10 +125,21 @@ jobs:
           if-no-files-found: error
 
   publish:
-    name: "Assemble + publish gh-pages"
+    name: "Assemble + publish to GitHub Pages"
     runs-on: ubuntu-latest
     needs: build
-    timeout-minutes: 10
+    timeout-minutes: 15
+    # Workflow-type Pages deployment (actions/deploy-pages). The legacy
+    # branch-sourced pipeline failed twice on 2026-07-02 ("Deployment failed,
+    # try again later", then a 10-min backend timeout) with a healthy 28MB/1552-
+    # file payload — build_type=workflow bypasses the legacy Jekyll pipeline.
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Download all dist artifacts
         uses: actions/download-artifact@v4
@@ -154,8 +165,14 @@ jobs:
           touch gh-pages/.nojekyll
           ls gh-pages | head -20
 
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: gh-pages
+          path: gh-pages
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
