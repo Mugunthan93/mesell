@@ -5,15 +5,23 @@
 # The federated Angular workspace is built and published to GitHub Pages under
 # /mesell/. The HOST (shell) project in angular.json is named `frontend` (root
 # apps/shell) — NOT "shell". The seven cutover remotes are mfe-auth, mfe-billing,
-# mfe-catalog, mfe-dashboard, mfe-export, mfe-onboarding, mfe-pricing (verified
-# against frontend/angular.json — the template's mfe-quality/categories/account
-# do not exist; the real set is used here).
+# mfe-catalog, mfe-dashboard, mfe-export, mfe-onboarding, mfe-pricing.
 #
-# Native federation: the shell index.html is the served entrypoint (base-href
-# /mesell/). Each remote is loaded at runtime via its remoteEntry.json, so the
-# remotes are published UNDER /mesell/remotes/<name>/ and the prod federation
-# manifest (apps/shell/src/main.ts, env-aware) points there. Remote chunks resolve
-# relative to their own remoteEntry.json URL, so remotes need no base-href.
+# ── WHY A MATRIX (2026-07-02 rework) ─────────────────────────────────────────
+# Native-federation's cold "Preparing shared npm packages" phase stalls ~24 min
+# PER PROJECT BUILD on a fresh CI runner (documented in ci.yml boot-smoke notes;
+# reproduced live: the first sequential run spent 23+ min on the shell alone and
+# hit the 30-min job timeout). 8 sequential builds = ~192 min — never fits.
+# Fix: one runner per project (the same pattern ci.yml frontend-build uses),
+# built dist uploaded as an artifact, then a single publish job assembles the
+# GitHub Pages layout and pushes the gh-pages branch. The NF prepare cache
+# (node_modules/.cache + .angular/cache) is actions/cache'd to cut warm runs.
+#
+# Native federation layout: the shell index.html is the served entrypoint
+# (base-href /mesell/). Each remote is loaded at runtime via remoteEntry.json,
+# so remotes are published UNDER /mesell/remotes/<name>/ and the prod federation
+# manifest (apps/shell/src/main.ts, env-aware) points there. Remote chunks
+# resolve relative to their own remoteEntry.json URL — no base-href needed.
 name: Deploy Frontend to GitHub Pages
 
 on:
@@ -24,14 +32,27 @@ on:
   # Manual trigger — first deploy / re-publish without touching frontend files.
   workflow_dispatch:
 
-# Allow the workflow to publish to the gh-pages branch.
+# Allow the publish job to push the gh-pages branch.
 permissions:
   contents: write
 
 jobs:
-  deploy-frontend:
+  build:
+    name: "Build: ${{ matrix.project }}"
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45  # NF cold prepare alone is ~24 min; leave headroom.
+    strategy:
+      fail-fast: true
+      matrix:
+        project:
+          - frontend      # shell/host — built with --base-href /mesell/
+          - mfe-auth
+          - mfe-billing
+          - mfe-catalog
+          - mfe-dashboard
+          - mfe-export
+          - mfe-onboarding
+          - mfe-pricing
     steps:
       - uses: actions/checkout@v4
 
@@ -47,6 +68,16 @@ jobs:
         with:
           version: '11.5.2'
 
+      - name: Restore NF prepare + Angular caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            frontend/node_modules/.cache
+            frontend/.angular/cache
+          key: nf-prepare-${{ matrix.project }}-${{ hashFiles('frontend/pnpm-lock.yaml') }}
+          restore-keys: |
+            nf-prepare-${{ matrix.project }}-
+
       - name: pnpm install (frozen lockfile)
         working-directory: frontend
         run: pnpm install --frozen-lockfile
@@ -55,45 +86,57 @@ jobs:
         working-directory: frontend
         run: pnpm rebuild esbuild @parcel/watcher lmdb msgpackr-extract
 
-      - name: Build shell (production, base-href /mesell/)
+      - name: Build ${{ matrix.project }} (production)
         working-directory: frontend
-        # angular.json host project is `frontend` (root apps/shell). Output: dist/frontend/browser.
-        run: pnpm exec ng build frontend --configuration production --base-href /mesell/
-
-      - name: Build MFE remotes (production)
-        working-directory: frontend
-        # The real remote project names per angular.json. Each builds to dist/<name>/browser.
+        # Shell gets the Pages base-href; remotes resolve relative to their own
+        # remoteEntry.json URL and need none.
         run: |
-          for mfe in mfe-auth mfe-billing mfe-catalog mfe-dashboard mfe-export mfe-onboarding mfe-pricing; do
-            if pnpm exec ng build $mfe --configuration production; then
-              echo "Built $mfe"
-            else
-              echo "WARN: build failed for $mfe — continuing"
-            fi
-          done
+          if [ "${{ matrix.project }}" = "frontend" ]; then
+            pnpm exec ng build frontend --configuration production --base-href /mesell/
+          else
+            pnpm exec ng build ${{ matrix.project }} --configuration production
+          fi
+
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.project }}
+          path: frontend/dist/${{ matrix.project }}
+          retention-days: 3
+          if-no-files-found: error
+
+  publish:
+    name: "Assemble + publish gh-pages"
+    runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 10
+    steps:
+      - name: Download all dist artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist  # each artifact lands in dist/dist-<project>/
 
       - name: Assemble GitHub Pages publish dir (shell at root + remotes/<name>/)
-        working-directory: frontend
-        # The prod federation manifest expects remotes at /mesell/remotes/<name>/remoteEntry.json,
-        # so lay the shell at the publish root and each remote under remotes/<name>/.
+        # The prod federation manifest expects remotes at
+        # /mesell/remotes/<name>/remoteEntry.json, so lay the shell at the
+        # publish root and each remote under remotes/<name>/.
         run: |
-          rm -rf dist/gh-pages
-          mkdir -p dist/gh-pages
-          cp -r dist/frontend/browser/. dist/gh-pages/
+          set -euo pipefail
+          rm -rf gh-pages && mkdir -p gh-pages
+          cp -r dist/dist-frontend/browser/. gh-pages/
           for mfe in mfe-auth mfe-billing mfe-catalog mfe-dashboard mfe-export mfe-onboarding mfe-pricing; do
-            if [ -d "dist/$mfe/browser" ]; then
-              mkdir -p "dist/gh-pages/remotes/$mfe"
-              cp -r "dist/$mfe/browser/." "dist/gh-pages/remotes/$mfe/"
-              echo "Staged remote $mfe"
-            fi
+            test -d "dist/dist-$mfe/browser" || { echo "missing artifact for $mfe"; exit 1; }
+            mkdir -p "gh-pages/remotes/$mfe"
+            cp -r "dist/dist-$mfe/browser/." "gh-pages/remotes/$mfe/"
+            echo "Staged remote $mfe"
           done
-          # SPA fallback for GitHub Pages deep links, and disable Jekyll (_-prefixed NF chunks).
-          cp dist/gh-pages/index.html dist/gh-pages/404.html
-          touch dist/gh-pages/.nojekyll
+          # SPA fallback for GitHub Pages deep links; disable Jekyll (_-prefixed NF chunks).
+          cp gh-pages/index.html gh-pages/404.html
+          touch gh-pages/.nojekyll
+          ls gh-pages | head -20
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: frontend/dist/gh-pages
-          cname: ''
+          publish_dir: gh-pages
