@@ -21,6 +21,8 @@ on:
     branches: [develop]
     paths:
       - 'frontend/**'
+  # Manual trigger — first deploy / re-publish without touching frontend files.
+  workflow_dispatch:
 
 # Allow the workflow to publish to the gh-pages branch.
 permissions:
@@ -33,27 +35,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The workspace is pnpm (frontend/pnpm-lock.yaml, packageManager pnpm@11.5.2).
+      # Same toolchain as the CI frontend-build job — Node 22 + pnpm 11.5.2 +
+      # frozen lockfile + explicit native rebuild (esbuild et al. are ignored
+      # builds under pnpm and must be rebuilt or `ng build` fails on fresh CI).
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
+          node-version: '22'
 
-      - name: Install deps
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.5.2'
+
+      - name: pnpm install (frozen lockfile)
         working-directory: frontend
-        run: npm ci
+        run: pnpm install --frozen-lockfile
+
+      - name: pnpm rebuild native binaries
+        working-directory: frontend
+        run: pnpm rebuild esbuild @parcel/watcher lmdb msgpackr-extract
 
       - name: Build shell (production, base-href /mesell/)
         working-directory: frontend
         # angular.json host project is `frontend` (root apps/shell). Output: dist/frontend/browser.
-        run: npx ng build frontend --configuration production --base-href /mesell/
+        run: pnpm exec ng build frontend --configuration production --base-href /mesell/
 
       - name: Build MFE remotes (production)
         working-directory: frontend
         # The real remote project names per angular.json. Each builds to dist/<name>/browser.
         run: |
           for mfe in mfe-auth mfe-billing mfe-catalog mfe-dashboard mfe-export mfe-onboarding mfe-pricing; do
-            if npx ng build $mfe --configuration production; then
+            if pnpm exec ng build $mfe --configuration production; then
               echo "Built $mfe"
             else
               echo "WARN: build failed for $mfe — continuing"
