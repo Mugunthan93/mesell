@@ -3622,3 +3622,33 @@ Cost: ₹0/mo — merge only; the single source change is `backend/app/ai_ops/ev
 Note: this board+STATUS update was authored via git-plumbing off the merged develop tip `c946302` and landed on a dedicated chore branch, because the master working tree carried a STALE uncommitted revert of `feature_board_infra.md` (rolling the header back to the 2026-06-14 MS-5 state, losing fe-lockfile-sync + qa-onboarding-merged updates) — NOT inherited, NOT committed (co-tenancy rule: never clobber the shared dirty tree).
 Next action: none — wave merged + verified on develop. Carried items tracked (E2E env-block, backend logout-idempotency loop-bug).
 =========
+
+---
+
+## UPDATE 2026-07-03 — GitHub Pages frontend LIVE (overnight autonomous loop)
+
+**MeeSell is fully deployed.** Frontend: https://mugunthan93.github.io/mesell/ · Backend: https://meesell-api.fly.dev
+
+### Final state
+| Surface | URL | Evidence |
+|---|---|---|
+| Shell (host) | https://mugunthan93.github.io/mesell/ | index 200, `main-H7EY6BEG.js` 200 |
+| 7 MFE remotes | `/mesell/remotes/<name>/remoteEntry.json` | all 7 return 200 |
+| SPA deep links | e.g. `/mesell/login` | 404.html fallback serves the app (`<app-root>` present; 404 status is standard Pages SPA behavior) |
+| API | https://meesell-api.fly.dev/health | `{"status":"healthy","checks":{"postgres":"ok","valkey":"ok"}}` |
+| CORS | Pages origin → Fly API preflight | 200 |
+| CI | last 3 develop runs (e2deccb, 1021504, d79a65a) | success, incl. deploy-backend |
+
+### Defects found + fixed in the overnight loop (deploy-frontend workflow)
+1. **npm→pnpm** (`66fc6db`): workflow assumed npm; workspace is pnpm@11.5.2 (no package-lock.json). Node 22 + pnpm/action-setup + frozen lockfile + native rebuild.
+2. **NF cold-prepare stall** (`e2deccb`): native-federation "Preparing shared npm packages" ≈24 min/project on cold runners → 8 sequential builds can never fit one job. Reworked to 8-way matrix + artifact assembly (ci.yml frontend-build pattern) + actions/cache on `node_modules/.cache` + `.angular/cache`.
+3. **NF emit-then-hang** (`1021504`): builder writes full dist then never exits (open esbuild/watcher handles). `timeout -k 15s 35m` + artifact-existence gate instead of exit code.
+4. **Legacy Pages pipeline wedge** (`d79a65a`): branch-sourced deploys failed twice ("Deployment failed, try again later" — wedged in-flight deployment; then 10-min backend timeout) on a healthy 28MB/1552-file payload. Switched repo `build_type` to **workflow** + `actions/configure-pages`/`upload-pages-artifact`/`deploy-pages`. peaceiris gh-pages branch push retired.
+
+Also: K3s build/deploy CI jobs silenced with `if: false` (`fabbfcb`, founder-ruled — VM terminated); deploy-backend machine-wake step before Alembic (`9385eb6`).
+
+### Notes
+- Warm NF cache: post-fix runs complete in minutes (cache seeded by first green run).
+- gh-pages branch still exists but is now unused (workflow deploys bypass it) — safe to delete later.
+- Cross-origin refresh cookie (github.io → fly.dev) remains the fragile piece — custom domain (mesell.xyz + api.mesell.xyz, COOKIE_DOMAIN=.mesell.xyz) is the durable fix.
+- Pending for real users: MSG91 + Razorpay live keys via `fly secrets set`.
