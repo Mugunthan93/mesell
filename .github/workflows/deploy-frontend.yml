@@ -160,6 +160,22 @@ jobs:
             cp -r "dist/dist-$mfe/browser/." "gh-pages/remotes/$mfe/"
             echo "Staged remote $mfe"
           done
+          # PROD federation manifest — OVERWRITE the dev manifest (localhost ports)
+          # that ships in the shell dist. main.ts fetches federation.manifest.json
+          # relative to <base href>, so this file is the single prod config surface.
+          # (main.ts must never import @mesell/env to pick a manifest — F-001
+          # chicken-and-egg with the import map; see apps/shell/src/main.ts.)
+          cat > gh-pages/federation.manifest.json << 'MANIFEST'
+          {
+            "mfe-auth": "https://mugunthan93.github.io/mesell/remotes/mfe-auth/remoteEntry.json",
+            "mfe-billing": "https://mugunthan93.github.io/mesell/remotes/mfe-billing/remoteEntry.json",
+            "mfe-catalog": "https://mugunthan93.github.io/mesell/remotes/mfe-catalog/remoteEntry.json",
+            "mfe-dashboard": "https://mugunthan93.github.io/mesell/remotes/mfe-dashboard/remoteEntry.json",
+            "mfe-export": "https://mugunthan93.github.io/mesell/remotes/mfe-export/remoteEntry.json",
+            "mfe-onboarding": "https://mugunthan93.github.io/mesell/remotes/mfe-onboarding/remoteEntry.json",
+            "mfe-pricing": "https://mugunthan93.github.io/mesell/remotes/mfe-pricing/remoteEntry.json"
+          }
+          MANIFEST
           # SPA fallback for GitHub Pages deep links; disable Jekyll (_-prefixed NF chunks).
           cp gh-pages/index.html gh-pages/404.html
           touch gh-pages/.nojekyll
