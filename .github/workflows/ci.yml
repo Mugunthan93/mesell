@@ -1271,6 +1271,25 @@ jobs:
         # Run AFTER the new image is live so the migrations match the shipped code.
         run: flyctl ssh console --app meesell-api -C "alembic -c /app/alembic.ini upgrade head"
 
+      - name: Post-deploy smoke check (live API verification)
+        # Gate the deploy on the API actually serving:
+        #   1. /health must be 200 AND report postgres+valkey ok (end-to-end
+        #      DB + cache connectivity of the freshly deployed image).
+        #   2. / must be FastAPI's JSON 404 — the root path has no route BY
+        #      DESIGN; a 404 proves the ASGI app answered (an app that is
+        #      down surfaces as Fly proxy 502/503 instead).
+        run: |
+          set -euo pipefail
+          body=$(curl -sf --retry 10 --retry-delay 6 --retry-all-errors https://meesell-api.fly.dev/health)
+          echo "health: $body"
+          echo "$body" | grep -q '"status":"healthy"'
+          echo "$body" | grep -q '"postgres":"ok"'
+          echo "$body" | grep -q '"valkey":"ok"'
+          root_code=$(curl -s -o /dev/null -w "%{http_code}" https://meesell-api.fly.dev/)
+          echo "root path status: $root_code (404 = app answered, no route mounted — expected)"
+          [ "$root_code" = "404" ]
+          echo "post-deploy smoke check PASSED"
+
   # =============================================================================
   # NIGHTLY — slow/perf + ai_eval, schedule-only
   # Fires only on the cron trigger. No build / no deploy.
