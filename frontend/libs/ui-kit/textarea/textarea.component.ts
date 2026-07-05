@@ -13,6 +13,7 @@ import {
 } from '@angular/forms';
 import { Textarea } from 'primeng/textarea';
 import { Tooltip } from 'primeng/tooltip';
+import { meeIconClass } from '../icon/icon.registry';
 
 @Component({
   selector: 'mee-textarea',
@@ -34,7 +35,7 @@ import { Tooltip } from 'primeng/tooltip';
           <span aria-hidden="true" style="color: var(--mee-color-error)"> *</span>
         }
         @if (tooltip()) {
-          <i class="pi pi-info-circle text-xs"
+          <i [class]="helpIconClass"
              style="color: var(--mee-color-on-surface-muted); cursor: help;"
              [pTooltip]="tooltip()!"
              tooltipPosition="top"
@@ -87,6 +88,9 @@ export class MeeTextareaComponent implements ControlValueAccessor {
 
   readonly textareaId = `mee-textarea-${Math.random().toString(36).slice(2)}`;
   readonly innerValue = signal<string>('');
+
+  /** FE-2: help-tooltip icon class resolved via the icon registry (no raw literal). */
+  protected readonly helpIconClass = meeIconClass('info-circle') + ' text-xs';
 
   private _onChange: (v: string) => void = () => {};
   private _onTouched: () => void = () => {};

@@ -43,6 +43,7 @@ export const MEE_ICONS_ALT = {
 
   // Internal ui-kit use
   warning:    'material-icons mi-warning',           // confirm-dialog warning icon
+  'info-circle': 'material-icons mi-info',           // input-family help-tooltip trigger (key-parity with MEE_ICONS)
 
   // Deep-link navigation
   'external-link': 'material-icons mi-open_in_new',  // My Live Listings sidebar nav

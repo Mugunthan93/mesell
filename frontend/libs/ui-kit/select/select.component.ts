@@ -21,6 +21,7 @@ import type { SelectChangeEvent, SelectFilterEvent } from 'primeng/select';
 import { Tooltip } from 'primeng/tooltip';
 import { Subject, debounceTime, merge } from 'rxjs';
 import type { MeeSelectOption } from './select.types';
+import { meeIconClass } from '../icon/icon.registry';
 
 export type MeeShowErrorOn = 'touched' | 'dirty' | 'always';
 
@@ -72,7 +73,7 @@ function resolveErrorMessage(errors: ValidationErrors): string {
           <span aria-hidden="true" class="mee-required"> *</span>
         }
         @if (tooltip()) {
-          <i class="pi pi-info-circle text-xs"
+          <i [class]="helpIconClass"
              style="color: var(--mee-color-on-surface-muted); cursor: help;"
              [pTooltip]="tooltip()!"
              tooltipPosition="top"
@@ -146,6 +147,8 @@ export class MeeSelectComponent implements ControlValueAccessor, OnInit {
 
   // ── Internal state ─────────────────────────────────────────────────────────────
   readonly innerValue             = signal<unknown>(null);
+  /** FE-2: help-tooltip icon class resolved via the icon registry (no raw literal). */
+  protected readonly helpIconClass = meeIconClass('info-circle') + ' text-xs';
   private readonly _controlStatus = signal<string>('VALID');
   private readonly _filterSubject = new Subject<string>();
 

@@ -32,6 +32,7 @@ export const MEE_ICONS = {
 
   // Internal ui-kit use
   warning:    'pi pi-exclamation-triangle', // confirm-dialog ConfirmationService icon
+  'info-circle': 'pi pi-info-circle',       // input-family help-tooltip trigger (mee-input / -number / select / textarea)
 
   // Deep-link navigation
   'external-link': 'pi pi-external-link',  // My Live Listings sidebar nav (live Meesho links)
