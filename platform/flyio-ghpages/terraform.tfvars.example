@@ -1,0 +1,43 @@
+# terraform.tfvars.example — copy to terraform.tfvars and adjust.
+#
+# terraform.tfvars is GIT-IGNORED (see .gitignore). This example carries NO secret
+# values — only placeholders + the non-sensitive toggles. All sensitive inputs are
+# supplied from the ENVIRONMENT as TF_VAR_<name>, NEVER from a committed file:
+#
+#   export TF_VAR_fly_github_actions_token="<the FLY_API_TOKEN value>"
+#   export TF_VAR_fly_secret_jwt_secret="<...>"
+#   export TF_VAR_fly_secret_gemini_api_key="<...>"
+#   export TF_VAR_fly_secret_msg91_auth_key="<...>"
+#   export TF_VAR_fly_secret_razorpay_key_id="<...>"
+#   export TF_VAR_fly_secret_razorpay_key_secret="<...>"
+#   export TF_VAR_fly_secret_refresh_token_pepper="<...>"
+#   # GitHub provider token (repo scope) for the actions secret + repo data source:
+#   export GITHUB_TOKEN="<a PAT with repo scope>"
+#   # GCP auth via ADC:  gcloud auth application-default login
+#
+# Leaving a TF_VAR_fly_secret_* unset means the fly_secrets shim SKIPS that key — so an
+# adoption run stages no new secret values (the ~40 live Fly secrets stay as-is).
+
+# ── GCP ─────────────────────────────────────────────────────────────────────
+gcp_project_id      = "project-1f5cbf72-2820-4cdb-949"
+gcp_region          = "asia-south1"
+fly_sa_account_id   = "meesell-fly-sa"
+gcs_buckets         = ["meesell-dev", "meesell-images", "meesell-prod-assets"]
+manage_sa_key       = false # true ONLY to rotate the GCS key (writes key to state)
+push_sa_key_to_fly  = false
+
+# ── Fly.io ──────────────────────────────────────────────────────────────────
+fly_app_name     = "meesell-api"
+fly_region       = "bom"
+fly_org          = "personal"
+secrets_revision = 1 # bump to force fly_secrets re-stage on next apply
+
+# ── GitHub ──────────────────────────────────────────────────────────────────
+github_owner            = "Mugunthan93"
+github_repo             = "mesell"
+github_pages_build_type = "workflow"
+manage_pages_shim       = true
+
+# ── Public URLs (output contract) ───────────────────────────────────────────
+api_base_url = "https://meesell-api.fly.dev"
+frontend_url = "https://mugunthan93.github.io/mesell/"

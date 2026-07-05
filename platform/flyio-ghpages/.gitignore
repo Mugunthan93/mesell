@@ -1,0 +1,18 @@
+# Mirrored from /terraform/.gitignore — LOCAL state stays out of git (contains the GCS
+# SA key when manage_sa_key = true), and terraform.tfvars may carry non-secret local
+# overrides. Sensitive values come from the environment (TF_VAR_*), never a committed file.
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+crash.log
+crash.*.log
+terraform.tfvars
+*.auto.tfvars
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
