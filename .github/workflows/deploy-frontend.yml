@@ -188,24 +188,16 @@ jobs:
           if-no-files-found: error
 
   publish:
-    name: "Assemble + publish to GitHub Pages"
+    name: "Assemble + upload Pages artifact"
     runs-on: ubuntu-latest
     needs: build
-    # Measured 6-12 s (runs 28610655843 / 28614840041 / 28631588555); 10 min is a
-    # generous ceiling that still houses a full actions/deploy-pages internal
-    # deployment-timeout window.
+    # Measured 6-12 s (runs 28610655843 / 28614840041 / 28631588555).
     timeout-minutes: 10
-    # Workflow-type Pages deployment (actions/deploy-pages). The legacy
-    # branch-sourced pipeline failed twice on 2026-07-02 ("Deployment failed,
-    # try again later", then a 10-min backend timeout) with a healthy 28MB/1552-
-    # file payload — build_type=workflow bypasses the legacy Jekyll pipeline.
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    # Workflow-type Pages deployment (actions/deploy-pages in the deploy job
+    # below). The legacy branch-sourced pipeline failed twice on 2026-07-02
+    # ("Deployment failed, try again later", then a 10-min backend timeout)
+    # with a healthy 28MB/1552-file payload — build_type=workflow bypasses the
+    # legacy Jekyll pipeline entirely.
     steps:
       - name: Download all dist artifacts
         uses: actions/download-artifact@v4
@@ -255,6 +247,27 @@ jobs:
         with:
           path: gh-pages
 
+  # Deploy is its OWN job (GitHub starter-workflow pattern) for rerun safety:
+  # the Pages backend intermittently fails deployments ("Deployment failed,
+  # try again later" — 3x on 2026-07-05). Rerunning a combined job re-executes
+  # upload-pages-artifact, and v4 artifacts are immutable — duplicates pile up
+  # until deploy-pages hard-fails with "Multiple artifacts named github-pages"
+  # (required manual artifact deletion via API to recover). With deploy split
+  # out, `gh run rerun --failed` re-runs ONLY this job: no re-upload, no
+  # duplicates, safe to retry any number of times.
+  deploy:
+    name: "Deploy to GitHub Pages"
+    runs-on: ubuntu-latest
+    needs: publish
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
