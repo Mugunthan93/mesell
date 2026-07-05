@@ -8,14 +8,19 @@
 # mfe-catalog, mfe-dashboard, mfe-export, mfe-onboarding, mfe-pricing.
 #
 # ── WHY A MATRIX (2026-07-02 rework) ─────────────────────────────────────────
-# Native-federation's cold "Preparing shared npm packages" phase stalls ~24 min
-# PER PROJECT BUILD on a fresh CI runner (documented in ci.yml boot-smoke notes;
-# reproduced live: the first sequential run spent 23+ min on the shell alone and
-# hit the 30-min job timeout). 8 sequential builds = ~192 min — never fits.
-# Fix: one runner per project (the same pattern ci.yml frontend-build uses),
-# built dist uploaded as an artifact, then a single publish job assembles the
-# GitHub Pages layout and pushes the gh-pages branch. The NF prepare cache
-# (node_modules/.cache + .angular/cache) is actions/cache'd to cut warm runs.
+# Historically the pre-matrix SEQUENTIAL design let native-federation's cold
+# "Preparing shared npm packages" phase dominate: the first sequential run spent
+# 23+ min on the shell alone and hit the 30-min job timeout (8 sequential builds
+# = ~192 min — never fits). Fix: one runner per project (the same pattern ci.yml
+# frontend-build uses), built dist uploaded as an artifact, then a single publish
+# job assembles the GitHub Pages layout and deploys via actions/deploy-pages.
+# The NF prepare cache (node_modules/.cache + .angular/cache) is actions/cache'd.
+#
+# MEASURED CORRECTION (runs 28610655843 cold-MISS / 28614840041 warm, 2026-07-02):
+# under this matrix the prepare phase is only 8-18 s per project (cold ≈ warm) —
+# the ~24-min stall was a sequential-era artifact and does NOT recur per runner.
+# The real cost is pathology (b) in the Build step (the post-emit hang), now
+# fixed there by kill-on-artifact-ready instead of a fixed 35-min wait.
 #
 # Native federation layout: the shell index.html is the served entrypoint
 # (base-href /mesell/). Each remote is loaded at runtime via remoteEntry.json,
@@ -40,7 +45,9 @@ jobs:
   build:
     name: "Build: ${{ matrix.project }}"
     runs-on: ubuntu-latest
-    timeout-minutes: 45  # NF cold prepare alone is ~24 min; leave headroom.
+    # kill-on-artifact-ready (see the Build step) bounds each leg to ~1.5-2 min;
+    # this cap only backstops the 8-min inner fallback + setup/upload overhead.
+    timeout-minutes: 10
     strategy:
       fail-fast: true
       matrix:
@@ -91,24 +98,80 @@ jobs:
         # Shell gets the Pages base-href; remotes resolve relative to their own
         # remoteEntry.json URL and need none.
         #
-        # The NF builder has TWO CI pathologies (both observed live 2026-07-02):
-        #  (a) cold "Preparing shared npm packages" stalls ~24 min, then proceeds;
-        #  (b) it EMITS the full dist output and then never exits (open esbuild/
-        #      watcher handles keep node alive) — the step hangs until the job
-        #      timeout kills everything, skipping the artifact upload.
-        # Remedy: hard-timeout the build (35 min < 45-min job cap) and judge
-        # success by the emitted artifacts, NOT the exit code.
+        # The NF builder has TWO documented CI pathologies:
+        #  (a) COLD "Preparing shared npm packages" stall — historically ~24 min
+        #      on the pre-matrix SEQUENTIAL design; under this matrix it does NOT
+        #      recur (measured 8-18 s on cold-cache-MISS run 28610655843).
+        #  (b) POST-EMIT HANG (the real cost): the builder writes the FULL dist
+        #      output and then never exits — open esbuild/@parcel/watcher handles
+        #      keep node alive. Measured: the artifact lands ~20-30 s after the
+        #      step starts, then the process hangs ~34.5 min until killed (run
+        #      28610655843: shell emit done 17:53:48, killed 18:28:27 by the old
+        #      fixed 35-min `timeout`). Cold ≈ warm — the emit time barely moves.
+        # The old fixed `timeout 35m` therefore burned ~34.5 min of pure waste per
+        # leg × 8 legs. REMEDY: KILL-ON-ARTIFACT-READY — run ng build in the
+        # background in its own process group, poll for the emitted artifact,
+        # confirm the dist dir is quiescent (stable file-count + byte-size across
+        # two 15 s samples), then kill the group. Success is judged by the
+        # artifact gate, NOT the exit code. FALLBACK_SECS (8 min ≈ 16× the
+        # measured cold artifact-ready) is the hard ceiling if the artifact never
+        # appears; lockfile changes evict the cache, so it still clears a fully
+        # cold run with wide headroom.
         run: |
           set +e
           if [ "${{ matrix.project }}" = "frontend" ]; then
-            timeout -k 15s 35m pnpm exec ng build frontend --configuration production --base-href /mesell/
+            ARTIFACT="dist/frontend/browser/index.html"
           else
-            timeout -k 15s 35m pnpm exec ng build ${{ matrix.project }} --configuration production
+            ARTIFACT="dist/${{ matrix.project }}/browser/remoteEntry.json"
           fi
-          code=$?
+          DISTDIR="dist/${{ matrix.project }}"
+          FALLBACK_SECS=480   # 8-min hard fallback if the artifact never appears
+
+          # Launch ng build in its OWN process group (setsid) so the whole tree
+          # (esbuild/watcher children that keep node alive) can be killed once
+          # the dist is written.
+          if [ "${{ matrix.project }}" = "frontend" ]; then
+            setsid pnpm exec ng build frontend --configuration production --base-href /mesell/ > /tmp/ngbuild.log 2>&1 &
+          else
+            setsid pnpm exec ng build ${{ matrix.project }} --configuration production > /tmp/ngbuild.log 2>&1 &
+          fi
+          BPID=$!
+          echo "ng build launched (pgid $BPID); polling for $ARTIFACT (fallback ${FALLBACK_SECS}s)"
+
+          DEADLINE=$(( $(date +%s) + FALLBACK_SECS ))
+          ready=0
+          while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+            if [ -f "$ARTIFACT" ]; then ready=1; break; fi
+            kill -0 "$BPID" 2>/dev/null || { echo "build ended before artifact appeared"; break; }
+            sleep 10
+          done
+
+          if [ "$ready" = "1" ]; then
+            echo "artifact present; waiting for dist to go quiescent"
+            while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+              c1=$(find "$DISTDIR" -type f | wc -l | tr -d ' ')
+              b1=$(du -sb "$DISTDIR" | cut -f1)
+              sleep 15
+              c2=$(find "$DISTDIR" -type f | wc -l | tr -d ' ')
+              b2=$(du -sb "$DISTDIR" | cut -f1)
+              if [ "$c1" = "$c2" ] && [ "$b1" = "$b2" ]; then
+                echo "dist quiescent: $c2 files, $b2 bytes"
+                break
+              fi
+              echo "dist still settling: files $c1->$c2 bytes $b1->$b2"
+            done
+          fi
+
+          # Kill the whole build process group (the post-emit hang never exits).
+          kill -TERM -"$BPID" 2>/dev/null || kill -TERM "$BPID" 2>/dev/null || true
+          sleep 2
+          kill -KILL -"$BPID" 2>/dev/null || kill -KILL "$BPID" 2>/dev/null || true
+          wait "$BPID" 2>/dev/null
+          tail -n 3 /tmp/ngbuild.log 2>/dev/null || true
+          echo "build group $BPID terminated post-artifact-ready"
           set -e
-          echo "ng build exit code: $code (124/137 = killed post-emit hang — tolerated)"
-          # Hard artifact gate — the real success signal.
+
+          # Hard artifact gate — the real success signal (unchanged).
           if [ "${{ matrix.project }}" = "frontend" ]; then
             test -f dist/frontend/browser/index.html
           else
@@ -128,7 +191,10 @@ jobs:
     name: "Assemble + publish to GitHub Pages"
     runs-on: ubuntu-latest
     needs: build
-    timeout-minutes: 15
+    # Measured 6-12 s (runs 28610655843 / 28614840041 / 28631588555); 10 min is a
+    # generous ceiling that still houses a full actions/deploy-pages internal
+    # deployment-timeout window.
+    timeout-minutes: 10
     # Workflow-type Pages deployment (actions/deploy-pages). The legacy
     # branch-sourced pipeline failed twice on 2026-07-02 ("Deployment failed,
     # try again later", then a 10-min backend timeout) with a healthy 28MB/1552-

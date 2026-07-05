@@ -1247,7 +1247,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: [unit, smoke, lint, integration, golden_roundtrip]
     if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
-    timeout-minutes: 20
+    # Measured 91 s (warm, run 28614840185) to 207 s (run 28631404945: 193 s Fly
+    # remote build + wake + alembic). 15 min keeps ~4x headroom for a cold Fly
+    # remote Docker rebuild (full pip layer on a dep change) + retry-heavy smoke.
+    timeout-minutes: 15
     env:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
     steps:
