@@ -65,3 +65,29 @@ verified `export.component.ts` on origin/develop has ZERO `'current-product-id'`
 unblocked — author against develop, no dependency remaining.** NOTE: the referenced frontend-coordinator
 handoff memo `handoff_mfe-export-productid-already-on-develop.md` was NOT present in their memory dir;
 closure justified by independent verification (PR #404 MERGED + clean component source).
+
+## V1 CONFORMANCE AUDIT (2026-07-05, fast-mode read-only) — report on develop `ed6c99a`
+Founder asked "did we implement all V1 features correctly?" → authored `docs/status/V1_CONFORMANCE_REPORT.md`
+(committed direct to develop via `/tmp/mesell-wt/v1conf` off origin/develop, admin-bypass on the docs-only file).
+**Verdict: 9/9 V1 features IMPLEMENTED, 0 missing, 0 material gaps.** Code reality-checked on develop
+(routes/components/migrations/tests), not board-trusted.
+- **Backend is MODULAR** (`app/modules/{iam,category,catalog,image,pricing,dashboard,export,customer,monitor}/router.py`),
+  NOT the legacy `app/routers/` flat layout the base CLAUDE.md tree implies. Routes mounted in `app/main.py`
+  with `if settings.FEATURE_*` flag-gates (google-auth OFF, billing dev=True, catalog-form gated).
+- **Frontend is FEDERATED** (`apps/{shell,mfe-auth,mfe-catalog,mfe-dashboard,mfe-pricing,mfe-export,mfe-onboarding,mfe-billing}`
+  + 7 `libs/`), one mfe per feature-area. mfe-catalog carries F2/F3/F4/F5/F6.
+- **3 features DIVERGE from BASE spec text but are correct per ratified amendments** (base spec is stale, code follows amendment):
+  F6 Live Preview → My Live Listings `/catalogs/live` (2026-06-18 PR #278; old `:id/preview` retired, PreviewFeed/Detail/Mobile grep=0);
+  F7 Price Calc → census settlement estimator (`estimated_bank_settlement`, per-cat constant shipping from
+  `meesho_pricing_lookup.json` 3,772 entries, commission=0, migration d4e5f6a7b8c9);
+  F1 Auth → FE-D5 in-memory token + Decision #5 google flag-off (migration c2d3e4f5a6b7).
+  F4 Autofill = minor structural divergence (inline in CatalogFormComponent, not the spec's named AutofillButton/FieldDiff).
+- **Scope BEYOND the nine:** Razorpay billing (a V1.5 line item, built early, flag-gated), Legal-Metrology
+  seller-profile/onboarding (NET-NEW — `customer` module + mfe-onboarding, in neither V1 nor V1.5 list), google-auth (flag-off),
+  category-monitor (maintenance). All V1.5-deferred items (bulk/analytics/brand-validator/versioning/net-profit) correctly absent.
+- **Test coverage is NOT thin** (corrects the dispatch brief's assumption): 183 backend test files, ~111 FE specs (48 app + 63 lib),
+  15 e2e flows — from 5 MERGED QA waves. BUT: 9 of ~22 e2e blocks are `test.fixme` scaffolds (GCS/Gemini/data-testid env-blocked),
+  ~61 FE specs are pre-existing reds (W2-FE carry — `ng test` NOT green on develop), and 2 QA lanes still OPEN
+  (qa-pricing e2e blocked on mfe-pricing data-testids; qa-catalog backend gate REJECTED, PR #435 event-loop fixture re-do owed).
+LESSON: the base `V1_FEATURE_SPEC.md` text is materially stale vs shipped reality — always read the AMENDMENT blocks
+(2026-06-05/-16/-18/-19) before judging conformance, and code-verify module routes (the CLAUDE.md dir tree predates the modular refactor).
