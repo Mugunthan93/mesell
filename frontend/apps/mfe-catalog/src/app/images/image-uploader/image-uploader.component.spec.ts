@@ -937,8 +937,8 @@ describe('IMG-FE-02 — featureDisabled: all uploads EMPTY → featureDisabled=t
   it('should NOT set featureDisabled=true when at least one upload succeeds', () => {
     // If any upload succeeds (next() fires), featureDisabled stays false
     let featureDisabled = false;
-    const uploadSuccessCount = 1;  // one upload succeeded
-    const imagesLength = 1;
+    const uploadSuccessCount: number = 1;  // one upload succeeded
+    const imagesLength: number = 1;
 
     if (uploadSuccessCount === 0 && imagesLength === 0) {
       featureDisabled = true;
@@ -950,8 +950,8 @@ describe('IMG-FE-02 — featureDisabled: all uploads EMPTY → featureDisabled=t
   it('should NOT set featureDisabled=true when images already exist from a prior upload', () => {
     // Guard: even if this batch returns EMPTY, existing images[] stays visible
     let featureDisabled = false;
-    const uploadSuccessCount = 0;
-    const imagesLength = 2;  // prior uploads already landed
+    const uploadSuccessCount: number = 0;
+    const imagesLength: number = 2;  // prior uploads already landed
 
     if (uploadSuccessCount === 0 && imagesLength === 0) {
       featureDisabled = true;

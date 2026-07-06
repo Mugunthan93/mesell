@@ -61,6 +61,8 @@ class MeeInputStub implements ControlValueAccessor {
   @Input() error: string | undefined = undefined;
   /** Added: OnboardingComponent template uses [hint] on pincode inputs. */
   @Input() hint: string | undefined = undefined;
+  /** Added: OnboardingComponent template uses [testId] on mee-input fields (PR #490 onboarding-testids). */
+  @Input() testId: string | undefined = undefined;
   writeValue(_v: unknown): void {}
   registerOnChange(_fn: (_: unknown) => void): void {}
   registerOnTouched(_fn: () => void): void {}

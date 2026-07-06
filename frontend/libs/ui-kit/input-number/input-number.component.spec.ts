@@ -78,6 +78,10 @@ describe('MeeInputNumberComponent', () => {
     });
 
     it('should render info icon when tooltip is set', () => {
+      // The help-tooltip icon renders inside the label row (`@if (label())`),
+      // so a label must be present for the affordance to appear — this mirrors
+      // real wizard usage where a number field always carries a label.
+      fixture.componentRef.setInput('label', 'Selling Price');
       fixture.componentRef.setInput('tooltip', 'Maximum retail price');
       fixture.detectChanges();
       const icon = fixture.nativeElement.querySelector('i.pi-info-circle');

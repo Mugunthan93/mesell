@@ -1,7 +1,11 @@
 /**
  * retry.interceptor.spec.ts
  *
- * Tests retryInterceptor using Angular's HttpTestingController + fakeAsync/tick.
+ * Tests retryInterceptor using Angular's HttpTestingController + vi fake timers.
+ *
+ * Zoneless project: fakeAsync()/tick() are NOT available (they require
+ * zone.js/testing) — use vi.useFakeTimers() + vi.advanceTimersByTime() to flush
+ * the RxJS timer() backoff (mirrors the ApiClient retry-filter spec pattern).
  *
  * Retry policy under test:
  *   count: 3, delay: 2^(n-1) * 1000ms (1 s, 2 s, 4 s)
@@ -24,7 +28,7 @@
  *   (h) PATCH + 500 → NOT retried (non-idempotent)
  */
 
-import { fakeAsync, TestBed, tick } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import {
   HttpClient,
   provideHttpClient,
@@ -35,6 +39,7 @@ import {
   HttpTestingController,
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
+import { vi } from 'vitest';
 
 import { retryInterceptor } from './retry.interceptor';
 
@@ -57,12 +62,14 @@ function setup() {
 afterEach(() => {
   TestBed.inject(HttpTestingController).verify();
   TestBed.resetTestingModule();
+  vi.useRealTimers();
 });
 
 // ── (a) GET + 503 → retried ──────────────────────────────────────────────────
 
 describe('retryInterceptor — GET + 503 (server error, idempotent)', () => {
-  it('retries once and succeeds on the second attempt', fakeAsync(() => {
+  it('retries once and succeeds on the second attempt', () => {
+    vi.useFakeTimers();
     const { http, controller } = setup();
 
     let result: unknown = null;
@@ -80,7 +87,7 @@ describe('retryInterceptor — GET + 503 (server error, idempotent)', () => {
     );
 
     // Advance past the first retry delay (2^0 * 1000 = 1000 ms)
-    tick(1000);
+    vi.advanceTimersByTime(1000);
 
     // Retry request — succeed this time
     const req2 = controller.expectOne('/api/v1/products');
@@ -88,13 +95,14 @@ describe('retryInterceptor — GET + 503 (server error, idempotent)', () => {
 
     expect(errorCaught).toBe(false);
     expect(result).toEqual({ items: [] });
-  }));
+  });
 });
 
 // ── (b) POST + 503 → NOT retried ─────────────────────────────────────────────
 
 describe('retryInterceptor — POST + 503 (non-idempotent, no retry)', () => {
-  it('propagates the error immediately without retrying', fakeAsync(() => {
+  it('propagates the error immediately without retrying', () => {
+    vi.useFakeTimers();
     const { http, controller } = setup();
 
     let errorStatus = 0;
@@ -114,13 +122,14 @@ describe('retryInterceptor — POST + 503 (non-idempotent, no retry)', () => {
 
     // Verify no second request was made
     controller.expectNone('/api/v1/products');
-  }));
+  });
 });
 
 // ── (c) GET + status 0 → retried ─────────────────────────────────────────────
 
 describe('retryInterceptor — GET + status 0 (network failure)', () => {
-  it('retries on a network failure (status 0) for GET', fakeAsync(() => {
+  it('retries on a network failure (status 0) for GET', () => {
+    vi.useFakeTimers();
     const { http, controller } = setup();
 
     let result: unknown = null;
@@ -132,19 +141,20 @@ describe('retryInterceptor — GET + status 0 (network failure)', () => {
     const req1 = controller.expectOne('/api/v1/products');
     req1.flush(null, { status: 0, statusText: 'Unknown Error' });
 
-    tick(1000); // first retry delay
+    vi.advanceTimersByTime(1000); // first retry delay
 
     const req2 = controller.expectOne('/api/v1/products');
     req2.flush({ items: [] });
 
     expect(result).toEqual({ items: [] });
-  }));
+  });
 });
 
 // ── (d) POST + status 0 → retried (network failure is method-agnostic) ───────
 
 describe('retryInterceptor — POST + status 0 (network failure, any method)', () => {
-  it('retries on network failure even for POST', fakeAsync(() => {
+  it('retries on network failure even for POST', () => {
+    vi.useFakeTimers();
     const { http, controller } = setup();
 
     let result: unknown = null;
@@ -155,19 +165,20 @@ describe('retryInterceptor — POST + status 0 (network failure, any method)', (
     const req1 = controller.expectOne('/api/v1/products');
     req1.flush(null, { status: 0, statusText: 'Unknown Error' });
 
-    tick(1000);
+    vi.advanceTimersByTime(1000);
 
     const req2 = controller.expectOne('/api/v1/products');
     req2.flush({ id: '1' });
 
     expect(result).toEqual({ id: '1' });
-  }));
+  });
 });
 
 // ── (e) GET + 404 → NOT retried (4xx) ────────────────────────────────────────
 
 describe('retryInterceptor — GET + 404 (client error, no retry)', () => {
-  it('does not retry on 4xx errors', fakeAsync(() => {
+  it('does not retry on 4xx errors', () => {
+    vi.useFakeTimers();
     const { http, controller } = setup();
 
     let errorStatus = 0;
@@ -183,13 +194,14 @@ describe('retryInterceptor — GET + 404 (client error, no retry)', () => {
 
     expect(errorStatus).toBe(404);
     controller.expectNone('/api/v1/products/nonexistent');
-  }));
+  });
 });
 
 // ── (f) GET + 401 → NOT retried ──────────────────────────────────────────────
 
 describe('retryInterceptor — GET + 401 (auth error, no retry)', () => {
-  it('does not retry on 401 (handled by refreshInterceptor in the full chain)', fakeAsync(() => {
+  it('does not retry on 401 (handled by refreshInterceptor in the full chain)', () => {
+    vi.useFakeTimers();
     const { http, controller } = setup();
 
     let errorStatus = 0;
@@ -205,13 +217,14 @@ describe('retryInterceptor — GET + 401 (auth error, no retry)', () => {
 
     expect(errorStatus).toBe(401);
     controller.expectNone('/api/v1/products');
-  }));
+  });
 });
 
 // ── (g) PUT + 500 → retried (idempotent method) ───────────────────────────────
 
 describe('retryInterceptor — PUT + 500 (idempotent, retried)', () => {
-  it('retries PUT on a 500 server error', fakeAsync(() => {
+  it('retries PUT on a 500 server error', () => {
+    vi.useFakeTimers();
     const { http, controller } = setup();
 
     let result: unknown = null;
@@ -225,19 +238,20 @@ describe('retryInterceptor — PUT + 500 (idempotent, retried)', () => {
       { status: 500, statusText: 'Internal Server Error' },
     );
 
-    tick(1000);
+    vi.advanceTimersByTime(1000);
 
     const req2 = controller.expectOne('/api/v1/products/1');
     req2.flush({ id: '1', name: 'updated' });
 
     expect(result).toEqual({ id: '1', name: 'updated' });
-  }));
+  });
 });
 
 // ── (h) PATCH + 500 → NOT retried (non-idempotent) ────────────────────────────
 
 describe('retryInterceptor — PATCH + 500 (non-idempotent, no retry)', () => {
-  it('does not retry PATCH on a 500 server error', fakeAsync(() => {
+  it('does not retry PATCH on a 500 server error', () => {
+    vi.useFakeTimers();
     const { http, controller } = setup();
 
     let errorStatus = 0;
@@ -253,5 +267,5 @@ describe('retryInterceptor — PATCH + 500 (non-idempotent, no retry)', () => {
 
     expect(errorStatus).toBe(500);
     controller.expectNone('/api/v1/products/1');
-  }));
+  });
 });
