@@ -119,14 +119,12 @@ class TestFullProductLifecycle:
             "status=ready transition must succeed."
         )
 
-        # ── 5. get_preview ──────────────────────────────────────────────
-        preview = await catalog_service.get_preview(user.id, product.id, db=db)
-        assert preview.status == "ready"
-        # The 4 schema fields plus any preview-only synthesized rows.
-        canonical_names = {f.canonical_name for f in preview.fields}
-        assert {"product_name", "brand_name", "application_area"}.issubset(
-            canonical_names
-        )
+        # ── 5. (RETIRED) get_preview step removed 2026-07-06 ─────────────
+        # The §10.B.4 Live Product Preview route + service.get_preview were
+        # retired with Feature 6 (frontend removed in PR #278; see
+        # BACKEND_ARCHITECTURE.md §17.B.2 F6-retirement amendment). The full
+        # lifecycle ends at the ready-status transition asserted above; the
+        # read-composition (preview) facet no longer exists.
 
 
 # ─────────────────────────────────────────────────────────────────────────────

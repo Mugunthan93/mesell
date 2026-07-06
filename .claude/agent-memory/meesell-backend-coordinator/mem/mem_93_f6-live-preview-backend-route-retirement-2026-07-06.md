@@ -89,3 +89,15 @@ verification = CI on push (unit/smoke/integration + deploy-backend post-deploy l
 
 **Rule B (rebuild-localhost-on-merge):** backend `uvicorn --reload :8000` restart deferred
 to the founder's next dev session (noted; this chore only pushes to develop).
+
+**⭐ CI Gate 4 follow-up (2026-07-06, commit after e6a82bb).** Push e6a82bb FAILED Gate 4 on
+ONE missed consumer: `tests/modules/catalog/test_integration.py::TestFullProductLifecycle::
+test_full_lifecycle` called `catalog_service.get_preview(...)` DIRECTLY (step 5). My
+zero-consumer sweep grepped `backend/app` for callers + the exclusively-owned preview test
+files, but did NOT sweep `backend/tests` for direct SERVICE-level calls. LESSON: when
+retiring a service method, grep the `get_preview(` CALL pattern across ALL of `backend/`
+(routes AND service-level test calls), not just route consumers. Fix: dropped the lifecycle
+preview step (get_draft doesn't fit — no draft exists after a non-autosave patch + shape
+mismatch). Verified `get_preview(` now has ZERO call sites in backend/app + backend/tests.
+The image `TestCrossModuleUrlFetch` mentions get_preview in PROSE only (drives
+`get_image_urls` directly) — still passes; left as image-owner follow-up.
