@@ -66,6 +66,28 @@ unblocked — author against develop, no dependency remaining.** NOTE: the refer
 handoff memo `handoff_mfe-export-productid-already-on-develop.md` was NOT present in their memory dir;
 closure justified by independent verification (PR #404 MERGED + clean component source).
 
+## V1_FEATURE_SPEC reconciled with shipped reality (2026-07-06, mesell-qa-wave-conformance-coord)
+Fast-mode docs task (founder-approved action #1 of `docs/status/V1_CONFORMANCE_REPORT.md` @ ed6c99a).
+Reconciled `docs/V1_FEATURE_SPEC.md` against develop @ c24e158 — RECORDED ratified rulings ONLY (surgical,
+base text preserved, no silent rewrites). 16 edits, +44/-15 (deletions = inline-marker re-adds, zero content
+removed). Landed: (1) header "Reconciled with develop @ …" line; (2) F1 Auth — inline FE-D5 markers on the
+stale localStorage/7-day-JWT base text (user-journey 3-4 + acceptance criterion) + a NEW Decision #5
+dual-identity amendment block (phone→nullable, google_sub/email-unique/auth_provider, CHECK, AUTO-LINK,
++1 flag-gated `/auth/google/verify`, iam 6→7) + Section-4 SQL `users` inline markers; (3) F6 — scope-line +
+AS-BUILT head pointer (My Live Listings `/catalogs/live`, PR #278); block amendment ALREADY existed at the
+feature tail; (4) F7 — AS-BUILT head pointer (forward Estimated-Bank-Settlement estimator); both block
+amendments ALREADY existed; (5) F4 — one-line note (autofill UI is INLINE in `CatalogFormComponent`, no
+`AutofillButton`/`FieldDiff`); (6) NEW "Section 1.5 — Shipped Beyond the V1 Nine": Razorpay billing (V1.5
+pulled early, flag-gated), Legal-Metrology onboarding/seller-profile (net-new, compliance), Google sign-in
+(flag-off), category-monitor (maintenance). Also reconciled the downstream surfaces the rulings touch:
+Section-3 journey steps 8-9, Section-5 API table (added refresh/logout/me/google-verify; marked `/preview`
+orphaned per conformance action #5), Section-6 route table (`/preview` RETIRED + `/catalogs/live` added — the
+F6 amendment explicitly says "see Section 6"), Section-8 checklist. LESSON: F6/F7/FE-D5 already carried full
+block amendments in the locked spec — the reconciliation gap was (a) the entirely-missing Decision #5 block,
+(b) the two shipped-beyond-scope verticals, (c) stale base text lacking inline "read the amendment" pointers.
+Committed on a fresh worktree off origin/develop → push origin HEAD:develop (master-tree docs are
+root:staff-unwritable; fresh-checkout files are writable as mugunthansrinivasan).
+
 ## V1 CONFORMANCE AUDIT (2026-07-05, fast-mode read-only) — report on develop `ed6c99a`
 Founder asked "did we implement all V1 features correctly?" → authored `docs/status/V1_CONFORMANCE_REPORT.md`
 (committed direct to develop via `/tmp/mesell-wt/v1conf` off origin/develop, admin-bypass on the docs-only file).

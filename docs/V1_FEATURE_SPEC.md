@@ -2,6 +2,7 @@
 
 Last updated: 2026-06-04
 Status: V1 Locked — ready to build
+Reconciled with develop @ c24e158 on 2026-07-06 per docs/status/V1_CONFORMANCE_REPORT.md — this pass RECORDS founder-ratified rulings only (FE-D5 2026-06-05, Decision #5 2026-06-18, the F6/F7 amendments) and folds in the verticals shipped beyond the V1 nine; no unbacked changes, base text preserved for history.
 
 Reference: `docs/VALIDATED_PAIN_POINTS.md` (themes T1–T6, new pains S3.x)
 
@@ -15,7 +16,7 @@ Reference: `docs/VALIDATED_PAIN_POINTS.md` (themes T1–T6, new pains S3.x)
 3. **Fast Catalog Form** — Category-specific form (≤50 fields, inline help from XLSX)
 4. **AI Auto-fill** — Gemini suggests values for compulsory fields from description
 5. **Image Pre-check** — JPEG, RGB (not CMYK), watermark detection, white-BG check
-6. **Live Product Preview** — Meesho marketplace render before publish
+6. **Live Product Preview** — *AMENDED 2026-06-18 → shipped as "My Live Listings" (`/catalogs/live`): seller uploads their Meesho Inventory XLSX → per-product public "View on Meesho" deep-links (PR #278); the simulated pre-publish render is superseded. See Feature 6 amendment.*
 7. **Price Calculator** — Estimated Bank Settlement from Meesho Price (census-confirmed model; see Feature 7 + 2026-06-19 amendment)
 8. **Tracking Dashboard** — User's products with status (draft / exported / live)
 9. **XLSX Export** — Meesho-format XLSX for supplier-panel upload
@@ -36,6 +37,19 @@ Reference: `docs/VALIDATED_PAIN_POINTS.md` (themes T1–T6, new pains S3.x)
 
 ---
 
+## Section 1.5: Shipped Beyond the V1 Nine (post-spec additions)
+
+*Reconciliation note (2026-07-06, per `docs/status/V1_CONFORMANCE_REPORT.md`): four verticals shipped on `develop` that are not part of the nine-feature V1 list above. Recorded here so "the contract the tests defend" matches the code. None of these change the V1 nine.*
+
+1. **Razorpay Billing** — the V1.5 line item *"Razorpay billing (Pro tier upgrade)"* (see §V1.5 above) was **built early** and ships flag-gated. Backend `iam/billing_router.py` (`/billing/subscribe|start-trial|cancel|subscription`) + `iam/router.py` `/webhooks/razorpay`; frontend `mfe-billing/` (plans, checkout, account — 5 files); migrations `f8fa7a36383f`, `e9415bdcae20`. Flag `FEATURE_BILLING_ENABLED` (dev=True; staging/prod gated). Landed PR #323. Tests: e2e `plan-guard.spec.ts`, `mfe-billing` specs.
+2. **Legal-Metrology Seller Profile / Onboarding** — **net-new** (in neither the V1 nine nor the V1.5 list), compliance-driven. Backend `customer/router.py` (`GET/PATCH /seller-profile`, `/active-categories`, `/compliance/{super_id}`, `/required-fields`); frontend `mfe-onboarding/` (`onboarding`, `profile`) capturing manufacturer/packer details + pincode. Tests: `tests/modules/customer/`, the qa-onboarding QA wave (backend + frontend + e2e `onboarding.spec.ts`).
+3. **Google Sign-In** — Decision #5 dual-identity amendment (2026-06-18, see Feature 1 amendment), **flag-off**. Backend `iam/router.py` `POST /auth/google/verify`, migration `c2d3e4f5a6b7`; frontend Google button in `mfe-auth`; e2e `google-signin.spec.ts`. Not mounted unless `FEATURE_GOOGLE_AUTH_ENABLED` (default False). Go-live (flag flip + prod OAuth origins + CSP) deferred to V1.5.
+4. **Category Monitor** — maintenance, not a user feature. Backend `app/modules/monitor/`; migration `480c10b0219f_add_category_monitor_wave1_snapshots`. Background category-tree drift tracking (Wave-1 schema).
+
+All other V1.5-deferred items remain correctly absent (bulk ops, analytics, brand validator, catalog versioning, pricing net-profit layer).
+
+---
+
 ## Section 2: P0 Feature Specs
 
 ### Feature 1: Auth (Phone OTP + JWT)
@@ -46,8 +60,8 @@ Reference: `docs/VALIDATED_PAIN_POINTS.md` (themes T1–T6, new pains S3.x)
 **User journey:**
 1. User enters phone number on `/login`
 2. System sends 6-digit OTP via MSG91, stores in Valkey (TTL 5 min)
-3. User enters OTP → server validates → returns JWT (7-day expiry)
-4. Frontend stores JWT in localStorage, attaches as `Authorization: Bearer` on every call
+3. User enters OTP → server validates → returns JWT (7-day expiry) *[— AMENDED per FE-D5 2026-06-05: access JWT is now 15-min and held in-memory; the refresh token is 7-day in an HttpOnly cookie. See amendment below.]*
+4. Frontend stores JWT in localStorage, attaches as `Authorization: Bearer` on every call *[— AMENDED per FE-D5 2026-06-05: NO tokens in localStorage — access token held in-memory (signal), refresh token in an HttpOnly cookie. See amendment below.]*
 
 **AMENDMENT 2026-06-05 — FE-D5 ratification:** step 4 is superseded. The frontend holds the access JWT in memory (signal); the refresh token is delivered as an `HttpOnly; Secure; SameSite=Strict` cookie owned by the backend. The frontend attaches `Authorization: Bearer <access>` on every API call. On access-token expiry, the frontend's `RefreshInterceptor` silently calls `POST /api/v1/auth/refresh` (the refresh cookie is auto-sent by the browser); a new access JWT is issued and the refresh cookie is rotated server-side. Server-side revocation on logout is enforced via a Valkey allowlist DEL. No tokens in localStorage. See `docs/BACKEND_ARCHITECTURE.md` §0.C + §4.B + §7 amendments and `.claude/agent-memory/meesell-frontend-coordinator/backend_handoff_jwt_session_pattern.md`. (End amendment.)
 
@@ -61,17 +75,19 @@ Reference: `docs/VALIDATED_PAIN_POINTS.md` (themes T1–T6, new pains S3.x)
 | column | type | notes |
 |---|---|---|
 | id | UUID PK | gen_random_uuid() |
-| phone | VARCHAR(15) UNIQUE | E.164 |
-| email | VARCHAR(255) NULL | optional |
+| phone | VARCHAR(15) UNIQUE | E.164 — *AMENDED per Decision #5 2026-06-18: now **nullable**-unique (dual-identity: a user may be phone-only, Google-only, or both). See amendment below.* |
+| email | VARCHAR(255) NULL | optional — *AMENDED per Decision #5 2026-06-18: gains a nullable-**UNIQUE** linking constraint.* |
 | plan | VARCHAR(20) | `free` / `pro` (V1 = `free`) |
 | created_at | TIMESTAMPTZ | default now() |
 | last_login_at | TIMESTAMPTZ | nullable |
+
+**AMENDMENT 2026-06-18 — Decision #5 dual-identity (Google Sign-In) ratification:** the "phone-only" identity model is widened to **DUAL-IDENTITY**. A user may exist with **phone only** (every existing row), **Google only** (`email` + Google `sub`, `phone = NULL`), or **both**. Data-model changes on `iam.users`: `phone` becomes **nullable**-unique; `email` gains a nullable-**UNIQUE** linking constraint; a new nullable-**UNIQUE** `google_sub` column and an `auth_provider` audit column are added; a table-level **CHECK** guarantees `phone IS NOT NULL OR google_sub IS NOT NULL`. Account-linking is **AUTO-LINK** on a Google `email_verified` match: `google_sub` match → login; else verified-`email` match → link `google_sub` onto the existing user; else create a Google-only user; a **409** is returned if the email belongs to a different `google_sub`. The phone-OTP path is **unchanged**. Adds exactly one endpoint — `POST /api/v1/auth/google/verify` (iam count 6 → 7) — **feature-flag gated** by `FEATURE_GOOGLE_AUTH_ENABLED` (default **False**): NOT mounted when the flag is off, so the OpenAPI surface is unchanged until enabled per namespace (dev → staging; **prod deferred to V1.5**). Shipped on `develop` via migration `c2d3e4f5a6b7_add_google_identity_to_users.py`, flag-off. See CLAUDE.md Decision #5 amendment (2026-06-18) + `BACKEND_ARCHITECTURE.md` §7.3/§17. (End amendment.)
 
 **Acceptance criteria:**
 - [ ] User receives OTP within 10 s of submit
 - [ ] Wrong OTP rejected with `401`, correct OTP returns JWT
 - [ ] OTP expires after 5 min; resend allowed after 30 s
-- [ ] JWT valid for 7 days, refreshed silently on call within 24 h of expiry
+- [ ] JWT valid for 7 days, refreshed silently on call within 24 h of expiry *[— AMENDED per FE-D5 2026-06-05: access JWT 15 min (env `ACCESS_TOKEN_TTL_SECONDS`) / refresh 7 days (env `REFRESH_TOKEN_TTL_SECONDS`), rotated per use, Valkey-allowlist revocation on logout. See amendment below.]*
 - [ ] Rate limit: 3 OTP requests per phone per hour (Valkey sliding window)
 
 **AMENDMENT 2026-06-05 — FE-D5 ratification:** the JWT-validity criterion is superseded. New acceptance: access JWT valid for 15 min (prod default; env-driven via `ACCESS_TOKEN_TTL_SECONDS`). Refresh token valid for 7 days (env-driven via `REFRESH_TOKEN_TTL_SECONDS`); rotated on every use (Lua-script atomic DEL-old + SET-new on the Valkey allowlist per `BACKEND_ARCHITECTURE.md` §4.B amendment); revoked server-side on logout via Valkey allowlist DEL. The frontend's `RefreshInterceptor` silently refreshes within 30 s of access-token expiry. The `/auth/refresh` endpoint is rate-limited 60/h/user. (End amendment.)
@@ -172,7 +188,7 @@ Reference: `docs/VALIDATED_PAIN_POINTS.md` (themes T1–T6, new pains S3.x)
 4. User clicks "Accept all" or edits inline; values persist on next autosave
 
 **Technical components:**
-- Frontend: `AutofillButtonComponent`, `FieldDiffComponent`
+- Frontend: `AutofillButtonComponent`, `FieldDiffComponent` *(AS-BUILT 2026-07-06: neither component exists — the auto-fill UI is implemented **inline** in `CatalogFormComponent` (the "AI fill" button + `onAutofill()` + dual-write of `aiSuggestions`/`fieldValues`). Functionally complete; structural naming divergence only.)*
 - Backend: `POST /api/v1/products/:id/autofill`
 - Database: writes to `products.fields_jsonb` + `products.ai_suggestions_jsonb`
 - External: Gemini 2.5 Flash (JSON-mode call)
@@ -240,6 +256,8 @@ Reference: `docs/VALIDATED_PAIN_POINTS.md` (themes T1–T6, new pains S3.x)
 ---
 
 ### Feature 6: Live Product Preview
+> **AS-BUILT — see AMENDMENT 2026-06-18 at the end of this feature:** shipped as **"My Live Listings"** (`/catalogs/live`, PR #278), NOT the simulated three-surface preview described below. `PreviewFeed/Detail/Mobile` do not exist. The base text is retained for history.
+
 **Pain solved:** Theme 4 (IMAGE PREVIEW MISSING) — strongly validated, no competitor has it.
 
 **User journey:**
@@ -272,6 +290,8 @@ Reference: `docs/VALIDATED_PAIN_POINTS.md` (themes T1–T6, new pains S3.x)
 ---
 
 ### Feature 7: Price Calculator
+> **AS-BUILT — see AMENDMENTS 2026-06-18 / 2026-06-19 at the end of this feature:** shipped as a **forward "Estimated Bank Settlement" estimator** (seller enters Meesho Price → offline, census-confirmed net-payout estimate; commission = 0, per-category constant shipping), NOT the MRP → target-margin back-solve described below. The base text is retained for history.
+
 **Pain solved:** Theme 5 (PRICING CONFUSION) — strongly validated, 5+ external calculators exist.
 
 **User journey:**
@@ -432,8 +452,8 @@ A new Tirupur seller signs up and exports their first catalog:
 5. **`/catalogs/new` (Smart Category Picker)** — User types: "Blue cotton kurti with mirror work for women, size M to XXL." → 3 cards returned: "Fashion > Women > Ethnic > Kurti" (94 %), "Fashion > Women > Ethnic > Kurta Set" (71 %), "Fashion > Women > Tops > Tunic" (52 %). User picks Kurti.
 6. **`/catalogs/:id/edit`** — Form renders 32 Kurti-specific fields. User clicks "AI fill" → compulsory fields populate yellow. User reviews, edits brand name, accepts rest. Autosave fires.
 7. **`/catalogs/:id/images`** — User drags 4 images. Pre-check runs: image #2 fails CMYK; user converts and re-uploads. All 4 pass.
-8. **`/catalogs/:id/preview`** — User sees feed thumbnail, detail page, mobile card. Title cuts at "Blue Cotton Kurti With Mir…" — user shortens to "Blue Cotton Kurti — Mirror Work."
-9. **`/catalogs/:id/pricing`** — Enters MRP ₹899, target margin ₹150. Calculator shows commission 5 %, GST 5 %, Meesho price ₹450, seller payout ₹408, net margin ₹158 (positive — green).
+8. **`/catalogs/:id/preview`** — User sees feed thumbnail, detail page, mobile card. Title cuts at "Blue Cotton Kurti With Mir…" — user shortens to "Blue Cotton Kurti — Mirror Work." *[— AS-BUILT: this step is superseded by "My Live Listings" (`/catalogs/live`, PR #278); the simulated preview no longer ships. See Feature 6 amendment.]*
+9. **`/catalogs/:id/pricing`** — Enters MRP ₹899, target margin ₹150. Calculator shows commission 5 %, GST 5 %, Meesho price ₹450, seller payout ₹408, net margin ₹158 (positive — green). *[— AS-BUILT: the calculator is a forward Estimated-Bank-Settlement estimator (enter Meesho Price → net payout; commission = 0; only 18 % GST-on-shipping deducted). See Feature 7 amendments.]*
 10. **`/catalogs/:id/export`** — Validation passes. XLSX + image ZIP generated. Download URL displayed.
 11. **Outside MeeSell** — User uploads to Meesho supplier panel.
 12. **Back in `/dashboard`** — User marks the product "live" once Meesho QC approves.
@@ -444,13 +464,17 @@ A new Tirupur seller signs up and exports their first catalog:
 
 ```sql
 -- users
+-- AMENDED per Decision #5 2026-06-18 (dual-identity): phone is now NULLABLE-unique; email gains a
+-- nullable-UNIQUE linking constraint; nullable-UNIQUE `google_sub` + `auth_provider` columns added;
+-- table-level CHECK (phone IS NOT NULL OR google_sub IS NOT NULL). Migration c2d3e4f5a6b7. See Feature 1 amendment.
 CREATE TABLE users (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  phone        VARCHAR(15) UNIQUE NOT NULL,
-  email        VARCHAR(255),
+  phone        VARCHAR(15) UNIQUE NOT NULL,  -- AMENDED → nullable-unique (Decision #5)
+  email        VARCHAR(255),                 -- AMENDED → nullable-UNIQUE linking constraint (Decision #5)
   plan         VARCHAR(20) DEFAULT 'free',
   created_at   TIMESTAMPTZ DEFAULT NOW(),
   last_login_at TIMESTAMPTZ
+  -- + google_sub VARCHAR UNIQUE NULL, auth_provider VARCHAR (Decision #5); CHECK (phone IS NOT NULL OR google_sub IS NOT NULL)
 );
 
 -- categories (preseeded from 3,772-leaf tree)
@@ -544,6 +568,10 @@ CREATE TABLE exports (
 | POST | `/api/v1/auth/otp/send` | Send 6-digit OTP via MSG91 |
 | POST | `/api/v1/auth/otp/verify` | Verify OTP, return JWT |
 | POST | `/api/v1/auth/login` | Reserved (V1.5 email/password) |
+| POST | `/api/v1/auth/refresh` | Rotate access JWT from HttpOnly refresh cookie (FE-D5 2026-06-05) |
+| POST | `/api/v1/auth/logout` | Revoke refresh token — Valkey allowlist DEL (FE-D5 2026-06-05) |
+| GET  | `/api/v1/auth/me` | Current user (FE-D5 2026-06-05) |
+| POST | `/api/v1/auth/google/verify` | Google Sign-In — **flag-gated** `FEATURE_GOOGLE_AUTH_ENABLED` (default off), not mounted when off (Decision #5 2026-06-18) |
 | POST | `/api/v1/categories/suggest` | Smart picker — top-3 Gemini suggestions (amended 2026-06-16 → POST, JSON body `{"q": "<desc>"}`, max 5000 chars; was GET `?q=<desc>`, see Feature 2 amendment) |
 | GET  | `/api/v1/categories/{id}/schema` | Field schema for category |
 | POST | `/api/v1/products` | Create draft product |
@@ -551,7 +579,7 @@ CREATE TABLE exports (
 | POST | `/api/v1/products/{id}/autofill` | Gemini auto-fill |
 | POST | `/api/v1/products/{id}/images` | Upload image + queue pre-check |
 | GET  | `/api/v1/products/{id}/images` | List images + check status |
-| GET  | `/api/v1/products/{id}/preview` | Live preview JSON |
+| GET  | `/api/v1/products/{id}/preview` | Live preview JSON — *AS-BUILT: the frontend preview was retired (Feature 6 → My Live Listings, PR #278); this backend route still mounts but is **orphaned** (see V1_CONFORMANCE_REPORT.md action #5).* |
 | POST | `/api/v1/products/{id}/price-calc` | Pricing breakdown |
 | GET  | `/api/v1/products` | List for dashboard (paginated) |
 | DELETE | `/api/v1/products/{id}` | Soft delete |
@@ -573,7 +601,8 @@ All endpoints require JWT in `Authorization: Bearer` header, except `/auth/otp/*
 | `/catalogs/new` | `SmartPickerComponent` | Description → category |
 | `/catalogs/:id/edit` | `CatalogFormComponent` | Form + autofill |
 | `/catalogs/:id/images` | `ImageUploaderComponent` | Upload + pre-check report |
-| `/catalogs/:id/preview` | `PreviewComponent` | Feed / detail / mobile previews |
+| `/catalogs/:id/preview` | ~~`PreviewComponent`~~ | **RETIRED** per PR #278 (Feature 6 amendment) — removed from the V1 route set |
+| `/catalogs/live` | `LiveListingsComponent` | **My Live Listings** — upload Meesho Inventory XLSX → per-product "View on Meesho" deep-links (Feature 6 amendment, PR #278) |
 | `/catalogs/:id/pricing` | `PricingComponent` | Calculator + margin slider |
 | `/catalogs/:id/export` | `ExportComponent` | XLSX trigger + download |
 
@@ -619,8 +648,8 @@ Buffer: tight. If image pre-check slips, move watermark detection to V1.5 (other
 - [ ] User can create a catalog from any of 3,772 categories via Smart Picker
 - [ ] User can fill the category-specific form with AI auto-fill assistance
 - [ ] User can upload up to 6 images with all 5 pre-checks reporting pass/fail
-- [ ] User sees live Meesho-style preview (feed / detail / mobile) before publish
-- [ ] User sees price calculation with commission, GST, and net margin
+- [ ] User sees live Meesho-style preview (feed / detail / mobile) before publish *[— AS-BUILT: superseded by "My Live Listings" (`/catalogs/live`, PR #278); see Feature 6 amendment.]*
+- [ ] User sees price calculation with commission, GST, and net margin *[— AS-BUILT: Estimated Bank Settlement (forward estimator; commission = 0, GST-on-shipping only); see Feature 7 amendments.]*
 - [ ] User can export a Meesho-format XLSX + image ZIP and download via signed URL
 - [ ] User can see all their drafts/exports in dashboard with status filters
 - [ ] All routes auth-guarded; JWT refresh works
