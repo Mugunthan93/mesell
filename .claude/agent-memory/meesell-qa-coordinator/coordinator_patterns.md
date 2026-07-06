@@ -161,3 +161,23 @@ the next wave's spec automatically so every wave is smarter than the last. Forma
   `GEMINI_API_KEY=ci-dummy`; only the nightly `ai_eval` job uses the low-quota real `GEMINI_API_KEY_CI`. E2E
   should assert the FE APPLIES the AI response (canned stub), never call real Gemini — AI quality is the eval
   lane's job, not the browser test's.
+
+## From qa-pricing e2e lane completion (`1794da3`, 2026-07-06)
+- **A spec's measurable EXIT criterion governs the gate — not a leaning prose note elsewhere in the spec.**
+  → all lanes → SPEC A §3.3 (prose) leaned "collapse the W3-E2-6/PQE-E2E-04 duplicate," but §4 (the measurable
+  exit criterion the gate checks) listed "W3-E2-6 GREEN" as one of two accepted states. The writer chose the
+  keep-green state → NOT a reject. When authoring a spec, if two exit states are both acceptable, SAY SO in the
+  exit criterion and do not contradict it with a "prefer X" prose aside — the gate reads the exit criterion.
+- **A test FILE can be load-bearing beyond its own assertions.** → gate rulings → before ruling to delete/collapse
+  a spec file, grep `V1_CONFORMANCE_REPORT.md` + the wave plan for a BY-PATH reference. `price-apply-export.spec.ts`
+  is a named V1-conformance artifact (Features 7 + 9); collapsing it would have orphaned founder-facing refs. The
+  cheap "DRY dedup" was the WRONG call once the file's external role surfaced.
+- **e2e writers keep source-only role selectors as `test.fixme` when live-verify is env-blocked (GOOD discipline,
+  do NOT push to un-fixme).** → E2E lane → CAT-E2E-03/07 role selectors were source-confirmed but not live-verifiable
+  (deployed suggest empty + no route-stub for `fallback_offered`). The writer kept them fixme + filed a testid memo —
+  exactly the two-phase mandate. The gate must NOT pressure a source-only selector into a green test; a testid memo
+  to frontend is the correct un-block, not a source-derived `getByRole` guess.
+- **Direct-to-develop pipeline: the IN-REVIEW board discipline does not apply (no PR), so scribe straight to
+  MERGED-on-develop.** → all lanes on the direct pipeline → don't log a "specialist didn't flip IN REVIEW" gap when
+  there was never a PR; instead the gate owns the whole board transition. Still verify every claim independently —
+  a post-hoc gate is a REAL gate and can reject → corrective spec.

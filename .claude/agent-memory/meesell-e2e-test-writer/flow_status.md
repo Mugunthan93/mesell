@@ -94,3 +94,17 @@ Procedural: cut the e2e lane branch from the LIVE integration tip (here merge-ba
 
 ## Google Sign-In — COVERED (#483)
 Google Sign-In = COVERED ✅ (render + real POST /auth/google/verify fires + success-to-dashboard via dev-bypass). E2E-AUTH-06 success fixme RETIRED (#483).
+
+## qa-pricing e2e lane completion (2026-07-06, commit `1794da3` direct-to-develop) [SCRIBED BY QA-COORD, isolated-writer scribe]
+SPEC A (pricing lane) + SPEC B group R (de-fixme). Suite `test.fixme` 9 → 7; `playwright test --list` CLEAN = 31 tests / 16 files. Live pass/fail run OWED on a working full stack (deployed product-creation is down + local 8GB box swap-blocked — see federation_quirks); gate accepted the list-clean + source-ground-truth + deployed-live-verify-of-static-controls fallback.
+
+| Case | File | Status | Notes |
+|---|---|---|---|
+| PQE-E2E-04 | flows/pricing.spec.ts | COVERED ✅ | createProductViaPicker → pricing → calc('70') → settlement visible → applyButton ENABLED → applyPrice() → assert `/catalogs/:id/export` URL + `ExportPage.generateButton` visible. Anchors the export URL (applied-status may unmount on nav). |
+| PQE-E2E-04b | flows/pricing.spec.ts | COVERED ✅ (negative) | Route-stub `**/apply-price`→500 SET AFTER a real calc (breakdown genuine, no green-wash) → applyPrice() → `pricing-apply-error` visible + stays on `/pricing`. |
+| W3-E2-6 | flows/price-apply-export.spec.ts | COVERED ✅ (de-fixme'd) | calc→apply→export-PAGE-reachable chain (URL + generateButton). Download leg OUT of scope (→ PQE-E2E-05, storage-gated). Functionally overlaps PQE-E2E-04 — **KEEP ruling by the gate**: SPEC A §4 lists "W3-E2-6 GREEN" as an accepted exit state, and the file is a NAMED e2e artifact in V1_CONFORMANCE_REPORT.md (Features 7 + 9). PQE-E2E-04 = the apply-CONTROL test; W3-E2-6 = the named CHAIN + the future home for the download-leg extension. |
+| W3-E2-4 | flows/catalog-edit-delete.spec.ts | COVERED ✅ (de-fixme'd) | createProductViaPicker → gotoList → `rowFor(id)` visible → `deleteButtonIn(row)` → `deleteConfirmIn(row)` → assert `rowFor(id).toHaveCount(0)`. Delete UX = inline confirm (#425). Edit leg still covered by W3-E2-1. |
+| CAT-E2E-03 | flows/category-picker.spec.ts | FIXME (kept) | browse-fallback link = source-confirmed role selector @ `c5529f6` (smart-picker.component.ts L171-178) but live-verify env-BLOCKED (deployed suggest empty → fallback UI never renders; agent-browser can't route-stub to force `fallback_offered=true`). Two-phase mandate → NOT un-fixme'd from source alone. Testid memo filed → frontend-coordinator: `smart-picker-browse-fallback`. |
+| CAT-E2E-07 | flows/category-picker.spec.ts | FIXME (kept) | empty-state + CTA = source-confirmed role selectors @ `c5529f6` (smart-picker.component.ts L184-190 + empty-state.component.ts L44/56); same env block. Testid memo → frontend-coordinator: `smart-picker-empty` / `smart-picker-empty-browse`. |
+
+Remaining 7 `test.fixme` after this lane: CAT-E2E-03/07 (frontend testid + live-verify), CAT-E2E-05/06 (category-schema seed + Gemini canned-JSON stub — SPEC B), PQE-E2E-05 + image-precheck (storage → fake-gcs-server, NOT MinIO — SPEC B §2), W3-E2-2 live-preview (product gap #278 — delete-or-retain is OQ-2, founder).

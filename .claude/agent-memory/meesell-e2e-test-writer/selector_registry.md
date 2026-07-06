@@ -231,3 +231,26 @@ wrong and `getByTestId(x)` resolves to a non-interactable host:
 
 ## gis-stub-button (test-injected, #483)
 - `gis-stub-button` — test-injected (not an app testid) by `AuthPage.installGisStub()`; drives the GIS callback with the dev-bypass sentinel.
+
+## qa-pricing e2e lane completion (2026-07-06) — SUPERSEDES two CONFIRMED-ABSENT entries above [SCRIBED BY QA-COORD, isolated-writer scribe]
+> The commit `1794da3` (direct-to-develop pipeline) de-fixme'd W3-E2-4 + W3-E2-6 and authored
+> PQE-E2E-04/04b. Source-ground-truthed @ develop `c5529f6`; the pricing apply trio was
+> LIVE-VERIFIED on the DEPLOYED build (GH-Pages + Fly) 2026-07-06. These entries SUPERSEDE the
+> stale "mfe-pricing has NO apply-price control" + "catalog-list has NO delete control" lines in
+> the Wave-3 CONFIRMED-ABSENT block (both resolved by #439/SPEC-C and #425 respectively).
+
+### mfe-pricing apply-price trio — NATIVE elements (testid IS the element; NO `.locator('button')`)
+Federation strips `[testId]` on `mee-*` wrappers, so these three were placed on NATIVE DOM
+elements with a LITERAL `data-testid` (source comment pricing.component.ts L666-675; verified L682/L705/L718 @ `c5529f6`). This differs from the calc trio (`pricing-cost-input`/`-commission-input` are `[testId]` passthroughs on `mee-input`; `pricing-calculate-btn` is `[testId]` on the `mee-button` host → `.locator('button')`).
+- `[data-testid="pricing-apply-btn"]` — IS the native `<button>` ("Save & Continue"). Click DIRECTLY (`getByTestId('pricing-apply-btn').click()`, NO `.locator('button')`). `[disabled]="!breakdown() || appliedStatus()==='applying'"` → DISABLED on load; enables ONLY after a successful calc → assert `toBeEnabled()` AFTER calc, then click. On the 204 `onSaveContinue()` navigates to `/catalogs/:id/export`.
+- `[data-testid="pricing-applied-status"]` — native `<span>` ("Price applied"), rendered ONLY after the apply POST returns 204, and MAY unmount as the flow navigates to export. Count 0 on load. Do NOT anchor a nav test on it — assert the EXPORT URL + `ExportPage.generateButton` instead (the robust visible outcome).
+- `[data-testid="pricing-apply-error"]` — native `<span>` ("Could not apply price…"), rendered ONLY when the apply POST errors (`appliedStatus()==='error'`). Count 0 on load. Force it by `page.route('**/apply-price', r => r.fulfill({status:500}))` set AFTER a real calc (keeps the breakdown genuine — no green-wash).
+
+### mfe-catalog catalog-list rows + inline delete (#425 testids, `77b5db0`)
+`catalog-empty` LIVE-VERIFIED on the DEPLOYED build 2026-07-06; the per-row controls are SOURCE-ground-truthed @ `c5529f6` (a live row could not render on deployed — product-creation is down there, see federation_quirks).
+- `[data-testid="catalog-row"]` — one `<div>` per product; carries `[attr.data-product-id]="cat.id"`. Anchor a specific row by `[data-testid="catalog-row"][data-product-id="${id}"]` (page object `CatalogPage.rowFor(id)`).
+- `[data-testid="catalog-empty"]` — empty-state `<div>` when there are no catalogs.
+- `catalog-edit-btn` / `catalog-delete-btn` / `catalog-delete-confirm` / `catalog-delete-cancel` — each is a `<span data-testid>` WRAPPING a `<mee-button>` → click the inner `<button>` (`.getByTestId(x).locator('button')`; page-object helpers `editButtonIn/deleteButtonIn/deleteConfirmIn/deleteCancelIn(row)`). Delete UX is an INLINE confirm (no dialog): `catalog-delete-btn` → swaps the row to a "Delete this catalog?" affordance → `catalog-delete-confirm` → DELETE `/products/{id}` → row removed. Assert `rowFor(id).toHaveCount(0)`.
+
+### auth — OTP send path (harness note)
+The OTP send endpoint is `POST /auth/otp/send`; the dev bypass code `000000` only matches AFTER a send has SEEDED the OTP for that phone (the bypass is validated against a seeded record, not accepted unconditionally). So a login must POST `/auth/otp/send` first, then verify with `otp:'000000'`. (Rate limit: 3 sends / 3600s per IP — see federation_quirks; the worker-scoped fixture logs in ONCE per worker.)
