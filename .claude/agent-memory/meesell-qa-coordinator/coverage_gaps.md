@@ -117,3 +117,33 @@ STILL OPEN (carried, filed as inter-lead requests):
 
 ## From qa-auth-contract (#480 dev-google seam + #483 google-success)
 - E2E-AUTH-06 Google-success now GREEN (un-fixme via #480 dev-google seam + #483). NEW gap: onboarding selector map stale — multi-step compliance wizard, no `onboarding-business-name` testid → frontend re-exploration + data-testids owed.
+
+## WAVE-B de-fixme + qa-pricing e2e (2026-07-06, mesell-qa-wave-pricing-coord-session-1) — spec-stage, RE-VERIFIED @ develop 9ebc0d9
+Two specs written (docs/plans/qa/spec_qa-pricing-e2e-lane-completion.md + spec_qa-e2e-defixme-scaffolds.md).
+Re-verified the 9 `test.fixme` blockers in frontend/e2e against CURRENT develop (several fixme reasons were
+written vs older `a94e013` and are STALE):
+- **RESOLVED since a94e013 (un-fixme now, no external dep):** W3-E2-4 catalog-edit-delete — PR #425 (`77b5db0`)
+  added per-row delete + testids `catalog-row`/`catalog-edit-btn`/`catalog-delete-btn`/`catalog-delete-confirm`/
+  `catalog-delete-cancel`/`catalog-empty` (catalog-list.component.ts). W3-E2-6 price-apply-export — mfe-pricing
+  apply trio landed (#439/SPEC-C) + export productId fixed (`resolveExportProductId`). Both were BLOCKED-on-a-
+  stale-premise.
+- **STILL OPEN, grouped by dependency:**
+  - Frontend live-verify (CAT-E2E-03 browse-fallback link, CAT-E2E-07 empty-state): ship no data-testid,
+    targeted by `getByRole` — un-fixme on live-verify OR a `smart-picker-browse-fallback`/`smart-picker-empty`
+    testid memo to frontend.
+  - Category-schema seed (CAT-E2E-05 autosave, CAT-E2E-06 autofill): E2E DB is schema-only; the ~100-prewarmed
+    vs 3,772-tree gap. DATA MODEL IS COMPLETE (CAT-BE-17-GUARD #474). Recommend pin-a-known-schema'd-category +
+    stub /suggest (OQ-3) rather than a full-tree seed.
+  - Gemini (CAT-E2E-06): canned-JSON route-stub of POST /autofill keyed to the seeded category's fields.
+  - Storage (PQE-E2E-05 export-download, image-precheck valid-JPEG): POST /images 502 gcs.unavailable in dev/CI
+    (docker-compose.dev.yml = postgres+valkey only; CI GCS_BUCKET=ci-dummy). Fix = fake-gcs-server +
+    STORAGE_EMULATOR_HOST. image-precheck needs only upload (un-fixme independently); export-download needs the
+    signed-URL leg (OQ-1: fake-gcs signed URL vs a backend fake-signed-URL/fake-storage mode).
+  - Product-gap (W3-E2-2 live-preview): frontend `/catalogs/:id/preview` route RETIRED (#278; app.routes.ts L66);
+    "Preview" button repointed to /edit (#395). NO surface to E2E. Backend GET /products/{id}/preview covered by
+    the backend lane. NOT a test-enablement — OQ-2 delete-vs-retain the scaffold (founder/frontend).
+- **qa-pricing e2e:** mfe-pricing testids ALL present (10, incl. apply trio) — the board's "ZERO data-testid"
+  block is CLOSED. selector_registry.md § mfe-pricing needs the apply trio added at exploration (NEW).
+- **Backend E2E seams (pytest-only, do NOT apply to E2E):** `mock_gcs_adapter` (conftest L838) + `call_gemini`
+  monkeypatch (conftest L784/L799) mock at the adapter boundary for pytest; E2E drives a real uvicorn so it
+  needs the container/env-flag/route-stub seams above instead.

@@ -134,3 +134,30 @@ the next wave's spec automatically so every wave is smarter than the last. Forma
 - **The master-tree-git guard fires on `cd <worktree> && git commit`, NOT on `git -C <worktree> commit`** → board / memory scribe mechanics → the PreToolUse guard's cwd heuristic flagged a `cd /private/tmp/mesell-wt/... && git commit` as a master-checkout commit (false positive). Re-running the identical commit as `git -C /private/tmp/mesell-wt/... commit` passed. Always use the `-C <worktree>` form for state-changing git in a worktree; reserve `cd` for read-only inspection. (`gh pr merge` is server-side and never trips the guard.)
 - **A FOUNDER-DIRECTED merge of an `integration → develop` PR is the ONE sanctioned exception to D1 — run the gate FIRST, record the override for audit** → founder-gate handoff → the PR title may literally say `[FOUNDER GATE — DO NOT MERGE BY LEAD]`, but an explicit founder instruction ("merge gate PR #460 whenever ready") overrides the standing policy for THAT PR only. The lead's duty is unchanged: run the FULL merge-gate (re-run the tests, all 8 boxes) and merge ONLY if it passes; REJECT if any test is RED. Note the override explicitly in the board + memory ("normally the FOUNDER's D1 gate; the lead acted only on the explicit directive") so the audit trail is clean and the standing rule is not eroded.
 - **A board-tracker PR that says "#NNN OPEN" goes MOOT the instant #NNN merges — close it, don't merge it** → board mechanics → #461 existed only to track #460 as awaiting-founder; once #460 merged its content was false AND its +4/-4 was stale against the churned develop board. Close it with a pointer to the merge SHA and write the MERGED state directly to the board off CURRENT develop (take develop's board as base; never re-author a tracker PR's stale snapshot).
+
+## WAVE-B (2026-07-06) — stale-premise + retrospective-gate patterns
+- **A Wave task that names a PR to "merge or reject" can be built on a STALE board/founder snapshot — VERIFY
+  the PR's live state before acting.** → all merge-gate tasks → PR #435 was named for a fresh gate but had been
+  merged 2 weeks earlier (integration `c8f42554` → develop via #470 `494c7838`). First move on ANY "gate PR
+  #NNN" task: `gh pr view NNN --json state,mergeCommit,baseRefName` + `git merge-base --is-ancestor <mergeCommit>
+  origin/develop`. If already merged: run a RETROSPECTIVE gate (ancestry + reject-reasons-cleared-in-source +
+  a targeted re-run of the previously-failing files) and RECONCILE the stale board row — do NOT attempt a
+  re-merge, and say NOT-DONE only if you genuinely never reviewed it.
+- **A `test.fixme` REASON rots — re-verify every blocker against CURRENT develop, not the reason text.** → e2e
+  lane / spec authoring → 2 of 9 fixmes (W3-E2-4 delete UI, W3-E2-6 pricing apply+testids) had their blockers
+  RESOLVED by later PRs (#425, #439) but the fixme comments still cited the old blocker (verified @ `a94e013`).
+  Before spec'ing enablement, grep the current component/route for the cited missing control/testid; a
+  fixme premise older than a few develop advances is presumed stale until re-checked.
+- **The storage-emulator choice follows the ADAPTER's API, not habit.** → storage-dependent e2e/CI → the
+  instinct "MinIO for object storage in CI" is WRONG here: `adapters/gcs.py` uses `google.cloud.storage` (GCS
+  JSON API), so the drop-in no-spend emulator is `fsouza/fake-gcs-server` + `STORAGE_EMULATOR_HOST`, NOT MinIO
+  (S3 → adapter rewrite) and NOT a paid bucket (spend + non-hermetic). Always read the adapter before picking
+  the fake.
+- **E2E cannot reuse pytest's mock seams.** → e2e enablement → `mock_gcs_adapter` + `call_gemini` monkeypatch
+  live in `backend/tests/conftest.py` and only work in-process for pytest. E2E drives a real uvicorn → the
+  no-spend seam must be a container (fake-gcs-server), an env-flagged backend fake-mode, OR a Playwright
+  `page.route()` canned-JSON stub (the hermetic default for Gemini, mirroring the existing /suggest stub).
+- **Reserve real Gemini for the nightly ai_eval; E2E stubs the response.** → e2e/AI → CI PR gates use
+  `GEMINI_API_KEY=ci-dummy`; only the nightly `ai_eval` job uses the low-quota real `GEMINI_API_KEY_CI`. E2E
+  should assert the FE APPLIES the AI response (canned stub), never call real Gemini — AI quality is the eval
+  lane's job, not the browser test's.

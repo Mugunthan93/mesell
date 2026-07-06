@@ -146,3 +146,38 @@ branch NOT deleted, PR left open + verdict commented.
 
 ## qa-auth-contract salvage wave — CLOSED on develop
 qa-auth-contract salvage wave CLOSED on develop (#445 `e83e6f2`); follow-ons #480 google-seam (`b10cc77`) + #483 google-success E2E (`17171d1`) landed. All gate-reviewed + independently re-run.
+
+## WAVE-B (2026-07-06, mesell-qa-wave-pricing-coord-session-1) — PR #435 retrospective gate + 2 specs
+**Part 1 — PR #435 (qa-catalog Wave-A backend re-do): retrospective merge-gate = PASS (already merged).**
+The Wave-B task asked me to merge/reject PR #435, but its premise was STALE: #435 was ALREADY MERGED
+(integration squash `c8f42554`, 2026-06-22) and the whole qa-catalog wave reached develop via PR #470
+merge-commit `494c7838` the same day. I could not (and must not) re-merge; instead I ran a retrospective
+gate: (1) `c8f42554` is an ancestor of `origin/develop` (`9ebc0d9`); (2) both original reject reasons are
+cleared on develop in source — all 6 gap-fill files consume the loop-bound `catalog_route_client`/
+`category_route_client` conftest fixtures (zero `_make_client`/`lifespan_context`), and CAT-BE-19
+(`test_field_enum_unknown_category_404`) is a hard `assert resp.status_code == 404` (masking skip gone);
+(3) re-ran the 6 previously-failing files TOGETHER in one process vs `meesell_test` (CI dummy env, local
+PG:5432 / Valkey:6379, full §5.D secrets) = **24 passed / 7 skipped / 0 FAILED** — the 7 skips are all the
+honest seed-conditional CAT-BE-11/13/14/16/18/20/21, the loop-affinity `Event loop is closed` 500 is GONE.
+Verdict recorded on the board + reported. LESSON: when a Wave task names a PR to gate, VERIFY its live
+state first (`gh pr view … --json state,mergeCommit` + `git merge-base --is-ancestor <mergeCommit> origin/develop`)
+— a stale board/founder snapshot can point you at an already-landed PR; the correct action is a retrospective
+gate + a board reconcile, not a re-merge attempt.
+
+**Part 2 — two specs authored (not implemented):**
+- SPEC A `docs/plans/qa/spec_qa-pricing-e2e-lane-completion.md` — mfe-pricing testids are ALL present on
+  develop `9ebc0d9` (10 testids incl. the SPEC-C apply trio `pricing-apply-btn`/`applied-status`/`apply-error`,
+  L441-724); the "ZERO data-testid" board premise was STALE (they landed #439 + SPEC-C). Lane completion is
+  an E2E-authoring task, not a frontend selector request: PQE-E2E-02/03 verify, NEW PQE-E2E-04 (apply-price
+  204 → applied-status/navigate-to-export), W3-E2-6 un-fixme (calc→apply→export-page-reachable). Backend
+  `POST /products/{id}/apply-price` exists (pricing/router.py L144).
+- SPEC B `docs/plans/qa/spec_qa-e2e-defixme-scaffolds.md` — all 9 `test.fixme` re-verified @ `9ebc0d9`:
+  2 already-resolved (W3-E2-4 catalog-edit-delete via #425 delete UI+testids; W3-E2-6 via #439), 2 frontend
+  live-verify (CAT-E2E-03/07), 2 seed (CAT-E2E-05/06), 1 Gemini (CAT-E2E-06), 2 storage (PQE-E2E-05 export,
+  image-precheck), 1 product-gap (W3-E2-2 live-preview retired #278 — escalate, not enablement).
+  STORAGE DECISION = **fake-gcs-server** (GCS-JSON-API emulator + `STORAGE_EMULATOR_HOST`) NOT MinIO (adapter
+  is `google.cloud.storage`, MinIO is S3 → would need an adapter rewrite) NOT a paid GCS bucket (spend +
+  non-hermetic). GEMINI DECISION = **Playwright canned-JSON route-stub** of `POST /autofill` (hermetic, no
+  spend, matches the existing /suggest stub; real-AI quality stays in the nightly `ai_eval` GEMINI_API_KEY_CI
+  job). 4 OPEN QUESTIONs flagged non-blocking (OQ-1 fake-gcs signed-URL for export download; OQ-2 live-preview
+  delete-vs-retain; OQ-3 seed full-tree vs pin+stub; OQ-4 CI container acceptance).
