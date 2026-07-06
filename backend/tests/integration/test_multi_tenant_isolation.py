@@ -6,8 +6,11 @@ Per BACKEND_ARCHITECTURE.md §19.H + §15.B + §22.B (LOCKED 2026-06-06):
     User A's products MUST NOT be visible to User B across 4 attack
     vectors. Each vector is a dedicated test method:
 
-      1. Direct GET of another tenant's product preview
+      1. Direct GET of another tenant's product draft
          → 404 (not 403 — leaks no info).
+         (Was the /preview GET until F6 retired that route 2026-07-06;
+          repointed to /draft — another ownership-gated GET — so the
+          cross-tenant no-leak vector stays live. See §17 F6 amendment.)
       2. List-endpoint leakage — GET /api/v1/products
          → product_a.id NOT in response.
       3. Autosave-PATCH against another tenant's product
@@ -148,7 +151,7 @@ class TestMultiTenantIsolation:
         return user_a, user_b, product_a
 
     @pytest.mark.asyncio
-    async def test_user_b_cannot_get_user_a_product_preview(
+    async def test_user_b_cannot_get_user_a_product_draft(
         self,
         client,
         db,
@@ -159,12 +162,18 @@ class TestMultiTenantIsolation:
         mock_razorpay_adapter,
         issue_token,
     ):
-        """Vector 1: GET /products/{a.id}/preview as User B → 404."""
+        """Vector 1: GET /products/{a.id}/draft as User B → 404.
+
+        Repointed from /preview to /draft 2026-07-06 (F6 preview route
+        retired). ``get_draft`` calls ``assert_product_ownership`` BEFORE the
+        None-draft check (§10.B.6), so a cross-tenant GET raises → 404 rather
+        than 204 — the §15.B Layer 2 no-leak vector stays meaningful.
+        """
         user_a, user_b, product_a = await self._seed(db)
         token_b = issue_token(user_b.id, user_b.plan)
 
         resp = await client.get(
-            f"/api/v1/products/{product_a.id}/preview",
+            f"/api/v1/products/{product_a.id}/draft",
             headers={"Authorization": f"Bearer {token_b}"},
         )
 
@@ -172,7 +181,7 @@ class TestMultiTenantIsolation:
         # the existence of A's product.
         assert resp.status_code == 404, (
             f"§19.H VECTOR 1: User B got status {resp.status_code} on a "
-            f"GET to User A's product preview. §15.B Layer 2 "
+            f"GET to User A's product draft. §15.B Layer 2 "
             f"(assert_product_ownership) leak suspected.\n"
             f"Body: {resp.text[:500]}"
         )

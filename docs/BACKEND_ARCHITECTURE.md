@@ -389,7 +389,7 @@ The Module Catalog is the **ownership map** for specialists. When the founder di
 **Adapters used:** `gemini` (via §6A AI Ops for Auto-fill).
 
 **V1_FEATURE_SPEC mapping:** Feature 3 (Fast Catalog Form), Feature 4 (AI Auto-fill), Feature 6 (Live Product Preview) — `V1_FEATURE_SPEC §2`.
-**Endpoint count:** 6 endpoints (create, PATCH, autofill, preview, soft-delete, draft-recover) per `MVP_ARCH §3.4` + `§11.6`. Canonical signatures locked in §17. This is the **central spine module** with the largest endpoint count.
+**Endpoint count:** 5 endpoints (create, PATCH, autofill, soft-delete, draft-recover) per `MVP_ARCH §3.4` + `§11.6`. Canonical signatures locked in §17. This is the **central spine module** with the largest endpoint count. **[AMENDED 2026-07-06 — F6 live-preview retirement: the `GET /products/{id}/preview` endpoint (previously the 6th) was retired; see the §17.B.2 F6 amendment. Was: "6 endpoints (create, PATCH, autofill, preview, soft-delete, draft-recover)".]**
 **MVP_ARCH cross-references:** §2.4 (DDL), §3.4 (endpoints), §5.2 (Auto-fill pipeline + 2-layer guardrail), §6.7 (LRU pre-warm on schema reads), §11.4 (autosave coalescing 30× volume reduction), §11.6 (`product_drafts` table + recovery endpoint), §12.4 (`is_advanced` honoured — accept whether or not the wizard expanded).
 
 **Extraction notes (V1.5+):** `catalog` is the **hardest** module to extract per `§0.B` discussion — it is the spine that `image`/`pricing`/`dashboard`/`export` depend on. Extracting it requires defining stable cross-pod contracts to every dependent. Per `§21` recommended extraction order, this is the **last** module to split out.
@@ -3632,6 +3632,14 @@ The 6 endpoint contracts below are normative. Request/response shapes reference 
   11. Return `AutofillResponse(suggestions, applied, fallback_offered=False)`.
 
 #### 10.B.4 `GET /api/v1/products/{id}/preview` — Live Product Preview (Feature 6)
+
+> **RETIRED 2026-07-06 (F6 live-preview backend retirement).** This route was
+> removed from the codebase. The frontend preview surface was deleted in PR #278
+> (feat/my-live-listings) and the flag-gated (`FEATURE_LIVE_PREVIEW_ENABLED`,
+> default False) backend route was a zero-consumer orphan, retired per the
+> founder-approved V1 conformance cleanup (action #5). The contract below is
+> preserved for historical reference only — it is NOT a live endpoint. See the
+> §17.B.2 F6-retirement amendment for the mounted-inventory decrement (28 → 27).
 
 - **Request:** no body. Authorization: `Bearer <access_token>` per §4.B.
 - **Response 200** (Pydantic, §10.E): `ProductPreviewResponse` — composite of (a) the product with each canonical field-name resolved to its display label per `templates.schema_jsonb.fields[*].name` (§5A.C), (b) image URLs (signed GCS URLs with 1h TTL per §1.B + §6.D), (c) the compliance block from `customer.service.get_compliance_block(user_id)` per §8.C — collapsed-shape for Eye-Serum products, standard-shape otherwise per §5A.F + `MVP_ARCH §12.6`. The shape is ready for the Feature 6 preview screen and is also the input to the §14 export's M10 canonicalisation step (export consumes a different snapshot — `get_product_for_export` per §10.C — but the preview is what the seller sees in the wizard).
@@ -6963,7 +6971,7 @@ The table columns are: **#** (row number), **Method** (HTTP verb), **Path** (URL
 | 15 | POST | `/api/v1/products` | `catalog` | JWT | 20/h/user | `create_product_hourly` + `product_count` | `catalog.product.created` | §10.B.1 |
 | 16 | PATCH | `/api/v1/products/{id}` | `catalog` | JWT | per-IP only | — | `catalog.product.updated` (coalesced 5-min per §15.E) | §10.B.2 |
 | 17 | POST | `/api/v1/products/{id}/autofill` | `catalog` | JWT | 50/h/user | `ai_autofill_hourly` | `catalog.autofill.invoked` | §10.B.3 |
-| 18 | GET | `/api/v1/products/{id}/preview` | `catalog` | JWT | per-IP only | — | — | §10.B.4 |
+| 18 | GET | ~~`/api/v1/products/{id}/preview`~~ **RETIRED 2026-07-06 (F6 — see §17.B.2)** | `catalog` | JWT | per-IP only | — | — | §10.B.4 |
 | 19 | DELETE | `/api/v1/products/{id}` | `catalog` | JWT | 60/h/user | — | `catalog.product.deleted` | §10.B.5 |
 | 20 | GET | `/api/v1/products/{id}/draft` | `catalog` | JWT | per-IP only | — | — | §10.B.6 |
 | 21 | POST | `/api/v1/products/{id}/images` | `image` | JWT | 10/min/user | — | `image.upload.received` | §11.B.1 |
@@ -6985,7 +6993,7 @@ This counter-alignment note is preserved verbatim so future amendments do NOT re
 | I1 | GET | `/api/v1/auth/me` | `iam` | JWT | per-IP only | — | — | §7.B.5 |
 | I2 | POST | `/api/v1/webhooks/razorpay` | `iam` | signature (HMAC body) | per-IP only | — | `razorpay.webhook.captured` | §7.B.6 |
 
-These 2 infrastructure surfaces bring the total HTTP routes mounted on `app/main.py` to **28** (the 26 distinct contract routes + 2 infrastructure). The 28-count is the operational deployment-side reality; the 27-count is the contract narrative (row 27 in §17.B is a counter-alignment placeholder per §17.B.1 reconciliation arithmetic). Both counts are correct in their respective contexts. **[AMENDMENT 2026-06-18 — see §7.3: the flag-gated `POST /api/v1/auth/google/verify` raises this mounted total 28 → 29 in namespaces where `FEATURE_GOOGLE_AUTH_ENABLED` is on. With the flag off (default) the route is not mounted and the total remains 28.]**
+These 2 infrastructure surfaces bring the total HTTP routes mounted on `app/main.py` to **28** (the 26 distinct contract routes + 2 infrastructure). The 28-count is the operational deployment-side reality; the 27-count is the contract narrative (row 27 in §17.B is a counter-alignment placeholder per §17.B.1 reconciliation arithmetic). Both counts are correct in their respective contexts. **[AMENDMENT 2026-06-18 — see §7.3: the flag-gated `POST /api/v1/auth/google/verify` raises this mounted total 28 → 29 in namespaces where `FEATURE_GOOGLE_AUTH_ENABLED` is on. With the flag off (default) the route is not mounted and the total remains 28.]** **[AMENDMENT 2026-07-06 — F6 live-preview backend retirement (row 18, `GET /api/v1/products/{id}/preview`): RETIRED per PR #278 (frontend preview surface deleted) + the founder-approved V1 conformance cleanup (action #5). CONVENTION DETERMINATION: unlike `google/verify` (mount-gated — conditionally `include_router`-ed, so NOT counted when its flag is off), the preview route was HANDLER-gated — always mounted via `@router.get`, returning a runtime 404 (`feature.live_preview.disabled`) when `FEATURE_LIVE_PREVIEW_ENABLED=False`. It was therefore always in the OpenAPI surface and DID count toward the mounted inventory. Removing it drops the mounted total **28 → 27** (google-auth flag off), the §0.C contract count **27 → 26**, and the `catalog` module **6 → 5** endpoints. Downstream per-section counts in §17.C–F that cite 27/28/23/16 each decrement by 1 on the preview (row-18) line; they are not individually rewritten here — this consolidated note is the authoritative decrement record (mirroring the google-auth §17.B.2 inline-amendment precedent). Reverse by restoring row 18 + the route/flag/schemas and the 28/27/6 counts.]**
 
 **§17.B.3 Plus `/health` and FastAPI defaults.** The `/health` liveness endpoint (mounted at root, NOT under `/api/v1/`) plus 5 FastAPI framework routes (`/docs`, `/docs/oauth2-redirect`, `/redoc`, `/openapi.json`, `/favicon.ico`) bring the total app surface to **34** routes. These 6 framework / health surfaces are NOT in any contract count — they are FastAPI / K8s deployment plumbing.
 

@@ -98,3 +98,4 @@ Backend coordinator for MeeSell. Orchestrates the 4 backend specialists (databas
 - ⭐ [Session mesell-auth-refresh-clear-cookie-backend-session-1 — 2026-06-22 — MERGE-GATE REVIEW of PR #427 → VERDICT: APPROVE (land-ready for founder)](mem/mem_90_session-mesell-auth-refresh-clear-cookie-backend-session-1-2.md)
 - [LAND: PR #427 fix/auth-refresh-clear-cookie → develop MERGE-COMMIT 2026-06-22](mem/mem_91_land-pr-427-fix-auth-refresh-clear-cookie-develop-merge-comm.md)
 - ⭐ [2026-06-22 — category-monitor Wave-3 Unit T RE-GATE PASS (after identity-map REJECT); WAVE 3 COMPLETE [project]](mem/mem_92_2026-06-22-category-monitor-wave-3-unit-t-re-gate-pass-after.md)
+- ⭐ [F6 live-preview BACKEND route retirement — 2026-07-06 (founder-approved cleanup; handler-gated vs mount-gated CONVENTION pattern; §17 28→27; §19.H Vector-1 repoint to /draft)](mem/mem_93_f6-live-preview-backend-route-retirement-2026-07-06.md)

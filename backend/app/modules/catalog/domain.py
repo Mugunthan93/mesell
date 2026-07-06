@@ -177,45 +177,6 @@ class PaginatedProductsInternal:
 
 
 @dataclass(frozen=True, kw_only=True)
-class PreviewField:
-    """One row of the §10.B.4 live-preview composite.
-
-    ``canonical_name``: backend-internal key from
-        ``products.fields_jsonb`` per §5A.C.
-    ``display_label``: localised display string from
-        ``templates.schema_jsonb.fields[*].name`` per §5A.C + §5A.I.
-    ``value``: as-stored field value (no Meesho transformation — that
-        happens in §14 export only).
-    ``is_advanced``: True for V1's ``group_id`` only (per §5A.F + §12.4).
-    """
-
-    canonical_name: str
-    display_label: str
-    value: Any
-    is_advanced: bool
-
-
-@dataclass(frozen=True, kw_only=True)
-class ProductPreviewInternal:
-    """Service-layer return shape for §10.B.4 — mirrored to
-    :class:`schemas.ProductPreviewResponse` at the router boundary.
-
-    ``compliance`` is the §5A.F shape (standard or collapsed) from
-    ``customer.service.get_compliance_block`` (V1: V1 emits a 9-key
-    standard block universally — the export Adapter does the collapsed-
-    shape transformation; preview shows the standard block).
-    """
-
-    id: UUID
-    name: str | None
-    category_path: str
-    fields: tuple[PreviewField, ...]
-    image_urls: tuple[str, ...]
-    compliance: dict[str, Any]
-    status: ProductStatus
-
-
-@dataclass(frozen=True, kw_only=True)
 class Pagination:
     """Pagination input for :func:`catalog.service.list_products`.
 
@@ -235,10 +196,8 @@ __all__ = [
     "ExportSnapshotInternal",
     "PaginatedProductsInternal",
     "Pagination",
-    "PreviewField",
     "Product",
     "ProductDraft",
-    "ProductPreviewInternal",
     "ProductStatus",
     "ValidationSummaryInternal",
 ]

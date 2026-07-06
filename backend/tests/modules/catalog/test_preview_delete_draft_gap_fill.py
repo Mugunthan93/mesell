@@ -1,12 +1,14 @@
-"""CAT-BE-40 / CAT-BE-41 / CAT-BE-42 / CAT-BE-43 / CAT-BE-44 / CAT-BE-45
-Gap-fill for preview, delete, and draft endpoints.
+"""CAT-BE-43 / CAT-BE-44 / CAT-BE-45
+Gap-fill for delete and draft endpoints.
 
-- CAT-BE-40  GET /preview flag-OFF → 404 code=feature.live_preview.disabled
-- CAT-BE-41  GET /preview flag-ON → 200 with fields[] + image_urls shape
-- CAT-BE-42  GET /preview unauth 401 / not-found 404
 - CAT-BE-43  DELETE 204 + soft-not-hard (deleted_at set, row still exists)
 - CAT-BE-44  DELETE cross-tenant → 404 (not 403)
 - CAT-BE-45  GET /draft → 204 when no draft exists
+
+NOTE: CAT-BE-40/41/42 (GET /preview flag-off / flag-on / unauth+not-found) were
+REMOVED 2026-07-06 — the §10.B.4 Live Product Preview route was retired with
+Feature 6 (frontend removed in PR #278). See BACKEND_ARCHITECTURE.md §17
+F6-retirement amendment.
 
 Route-level tests use the ASGI stub-auth client pattern.
 Service-level tests call service methods directly.
@@ -34,128 +36,6 @@ pytestmark = pytest.mark.asyncio
 class _StubUser:
     user_id: object
     plan: str = "free"
-
-
-# ── CAT-BE-40: preview flag-OFF → 404 ────────────────────────────────────────
-
-@pytest.mark.integration
-async def test_preview_flag_off_returns_404(catalog_route_client, monkeypatch):
-    """CAT-BE-40: GET /preview returns 404 when FEATURE_LIVE_PREVIEW_ENABLED=false."""
-    from app.shared.config import settings
-
-    monkeypatch.setattr(settings, "FEATURE_LIVE_PREVIEW_ENABLED", False)
-
-    random_id = uuid.uuid4()
-    resp = await catalog_route_client.get(f"/api/v1/products/{random_id}/preview")
-
-    assert resp.status_code == 404, (
-        f"Expected 404 when FEATURE_LIVE_PREVIEW_ENABLED=false, got {resp.status_code}: {resp.text}"
-    )
-    body = resp.json()
-    code = body.get("code") or body.get("detail") or ""
-    assert code, f"404 must carry a non-empty code; got {body}"
-    # Should carry the feature.live_preview.disabled code.
-    assert "live_preview" in str(code).lower() or "disabled" in str(code).lower() or resp.status_code == 404, (
-        f"Expected live_preview.disabled code; got {code!r}"
-    )
-
-
-# ── CAT-BE-41: preview flag-ON → 200 with fields[] + image_urls ──────────────
-
-@pytest.mark.integration
-async def test_preview_flag_on_200_with_fields(
-    db, user, beauty_category, beauty_profile, catalog_route_client, monkeypatch
-):
-    """CAT-BE-41: GET /preview flag-ON happy path → 200, fields list, image_urls list."""
-    from app.shared.config import settings
-
-    monkeypatch.setattr(settings, "FEATURE_LIVE_PREVIEW_ENABLED", True)
-
-    product = await catalog_service.create_product(
-        user.id,
-        "free",
-        CreateProductRequest(category_id=beauty_category.id, name="PreviewHappy"),
-        db=db,
-    )
-
-    # Share the test's savepoint session so the route handler sees the inserted row.
-    async def _override_get_db():
-        yield db
-
-    app.dependency_overrides[get_db] = _override_get_db
-    app.dependency_overrides[get_current_user] = lambda: _StubUser(user_id=user.id)
-    try:
-        resp = await catalog_route_client.get(f"/api/v1/products/{product.id}/preview")
-    finally:
-        app.dependency_overrides.pop(get_db, None)
-        app.dependency_overrides.pop(get_current_user, None)
-
-    assert resp.status_code == 200, (
-        f"Expected 200 on preview flag-ON, got {resp.status_code}: {resp.text}"
-    )
-    body = resp.json()
-    assert "fields" in body, f"Preview response must contain 'fields'; got {body.keys()}"
-    assert isinstance(body["fields"], list), (
-        f"'fields' must be a list; got {type(body['fields'])}"
-    )
-    assert "image_urls" in body, f"Preview response must contain 'image_urls'; got {body.keys()}"
-    assert isinstance(body["image_urls"], list), (
-        f"'image_urls' must be a list; got {type(body['image_urls'])}"
-    )
-
-
-# ── CAT-BE-42: preview unauth 401 / not-found 404 ────────────────────────────
-
-@pytest.mark.integration
-async def test_preview_unauthenticated_401(catalog_route_client, monkeypatch):
-    """CAT-BE-42a: preview without real auth token → 401/403.
-
-    The ``catalog_route_client`` fixture installs a stub get_current_user dep that
-    returns a valid user.  To test the unauthenticated path we temporarily remove
-    the override so the real auth middleware runs and rejects the request.
-    """
-    from app.shared.config import settings
-
-    monkeypatch.setattr(settings, "FEATURE_LIVE_PREVIEW_ENABLED", True)
-
-    # Remove the stub auth override so the real JWT guard runs.
-    app.dependency_overrides.pop(get_current_user, None)
-    try:
-        resp = await catalog_route_client.get(
-            f"/api/v1/products/{uuid.uuid4()}/preview"
-        )
-    finally:
-        # The fixture teardown will pop again (idempotent).
-        pass
-
-    assert resp.status_code in (401, 403), (
-        f"Expected 401/403 with no auth, got {resp.status_code}: {resp.text}"
-    )
-
-
-@pytest.mark.integration
-async def test_preview_not_found_404(catalog_route_client, monkeypatch):
-    """CAT-BE-42b: preview for a random UUID → 404 (not owned by stub user).
-
-    The product-not-found 404 requires the flag to be ON; otherwise the
-    flag-guard 404 fires first (both are 404, but we want the product-not-found
-    path specifically to assert ownership enforcement works).
-    """
-    from app.shared.config import settings
-
-    monkeypatch.setattr(settings, "FEATURE_LIVE_PREVIEW_ENABLED", True)
-
-    random_id = uuid.uuid4()
-    resp = await catalog_route_client.get(f"/api/v1/products/{random_id}/preview")
-
-    # 404 from either the flag guard OR product-not-found is acceptable.
-    assert resp.status_code == 404, (
-        f"Expected 404 for non-existent product, got {resp.status_code}: {resp.text}"
-    )
-    body = resp.json()
-    # Must carry a non-empty code — not flag disabled (we set flag ON).
-    code = body.get("code") or body.get("detail") or ""
-    assert code, f"404 must carry non-empty code; got {body}"
 
 
 # ── CAT-BE-43: DELETE 204 + soft-not-hard ────────────────────────────────────

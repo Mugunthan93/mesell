@@ -10,13 +10,16 @@ Response models use ``model_config = ConfigDict(extra="ignore",
 from_attributes=True)`` — forward-compat + accepts both dataclass and
 ORM instances for ``model_validate`` at the router boundary.
 
-12 models total per §10.E::
+10 models total per §10.E::
 
   CreateProductRequest, PatchProductRequest, AutofillRequest         (requests)
   ProductResponse, AutofillSuggestion, AutofillResponse,
-  ProductPreviewField, ProductPreviewResponse,
   ProductDraftResponse, Pagination, PaginatedProductsResponse,
   ValidationSummary, ExportSnapshot                                  (responses)
+
+The §10.B.4 ``ProductPreviewField`` + ``ProductPreviewResponse`` models
+(Live Product Preview / Feature 6) were RETIRED 2026-07-06 with the preview
+route — see BACKEND_ARCHITECTURE.md §17 F6-retirement amendment.
 
 All UUIDs serialise as strings per Pydantic v2 default; all datetimes
 are ISO-8601 with TZ per `CLAUDE.md` ("TIMESTAMPTZ for all timestamps").
@@ -158,39 +161,6 @@ class AutofillResponse(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Response — live preview
-# ─────────────────────────────────────────────────────────────────────────────
-class ProductPreviewField(BaseModel):
-    """One row of the §10.B.4 preview composite."""
-
-    model_config = ConfigDict(extra="ignore", from_attributes=True)
-
-    canonical_name: str
-    display_label: str
-    value: Any
-    is_advanced: bool
-
-
-class ProductPreviewResponse(BaseModel):
-    """200 response for §10.B.4.
-
-    ``fields`` is ordered per the schema's wizard-step composition (§5A.C).
-    ``compliance`` is the standard 9-key shape per §5A.F + V1 universal
-    collection rule (collapsed-shape transform happens in §14 export).
-    """
-
-    model_config = ConfigDict(extra="ignore", from_attributes=True)
-
-    id: UUID
-    name: str | None
-    category_path: str
-    fields: list[ProductPreviewField]
-    image_urls: list[str]
-    compliance: dict[str, Any]
-    status: Literal["draft", "ready"]
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Response — draft recovery
 # ─────────────────────────────────────────────────────────────────────────────
 class ProductDraftResponse(BaseModel):
@@ -290,8 +260,6 @@ __all__ = [
     "Pagination",
     "PatchProductRequest",
     "ProductDraftResponse",
-    "ProductPreviewField",
-    "ProductPreviewResponse",
     "ProductResponse",
     "ValidationSummary",
 ]

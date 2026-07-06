@@ -315,12 +315,12 @@ class Settings(BaseSettings):
     # D3 kill-switch: the read IS the feature — 404 on GET is intentional.
     FEATURE_TRACKING_DASHBOARD_ENABLED: bool = True
 
-    # FEATURE_LIVE_PREVIEW_ENABLED: dev default FALSE (gated rollout — the ONLY
-    # V1 flag that ships default-False; all others default True).
-    # Decision D3 in docs/plans/features/live-preview/FEATURE_PLAN.md §3.
-    # GET /api/v1/products/{id}/preview returns 404 when False.
-    # Set FEATURE_LIVE_PREVIEW_ENABLED=true in .env to enable in development.
-    FEATURE_LIVE_PREVIEW_ENABLED: bool = False
+    # FEATURE_LIVE_PREVIEW_ENABLED (§10.B.4 Live Product Preview / Feature 6)
+    # was RETIRED 2026-07-06 with the preview route (frontend removed in PR #278;
+    # flag-gated backend route was an orphan) per the founder-approved V1
+    # conformance cleanup. extra="ignore" (above) means any lingering
+    # k8s-injected FEATURE_LIVE_PREVIEW_ENABLED env var is safely ignored until
+    # infra removes it. See BACKEND_ARCHITECTURE.md §17 F6-retirement amendment.
 
     # ── Dev-only OTP bypass (dev-otp-bypass feature) ───────────────────────────
     # OFF by default ("" == disabled). When NON-EMPTY *and* APP_ENV != "production",

@@ -147,7 +147,6 @@ def test_no_stray_legacy_routes(meesell_app):
         GET    /api/v1/products                     (§13 dashboard: list — Feature 8)
         PATCH  /api/v1/products/{id}                (§10 catalog; also DELETE — shares path key)
         POST   /api/v1/products/{id}/autofill       (§10 catalog)
-        GET    /api/v1/products/{id}/preview        (§10 catalog)
         GET    /api/v1/products/{id}/draft          (§10 catalog)
       §11 image routes:
         GET    /api/v1/products/{id}/images        (also POST — shares path key)
@@ -189,7 +188,6 @@ def test_no_stray_legacy_routes(meesell_app):
         "/api/v1/products",
         "/api/v1/products/{id}",
         "/api/v1/products/{id}/autofill",
-        "/api/v1/products/{id}/preview",
         "/api/v1/products/{id}/draft",
         "/api/v1/products/{id}/images",
         "/api/v1/products/{id}/price-calc",
@@ -214,7 +212,8 @@ def test_no_stray_legacy_routes(meesell_app):
 
 
 def test_total_route_count(meesell_app):
-    """Exact route count: 34 distinct path entries in the route_map.
+    """Exact route count: 33 distinct path entries in the route_map (google-auth
+    flag off; +1 → 34 when FEATURE_GOOGLE_AUTH_ENABLED is true).
 
     Breakdown:
       FastAPI builtins: /openapi.json, /docs, /docs/oauth2-redirect, /redoc  (4)
@@ -241,17 +240,18 @@ def test_total_route_count(meesell_app):
       §10 catalog +     /api/v1/products (POST [§10] + GET [§13] → 1 path key),
       §13 dashboard:    /api/v1/products/{id} (PATCH + DELETE → 1 path key),
                         /api/v1/products/{id}/autofill (POST),
-                        /api/v1/products/{id}/preview (GET),
-                        /api/v1/products/{id}/draft (GET)                      (5 distinct paths)
+                        /api/v1/products/{id}/draft (GET)                      (4 distinct paths)
       §11 image:        /api/v1/products/{id}/images (GET + POST → 1 path key) (1)
       §12 pricing:      /api/v1/products/{id}/price-calc (POST)                (1)
                         /api/v1/products/{id}/apply-price (POST, W4b)          (1)
       §14 export:       /api/v1/products/{product_id}/export-xlsx (POST)       (1)
                         /api/v1/exports/{export_id} (GET)                      (1)
       Health:           /health                                                 (1)
-    Total = 34 distinct paths
+    Total = 33 distinct paths (google-auth flag off)
       (was 29 before W4b → 30 after W4b apply-price → 34 after Razorpay Wave 3
-       added the 4 /api/v1/billing/* paths under FEATURE_BILLING_ENABLED.
+       added the 4 /api/v1/billing/* paths under FEATURE_BILLING_ENABLED
+       → 33 after the F6 live-preview route retirement 2026-07-06 (−1;
+       see BACKEND_ARCHITECTURE.md §17 F6-retirement amendment).
        The /api/v1/webhooks/razorpay route was ALREADY in the 30 — it is the
        Wave 2 capture-only webhook on the iam_router, not a Wave 3 addition.)
 
@@ -266,12 +266,13 @@ def test_total_route_count(meesell_app):
     """
     route_map = _route_map(meesell_app)
     # google-auth (2026-06-18 amendment): +1 path (/api/v1/auth/google/verify) when
-    # FEATURE_GOOGLE_AUTH_ENABLED is true (dev default true → 35; flag off → 34).
-    # §17 mounted-endpoint inventory: 28→29 maps here to 34→35 (this count includes
-    # the 4 billing paths + FastAPI builtins, hence the offset from the §17 number).
+    # FEATURE_GOOGLE_AUTH_ENABLED is true (dev default true → 34; flag off → 33).
+    # §17 mounted-endpoint inventory: 27→28 (post-F6 retirement) maps here to 33→34
+    # (this count includes the 4 billing paths + FastAPI builtins, hence the offset
+    # from the §17 number).
     from app.shared.config import settings  # noqa: PLC0415
 
-    expected_count = 35 if settings.FEATURE_GOOGLE_AUTH_ENABLED else 34
+    expected_count = 34 if settings.FEATURE_GOOGLE_AUTH_ENABLED else 33
     assert len(route_map) == expected_count, (
         f"Expected {expected_count} routes, got {len(route_map)}. "
         f"Paths: {sorted(route_map)}"

@@ -1,15 +1,20 @@
-"""``catalog`` router — 7 endpoint handlers per §10.B (LOCKED 2026-06-05) +
-section-3 Wave 1 GAP-1 addition.
+"""``catalog`` router — 6 endpoint handlers (5 per §10.B after the F6
+preview retirement + section-3 Wave 1 GAP-1 addition).
 
 Endpoints
 ---------
 1. ``POST   /api/v1/products``                       — create product (§10.B.1)
 2. ``PATCH  /api/v1/products/{id}``                  — update product fields (§10.B.2)
 3. ``POST   /api/v1/products/{id}/autofill``         — AI Auto-fill (§10.B.3)
-4. ``GET    /api/v1/products/{id}/preview``          — Live Product Preview (§10.B.4)
-5. ``DELETE /api/v1/products/{id}``                  — soft delete (§10.B.5)
-6. ``GET    /api/v1/products/{id}/draft``            — draft recovery (§10.B.6)
-7. ``GET    /api/v1/products/{id}``                  — Get single product (GAP-1 reload fix, section-3 Wave 1)
+4. ``DELETE /api/v1/products/{id}``                  — soft delete (§10.B.5)
+5. ``GET    /api/v1/products/{id}/draft``            — draft recovery (§10.B.6)
+6. ``GET    /api/v1/products/{id}``                  — Get single product (GAP-1 reload fix, section-3 Wave 1)
+
+RETIRED 2026-07-06 — ``GET /api/v1/products/{id}/preview`` (§10.B.4, Live
+Product Preview / Feature 6): the frontend preview surface was removed in
+PR #278 (feat/my-live-listings); the flag-gated backend route was an orphan.
+Retired per the founder-approved V1 conformance cleanup (action #5). See
+BACKEND_ARCHITECTURE.md §17 F6-retirement amendment.
 
 Route invariants (§10.B + §4.B)
 -------------------------------
@@ -32,10 +37,9 @@ Audit posture (§10.B + §4.G)
   * POST   /products/{id}/autofill    → ``catalog.autofill.invoked``
   * DELETE /products/{id}             → ``catalog.product.deleted``
 
-3 read endpoints get NO audit decorator (per `MVP_ARCH §11.3`
+2 read endpoints get NO audit decorator (per `MVP_ARCH §11.3`
 read-flood rule):
 
-  * GET    /products/{id}/preview
   * GET    /products/{id}/draft
   * GET    /products/{id}
 
@@ -44,7 +48,6 @@ Rate-limit decorators (§4.G + §4.E)
 * POST   /products                 — 20/h/user (``create_product_hourly``).
 * PATCH  /products/{id}            — 600/h per-IP (autosave-friendly).
 * POST   /products/{id}/autofill   — 50/h/user (``ai_autofill_hourly``).
-* GET    /products/{id}/preview    — 600/h per-IP only.
 * DELETE /products/{id}            — 60/h/user.
 * GET    /products/{id}/draft      — 600/h per-IP only.
 * GET    /products/{id}            — 600/h per-IP (``product_detail``).
@@ -71,7 +74,6 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import CurrentUser, get_current_user
-from app.core.errors import MeesellError
 from app.core.middleware.audit_mw import audit_event
 from app.core.middleware.rate_limit_mw import rate_limit
 from app.modules.catalog import service as catalog_service
@@ -87,8 +89,6 @@ from app.modules.catalog.schemas import (
     CreateProductRequest,
     PatchProductRequest,
     ProductDraftResponse,
-    ProductPreviewField,
-    ProductPreviewResponse,
     ProductResponse,
 )
 from app.shared.database import get_db
@@ -289,59 +289,6 @@ async def autofill_product(
         },
         applied=dict(result.applied),
         fallback_offered=result.fallback_offered,
-    )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 4. GET /products/{id}/preview  — §10.B.4
-# ─────────────────────────────────────────────────────────────────────────────
-@router.get(
-    "/products/{id}/preview",
-    response_model=ProductPreviewResponse,
-    summary="Live Product Preview — Feature 6 wizard view",
-)
-@rate_limit(scope="product_preview", limit=600, window=3600)
-async def get_product_preview(
-    id: UUID,
-    user: Annotated[CurrentUser, Depends(get_current_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> ProductPreviewResponse:
-    """§10.B.4 — GET /products/{id}/preview.
-
-    No audit event (read-only per `MVP_ARCH §11.3`).
-
-    Status codes: 200, 401, 404.
-    Feature flag: returns 404 with code ``feature.live_preview.disabled``
-    when ``FEATURE_LIVE_PREVIEW_ENABLED=false`` (default False — gated rollout
-    per Master Plan §3.2 + FEATURE_PLAN.md D3).
-    """
-    # ── Feature flag guard (§3.2 / D3 gated rollout) ─────────────────────
-    # NOTE: FEATURE_LIVE_PREVIEW_ENABLED defaults to False (the ONLY V1 flag
-    # that ships default-False; all others default True). Raise via MeesellError
-    # to carry the machine-readable `code` field per §4.F envelope contract.
-    if not settings.FEATURE_LIVE_PREVIEW_ENABLED:
-        raise MeesellError(
-            code="feature.live_preview.disabled",
-            status_code=404,
-            detail="Preview unavailable",
-        )
-    preview = await catalog_service.get_preview(user.user_id, id, db=db)
-    return ProductPreviewResponse(
-        id=preview.id,
-        name=preview.name,
-        category_path=preview.category_path,
-        fields=[
-            ProductPreviewField(
-                canonical_name=f.canonical_name,
-                display_label=f.display_label,
-                value=f.value,
-                is_advanced=f.is_advanced,
-            )
-            for f in preview.fields
-        ],
-        image_urls=list(preview.image_urls),
-        compliance=dict(preview.compliance or {}),
-        status=preview.status,
     )
 
 

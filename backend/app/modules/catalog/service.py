@@ -9,7 +9,6 @@ Route-internal (driven by §10.B.1 through §10.B.6):
 * :func:`create_product`
 * :func:`patch_product`
 * :func:`autofill_product`
-* :func:`get_preview`
 * :func:`soft_delete`
 * :func:`get_draft`
 * :func:`get_product_detail`
@@ -87,10 +86,8 @@ from app.modules.catalog.domain import (
     ExportSnapshotInternal,
     PaginatedProductsInternal,
     Pagination,
-    PreviewField,
     Product,
     ProductDraft,
-    ProductPreviewInternal,
     ValidationSummaryInternal,
 )
 from app.modules.catalog.exceptions import (
@@ -971,101 +968,6 @@ def _render_schema_summary(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# §10.B.4 — get_preview
-# ─────────────────────────────────────────────────────────────────────────────
-async def get_preview(
-    user_id: UUID,
-    product_id: UUID,
-    db: AsyncSession,
-) -> ProductPreviewInternal:
-    """Implement the §10.B.4 6-step flow.
-
-    Compose the live preview from:
-        * product fields + schema labels,
-        * image URLs (via image.service.get_image_urls — V1 absent module
-          returns empty list defensively),
-        * compliance block from customer.service.get_compliance_block.
-    """
-    await assert_product_ownership(product_id, user_id, db=db)
-    product_row = await catalog_repo.find_by_id(db, user_id, product_id)
-    if product_row is None:
-        raise ProductNotFoundError()
-
-    schema = await category_service.fetch_schema(product_row.category_id, db=db)
-
-    # Compose ordered preview fields with display labels per §5A.C.
-    fields: list[PreviewField] = []
-    for spec in schema.get("fields") or []:
-        if not isinstance(spec, dict):
-            continue
-        canonical = spec.get("canonical_name") or spec.get("name")
-        if not canonical:
-            continue
-        label = str(
-            spec.get("name") or spec.get("display_label") or canonical
-        )
-        value = (product_row.fields_jsonb or {}).get(str(canonical))
-        is_advanced = bool(spec.get("is_advanced", False))
-        fields.append(
-            PreviewField(
-                canonical_name=str(canonical),
-                display_label=label,
-                value=value,
-                is_advanced=is_advanced,
-            )
-        )
-
-    # Image URLs — §11 image module may not yet be constructed; defensive
-    # call via getattr keeps the catalog construction independent of §11.
-    image_urls: tuple[str, ...] = ()
-    try:
-        from app.modules import image as _image_module  # noqa: F401 — defensive
-        image_service = getattr(_image_module, "service", None)
-        if image_service is not None and hasattr(image_service, "get_image_urls"):
-            urls = await image_service.get_image_urls(product_id, user_id, db=db)
-            if isinstance(urls, (list, tuple)):
-                image_urls = tuple(str(u) for u in urls)
-    except ImportError:
-        pass  # §11 not yet constructed — return empty list.
-
-    # Compliance block via customer.service.
-    try:
-        compliance_block = await customer_service.get_compliance_block(
-            user_id, db=db
-        )
-        compliance = {
-            "manufacturer_name": compliance_block.manufacturer_name,
-            "manufacturer_address": compliance_block.manufacturer_address,
-            "manufacturer_pincode": compliance_block.manufacturer_pincode,
-            "packer_name": compliance_block.packer_name,
-            "packer_address": compliance_block.packer_address,
-            "packer_pincode": compliance_block.packer_pincode,
-            "importer_name": compliance_block.importer_name,
-            "importer_address": compliance_block.importer_address,
-            "importer_pincode": compliance_block.importer_pincode,
-            "country_of_origin": compliance_block.country_of_origin,
-        }
-    except Exception as exc:  # noqa: BLE001 — preview tolerates missing profile
-        logger.info(
-            "catalog.preview: get_compliance_block fallback (missing profile): %r",
-            exc,
-        )
-        compliance = {}
-
-    category_path = str(schema.get("category_path") or schema.get("path") or "")
-
-    return ProductPreviewInternal(
-        id=product_row.id,
-        name=product_row.name,
-        category_path=category_path,
-        fields=tuple(fields),
-        image_urls=image_urls,
-        compliance=compliance,
-        status=product_row.status,
-    )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # §10.B.5 — soft_delete
 # ─────────────────────────────────────────────────────────────────────────────
 async def soft_delete(
@@ -1330,7 +1232,6 @@ __all__ = [
     "get_distinct_product_category_ids",
     "get_draft",
     "get_product_detail",
-    "get_preview",
     "get_product_for_export",
     "get_validation_summary",
     "list_products",

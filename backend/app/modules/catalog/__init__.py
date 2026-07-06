@@ -1,4 +1,4 @@
-"""``catalog`` — Product CRUD, autosave, Auto-fill, Live Preview module.
+"""``catalog`` — Product CRUD, autosave, Auto-fill module.
 
 Owner specialists: ``meesell-api-routes-builder`` (routes + Pydantic
 schemas) + ``meesell-services-builder`` (business logic, AI Auto-fill
@@ -12,14 +12,14 @@ outbound service calls (``customer`` + ``category``) but is called BY
 get_validation_summary), and ``export`` (get_product_for_export) — making
 it the most-called module in the architecture.
 
-Per BACKEND_ARCHITECTURE.md §10 the module surfaces 6 endpoints:
+Per BACKEND_ARCHITECTURE.md §10 the module surfaces 5 endpoints (the
+§10.B.4 Live Product Preview GET was RETIRED 2026-07-06 — see §17):
 
 1. ``POST   /api/v1/products``                       — create product
 2. ``PATCH  /api/v1/products/{id}``                  — update fields + autosave
 3. ``POST   /api/v1/products/{id}/autofill``         — AI Auto-fill
-4. ``GET    /api/v1/products/{id}/preview``          — Live Product Preview
-5. ``DELETE /api/v1/products/{id}``                  — soft delete
-6. ``GET    /api/v1/products/{id}/draft``            — draft recovery
+4. ``DELETE /api/v1/products/{id}``                  — soft delete
+5. ``GET    /api/v1/products/{id}/draft``            — draft recovery
 
 The public router is exposed via ``catalog_router`` so ``app/main.py``
 can mount it with ``app.include_router(catalog_router)``.
