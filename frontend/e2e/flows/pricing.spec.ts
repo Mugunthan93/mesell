@@ -20,6 +20,7 @@
 import { authedTest as test, expect } from '../fixtures/auth';
 import { CatalogPage } from '../page-objects/catalog.page';
 import { PricingPage } from '../page-objects/pricing.page';
+import { ExportPage } from '../page-objects/export.page';
 
 test.describe('Price calculator', () => {
   test('PQE-E2E-02: entering a selling price renders the settlement breakdown + disclaimer', async ({
@@ -68,5 +69,74 @@ test.describe('Price calculator', () => {
     await expect(pricing.negativeAlert).toContainText(/negative settlement/i);
     await expect(pricing.settlementValue).toBeVisible();
     await expect(pricing.settlementValue).toHaveText(/₹\s?-/); // a negative rupee amount
+  });
+
+  // ── PQE-E2E-04 — apply a calculated price → export page reachable (SPEC-C) ──
+  //
+  // The SPEC-C "Save & Continue" control (pricing-apply-btn — LIVE-VERIFIED on the
+  // deployed build 2026-07-06: a native <button>, disabled on load, enabling after a
+  // calc). onSaveContinue() POSTs /apply-price; on 204 it sets appliedStatus='applied'
+  // THEN navigates to /catalogs/:id/export. The applied-status chip can unmount on
+  // that navigation, so the robust VISIBLE outcome asserted here is the export page
+  // itself (URL + its Generate control), per SPEC A §3.2.
+  test('PQE-E2E-04: applying a calculated price navigates to the export page', async ({
+    authedPage,
+  }) => {
+    const catalog = new CatalogPage(authedPage);
+    const pricing = new PricingPage(authedPage);
+    const exportPage = new ExportPage(authedPage);
+
+    const productId = await catalog.createProductViaPicker();
+    await pricing.goto(productId);
+    await expect(pricing.sellingPriceInput).toBeVisible();
+
+    // Calculate first — the apply button is disabled until a breakdown exists.
+    await pricing.calculate('70');
+    await expect(pricing.settlementValue).toBeVisible({ timeout: 20_000 });
+    await expect(pricing.applyButton).toBeEnabled();
+
+    // Apply → the 204 drives navigation to the export page.
+    await pricing.applyPrice();
+
+    // VISIBLE outcome: the export page is reached and its Generate control is present.
+    await expect(authedPage).toHaveURL(new RegExp(`/catalogs/${productId}/export`), {
+      timeout: 15_000,
+    });
+    await expect(exportPage.generateButton).toBeVisible();
+  });
+
+  // ── PQE-E2E-04b — apply-price error path shows the apply-error chip ──
+  //
+  // Guards the SPEC-C error branch (pricing-apply-error): PricingApiService.applyPrice
+  // maps any error to a typed shape emitted on `next` → onSaveContinue() sets
+  // appliedStatus='error' → the apply-error chip renders and NO navigation happens.
+  // The calc hits the real backend (a real breakdown enables the button); only the
+  // subsequent apply POST is forced to fail via route interception.
+  test('PQE-E2E-04b: an apply-price server error shows the apply-error chip and stays on pricing', async ({
+    authedPage,
+  }) => {
+    const catalog = new CatalogPage(authedPage);
+    const pricing = new PricingPage(authedPage);
+
+    const productId = await catalog.createProductViaPicker();
+    await pricing.goto(productId);
+    await pricing.calculate('70');
+    await expect(pricing.settlementValue).toBeVisible({ timeout: 20_000 });
+    await expect(pricing.applyButton).toBeEnabled();
+
+    // Fail ONLY the apply POST (set AFTER the real calc so the breakdown is genuine).
+    await authedPage.route('**/apply-price', (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'server_error' }),
+      }),
+    );
+
+    await pricing.applyPrice();
+
+    // VISIBLE outcome: the apply-error chip appears and the flow stays on /pricing.
+    await expect(pricing.applyError).toBeVisible();
+    await expect(authedPage).toHaveURL(new RegExp(`/catalogs/${productId}/pricing`));
   });
 });

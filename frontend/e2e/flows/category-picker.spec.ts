@@ -118,11 +118,15 @@ test.describe('Category smart-picker', () => {
   // not depend on a specific live Gemini response). Asserts the secondary
   // "Browse if none match" link is visible AND navigates to /categories/browse.
   //
-  // FIXME: the browse-fallback link ships NO data-testid; it is targeted by an
-  // accessible role/name DERIVED FROM SOURCE (@ 3476b0e) but the Wave-C live
-  // exploration was environment-blocked (8GB-box swap ceiling — see
-  // federation_quirks.md). Un-fixme once the selector is agent-browser LIVE-VERIFIED
-  // (and/or a data-testid lands per the coordinator memo).
+  // FIXME (kept — qa de-fixme lane, SPEC B group F, 2026-07-06): the browse-fallback
+  // link ships NO data-testid; it is a native <button aria-label="Browse all categories
+  // if none of the suggestions match"> targeted by accessible role/name, SOURCE-CONFIRMED
+  // at develop c5529f6 (smart-picker.component.ts L171-178). Live-verification remains
+  // env-BLOCKED: the deployed backend's /categories/suggest returns empty responses so
+  // the fallback UI never renders live, and agent-browser cannot route-stub to force
+  // fallback_offered=true. A data-testid memo (smart-picker-browse-fallback) is filed
+  // with the coordinator. Un-fixme once the role selector is agent-browser LIVE-VERIFIED
+  // on a working stack OR the requested data-testid lands.
   test.fixme('CAT-E2E-03: browse-fallback link visible and navigates to /categories/browse', async ({ authedPage }) => {
     const catalog = new CatalogPage(authedPage);
 
@@ -151,9 +155,14 @@ test.describe('Category smart-picker', () => {
   });
 
   // ── CAT-E2E-07 — empty-state on zero suggestions ────────────────────────────
-  // FIXME: same provenance as CAT-E2E-03 — the empty-state + its CTA ship no
-  // data-testid; targeted by source-derived role/name, not yet live-verified
-  // (Wave-C environment blocker). Un-fixme once live-verified / testid lands.
+  // FIXME (kept — qa de-fixme lane, SPEC B group F, 2026-07-06): same provenance as
+  // CAT-E2E-03. The empty-state renders `<div role="status" aria-label="No automatic
+  // suggestions found…">` + a "Browse all categories" mee-button CTA (SOURCE-CONFIRMED
+  // at c5529f6: smart-picker.component.ts L184-190 + empty-state.component.ts L44/56).
+  // Live-verification is env-BLOCKED (deployed suggest returns empty → fallback UI
+  // unreachable live; agent-browser cannot route-stub). A data-testid memo
+  // (smart-picker-empty / smart-picker-empty-browse) is filed with the coordinator.
+  // Un-fixme once live-verified on a working stack OR the testids land.
   test.fixme('CAT-E2E-07: empty-state shown when there are no suggestions', async ({ authedPage }) => {
     const catalog = new CatalogPage(authedPage);
 

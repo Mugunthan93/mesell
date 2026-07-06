@@ -102,6 +102,47 @@ export class CatalogPage {
     return this.page.getByTestId('precheck-status');
   }
 
+  // ── Catalog list rows + inline delete (/catalogs) — #425 testids ──
+  // SELECTOR PROVENANCE: literal data-testids added by PR #425 (77b5db0) in
+  // catalog-list.component.ts. `catalog-empty` was LIVE-VERIFIED on the deployed
+  // build (2026-07-06). The per-row controls (`catalog-row` + the edit/delete/
+  // confirm/cancel <span> wrappers around mee-buttons) are SOURCE-GROUND-TRUTHED at
+  // develop c5529f6 — their live-verification was env-blocked (the deployed backend's
+  // product-creation is down: Gemini suggest returns empty + category browse is
+  // unseeded, so no row could be rendered live). They are exercised live when the
+  // suite runs on a working stack. The delete controls are `<span data-testid>`
+  // wrapping a `<mee-button>` (whose (clicked) fires from the inner <button>), so
+  // click `.locator('button')` inside the span — same pattern as the other mee-buttons.
+
+  /** All catalog rows (one `<div data-testid="catalog-row" [data-product-id]>` per product). */
+  get catalogRows(): Locator {
+    return this.page.getByTestId('catalog-row');
+  }
+  /** The empty-state shown when there are no catalogs (LIVE-VERIFIED on deployed). */
+  get catalogEmpty(): Locator {
+    return this.page.getByTestId('catalog-empty');
+  }
+  /** The row for a specific product, anchored by its data-product-id (unique). */
+  rowFor(productId: string): Locator {
+    return this.page.locator(`[data-testid="catalog-row"][data-product-id="${productId}"]`);
+  }
+  /** Delete button within a row (mee-button → inner <button>). Opens the inline confirm. */
+  deleteButtonIn(row: Locator): Locator {
+    return row.getByTestId('catalog-delete-btn').locator('button');
+  }
+  /** "Confirm delete" button in a row's inline confirm affordance (mee-button → <button>). */
+  deleteConfirmIn(row: Locator): Locator {
+    return row.getByTestId('catalog-delete-confirm').locator('button');
+  }
+  /** "Cancel" button in a row's inline confirm affordance (mee-button → <button>). */
+  deleteCancelIn(row: Locator): Locator {
+    return row.getByTestId('catalog-delete-cancel').locator('button');
+  }
+  /** Edit button within a row (mee-button → inner <button>). */
+  editButtonIn(row: Locator): Locator {
+    return row.getByTestId('catalog-edit-btn').locator('button');
+  }
+
   // ── Navigation helpers ──
   async gotoList(): Promise<void> {
     await this.page.goto('/catalogs');

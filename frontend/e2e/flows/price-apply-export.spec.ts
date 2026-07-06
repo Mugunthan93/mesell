@@ -1,40 +1,53 @@
 /**
- * Flow: W3-E2-6 — Price-calc → apply → export chain.
+ * Flow: W3-E2-6 — Price-calc → apply → export chain (the end-to-end journey).
  *
- * Plan §4.3 W3-E2-6 asked: for a created product, open pricing → calc → apply →
- * navigate to export → (download leg gated on E2-3).
+ * DE-FIXME'd (qa-pricing e2e lane, SPEC A §3.3, 2026-07-06). The original fixme
+ * blockers are BOTH resolved on develop:
+ *   1. mfe-pricing now ships the SPEC-C apply control + testids (#439). The apply
+ *      button `pricing-apply-btn` was LIVE-VERIFIED on the deployed build (2026-07-06):
+ *      a native <button>, disabled on load, enabling after a successful calc.
+ *   2. The mfe-export productId placeholder bug is fixed (`resolveExportProductId`), so
+ *      the export page renders for the real product (verified in export.spec.ts).
  *
- * BLOCKED on two counts, both VERIFIED LIVE this wave (develop @ a94e013):
- *   1. The mfe-pricing component (pricing.component.ts) carries NO data-testids
- *      (grep: zero testId / data-testid) and exposes NO "apply price" control — it
- *      has a "Calculate" mee-button (no testid) and renders a read-only P&L
- *      breakdown. There is no apply-price button to click, and no LIVE-VERIFIED
- *      selector for the calculate button or the result, so neither "calc" nor
- *      "apply" can be driven from the UI.
- *   2. The export DOWNLOAD leg is GATED on W3-E2-3 / the mfe-export productId fix,
- *      which is NOT on develop (export.component.ts onGenerate() still hardcodes
- *      productId='current-product-id' — verified on develop @ a94e013).
+ * This asserts the calc → apply → export-PAGE-REACHABLE chain (URL + the export
+ * Generate control). The export DOWNLOAD leg stays OUT of scope here — it is
+ * storage-env-blocked (no GCS/fake-gcs in dev/CI) and owned by SPEC B PQE-E2E-05.
  *
- * The backend price-calc → apply → export round-trip IS covered at the integration
- * layer (W3-BE-17, integration/test_price_export_roundtrip.py).
- *
- * Un-fixme condition: when (a) mfe-pricing gains data-testids on the calculate
- *   control + the P&L result + an apply-price control, all LIVE-VERIFIED in
- *   selector_registry.md, AND (b) the export download leg is un-fixme'd (W3-E2-3).
- *   The pricing testids + apply control are a frontend-lead request via the QA
- *   coordinator memo (E2E does NOT add data-testids or feature controls itself).
+ * OVERLAP NOTE: this journey overlaps the apply-flow assertion in PQE-E2E-04
+ * (flows/pricing.spec.ts). PQE-E2E-04 is the primary apply-CONTROL test; W3-E2-6 is
+ * the named wave-plan CHAIN. Both use the same rotation-safe worker-scoped auth
+ * fixture and config-driven ports (the page objects navigate the shell only).
  */
-import { authedTest as test } from '../fixtures/auth';
+import { authedTest as test, expect } from '../fixtures/auth';
+import { CatalogPage } from '../page-objects/catalog.page';
+import { PricingPage } from '../page-objects/pricing.page';
+import { ExportPage } from '../page-objects/export.page';
 
 test.describe('W3-E2-6 Price-calc → apply → export chain', () => {
-  test.fixme(
-    'calculating then applying a price is reflected and the export page is reachable',
-    async () => {
-      // BLOCKED: mfe-pricing has no data-testids + no apply-price control
-      // (develop @ a94e013, verified live), and the export download leg is gated on
-      // W3-E2-3 (the mfe-export productId fix is not yet on develop). Backend
-      // round-trip is covered by W3-BE-17. Un-fixme when pricing gains LIVE-VERIFIED
-      // testids + an apply control AND W3-E2-3 is un-fixme'd.
-    },
-  );
+  test('calculating then applying a price makes the export page reachable', async ({
+    authedPage,
+  }) => {
+    const catalog = new CatalogPage(authedPage);
+    const pricing = new PricingPage(authedPage);
+    const exportPage = new ExportPage(authedPage);
+
+    // Real product (smart-picker leaf → has a pricing-lookup row so calc 200s).
+    const productId = await catalog.createProductViaPicker();
+
+    // Calculate a settlement (the apply button is disabled until a breakdown exists).
+    await pricing.goto(productId);
+    await pricing.calculate('70');
+    await expect(pricing.settlementValue).toBeVisible({ timeout: 20_000 });
+    await expect(pricing.applyButton).toBeEnabled();
+
+    // Apply the price → onSaveContinue()'s 204 navigates to the export page.
+    await pricing.applyPrice();
+
+    // VISIBLE outcome: the export page is reachable (URL) and its Generate control
+    // is present. The download leg is intentionally NOT asserted (env-blocked).
+    await expect(authedPage).toHaveURL(new RegExp(`/catalogs/${productId}/export`), {
+      timeout: 15_000,
+    });
+    await expect(exportPage.generateButton).toBeVisible();
+  });
 });

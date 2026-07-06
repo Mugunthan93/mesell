@@ -1,41 +1,47 @@
 /**
- * Flow: W3-E2-4 — Catalog list → edit → delete round-trip.
+ * Flow: W3-E2-4 — Catalog list → delete round-trip.
  *
- * Plan §4.3 W3-E2-4 asked to: from dashboard/list, open a product, edit a field
- * (autosave), then DELETE it, and assert the row disappears.
+ * DE-FIXME'd (qa de-fixme lane, SPEC B group R / #9, 2026-07-06). The original
+ * blocker ("no delete control + no per-row testids") is RESOLVED: PR #425 (77b5db0)
+ * added a per-row inline delete affordance + literal data-testids in
+ * catalog-list.component.ts — `catalog-row` (carries `data-product-id`), `catalog-edit-btn`,
+ * `catalog-delete-btn`, `catalog-delete-confirm`, `catalog-delete-cancel`, `catalog-empty`.
  *
- * PARTIALLY BLOCKED — there is NO delete control in the UI, and the list cards/
- * buttons carry NO data-testids.
- *   VERIFIED LIVE this wave (agent-browser + source on develop @ a94e013):
- *     - catalog-list.component.ts renders per-product cards with "Edit" and "Preview"
- *       mee-buttons ONLY. There is NO delete / remove / trash control anywhere in the
- *       component (grep: zero matches for delete|remove|trash).
- *     - The list cards, the Edit button, and the Preview button have NO data-testid /
- *       no [testId] binding — so there is no LIVE-VERIFIED selector to target a
- *       specific row's controls.
- *     - The backend DOES expose DELETE /products/{id} (covered by the backend lane
- *       W3-BE-15), but it is unreachable through the UI.
+ * The delete UX is an INLINE confirm (no PrimeNG dialog): clicking Delete swaps the
+ * row's edit/delete buttons for a "Delete this catalog?" row with Cancel + Confirm;
+ * Confirm calls DELETE /products/{id} and removes the row on completion.
  *
- *   The EDIT leg is exercised by W3-E2-1 (wizard-save.spec.ts) via the edit-form
- *   autosave path. The DELETE leg cannot be E2E-tested until the UI gains a delete
- *   control with a LIVE-VERIFIED selector.
+ * SELECTOR PROVENANCE (honest disclosure): `catalog-empty` was LIVE-VERIFIED on the
+ * deployed build (2026-07-06). The per-row controls are SOURCE-GROUND-TRUTHED at develop
+ * c5529f6 — live-verification of a rendered row was env-blocked (the deployed backend's
+ * product-creation is down: the AI smart-picker suggest returns empty responses and the
+ * category browse tree is unseeded, so no catalog row could be created/rendered live).
+ * They run live when the suite executes on a working stack (createProductViaPicker needs
+ * a working suggest). The EDIT leg is covered by W3-E2-1 (wizard-save.spec.ts).
  *
- * Un-fixme condition: when catalog-list.component.ts (a) adds a delete control AND
- *   (b) per-row controls carry data-testids (e.g. catalog-list-row /
- *   catalog-list-delete) that are then LIVE-VERIFIED in selector_registry.md.
- *   Request the data-testids + the delete control via the QA coordinator → frontend
- *   lead memo (E2E does NOT add data-testids or feature controls itself).
+ * Pre-authenticated via the worker-scoped authed-context fixture (rotation-safe).
+ * Ports come from playwright.config.ts (the page objects navigate the shell only).
  */
-import { authedTest as test } from '../fixtures/auth';
+import { authedTest as test, expect } from '../fixtures/auth';
+import { CatalogPage } from '../page-objects/catalog.page';
 
-test.describe('W3-E2-4 Catalog list edit + delete round-trip', () => {
-  test.fixme(
-    'editing then deleting a product removes its row from the list',
-    async () => {
-      // BLOCKED: no delete control + no per-row data-testids in catalog-list
-      // (develop @ a94e013, verified live). The edit leg is covered by W3-E2-1.
-      // Un-fixme when the list gains a delete control + LIVE-VERIFIED per-row
-      // selectors (frontend-lead memo via the QA coordinator).
-    },
-  );
+test.describe('W3-E2-4 Catalog list delete round-trip', () => {
+  test('deleting a product removes its row from the list', async ({ authedPage }) => {
+    const catalog = new CatalogPage(authedPage);
+
+    // Create a real product — its row appears in the catalog list.
+    const productId = await catalog.createProductViaPicker();
+
+    // Open the list; the new product's row is present (anchored by data-product-id).
+    await catalog.gotoList();
+    const row = catalog.rowFor(productId);
+    await expect(row).toBeVisible();
+
+    // Delete: click Delete → the inline confirm affordance → Confirm delete.
+    await catalog.deleteButtonIn(row).click();
+    await catalog.deleteConfirmIn(row).click();
+
+    // VISIBLE outcome: the row disappears from the list.
+    await expect(row).toHaveCount(0);
+  });
 });
