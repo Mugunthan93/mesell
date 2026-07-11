@@ -17,7 +17,17 @@ import { retry, timer } from 'rxjs';
  *   - 401 (handled by refreshInterceptor)
  *   - POST / PATCH / DELETE 5xx (non-idempotent — retrying may cause duplicate side effects)
  *
- * Backoff schedule: 1 s, 2 s, 4 s (max 3 attempts after the initial failure).
+ * Backoff schedule: 1 s, 2 s, 4 s (max 3 attempts after the initial failure — a HARD cap).
+ *
+ * IMPORTANT — do NOT add `resetOnSuccess: true` here. HttpClient's request stream emits an
+ * `HttpEventType.Sent` `next` value through the interceptor chain on every attempt, BEFORE the
+ * eventual response/error. RxJS's `retry({ resetOnSuccess: true })` treats that `next` as a
+ * "success" and resets the internal retry counter to 0 on every attempt — including the
+ * attempts that go on to error. That reset happens before the counter is ever checked/incremented
+ * against `count`, so the cap never trips: every sustained failure (status 0 / 5xx-idempotent)
+ * retries forever at a constant ~1 s cadence instead of stopping after 3 retries. A single
+ * HttpClient request is a single-shot stream (it errors or completes once) — `resetOnSuccess`
+ * has no legitimate use case here and only reintroduces this hazard. Keep it off (the default).
  */
 
 const IDEMPOTENT = new Set(['GET', 'HEAD', 'OPTIONS', 'PUT']);
@@ -32,6 +42,5 @@ export const retryInterceptor: HttpInterceptorFn = (req, next) =>
         if (!networkFail && !serverErr) throw error;
         return timer(Math.pow(2, retryCount - 1) * 1000); // 1 s, 2 s, 4 s
       },
-      resetOnSuccess: true,
     }),
   );

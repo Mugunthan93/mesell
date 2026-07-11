@@ -26,20 +26,38 @@
  *   (f) GET + 401 → NOT retried (4xx; not retryInterceptor's concern)
  *   (g) PUT + 500 → retried (idempotent method + 5xx)
  *   (h) PATCH + 500 → NOT retried (non-idempotent)
+ *
+ * Sustained-failure regression guard (resetOnSuccess hazard, see interceptor doc comment):
+ *   HttpTestingController.flush() calls `observer.error(...)` directly — it never emits a
+ *   preceding `HttpEventType.Sent` `next` value, so it CANNOT reproduce the bug where
+ *   `resetOnSuccess: true` treated that per-attempt `Sent` event as a "success" and reset the
+ *   retry counter before every failure was counted, defeating the count:3 cap entirely (the
+ *   cap never trips → unbounded ~1 s-cadence retries). These cases call `retryInterceptor`
+ *   directly (it injects nothing) with a hand-rolled `next: HttpHandlerFn` that emits
+ *   `Sent` then errors on every invocation, so the hazard is actually exercised.
+ *   (i) sustained status-0 (GET)      → exactly 4 attempts total, terminal error propagates
+ *   (j) backoff progression (GET)     → 4th attempt not before ~7 s cumulative (1 s+2 s+4 s)
+ *   (k) sustained 503 (GET, idempotent 5xx path) → exactly 4 attempts total
  */
 
 import { TestBed } from '@angular/core/testing';
 import {
   HttpClient,
+  HttpErrorResponse,
+  HttpEventType,
+  HttpRequest,
   provideHttpClient,
   withFetch,
   withInterceptors,
+  type HttpHandlerFn,
+  type HttpSentEvent,
 } from '@angular/common/http';
 import {
   HttpTestingController,
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
 import { vi } from 'vitest';
+import { concat, defer, of, throwError } from 'rxjs';
 
 import { retryInterceptor } from './retry.interceptor';
 
@@ -60,7 +78,14 @@ function setup() {
 }
 
 afterEach(() => {
-  TestBed.inject(HttpTestingController).verify();
+  // The sustained-failure regression guard cases below call retryInterceptor directly
+  // (it injects nothing) and never configure TestBed's HttpClientTesting — guard the
+  // verify() call so this shared hook doesn't NG0201 for those cases.
+  try {
+    TestBed.inject(HttpTestingController).verify();
+  } catch {
+    /* no HttpClientTesting configured for this test — nothing to verify */
+  }
   TestBed.resetTestingModule();
   vi.useRealTimers();
 });
@@ -267,5 +292,117 @@ describe('retryInterceptor — PATCH + 500 (non-idempotent, no retry)', () => {
 
     expect(errorStatus).toBe(500);
     controller.expectNone('/api/v1/products/1');
+  });
+});
+
+// ── Sustained-failure regression guard (resetOnSuccess hazard) ───────────────
+//
+// These bypass HttpTestingController entirely: retryInterceptor injects nothing, so it can be
+// called directly as a plain function with a hand-rolled `next: HttpHandlerFn` that simulates
+// what HttpClient's real backend does on EVERY attempt — emit `HttpEventType.Sent` as a `next`
+// value, then error. That `Sent` emission is exactly what a reintroduced `resetOnSuccess: true`
+// would treat as a "success" and use to reset the retry counter before it's ever checked.
+//
+// IMPORTANT: `next(req)` is called exactly ONCE by retryInterceptor — `retry()` then
+// RE-SUBSCRIBES to that single returned Observable on every attempt (this mirrors real
+// HttpClient: the backend Observable performs the XHR/fetch inside its own subscribe callback,
+// so resubscribing IS what fires a fresh request). The handler below therefore uses `defer()`
+// so each retry's resubscription — not each call to `next` — increments the attempt counter and
+// re-emits Sent-then-error.
+
+/** Builds a `next: HttpHandlerFn` that always fails with `status`, counting attempts (subscriptions). */
+function alwaysFailingHandler(status: number): {
+  next: HttpHandlerFn;
+  attempts: () => number;
+} {
+  let attempts = 0;
+  const next: HttpHandlerFn = () =>
+    defer(() => {
+      attempts += 1;
+      return concat(
+        of({ type: HttpEventType.Sent } as HttpSentEvent),
+        throwError(() => new HttpErrorResponse({ status, url: '/api/v1/products' })),
+      );
+    });
+  return { next, attempts: () => attempts };
+}
+
+describe('retryInterceptor — sustained status-0 failure (GET), resetOnSuccess regression guard', () => {
+  it('caps at exactly 4 attempts total and propagates the terminal error', () => {
+    vi.useFakeTimers();
+    const req = new HttpRequest('GET', '/api/v1/products');
+    const { next, attempts } = alwaysFailingHandler(0);
+
+    let terminalError: unknown = null;
+    let errorStatus = -1;
+    let completed = false;
+    const sub = retryInterceptor(req, next).subscribe({
+      error: (e: HttpErrorResponse) => { terminalError = e; errorStatus = e.status; },
+      complete: () => { completed = true; },
+    });
+
+    // Sustained failure well beyond the 1 s + 2 s + 4 s = 7 s total backoff window.
+    vi.advanceTimersByTime(30_000);
+
+    expect(attempts()).toBe(4); // 1 initial + 3 retries — the hard cap
+    expect(terminalError).toBeInstanceOf(HttpErrorResponse);
+    expect(errorStatus).toBe(0);
+    expect(completed).toBe(false);
+
+    sub.unsubscribe();
+  });
+});
+
+describe('retryInterceptor — backoff progression (GET, status 0)', () => {
+  it('does not fire the 4th (final) attempt before ~7 s cumulative (1 s + 2 s + 4 s)', () => {
+    vi.useFakeTimers();
+    const req = new HttpRequest('GET', '/api/v1/products');
+    const { next, attempts } = alwaysFailingHandler(0);
+
+    const sub = retryInterceptor(req, next).subscribe({ error: () => {} });
+
+    expect(attempts()).toBe(1); // initial attempt fires synchronously on subscribe
+
+    vi.advanceTimersByTime(999);
+    expect(attempts()).toBe(1); // still waiting out the 1 s delay (retryCount 1)
+
+    vi.advanceTimersByTime(1); // cumulative 1 000 ms
+    expect(attempts()).toBe(2); // 2nd attempt fires at +1 s
+
+    vi.advanceTimersByTime(1999);
+    expect(attempts()).toBe(2); // still waiting out the 2 s delay (retryCount 2)
+
+    vi.advanceTimersByTime(1); // cumulative 3 000 ms (1 s + 2 s)
+    expect(attempts()).toBe(3); // 3rd attempt fires at +2 s
+
+    vi.advanceTimersByTime(3999);
+    expect(attempts()).toBe(3); // still waiting out the 4 s delay (retryCount 3)
+
+    vi.advanceTimersByTime(1); // cumulative 7 000 ms (1 s + 2 s + 4 s)
+    expect(attempts()).toBe(4); // 4th (final) attempt fires at +4 s, terminal — no further delay
+
+    sub.unsubscribe();
+  });
+});
+
+describe('retryInterceptor — sustained 503 failure (GET, idempotent 5xx path), resetOnSuccess regression guard', () => {
+  it('caps at exactly 4 attempts total and propagates the terminal error', () => {
+    vi.useFakeTimers();
+    const req = new HttpRequest('GET', '/api/v1/products');
+    const { next, attempts } = alwaysFailingHandler(503);
+
+    let terminalError: unknown = null;
+    let errorStatus = -1;
+    const sub = retryInterceptor(req, next).subscribe({
+      error: (e: HttpErrorResponse) => { terminalError = e; errorStatus = e.status; },
+    });
+
+    vi.advanceTimersByTime(30_000);
+
+    expect(attempts()).toBe(4);
+    expect(terminalError).toBeInstanceOf(HttpErrorResponse);
+    expect(errorStatus).toBe(503);
+
+    sub.unsubscribe();
   });
 });
