@@ -28,8 +28,12 @@ Cookie format (locked per §4.B FE-D5 amendment)
 ``Set-Cookie: refresh_token=<value>; Domain=.mesell.xyz; Path=/api/v1/auth;
 HttpOnly; Secure; SameSite=Strict; Max-Age=<TTL>``
 (production values; dev omits Domain and Secure — see settings.COOKIE_DOMAIN /
-COOKIE_SECURE)
-(or Max-Age=0 with empty value to clear on failure/logout).
+COOKIE_SECURE.  SameSite is env-configurable via settings.COOKIE_SAMESITE
+— AMENDED per founder ruling 2026-07-11 (cross-site GH-Pages→Fly interim; revert
+to strict-only when custom domain lands): the live github.io→fly.dev cross-site
+topology needs SameSite=None (with Secure) so the browser sends the cookie on
+reload; HttpOnly stays always-on.)
+(or Max-Age=0 with empty value to clear on failure/logout.)
 """
 
 from __future__ import annotations
@@ -73,10 +77,16 @@ _REFRESH_COOKIE_PATH = "/api/v1/auth"
 def _set_refresh_cookie(response: Response, token: str, max_age: int) -> None:
     """Attach the locked-format refresh cookie to ``response``.
 
-    Domain + Secure are environment-dependent (``settings.COOKIE_DOMAIN`` /
-    ``settings.COOKIE_SECURE``): prod = ``.mesell.xyz`` + Secure; local-http dev
-    omits both.  HttpOnly + SameSite=Strict are FE-D5 security-critical and
+    Domain, Secure, and SameSite are environment-dependent
+    (``settings.COOKIE_DOMAIN`` / ``settings.COOKIE_SECURE`` /
+    ``settings.COOKIE_SAMESITE``): prod = ``.mesell.xyz`` + Secure + Strict;
+    local-http dev omits Domain/Secure.  HttpOnly is FE-D5 security-critical and
     always on, never configurable.
+
+    SameSite is env-configurable — AMENDED per founder ruling 2026-07-11
+    (cross-site GH-Pages→Fly interim; revert to strict-only when custom domain
+    lands): the live github.io→fly.dev cross-site topology needs SameSite=None
+    (with Secure) so the browser sends the refresh cookie on reload.
     """
     response.set_cookie(
         key=_REFRESH_COOKIE_NAME,
@@ -86,15 +96,23 @@ def _set_refresh_cookie(response: Response, token: str, max_age: int) -> None:
         domain=settings.COOKIE_DOMAIN or None,
         secure=settings.COOKIE_SECURE,
         httponly=True,
-        samesite="strict",
+        # samesite — AMENDED per founder ruling 2026-07-11 (cross-site
+        # GH-Pages→Fly interim; revert to strict-only when custom domain lands).
+        samesite=settings.COOKIE_SAMESITE,
     )
 
 
 def _clear_refresh_cookie(response: Response) -> None:
     """Idempotent clear-cookie header per §7.B.3 / §7.B.4.
 
-    Domain MUST match the set-cookie's Domain or the browser will not clear it,
-    so this mirrors ``_set_refresh_cookie``'s env-dependent Domain/Secure.
+    Domain, Secure, and SameSite MUST match the set-cookie's attributes or the
+    browser will not clear it, so this mirrors ``_set_refresh_cookie``'s
+    env-dependent Domain/Secure/SameSite.
+
+    — AMENDED per founder ruling 2026-07-11 (cross-site GH-Pages→Fly interim;
+    revert to strict-only when custom domain lands): SameSite is env-configurable,
+    and the clear MUST use the same value as the set (browser attribute-match
+    rule — a mismatched SameSite leaves a stale cookie the browser won't evict).
     """
     response.set_cookie(
         key=_REFRESH_COOKIE_NAME,
@@ -104,7 +122,10 @@ def _clear_refresh_cookie(response: Response) -> None:
         domain=settings.COOKIE_DOMAIN or None,
         secure=settings.COOKIE_SECURE,
         httponly=True,
-        samesite="strict",
+        # samesite — AMENDED per founder ruling 2026-07-11 (cross-site
+        # GH-Pages→Fly interim; revert to strict-only when custom domain lands).
+        # MUST match _set_refresh_cookie's samesite so the browser evicts it.
+        samesite=settings.COOKIE_SAMESITE,
     )
 
 
