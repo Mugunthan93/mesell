@@ -13,18 +13,29 @@
 # the harness runs it before every Bash call and BLOCKS the dangerous git ops
 # when they target the master tree.
 #
-# Contract (Claude Code PreToolUse hook):
+# Contract (Claude Code PreToolUse hook — CURRENT permissionDecision protocol,
+# per code.claude.com/docs/en/hooks.md; the legacy top-level {"decision":...}
+# shape is INVALID and was the root cause of "Hook JSON output validation
+# failed — (root): Invalid input"):
 #   - stdin  : JSON with .tool_input.command and .cwd
-#   - stdout : {"decision":"allow"}  or  {"decision":"block","reason":"..."}
+#   - stdout (ALLOW/NEUTRAL) : NOTHING. A guard must emit no output on allow so
+#              the normal permission flow applies. We deliberately do NOT emit an
+#              explicit permissionDecision:"allow" — that would AUTO-APPROVE the
+#              Bash call and bypass the user's own permission prompts, which is
+#              wrong for a guard. Silent exit 0 = "I have no objection".
+#   - stdout (BLOCK) : {"hookSpecificOutput":{"hookEventName":"PreToolUse",
+#              "permissionDecision":"deny","permissionDecisionReason":"..."}}
 #
 # DESIGN: FAIL-OPEN. Any uncertainty, parse error, missing jq, unmatched shape →
-# emit allow. A guard bug must never brick sessions; the worst case is we fail to
-# block (degrading to today's behavior), never that we block legitimate work.
+# silent exit 0 (neutral). A guard bug must never brick sessions; the worst case
+# is we fail to block (degrading to today's behavior), never that we block
+# legitimate work.
 # ──────────────────────────────────────────────────────────────────────────────
 
 MASTER="/Users/mugunthansrinivasan/Project/mesell"
 
-allow() { printf '{"decision":"allow"}\n'; exit 0; }
+# Silent neutral: no stdout so the normal permission flow applies (see Contract).
+allow() { exit 0; }
 
 # --- read + parse input (fail-open on any error) ------------------------------
 input="$(cat 2>/dev/null)" || allow
@@ -110,8 +121,9 @@ if [ -z "$reason" ] && printf '%s' "$cmd" | grep -Eq "${gitpre}branch[[:space:]]
 fi
 
 if [ -n "$reason" ]; then
-  # Block. Keep the reason single-line JSON-safe (no embedded quotes/newlines).
-  printf '{"decision":"block","reason":"BLOCKED by guard-master-tree-git: %s. The MeeSell master checkout (%s) must stay on develop/main and never take a session branch-switch or commit — that is what corrupted the founder editor on 2026-06-15 and 2026-06-16. Do the work in a worktree instead: git worktree add -b <branch> /tmp/mesell-wt/<name> origin/develop  then  cd into it. Deliberate Director/founder recovery: prefix the command with MESELL_ALLOW_MASTER_GIT=1 ."}\n' \
+  # Deny (current permissionDecision protocol). Keep permissionDecisionReason
+  # single-line JSON-safe (no embedded quotes/newlines).
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"BLOCKED by guard-master-tree-git: %s. The MeeSell master checkout (%s) must stay on develop/main and never take a session branch-switch or commit — that is what corrupted the founder editor on 2026-06-15 and 2026-06-16. Do the work in a worktree instead: git worktree add -b <branch> /tmp/mesell-wt/<name> origin/develop  then  cd into it. Deliberate Director/founder recovery: prefix the command with MESELL_ALLOW_MASTER_GIT=1 ."}}\n' \
     "$reason" "$MASTER"
   exit 0
 fi
