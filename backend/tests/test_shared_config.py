@@ -206,6 +206,75 @@ def test_cookie_secure_false_coerces_to_bool(
 
 
 # ───────────────────────────────────────────────────────────────────────────
+# COOKIE_SAMESITE — env-configurable SameSite
+# — AMENDED per founder ruling 2026-07-11 (cross-site GH-Pages→Fly interim;
+#   revert to strict-only when custom domain lands).
+# ───────────────────────────────────────────────────────────────────────────
+
+
+def test_cookie_samesite_default_strict() -> None:
+    """COOKIE_SAMESITE defaults to 'strict' — preserves the FE-D5 posture for
+    every env that does not explicitly opt into the cross-site interim."""
+    assert Settings.model_fields["COOKIE_SAMESITE"].default == "strict"
+
+
+def test_cookie_samesite_not_required() -> None:
+    """COOKIE_SAMESITE carries a safe default → NOT in REQUIRED_FIELDS."""
+    assert "COOKIE_SAMESITE" not in REQUIRED_FIELDS
+
+
+def test_cookie_samesite_none_without_secure_fails_fast(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SameSite=None without Secure is rejected at boot (SystemExit).
+
+    Browsers refuse to store a ``SameSite=None`` cookie that is not also
+    ``Secure``; a half-configured env must crash rather than serve a cookie no
+    browser will keep.
+    """
+    with pytest.raises(SystemExit, match="COOKIE_SECURE"):
+        _build_settings(
+            monkeypatch,
+            _good_env(COOKIE_SAMESITE="none", COOKIE_SECURE="false"),
+        )
+
+
+def test_cookie_samesite_none_with_secure_boots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SameSite=None WITH Secure boots cleanly (the cross-site interim mode)."""
+    s = _build_settings(
+        monkeypatch,
+        _good_env(COOKIE_SAMESITE="none", COOKIE_SECURE="true"),
+    )
+    assert s.COOKIE_SAMESITE == "none"
+    assert s.COOKIE_SECURE is True
+
+
+@pytest.mark.parametrize("samesite", ["strict", "lax"])
+def test_cookie_samesite_strict_lax_accept_any_secure(
+    monkeypatch: pytest.MonkeyPatch, samesite: str
+) -> None:
+    """'strict'/'lax' carry no Secure requirement — boot with COOKIE_SECURE=false."""
+    s = _build_settings(
+        monkeypatch,
+        _good_env(COOKIE_SAMESITE=samesite, COOKIE_SECURE="false"),
+    )
+    assert s.COOKIE_SAMESITE == samesite
+
+
+def test_cookie_samesite_invalid_value_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-Literal value (e.g. 'None' / 'true') is rejected at construction."""
+    with pytest.raises(SystemExit):
+        _build_settings(
+            monkeypatch,
+            _good_env(COOKIE_SAMESITE="None"),  # capital-N is not the Literal
+        )
+
+
+# ───────────────────────────────────────────────────────────────────────────
 # Happy path — full env satisfies the validator
 # ───────────────────────────────────────────────────────────────────────────
 

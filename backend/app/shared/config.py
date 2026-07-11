@@ -163,12 +163,29 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_PEPPER_VERSION: int = 1
 
     # ── Refresh-cookie environment attributes (cookie-env-config feature) ──
-    # FE-D5 security-critical attrs (HttpOnly, SameSite=Strict) are ALWAYS on and
-    # NOT configurable. Only env-dependent attrs come from config:
+    # FE-D5 security-critical attr HttpOnly is ALWAYS on and NOT configurable.
+    # Env-dependent attrs come from config:
     #   COOKIE_DOMAIN: prod=".mesell.xyz"; dev/local="" (empty → no Domain attr → binds to request host)
     #   COOKIE_SECURE: prod=True; local-http dev=False
+    #   COOKIE_SAMESITE: "strict" (default) | "lax" | "none"
+    #     — AMENDED per founder ruling 2026-07-11 (cross-site GH-Pages→Fly interim;
+    #       revert to strict-only when custom domain lands). FE-D5 originally froze
+    #       SameSite=Strict as non-configurable; the live GitHub-Pages(github.io)→
+    #       Fly(fly.dev) cross-site topology means the browser never sends a
+    #       Strict/Lax refresh cookie on reload → the user is logged out on every
+    #       page load. SameSite=None (paired with Secure) is the interim unblock
+    #       until the mesell.xyz custom domain restores a same-site origin pair,
+    #       at which point this reverts to "strict". HttpOnly + Secure remain on;
+    #       CSRF exposure is accepted (mitigations: HttpOnly, Secure, rotation,
+    #       Valkey allowlist). None WITHOUT Secure is rejected at boot (validator
+    #       below) because browsers refuse to store such a cookie.
     COOKIE_DOMAIN: str = ""        # empty == omit Domain attribute
     COOKIE_SECURE: bool = True     # prod/staging True; local-http dev False
+    # COOKIE_SAMESITE — AMENDED per founder ruling 2026-07-11 (cross-site
+    # GH-Pages→Fly interim; revert to strict-only when custom domain lands).
+    # NOT in REQUIRED_FIELDS — safe default "strict" preserves the FE-D5 posture
+    # for every env that does not explicitly opt into the cross-site interim.
+    COOKIE_SAMESITE: Literal["strict", "lax", "none"] = "strict"
 
     # NOTE: ``JWT_EXPIRY_DAYS`` was DEPRECATED per the FE-D5 + FE-D6 amendments
     # and REMOVED during the §7 (`iam`) construction dispatch (2026-06-06).
@@ -416,6 +433,26 @@ class Settings(BaseSettings):
             raise SystemExit(
                 "FATAL: CORS_ALLOWED_ORIGINS may not contain '*' "
                 "(CORS with credentials forbids wildcard — §4.G amendment)"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _require_secure_when_samesite_none(self) -> "Settings":
+        """SameSite=None demands Secure — browser rule + defence-in-depth.
+
+        — AMENDED per founder ruling 2026-07-11 (cross-site GH-Pages→Fly interim;
+        revert to strict-only when custom domain lands).  Browsers reject (refuse
+        to store) a ``SameSite=None`` cookie that is not also ``Secure``; shipping
+        ``None`` without ``Secure`` would silently drop the refresh cookie in
+        every browser AND expose it on any plaintext hop.  Fail fast at boot
+        rather than serve a cookie no browser will keep.  ``strict``/``lax`` carry
+        no such requirement, so they are unaffected.
+        """
+        if self.COOKIE_SAMESITE == "none" and not self.COOKIE_SECURE:
+            raise SystemExit(
+                "FATAL: COOKIE_SAMESITE='none' requires COOKIE_SECURE=true "
+                "(browsers reject SameSite=None without Secure) — AMENDED per "
+                "founder ruling 2026-07-11 (cross-site GH-Pages→Fly interim)."
             )
         return self
 

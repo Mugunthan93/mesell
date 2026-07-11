@@ -5,8 +5,12 @@ attributes derive from ``settings.COOKIE_DOMAIN`` / ``settings.COOKIE_SECURE``
 so the cookie is accepted on ``http://localhost`` in local dev while remaining
 ``.mesell.xyz`` + ``Secure`` in production.
 
-The FE-D5 security-critical attributes ``HttpOnly`` and ``SameSite=Strict`` are
-code-enforced and must be present in EVERY environment.
+The FE-D5 security-critical attribute ``HttpOnly`` is code-enforced and must be
+present in EVERY environment.  ``SameSite`` is env-configurable via
+``settings.COOKIE_SAMESITE`` — AMENDED per founder ruling 2026-07-11 (cross-site
+GH-Pages→Fly interim; revert to strict-only when custom domain lands) — so the
+set-cookie AND the clear-cookie both emit whatever ``COOKIE_SAMESITE`` is; they
+MUST match or the browser will not evict the cookie.
 
 We inspect the raw ``Set-Cookie`` header (not ``response.cookies``) because
 httpx's cookie jar silently drops a ``.mesell.xyz``-domain cookie on a
@@ -54,10 +58,16 @@ def _refresh_set_cookie_header(response) -> str:
 
 
 def _assert_always_on(header: str) -> None:
-    """FE-D5 security-critical attrs — present in EVERY environment."""
+    """FE-D5 always-on attrs — present in EVERY environment.
+
+    — AMENDED per founder ruling 2026-07-11 (cross-site GH-Pages→Fly interim;
+    revert to strict-only when custom domain lands): SameSite is NO LONGER
+    always-on-strict — it is env-configurable via COOKIE_SAMESITE and asserted
+    per-mode by the dedicated tests below.  HttpOnly + Path stay unconditionally
+    always-on.
+    """
     low = header.lower()
     assert "httponly" in low, f"HttpOnly missing: {header!r}"
-    assert "samesite=strict" in low, f"SameSite=Strict missing: {header!r}"
     assert "path=/api/v1/auth" in low, f"Path missing/wrong: {header!r}"
 
 
@@ -67,12 +77,27 @@ _DEV = ("", False, False, False)
 _PROD = (".mesell.xyz", True, True, True)
 
 
-def _apply_env(monkeypatch, cookie_domain: str, cookie_secure: bool) -> None:
-    """Override the settings singleton the router helpers read at call time."""
+def _apply_env(
+    monkeypatch,
+    cookie_domain: str,
+    cookie_secure: bool,
+    cookie_samesite: str | None = None,
+) -> None:
+    """Override the settings singleton the router helpers read at call time.
+
+    ``cookie_samesite`` is optional (default None → leave the singleton's
+    "strict" default untouched) so the pre-existing dev/prod callers are
+    unaffected — AMENDED per founder ruling 2026-07-11 (cross-site GH-Pages→Fly
+    interim; revert to strict-only when custom domain lands).
+    """
     from app.shared.config import settings
 
     monkeypatch.setattr(settings, "COOKIE_DOMAIN", cookie_domain, raising=False)
     monkeypatch.setattr(settings, "COOKIE_SECURE", cookie_secure, raising=False)
+    if cookie_samesite is not None:
+        monkeypatch.setattr(
+            settings, "COOKIE_SAMESITE", cookie_samesite, raising=False
+        )
 
 
 @pytest.mark.parametrize(
@@ -111,6 +136,10 @@ async def test_verify_cookie_env_attrs(
     header = _refresh_set_cookie_header(r)
     low = header.lower()
     _assert_always_on(header)
+    # Default mode (COOKIE_SAMESITE unset) → SameSite=Strict.  Per-mode SameSite
+    # is covered by the dedicated tests below — AMENDED per founder ruling
+    # 2026-07-11 (cross-site GH-Pages→Fly interim; revert to strict when domain lands).
+    assert "samesite=strict" in low, f"default SameSite must be Strict: {header!r}"
 
     if expect_domain:
         assert "domain=.mesell.xyz" in low, f"expected Domain=.mesell.xyz: {header!r}"
@@ -150,6 +179,10 @@ async def test_logout_clear_cookie_env_attrs(
     header = _refresh_set_cookie_header(r)
     low = header.lower()
     _assert_always_on(header)
+    # Default mode (COOKIE_SAMESITE unset) → SameSite=Strict.  Per-mode SameSite
+    # is covered by the dedicated tests below — AMENDED per founder ruling
+    # 2026-07-11 (cross-site GH-Pages→Fly interim; revert to strict when domain lands).
+    assert "samesite=strict" in low, f"default SameSite must be Strict: {header!r}"
 
     if expect_domain:
         assert "domain=.mesell.xyz" in low, f"expected Domain=.mesell.xyz: {header!r}"
@@ -161,3 +194,70 @@ async def test_logout_clear_cookie_env_attrs(
     else:
         attrs = {p.strip().lower() for p in header.split(";")}
         assert "secure" not in attrs, f"dev must omit Secure: {header!r}"
+
+
+# ── SameSite env-configurable matrix ─────────────────────────────────────────
+# — AMENDED per founder ruling 2026-07-11 (cross-site GH-Pages→Fly interim;
+#   revert to strict-only when custom domain lands).
+# (samesite, secure): "none" is paired with Secure=True because browsers reject
+# SameSite=None without Secure (and the config validator fails fast on the pair).
+_SAMESITE_MODES = [("strict", False), ("lax", False), ("none", True)]
+
+
+@pytest.mark.parametrize(
+    "samesite,secure", _SAMESITE_MODES, ids=["strict", "lax", "none"]
+)
+async def test_verify_cookie_samesite_configurable(
+    iam_client,
+    use_live_valkey,
+    monkeypatch,
+    samesite,
+    secure,
+):
+    """otp/verify Set-Cookie SameSite honours settings.COOKIE_SAMESITE; HttpOnly stays on."""
+    _apply_env(monkeypatch, "", secure, cookie_samesite=samesite)
+
+    phone = "+915550000302"
+    otp = "323232"
+    await _seed_otp_in_valkey(phone, otp)
+
+    async def _fake_send_otp(*args, **kwargs):
+        return Msg91Response(success=True, request_id="test-req-id", message="")
+
+    monkeypatch.setattr("app.adapters.msg91.send_otp", _fake_send_otp)
+
+    r = await iam_client.post(
+        "/api/v1/auth/otp/verify",
+        json={"phone": phone, "otp": otp},
+    )
+    assert r.status_code == 200, r.text
+    header = _refresh_set_cookie_header(r)
+    low = header.lower()
+    assert f"samesite={samesite}" in low, f"expected SameSite={samesite}: {header!r}"
+    assert "httponly" in low, f"HttpOnly must remain always-on: {header!r}"
+
+
+@pytest.mark.parametrize(
+    "samesite,secure", _SAMESITE_MODES, ids=["strict", "lax", "none"]
+)
+async def test_logout_clear_cookie_samesite_configurable(
+    iam_client,
+    use_live_valkey,
+    monkeypatch,
+    samesite,
+    secure,
+):
+    """logout clear-cookie SameSite MUST equal the set-cookie's SameSite.
+
+    A mismatched SameSite between set and clear leaves a stale cookie the
+    browser refuses to evict (attribute-match rule), so both read the same
+    settings.COOKIE_SAMESITE.
+    """
+    _apply_env(monkeypatch, "", secure, cookie_samesite=samesite)
+
+    r = await iam_client.post("/api/v1/auth/logout")
+    assert r.status_code == 204, r.text
+    header = _refresh_set_cookie_header(r)
+    low = header.lower()
+    assert f"samesite={samesite}" in low, f"expected SameSite={samesite}: {header!r}"
+    assert "httponly" in low, f"HttpOnly must remain always-on: {header!r}"
