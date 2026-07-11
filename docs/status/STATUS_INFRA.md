@@ -3652,3 +3652,29 @@ Also: K3s build/deploy CI jobs silenced with `if: false` (`fabbfcb`, founder-rul
 - gh-pages branch still exists but is now unused (workflow deploys bypass it) — safe to delete later.
 - Cross-origin refresh cookie (github.io → fly.dev) remains the fragile piece — custom domain (mesell.xyz + api.mesell.xyz, COOKIE_DOMAIN=.mesell.xyz) is the durable fix.
 - Pending for real users: MSG91 + Razorpay live keys via `fly secrets set`.
+
+---
+
+## UPDATE 2026-07-11 — Fly Postgres CATEGORY SEED (production data fix, VERIFIED) + Upstash multi-DB defect surfaced
+
+**Session:** `mesell-seed-fly-categories-infra-session-1` · **Cost:** ₹0 (data-ops + 1 env-gated seed-script tweak; NO new resource created)
+
+**Problem:** live Fly Postgres (`meesell_api` on app `meesell-db`) had ALL four seed tables EMPTY → `/api/v1/categories/*` returned nothing → no seller could create a product (the week's #1 conformance blocker).
+
+**Seed mechanism (existing — reused, NOT regenerated/re-scraped):** `Makefile` target `seed` → `scripts/seed_all.py`, a 4-step FK chain: `seed_field_aliases.py` → `build_template_schemas.py` (writes the intermediate `data/parsed/leaf_id_to_schema_hash.json` in-process) → `seed_categories.py` → `seed_field_enum_values.py`. Inputs = `backend/app/data/meesho_category_tree.json` + tracked `data/parsed/batch_*.json` + `canonical_field_aliases.json`.
+
+**Why "run inside the machine" (the alembic pattern) does NOT work for seeding:** `Dockerfile.fly` copies ONLY `backend/{app,alembic,scripts}` — NOT the repo-root `scripts/` (the seed scripts) nor `data/parsed/` (the ~100 MB batch JSONs). So the seed pipeline was run LOCALLY against a `fly proxy` tunnel (approach b).
+
+**How run against Fly:** `fly proxy 15432:5432 -a meesell-db` (local port 15432, deliberately NOT 5432 = the local dev DB); `DATABASE_URL` captured from the running machine's env (`fly ssh console -C "printenv DATABASE_URL"`, redirected to a `chmod 600` file, never printed), host rewritten `@meesell-db.flycast:5432/`→`@localhost:15432/`; `PYTHONPATH=backend .venv/bin/python scripts/seed_all.py` with that URL exported (wins over `backend/.env` via `load_dotenv(override=False)`).
+
+**VERIFIED — direct row counts on Fly `meesell_api`:** field_aliases=**67**, templates=**3566**, categories=**3772 (exact)**, field_enum_values=**49259**. (`current_database=meesell_api`, `inet_server_addr=fdaa:8d:8e32…` Fly 6PN, PG 17.7 — confirmed Fly, not the local `meesell` DB.)
+
+**Script adaptation (Rule A — on develop):** `scripts/seed_field_enum_values.py`. Step-4's single 500-row multi-KB-JSONB `INSERT` dropped the connection on the **256 MB** Fly PG over the proxy (`asyncpg ConnectionDoesNotExistError`); the one-shot transaction (commit only at end) rolled the whole step back → 0. Made `CHUNK_SIZE` + a new `COMMIT_EVERY_CHUNKS` **env-overridable** (defaults preserve local `make seed` byte-for-byte); re-ran `SEED_ENUM_CHUNK_SIZE=50 SEED_ENUM_COMMIT_EVERY_CHUNKS=10` (small statements + durable per-500-row commits) → 49259 rows, no drops. Diff = 1 file, +16/−2.
+
+**🔴 SEPARATE PRE-EXISTING BLOCKER SURFACED (NOT the seed) — Upstash single-DB vs LOCKED 4-DB Valkey topology.** Live `/api/v1/categories/*` still returns **500 AFTER auth**: `redis.exceptions.ResponseError: Only 0th database is supported! Selected DB: 3`. Fly cache = Upstash Redis (`meesell-cache`) which supports ONLY DB 0; MeeSell's LOCKED topology (`backend/app/shared/valkey.py`, §1.B/§5.C, "cross-DB forbidden", not env-configurable) requires DBs 0-3: **0**=OTP/RL/sessions/auth-allowlist ✓ (login works), **1**=Celery broker ✗, **2**=Celery results ✗ (`celery_app.py` L92-93), **3**=read-through cache ✗. **Blast radius:** every read-through-cached endpoint (category browse/suggest/list/schema/field-enum + seller-profile) 500s, AND all Celery jobs (image rembg, XLSX export, AI generation) can't reach the broker (worker machine is also auto-stopped). Only pure DB-0 auth + uncached direct-DB reads work; `/health` passes because it pings DB 0. **NOT fixable in code (locked architecture) or via env.** **RECOMMENDED FIX (founder-gated, ~₹200-300/mo — do NOT implement):** self-host Valkey 8 as a small Fly Machine (shared-cpu-1x 256 MB, region bom, optional 1 GB volume) — supports DBs 0-15 natively → keeps the locked topology byte-identical → repoint the `VALKEY_URL` secret on `meesell-api`+`worker` → decommission Upstash. Upstash serverless Redis has NO multi-DB/`SELECT` option (one DB per instance; the single-base-URL `_build_url_for_db` factory cannot address 4 separate Upstash URLs). Tracked as an inter-lead request → founder/backend.
+
+**Live-API evidence:** unauth `/categories/browse` → 401 `auth.token.missing` (endpoint wired); dev-bypass login (`+919000000007`, OTP `000000` — active on Fly) → 200 JWT; authed `/categories/browse|suggest|list|schema` → 500 (the Upstash DB-3 error above). Real seeded data sampled directly from Postgres: 8 categories match `%saree%` incl. "Ready To Wear Sarees", "Blouses", full paths → the data the API *would* serve once the cache backend is fixed.
+
+**Rule B:** production data change (no localhost rebuild). Local dev DB parity: already seeded (3772) per 2026-06-16 history — confirmed, not reseeded.
+
+**Note:** 1 throwaway test seller created in prod (`+919000000007`) to exercise the authed API — safe to purge.

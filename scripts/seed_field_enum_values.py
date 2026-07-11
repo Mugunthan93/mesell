@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import sys
 from pathlib import Path
@@ -59,8 +60,16 @@ BATCH_GLOB = "batch_*.json"
 TARGET_ENUM_ROWS = 49295
 TOLERANCE = 0.005  # ±0.5%
 
-# Chunk size for bulk inserts (~49K rows; keep parameter count under driver limits)
-CHUNK_SIZE = 500
+# Chunk size for bulk inserts (~49K rows; keep parameter count under driver limits).
+# Overridable via env for constrained/remote targets — e.g. Fly.io's 256MB Postgres
+# reached over a WireGuard `fly proxy` tunnel, where a large multi-row JSONB statement
+# can exhaust instance memory and drop the connection mid-write. Default 500 keeps
+# local `make seed` behaviour byte-for-byte unchanged.
+CHUNK_SIZE = int(os.environ.get("SEED_ENUM_CHUNK_SIZE", "500"))
+# Commit cadence in chunks. 0 (default) = a single commit at the end (original behaviour).
+# A positive value commits progress every N chunks so a transient mid-run connection
+# drop does not roll the whole seed back to zero; the UPSERT makes a resume idempotent.
+COMMIT_EVERY_CHUNKS = int(os.environ.get("SEED_ENUM_COMMIT_EVERY_CHUNKS", "0"))
 
 
 def slugify(name: str) -> str:
@@ -239,6 +248,7 @@ async def seed(session: AsyncSession) -> int:
 
     # Bulk UPSERT in chunks
     upserted = 0
+    chunk_index = 0
     for i in range(0, len(all_rows), CHUNK_SIZE):
         chunk = all_rows[i: i + CHUNK_SIZE]
         # Convert enum_entries from JSON string back to Python list for JSONB
@@ -263,6 +273,10 @@ async def seed(session: AsyncSession) -> int:
         )
         await session.execute(stmt)
         upserted += len(chunk)
+        chunk_index += 1
+        if COMMIT_EVERY_CHUNKS and chunk_index % COMMIT_EVERY_CHUNKS == 0:
+            await session.commit()
+            logger.info("  Committed progress at %d / %d", upserted, total)
         if upserted % 5000 == 0 or upserted == total:
             logger.info("  Upserted %d / %d", upserted, total)
 
