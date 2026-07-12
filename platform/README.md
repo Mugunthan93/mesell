@@ -19,7 +19,7 @@ so you can bring up, tear down, or adopt either one without touching the other.
 | Status | **TERMINATED** — VM `meesell-dev` stopped 2026-06-30 (GCP credit stop). Code preserved. | **LIVE** — https://meesell-api.fly.dev + https://mugunthan93.github.io/mesell/ |
 | Backend host | FastAPI on K3s (`api` Deployment, 2 replicas) behind Traefik | Fly.io app `meesell-api` (region `bom`): `api` + `worker` processes from one image |
 | Database | PostgreSQL 16 StatefulSet on K3s | Fly Postgres cluster `meesell-db` (attached) |
-| Cache / queue | Valkey 8 StatefulSet on K3s | Upstash Redis `meesell-cache` (via Fly) |
+| Cache / queue | Valkey 8 StatefulSet on K3s | **self-hosted Valkey 8** app `meesell-valkey` (config-as-code in [`platform/fly/valkey`](./fly/valkey)) — replaced Upstash `meesell-cache`, which supported only DB 0 and 500'd the locked 4-DB topology. Deployed `sin` (bom-capacity fallback), private 6PN only. |
 | Frontend host | Angular shell + 7 remotes served on K3s (nginx) behind Traefik | GitHub Pages `build_type=workflow` under `/mesell/` |
 | Object storage | GCS via **ADC** (VM/pod metadata SA) | GCS via **base64 SA key** in Fly secret `GCS_SA_KEY_B64` |
 | CI deploy jobs | `ci.yml` `build` + `deploy` (K3s) — currently `if: false` | `ci.yml` `deploy-backend` (Fly) + `deploy-frontend.yml` (Pages) |
@@ -118,6 +118,16 @@ terraform plan       # expect: imported google_*/github_* show NO change;
 **Secrets, always:** the ~40 live Fly secrets stay as-is on adoption. To (re)stage a
 secret, export its `TF_VAR_fly_secret_*` value, bump `secrets_revision`, and apply —
 `fly_secrets.sh` stages it with `--stage` (no machine restart) and never prints the value.
+
+**Follow-up — adopt `meesell-valkey` (NOT built here):** a new imperatively-created
+Fly app **`meesell-valkey`** (self-hosted Valkey 8, config-as-code in
+[`platform/fly/valkey`](./fly/valkey)) now exists and replaces Upstash `meesell-cache`.
+It is **not yet modelled in Terraform**. When this root is next revised, add it as an
+idempotent flyctl-shim `terraform_data.fly_valkey_app` (create-if-absent, destroy =
+no-op runbook line, mirroring `fly_app`) driven by `platform/fly/valkey/fly.toml`, add
+its `VALKEY_PASSWORD` to the `fly_secrets` shim, and extend `import.sh`/the switch
+checklist accordingly. **Do the full Terraform later — flagged only.** (Its config-as-code
++ runbook already live in `platform/fly/valkey/README.md`.)
 
 ---
 

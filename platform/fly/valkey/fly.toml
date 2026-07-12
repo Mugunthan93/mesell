@@ -1,0 +1,52 @@
+# fly.toml — MeeSell self-hosted Valkey 8 (replaces Upstash `meesell-cache`).
+#
+# WHY: Upstash serverless Redis supports ONLY logical DB 0. MeeSell's backend
+# (backend/app/shared/valkey.py) is a LOCKED 4-DB factory (DB 0 auth / 1 broker /
+# 2 results / 3 cache) — so every DB1/2/3 op on Upstash 500'd ("Only 0th database
+# is supported! Selected DB: 3"). A self-hosted Valkey supports DBs 0-15 natively,
+# keeping the locked topology byte-identical. See README.md for the full analysis.
+#
+# Region: bom (Mumbai) — co-located with meesell-api + meesell-db.
+# PRIVATE ONLY: no [http_service] / no [[services]] => Fly allocates NO public IP.
+# Reachable only over the 6PN private network from meesell-api (same org) at
+# meesell-valkey.internal:6379. requirepass gates every connection.
+# Docs: https://fly.io/docs/reference/configuration/
+
+app = "meesell-valkey"
+# primary_region: the TARGET is bom (co-located with meesell-api + meesell-db), but
+# bom had NO machine/volume capacity at provision time (2026-07-11 — "no capacity
+# available in bom" across ~25 attempts). Deployed to sin (Singapore, nearest APAC
+# region) as a coordinator-approved capacity FALLBACK to ship the multi-DB fix now.
+# TRADEOFF: cross-region redis adds ~60-100ms per round-trip vs a same-region cache
+# (category endpoints slower), but WORKING beats the current 500s. Fly 6PN spans
+# regions, so meesell-api still reaches this at meesell-valkey.internal.
+# TODO(migrate-to-bom): when bom capacity frees, set this back to "bom", (re)create
+# the valkey_data volume + restore the [mounts] block, re-enable AOF in valkey.conf,
+# and redeploy.
+primary_region = "sin"
+
+# ── Build ────────────────────────────────────────────────────────────────────
+[build]
+  dockerfile = "Dockerfile"
+
+# ── Persistence ──────────────────────────────────────────────────────────────
+# TODO(volume): EPHEMERAL for now — bom had NO volume capacity at provision time
+# (2026-07-11: "no capacity available in bom" across ~12 `fly volumes create`
+# attempts). The machine runs pure in-memory (see valkey.conf: appendonly no).
+# SAFE for this workload — every logical DB (0 auth / 1 broker / 2 results /
+# 3 cache) holds rebuildable or transient data. RESTORE this mount + re-enable AOF
+# in valkey.conf when bom volume capacity returns:
+#   fly volumes create valkey_data --size 1 --region bom -a meesell-valkey
+# [mounts]
+#   source      = "valkey_data"
+#   destination = "/data"
+
+# ── VM ───────────────────────────────────────────────────────────────────────
+# ONE always-on machine (dev/staging-grade: NO auto-stop, NO HA — a prod-grade
+# HA/replica decision is deferred, see README.md). Because there is no
+# [http_service]/[[services]] there is no auto-stop config, so the machine runs
+# continuously (unlike meesell-api, which auto-stops when idle).
+[[vm]]
+  memory   = "256mb"
+  cpu_kind = "shared"
+  cpus     = 1
