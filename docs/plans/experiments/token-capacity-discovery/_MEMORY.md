@@ -69,3 +69,9 @@ commit + push the BRANCH to origin (NO PR, no develop merge), and never edit the
 memory from this branch.
 
 **Cost/impact:** ₹0, docs-only, nothing built, no scripts/settings/telemetry/probes.
+
+## POC results 2026-07-18 (master session bae00058, direct-mode, unattended)
+- **Group 1 (transcript reality check) ALL GREEN** + 3 corrections now proven with numbers: (1) **recursive glob mandatory** — subagent transcripts live at `~/.claude/projects/<slug>/<session>/subagents/agent-*.jsonl` and are **49% of all weighted spend** (a non-recursive glob undercounts by ~half); (2) **dedup mandatory** — up to 24 lines/requestId, 20,507 merges had *differing* usage → **per-field-MAX** is the correct rule (usage varies across a request's lines, not identical-repeat); (3) slug needs worktree→parent normalization (+ a native `slug` field exists).
+- **Group 2 (OTEL) SUCCESS**: O1 byte-identical settings toggle; O2 local OTLP **http/json** listener on `:4318` receives `claude_code.token.usage` (by `type`) + `claude_code.cost.usage` with attrs incl. **`query_source` (main/subagent)** + org/user ids. Listener must decode **chunked+gzip** (Content-Length can be absent). `claude -p --output-format json` returns its own usage + `total_cost_usd`. "Empty" scratch still loads **~27K cache-creation** baseline. Probes: cold $0.054 / warm $0.0245.
+- **Phase 0 ledger BUILT** (`tools/tokcap_ledger.py`, read-only, SQLite → `~/.tokcap/ledger.db`, 46,708 reqs). Corpus ≈ **$4,879** API-equiv; **capacity lower bound 81.88M BW** (max window).
+- **Phase 1 BLOCKER**: live % sensor — agent-browser scrape **Cloudflare-blocked**; needs founder pick of (a) headed-login-seed / (b) OAuth-endpoint / (c) manual bracketing. Tick/bounds calibration blocked until then.
