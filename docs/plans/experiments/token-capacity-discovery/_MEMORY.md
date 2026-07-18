@@ -80,3 +80,9 @@ memory from this branch.
 - **Working recipe** in `tools/tokcap_meter.py`: Keychain acct=login-user (NOT root) → `/api/oauth/usage` (Bearer + UA + oauth-2025-04-20) → `limits[]` bars (session/weekly_all/weekly_scoped-per-model), `resets_at`=ISO string. 60s floor (429s on rapid polls). Guard: `--guard 90` → rc 1 at ≥90.
 - **Critical lesson**: transcript ledger lags live sessions (flush lag) — proxy read 0.8% when real meter read 49% (~60×). Historical attribution only; **live guard = this sensor**.
 - Live observation: session 49%→81% in ~26min of Fable-max master-session turns — model choice dominates burn, exactly as plan §2 predicted.
+
+## Phase-2 batches 1–3 (2026-07-18)
+- Effort axis CLOSED: no surcharge; effort = dose size (out-tokens), receipts capture it. Haiku rejects `--effort` (not a variable there).
+- Clean-batch discipline: quarantine mandatory; live human log for founder; pre-flight per dose (ceiling breach forbidden, founder rule "check ongoing will finish before ceiling").
+- Weight question OPEN; clean bound 1% ≥ $0.066 (C_session ≥ $6.6, likely 7–10); warm-cache nearly free; batch-1 $3.9 estimate was contamination artifact — NEVER trust tick math from unquarantined windows.
+- Reset anomaly: fresh bar read 31% at reset+1min — carryover/lag semantics unknown; reproduce before relying on "reset = 0%".

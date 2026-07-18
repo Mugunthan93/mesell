@@ -35,3 +35,14 @@ One row per iteration, written immediately (plan §8/§10). Data lives in `~/.to
 | First readings | 01:19Z session 49%/weekly 21%/Fable 18% → 01:45Z **session 81% (warning)** — live guard working (`tokcap_meter.py --guard 90` → PROCEED rc=0) |
 | ⚠️ Proxy correction | Ledger transcript-gauge said ~0.8–1.5% while real meter said 49–81% → **transcript flush lag; ~60× undercount. Live guard MUST use this sensor, never the transcript proxy** |
 | Caveats | endpoint 429s on rapid polls → 60s courtesy floor built in; token refreshed by Claude Code ~hourly (if expired: run any `claude` cmd); undocumented endpoint = fragile by design (plan §3 route 3 caveat stands) |
+
+## Phase-2 titration batches — 2026-07-18 (founder-supervised)
+| batch | cells | doses | Σ$ | meter | key result |
+|---|---|---|---|---|---|
+| 1 (pre-reset slot) | haiku default | 7 | $0.118 | 89→94% (stop: preflight@94, ceiling 95 founder-amended) | cold 34.3K BW/$0.056 vs warm 6.9K/$0.010 (~5×); per-1% est $0.036–0.040 — **later shown contamination-low** |
+| 2 (post-reset) | sonnet default ×5 + `--effort high` ×5 | 10 | $0.472 | 32→39% | **EFFORT VERDICT ✓**: effort-high = ~100× output tokens (4→406), cost scales exactly with tokens, NO hidden surcharge. Sonnet cold $0.159 vs warm $0.008 (~20×). Tick intervals disagreed 19× → contaminated (master-session turns mid-batch) |
+| 3 (CLEAN, quarantined, interleaved 6H+6S) | both, default | 12 | $0.122 | 42→44% then flat | **11 warm doses ($0.066 / 31K BW) → ZERO ticks** → clean bound **1% ≥ $0.066** ⇒ C_session ≥ ~$6.6-equiv (likely $7–10); batch-1's $3.9 "convergence" = contamination artifact. Warm-cache ≈ free on the meter (0.1× confirmed live). $-vs-token weighting STILL OPEN — interleaving can't separate; needs mono-model clean runs |
+| — | anomaly | — | — | reset 05:50Z → 1 min later fresh bar read 31% | end-of-window spend appears to carry/lag into the new bar — logged, needs repro |
+
+**Method upgrades locked in:** per-dose PRE-FLIGHT guard (founder rule: never fire a dose that could cross the ceiling; adaptive buffer from observed jumps); human live log (`clean_batch_live.log`) for founder observation without chat contamination; quarantine = REQUIRED for any tick attribution (master-session Fable-max turns cost ~1–3%/turn and destroy tick math).
+**Next decisive cell:** mono-model clean runs (haiku-only +2 ticks, sonnet-only +2 ticks, same window) → separates $-weighted vs token-weighted.
