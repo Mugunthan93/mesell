@@ -1,6 +1,6 @@
 # Token-Capacity Discovery Experiment — Ledger + Active-Dose Calibration
 
-**Status:** DRAFT — discussion ratified by founder 2026-07-17, nothing built yet
+**Status:** ACTIVE — Phases 0–2 executed 2026-07-18 (G0 partial · G1 passed · G2 substantially passed — meter is **$-weighted**, C_session(Pro) ≈ $5–6.5). Phase 3 (validation + drift) started. See `phase2-report.md` + `RESULTS_LOG.md`.
 **Owner:** Founder (Muguntha) + master Claude session
 **Created:** 2026-07-17
 **Sibling experiment:** `rtk-token-adoption` (shares the transcript-mining methodology; this plan's ledger generalizes RTK Phase 0's mining script)
