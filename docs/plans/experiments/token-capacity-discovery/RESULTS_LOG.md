@@ -26,3 +26,12 @@ One row per iteration, written immediately (plan §8/§10). Data lives in `~/.to
 - 1,419 files (63 main + 1,356 subagent) → 46,708 deduped requests → `~/.tokcap/ledger.db` (17MB)
 - main 478.3M / **subagent 462.0M BW (49%)** — recursive-glob correction confirmed load-bearing
 - 95 windows; **max 81.88M BW = capacity lower bound**; current window ~1.5% of max (budget gauge); corpus ≈ **$4,879** API-equiv
+
+### Sensor route (b) — LIVE 2026-07-18 (founder-selected)
+| item | result |
+|---|---|
+| Recipe | Keychain svc `Claude Code-credentials` **acct=<login user>** (acct=root item is STALE/expired) → `GET api.anthropic.com/api/oauth/usage` w/ `Authorization: Bearer` + `User-Agent: claude-cli/…` + `anthropic-beta: oauth-2025-04-20` → 200 |
+| Response | `limits[]` = kind/group/percent/severity/resets_at/scope (+ five_hour/seven_day summaries). Bars found: **session, weekly_all, weekly_scoped[Fable]**. `resets_at` = ISO string |
+| First readings | 01:19Z session 49%/weekly 21%/Fable 18% → 01:45Z **session 81% (warning)** — live guard working (`tokcap_meter.py --guard 90` → PROCEED rc=0) |
+| ⚠️ Proxy correction | Ledger transcript-gauge said ~0.8–1.5% while real meter said 49–81% → **transcript flush lag; ~60× undercount. Live guard MUST use this sensor, never the transcript proxy** |
+| Caveats | endpoint 429s on rapid polls → 60s courtesy floor built in; token refreshed by Claude Code ~hourly (if expired: run any `claude` cmd); undocumented endpoint = fragile by design (plan §3 route 3 caveat stands) |

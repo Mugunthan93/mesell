@@ -1,6 +1,6 @@
 # Phase 1 — Meter-Sensor POC: findings
 
-**Status:** DRAFT — POC done 2026-07-18. **Result: the live % sensor is the blocker.**
+**Status:** RESOLVED 2026-07-18 — founder selected **option (b)**; sensor LIVE via `tools/tokcap_meter.py` (see RESULTS_LOG). Tick/bounds calibration UNBLOCKED. Historical note below preserved from the POC.
 
 ## Sensor routes tested
 | route | outcome |

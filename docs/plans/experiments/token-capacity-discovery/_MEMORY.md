@@ -75,3 +75,8 @@ memory from this branch.
 - **Group 2 (OTEL) SUCCESS**: O1 byte-identical settings toggle; O2 local OTLP **http/json** listener on `:4318` receives `claude_code.token.usage` (by `type`) + `claude_code.cost.usage` with attrs incl. **`query_source` (main/subagent)** + org/user ids. Listener must decode **chunked+gzip** (Content-Length can be absent). `claude -p --output-format json` returns its own usage + `total_cost_usd`. "Empty" scratch still loads **~27K cache-creation** baseline. Probes: cold $0.054 / warm $0.0245.
 - **Phase 0 ledger BUILT** (`tools/tokcap_ledger.py`, read-only, SQLite → `~/.tokcap/ledger.db`, 46,708 reqs). Corpus ≈ **$4,879** API-equiv; **capacity lower bound 81.88M BW** (max window).
 - **Phase 1 BLOCKER**: live % sensor — agent-browser scrape **Cloudflare-blocked**; needs founder pick of (a) headed-login-seed / (b) OAuth-endpoint / (c) manual bracketing. Tick/bounds calibration blocked until then.
+
+## Sensor route (b) LIVE 2026-07-18
+- **Working recipe** in `tools/tokcap_meter.py`: Keychain acct=login-user (NOT root) → `/api/oauth/usage` (Bearer + UA + oauth-2025-04-20) → `limits[]` bars (session/weekly_all/weekly_scoped-per-model), `resets_at`=ISO string. 60s floor (429s on rapid polls). Guard: `--guard 90` → rc 1 at ≥90.
+- **Critical lesson**: transcript ledger lags live sessions (flush lag) — proxy read 0.8% when real meter read 49% (~60×). Historical attribution only; **live guard = this sensor**.
+- Live observation: session 49%→81% in ~26min of Fable-max master-session turns — model choice dominates burn, exactly as plan §2 predicted.
