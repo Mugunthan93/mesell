@@ -46,3 +46,20 @@ One row per iteration, written immediately (plan §8/§10). Data lives in `~/.to
 
 **Method upgrades locked in:** per-dose PRE-FLIGHT guard (founder rule: never fire a dose that could cross the ceiling; adaptive buffer from observed jumps); human live log (`clean_batch_live.log`) for founder observation without chat contamination; quarantine = REQUIRED for any tick attribution (master-session Fable-max turns cost ~1–3%/turn and destroy tick math).
 **Next decisive cell:** mono-model clean runs (haiku-only +2 ticks, sonnet-only +2 ticks, same window) → separates $-weighted vs token-weighted.
+
+## Batch 4 — MONO-MODEL DECIDER (2026-07-18 11:36–11:54Z, quarantined, founder-observed via live log)
+| phase | interior ticks | per-1% ($) | per-1% (tokens) |
+|---|---|---|---|
+| haiku-only | 2 | $0.0531, $0.0497 → **$0.0514** | 25.3K, 20.7K → 23.0K |
+| sonnet-only | 2 | $0.0233, $0.0833 → **$0.0533** | 3.7K, 15.8K → 9.7K |
+
+**Ratios: $-per-tick sonnet/haiku = 1.04 · tokens-per-tick = 0.42 → VERDICT: $-WEIGHTED.**
+The meter charges by API price; model choice is a real plan-budget lever (~10× Fable→Haiku).
+
+### Calibrated constants (Pro, first fit)
+- 1% ≈ **$0.05–0.065** API-equiv (mono $0.052; batch-3 no-tick bound $0.066 — residual quantization tension to resolve with repetition)
+- **C_session ≈ $5–6.5-equiv** · C_weekly ≈ 8–9× ≈ $42–55-equiv
+- Window output-budgets: Fable ≈100K · Opus ≈210K · Sonnet ≈350K · Haiku ≈1M out-tokens
+- Cold 78K-context rewrite on Fable ≈ $1 ≈ ~20% of a window → warm sessions are the top efficiency lever; master-session Fable-max turns ≈ $0.15–0.5 (3–10%/turn) — matches observed burn
+
+**G2 status:** weight model = price-weighted ✓ · session constant ±~15% (one clean repetition to reach ±5–10%) · OPEN: reset-carryover anomaly, Opus/Fable spot-check tick, weekly precision.

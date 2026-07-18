@@ -86,3 +86,7 @@ memory from this branch.
 - Clean-batch discipline: quarantine mandatory; live human log for founder; pre-flight per dose (ceiling breach forbidden, founder rule "check ongoing will finish before ceiling").
 - Weight question OPEN; clean bound 1% ≥ $0.066 (C_session ≥ $6.6, likely 7–10); warm-cache nearly free; batch-1 $3.9 estimate was contamination artifact — NEVER trust tick math from unquarantined windows.
 - Reset anomaly: fresh bar read 31% at reset+1min — carryover/lag semantics unknown; reproduce before relying on "reset = 0%".
+
+## Batch 4 verdict (2026-07-18): meter is $-WEIGHTED
+- sonnet/haiku $-per-tick = 1.04, tokens-per-tick = 0.42 → charges by API price. 1% ≈ $0.05–0.065; C_session(Pro) ≈ $5–6.5; weekly ≈ 8–9×. Model choice = ~10× lever; warm cache ≈ free; cold Fable context rewrite ≈ 20% of a window.
+- Method: mono-model phases with interior-tick-only accounting is THE decisive design; interleaved batches cannot separate weight hypotheses.
