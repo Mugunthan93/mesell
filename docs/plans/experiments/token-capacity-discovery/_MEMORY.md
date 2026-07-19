@@ -90,3 +90,13 @@ memory from this branch.
 ## Batch 4 verdict (2026-07-18): meter is $-WEIGHTED
 - sonnet/haiku $-per-tick = 1.04, tokens-per-tick = 0.42 → charges by API price. 1% ≈ $0.05–0.065; C_session(Pro) ≈ $5–6.5; weekly ≈ 8–9×. Model choice = ~10× lever; warm cache ≈ free; cold Fable context rewrite ≈ 20% of a window.
 - Method: mono-model phases with interior-tick-only accounting is THE decisive design; interleaved batches cannot separate weight hypotheses.
+
+## CLOSED 2026-07-19 (founder ruling)
+Founder judged the precision-chase over-engineered (correctly). KEEP: the mental model
+(resend-context / cache / cold-vs-warm / model-tiers), 5 behavioural rules (cheapest
+capable model · stay warm · lean context · effort is free · check meter before big
+spends), and the tools (tokcap_meter/ledger/predict/dashboard). These are RELATIVE facts
++ tools → survive any Anthropic price/plan change. FRAGILE: the exact $-constants
+(1%≈$0.0575, window≈$5.75) → re-measure in ~30 min if the drift-monitor flags. Locked at
+tag tokcap-closed-2026-07-19. Isolated branch; never merges to mesell. Runtime data in
+~/.tokcap/ (out of repo).
