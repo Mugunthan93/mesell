@@ -29,12 +29,16 @@
 # resolve relative to their own remoteEntry.json URL — no base-href needed.
 name: Deploy Frontend to GitHub Pages
 
+# DEPLOYMENT STOPPED (2026-07-19, founder-directed teardown): MeeSell's GitHub
+# Pages + Fly.io deployment was shut down to stop all billing. Auto-deploy on
+# push is disabled; only manual dispatch remains, and the build job is if:false
+# guarded below (publish + deploy `needs: build`, so both skip) — a manual run is
+# a no-op until the founder re-enables deploys. Do NOT delete: kept for restore.
 on:
-  push:
-    branches: [develop]
-    paths:
-      - 'frontend/**'
-  # Manual trigger — first deploy / re-publish without touching frontend files.
+  # push trigger removed 2026-07-19 (teardown). Restore by re-adding:
+  #   push:
+  #     branches: [develop]
+  #     paths: ['frontend/**']
   workflow_dispatch:
 
 # Allow the publish job to push the gh-pages branch.
@@ -44,6 +48,10 @@ permissions:
 jobs:
   build:
     name: "Build: ${{ matrix.project }}"
+    # DEPLOYMENT STOPPED 2026-07-19 (teardown) — no-op guard. publish + deploy
+    # jobs `needs: build`, so guarding build skips the whole Pages publish chain.
+    # Restore by removing this `if: false` line.
+    if: false
     runs-on: ubuntu-latest
     # kill-on-artifact-ready (see the Build step) bounds each leg to ~1.5-2 min;
     # this cap only backstops the 8-min inner fallback + setup/upload overhead.
